@@ -1,10 +1,21 @@
 {
-  "background": "building repeatable agent-assisted GTM workflows",
+  "background": "building repeatable agent-assisted GTM workflows across Clay, Codex, and Claude Code",
   "company": "ExampleCo",
   "company_url": "https://example.com",
   "linkedin_url": "https://www.linkedin.com/in/example-mdp-demo",
   "name": "Alex Rivera",
   "persona": "GTM Engineering",
+  "segment": "agent-assisted GTM",
+  "signals": [
+    {
+      "confidence": "medium",
+      "freshness": "recent",
+      "id": "agent-gtm-workflow",
+      "source": "example enrichment row",
+      "state_as": "hypothesis",
+      "title": "Building multi-agent GTM workflow"
+    }
+  ],
   "title": "GTM Engineering Lead",
   "trigger": "standardizing outbound context across agents and systems"
 }

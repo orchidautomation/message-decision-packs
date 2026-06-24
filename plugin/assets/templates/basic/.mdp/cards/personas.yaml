@@ -18,7 +18,7 @@ entries:
   avoid: []
 - id: pmm
   title: PMM
-  body: Needs pains, triggers, hooks, proof points, and copy constraints without losing source fidelity.
+  body: Needs pains, triggers, hooks, proof points, CTA policy, and copy constraints without losing source fidelity.
   applies_to:
   - PMM
   evidence: []

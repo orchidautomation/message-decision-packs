@@ -34,14 +34,14 @@ mdp --json explain --dir .
 Choose the narrow path and use that skill's workflow:
 
 - New or messy pack: `$mdp-create-pack`
-- ICP, segments, personas, fit/disqualifiers: `$mdp-icp-builder`
+- ICP, segments, personas, fit/disqualifiers, signals, and no-message logic: `$mdp-icp-builder`
 - Website, docs, notes, sales calls into card entries: `$mdp-source-extract`
 - Hooks, objections, message angles, copy structures: `$mdp-message-angles`
 - CTA, ask style, reply path, meeting boundary: `$mdp-cta-builder`
 - Forbidden claims, category boundaries, unsupported promises: `$mdp-avoid-rules`
 - Clay, Deepline, CSV, LinkedIn, or enrichment row to brief: `$mdp-prospect-brief`
 - Model-ready writing contract: `$mdp-copy-brief`
-- Generated copy QA or revision: `$mdp-copy-eval`
+- Generated copy QA, claim checks, or revision: `$mdp-copy-eval`
 - Full pack audit, routing QA, completeness check: `$mdp-pack-review`
 - Scenario/eval testing of a pack: `$mdp-pack-eval`
 
@@ -59,7 +59,7 @@ For most requests, run this loop:
 6. Test one representative route:
 
 ```bash
-mdp --json route --dir . --persona "<persona>" --job "<channel> outbound copy"
+mdp --json route --entries --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
 7. If a prospect row is involved, produce the brief:
@@ -74,14 +74,22 @@ A usable GTM messaging pack should usually have:
 
 - `.mdp/manifest.yaml`
 - `.mdp/cards/personas.yaml`
+- `.mdp/cards/positioning.yaml`
+- `.mdp/cards/fit-rules.yaml`
+- `.mdp/cards/signals.yaml`
 - `.mdp/cards/pains.yaml`
+- `.mdp/cards/claims.yaml`
 - `.mdp/cards/motions.yaml`
+- `.mdp/cards/channel-policies.yaml`
 - `.mdp/cards/hooks.yaml`
 - `.mdp/cards/ctas.yaml`
 - `.mdp/cards/avoid-rules.yaml`
 - `.mdp/cards/copy-patterns.yaml`
+- `.mdp/cards/objections.yaml`
+- `.mdp/cards/gaps.yaml`
+- `.mdp/evals/*.yaml`
 
-Treat `ctas.yaml` as the policy for the ask or reply path. Do not bury CTA rules only inside copy examples.
+Treat `ctas.yaml` as the policy for the ask or reply path. Treat `claims.yaml` as the approved proof ledger, `fit-rules.yaml` as the no-message gate, and `gaps.yaml` as the place to preserve known unknowns. Do not bury these rules only inside copy examples.
 
 ## Boundaries
 

@@ -11,7 +11,7 @@ tags:
 entries:
 - id: copy-brief
   title: Copy brief
-  body: Route persona, pain, hook, avoid-rules, and copy-pattern cards to produce a grounded brief, not final unsupervised sending.
+  body: Route persona, pain, hook, avoid-rules, CTA policy, and copy-pattern cards to produce a grounded brief, not final unsupervised sending.
   applies_to:
   - PMM
   evidence: []
@@ -21,5 +21,13 @@ entries:
   body: Let an agent inspect the pack before doing GTM work and report missing evidence or unsupported claims.
   applies_to:
   - GTM Engineering
+  evidence: []
+  avoid: []
+- id: clay-row-to-brief
+  title: Enriched row to brief
+  body: Convert a Clay/Deepline-style row into a message brief before drafting. Keep source fields as inputs, not as proof of claims.
+  applies_to:
+  - GTM Engineering
+  - PMM
   evidence: []
   avoid: []

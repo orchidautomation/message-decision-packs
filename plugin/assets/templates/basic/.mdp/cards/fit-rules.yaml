@@ -1,0 +1,44 @@
+id: fit-rules
+kind: fit-rules
+title: Fit rules
+description: ICP, qualification, disqualification, and no-message rules.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- fit
+- icp
+- disqualifier
+- no-message
+entries:
+- id: good-fit-agent-gtm
+  title: 'Good fit: agent-assisted GTM'
+  body: Use when the account is building GTM workflows with agents, Clay/Deepline-style enrichment rows, Codex/Claude Code/OpenCode, or multiple systems that need consistent message context.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence: []
+  avoid: []
+- id: no-context-no-copy
+  title: No message without context
+  body: If the row has no persona, trigger, source, or useful account context, return insufficient-context instead of drafting polished copy.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence: []
+  avoid:
+  - no source
+  - unknown persona
+  - no trigger
+- id: bad-fit-sending-only
+  title: 'Bad fit: sending-only ask'
+  body: If the request is only to blast, sequence, or auto-send messages without decision context, treat it as out of scope for MDP.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence: []
+  avoid:
+  - blast
+  - auto-send
+  - sequence everyone

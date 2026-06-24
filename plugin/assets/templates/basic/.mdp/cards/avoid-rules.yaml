@@ -12,14 +12,27 @@ tags:
 entries:
 - id: not-execution
   title: Do not claim execution
-  body: Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, BI tool, or generic RevOps automation system.
+  body: Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, or generic RevOps automation system.
   applies_to:
   - GTM Engineering
   - PMM
   - PM
-  evidence: []
+  evidence:
+  - README.md
   avoid:
   - AI SDR
   - sequencer
   - CRM replacement
   - generic automation
+  - scraper
+- id: no-unsourced-claims
+  title: No unsourced claims
+  body: Do not add quantified outcomes, integrations, customer names, compliance claims, or product capabilities unless they are present in the claims card or supplied source material.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid:
+  - guaranteed
+  - proven ROI
+  - fully automated

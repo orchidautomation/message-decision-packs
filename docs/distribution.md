@@ -13,9 +13,9 @@ message-decision-packs/
 
 The CLI and plugin are tightly coupled:
 
-- the CLI defines the pack schema, JSON contracts, validation, routing, and brief emission
+- the CLI defines the pack schema, JSON contracts, validation, routing, entry routing, fit checks, claim checks, gaps, eval fixtures, and brief emission
 - the plugin teaches agents how to author, inspect, and use those contracts
-- examples and templates need to stay aligned with CLI behavior
+- examples, eval fixtures, and templates need to stay aligned with CLI behavior
 
 Keeping them together avoids version drift while the standard is young.
 

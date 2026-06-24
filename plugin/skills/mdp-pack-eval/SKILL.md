@@ -13,6 +13,7 @@ Test whether the pack routes the right cards for realistic GTM tasks.
 
 ```bash
 mdp --json validate --dir .
+mdp --json eval --dir .
 ```
 
 2. Choose representative cases:
@@ -27,7 +28,7 @@ mdp --json validate --dir .
 3. Run routes:
 
 ```bash
-mdp --json route --dir . --persona "<persona>" --job "<job>"
+mdp --json route --entries --dir . --persona "<persona>" --job "<job>"
 ```
 
 4. For prospect cases, run:
@@ -41,11 +42,15 @@ mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
 For each case, check:
 
 - expected base cards loaded
+- fit-rules and positioning included when relevant
+- claims included for copy jobs that use proof
 - avoid-rules included for copy jobs
-- ctas included for outbound/message/copy jobs
+- ctas and channel-policies included for outbound/message/copy jobs
 - persona-specific cards included
+- entry-level route is useful, not noisy
 - irrelevant cards omitted
 - route does not exceed policy limits
+- eval fixtures pass
 - decision trace is understandable
 
 ## Fixes

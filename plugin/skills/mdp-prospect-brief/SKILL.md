@@ -28,19 +28,27 @@ Preferred fields:
 - `background`
 - `trigger`
 - `persona`
+- `segment`
+- `signals` with source, confidence, freshness, and state_as when available
 
 ## Workflow
 
 1. Normalize the source row into a small JSON file.
 2. Keep only useful, non-sensitive fields needed for routing and copy.
 3. Do not treat LinkedIn URL presence as proof of any claim.
-4. Run:
+4. Check fit before drafting:
+
+```bash
+mdp --json fit --dir . --prospect <prospect.json>
+```
+
+5. Run the brief:
 
 ```bash
 mdp --json brief --dir . --prospect <prospect.json> --channel linkedin
 ```
 
-5. Read only `data.required_load_order` if drafting is requested.
+6. Read only `data.required_load_order` if drafting is requested.
 
 ## Response
 
@@ -48,6 +56,7 @@ Return:
 
 - normalized prospect fields
 - inferred persona
+- fit status and disqualifiers
 - required card load order
 - decision trace
 - gaps or assumptions

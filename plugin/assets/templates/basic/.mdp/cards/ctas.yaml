@@ -27,9 +27,7 @@ entries:
   applies_to:
   - PMM
   evidence: []
-  avoid:
-  - urgent because I saw
-  - you asked for help
+  avoid: []
 - id: reply-path
   title: Reply path
   body: When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.

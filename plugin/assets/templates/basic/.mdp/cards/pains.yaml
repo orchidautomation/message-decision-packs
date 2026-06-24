@@ -25,3 +25,10 @@ entries:
   - PMM
   evidence: []
   avoid: []
+- id: claim-inconsistency
+  title: Claim inconsistency
+  body: Different agents or workflows reuse outdated claims, unsupported proof points, or mismatched CTAs when there is no shared pack.
+  applies_to:
+  - PMM
+  evidence: []
+  avoid: []
