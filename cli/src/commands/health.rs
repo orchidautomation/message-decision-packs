@@ -1,6 +1,8 @@
 use crate::constants::{DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION};
 use crate::models::CardKind;
-use crate::pack_io::{read_card, read_card_by_id, read_manifest};
+use crate::pack_io::{
+    display_pack_path, read_card, read_card_by_id, read_manifest, resolve_pack_path,
+};
 use crate::routing::select_cards;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -17,10 +19,20 @@ pub(crate) fn doctor(root: &Path) -> Value {
     checks.insert("pack_dir_exists", json!(pack_dir.exists()));
     checks.insert("manifest_exists", json!(manifest_path.exists()));
     if !pack_dir.exists() {
-        issues.push(format!("missing {}", pack_dir.display()));
+        issues.push(issue(
+            "pack_dir_missing",
+            "error",
+            DEFAULT_DIR,
+            format!("missing {}", pack_dir.display()),
+        ));
     }
     if !manifest_path.exists() {
-        issues.push(format!("missing {}", manifest_path.display()));
+        issues.push(issue(
+            "manifest_missing",
+            "error",
+            ".mdp/manifest.yaml",
+            format!("missing {}", manifest_path.display()),
+        ));
     }
     if manifest_path.exists() {
         match read_manifest(root) {
@@ -30,7 +42,12 @@ pub(crate) fn doctor(root: &Path) -> Value {
             }
             Err(err) => {
                 checks.insert("manifest_parseable", json!(false));
-                issues.push(err.to_string());
+                issues.push(issue(
+                    "manifest_parse_failed",
+                    "error",
+                    ".mdp/manifest.yaml",
+                    err.to_string(),
+                ));
             }
         }
     }
@@ -51,48 +68,100 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     let mut card_ids = BTreeSet::new();
     let mut loaded_cards = Vec::new();
     if manifest.format != FORMAT_VERSION {
-        issues.push(format!(
-            "manifest format must be {FORMAT_VERSION}, found {}",
-            manifest.format
+        issues.push(issue(
+            "manifest_format",
+            "error",
+            ".mdp/manifest.yaml#/format",
+            format!(
+                "manifest format must be {FORMAT_VERSION}, found {}",
+                manifest.format
+            ),
         ));
     }
     if manifest.personas.is_empty() {
-        issues.push("manifest personas must not be empty".to_string());
+        issues.push(issue(
+            "manifest_personas_empty",
+            "error",
+            ".mdp/manifest.yaml#/personas",
+            "manifest personas must not be empty",
+        ));
     }
     if manifest.cards.is_empty() {
-        issues.push("manifest cards must not be empty".to_string());
+        issues.push(issue(
+            "manifest_cards_empty",
+            "error",
+            ".mdp/manifest.yaml#/cards",
+            "manifest cards must not be empty",
+        ));
     }
     if !manifest.policy.progressive_disclosure {
-        issues.push("policy.progressive_disclosure should be true".to_string());
+        issues.push(issue(
+            "policy_progressive_disclosure",
+            "warning",
+            ".mdp/manifest.yaml#/policy/progressive_disclosure",
+            "policy.progressive_disclosure should be true",
+        ));
     }
     for card_ref in &manifest.cards {
         if !card_ids.insert(card_ref.id.clone()) {
-            issues.push(format!("duplicate card id {}", card_ref.id));
+            issues.push(issue(
+                "duplicate_card_id",
+                "error",
+                ".mdp/manifest.yaml#/cards",
+                format!("duplicate card id {}", card_ref.id),
+            ));
         }
-        let path = root.join(DEFAULT_DIR).join(&card_ref.path);
+        let path = match resolve_pack_path(root, &card_ref.path) {
+            Ok(path) => path,
+            Err(err) => {
+                issues.push(issue(
+                    "invalid_card_path",
+                    "error",
+                    format!(".mdp/manifest.yaml#/cards/{}", card_ref.id),
+                    err.to_string(),
+                ));
+                continue;
+            }
+        };
+        let display_path = display_pack_path(&card_ref.path);
         match read_card(&path) {
             Ok(card) => {
                 if card.id != card_ref.id {
-                    issues.push(format!(
-                        "{} id mismatch: manifest has {}, card has {}",
-                        path.display(),
-                        card_ref.id,
-                        card.id
+                    issues.push(issue(
+                        "card_id_mismatch",
+                        "error",
+                        &display_path,
+                        format!("manifest has {}, card has {}", card_ref.id, card.id),
                     ));
                 }
                 if card.kind != card_ref.kind {
-                    issues.push(format!("{} kind mismatch", path.display()));
+                    issues.push(issue(
+                        "card_kind_mismatch",
+                        "error",
+                        &display_path,
+                        "card kind does not match manifest",
+                    ));
                 }
                 if card.entries.is_empty() {
-                    issues.push(format!("{} has no entries", path.display()));
+                    issues.push(issue(
+                        "card_entries_empty",
+                        "error",
+                        &display_path,
+                        "card has no entries",
+                    ));
                 }
-                loaded_cards.push(json!({"id": card.id, "kind": card_ref.kind, "path": path.display().to_string(), "entries": card.entries.len()}));
+                loaded_cards.push(json!({"id": card.id, "kind": card_ref.kind, "path": display_path, "entries": card.entries.len()}));
             }
-            Err(err) => issues.push(err.to_string()),
+            Err(err) => issues.push(issue(
+                "card_read_failed",
+                "error",
+                display_path,
+                err.to_string(),
+            )),
         }
     }
     Ok(
-        json!({"valid": issues.is_empty(), "manifest": root.join(DEFAULT_DIR).join("manifest.yaml").display().to_string(), "cards": loaded_cards, "issues": issues}),
+        json!({"valid": issues.is_empty(), "manifest": format!("{DEFAULT_DIR}/manifest.yaml"), "cards": loaded_cards, "issues": issues}),
     )
 }
 
@@ -123,7 +192,7 @@ pub(crate) fn gaps(root: &Path) -> Result<Value> {
         }
     }
     for card_ref in &manifest.cards {
-        let card = read_card(&root.join(DEFAULT_DIR).join(&card_ref.path))?;
+        let card = read_card(&resolve_pack_path(root, &card_ref.path)?)?;
         for entry in &card.entries {
             if entry.evidence.is_empty()
                 && !matches!(
@@ -143,4 +212,128 @@ pub(crate) fn gaps(root: &Path) -> Result<Value> {
         "evidence_gaps": evidence_gaps,
         "summary": {"durable": durable_count, "evidence": evidence_count}
     }))
+}
+
+pub(crate) fn issue(
+    code: &str,
+    severity: &str,
+    path: impl Into<String>,
+    message: impl Into<String>,
+) -> Value {
+    json!({
+        "code": code,
+        "severity": severity,
+        "path": path.into(),
+        "message": message.into()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::init::init_pack;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_pack(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-{name}-{nonce}"));
+        init_pack(&root, "Example Message Pack", "gtm", true)
+            .expect("starter pack should initialize");
+        root
+    }
+
+    #[test]
+    fn validate_rejects_manifest_card_path_traversal() {
+        let root = temp_pack("path-traversal");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("path: cards/personas.yaml", "path: ../secrets.yaml"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "invalid_card_path")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_manifest_absolute_card_path() {
+        let root = temp_pack("path-absolute");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("path: cards/personas.yaml", "path: /tmp/personas.yaml"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "invalid_card_path")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_rejects_manifest_card_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_pack("path-symlink");
+        let outside = root.join("outside-card.yaml");
+        std::fs::write(
+            &outside,
+            r#"id: personas
+kind: personas
+title: Outside
+description: Outside
+entries: []
+"#,
+        )
+        .expect("outside card should be writable");
+        let link = root.join(".mdp").join("cards").join("escaped.yaml");
+        symlink(&outside, &link).expect("symlink should be creatable");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("path: cards/personas.yaml", "path: cards/escaped.yaml"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "invalid_card_path")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

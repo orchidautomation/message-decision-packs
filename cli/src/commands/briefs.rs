@@ -40,8 +40,21 @@ pub(crate) fn prospect_brief(
     channel: &str,
     job: Option<&str>,
 ) -> Result<Value> {
-    let manifest = read_manifest(root)?;
     let prospect = read_prospect(prospect_path)?;
+    prospect_brief_from_value(root, prospect, channel, job)
+}
+
+pub(crate) fn prospect_brief_from_value(
+    root: &Path,
+    prospect: Prospect,
+    channel: &str,
+    job: Option<&str>,
+) -> Result<Value> {
+    let manifest = read_manifest(root)?;
+    let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
+    let fit_status = fit_result["status"]
+        .as_str()
+        .unwrap_or("insufficient-context");
     let persona = prospect
         .persona
         .as_deref()
@@ -52,12 +65,20 @@ pub(crate) fn prospect_brief(
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
         .collect();
+    let draft_status = if fit_status == "fit" {
+        "ready"
+    } else {
+        "no-draft"
+    };
     Ok(json!({
         "contract": "mdp.message-brief.v0",
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
         "channel": channel,
         "prospect": prospect,
         "persona": persona,
+        "fit": fit_result,
+        "draft_status": draft_status,
+        "draft_decision": if draft_status == "ready" { "Proceed with routed brief using stated assumptions." } else { "Do not draft outbound copy unless the user explicitly overrides this fit gate." },
         "job": job_text,
         "required_load_order": load_order,
         "route": route,
@@ -67,7 +88,7 @@ pub(crate) fn prospect_brief(
             {"step": "route_cards", "reason": "load only relevant message decision cards"},
             {"step": "generate_or_handoff", "reason": "use the brief as the agent/model input contract"}
         ],
-        "agent_instruction": "Read only required_load_order card files, combine them with prospect, then draft copy. Use the routed CTA policy when present. Do not invent claims outside the loaded cards."
+        "agent_instruction": if draft_status == "ready" { "Read only required_load_order card files, combine them with prospect, then draft copy. Use the routed CTA policy when present. Do not invent claims outside the loaded cards." } else { "Stop before drafting. Surface the fit status and missing context/disqualifiers, then ask for explicit user override before creating outbound copy." }
     }))
 }
 
@@ -79,6 +100,15 @@ pub(crate) fn demo_copy(root: &Path, prospect_path: &Path, channel: &str) -> Res
         Some("write linkedin outbound copy"),
     )?;
     let prospect: Prospect = serde_json::from_value(brief["prospect"].clone())?;
+    if brief["draft_status"] != "ready" {
+        return Ok(json!({
+            "contract": "mdp.copy-demo.v0",
+            "channel": channel,
+            "draft_status": "no-draft",
+            "fit": brief["fit"].clone(),
+            "decision": "Demo copy was not generated because the fit gate did not pass."
+        }));
+    }
     let persona = brief["persona"].as_str().unwrap_or("finance leader");
     let trigger = prospect
         .trigger
@@ -128,4 +158,42 @@ pub(crate) fn demo_copy(root: &Path, prospect_path: &Path, channel: &str) -> Res
             "No LinkedIn, Clay, CRM, or sequencer write was performed."
         ]
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::init::init_pack;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_pack(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-{name}-{nonce}"));
+        init_pack(&root, "Example Message Pack", "gtm", true)
+            .expect("starter pack should initialize");
+        root
+    }
+
+    #[test]
+    fn brief_marks_no_draft_when_fit_is_insufficient() {
+        let root = temp_pack("brief-no-draft");
+        let prospect_path = root.join("examples").join("thin.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{"name":"Taylor Lee","title":"GTM Engineering Lead","company":"ExampleCo"}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result =
+            prospect_brief(&root, &prospect_path, "linkedin", None).expect("brief should succeed");
+
+        assert_eq!(result["fit"]["status"], "insufficient-context");
+        assert_eq!(result["draft_status"], "no-draft");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

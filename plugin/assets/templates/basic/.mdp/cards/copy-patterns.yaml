@@ -15,7 +15,8 @@ entries:
   body: Return audience, job, loaded cards, decision trace, approved claims, avoid rules, open questions, and draft direction.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: claim-gap
   title: Claim gap
@@ -23,12 +24,15 @@ entries:
   applies_to:
   - PMM
   - PM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: trigger-pain-angle-ask
   title: Trigger -> pain -> angle -> ask
   body: Structure outbound copy as observed trigger, likely pain, approved angle, and low-friction ask. Mark weak inputs as hypotheses.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - README.md
+  - examples/clay-row.json
   avoid: []

@@ -27,8 +27,9 @@ mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound co
 mdp --json check-claims --dir . --text "<draft copy>"
 ```
 
-3. Read only the returned card paths.
-3. Compare the copy to:
+3. Use `check-claims` for `valid`, `matched_claims`, `claim_gaps`, `guardrail_hits`, and `unsupported_claims`. It does not return card paths.
+4. Read card files only from the relevant brief `required_load_order` or route `load_order`.
+5. Compare the copy to:
 
 - persona fit
 - pain/trigger relevance

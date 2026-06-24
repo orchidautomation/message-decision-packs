@@ -1,0 +1,7 @@
+command: fit
+expect_status: insufficient-context
+id: fit-insufficient-context
+prospect:
+  company: ExampleCo
+  name: Taylor Lee
+  title: GTM Engineering Lead

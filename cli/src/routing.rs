@@ -1,6 +1,6 @@
 use crate::constants::DEFAULT_DIR;
 use crate::models::{CardKind, Manifest};
-use crate::pack_io::read_card;
+use crate::pack_io::{read_card, resolve_pack_path};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -12,8 +12,8 @@ pub(crate) fn select_cards(
     job: Option<&str>,
 ) -> Vec<Value> {
     let persona_lower = persona.map(|p| p.to_lowercase());
-    let job_lower = job.unwrap_or("").to_lowercase();
-    let is_message_job = is_message_job(&job_lower);
+    let job_tokens = tokens(job.unwrap_or(""));
+    let is_message_job = is_message_job(&job_tokens);
     let mut selected = Vec::new();
     let mut candidates = Vec::new();
 
@@ -36,12 +36,12 @@ pub(crate) fn select_cards(
                     || card.description.to_lowercase().contains(p)
             })
             .unwrap_or(false);
-        let job_match = !job_lower.is_empty()
-            && (card.description.to_lowercase().contains(&job_lower)
-                || card.tags.iter().any(|tag| {
-                    job_lower.contains(&tag.to_lowercase())
-                        || tag.to_lowercase().contains(&job_lower)
-                }));
+        let job_match = !job_tokens.is_empty()
+            && (token_overlap(&job_tokens, &tokens(&card.description))
+                || card
+                    .tags
+                    .iter()
+                    .any(|tag| token_overlap(&job_tokens, &tokens(tag))));
         if persona_match || job_match {
             let reason = match (persona_match, job_match) {
                 (true, true) => "persona and job/tag match",
@@ -67,12 +67,12 @@ pub(crate) fn select_cards(
     selected
 }
 
-fn is_message_job(job_lower: &str) -> bool {
+fn is_message_job(job_tokens: &[String]) -> bool {
     [
         "copy", "outbound", "linkedin", "email", "message", "brief", "cta", "ask", "reply",
     ]
     .iter()
-    .any(|token| job_lower.contains(token))
+    .any(|token| job_tokens.iter().any(|candidate| candidate == token))
 }
 
 fn card_priority(kind: &CardKind, is_message_job: bool) -> usize {
@@ -123,12 +123,7 @@ pub(crate) fn entry_route(
         .filter_map(|value| value["id"].as_str().map(str::to_string))
         .collect();
     let persona_lower = persona.to_lowercase();
-    let job_lower = job.to_lowercase();
-    let job_tokens: Vec<String> = job_lower
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|token| token.len() >= 4)
-        .map(str::to_string)
-        .collect();
+    let job_tokens = tokens(job);
     let mut matches = Vec::new();
     let mut gaps = Vec::new();
 
@@ -136,7 +131,7 @@ pub(crate) fn entry_route(
         if !selected_ids.contains(&card_ref.id) {
             continue;
         }
-        let card = read_card(&root.join(DEFAULT_DIR).join(&card_ref.path))?;
+        let card = read_card(&resolve_pack_path(root, &card_ref.path)?)?;
         let mut card_match_count = 0usize;
         for entry in &card.entries {
             let entry_text = format!(
@@ -146,16 +141,21 @@ pub(crate) fn entry_route(
                 entry.applies_to.join(" ")
             )
             .to_lowercase();
-            let applies = entry.applies_to.is_empty()
-                || entry
-                    .applies_to
-                    .iter()
-                    .any(|candidate| candidate.eq_ignore_ascii_case(persona));
-            let job_match = card.tags.iter().any(|tag| {
-                let tag_lower = tag.to_lowercase();
-                job_lower.contains(&tag_lower) || tag_lower.contains(&job_lower)
-            }) || job_tokens.iter().any(|token| entry_text.contains(token));
+            let applies = entry
+                .applies_to
+                .iter()
+                .any(|candidate| candidate.eq_ignore_ascii_case(persona));
+            let entry_tokens = tokens(&entry_text);
+            let card_tag_match = card
+                .tags
+                .iter()
+                .any(|tag| token_overlap(&job_tokens, &tokens(tag)));
+            let entry_job_match = token_overlap(&job_tokens, &entry_tokens);
+            let job_match = card_tag_match || entry_job_match;
             let persona_match = entry_text.contains(&persona_lower);
+            if matches!(card.kind, CardKind::ChannelPolicies) && !entry_job_match {
+                continue;
+            }
             if applies || job_match || persona_match {
                 card_match_count += 1;
                 matches.push(json!({
@@ -187,6 +187,20 @@ pub(crate) fn entry_route(
         "gaps": gaps,
         "policy": "Load matched entries first. Load the full card only when an entry is ambiguous, missing, or a guardrail card needs complete review."
     }))
+}
+
+pub(crate) fn tokens(input: &str) -> Vec<String> {
+    input
+        .to_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|token| token.len() >= 2)
+        .map(str::to_string)
+        .collect()
+}
+
+pub(crate) fn token_overlap(left: &[String], right: &[String]) -> bool {
+    left.iter()
+        .any(|token| right.iter().any(|other| other == token))
 }
 
 #[cfg(test)]

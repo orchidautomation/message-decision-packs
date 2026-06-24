@@ -1,13 +1,13 @@
 ---
 name: mdp
-description: Use when the user wants to create, brainstorm, validate, inspect, route, or use a Message Decision Pack for GTM messaging, ICP, pains, hooks, avoid-rules, CTA rules, copy patterns, Clay or Deepline enriched rows, LinkedIn/email outbound, or agent-readable message briefs. Prefer the installed `mdp` CLI for validation and routing before manually reading `.mdp/` YAML files.
+description: Use when the user explicitly wants to create, validate, inspect, route, or use a Message Decision Pack, `.mdp/` pack, MDP CLI, MDP skills, or agent-readable MDP brief. Prefer the installed `mdp` CLI for validation and routing before manually reading `.mdp/` YAML files.
 ---
 
 # MDP
 
 For fuzzy or multi-step MDP work, use `$mdp-lfg` first, then route to the narrower skill or CLI command.
 
-Use Message Decision Packs as the source of messaging decisions, not as the execution system. The pack stores ICP, fit rules, personas, pains, signals, positioning, claims, hooks, channel policies, avoid rules, CTA rules, objections, gaps, and copy patterns. The `mdp` CLI validates, routes, checks fit, checks claims, lists gaps, and runs eval fixtures. The agent drafts only after the CLI returns the relevant cards.
+Use Message Decision Packs as the source of messaging decisions, not as the execution system. The pack stores ICP, fit rules, personas, pains, signals, positioning, claims, hooks, channel policies, avoid rules, CTA rules, objections, gaps, and copy patterns. The `mdp` CLI validates, routes, checks fit, checks claims, lists gaps, and runs eval fixtures. Draft only after the CLI returns the relevant cards and fit is acceptable.
 
 ## First Check
 
@@ -61,7 +61,7 @@ mdp --json validate --dir .
 
 ## Use A Prospect Row
 
-Convert Clay, Deepline, CSV, LinkedIn research, or enrichment output into a small JSON file. Check the expected shape:
+Convert Clay, Deepline, CSV, LinkedIn research, or enrichment output into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Do not commit private prospect data. Check the expected shape:
 
 ```bash
 mdp --json schema prospect
@@ -69,13 +69,15 @@ mdp --json schema prospect
 
 Minimum fields: `name`, `title`, `company`. Prefer adding `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, and structured `signals`.
 
+Run fit first and stop on `disqualified` or `insufficient-context` unless the user explicitly overrides.
+
 Then create a brief:
 
 ```bash
 mdp --json brief --dir . --prospect examples/clay-row.json --channel linkedin
 ```
 
-Read only `data.required_load_order`. Then draft using the brief plus those loaded card files.
+Read only `data.required_load_order`. Draft only when `data.draft_status` is `ready`.
 
 ## Route Without A Prospect
 
@@ -119,7 +121,8 @@ For production-quality output, use `brief` and draft from the returned contract 
 ## Boundaries
 
 - Do not send LinkedIn messages or emails.
-- Do not update CRM, Clay, Deepline, sequencers, or enrichment systems unless the user explicitly asks and a separate tool is available.
+- MDP stops at pack, route, fit, claims, gaps, evals, and brief contracts.
+- Sending, scheduling, enriching, CRM updates, Clay/Deepline writes, or sequencer work requires a separate exact-action handoff/tool outside MDP and explicit user approval.
 - Do not call MDP an AI SDR, CRM, sequencer, enrichment provider, BI tool, or generic automation system.
 - Do not invent missing claims. Surface gaps in the brief.
 - Keep `--json` on when another agent, script, or tool will parse the output.

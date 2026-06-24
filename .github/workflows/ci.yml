@@ -19,3 +19,6 @@ jobs:
       - name: Validate bundled template
         run: cargo run -- --json validate --dir ../plugin/assets/templates/basic
         working-directory: cli
+      - name: Eval bundled template
+        run: cargo run -- --json eval --dir ../plugin/assets/templates/basic
+        working-directory: cli

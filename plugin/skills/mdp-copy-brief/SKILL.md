@@ -1,6 +1,6 @@
 ---
 name: mdp-copy-brief
-description: Use when the user wants a model-ready copywriting brief from an MDP, routed cards, persona, prospect row, channel, motion, or job. Produces a controlled writing contract before drafting LinkedIn/email copy.
+description: Use when the user wants a model-ready copywriting brief from a Message Decision Pack, routed MDP cards, persona, prospect row, channel, motion, or job. Produces a controlled writing contract before drafting.
 ---
 
 # MDP Copy Brief
@@ -9,21 +9,28 @@ Create a writing brief from MDP routing. The brief should constrain a copywriter
 
 ## Workflow
 
-1. If a prospect row exists, run:
+1. If a prospect row exists, run fit first:
+
+```bash
+mdp --json fit --dir . --prospect <prospect.json>
+```
+
+Hard-stop on `disqualified` or `insufficient-context` unless the user explicitly overrides.
+
+2. Build the brief:
 
 ```bash
 mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
 ```
 
-2. If no prospect row exists, run:
+3. If no prospect row exists, run:
 
 ```bash
 mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-3. If a prospect row exists, run `mdp --json fit --dir . --prospect <prospect.json>` before drafting.
-4. Read only the returned `required_load_order` card files.
-4. Build a copy brief with:
+4. Read only the returned `required_load_order` card files. If `draft_status` is `no-draft`, surface the fit decision and do not draft.
+5. Build a copy brief with:
 
 - audience/persona
 - fit status or insufficient-context decision

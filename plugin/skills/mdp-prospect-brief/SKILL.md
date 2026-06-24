@@ -33,8 +33,8 @@ Preferred fields:
 
 ## Workflow
 
-1. Normalize the source row into a small JSON file.
-2. Keep only useful, non-sensitive fields needed for routing and copy.
+1. Normalize the source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path.
+2. Keep only useful, non-sensitive fields needed for routing and copy; redact private data before committing any example.
 3. Do not treat LinkedIn URL presence as proof of any claim.
 4. Check fit before drafting:
 
@@ -42,13 +42,14 @@ Preferred fields:
 mdp --json fit --dir . --prospect <prospect.json>
 ```
 
-5. Run the brief:
+5. If status is `disqualified` or `insufficient-context`, stop before drafting unless the user explicitly overrides.
+6. Run the brief:
 
 ```bash
 mdp --json brief --dir . --prospect <prospect.json> --channel linkedin
 ```
 
-6. Read only `data.required_load_order` if drafting is requested.
+7. Read only `data.required_load_order` if drafting is requested and `data.draft_status` is `ready`.
 
 ## Response
 

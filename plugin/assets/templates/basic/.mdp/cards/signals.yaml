@@ -20,14 +20,16 @@ entries:
   applies_to:
   - GTM Engineering
   - PMM
-  evidence: []
+  evidence:
+  - examples/clay-row.json
   avoid: []
 - id: linkedin-profile-signal
   title: LinkedIn profile signal
   body: Use LinkedIn URLs or profile summaries as context for role, background, and likely priorities. Do not pretend the profile proves a product need by itself.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - examples/clay-row.json
   avoid: []
 - id: company-context-signal
   title: Company context signal
@@ -35,5 +37,6 @@ entries:
   applies_to:
   - PMM
   - PM
-  evidence: []
+  evidence:
+  - examples/clay-row.json
   avoid: []

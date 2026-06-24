@@ -14,14 +14,16 @@ entries:
   body: Position the pack as a small manifest plus task-specific cards so agents load the minimum needed context.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: evidence-before-action
   title: Evidence before action
   body: Emphasize that GTM execution should start with source context, contracts, and approval boundaries.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: one-context-many-agents
   title: One context, many agents
@@ -29,5 +31,7 @@ entries:
   applies_to:
   - PMM
   - GTM Engineering
-  evidence: []
+  evidence:
+  - README.md
+  - examples/clay-row.json
   avoid: []

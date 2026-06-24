@@ -21,7 +21,7 @@ A pack is a local `.mdp/` folder:
   cards/ctas.yaml
   cards/objections.yaml
   cards/gaps.yaml
-  evals/linkedin-copy-route.yaml
+  evals/*.yaml
 examples/
   clay-row.json
 ```
@@ -44,7 +44,7 @@ Use `brief` for production handoff. Use `copy` only for local demos. CTA guidanc
 
 ## JSON contract
 
-All commands support `--json`.
+All commands support `--json`. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.
 
 Success:
 
@@ -64,7 +64,8 @@ Error:
 2. Convert the Clay, Deepline, CSV, or enrichment row into `mdp schema prospect`.
 3. Run `mdp --json fit --prospect <row.json>` and stop if it returns `disqualified` or `insufficient-context`.
 4. Run `mdp --json brief --prospect <row.json> --channel linkedin`.
-5. Read only the files in `data.required_load_order`.
-6. Draft from the brief plus routed cards, then run `mdp --json check-claims` before approval.
+5. Stop if `data.draft_status` is `no-draft`.
+6. Read only the files in `data.required_load_order`.
+7. Draft from the brief plus routed cards, then run `mdp --json check-claims` before approval.
 
 `mdp` is not a sender, CRM, sequencer, lead enricher, scraper, or AI SDR. It is the local decision contract layer.

@@ -16,7 +16,8 @@ entries:
   applies_to:
   - PMM
   - GTM Engineering
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: why-not-sequencer
   title: Why not a sequencer?
@@ -24,5 +25,6 @@ entries:
   applies_to:
   - PMM
   - GTM Engineering
-  evidence: []
+  evidence:
+  - README.md
   avoid: []

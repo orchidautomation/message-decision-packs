@@ -33,7 +33,7 @@ mdp --json doctor --dir .
 Create a pack:
 
 ```bash
-mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo
+mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
 mdp --json validate --dir /tmp/mdp-demo
 mdp --json route --entries --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
@@ -64,12 +64,12 @@ A pack is a local `.mdp/` folder:
   cards/copy-patterns.yaml
   cards/objections.yaml
   cards/gaps.yaml
-  evals/linkedin-copy-route.yaml
+  evals/*.yaml
 examples/
   clay-row.json
 ```
 
-Agents should load the manifest first, then only the cards returned by `mdp route`, `mdp route --entries`, or `mdp brief`. Use `fit` before drafting from a prospect row, `check-claims` before approving copy, `gaps` to expose missing evidence, and `eval` to test route behavior.
+Agents should load the manifest first, then only the cards returned by `mdp route`, `mdp route --entries`, or `mdp brief`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy, `gaps` to expose missing evidence, and `eval` to test route, fit, brief, and claim behavior.
 
 ## Codex Plugin
 
@@ -101,4 +101,4 @@ This validates the Rust CLI, the bundled template pack, and, when local Codex va
 
 ## Status
 
-This is an MVP local/offline implementation. No auth is required. No hosted API is included yet.
+This is an MVP local/offline implementation. No auth is required. No hosted API, sending, CRM update, enrichment writeback, scraping, sequencing, or public package release workflow is included.

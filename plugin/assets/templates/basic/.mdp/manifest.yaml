@@ -112,6 +112,9 @@ cards:
   - channel
   - linkedin
   - email
+  - call
+  - prep
+  - agent
   - brief
 - id: hooks
   path: cards/hooks.yaml

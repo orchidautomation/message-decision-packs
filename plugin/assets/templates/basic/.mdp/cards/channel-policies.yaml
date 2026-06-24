@@ -16,14 +16,16 @@ entries:
   body: Keep the opener short, use one sourced or explicitly hypothetical trigger, one relevant angle, and one low-friction ask.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: email-follow-up
   title: Email follow-up
   body: Use a clearer subject, one source-backed reason for relevance, one approved claim, and a reply path that does not force a meeting too early.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: call-prep
   title: Call prep
@@ -31,5 +33,15 @@ entries:
   applies_to:
   - GTM Engineering
   - PMM
-  evidence: []
+  evidence:
+  - README.md
+  avoid: []
+- id: agent-brief
+  title: Agent brief
+  body: Return fit status, loaded cards, approved claims, avoid-rules, source hypotheses, open gaps, and exact handoff boundaries. Do not send, enrich, or update external systems.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence:
+  - README.md
   avoid: []

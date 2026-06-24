@@ -18,7 +18,9 @@ entries:
   applies_to:
   - GTM Engineering
   - PMM
-  evidence: []
+  evidence:
+  - README.md
+  - examples/clay-row.json
   avoid: []
 - id: no-context-no-copy
   title: No message without context
@@ -26,7 +28,8 @@ entries:
   applies_to:
   - GTM Engineering
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid:
   - no source
   - unknown persona
@@ -37,7 +40,8 @@ entries:
   applies_to:
   - GTM Engineering
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid:
   - blast
   - auto-send

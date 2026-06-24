@@ -15,8 +15,14 @@ Create CTA guidance as a decision card, not as one-off copy. CTA rules should te
 mdp --json validate --dir .
 ```
 
-2. Read `.mdp/cards/ctas.yaml` plus routed channel-policies, persona, pains, hooks, copy-patterns, claims, gaps, and avoid-rules cards.
-3. Add or revise CTA entries with:
+2. Run a route for the active persona/channel/job:
+
+```bash
+mdp --json route --entries --dir . --persona "<persona>" --job "<channel> CTA policy"
+```
+
+3. Read `.mdp/cards/ctas.yaml` plus only routed channel-policies, persona, pains, hooks, copy-patterns, claims, gaps, and avoid-rules cards needed for the change.
+4. Add or revise CTA entries with:
 
 - ask type
 - channel fit
@@ -25,8 +31,8 @@ mdp --json validate --dir .
 - reply path when a meeting ask is too strong
 - avoid phrases or pressure tactics
 
-4. Keep CTAs small and reusable. Do not draft final messages unless the user asks.
-5. Validate routing:
+5. Keep CTAs small and reusable. Do not draft final messages unless the user asks.
+6. Validate routing:
 
 ```bash
 mdp --json route --entries --dir . --persona "<persona>" --job "linkedin outbound copy"

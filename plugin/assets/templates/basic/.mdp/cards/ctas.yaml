@@ -19,14 +19,16 @@ entries:
   applies_to:
   - PMM
   - GTM Engineering
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: no-false-urgency
   title: No false urgency
   body: Do not manufacture urgency or imply the prospect has asked for help unless the source row says so.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: reply-path
   title: Reply path
@@ -34,5 +36,6 @@ entries:
   applies_to:
   - PMM
   - GTM Engineering
-  evidence: []
+  evidence:
+  - README.md
   avoid: []

@@ -1,0 +1,9 @@
+channel: linkedin
+command: brief
+expect_draft_status: no-draft
+id: brief-insufficient-context
+job: linkedin outbound copy
+prospect:
+  company: ExampleCo
+  name: Taylor Lee
+  title: GTM Engineering Lead

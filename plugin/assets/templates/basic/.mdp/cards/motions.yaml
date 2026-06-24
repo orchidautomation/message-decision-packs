@@ -14,14 +14,16 @@ entries:
   body: Route persona, pain, hook, avoid-rules, CTA policy, and copy-pattern cards to produce a grounded brief, not final unsupervised sending.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: agent-preflight
   title: Agent preflight
   body: Let an agent inspect the pack before doing GTM work and report missing evidence or unsupported claims.
   applies_to:
   - GTM Engineering
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: clay-row-to-brief
   title: Enriched row to brief
@@ -29,5 +31,7 @@ entries:
   applies_to:
   - GTM Engineering
   - PMM
-  evidence: []
+  evidence:
+  - README.md
+  - examples/clay-row.json
   avoid: []

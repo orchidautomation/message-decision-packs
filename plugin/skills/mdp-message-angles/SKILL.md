@@ -9,11 +9,18 @@ Create reusable message angles for an MDP. Store strategy in cards; do not turn 
 
 ## Workflow
 
-1. Read the manifest and relevant cards.
-2. Identify the active persona, channel, and job.
-3. Generate candidate hooks, proof-backed claims, channel policies, objections, copy patterns, and CTA options.
-4. Keep only angles grounded in source context or explicitly marked assumptions.
-5. Update:
+1. Identify the active persona, channel, and job.
+2. Validate and route before reading cards:
+
+```bash
+mdp --json validate --dir .
+mdp --json route --entries --dir . --persona "<persona>" --job "<channel> outbound copy"
+```
+
+3. Read only routed cards plus any card you are explicitly updating.
+4. Generate candidate hooks, proof-backed claims, channel policies, objections, copy patterns, and CTA options.
+5. Keep only angles grounded in source context or explicitly marked assumptions.
+6. Update:
 
 - `.mdp/cards/hooks.yaml`
 - `.mdp/cards/claims.yaml`

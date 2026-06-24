@@ -12,6 +12,7 @@ validate-cli:
 
 validate-template:
 	cd cli && $(CARGO) run -- --json validate --dir ../plugin/assets/templates/basic >/tmp/mdp-template-validate.json
+	cd cli && $(CARGO) run -- --json eval --dir ../plugin/assets/templates/basic >/tmp/mdp-template-eval.json
 
 validate-skills:
 	@if [ -f "$(SKILL_VALIDATOR)" ]; then 		for skill in plugin/skills/*; do 			$(PYTHON) "$(SKILL_VALIDATOR)" "$$skill" || exit 1; 		done; 	else 		echo "Skipping skill validation; missing $(SKILL_VALIDATOR)"; 	fi

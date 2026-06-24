@@ -15,7 +15,8 @@ entries:
   applies_to:
   - PMM
   - PM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: handoff-friction
   title: Handoff friction
@@ -23,12 +24,14 @@ entries:
   applies_to:
   - GTM Engineering
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []
 - id: claim-inconsistency
   title: Claim inconsistency
   body: Different agents or workflows reuse outdated claims, unsupported proof points, or mismatched CTAs when there is no shared pack.
   applies_to:
   - PMM
-  evidence: []
+  evidence:
+  - README.md
   avoid: []

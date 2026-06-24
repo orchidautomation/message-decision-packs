@@ -93,7 +93,7 @@ pub(crate) struct Entry {
     pub(crate) avoid: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct Prospect {
     pub(crate) name: String,
     pub(crate) title: String,
