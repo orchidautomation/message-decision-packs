@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Avoid Rules"
+  short_description: "Create claim and tone guardrails"
+  default_prompt: "Use $mdp-avoid-rules to define forbidden claims and category boundaries."

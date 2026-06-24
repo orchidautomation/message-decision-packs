@@ -1,0 +1,30 @@
+id: objections
+kind: objections
+title: Objections and alternatives
+description: Category confusion and response logic for agents to preserve.
+personas:
+- PMM
+- GTM Engineering
+tags:
+- objection
+- alternative
+- response
+entries:
+- id: why-not-prompt
+  title: Why not one giant prompt?
+  body: Explain that MDP favors versioned, testable, progressively loaded cards so agents can fetch only the context needed for the current job.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence:
+  - README.md
+  avoid: []
+- id: why-not-sequencer
+  title: Why not a sequencer?
+  body: Clarify that MDP stores message decisions and evidence. Sequencers or CRMs may consume outputs, but they are separate execution systems.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence:
+  - README.md
+  avoid: []

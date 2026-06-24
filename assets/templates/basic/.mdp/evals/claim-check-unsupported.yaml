@@ -1,0 +1,4 @@
+command: check-claims
+expect_valid: false
+id: claim-check-unsupported
+text: MDP guarantees meetings, improves reply rates by 30%, integrates with Salesforce, and updates CRM records.

@@ -1,0 +1,38 @@
+id: copy-patterns
+kind: copy-patterns
+title: Copy patterns
+description: Reusable structures for brief and copy outputs.
+personas:
+- PMM
+tags:
+- copy
+- brief
+- outbound
+- message
+entries:
+- id: brief-contract
+  title: Brief contract
+  body: Return audience, job, loaded cards, decision trace, approved claims, avoid rules, open questions, and draft direction.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: claim-gap
+  title: Claim gap
+  body: When evidence is missing, write the gap explicitly instead of smoothing over it with generic GTM language.
+  applies_to:
+  - PMM
+  - PM
+  evidence:
+  - README.md
+  avoid: []
+- id: trigger-pain-angle-ask
+  title: Trigger -> pain -> angle -> ask
+  body: Structure outbound copy as observed trigger, likely pain, approved angle, and low-friction ask. Mark weak inputs as hypotheses.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  - examples/clay-row.json
+  avoid: []

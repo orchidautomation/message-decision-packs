@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP ICP Builder"
+  short_description: "Codify ICP, personas, and fit logic"
+  default_prompt: "Use $mdp-icp-builder to turn fuzzy ICP notes into MDP personas and pains."

@@ -1,0 +1,47 @@
+id: channel-policies
+kind: channel-policies
+title: Channel policies
+description: Channel-specific rules for how to use the routed message decisions.
+personas:
+- GTM Engineering
+- PMM
+tags:
+- channel
+- linkedin
+- email
+- brief
+entries:
+- id: linkedin-opener
+  title: LinkedIn opener
+  body: Keep the opener short, use one sourced or explicitly hypothetical trigger, one relevant angle, and one low-friction ask.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: email-follow-up
+  title: Email follow-up
+  body: Use a clearer subject, one source-backed reason for relevance, one approved claim, and a reply path that does not force a meeting too early.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: call-prep
+  title: Call prep
+  body: Return likely persona, pains, allowed claims, avoid-rules, open questions, and the exact cards loaded. Do not pretend this is CRM history.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: agent-brief
+  title: Agent brief
+  body: Return fit status, loaded cards, approved claims, avoid-rules, source hypotheses, open gaps, and exact handoff boundaries. Do not send, enrich, or update external systems.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence:
+  - README.md
+  avoid: []

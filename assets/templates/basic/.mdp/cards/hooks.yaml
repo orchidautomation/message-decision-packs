@@ -1,0 +1,37 @@
+id: hooks
+kind: hooks
+title: Hooks
+description: Starter hook patterns that require local evidence before use.
+personas:
+- PMM
+tags:
+- hook
+- copy
+- message
+entries:
+- id: manifest-not-monolith
+  title: Manifest, not monolith
+  body: Position the pack as a small manifest plus task-specific cards so agents load the minimum needed context.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: evidence-before-action
+  title: Evidence before action
+  body: Emphasize that GTM execution should start with source context, contracts, and approval boundaries.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: one-context-many-agents
+  title: One context, many agents
+  body: Use when the account has Claude Code, Codex, OpenCode, Clay, or other systems that need the same source of messaging truth.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence:
+  - README.md
+  - examples/clay-row.json
+  avoid: []

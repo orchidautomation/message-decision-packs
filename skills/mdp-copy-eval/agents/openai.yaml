@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Copy Eval"
+  short_description: "Evaluate copy against pack rules"
+  default_prompt: "Use $mdp-copy-eval to check copy against MDP claims and avoid rules."

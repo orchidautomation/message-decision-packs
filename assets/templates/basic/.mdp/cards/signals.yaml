@@ -1,0 +1,42 @@
+id: signals
+kind: signals
+title: Signals and triggers
+description: How to interpret enriched rows, LinkedIn context, source material, and account signals.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- signal
+- trigger
+- source
+- clay
+- deepline
+- linkedin
+entries:
+- id: enriched-row-signal
+  title: Enriched row signal
+  body: Treat Clay, Deepline, CSV, or user-provided enrichment as input evidence. Preserve source and confidence when present, and state weak signals as hypotheses.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence:
+  - examples/clay-row.json
+  avoid: []
+- id: linkedin-profile-signal
+  title: LinkedIn profile signal
+  body: Use LinkedIn URLs or profile summaries as context for role, background, and likely priorities. Do not pretend the profile proves a product need by itself.
+  applies_to:
+  - PMM
+  evidence:
+  - examples/clay-row.json
+  avoid: []
+- id: company-context-signal
+  title: Company context signal
+  body: Company website, hiring, funding, product, and stack clues can shape the pain hypothesis when the pack states how to interpret them.
+  applies_to:
+  - PMM
+  - PM
+  evidence:
+  - examples/clay-row.json
+  avoid: []

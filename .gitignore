@@ -1,6 +1,7 @@
 # Rust build output
 /target/
 /cli/target/
+/dist/
 
 # Local editor/system files
 .DS_Store

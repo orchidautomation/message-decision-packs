@@ -1,0 +1,12 @@
+command: route
+expect_entry_titles_contains:
+- Call prep
+expect_entry_titles_excludes:
+- LinkedIn opener
+- Email follow-up
+expect_load_order_contains:
+- .mdp/cards/channel-policies.yaml
+- .mdp/cards/fit-rules.yaml
+id: call-prep-route
+job: call prep
+persona: GTM Engineering

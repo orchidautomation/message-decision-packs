@@ -1,0 +1,39 @@
+id: claims
+kind: claims
+title: Approved claims
+description: Claims an agent may use only when the route and source context support them.
+personas:
+- PMM
+- GTM Engineering
+tags:
+- claim
+- proof
+- evidence
+entries:
+- id: modular-pack-routing
+  title: Modular pack routing
+  body: MDP lets teams store messaging decisions in a manifest plus modular cards so agents load relevant context instead of a giant prompt.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence:
+  - README.md
+  avoid: []
+- id: local-offline
+  title: Local offline CLI
+  body: The MVP CLI runs locally/offline without auth and returns stable JSON for agent and script usage.
+  applies_to:
+  - GTM Engineering
+  evidence:
+  - README.md
+  - cli/src/main.rs
+  avoid: []
+- id: versionable-context
+  title: Versionable message context
+  body: A pack can live in a repo so teams can review, diff, test, and update messaging decisions over time.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence:
+  - README.md
+  avoid: []

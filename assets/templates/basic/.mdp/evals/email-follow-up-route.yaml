@@ -1,0 +1,12 @@
+command: route
+expect_entry_titles_contains:
+- Email follow-up
+expect_entry_titles_excludes:
+- LinkedIn opener
+- Call prep
+expect_load_order_contains:
+- .mdp/cards/channel-policies.yaml
+- .mdp/cards/copy-patterns.yaml
+id: email-follow-up-route
+job: email follow up
+persona: PMM

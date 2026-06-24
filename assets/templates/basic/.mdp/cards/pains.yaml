@@ -1,0 +1,37 @@
+id: pains
+kind: pains
+title: Pains and triggers
+description: Reusable buyer pains with evidence expectations.
+personas:
+- PMM
+- PM
+tags:
+- pain
+- trigger
+entries:
+- id: agent-context-drift
+  title: Agent context drift
+  body: Agents working on GTM tasks lose product truth when source context, contracts, and approved claims are scattered.
+  applies_to:
+  - PMM
+  - PM
+  evidence:
+  - README.md
+  avoid: []
+- id: handoff-friction
+  title: Handoff friction
+  body: Teams need a way to give agents enough context to draft or decide without dumping a giant doc into every prompt.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: claim-inconsistency
+  title: Claim inconsistency
+  body: Different agents or workflows reuse outdated claims, unsupported proof points, or mismatched CTAs when there is no shared pack.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  avoid: []

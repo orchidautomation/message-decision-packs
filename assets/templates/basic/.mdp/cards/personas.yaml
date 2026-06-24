@@ -1,0 +1,35 @@
+id: personas
+kind: personas
+title: Core personas
+description: The users who author, maintain, and consume the decision pack.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- persona
+entries:
+- id: gtm-engineering
+  title: GTM Engineering
+  body: Needs precise contracts, data boundaries, approved workflows, and machine-readable routing.
+  applies_to:
+  - GTM Engineering
+  evidence:
+  - README.md
+  avoid: []
+- id: pmm
+  title: PMM
+  body: Needs pains, triggers, hooks, proof points, CTA policy, and copy constraints without losing source fidelity.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: pm
+  title: PM
+  body: Needs product boundaries, roadmap-relevant pain evidence, and clear decisions about what the product is not.
+  applies_to:
+  - PM
+  evidence:
+  - README.md
+  avoid: []

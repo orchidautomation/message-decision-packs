@@ -22,3 +22,19 @@ jobs:
       - name: Eval bundled template
         run: cargo run -- --json eval --dir ../plugin/assets/templates/basic
         working-directory: cli
+
+  pluxx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install Pluxx
+        run: npm install -g @orchid-labs/pluxx@0.1.22
+      - name: Check Pluxx source health
+        run: pluxx doctor
+      - name: Lint Pluxx source
+        run: pluxx lint
+      - name: Test Pluxx bundles
+        run: pluxx test

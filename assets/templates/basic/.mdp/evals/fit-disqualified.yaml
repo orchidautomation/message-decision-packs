@@ -1,0 +1,14 @@
+command: fit
+expect_status: disqualified
+id: fit-disqualified
+prospect:
+  company: BlastCo
+  name: Jordan Smith
+  persona: GTM Engineering
+  segment: agent-assisted GTM
+  signals:
+  - id: sending-only
+    source: example row
+    title: Wants auto-send
+  title: Growth Lead
+  trigger: sequence everyone with auto-send
