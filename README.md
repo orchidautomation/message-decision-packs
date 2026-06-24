@@ -1,6 +1,6 @@
 # Message Decision Packs
 
-Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest and routed card files for ICP, personas, pains, motions, hooks, CTA policy, avoid-rules, and copy patterns.
+Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest and routed card files for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, objections, gaps, and copy patterns.
 
 This repo contains both the local CLI and the Codex plugin:
 
@@ -35,8 +35,12 @@ Create a pack:
 ```bash
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo
 mdp --json validate --dir /tmp/mdp-demo
-mdp --json route --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
+mdp --json route --entries --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
+mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
 mdp --json brief --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin
+mdp --json check-claims --dir /tmp/mdp-demo --text "MDP is a local offline CLI for modular message context."
+mdp --json gaps --dir /tmp/mdp-demo
+mdp --json eval --dir /tmp/mdp-demo
 ```
 
 ## Pack Layout
@@ -47,17 +51,25 @@ A pack is a local `.mdp/` folder:
 .mdp/
   manifest.yaml
   cards/personas.yaml
+  cards/positioning.yaml
+  cards/fit-rules.yaml
+  cards/signals.yaml
   cards/pains.yaml
+  cards/claims.yaml
   cards/motions.yaml
+  cards/channel-policies.yaml
   cards/hooks.yaml
   cards/ctas.yaml
   cards/avoid-rules.yaml
   cards/copy-patterns.yaml
+  cards/objections.yaml
+  cards/gaps.yaml
+  evals/linkedin-copy-route.yaml
 examples/
   clay-row.json
 ```
 
-Agents should load the manifest first, then only the cards returned by `mdp route` or `mdp brief`.
+Agents should load the manifest first, then only the cards returned by `mdp route`, `mdp route --entries`, or `mdp brief`. Use `fit` before drafting from a prospect row, `check-claims` before approving copy, `gaps` to expose missing evidence, and `eval` to test route behavior.
 
 ## Codex Plugin
 

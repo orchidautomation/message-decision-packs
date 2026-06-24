@@ -23,3 +23,11 @@ entries:
   - PMM
   evidence: []
   avoid: []
+- id: one-context-many-agents
+  title: One context, many agents
+  body: Use when the account has Claude Code, Codex, OpenCode, Clay, or other systems that need the same source of messaging truth.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid: []

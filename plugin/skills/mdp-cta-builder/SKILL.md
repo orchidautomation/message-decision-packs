@@ -15,7 +15,7 @@ Create CTA guidance as a decision card, not as one-off copy. CTA rules should te
 mdp --json validate --dir .
 ```
 
-2. Read `.mdp/cards/ctas.yaml` plus the routed persona, pains, hooks, copy-patterns, and avoid-rules cards.
+2. Read `.mdp/cards/ctas.yaml` plus routed channel-policies, persona, pains, hooks, copy-patterns, claims, gaps, and avoid-rules cards.
 3. Add or revise CTA entries with:
 
 - ask type
@@ -29,10 +29,10 @@ mdp --json validate --dir .
 5. Validate routing:
 
 ```bash
-mdp --json route --dir . --persona "<persona>" --job "linkedin outbound copy"
+mdp --json route --entries --dir . --persona "<persona>" --job "linkedin outbound copy"
 ```
 
-Confirm `.mdp/cards/ctas.yaml` appears in `load_order` for outbound, message, CTA, or copy jobs.
+Confirm `.mdp/cards/ctas.yaml` and `.mdp/cards/channel-policies.yaml` appear in `load_order` for outbound, message, CTA, or copy jobs.
 
 ## CTA Patterns
 

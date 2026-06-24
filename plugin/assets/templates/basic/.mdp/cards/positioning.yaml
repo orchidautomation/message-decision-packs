@@ -1,0 +1,42 @@
+id: positioning
+kind: positioning
+title: Positioning and boundaries
+description: Category and product truth that every routed brief should preserve.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- positioning
+- category
+- boundary
+entries:
+- id: decision-layer
+  title: Decision/context layer
+  body: Describe MDP as a local, agent-readable decision and context layer for GTM messaging. It stores what an agent should load, believe, avoid, and surface as a gap.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  - PM
+  evidence:
+  - README.md
+  avoid: []
+- id: not-execution-system
+  title: Not execution
+  body: Do not describe MDP as a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  - PM
+  evidence:
+  - README.md
+  avoid: []
+- id: progressive-disclosure
+  title: Progressive disclosure
+  body: The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence:
+  - README.md
+  avoid: []

@@ -19,13 +19,20 @@ Extract pack-ready card entries from source material. Preserve evidence and do n
 
 Map source material into:
 
+- positioning: category, boundaries, and what the product/pack is not
 - personas: who cares and why
+- fit-rules: qualification, disqualification, and no-message cases
+- signals: source fields, triggers, confidence, and freshness
 - pains: problems, triggers, stakes, current alternatives
+- claims: approved claims with proof/evidence
 - motions: approved workflows and where the message is used
+- channel-policies: LinkedIn/email/call-prep rules
 - hooks: reusable claims or angles with source evidence
 - avoid-rules: unsupported claims, risks, category boundaries
+- objections: alternatives and response logic
 - copy-patterns: reusable message structures, not final sends
 - ctas: asks, reply paths, and meeting boundaries
+- gaps: missing proof, unclear fit, and open questions
 
 ## Workflow
 
@@ -38,6 +45,7 @@ Map source material into:
 
 ```bash
 mdp --json validate --dir .
+mdp --json gaps --dir .
 ```
 
 ## Output

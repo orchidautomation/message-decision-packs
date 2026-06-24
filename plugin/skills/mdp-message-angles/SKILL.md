@@ -11,14 +11,18 @@ Create reusable message angles for an MDP. Store strategy in cards; do not turn 
 
 1. Read the manifest and relevant cards.
 2. Identify the active persona, channel, and job.
-3. Generate candidate hooks, copy patterns, and CTA options.
+3. Generate candidate hooks, proof-backed claims, channel policies, objections, copy patterns, and CTA options.
 4. Keep only angles grounded in source context or explicitly marked assumptions.
 5. Update:
 
 - `.mdp/cards/hooks.yaml`
+- `.mdp/cards/claims.yaml`
+- `.mdp/cards/channel-policies.yaml`
 - `.mdp/cards/copy-patterns.yaml`
 - `.mdp/cards/ctas.yaml`
+- `.mdp/cards/objections.yaml`
 - `.mdp/cards/pains.yaml` when the angle depends on a missing pain
+- `.mdp/cards/gaps.yaml` when evidence is missing
 - `.mdp/cards/avoid-rules.yaml` when an angle risks overclaiming
 
 ## Angle Structure
@@ -48,7 +52,8 @@ Avoid generic "AI transformation" language unless the source material supports i
 
 ```bash
 mdp --json validate --dir .
-mdp --json route --dir . --persona "<persona>" --job "<channel> outbound copy"
+mdp --json route --entries --dir . --persona "<persona>" --job "<channel> outbound copy"
+mdp --json gaps --dir .
 ```
 
 Confirm that hooks, copy patterns, and CTA rules route for the intended persona and job.

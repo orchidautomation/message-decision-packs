@@ -11,8 +11,8 @@ Create guardrails that prevent agents from overclaiming or drifting into the wro
 
 1. Review current positioning, claims, ICP, and planned copy patterns.
 2. Identify the ways an agent might overreach.
-3. Add explicit entries to `.mdp/cards/avoid-rules.yaml`.
-4. If needed, add supporting constraints to personas, pains, hooks, or copy patterns.
+3. Add explicit entries to `.mdp/cards/avoid-rules.yaml`, and use `.mdp/cards/fit-rules.yaml` for no-message or disqualification rules.
+4. If needed, add supporting constraints to positioning, claims, personas, pains, hooks, channel-policies, ctas, or copy patterns.
 5. Validate the pack.
 
 ## Avoid Rule Categories
@@ -43,6 +43,7 @@ Each avoid rule should include:
 ```bash
 mdp --json validate --dir .
 mdp --json brief --dir . --prospect examples/clay-row.json --channel linkedin
+mdp --json check-claims --dir . --text "<draft copy>"
 ```
 
 Check that avoid-rules appear in `required_load_order` for copy jobs.

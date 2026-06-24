@@ -15,12 +15,15 @@ Review an MDP like a GTM control surface: structure first, then decision quality
 mdp --json doctor --dir .
 mdp --json validate --dir .
 mdp --json pack --dir .
+mdp --json gaps --dir .
+mdp --json eval --dir .
 ```
 
 2. Review the manifest:
 
 - format and version
-- personas
+- personas, target personas, and operator roles
+- supported channels
 - card index
 - progressive disclosure policy
 - max cards per route
@@ -29,18 +32,23 @@ mdp --json pack --dir .
 
 - unclear personas
 - broad ICP
+- missing fit-rules or no-message logic
 - weak or unsourced claims
+- missing signals or source interpretation rules
 - missing disqualifiers
+- missing channel policies
 - missing CTA rules or hard-sell asks
 - missing avoid-rules
+- missing objections or alternatives
+- missing durable gaps
 - duplicated hooks or pains
 - copy patterns that imply unsupported claims
 
 4. Test routing with representative jobs:
 
 ```bash
-mdp --json route --dir . --persona "<persona>" --job "linkedin outbound copy"
-mdp --json route --dir . --persona "<persona>" --job "email follow-up"
+mdp --json route --entries --dir . --persona "<persona>" --job "linkedin outbound copy"
+mdp --json route --entries --dir . --persona "<persona>" --job "email follow-up"
 ```
 
 ## Findings Format

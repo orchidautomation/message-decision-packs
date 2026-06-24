@@ -1,6 +1,6 @@
 ---
 name: mdp-icp-builder
-description: Use when the user needs to define, sharpen, or codify ICP, segments, personas, disqualifiers, pains, triggers, buying committees, or fit logic for a Message Decision Pack. Produces content for MDP personas, pains, motions, and avoid-rules cards.
+description: Use when the user needs to define, sharpen, or codify ICP, segments, personas, disqualifiers, pains, triggers, buying committees, or fit logic for a Message Decision Pack. Produces content for MDP personas, fit-rules, signals, pains, motions, objections, gaps, and avoid-rules cards.
 ---
 
 # MDP ICP Builder
@@ -26,15 +26,22 @@ Create concise entries for:
 
 - segments: company types that should be considered
 - personas: roles, jobs, pains, and objections
-- triggers: events that make outreach timely
+- fit rules: when to proceed, ask for more context, or stop
+- signals: observable events or source fields that make outreach timely
 - disqualifiers: who should not be targeted
+- objections: expected confusion and approved response logic
+- gaps: unknowns agents must surface instead of guessing
 - routing hints: which card tags should match which jobs
 
 Write results into:
 
 - `.mdp/cards/personas.yaml`
+- `.mdp/cards/fit-rules.yaml`
+- `.mdp/cards/signals.yaml`
 - `.mdp/cards/pains.yaml`
 - `.mdp/cards/motions.yaml`
+- `.mdp/cards/objections.yaml`
+- `.mdp/cards/gaps.yaml`
 - `.mdp/cards/avoid-rules.yaml` when fit boundaries need enforcement
 
 ## Quality Bar
@@ -49,7 +56,8 @@ Write results into:
 
 ```bash
 mdp --json validate --dir .
-mdp --json route --dir . --persona "<persona>" --job "linkedin outbound copy"
+mdp --json fit --dir . --prospect <prospect.json>
+mdp --json route --entries --dir . --persona "<persona>" --job "linkedin outbound copy"
 ```
 
 Report any routing mismatch and adjust card metadata when needed.

@@ -21,17 +21,22 @@ mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
 mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-3. Read only the returned `required_load_order` card files.
+3. If a prospect row exists, run `mdp --json fit --dir . --prospect <prospect.json>` before drafting.
+4. Read only the returned `required_load_order` card files.
 4. Build a copy brief with:
 
 - audience/persona
+- fit status or insufficient-context decision
 - channel and motion
-- prospect context or assumptions
+- prospect context, signals, and assumptions
 - loaded card ids
+- approved positioning and claims
 - approved hooks
 - pains and triggers
 - CTA style and reply path
+- channel policy
 - avoid-rules
+- objections or alternatives
 - evidence gaps
 - output requirements
 

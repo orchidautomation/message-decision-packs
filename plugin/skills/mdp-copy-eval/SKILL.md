@@ -21,15 +21,24 @@ or:
 mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-2. Read only the returned card paths.
+2. Run the deterministic claim/guardrail check against the draft:
+
+```bash
+mdp --json check-claims --dir . --text "<draft copy>"
+```
+
+3. Read only the returned card paths.
 3. Compare the copy to:
 
 - persona fit
 - pain/trigger relevance
+- approved positioning and claims
 - approved hooks
 - CTA style and reply path
+- channel policy
 - avoid-rules
 - evidence requirements
+- gaps the copy should surface rather than hide
 - channel length and ask style
 - unsupported or invented claims
 

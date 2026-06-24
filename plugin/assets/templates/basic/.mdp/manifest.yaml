@@ -1,12 +1,24 @@
 format: mdp.v0
-id: example-message-pack
-name: Example Message Pack
+id: basic-mdp-template
+name: Basic MDP Template
 version: 0.1.0
 description: A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, and copy guidance.
 personas:
 - GTM Engineering
 - PMM
 - PM
+target_personas:
+- GTM Engineering
+- PMM
+- PM
+operator_roles:
+- GTM Engineering
+- PMM
+supported_channels:
+- linkedin
+- email
+- call-prep
+- agent-brief
 cards:
 - id: personas
   path: cards/personas.yaml
@@ -18,6 +30,46 @@ cards:
   - PM
   tags:
   - persona
+- id: positioning
+  path: cards/positioning.yaml
+  kind: positioning
+  description: Category, product boundaries, value pillars, and what this pack is not.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - positioning
+  - category
+  - boundary
+- id: fit-rules
+  path: cards/fit-rules.yaml
+  kind: fit-rules
+  description: ICP, fit, disqualification, and no-message rules.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - fit
+  - icp
+  - disqualifier
+  - no-message
+- id: signals
+  path: cards/signals.yaml
+  kind: signals
+  description: Structured buying signals, triggers, and source interpretation rules.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - signal
+  - trigger
+  - source
+  - clay
+  - deepline
+  - linkedin
 - id: pains
   path: cards/pains.yaml
   kind: pains
@@ -28,6 +80,17 @@ cards:
   tags:
   - pain
   - trigger
+- id: claims
+  path: cards/claims.yaml
+  kind: claims
+  description: Approved claims and proof requirements an agent may use.
+  personas:
+  - PMM
+  - GTM Engineering
+  tags:
+  - claim
+  - proof
+  - evidence
 - id: motions
   path: cards/motions.yaml
   kind: motions
@@ -38,6 +101,18 @@ cards:
   tags:
   - motion
   - workflow
+- id: channel-policies
+  path: cards/channel-policies.yaml
+  kind: channel-policies
+  description: Channel-specific policy for LinkedIn, email, call prep, and agent briefs.
+  personas:
+  - GTM Engineering
+  - PMM
+  tags:
+  - channel
+  - linkedin
+  - email
+  - brief
 - id: hooks
   path: cards/hooks.yaml
   kind: hooks
@@ -47,6 +122,20 @@ cards:
   tags:
   - hook
   - copy
+  - message
+- id: ctas
+  path: cards/ctas.yaml
+  kind: ctas
+  description: CTA rules, reply paths, and ask boundaries for outbound copy.
+  personas:
+  - PMM
+  - GTM Engineering
+  tags:
+  - cta
+  - ask
+  - reply
+  - copy
+  - outbound
   - message
 - id: avoid-rules
   path: cards/avoid-rules.yaml
@@ -70,24 +159,33 @@ cards:
   - brief
   - outbound
   - message
-- id: ctas
-  path: cards/ctas.yaml
-  kind: ctas
-  description: CTA rules, reply paths, and ask boundaries for outbound copy.
+- id: objections
+  path: cards/objections.yaml
+  kind: objections
+  description: Expected objections, category confusion, and approved response logic.
   personas:
   - PMM
   - GTM Engineering
   tags:
-  - cta
-  - ask
-  - reply
-  - copy
-  - outbound
-  - message
+  - objection
+  - alternative
+  - response
+- id: gaps
+  path: cards/gaps.yaml
+  kind: gaps
+  description: Known gaps and open questions agents must surface instead of filling in.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - gap
+  - unknown
+  - open-question
 policy:
   progressive_disclosure: true
   load_manifest_first: true
-  max_cards_per_route: 6
+  max_cards_per_route: 12
   json_contract: mdp.cli.v0
   no_auth_required: true
 provenance:

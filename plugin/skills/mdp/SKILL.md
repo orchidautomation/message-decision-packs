@@ -7,7 +7,7 @@ description: Use when the user wants to create, brainstorm, validate, inspect, r
 
 For fuzzy or multi-step MDP work, use `$mdp-lfg` first, then route to the narrower skill or CLI command.
 
-Use Message Decision Packs as the source of messaging decisions, not as the execution system. The pack stores ICP, personas, pains, hooks, avoid rules, CTA rules, and copy patterns. The `mdp` CLI validates and routes the pack. The agent drafts only after the CLI returns the relevant cards.
+Use Message Decision Packs as the source of messaging decisions, not as the execution system. The pack stores ICP, fit rules, personas, pains, signals, positioning, claims, hooks, channel policies, avoid rules, CTA rules, objections, gaps, and copy patterns. The `mdp` CLI validates, routes, checks fit, checks claims, lists gaps, and runs eval fixtures. The agent drafts only after the CLI returns the relevant cards.
 
 ## First Check
 
@@ -38,12 +38,20 @@ When brainstorming the pack, help fill these files:
 
 - `.mdp/manifest.yaml`
 - `.mdp/cards/personas.yaml`
+- `.mdp/cards/positioning.yaml`
+- `.mdp/cards/fit-rules.yaml`
+- `.mdp/cards/signals.yaml`
 - `.mdp/cards/pains.yaml`
+- `.mdp/cards/claims.yaml`
 - `.mdp/cards/motions.yaml`
+- `.mdp/cards/channel-policies.yaml`
 - `.mdp/cards/hooks.yaml`
 - `.mdp/cards/avoid-rules.yaml`
 - `.mdp/cards/copy-patterns.yaml`
 - `.mdp/cards/ctas.yaml`
+- `.mdp/cards/objections.yaml`
+- `.mdp/cards/gaps.yaml`
+- `.mdp/evals/*.yaml`
 
 After edits:
 
@@ -59,7 +67,7 @@ Convert Clay, Deepline, CSV, LinkedIn research, or enrichment output into a smal
 mdp --json schema prospect
 ```
 
-Minimum fields: `name`, `title`, `company`. Prefer adding `linkedin_url`, `company_url`, `background`, `trigger`, and `persona`.
+Minimum fields: `name`, `title`, `company`. Prefer adding `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, and structured `signals`.
 
 Then create a brief:
 
@@ -72,11 +80,31 @@ Read only `data.required_load_order`. Then draft using the brief plus those load
 ## Route Without A Prospect
 
 ```bash
-mdp --json route --dir . --persona "VP Finance" --job "linkedin outbound copy"
+mdp --json route --entries --dir . --persona "VP Finance" --job "linkedin outbound copy"
 mdp --json emit-brief --dir . --persona "VP Finance" --job "linkedin outbound copy"
 ```
 
 Use `load_order` or `required_load_order` as the progressive-disclosure contract.
+
+
+Before drafting from a prospect row, check fit:
+
+```bash
+mdp --json fit --dir . --prospect examples/clay-row.json
+```
+
+Before approving generated copy, check claims and guardrails:
+
+```bash
+mdp --json check-claims --dir . --text "<draft copy>"
+```
+
+For pack QA:
+
+```bash
+mdp --json gaps --dir .
+mdp --json eval --dir .
+```
 
 ## Demo Copy
 

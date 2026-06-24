@@ -25,3 +25,10 @@ entries:
   - PM
   evidence: []
   avoid: []
+- id: trigger-pain-angle-ask
+  title: Trigger -> pain -> angle -> ask
+  body: Structure outbound copy as observed trigger, likely pain, approved angle, and low-friction ask. Mark weak inputs as hypotheses.
+  applies_to:
+  - PMM
+  evidence: []
+  avoid: []

@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Message Decision Packs",
     "shortDescription": "Create and route GTM message context.",
-    "longDescription": "Message Decision Packs helps Codex orchestrate end-to-end MDP workflows, create modular GTM messaging packs, sharpen ICP, brainstorm message angles, codify CTA rules, enforce avoid-rules, extract source evidence, validate with the mdp CLI, and route Clay, Deepline, CSV, or enrichment-style prospect rows into agent-readable copy briefs without turning the pack into a sender, CRM, sequencer, or enrichment tool.",
+    "longDescription": "Message Decision Packs helps Codex orchestrate end-to-end MDP workflows, create modular GTM messaging packs, sharpen ICP and fit rules, capture signals, maintain approved claims, brainstorm message angles, codify channel and CTA rules, enforce avoid-rules, surface gaps, run eval fixtures, extract source evidence, validate with the mdp CLI, and route Clay, Deepline, CSV, or enrichment-style prospect rows into agent-readable copy briefs without turning the pack into a sender, CRM, sequencer, or enrichment tool.",
     "developerName": "Brandon Guerrero",
     "category": "Productivity",
     "capabilities": [
@@ -19,7 +19,7 @@
     "defaultPrompt": [
       "Use $mdp-lfg to orchestrate this Message Decision Pack workflow.",
       "Use Message Decision Packs to create an MDP for this ICP.",
-      "Build ICP, angles, CTA rules, and avoid-rules for this MDP.",
+      "Build ICP, fit rules, signals, claims, angles, CTA rules, gaps, and avoid-rules for this MDP.",
       "Review this .mdp pack and produce a LinkedIn brief."
     ]
   }
