@@ -1,0 +1,25 @@
+id: avoid-rules
+kind: avoid-rules
+title: Avoid rules
+description: Category and claim boundaries agents must keep intact.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- guardrail
+- avoid
+entries:
+- id: not-execution
+  title: Do not claim execution
+  body: Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, BI tool, or generic RevOps automation system.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  - PM
+  evidence: []
+  avoid:
+  - AI SDR
+  - sequencer
+  - CRM replacement
+  - generic automation

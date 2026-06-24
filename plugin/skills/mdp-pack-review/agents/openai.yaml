@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Pack Review"
+  short_description: "Review pack quality and evidence gaps"
+  default_prompt: "Use $mdp-pack-review to audit an MDP for gaps and weak claims."

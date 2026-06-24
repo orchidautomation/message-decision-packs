@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Prospect Brief"
+  short_description: "Normalize prospects into briefs"
+  default_prompt: "Use $mdp-prospect-brief to turn an enriched prospect row into an MDP brief."

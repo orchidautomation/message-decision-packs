@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Copy Brief"
+  short_description: "Prepare copy prompts from routed cards"
+  default_prompt: "Use $mdp-copy-brief to create a writing brief from routed MDP cards."

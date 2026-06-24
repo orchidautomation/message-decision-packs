@@ -1,0 +1,27 @@
+id: copy-patterns
+kind: copy-patterns
+title: Copy patterns
+description: Reusable structures for brief and copy outputs.
+personas:
+- PMM
+tags:
+- copy
+- brief
+- outbound
+- message
+entries:
+- id: brief-contract
+  title: Brief contract
+  body: Return audience, job, loaded cards, decision trace, approved claims, avoid rules, open questions, and draft direction.
+  applies_to:
+  - PMM
+  evidence: []
+  avoid: []
+- id: claim-gap
+  title: Claim gap
+  body: When evidence is missing, write the gap explicitly instead of smoothing over it with generic GTM language.
+  applies_to:
+  - PMM
+  - PM
+  evidence: []
+  avoid: []

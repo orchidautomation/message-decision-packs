@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Create Pack"
+  short_description: "Create Message Decision Packs"
+  default_prompt: "Use $mdp-create-pack to create a Message Decision Pack from messy GTM context."

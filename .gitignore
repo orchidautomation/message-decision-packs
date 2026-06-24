@@ -1,0 +1,16 @@
+# Rust build output
+/target/
+/cli/target/
+
+# Local editor/system files
+.DS_Store
+*.swp
+*.swo
+
+# Local env/secrets
+.env
+.env.*
+!.env.example
+
+# Agent scratch
+.agent-artifacts/

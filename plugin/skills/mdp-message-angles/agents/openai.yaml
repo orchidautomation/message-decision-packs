@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Message Angles"
+  short_description: "Brainstorm hooks and copy angles"
+  default_prompt: "Use $mdp-message-angles to create hooks and copy patterns for an MDP."

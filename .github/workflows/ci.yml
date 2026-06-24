@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check formatting
+        run: cargo fmt --check
+        working-directory: cli
+      - name: Test CLI
+        run: cargo test
+        working-directory: cli
+      - name: Validate bundled template
+        run: cargo run -- --json validate --dir ../plugin/assets/templates/basic
+        working-directory: cli

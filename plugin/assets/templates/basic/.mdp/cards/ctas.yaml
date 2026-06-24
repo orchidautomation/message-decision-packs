@@ -1,0 +1,40 @@
+id: ctas
+kind: ctas
+title: CTA rules
+description: Calls to action, reply paths, and ask boundaries for outbound copy.
+personas:
+- PMM
+- GTM Engineering
+tags:
+- cta
+- ask
+- reply
+- copy
+- outbound
+- message
+entries:
+- id: soft-ask
+  title: Soft ask
+  body: Default to a low-friction ask such as comparing notes, sanity-checking the hypothesis, or asking who owns the problem.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid: []
+- id: no-false-urgency
+  title: No false urgency
+  body: Do not manufacture urgency or imply the prospect has asked for help unless the source row says so.
+  applies_to:
+  - PMM
+  evidence: []
+  avoid:
+  - urgent because I saw
+  - you asked for help
+- id: reply-path
+  title: Reply path
+  body: When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid: []

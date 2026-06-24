@@ -1,0 +1,55 @@
+---
+name: mdp-prospect-brief
+description: Use when the user has a Clay, Deepline, CSV, LinkedIn, enrichment, or research row and wants to normalize it into an MDP prospect JSON file, run `mdp brief`, and produce an agent-readable prospect/message decision contract.
+---
+
+# MDP Prospect Brief
+
+Turn an enriched prospect row into a clean MDP brief. This skill prepares context; it does not send messages.
+
+## Prospect Shape
+
+Check the schema:
+
+```bash
+mdp --json schema prospect
+```
+
+Minimum fields:
+
+- `name`
+- `title`
+- `company`
+
+Preferred fields:
+
+- `linkedin_url`
+- `company_url`
+- `background`
+- `trigger`
+- `persona`
+
+## Workflow
+
+1. Normalize the source row into a small JSON file.
+2. Keep only useful, non-sensitive fields needed for routing and copy.
+3. Do not treat LinkedIn URL presence as proof of any claim.
+4. Run:
+
+```bash
+mdp --json brief --dir . --prospect <prospect.json> --channel linkedin
+```
+
+5. Read only `data.required_load_order` if drafting is requested.
+
+## Response
+
+Return:
+
+- normalized prospect fields
+- inferred persona
+- required card load order
+- decision trace
+- gaps or assumptions
+
+Do not send, sequence, enrich, or CRM-update without explicit user approval and a separate tool.

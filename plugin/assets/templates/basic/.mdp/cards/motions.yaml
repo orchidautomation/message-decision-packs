@@ -1,0 +1,25 @@
+id: motions
+kind: motions
+title: Approved motions
+description: GTM workflows this pack can support as context.
+personas:
+- GTM Engineering
+- PMM
+tags:
+- motion
+- workflow
+entries:
+- id: copy-brief
+  title: Copy brief
+  body: Route persona, pain, hook, avoid-rules, and copy-pattern cards to produce a grounded brief, not final unsupervised sending.
+  applies_to:
+  - PMM
+  evidence: []
+  avoid: []
+- id: agent-preflight
+  title: Agent preflight
+  body: Let an agent inspect the pack before doing GTM work and report missing evidence or unsupported claims.
+  applies_to:
+  - GTM Engineering
+  evidence: []
+  avoid: []

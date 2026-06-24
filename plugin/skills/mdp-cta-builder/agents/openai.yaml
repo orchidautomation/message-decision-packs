@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP CTA Builder"
+  short_description: "Codify CTA and reply-path rules"
+  default_prompt: "Use $mdp-cta-builder to add CTA guidance to this MDP."
