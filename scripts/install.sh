@@ -6,7 +6,7 @@ usage() {
 Install Message Decision Packs release assets.
 
 Usage:
-  bash <(curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install.sh) --agents -y
+  bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 Options:
   --agents              Install agent plugin bundles for Claude Code, Cursor, Codex, and OpenCode.

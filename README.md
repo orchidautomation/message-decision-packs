@@ -20,13 +20,13 @@ Latest release: [release page](https://github.com/orchidautomation/message-decis
 One-command install:
 
 ```bash
-bash <(curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install.sh) --agents -y
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
 Portable shell fallback:
 
 ```bash
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install.sh | bash -s -- --agents -y
+curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --agents -y
 ```
 
 Copy-paste installers - pick the AI tool you use:

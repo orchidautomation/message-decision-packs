@@ -55,7 +55,7 @@ curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/l
 The preferred one-command installer mirrors Railway's agent installer shape:
 
 ```bash
-bash <(curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install.sh) --agents -y
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
 The tag-based release workflow installs Pluxx in CI, builds host plugin bundles, publishes Pluxx release assets, and uploads `mdp-*` CLI binaries plus `install.sh`. The installer scripts then install the plugin and use `scripts/bootstrap-runtime.sh` to prepare the local `mdp` CLI when it is missing.
