@@ -1,19 +1,19 @@
 # Message Decision Packs
 
-Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest, a source ledger, and routed card files for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, objections, gaps, and copy patterns.
+Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest, a source ledger, routed card files, and optional extraction prompt contracts for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, objections, gaps, and copy patterns.
 
-This repo contains both the local CLI and the Codex plugin:
+This repo contains both the local CLI and the Pluxx source plugin for supported agent hosts:
 
 ```text
 message-decision-packs/
   cli/      # Rust `mdp` CLI
-  plugin/   # Codex plugin with MDP skills, templates, and helper scripts
+  plugin/   # Pluxx source plugin with MDP skills, templates, and helper scripts
   docs/     # Project notes and distribution guidance
 ```
 
 MDP is a decision/context layer. It is not a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.
 
-For the conceptual model behind fit, routing, and bounded drafting context, see [Conceptual Decision Flow](docs/conceptual-decision-flow.md).
+For a deeper explanation of what this repo is, why it matters, and how to ask your agent to explain it accurately, read [What This Repo Is](docs/what-this-repo-is.md). For the conceptual model behind fit, routing, and bounded drafting context, see [Conceptual Decision Flow](docs/conceptual-decision-flow.md).
 
 ## Install
 
@@ -103,6 +103,7 @@ A pack is a local `.mdp/` folder:
   manifest.yaml
   sources.yaml
   briefs/
+  prompts/*.yaml
   cards/personas.yaml
   cards/positioning.yaml
   cards/fit-rules.yaml
@@ -124,11 +125,15 @@ examples/
 
 Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then only load the cards returned by `mdp route`, `mdp route --entries`, or `mdp brief`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy, `gaps` to expose missing evidence, and `eval` to test route, fit, brief, and claim behavior.
 
+Packs can declare `persona_mappings` in `.mdp/manifest.yaml` so prospect titles map into pack-owned personas before fit and brief routing. Explicit `prospect.persona` still wins. Legacy title fallbacks are reported as low-confidence and do not unlock the fit gate by themselves.
+
 Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures and include `source_kind: synthetic-example` plus `synthetic: true`.
 
-## Codex Plugin
+Extraction prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for classifying supplied person, company, account, domain, row, or research data into strict JSON candidate entries. They use `format: mdp.prompt.v0` and output `contract: mdp.prompt-output.v0` with `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance. They support full ICP extraction, but they do not browse, scrape, enrich, send, or update external systems. See [Prompt Extraction Contract](docs/prompt-extraction-contract.md) and `mdp --json schema prompt`.
 
-The plugin lives in `plugin/` and includes skills for creating, reviewing, routing, and using MDPs.
+## Agent Plugin
+
+The plugin source lives in `plugin/` and includes skills for creating, reviewing, routing, and using MDPs. Pluxx packages that source for supported agent hosts, including Claude Code, Cursor, Codex, and OpenCode. See [pluxx.dev](https://pluxx.dev) and [orchidautomation/pluxx](https://github.com/orchidautomation/pluxx) for the Pluxx project.
 
 Important skills include:
 

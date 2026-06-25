@@ -19,6 +19,30 @@ supported_channels:
 - email
 - call-prep
 - agent-brief
+persona_mappings:
+- persona: GTM Engineering
+  title_keywords:
+  - gtm engineering
+  - revops
+  - revenue operations
+  - sales ops
+  - sales operations
+  - growth ops
+- persona: PMM
+  title_keywords:
+  - pmm
+  - product marketing
+  - demand gen
+  - demand generation
+  - growth marketing
+  - messaging
+  - positioning
+- persona: PM
+  title_keywords:
+  - product manager
+  - head of product
+  - vp product
+  - chief product officer
 cards:
 - id: personas
   path: cards/personas.yaml

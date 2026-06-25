@@ -1,5 +1,5 @@
 use crate::constants::DEFAULT_DIR;
-use crate::models::{Card, Manifest, Prospect};
+use crate::models::{Card, Manifest, PromptFile, Prospect};
 use anyhow::{Context, Result, anyhow};
 use serde::Serialize;
 use serde_json::Value;
@@ -14,6 +14,11 @@ pub(crate) fn read_manifest(root: &Path) -> Result<Manifest> {
 }
 
 pub(crate) fn read_card(path: &Path) -> Result<Card> {
+    let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    serde_yaml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
+}
+
+pub(crate) fn read_prompt(path: &Path) -> Result<PromptFile> {
     let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     serde_yaml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
 }

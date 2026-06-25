@@ -70,6 +70,8 @@ Keep private prospect data in ignored scratch unless you intentionally commit a 
 mdp --json fit --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json
 ```
 
+If a prospect row has no explicit `persona`, the CLI can use pack-owned `.mdp/manifest.yaml` `persona_mappings` to map title keywords to personas. Unmapped title fallbacks are reported as low-confidence and still require review.
+
 If fit returns `disqualified` or `insufficient-context`, do not draft unless the user explicitly overrides.
 
 When fit is acceptable, build the brief:

@@ -23,6 +23,10 @@ Do not describe MDP as:
 - `plugin/assets/templates/basic`: neutral example pack.
 - `docs/`: distribution and design notes.
 
+## Feature Change Hygiene
+
+When adding, changing, or removing MDP behavior, update the matching agent-facing skill instructions in `plugin/skills/` in the same change. The CLI contract, starter/template pack, docs, and skills should not drift apart.
+
 ## Validation
 
 Prefer narrow checks first:
