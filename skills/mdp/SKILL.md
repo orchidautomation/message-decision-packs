@@ -135,6 +135,18 @@ mdp --json copy --dir . --prospect <prospect.json> --channel <channel>
 
 For production-quality output, use `brief` and draft from the returned contract and routed cards.
 
+## Agent Framework Wrappers
+
+Frameworks such as Flue or Vercel Eve may wrap MDP for webhook admission, durable runs, filesystem staging, model drafting, and artifact collection. Keep that layer as an adapter around the CLI:
+
+1. Verify and normalize the inbound event in trusted application code.
+2. Write the raw payload and normalized prospect JSON to ignored scratch.
+3. Run `mdp --json fit` before drafting.
+4. Run `mdp --json brief --context` and draft only from the returned brief/context.
+5. Run `mdp --json check-claims` before treating draft text as ready.
+
+Do not move fit logic, route selection, claim checks, or card interpretation into the framework layer. Do not let the framework wrapper send, schedule, enrich, scrape, update a CRM, or write to a sequencer unless the user explicitly asks for that separate system action outside MDP.
+
 ## Boundaries
 
 - Do not send LinkedIn messages or emails.

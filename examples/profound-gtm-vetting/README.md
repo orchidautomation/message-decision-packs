@@ -27,6 +27,10 @@ mdp --json gaps --dir examples/profound-gtm-vetting
 mdp --json eval --dir examples/profound-gtm-vetting
 ```
 
+## Flue Webhook Agent Example
+
+`flue-webhook-agent/` shows how a webhook-style prospect row can be turned into an MDP fit decision, routed brief, and optional response draft through Flue while preserving the MDP boundary. It uses local scratch plus the `mdp` CLI; it does not send, enrich, scrape, update a CRM, or write to a sequencer.
+
 ## How The Story Routes
 
 ```mermaid
