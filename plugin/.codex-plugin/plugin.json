@@ -3,7 +3,8 @@
   "version": "0.1.2",
   "description": "Author, validate, and use Message Decision Packs with the local mdp CLI.",
   "author": {
-    "name": "Orchid Labs"
+    "name": "Orchid Labs",
+    "url": "https://orchidautomation.com"
   },
   "skills": "./skills/",
   "interface": {
@@ -20,6 +21,8 @@
       "Use $mdp-lfg to orchestrate this Message Decision Pack workflow.",
       "Use Message Decision Packs to create an MDP for this ICP.",
       "Review this .mdp pack and produce a LinkedIn brief."
-    ]
-  }
+    ],
+    "websiteURL": "https://orchidautomation.com"
+  },
+  "homepage": "https://orchidautomation.com"
 }

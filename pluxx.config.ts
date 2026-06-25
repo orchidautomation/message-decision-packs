@@ -4,8 +4,10 @@ export default definePlugin({
   name: 'message-decision-packs',
   version: '0.1.2',
   description: 'Author, validate, and use Message Decision Packs with the local mdp CLI.',
+  homepage: 'https://orchidautomation.com',
   author: {
     name: 'Orchid Labs',
+    url: 'https://orchidautomation.com',
   },
   brand: {
     "displayName": "Message Decision Packs",
@@ -31,6 +33,7 @@ export default definePlugin({
     "codex": {
       "interface": {
         "developerName": "Orchid Labs",
+        "websiteURL": "https://orchidautomation.com",
         "capabilities": [
           "Interactive",
           "Write"
