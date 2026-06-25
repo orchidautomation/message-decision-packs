@@ -63,7 +63,7 @@ Error:
 ## Agent handoff
 
 1. Run `mdp --json doctor` and `mdp --json validate`.
-2. Convert the Clay, Deepline, CSV, or enrichment row into `mdp schema prospect`.
+2. Convert the Clay, Deepline, CSV, or enrichment row into `mdp schema prospect`. Use explicit `persona` when known; otherwise `.mdp/manifest.yaml` can define `persona_mappings` from title keywords to pack personas.
 3. Run `mdp --json fit --prospect <row.json>` and stop if it returns `disqualified` or `insufficient-context`.
 4. Run `mdp --json --summary brief --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
 5. Stop if `data.draft_status` is `no-draft`.
