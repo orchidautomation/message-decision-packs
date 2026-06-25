@@ -96,8 +96,8 @@ Results:
 
 | Command | Result | Notes |
 |---|---:|---|
-| `pluxx doctor --json` | Pass | Warnings only for missing icon/screenshots metadata. |
-| `pluxx lint --json` | Pass | Six warnings: branding metadata and Claude Code description truncation. |
+| `pluxx doctor --json` | Pass | Initial migration had branding warnings; current polished config validates cleanly. |
+| `pluxx lint --json` | Pass | Current polished config passes with zero warnings. |
 | `pluxx eval --json` | Pass | Scaffold file-level eval skipped because this is not MCP-tool-derived. |
 | `pluxx test --target codex --json` | Pass | Builds Codex bundle and smoke-checks the plugin manifest. |
 | `pluxx build --json` | Pass | Builds all configured targets. |
