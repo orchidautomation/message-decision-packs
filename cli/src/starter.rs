@@ -1,5 +1,5 @@
 use crate::constants::FORMAT_VERSION;
-use crate::models::{Card, CardKind, CardRef, Entry, Manifest, Policy, Provenance};
+use crate::models::{Card, CardKind, CardRef, Entry, Manifest, PersonaMapping, Policy, Provenance};
 use serde_json::{Value, json};
 
 pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manifest {
@@ -18,6 +18,11 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
         target_personas: personas,
         operator_roles: vec!["GTM Engineering".to_string(), "PMM".to_string()],
         supported_channels: vec!["linkedin".to_string(), "email".to_string(), "call-prep".to_string(), "agent-brief".to_string()],
+        persona_mappings: vec![
+            persona_mapping("GTM Engineering", &["gtm engineering", "revops", "revenue operations", "sales ops", "sales operations", "growth ops"]),
+            persona_mapping("PMM", &["pmm", "product marketing", "demand gen", "demand generation", "growth marketing", "messaging", "positioning"]),
+            persona_mapping("PM", &["product manager", "head of product", "vp product", "chief product officer"]),
+        ],
         cards: vec![
             card_ref("personas", "cards/personas.yaml", CardKind::Personas, "Who the decision pack serves and what each persona needs.", &["GTM Engineering", "PMM", "PM"], &["persona"]),
             card_ref("positioning", "cards/positioning.yaml", CardKind::Positioning, "Category, product boundaries, value pillars, and what this pack is not.", &["GTM Engineering", "PMM", "PM"], &["positioning", "category", "boundary"]),
@@ -387,6 +392,16 @@ fn card_ref(
         description: description.to_string(),
         personas: personas.iter().map(|s| s.to_string()).collect(),
         tags: tags.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+fn persona_mapping(persona: &str, title_keywords: &[&str]) -> PersonaMapping {
+    PersonaMapping {
+        persona: persona.to_string(),
+        title_keywords: title_keywords
+            .iter()
+            .map(|value| value.to_string())
+            .collect(),
     }
 }
 
