@@ -1,10 +1,10 @@
 command: route
 expect_entry_titles_contains:
-- LinkedIn initial touch
-- Answer-engine visibility hook
-- No contact harvest
-expect_entry_titles_excludes:
 - LinkedIn follow-up
+- Answer-engine visibility hook
+- Signal -> hypothesis -> question
+expect_entry_titles_excludes:
+- LinkedIn initial touch
 - Initial email
 - Email follow-up
 expect_load_order_contains:
@@ -12,10 +12,7 @@ expect_load_order_contains:
 - .mdp/cards/avoid-rules.yaml
 - .mdp/cards/channel-policies.yaml
 - .mdp/cards/hooks.yaml
-- .mdp/cards/ctas.yaml
-expect_load_order_excludes:
-- .mdp/cards/motions.yaml
-- .mdp/cards/objections.yaml
-id: linkedin-aeo-copy-route
-job: linkedin outbound copy
+- .mdp/cards/copy-patterns.yaml
+id: linkedin-follow-up-route
+job: linkedin follow-up message
 persona: AEO Lead

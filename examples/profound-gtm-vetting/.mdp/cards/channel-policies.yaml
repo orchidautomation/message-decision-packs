@@ -11,14 +11,16 @@ tags:
 - channel
 - linkedin
 - email
+- initial
+- follow-up
 - call
 - prep
 - agent
 - brief
 entries:
-- id: linkedin-opener
-  title: LinkedIn opener
-  body: "Use one public or supplied signal, one fit hypothesis, and one low-pressure owner or relevance question. Do not imply the prospect has intent or that Profound measured their current visibility."
+- id: linkedin-initial-touch
+  title: LinkedIn initial touch
+  body: "For the first LinkedIn touch, use one public or supplied signal, one fit hypothesis, and one low-pressure owner or relevance question. Do not imply the prospect has intent or that Profound measured their current visibility."
   applies_to:
   - AEO Lead
   - Content Lead
@@ -27,9 +29,33 @@ entries:
   evidence:
   - mdp-readme
   avoid: []
+- id: linkedin-follow-up
+  title: LinkedIn follow-up
+  body: "For a later LinkedIn note, reference the earlier outreach lightly, add one new relevance angle or question, and keep the ask to owner validation or roadmap relevance."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  - profound-homepage
+  avoid: []
+- id: initial-email
+  title: Initial email
+  body: "For the first email, lead with the account-vetting reason, map it to one Profound capability, and ask for the right owner or a quick relevance check instead of forcing a calendar ask."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  - profound-homepage
+  avoid: []
 - id: email-follow-up
   title: Email follow-up
-  body: "Lead with the account-vetting reason, map it to one Profound capability, and ask for the right owner or a quick relevance check instead of forcing a calendar ask."
+  body: "For a later email, refer back to the initial note without assuming interest, add one concrete signal or capability, and keep the reply path to owner validation or relevance check."
   applies_to:
   - AEO Lead
   - Content Lead

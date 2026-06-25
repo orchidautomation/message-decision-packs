@@ -210,7 +210,7 @@ claims:versionable-context
 ctas:soft-ask
 ctas:no-false-urgency
 ctas:reply-path
-channel-policies:linkedin-opener
+channel-policies:linkedin-initial-touch
 avoid-rules:not-execution
 avoid-rules:no-unsourced-claims
 ```

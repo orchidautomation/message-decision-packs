@@ -10,6 +10,7 @@ Create reusable message angles for an MDP. Store strategy in cards; do not turn 
 ## Workflow
 
 1. Identify the active persona, channel, and job.
+   - For outbound jobs, identify lifecycle too: initial touch or follow-up.
 2. Validate and route before reading cards:
 
 ```bash
@@ -42,6 +43,7 @@ Each useful angle should include:
 - proof or source requirement
 - avoid-rule risk
 - best channel
+- lifecycle: initial touch, follow-up, or lifecycle-neutral
 - CTA or reply path
 - persona fit
 
@@ -64,3 +66,4 @@ mdp --json gaps --dir .
 ```
 
 Confirm that hooks, copy patterns, and CTA rules route for the intended persona and job.
+For channel-policies, confirm first-touch and follow-up entries do not both appear unless that is intentional.

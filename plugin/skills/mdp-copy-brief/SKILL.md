@@ -41,6 +41,7 @@ mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> o
 - audience/persona
 - fit status or insufficient-context decision
 - channel and motion
+- lifecycle when relevant: initial touch vs follow-up
 - prospect context, signals, and assumptions
 - loaded context entry ids and card ids
 - approved positioning and claims
@@ -56,5 +57,7 @@ mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> o
 ## Drafting Rules
 
 If the user asks for copy after the brief, draft from bounded context entries and the prospect row first, including the routed CTA entry when present. Open fallback card files only when `full_card_required` lists them. Keep unsupported claims out. State assumptions when source context is weak.
+
+For outbound copy, preserve lifecycle distinctions. An initial email/LinkedIn touch should not use follow-up policy, and a follow-up should not use first-touch policy unless the route returns both intentionally.
 
 Do not send or schedule the copy.

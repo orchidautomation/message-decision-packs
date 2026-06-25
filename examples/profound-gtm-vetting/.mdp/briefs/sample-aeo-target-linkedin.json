@@ -436,18 +436,18 @@
           "Agency Partner"
         ],
         "avoid": [],
-        "body": "Use one public or supplied signal, one fit hypothesis, and one low-pressure owner or relevance question. Do not imply the prospect has intent or that Profound measured their current visibility.",
+        "body": "For the first LinkedIn touch, use one public or supplied signal, one fit hypothesis, and one low-pressure owner or relevance question. Do not imply the prospect has intent or that Profound measured their current visibility.",
         "card_id": "channel-policies",
         "card_kind": "channel-policies",
         "card_path": ".mdp/cards/channel-policies.yaml",
-        "entry_id": "linkedin-opener",
+        "entry_id": "linkedin-initial-touch",
         "evidence": [
           "mdp-readme"
         ],
         "reason": "persona applies",
         "selection": "matched",
         "status": "required",
-        "title": "LinkedIn opener"
+        "title": "LinkedIn initial touch"
       },
       {
         "applies_to": [
