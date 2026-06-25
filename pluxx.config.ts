@@ -19,9 +19,9 @@ export default definePlugin({
     ],
     "category": "Productivity",
     "defaultPrompts": [
-      "Use $mdp-lfg to orchestrate this Message Decision Pack workflow.",
-      "Use Message Decision Packs to create an MDP for this ICP.",
-      "Review this .mdp pack and produce a LinkedIn brief."
+      "Turn these ICP, positioning, and source notes into a local Message Decision Pack, then validate it.",
+      "Review this .mdp pack for gaps, unsupported claims, routing issues, and weak eval coverage.",
+      "Given this prospect context, run the MDP fit gate and create a message brief only if the context is sufficient."
     ]
   },
 
