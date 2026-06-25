@@ -13,6 +13,8 @@ message-decision-packs/
 
 MDP is a decision/context layer. It is not a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.
 
+For the conceptual model behind fit, routing, and bounded drafting context, see [Conceptual Decision Flow](docs/conceptual-decision-flow.md).
+
 ## Install
 
 Latest release: [release page](https://github.com/orchidautomation/message-decision-packs/releases/latest)
