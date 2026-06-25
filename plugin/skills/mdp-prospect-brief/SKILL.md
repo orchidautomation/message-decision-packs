@@ -30,26 +30,30 @@ Preferred fields:
 - `persona`
 - `segment`
 - `signals` with source, confidence, freshness, and state_as when available
+- `source_kind` and `synthetic` when the row is a generated or sanitized example
 
 ## Workflow
 
 1. Normalize the source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path.
 2. Keep only useful, non-sensitive fields needed for routing and copy; redact private data before committing any example.
 3. Do not treat LinkedIn URL presence as proof of any claim.
-4. Check fit before drafting:
+4. Mark fictional starter/demo rows with `source_kind: synthetic-example` and `synthetic: true`; do not present them as real prospects.
+5. Check fit before drafting:
 
 ```bash
 mdp --json fit --dir . --prospect <prospect.json>
 ```
 
-5. If status is `disqualified` or `insufficient-context`, stop before drafting unless the user explicitly overrides.
-6. Run the brief:
+6. If status is `disqualified` or `insufficient-context`, stop before drafting unless the user explicitly overrides.
+7. Run the brief:
 
 ```bash
-mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel>
 ```
 
-7. Read only `data.required_load_order` if drafting is requested and `data.draft_status` is `ready`.
+Use `--out .mdp/briefs/<brief-name>.json` when the user expects a durable created brief file. Without `--out`, the brief is stdout-only.
+
+8. Read only `data.required_load_order` if drafting is requested and `data.draft_status` is `ready`.
 
 ## Response
 
@@ -59,6 +63,7 @@ Return:
 - inferred persona
 - fit status and disqualifiers
 - required card load order
+- whether the brief was saved or stdout-only
 - decision trace
 - gaps or assumptions
 

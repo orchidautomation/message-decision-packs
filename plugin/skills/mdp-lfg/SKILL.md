@@ -16,13 +16,15 @@ command -v mdp
 mdp --json doctor --dir .
 ```
 
-2. If `.mdp/manifest.yaml` is missing and the user wants a pack, initialize:
+2. Before initializing, state the exact destination directory. If the user did not specify one, prefer the current repo/workspace root or an ignored scratch path; do not silently create a pack in `$HOME` or an unrelated code folder.
+
+3. If `.mdp/manifest.yaml` is missing and the user wants a pack, initialize:
 
 ```bash
 mdp --json init --template gtm --name "<pack name>" --dir .
 ```
 
-3. If a pack exists, validate before changing it:
+4. If a pack exists, validate before changing it:
 
 ```bash
 mdp --json validate --dir .
@@ -53,19 +55,20 @@ For most requests, run this loop:
 
 1. Establish the current objective in one sentence.
 2. Run `mdp --json doctor --dir .` and `mdp --json validate --dir .` when a pack exists.
-3. Identify which card files matter; do not load the entire pack unless reviewing the whole pack.
-4. Make the smallest useful pack edits.
-5. Validate again.
-6. Test one representative route:
+3. Capture source facts in `.mdp/sources.yaml` before bulk card writing. Keep direct source claims separate from interpretation, and put missing proof in `gaps.yaml`.
+4. Identify which card files matter; do not load the entire pack unless reviewing the whole pack.
+5. Make the smallest useful pack edits. For new packs, fill cards in slices: positioning/fit/claims/gaps first, then personas/signals/pains, then motions/hooks/ctas/copy-patterns/evals.
+6. Validate again.
+7. Test one representative route:
 
 ```bash
-mdp --json route --entries --dir . --persona "<persona>" --job "<channel> outbound copy"
+mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-7. If a prospect row is involved, produce the brief:
+8. If a prospect row is involved, produce the brief. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
 
 ```bash
-mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
 ## Required Card Coverage
@@ -73,6 +76,7 @@ mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
 A usable GTM messaging pack should usually have:
 
 - `.mdp/manifest.yaml`
+- `.mdp/sources.yaml`
 - `.mdp/cards/personas.yaml`
 - `.mdp/cards/positioning.yaml`
 - `.mdp/cards/fit-rules.yaml`
@@ -97,6 +101,8 @@ Treat `ctas.yaml` as the policy for the ask or reply path. Treat `claims.yaml` a
 - Do not call MDP a sender, CRM, sequencer, enrichment provider, AI SDR, BI tool, or generic automation system.
 - Do not invent unsupported claims. Put gaps in the brief or card entries.
 - Keep `--json` on for CLI output that another tool, script, or agent will parse.
+- Use `--summary` for status checks instead of piping JSON into ad hoc scripts.
+- Starter `examples/clay-row.json` rows are synthetic fixtures unless the prospect says otherwise. Do not present them as real prospects.
 
 ## Closeout
 
@@ -104,6 +110,8 @@ End with:
 
 - files changed or reviewed
 - validation result
-- route or brief command tested
+- route or brief command tested, including whether output was saved with `--out` or only printed to stdout
+- `mdp --json gaps --dir .` result
+- `mdp --json check-claims --dir . --text "<sample draft or risky claim>"` result when copy or claims changed
 - remaining evidence gaps
 - the next best MDP command

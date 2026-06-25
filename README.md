@@ -1,6 +1,6 @@
 # Message Decision Packs
 
-Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest and routed card files for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, objections, gaps, and copy patterns.
+Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest, a source ledger, and routed card files for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, objections, gaps, and copy patterns.
 
 This repo contains both the local CLI and the Codex plugin:
 
@@ -84,9 +84,9 @@ Create a pack:
 ```bash
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
 mdp --json validate --dir /tmp/mdp-demo
-mdp --json route --entries --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
+mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
-mdp --json brief --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin
+mdp --json --summary brief --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
 mdp --json check-claims --dir /tmp/mdp-demo --text "MDP is a local offline CLI for modular message context."
 mdp --json gaps --dir /tmp/mdp-demo
 mdp --json eval --dir /tmp/mdp-demo
@@ -99,6 +99,8 @@ A pack is a local `.mdp/` folder:
 ```text
 .mdp/
   manifest.yaml
+  sources.yaml
+  briefs/
   cards/personas.yaml
   cards/positioning.yaml
   cards/fit-rules.yaml
@@ -118,7 +120,9 @@ examples/
   clay-row.json
 ```
 
-Agents should load the manifest first, then only the cards returned by `mdp route`, `mdp route --entries`, or `mdp brief`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy, `gaps` to expose missing evidence, and `eval` to test route, fit, brief, and claim behavior.
+Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then only load the cards returned by `mdp route`, `mdp route --entries`, or `mdp brief`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy, `gaps` to expose missing evidence, and `eval` to test route, fit, brief, and claim behavior.
+
+Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures and include `source_kind: synthetic-example` plus `synthetic: true`.
 
 ## Codex Plugin
 

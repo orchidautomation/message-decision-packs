@@ -1,0 +1,30 @@
+format: mdp.sources.v0
+purpose: Source ledger for evidence used in cards. Keep direct source claims separate from interpretation, and preserve gaps instead of inventing proof.
+rules:
+- Add public URLs, user-provided docs, or note identifiers before bulk card writing.
+- Use direct_claims for facts the source states, and interpretations for how the pack may use them.
+- Mark confidence and freshness when known.
+- Do not include private customer data, raw call notes, local browser data, or sensitive local files.
+sources:
+- confidence: high
+  direct_claims:
+  - MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.
+  - MDP stores decision context and routing contracts; it is not execution infrastructure.
+  freshness: repo-current
+  gaps: []
+  id: mdp-readme
+  interpretations:
+  - Use this source for category boundaries, not for third-party customer proof.
+  kind: repo-doc
+  locator: README.md
+- confidence: demo-only
+  direct_claims:
+  - This row is fictional starter data for exercising fit, route, and brief commands.
+  freshness: generated
+  gaps:
+  - Replace with a real or intentionally sanitized prospect row before production copy work.
+  id: example-prospect
+  interpretations:
+  - Do not treat the example prospect as a real account, customer, or source of market evidence.
+  kind: synthetic-example
+  locator: examples/clay-row.json

@@ -99,6 +99,7 @@ fn run_fixture(root: &Path, path: &Path, fixture: &EvalFixture) -> Result<Value>
             fixture.persona.as_deref().expect("validated persona"),
             fixture.job.as_deref().expect("validated job"),
             true,
+            false,
         )?,
         "fit" => {
             let prospect = parse_prospect(path, fixture)?;

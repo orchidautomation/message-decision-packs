@@ -16,13 +16,17 @@ command -v mdp
 mdp --json doctor --dir .
 ```
 
-2. If no pack exists, initialize:
+2. State the destination directory before writing. If Brandon did not specify one, use the current workspace root for durable work or an ignored scratch path for disposable demos. Do not silently create a pack in `$HOME`.
+
+3. If no pack exists, initialize:
 
 ```bash
 mdp --json init --template gtm --name "<pack name>" --dir .
 ```
 
-3. Gather or infer the first version:
+4. Build the source ledger before writing cards. Add public URLs, user-provided docs, or note identifiers to `.mdp/sources.yaml`; separate direct source claims from interpretation; preserve missing proof in `gaps.yaml`.
+
+5. Gather or infer the first version:
 
 - product/category in one sentence
 - positioning and product boundaries
@@ -41,9 +45,10 @@ mdp --json init --template gtm --name "<pack name>" --dir .
 - copy patterns by channel
 - open gaps that need source evidence
 
-4. Edit only the pack files:
+6. Edit only the pack files:
 
 - `.mdp/manifest.yaml`
+- `.mdp/sources.yaml`
 - `.mdp/cards/personas.yaml`
 - `.mdp/cards/positioning.yaml`
 - `.mdp/cards/fit-rules.yaml`
@@ -60,7 +65,13 @@ mdp --json init --template gtm --name "<pack name>" --dir .
 - `.mdp/cards/gaps.yaml`
 - `.mdp/evals/*.yaml`
 
-5. Validate:
+Work in slices instead of rewriting the whole pack at once:
+
+- First: positioning, fit-rules, claims, gaps, and the source ledger.
+- Second: personas, signals, pains, and motions.
+- Third: channel-policies, hooks, ctas, copy-patterns, objections, and evals.
+
+7. Validate after each meaningful slice:
 
 ```bash
 mdp --json validate --dir .
@@ -69,15 +80,23 @@ mdp --json gaps --dir .
 mdp --json eval --dir .
 ```
 
+Use route-derived eval scaffolds before hand-writing assertions:
+
+```bash
+mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>" --job "<channel> outbound copy"
+```
+
 ## Authoring Rules
 
 - Keep each card small and task-specific.
 - Put evidence URLs or source names on entries when available.
+- Put source inventory and interpretation notes in `.mdp/sources.yaml` before compressing research into cards.
 - Mark guesses as assumptions in the card body.
 - Prefer concrete disqualifiers over vague ICP language.
 - Do not describe the pack as a sender, CRM, sequencer, enrichment provider, AI SDR, or execution agent.
 - Do not invent customer names, pricing, integrations, or proof points.
+- Mark generated example prospects as synthetic fixtures and do not confuse them with real target accounts.
 
 ## Response
 
-End with files changed, validation result, strongest gaps, and the next command to produce a prospect brief.
+End with files changed, validation result, strongest gaps, whether any brief was saved with `--out`, and the next command to produce a prospect brief.

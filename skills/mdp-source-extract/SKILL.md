@@ -13,6 +13,7 @@ Extract pack-ready card entries from source material. Preserve evidence and do n
 - If using URLs, fetch current source content when facts may have changed.
 - Do not scrape private, gated, or authenticated sources. Use user-provided files, notes, or public/current URLs.
 - Keep source URLs, document names, or note identifiers in `evidence`.
+- Add each source to `.mdp/sources.yaml` before using it to write many card entries.
 - Separate direct source claims from interpretation.
 - Mark missing evidence as a gap instead of inventing proof.
 
@@ -38,11 +39,12 @@ Map source material into:
 ## Workflow
 
 1. Read the provided source material or fetch public/current URLs when appropriate.
-2. Extract candidate entries by card kind.
-3. Deduplicate overlapping claims.
-4. Add evidence per entry.
-5. Edit only relevant `.mdp/cards/*.yaml` files.
-6. Run validation.
+2. Update `.mdp/sources.yaml` with source id, kind, locator, freshness, confidence, direct claims, interpretations, and gaps.
+3. Extract candidate entries by card kind.
+4. Deduplicate overlapping claims.
+5. Add evidence per entry using source ids, URLs, or document names from the ledger.
+6. Edit only relevant `.mdp/cards/*.yaml` files.
+7. Run validation.
 
 ```bash
 mdp --json validate --dir .

@@ -16,5 +16,7 @@ prospect:
     source: example enrichment row
     state_as: hypothesis
     title: Building multi-agent GTM workflow
+  source_kind: synthetic-example
+  synthetic: true
   title: GTM Engineering Lead
   trigger: standardizing outbound context across agents and systems

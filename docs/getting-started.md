@@ -41,6 +41,8 @@ The starter creates:
 mdp-demo/
   .mdp/
     manifest.yaml
+    sources.yaml
+    briefs/
     cards/
     evals/
   examples/
@@ -51,10 +53,12 @@ mdp-demo/
 Ask which cards matter for a persona and job:
 
 ```bash
-mdp --json route --entries --dir ./mdp-demo --persona "PMM" --job "linkedin outbound copy"
+mdp --json --summary route --entries --eval-fixture --dir ./mdp-demo --persona "PMM" --job "linkedin outbound copy"
 ```
 
 Agents should load only the returned cards instead of reading the entire pack by default.
+
+Use the returned `eval_fixture` as a scaffold for route tests. Review it before committing so evals encode intended behavior, not accidental routing noise.
 
 ## Use A Prospect Row
 
@@ -69,10 +73,16 @@ If fit returns `disqualified` or `insufficient-context`, do not draft unless the
 When fit is acceptable, build the brief:
 
 ```bash
-mdp --json brief --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json --channel linkedin
+mdp --json --summary brief --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json --channel linkedin --out ./mdp-demo/.mdp/briefs/example-linkedin.json
 ```
 
-Draft from the brief's `required_load_order`, the prospect context, and the approved pack cards.
+Draft from the brief's `required_load_order`, the prospect context, and the approved pack cards. Use `--out` when the brief should exist as a file; without it, the CLI reports the artifact as stdout-only.
+
+The generated `examples/clay-row.json` is a synthetic fixture, not a real prospect. It includes `source_kind: synthetic-example` and `synthetic: true`.
+
+## Source Ledger
+
+Use `.mdp/sources.yaml` before bulk card writing. Add public URLs, user-provided docs, or note identifiers, then separate direct source claims from interpretations and gaps. Cards should cite source ids, URLs, or document names from the ledger when possible.
 
 ## Check Claims
 

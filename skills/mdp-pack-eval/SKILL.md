@@ -28,13 +28,13 @@ mdp --json eval --dir .
 3. Run routes:
 
 ```bash
-mdp --json route --entries --dir . --persona "<persona>" --job "<job>"
+mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>" --job "<job>"
 ```
 
 4. For prospect cases, run:
 
 ```bash
-mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel>
 ```
 
 ## Evaluate
@@ -52,6 +52,7 @@ For each case, check:
 - route does not exceed policy limits
 - eval fixtures pass
 - decision trace is understandable
+- generated eval fixture scaffolds are reviewed before committing so tests encode intended behavior, not accidental routing noise
 
 ## Fixes
 

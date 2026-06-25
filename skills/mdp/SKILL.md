@@ -37,6 +37,7 @@ mdp --json init --template gtm --name "Example Message Pack" --dir .
 When brainstorming the pack, help fill these files:
 
 - `.mdp/manifest.yaml`
+- `.mdp/sources.yaml`
 - `.mdp/cards/personas.yaml`
 - `.mdp/cards/positioning.yaml`
 - `.mdp/cards/fit-rules.yaml`
@@ -69,12 +70,20 @@ mdp --json schema prospect
 
 Minimum fields: `name`, `title`, `company`. Prefer adding `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, and structured `signals`.
 
+Generated starter rows include `source_kind: synthetic-example` and `synthetic: true`. Treat those as demo fixtures, not real prospects. For production work, use a real row in ignored scratch or an intentionally sanitized example.
+
 Run fit first and stop on `disqualified` or `insufficient-context` unless the user explicitly overrides.
 
 Then create a brief:
 
 ```bash
-mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel>
+```
+
+If the user expects a created artifact, save it explicitly:
+
+```bash
+mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
 Read only `data.required_load_order`. Draft only when `data.draft_status` is `ready`.
@@ -82,7 +91,7 @@ Read only `data.required_load_order`. Draft only when `data.draft_status` is `re
 ## Route Without A Prospect
 
 ```bash
-mdp --json route --entries --dir . --persona "VP Finance" --job "linkedin outbound copy"
+mdp --json --summary route --entries --eval-fixture --dir . --persona "VP Finance" --job "linkedin outbound copy"
 mdp --json emit-brief --dir . --persona "VP Finance" --job "linkedin outbound copy"
 ```
 
@@ -107,6 +116,8 @@ For pack QA:
 mdp --json gaps --dir .
 mdp --json eval --dir .
 ```
+
+Use `--summary` for compact status instead of piping JSON into one-off scripts.
 
 ## Demo Copy
 

@@ -143,6 +143,8 @@ The result is a local `.mdp/` folder:
 ```text
 .mdp/
   manifest.yaml
+  sources.yaml
+  briefs/
   cards/
   evals/
 examples/
@@ -159,6 +161,7 @@ Codex helps turn that into cards:
 
 ```text
 personas
+sources
 fit-rules
 signals
 pains
@@ -173,7 +176,7 @@ objections
 gaps
 ```
 
-The important behavior is that Codex should not smooth over missing proof. Missing evidence goes into `gaps`, weak source signals stay hypotheses, and unsupported claims stay out of `claims`.
+The important behavior is that Codex should not smooth over missing proof. Source facts and interpretations start in `sources.yaml`, missing evidence goes into `gaps`, weak source signals stay hypotheses, and unsupported claims stay out of `claims`.
 
 ### Step 5: The user routes a task
 
@@ -187,7 +190,7 @@ Codex normalizes the prospect into ignored scratch, checks fit, and builds a bri
 
 ```bash
 mdp --json fit --dir . --prospect <prospect.json>
-mdp --json brief --dir . --prospect <prospect.json> --channel linkedin
+mdp --json --summary brief --dir . --prospect <prospect.json> --channel linkedin --out .mdp/briefs/<brief-name>.json
 ```
 
 If the prospect is too thin, the result is not a draft:
