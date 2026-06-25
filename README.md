@@ -30,6 +30,8 @@ For the first-use walkthrough, see [Getting Started](docs/getting-started.md).
 
 Canonical example: [Profound GTM Vetting](examples/profound-gtm-vetting/README.md) shows a complete public-source pack for how a company like Profound can codify ICP, target personas, fit rules, hooks, CTAs, guardrails, source-backed claims, prospect brief generation, gaps, and evals before any downstream agent drafts or executes outreach.
 
+The Profound example also includes a runnable [Flue webhook agent scaffold](examples/profound-gtm-vetting/flue-webhook-agent/README.md) that accepts a webhook-style prospect row, writes ignored local scratch, runs `mdp fit` and `mdp brief --context`, and returns a draft contract or model draft without sending or updating external systems.
+
 Portable shell fallback:
 
 ```bash

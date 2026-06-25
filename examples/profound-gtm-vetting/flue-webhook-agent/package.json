@@ -1,0 +1,20 @@
+{
+  "name": "profound-mdp-flue-webhook-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "flue dev",
+    "draft:sample": "node scripts/run-sample.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flue/runtime": "1.0.0-beta.6",
+    "hono": "^4.8.12",
+    "valibot": "^1.1.0"
+  },
+  "devDependencies": {
+    "@flue/cli": "1.0.0-beta.6",
+    "@types/node": "^24.0.14",
+    "typescript": "^5.9.2"
+  }
+}
