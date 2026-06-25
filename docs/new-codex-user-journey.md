@@ -190,7 +190,43 @@ Codex normalizes the prospect into ignored scratch, checks fit, and builds a bri
 
 ```bash
 mdp --json fit --dir . --prospect <prospect.json>
-mdp --json --summary brief --dir . --prospect <prospect.json> --channel linkedin --out .mdp/briefs/<brief-name>.json
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel linkedin --out .mdp/briefs/<brief-name>.json
+```
+
+The prospect JSON supplies the live input for the decision tree. `trigger` is the row-level reason to write now; `persona`, `title`, `segment`, `signals`, and `background` provide the rest of the routing context.
+
+```text
+prospect.json
+  |
+  +-- persona or title -> persona route
+  +-- trigger ---------> why this message now
+  +-- segment ---------> market/account context
+  +-- signals ---------> supporting facts or hypotheses
+  |
+  v
+fit gate
+  |
+  +-- no fit or missing context -> no-draft
+  |
+  v
+persona
+  |
+  +-- pains for that persona
+  |     |
+  |     v
+  |   hooks for those pains
+  |     |
+  |     v
+  |   claims/proof allowed by sources
+  |     |
+  |     v
+  |   CTA and channel policy
+  |
+  v
+avoid rules
+  |
+  v
+bounded context.entries
 ```
 
 If the prospect is too thin, the result is not a draft:
@@ -205,18 +241,15 @@ That is a feature. It prevents Codex from writing polished copy from weak inputs
 
 ### Step 6: The user drafts only when fit passes
 
-When fit passes, Codex reads only `required_load_order` from the brief, not every card in the pack.
+When fit passes, Codex uses `context.entries` from `mdp brief --context`, not every card in the pack.
 
 That gives a smaller, more auditable context window:
 
 ```text
-Load personas.
-Load avoid-rules.
-Load fit-rules.
-Load claims.
-Load CTA policy.
-Load channel policy.
-Draft from those cards plus prospect context.
+Use matched persona, fit, claim, CTA, and channel entries.
+Keep avoid-rule guardrails in the bounded context.
+Open `full_card_required` paths only when the brief says to.
+Draft from those entries plus prospect context.
 ```
 
 The user-visible difference is that the answer should sound less generic and be easier to audit:

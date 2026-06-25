@@ -97,6 +97,8 @@ pub(crate) enum Commands {
         channel: String,
         #[arg(long)]
         job: Option<String>,
+        #[arg(long, help = "Include bounded entry-level context for drafting")]
+        context: bool,
         #[arg(long)]
         out: Option<PathBuf>,
     },

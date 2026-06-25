@@ -6,7 +6,7 @@ pub(crate) mod pack;
 pub(crate) mod routing;
 pub(crate) mod schemas;
 
-pub(crate) use briefs::{demo_copy, emit_brief, prospect_brief};
+pub(crate) use briefs::{demo_copy, emit_brief, prospect_brief_with_context};
 pub(crate) use evals::eval_pack;
 pub(crate) use health::{doctor, explain, gaps, validate_pack};
 pub(crate) use init::init_pack;

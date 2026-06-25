@@ -34,7 +34,7 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 4. For prospect cases, run:
 
 ```bash
-mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel>
 ```
 
 ## Evaluate
@@ -42,6 +42,7 @@ mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel
 For each case, check:
 
 - expected base cards loaded
+- expected bounded context entries returned for prospect briefs
 - fit-rules and positioning included when relevant
 - claims included for copy jobs that use proof
 - avoid-rules included for copy jobs

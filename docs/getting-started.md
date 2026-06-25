@@ -73,12 +73,35 @@ If fit returns `disqualified` or `insufficient-context`, do not draft unless the
 When fit is acceptable, build the brief:
 
 ```bash
-mdp --json --summary brief --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json --channel linkedin --out ./mdp-demo/.mdp/briefs/example-linkedin.json
+mdp --json --summary brief --context --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json --channel linkedin --out ./mdp-demo/.mdp/briefs/example-linkedin.json
 ```
 
-Draft from the brief's `required_load_order`, the prospect context, and the approved pack cards. Use `--out` when the brief should exist as a file; without it, the CLI reports the artifact as stdout-only.
+Draft from the brief's `context.entries`, the prospect context, and any paths in `context.full_card_required`. Use `--out` when the brief should exist as a file; without it, the CLI reports the artifact as stdout-only.
 
 The generated `examples/clay-row.json` is a synthetic fixture, not a real prospect. It includes `source_kind: synthetic-example` and `synthetic: true`.
+
+The prospect row is where the situational trigger comes from. `trigger` is optional, but when present it should describe why the outreach is timely. The pack then decides how to use that input:
+
+```text
+prospect row
+  |
+  +-- title/persona -> choose persona
+  +-- trigger ------> why now
+  +-- signals ------> evidence/hypotheses
+  |
+  v
+fit gate
+  |
+  +-- blocked -> no draft
+  |
+  v
+persona -> pains -> hooks -> claims/proof -> CTA/channel policy
+                              |
+                              v
+                         avoid rules
+```
+
+`brief --context` makes the selected path explicit in `context.entries`, so agents draft from the relevant persona, pain, hook, proof, CTA, channel, and avoid-rule entries instead of loading every card in the pack.
 
 ## Source Ledger
 

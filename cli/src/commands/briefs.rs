@@ -1,6 +1,6 @@
 use crate::models::Prospect;
 use crate::pack_io::{read_manifest, read_prospect};
-use crate::routing::select_cards;
+use crate::routing::{entry_context, select_cards};
 use crate::utils::infer_persona;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -40,8 +40,18 @@ pub(crate) fn prospect_brief(
     channel: &str,
     job: Option<&str>,
 ) -> Result<Value> {
+    prospect_brief_with_context(root, prospect_path, channel, job, false)
+}
+
+pub(crate) fn prospect_brief_with_context(
+    root: &Path,
+    prospect_path: &Path,
+    channel: &str,
+    job: Option<&str>,
+    include_context: bool,
+) -> Result<Value> {
     let prospect = read_prospect(prospect_path)?;
-    prospect_brief_from_value(root, prospect, channel, job)
+    prospect_brief_from_value_with_context(root, prospect, channel, job, include_context)
 }
 
 pub(crate) fn prospect_brief_from_value(
@@ -49,6 +59,16 @@ pub(crate) fn prospect_brief_from_value(
     prospect: Prospect,
     channel: &str,
     job: Option<&str>,
+) -> Result<Value> {
+    prospect_brief_from_value_with_context(root, prospect, channel, job, false)
+}
+
+pub(crate) fn prospect_brief_from_value_with_context(
+    root: &Path,
+    prospect: Prospect,
+    channel: &str,
+    job: Option<&str>,
+    include_context: bool,
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
@@ -64,7 +84,14 @@ pub(crate) fn prospect_brief_from_value(
         .clone()
         .unwrap_or_else(|| "prospect-json".to_string());
     let prospect_is_synthetic = prospect.synthetic;
-    let job_text = job.unwrap_or("write outbound message");
+    let default_job;
+    let job_text = match job {
+        Some(value) => value,
+        None => {
+            default_job = format!("write {channel} outbound message");
+            &default_job
+        }
+    };
     let route = select_cards(&manifest, Some(persona), Some(job_text));
     let load_order: Vec<String> = route
         .iter()
@@ -75,7 +102,7 @@ pub(crate) fn prospect_brief_from_value(
     } else {
         "no-draft"
     };
-    Ok(json!({
+    let mut payload = json!({
         "contract": "mdp.message-brief.v0",
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
         "channel": channel,
@@ -98,8 +125,19 @@ pub(crate) fn prospect_brief_from_value(
             {"step": "route_cards", "reason": "load only relevant message decision cards"},
             {"step": "generate_or_handoff", "reason": "use the brief as the agent/model input contract"}
         ],
-        "agent_instruction": if draft_status == "ready" { "Read only required_load_order card files, combine them with prospect, then draft copy. Use the routed CTA policy when present. Do not invent claims outside the loaded cards." } else { "Stop before drafting. Surface the fit status and missing context/disqualifiers, then ask for explicit user override before creating outbound copy." }
-    }))
+        "agent_instruction": if draft_status == "ready" {
+            if include_context {
+                "Use data.context.entries before opening card files. Open full_card_required paths only when present. Combine bounded context with prospect, use the routed CTA policy when present, and do not invent claims outside the loaded context."
+            } else {
+                "Read only required_load_order card files, combine them with prospect, then draft copy. Use the routed CTA policy when present. Do not invent claims outside the loaded cards."
+            }
+        } else { "Stop before drafting. Surface the fit status and missing context/disqualifiers, then ask for explicit user override before creating outbound copy." }
+    });
+    if include_context {
+        payload["context"] =
+            entry_context(root, &manifest, persona, job_text, draft_status == "ready")?;
+    }
+    Ok(payload)
 }
 
 pub(crate) fn demo_copy(root: &Path, prospect_path: &Path, channel: &str) -> Result<Value> {
@@ -222,6 +260,69 @@ mod tests {
                 .as_str()
                 .expect("guidance should be a string")
                 .contains("Synthetic example fixture")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn brief_context_includes_bounded_entry_bodies_and_guardrails() {
+        let root = temp_pack("brief-context-ready");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result = prospect_brief_with_context(&root, &prospect_path, "linkedin", None, true)
+            .expect("brief should succeed");
+        let entries = result["context"]["entries"]
+            .as_array()
+            .expect("context entries should be an array");
+        let titles: Vec<&str> = entries
+            .iter()
+            .filter_map(|entry| entry["title"].as_str())
+            .collect();
+
+        assert_eq!(result["context"]["contract"], "mdp.context.v0");
+        assert_eq!(result["context"]["status"], "ready");
+        assert!(titles.contains(&"Do not claim execution"));
+        assert!(titles.contains(&"No message without context"));
+        assert!(titles.contains(&"LinkedIn opener"));
+        assert!(!titles.contains(&"Email follow-up"));
+        assert!(!titles.contains(&"Call prep"));
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry["body"].as_str().is_some_and(|body| !body.is_empty()))
+        );
+        assert!(
+            result["context"]["summary"]["guardrail_entry_count"]
+                .as_u64()
+                .expect("guardrail count")
+                > 0
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn brief_context_blocks_entries_when_fit_is_insufficient() {
+        let root = temp_pack("brief-context-blocked");
+        let prospect_path = root.join("examples").join("thin.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{"name":"Taylor Lee","title":"GTM Engineering Lead","company":"ExampleCo"}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = prospect_brief_with_context(&root, &prospect_path, "linkedin", None, true)
+            .expect("brief should succeed");
+
+        assert_eq!(result["draft_status"], "no-draft");
+        assert_eq!(result["context"]["status"], "blocked");
+        assert_eq!(
+            result["context"]["entries"]
+                .as_array()
+                .expect("entries array")
+                .len(),
+            0
         );
 
         let _ = std::fs::remove_dir_all(root);

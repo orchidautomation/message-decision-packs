@@ -12,7 +12,7 @@ Evaluate copy against the pack, not against generic taste.
 1. Run or inspect the relevant brief:
 
 ```bash
-mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json brief --context --dir . --prospect <prospect.json> --channel <channel>
 ```
 
 or:
@@ -28,7 +28,7 @@ mdp --json check-claims --dir . --text "<draft copy>"
 ```
 
 3. Use `check-claims` for `valid`, `matched_claims`, `claim_gaps`, `guardrail_hits`, and `unsupported_claims`. It does not return card paths.
-4. Read card files only from the relevant brief `required_load_order` or route `load_order`.
+4. Read `context.entries` first for prospect briefs. Open card files only from `context.full_card_required`, a brief `required_load_order`, or route `load_order` when the bounded context is missing or insufficient.
 5. Compare the copy to:
 
 - persona fit
