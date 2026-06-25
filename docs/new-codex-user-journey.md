@@ -147,9 +147,11 @@ The result is a local `.mdp/` folder:
   briefs/
   cards/
   evals/
-examples/
+  examples/
   clay-row.json
 ```
+
+The starter fixture path is kept for compatibility. It represents a synthetic provider-neutral prospect/source row, not a Clay dependency.
 
 The user now has a local source of truth for messaging decisions. It can live in their repo, be reviewed in PRs, and be tested by CI.
 

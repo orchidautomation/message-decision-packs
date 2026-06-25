@@ -6,7 +6,7 @@ MDP does not send messages, enrich leads, update CRM, scrape the web, run sequen
 
 ## Mental Model
 
-A prospect row supplies row-level inputs. The pack supplies modular decision entries. The CLI and skills route the row through a decision tree and return only the context needed for the job.
+A provider-neutral prospect/source row supplies row-level inputs. The row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it has been normalized into MDP prospect JSON. The pack supplies modular decision entries. The CLI and skills route the row through a decision tree and return only the context needed for the job.
 
 ```text
 prospect JSON
@@ -77,7 +77,9 @@ The prospect schema requires only `name`, `title`, and `company`, but good routi
 }
 ```
 
-The row should preserve source and confidence when available. Weak signals should stay hypotheses. A LinkedIn URL, CSV row, Clay row, or Deepline row can inform routing, but it should not be treated as proof of a product need by itself.
+The row should preserve source and confidence when available. Weak signals should stay hypotheses. A LinkedIn URL, CSV row, CRM export, Clay row, Deepline row, spreadsheet row, or user-provided note can inform routing, but it should not be treated as proof of a product need by itself.
+
+If the input is account-only and does not include a person name and title, do not invent a contact just to satisfy the prospect schema. Ask for a person row or return an insufficient-context decision until MDP has a provider-neutral account input contract.
 
 ## Pack Entries
 
@@ -117,6 +119,8 @@ row fields
   v
 fit | insufficient-context | disqualified
 ```
+
+`mdp fit` is the fit evaluator. Skills should not create a parallel row-evaluation path; they should normalize row-like input, call `mdp fit`, and report that decision.
 
 For the starter example row, `mdp fit` returns `fit` because the row has an explicit persona, segment, trigger, sourced signals, and a matching fit entry:
 

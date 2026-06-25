@@ -14,7 +14,7 @@ tags:
 entries:
 - id: good-fit-agent-gtm
   title: 'Good fit: agent-assisted GTM'
-  body: Use when the account is building GTM workflows with agents, Clay/Deepline-style enrichment rows, Codex/Claude Code/OpenCode, or multiple systems that need consistent message context.
+  body: Use when the account is building GTM workflows with agents, provider-neutral source rows, Codex/Claude Code/OpenCode, or multiple systems that need consistent message context.
   applies_to:
   - GTM Engineering
   - PMM

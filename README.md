@@ -128,7 +128,7 @@ examples/
 
 ## Decision Flow
 
-MDP routes messaging context as a decision tree. The prospect JSON supplies the account/person context, including optional fields such as `persona`, `segment`, `signals`, `background`, and `trigger`. If `persona` is present, MDP uses it; otherwise the CLI infers a persona from the prospect title. The `trigger` is the situational reason to write now, not a card by itself.
+MDP routes messaging context as a decision tree. The prospect JSON is a provider-neutral normalized row: it can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow. It supplies the account/person context, including optional fields such as `persona`, `segment`, `signals`, `background`, `source_kind`, and `trigger`. If `persona` is present, MDP uses it; otherwise the CLI infers a persona from the prospect title. The `trigger` is the situational reason to write now, not a card by itself.
 
 ```text
 prospect.json
@@ -159,7 +159,9 @@ Agents should load the manifest first, use `.mdp/sources.yaml` to preserve sourc
 
 Packs can declare `persona_mappings` in `.mdp/manifest.yaml` so prospect titles map into pack-owned personas before fit and brief routing. Explicit `prospect.persona` still wins. Legacy title fallbacks are reported as low-confidence and do not unlock the fit gate by themselves.
 
-Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures and include `source_kind: synthetic-example` plus `synthetic: true`.
+Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures kept for compatibility and include `source_kind: synthetic-example` plus `synthetic: true`; the file name is not a requirement to use Clay.
+
+Do not add a separate row-evaluation skill or workflow for fit. Normalize the supplied row into MDP prospect JSON, run `mdp fit`, stop on `disqualified` or `insufficient-context`, and only then run `mdp brief --context` when a brief is needed. True account-only evaluation is a schema/product question for a future provider-neutral account input, not a reason to invent a contact or bypass the prospect fit gate.
 
 Extraction prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for classifying supplied person, company, account, domain, row, or research data into strict JSON candidate entries. They use `format: mdp.prompt.v0` and output `contract: mdp.prompt-output.v0` with `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance. They support full ICP extraction, but they do not browse, scrape, enrich, send, or update external systems. See [Prompt Extraction Contract](docs/prompt-extraction-contract.md) and `mdp --json schema prompt`.
 
@@ -176,7 +178,7 @@ Important skills include:
 - `mdp-message-angles`: codify hooks and angles
 - `mdp-cta-builder`: codify CTA and reply-path policy
 - `mdp-avoid-rules`: enforce category and claim boundaries
-- `mdp-prospect-brief`: turn enriched rows into briefs
+- `mdp-prospect-brief`: turn provider-neutral prospect/source rows into fit decisions and briefs
 - `mdp-copy-brief`: produce model-ready writing contracts
 - `mdp-copy-eval`: evaluate generated copy against the pack
 - `mdp-pack-review` and `mdp-pack-eval`: QA the pack and routing behavior

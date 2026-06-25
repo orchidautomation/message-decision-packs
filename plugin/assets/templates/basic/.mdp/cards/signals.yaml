@@ -1,7 +1,7 @@
 id: signals
 kind: signals
 title: Signals and triggers
-description: How to interpret enriched rows, LinkedIn context, source material, and account signals.
+description: How to interpret source rows, LinkedIn context, source material, and account signals.
 personas:
 - GTM Engineering
 - PMM
@@ -10,13 +10,14 @@ tags:
 - signal
 - trigger
 - source
-- clay
-- deepline
+- source-row
+- csv
+- crm
 - linkedin
 entries:
-- id: enriched-row-signal
-  title: Enriched row signal
-  body: Treat Clay, Deepline, CSV, or user-provided enrichment as input evidence. Preserve source and confidence when present, and state weak signals as hypotheses.
+- id: source-row-signal
+  title: Source row signal
+  body: Treat user-provided rows, CSVs, CRM exports, Clay, Deepline, or other supplied row-like inputs as evidence inputs. Preserve source and confidence when present, and state weak signals as hypotheses.
   applies_to:
   - GTM Engineering
   - PMM
