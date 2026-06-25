@@ -2,6 +2,8 @@
 
 Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions, routing contracts, fit rules, approved claims, avoid-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, or act as an AI SDR.
 
+If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a prospect row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, and bounded context for drafting.
+
 ## Install
 
 Install the CLI and supported agent bundles:
