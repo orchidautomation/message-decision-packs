@@ -2,16 +2,18 @@
 
 Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest, a source ledger, and routed card files for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, objections, gaps, and copy patterns.
 
-This repo contains both the local CLI and the Codex plugin:
+This repo contains both the local CLI and the Pluxx source plugin for supported agent hosts:
 
 ```text
 message-decision-packs/
   cli/      # Rust `mdp` CLI
-  plugin/   # Codex plugin with MDP skills, templates, and helper scripts
+  plugin/   # Pluxx source plugin with MDP skills, templates, and helper scripts
   docs/     # Project notes and distribution guidance
 ```
 
 MDP is a decision/context layer. It is not a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.
+
+For a deeper explanation of what this repo is, why it matters, and how to ask your agent to explain it accurately, read [What This Repo Is](docs/what-this-repo-is.md).
 
 ## Install
 
@@ -124,9 +126,9 @@ Agents should load the manifest first, use `.mdp/sources.yaml` to preserve sourc
 
 Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures and include `source_kind: synthetic-example` plus `synthetic: true`.
 
-## Codex Plugin
+## Agent Plugin
 
-The plugin lives in `plugin/` and includes skills for creating, reviewing, routing, and using MDPs.
+The plugin source lives in `plugin/` and includes skills for creating, reviewing, routing, and using MDPs. Pluxx packages that source for supported agent hosts, including Claude Code, Cursor, Codex, and OpenCode. See [pluxx.dev](https://pluxx.dev) and [orchidautomation/pluxx](https://github.com/orchidautomation/pluxx) for the Pluxx project.
 
 Important skills include:
 
