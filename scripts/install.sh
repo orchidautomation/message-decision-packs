@@ -118,6 +118,7 @@ fi
 if [ "$yes" = "1" ]; then
   export PLUXX_CODEX_ENABLE_PLUGIN_HOOKS="${PLUXX_CODEX_ENABLE_PLUGIN_HOOKS:-1}"
 fi
+export MDP_VERSION="$version"
 
 tmp_dir="$(mktemp -d)"
 cleanup() {

@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if command -v mdp >/dev/null 2>&1; then
-  echo "mdp CLI already available: $(command -v mdp)"
-  mdp --version || true
-  exit 0
-fi
-
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
@@ -26,6 +20,16 @@ need_cmd head
 REPO="${MDP_GITHUB_REPO:-orchidautomation/message-decision-packs}"
 VERSION="${MDP_VERSION:-latest}"
 INSTALL_DIR="${MDP_INSTALL_DIR:-$HOME/.local/bin}"
+
+if command -v mdp >/dev/null 2>&1; then
+  echo "mdp CLI already available: $(command -v mdp)"
+  mdp --version || true
+  if [[ "${MDP_SKIP_CLI_UPDATE:-0}" == "1" ]]; then
+    echo "Skipping mdp CLI refresh because MDP_SKIP_CLI_UPDATE=1."
+    exit 0
+  fi
+  echo "Refreshing mdp CLI from release assets."
+fi
 
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64)
