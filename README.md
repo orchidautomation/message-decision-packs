@@ -1,6 +1,6 @@
 # Message Decision Packs
 
-Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest, a source ledger, and routed card files for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, objections, gaps, and copy patterns.
+Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest, a source ledger, routed card files, and optional extraction prompt contracts for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, objections, gaps, and copy patterns.
 
 This repo contains both the local CLI and the Pluxx source plugin for supported agent hosts:
 
@@ -103,6 +103,7 @@ A pack is a local `.mdp/` folder:
   manifest.yaml
   sources.yaml
   briefs/
+  prompts/*.yaml
   cards/personas.yaml
   cards/positioning.yaml
   cards/fit-rules.yaml
@@ -127,6 +128,8 @@ Agents should load the manifest first, use `.mdp/sources.yaml` to preserve sourc
 Packs can declare `persona_mappings` in `.mdp/manifest.yaml` so prospect titles map into pack-owned personas before fit and brief routing. Explicit `prospect.persona` still wins. Legacy title fallbacks are reported as low-confidence and do not unlock the fit gate by themselves.
 
 Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures and include `source_kind: synthetic-example` plus `synthetic: true`.
+
+Extraction prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for classifying supplied person, company, account, domain, row, or research data into strict JSON candidate entries. They use `format: mdp.prompt.v0` and output `contract: mdp.prompt-output.v0` with `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance. They support full ICP extraction, but they do not browse, scrape, enrich, send, or update external systems. See [Prompt Extraction Contract](docs/prompt-extraction-contract.md) and `mdp --json schema prompt`.
 
 ## Agent Plugin
 

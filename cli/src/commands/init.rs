@@ -1,7 +1,8 @@
 use crate::constants::{DEFAULT_DIR, FORMAT_VERSION};
 use crate::pack_io::{write_json_file, write_yaml};
 use crate::starter::{
-    starter_cards, starter_evals, starter_manifest, starter_prospect, starter_source_ledger,
+    starter_cards, starter_evals, starter_manifest, starter_prompts, starter_prospect,
+    starter_source_ledger,
 };
 use crate::utils::slugify;
 use anyhow::{Context, Result, anyhow};
@@ -17,11 +18,14 @@ pub(crate) fn init_pack(root: &Path, name: &str, template: &str, force: bool) ->
     let cards_dir = pack_dir.join("cards");
     let briefs_dir = pack_dir.join("briefs");
     let evals_dir = pack_dir.join("evals");
+    let prompts_dir = pack_dir.join("prompts");
     let examples_dir = root.join("examples");
     fs::create_dir_all(&cards_dir).with_context(|| format!("creating {}", cards_dir.display()))?;
     fs::create_dir_all(&briefs_dir)
         .with_context(|| format!("creating {}", briefs_dir.display()))?;
     fs::create_dir_all(&evals_dir).with_context(|| format!("creating {}", evals_dir.display()))?;
+    fs::create_dir_all(&prompts_dir)
+        .with_context(|| format!("creating {}", prompts_dir.display()))?;
     fs::create_dir_all(&examples_dir)
         .with_context(|| format!("creating {}", examples_dir.display()))?;
     let slug = slugify(name);
@@ -38,6 +42,9 @@ pub(crate) fn init_pack(root: &Path, name: &str, template: &str, force: bool) ->
     }
     for (filename, eval) in starter_evals() {
         write_yaml(&evals_dir.join(filename), &eval, force)?;
+    }
+    for (filename, prompt) in starter_prompts() {
+        write_yaml(&prompts_dir.join(filename), &prompt, force)?;
     }
     let prospect_path = examples_dir.join("clay-row.json");
     if prospect_path.exists() && !force {
@@ -56,6 +63,7 @@ pub(crate) fn init_pack(root: &Path, name: &str, template: &str, force: bool) ->
         "source_ledger": source_ledger_path.display().to_string(),
         "cards_dir": cards_dir.display().to_string(),
         "evals_dir": evals_dir.display().to_string(),
+        "prompts_dir": prompts_dir.display().to_string(),
         "example_prospect": prospect_path.display().to_string(),
         "example_prospect_kind": "synthetic-example",
         "next_commands": [

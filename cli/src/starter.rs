@@ -1,4 +1,4 @@
-use crate::constants::FORMAT_VERSION;
+use crate::constants::{FORMAT_VERSION, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT};
 use crate::models::{Card, CardKind, CardRef, Entry, Manifest, PersonaMapping, Policy, Provenance};
 use serde_json::{Value, json};
 
@@ -351,6 +351,293 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
     ]
 }
 
+pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "icp-persona.yaml",
+            prompt_contract(
+                "extract-icp-persona",
+                "Extract ICP and persona candidates",
+                "Turns supplied person, company, and account context into reviewable persona and ICP entries.",
+                &["personas", "fit-rules"],
+                &["prompt", "icp", "persona", "fit"],
+                "Identify likely operator or buyer personas, account traits, and fit rules. If the input does not support a persona, company segment, or fit rule, emit a gap entry instead of guessing.",
+                json!([
+                    {
+                        "card_id": "personas",
+                        "kind": "personas",
+                        "entries": [
+                            prompt_entry(
+                                "persona-gtm-ops",
+                                "GTM operations",
+                                "Supplied person, company, or account data suggests a team responsible for keeping outbound context and messaging rules consistent across agent-assisted workflows.",
+                                &["PMM", "GTM Engineering"],
+                                &["company_data"],
+                                &[],
+                                "low",
+                                &["company_data: supplied company data"],
+                                "needs-review"
+                            )
+                        ]
+                    },
+                    {
+                        "card_id": "fit-rules",
+                        "kind": "fit-rules",
+                        "entries": [
+                            prompt_entry(
+                                "fit-agent-assisted-gtm",
+                                "Possible fit: agent-assisted GTM",
+                                "Use only if supplied sources show the company is building or standardizing agent-assisted GTM workflows.",
+                                &["PMM", "GTM Engineering"],
+                                &["company_data"],
+                                &["no source", "no GTM workflow signal"],
+                                "low",
+                                &["company_data: supplied company data"],
+                                "needs-review"
+                            )
+                        ]
+                    }
+                ]),
+                &[],
+            ),
+        ),
+        (
+            "pains.yaml",
+            prompt_contract(
+                "extract-pains",
+                "Extract pain candidates",
+                "Turns supplied person, company, and account context into reviewable pain and trigger entries.",
+                &["pains"],
+                &["prompt", "pain", "trigger"],
+                "Extract pains only when the source material supports the problem. Phrase weak inferences as hypotheses and preserve missing evidence as gaps.",
+                json!([
+                    {
+                        "card_id": "pains",
+                        "kind": "pains",
+                        "entries": [
+                            prompt_entry(
+                                "pain-context-drift",
+                                "Possible pain: context drift",
+                                "The supplied material suggests messaging decisions may be scattered across tools or agents, creating context drift risk.",
+                                &["PMM", "GTM Engineering"],
+                                &["company_data"],
+                                &[],
+                                "low",
+                                &["company_data: supplied company data"],
+                                "needs-review"
+                            )
+                        ]
+                    }
+                ]),
+                &[],
+            ),
+        ),
+        (
+            "hooks.yaml",
+            prompt_contract(
+                "extract-hooks",
+                "Extract hook candidates",
+                "Turns supplied person, company, and account context into sourced hook candidates for later message work.",
+                &["hooks"],
+                &["prompt", "hook", "angle"],
+                "Create hooks only as reusable message angles, not final copy. Each hook must tie back to a source-backed signal or be marked as a gap.",
+                json!([
+                    {
+                        "card_id": "hooks",
+                        "kind": "hooks",
+                        "entries": [
+                            prompt_entry(
+                                "hook-standardize-agent-context",
+                                "Standardize agent context",
+                                "Use when supplied context shows the company has multiple GTM tools or agents that need the same messaging truth.",
+                                &["PMM"],
+                                &["company_data"],
+                                &[],
+                                "low",
+                                &["company_data: supplied company data"],
+                                "needs-review"
+                            )
+                        ]
+                    }
+                ]),
+                &[],
+            ),
+        ),
+        (
+            "claims-proof.yaml",
+            prompt_contract(
+                "extract-claims-proof",
+                "Extract claims and proof candidates",
+                "Turns supplied person, company, account, and source material into reviewable claims without upgrading unsupported statements.",
+                &["claims"],
+                &["prompt", "claim", "proof", "evidence"],
+                "Extract only claims directly supported by supplied source material. Put unsupported or quantified claims in rejected_claims, not card_patches.",
+                json!([
+                    {
+                        "card_id": "claims",
+                        "kind": "claims",
+                        "entries": [
+                            prompt_entry(
+                                "claim-local-decision-context",
+                                "Local decision context",
+                                "Supplied source material describes the product as local decision context for GTM messaging.",
+                                &["PMM", "GTM Engineering"],
+                                &["source_notes"],
+                                &[],
+                                "medium",
+                                &["source_notes: supplied source notes"],
+                                "needs-review"
+                            )
+                        ]
+                    }
+                ]),
+                &[],
+            ),
+        ),
+        (
+            "fit-rules.yaml",
+            prompt_contract(
+                "extract-fit-rules",
+                "Extract fit and disqualification rules",
+                "Turns supplied person, company, and account context into reviewable fit, no-message, and disqualification entries.",
+                &["fit-rules"],
+                &["prompt", "fit", "icp", "disqualifier"],
+                "Separate positive fit signals from disqualifiers. If source material only supports a sending or scraping ask, mark it as out of scope for MDP.",
+                json!([
+                    {
+                        "card_id": "fit-rules",
+                        "kind": "fit-rules",
+                        "entries": [
+                            prompt_entry(
+                                "fit-needs-message-context",
+                                "Good fit: needs message context",
+                                "Use when supplied context shows the account needs shared messaging decisions across agents, workflows, or teams.",
+                                &["PMM", "GTM Engineering"],
+                                &["company_data"],
+                                &[],
+                                "low",
+                                &["company_data: supplied company data"],
+                                "needs-review"
+                            )
+                        ]
+                    }
+                ]),
+                &[],
+            ),
+        ),
+        (
+            "avoid-rules.yaml",
+            prompt_contract(
+                "extract-avoid-rules",
+                "Extract avoid rules",
+                "Turns supplied person, company, and account context into reviewable category, claim, and wording guardrails.",
+                &["avoid-rules"],
+                &["prompt", "avoid", "guardrail"],
+                "Extract avoid rules that prevent category confusion, unsafe claims, or unsupported copy. Do not turn product aspirations into approved claims.",
+                json!([
+                    {
+                        "card_id": "avoid-rules",
+                        "kind": "avoid-rules",
+                        "entries": [
+                            prompt_entry(
+                                "avoid-unsupported-outcomes",
+                                "Avoid unsupported outcomes",
+                                "Do not claim quantified outcomes, customer proof, integrations, or execution capabilities unless supplied sources directly support them.",
+                                &["PMM", "GTM Engineering"],
+                                &["source_notes"],
+                                &["guaranteed", "proven ROI", "auto-send"],
+                                "medium",
+                                &["source_notes: supplied source notes"],
+                                "needs-review"
+                            )
+                        ]
+                    }
+                ]),
+                &[],
+            ),
+        ),
+        (
+            "cta-channel-policy.yaml",
+            prompt_contract(
+                "extract-cta-channel-policy",
+                "Extract CTA and channel policy",
+                "Turns supplied person, company, and account context into reviewable CTA rules and channel boundaries.",
+                &["ctas", "channel-policies"],
+                &["prompt", "cta", "channel"],
+                "Extract CTA and channel rules for handoff only. Do not imply sending, sequencing, CRM updates, or external-system execution.",
+                json!([
+                    {
+                        "card_id": "ctas",
+                        "kind": "ctas",
+                        "entries": [
+                            prompt_entry(
+                                "cta-routing-question",
+                                "Routing question",
+                                "When fit is plausible but not proven, ask a routing question that identifies the owner or current workflow before asking for a meeting.",
+                                &["PMM"],
+                                &["company_data"],
+                                &[],
+                                "low",
+                                &["company_data: supplied company data"],
+                                "needs-review"
+                            )
+                        ]
+                    },
+                    {
+                        "card_id": "channel-policies",
+                        "kind": "channel-policies",
+                        "entries": [
+                            prompt_entry(
+                                "channel-agent-brief",
+                                "Agent brief",
+                                "Return fit status, loaded card candidates, supported claims, avoid rules, and gaps. Do not send or update external systems.",
+                                &["GTM Engineering", "PMM"],
+                                &["source_notes"],
+                                &[],
+                                "medium",
+                                &["source_notes: supplied source notes"],
+                                "needs-review"
+                            )
+                        ]
+                    }
+                ]),
+                &[],
+            ),
+        ),
+        (
+            "gaps.yaml",
+            prompt_contract(
+                "extract-gaps",
+                "Extract durable gaps",
+                "Turns missing or weak person, company, account, or source context into explicit gaps instead of invented pack entries.",
+                &["gaps"],
+                &["prompt", "gap", "unknown"],
+                "List missing data that blocks confident card entries. Prefer gaps over weak claims whenever source support is absent.",
+                json!([
+                    {
+                        "card_id": "gaps",
+                        "kind": "gaps",
+                        "entries": [
+                            prompt_entry(
+                                "gap-company-proof",
+                                "Missing company proof",
+                                "N/A",
+                                &["PMM", "GTM Engineering"],
+                                &[],
+                                &[],
+                                "unknown",
+                                &[],
+                                "gap"
+                            )
+                        ]
+                    }
+                ]),
+                &["Need concrete source material before creating approved claims."],
+            ),
+        ),
+    ]
+}
+
 pub(crate) fn starter_prospect(_template: &str) -> Value {
     json!({
         "name": "Alex Rivera",
@@ -451,4 +738,139 @@ fn entry_with_evidence(
         evidence: evidence.iter().map(|s| s.to_string()).collect(),
         avoid: vec![],
     }
+}
+
+fn prompt_contract(
+    id: &str,
+    title: &str,
+    description: &str,
+    target_card_kinds: &[&str],
+    tags: &[&str],
+    task_instruction: &str,
+    card_patches: Value,
+    gaps: &[&str],
+) -> Value {
+    json!({
+        "format": PROMPT_FORMAT_VERSION,
+        "id": id,
+        "title": title,
+        "description": description,
+        "target_card_kinds": target_card_kinds,
+        "tags": tags,
+        "inputs": [
+            {
+                "name": "company_domain",
+                "description": "Company domain when available.",
+                "required": false,
+                "default": "N/A",
+                "missing_behavior": "Use N/A and do not infer company identity from absent data."
+            },
+            {
+                "name": "company_data",
+                "description": "Arbitrary user-provided company, website, firmographic, product, hiring, funding, or research context.",
+                "required": false,
+                "default": "N/A",
+                "missing_behavior": "Use N/A, emit gaps, and avoid creating candidate entries from missing context."
+            },
+            {
+                "name": "person_data",
+                "description": "Optional user-provided person-level context such as title, role, profile notes, responsibilities, posts, or background.",
+                "required": false,
+                "default": "N/A",
+                "missing_behavior": "Use N/A and do not infer role, seniority, priorities, or persona from absent person data."
+            },
+            {
+                "name": "account_data",
+                "description": "Optional account-level context such as segment, lifecycle stage, trigger, current workflow, tech stack, or qualification notes.",
+                "required": false,
+                "default": "N/A",
+                "missing_behavior": "Use N/A and emit fit or gap entries instead of forcing ICP classification."
+            },
+            {
+                "name": "source_notes",
+                "description": "Optional source excerpts, URLs, file references, or user notes.",
+                "required": false,
+                "default": "N/A",
+                "missing_behavior": "Use empty evidence arrays unless a supplied source supports the entry."
+            },
+            {
+                "name": "existing_pack_context",
+                "description": "Optional existing MDP card context to prevent duplicate or conflicting entries.",
+                "required": false,
+                "default": "N/A",
+                "missing_behavior": "Do not assume previous pack decisions when this field is N/A."
+            }
+        ],
+        "instructions": [
+            "Use only supplied person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.",
+            task_instruction,
+            "Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.",
+            "Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid.",
+            "Each candidate entry must also include confidence, provenance, and status so a reviewer can decide whether it may become a card entry.",
+            "Use body N/A, empty arrays, confidence unknown, and status gap when data is missing or weak.",
+            "Put unsupported, quantified, customer, integration, compliance, or execution claims in rejected_claims instead of card_patches.",
+            "MDP is a local/offline decision and context layer, not a sender, CRM, sequencer, enrichment provider, scraper, BI tool, AI SDR, or generic automation system."
+        ],
+        "output_contract": {
+            "contract": PROMPT_OUTPUT_CONTRACT,
+            "strict_json_only": true,
+            "required_top_level": [
+                "contract",
+                "prompt_id",
+                "source_summary",
+                "card_patches",
+                "gaps",
+                "rejected_claims"
+            ],
+            "entry_defaults": {
+                "body": "N/A",
+                "applies_to": [],
+                "evidence": [],
+                "avoid": [],
+                "confidence": "unknown",
+                "provenance": []
+            },
+            "example": {
+                "contract": PROMPT_OUTPUT_CONTRACT,
+                "prompt_id": id,
+                "source_summary": {
+                    "company_domain": "N/A",
+                    "company_name": "N/A",
+                    "person_name": "N/A",
+                    "person_title": "N/A",
+                    "account_name": "N/A",
+                    "inputs_used": [],
+                    "confidence": "unknown"
+                },
+                "card_patches": card_patches,
+                "gaps": gaps,
+                "rejected_claims": []
+            }
+        }
+    })
+}
+
+fn prompt_entry(
+    id: &str,
+    title: &str,
+    body: &str,
+    applies_to: &[&str],
+    evidence: &[&str],
+    avoid: &[&str],
+    confidence: &str,
+    provenance: &[&str],
+    status: &str,
+) -> Value {
+    json!({
+        "id": id,
+        "title": title,
+        "body": body,
+        "applies_to": applies_to,
+        "evidence": evidence,
+        "avoid": avoid,
+        "confidence": confidence,
+        "provenance": provenance,
+        "status": status,
+        "notes": []
+    })
 }
