@@ -1,7 +1,7 @@
 use crate::models::Prospect;
 use crate::pack_io::{read_manifest, read_prospect};
 use crate::routing::{entry_context, select_cards};
-use crate::utils::infer_persona;
+use crate::utils::resolve_persona;
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -71,14 +71,12 @@ pub(crate) fn prospect_brief_from_value_with_context(
     include_context: bool,
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
+    let persona_resolution = resolve_persona(&manifest, &prospect);
     let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
     let fit_status = fit_result["status"]
         .as_str()
         .unwrap_or("insufficient-context");
-    let persona = prospect
-        .persona
-        .as_deref()
-        .unwrap_or_else(|| infer_persona(&prospect.title));
+    let persona = persona_resolution.persona.clone();
     let prospect_source_kind = prospect
         .source_kind
         .clone()
@@ -92,7 +90,7 @@ pub(crate) fn prospect_brief_from_value_with_context(
             &default_job
         }
     };
-    let route = select_cards(&manifest, Some(persona), Some(job_text));
+    let route = select_cards(&manifest, Some(&persona), Some(job_text));
     let load_order: Vec<String> = route
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
@@ -113,6 +111,7 @@ pub(crate) fn prospect_brief_from_value_with_context(
             "guidance": if prospect_is_synthetic { "Synthetic example fixture. Replace with a real or intentionally sanitized prospect row before production use." } else { "User-provided or sanitized prospect row." }
         },
         "persona": persona,
+        "persona_resolution": persona_resolution,
         "fit": fit_result,
         "draft_status": draft_status,
         "draft_decision": if draft_status == "ready" { "Proceed with routed brief using stated assumptions." } else { "Do not draft outbound copy unless the user explicitly overrides this fit gate." },
@@ -135,7 +134,7 @@ pub(crate) fn prospect_brief_from_value_with_context(
     });
     if include_context {
         payload["context"] =
-            entry_context(root, &manifest, persona, job_text, draft_status == "ready")?;
+            entry_context(root, &manifest, &persona, job_text, draft_status == "ready")?;
     }
     Ok(payload)
 }
@@ -323,6 +322,43 @@ mod tests {
                 .expect("entries array")
                 .len(),
             0
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn brief_routes_with_manifest_persona_mapping() {
+        let root = temp_pack("brief-persona-mapping");
+        let prospect_path = root.join("examples").join("demand-gen.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result =
+            prospect_brief(&root, &prospect_path, "linkedin", None).expect("brief should succeed");
+
+        assert_eq!(result["persona"], "PMM");
+        assert_eq!(result["draft_status"], "ready");
+        assert_eq!(
+            result["persona_resolution"]["source"],
+            "manifest.persona_mappings.title_keywords"
+        );
+        assert!(
+            result["required_load_order"]
+                .as_array()
+                .expect("load order should be an array")
+                .iter()
+                .any(|path| path == ".mdp/cards/ctas.yaml")
         );
 
         let _ = std::fs::remove_dir_all(root);

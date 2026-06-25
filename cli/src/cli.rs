@@ -144,6 +144,7 @@ pub(crate) enum Commands {
 pub(crate) enum SchemaTarget {
     Manifest,
     Card,
+    Prompt,
     Brief,
     Prospect,
     Eval,

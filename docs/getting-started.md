@@ -2,6 +2,8 @@
 
 Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions, routing contracts, fit rules, approved claims, avoid-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, or act as an AI SDR.
 
+If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a prospect row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, and bounded context for drafting.
+
 ## Install
 
 Install the CLI and supported agent bundles:
@@ -67,6 +69,8 @@ Keep private prospect data in ignored scratch unless you intentionally commit a 
 ```bash
 mdp --json fit --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json
 ```
+
+If a prospect row has no explicit `persona`, the CLI can use pack-owned `.mdp/manifest.yaml` `persona_mappings` to map title keywords to personas. Unmapped title fallbacks are reported as low-confidence and still require review.
 
 If fit returns `disqualified` or `insufficient-context`, do not draft unless the user explicitly overrides.
 

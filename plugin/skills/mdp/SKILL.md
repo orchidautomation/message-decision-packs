@@ -70,6 +70,8 @@ mdp --json schema prospect
 
 Minimum fields: `name`, `title`, `company`. Prefer adding `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, and structured `signals`.
 
+If `persona` is missing, the CLI can resolve it from pack-owned `.mdp/manifest.yaml` `persona_mappings.title_keywords`. Treat `persona_resolution.source: builtin.title_keywords` or `fallback` as review-needed; those weak fallbacks do not make a prospect fit-ready by themselves.
+
 Generated starter rows include `source_kind: synthetic-example` and `synthetic: true`. Treat those as demo fixtures, not real prospects. For production work, use a real row in ignored scratch or an intentionally sanitized example.
 
 Run fit first and stop on `disqualified` or `insufficient-context` unless the user explicitly overrides.

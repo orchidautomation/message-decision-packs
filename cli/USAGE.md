@@ -9,6 +9,7 @@ A pack is a local `.mdp/` folder:
   manifest.yaml
   sources.yaml
   briefs/
+  prompts/*.yaml
   cards/personas.yaml
   cards/positioning.yaml
   cards/fit-rules.yaml
@@ -42,11 +43,13 @@ mdp --json eval --dir /tmp/mdp-demo
 mdp --json copy --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin
 ```
 
-Use `brief` for production handoff. Add `--out <path>` when the brief should be saved; otherwise the artifact is stdout-only. Use `copy` only for local demos. Source inventory lives in `.mdp/sources.yaml`, CTA guidance lives in `cards/ctas.yaml`, channel rules live in `cards/channel-policies.yaml`, approved claims live in `cards/claims.yaml`, and durable unknowns live in `cards/gaps.yaml`.
+Use `brief` for production handoff. Add `--out <path>` when the brief should be saved; otherwise the artifact is stdout-only. Use `copy` only for local demos. Source inventory lives in `.mdp/sources.yaml`, reusable extraction prompts live in `.mdp/prompts/*.yaml`, CTA guidance lives in `cards/ctas.yaml`, channel rules live in `cards/channel-policies.yaml`, approved claims live in `cards/claims.yaml`, and durable unknowns live in `cards/gaps.yaml`.
 
 ## JSON contract
 
 All commands support `--json`; add `--summary` for compact status output. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.
+
+Use `mdp --json schema prompt` to inspect the reusable extraction prompt contract. Prompt outputs use `contract: mdp.prompt-output.v0` and must preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance. Prompt files classify supplied person, company, account, domain, row, or research data into candidate MDP entries. They are local decision contracts, not browsing, scraping, enrichment, sending, or CRM-update workflows.
 
 Success:
 
@@ -63,7 +66,7 @@ Error:
 ## Agent handoff
 
 1. Run `mdp --json doctor` and `mdp --json validate`.
-2. Convert the Clay, Deepline, CSV, or enrichment row into `mdp schema prospect`.
+2. Convert the Clay, Deepline, CSV, or enrichment row into `mdp schema prospect`. Use explicit `persona` when known; otherwise `.mdp/manifest.yaml` can define `persona_mappings` from title keywords to pack personas.
 3. Run `mdp --json fit --prospect <row.json>` and stop if it returns `disqualified` or `insufficient-context`.
 4. Run `mdp --json --summary brief --context --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
 5. Stop if `data.draft_status` is `no-draft`.

@@ -402,6 +402,7 @@ mod tests {
             target_personas: vec![],
             operator_roles: vec![],
             supported_channels: vec![],
+            persona_mappings: vec![],
             cards: vec![
                 CardRef {
                     id: "personas".to_string(),
