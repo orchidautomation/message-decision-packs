@@ -1,6 +1,8 @@
 use crate::constants::{DEFAULT_DIR, FORMAT_VERSION};
 use crate::pack_io::{write_json_file, write_yaml};
-use crate::starter::{starter_cards, starter_evals, starter_manifest, starter_prospect};
+use crate::starter::{
+    starter_cards, starter_evals, starter_manifest, starter_prospect, starter_source_ledger,
+};
 use crate::utils::slugify;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
@@ -29,6 +31,8 @@ pub(crate) fn init_pack(root: &Path, name: &str, template: &str, force: bool) ->
         &starter_manifest(name, &slug, template),
         force,
     )?;
+    let source_ledger_path = pack_dir.join("sources.yaml");
+    write_yaml(&source_ledger_path, &starter_source_ledger(template), force)?;
     for (filename, card) in starter_cards(template) {
         write_yaml(&cards_dir.join(filename), &card, force)?;
     }
@@ -49,14 +53,16 @@ pub(crate) fn init_pack(root: &Path, name: &str, template: &str, force: bool) ->
         "root": root.display().to_string(),
         "pack_dir": pack_dir.display().to_string(),
         "manifest": manifest_path.display().to_string(),
+        "source_ledger": source_ledger_path.display().to_string(),
         "cards_dir": cards_dir.display().to_string(),
         "evals_dir": evals_dir.display().to_string(),
         "example_prospect": prospect_path.display().to_string(),
+        "example_prospect_kind": "synthetic-example",
         "next_commands": [
             format!("mdp --json validate --dir {}", root.display()),
             format!("mdp --json route --entries --dir {} --persona \\\"{}\\\" --job \\\"linkedin outbound copy\\\"", root.display(), example_persona),
             format!("mdp --json fit --dir {} --prospect {}", root.display(), prospect_path.display()),
-            format!("mdp --json brief --dir {} --prospect {} --channel linkedin", root.display(), prospect_path.display()),
+            format!("mdp --json --summary brief --dir {} --prospect {} --channel linkedin", root.display(), prospect_path.display()),
             format!("mdp --json eval --dir {}", root.display())
         ]
     }))
@@ -116,5 +122,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn init_writes_source_ledger_and_marks_example_prospect_synthetic() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-source-ledger-{nonce}"));
+
+        let result = init_pack(&root, "Source Ledger Pack", "gtm", true)
+            .expect("starter pack should initialize");
+
+        let source_ledger_path = root.join(".mdp").join("sources.yaml");
+        let source_ledger =
+            std::fs::read_to_string(&source_ledger_path).expect("source ledger should be readable");
+        assert!(source_ledger.contains("mdp.sources.v0"));
+        assert!(source_ledger.contains("synthetic-example"));
+        assert_eq!(
+            result["source_ledger"],
+            source_ledger_path.display().to_string()
+        );
+        assert_eq!(result["example_prospect_kind"], "synthetic-example");
+
+        let prospect_raw = std::fs::read_to_string(root.join("examples").join("clay-row.json"))
+            .expect("example prospect should be readable");
+        let prospect: serde_json::Value =
+            serde_json::from_str(&prospect_raw).expect("example prospect should parse");
+        assert_eq!(prospect["source_kind"], "synthetic-example");
+        assert_eq!(prospect["synthetic"], true);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

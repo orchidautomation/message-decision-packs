@@ -99,6 +99,10 @@ pub(crate) struct Prospect {
     pub(crate) title: String,
     pub(crate) company: String,
     #[serde(default)]
+    pub(crate) source_kind: Option<String>,
+    #[serde(default)]
+    pub(crate) synthetic: bool,
+    #[serde(default)]
     pub(crate) linkedin_url: Option<String>,
     #[serde(default)]
     pub(crate) company_url: Option<String>,

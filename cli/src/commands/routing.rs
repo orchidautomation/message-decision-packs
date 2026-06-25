@@ -1,12 +1,19 @@
 use crate::pack_io::{read_card_by_id, read_manifest, read_prospect};
 use crate::routing::{entry_route, select_cards};
 use crate::utils::prospect_haystack;
+use crate::utils::slugify;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 
-pub(crate) fn route(root: &Path, persona: &str, job: &str, include_entries: bool) -> Result<Value> {
+pub(crate) fn route(
+    root: &Path,
+    persona: &str,
+    job: &str,
+    include_entries: bool,
+    include_eval_fixture: bool,
+) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let selected = select_cards(&manifest, Some(persona), Some(job));
     let load_order: Vec<String> = selected
@@ -25,10 +32,39 @@ pub(crate) fn route(root: &Path, persona: &str, job: &str, include_entries: bool
         ],
         "load_order": load_order
     });
-    if include_entries {
-        payload["entry_route"] = json!(entry_route(root, &manifest, persona, job)?);
+    if include_entries || include_eval_fixture {
+        let routed_entries = entry_route(root, &manifest, persona, job)?;
+        if include_eval_fixture {
+            payload["eval_fixture"] = eval_fixture(persona, job, &payload, &routed_entries);
+        }
+        if include_entries {
+            payload["entry_route"] = json!(routed_entries);
+        }
     }
     Ok(payload)
+}
+
+fn eval_fixture(persona: &str, job: &str, route_output: &Value, routed_entries: &Value) -> Value {
+    let expected_titles: Vec<Value> = routed_entries["matches"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry["status"].as_str() == Some("required"))
+        .filter_map(|entry| entry["title"].as_str().map(|title| json!(title)))
+        .take(8)
+        .collect();
+    json!({
+        "id": slugify(&format!("{persona}-{job}")),
+        "command": "route",
+        "persona": persona,
+        "job": job,
+        "expect_load_order_contains": route_output["load_order"],
+        "expect_entry_titles_contains": expected_titles,
+        "notes": [
+            "Generated from current route output. Review before committing so evals encode desired behavior, not accidental noise.",
+            "Add expect_load_order_excludes or expect_entry_titles_excludes for known wrong-route regressions."
+        ]
+    })
 }
 
 pub(crate) fn fit(root: &Path, prospect_path: &Path) -> Result<Value> {
@@ -346,8 +382,14 @@ mod tests {
     fn route_preserves_skill_load_order_contract() {
         let root = temp_pack("route-contract");
 
-        let result = route(&root, "GTM Engineering", "linkedin outbound copy", false)
-            .expect("route should succeed");
+        let result = route(
+            &root,
+            "GTM Engineering",
+            "linkedin outbound copy",
+            false,
+            false,
+        )
+        .expect("route should succeed");
         let load_order: Vec<&str> = result["load_order"]
             .as_array()
             .expect("load_order should be an array")
@@ -373,8 +415,8 @@ mod tests {
     fn linkedin_entry_route_excludes_email_and_call_prep_entries() {
         let root = temp_pack("linkedin-entry-route");
 
-        let result =
-            route(&root, "PMM", "linkedin outbound copy", true).expect("route should succeed");
+        let result = route(&root, "PMM", "linkedin outbound copy", true, false)
+            .expect("route should succeed");
         let titles: Vec<&str> = result["entry_route"]["matches"]
             .as_array()
             .expect("entry matches array")
@@ -393,7 +435,8 @@ mod tests {
     fn unknown_task_does_not_match_ask_substring() {
         let root = temp_pack("route-token-boundary");
 
-        let result = route(&root, "Unknown", "task hygiene", false).expect("route should succeed");
+        let result =
+            route(&root, "Unknown", "task hygiene", false, false).expect("route should succeed");
         let ids: Vec<&str> = result["route"]
             .as_array()
             .expect("route array")
@@ -416,6 +459,33 @@ mod tests {
         assert_eq!(result["contract"], "mdp.fit.v0");
         assert_eq!(result["status"], "fit");
         assert!(result["matches"].as_array().expect("matches array").len() > 0);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn route_can_emit_eval_fixture_scaffold_from_actual_matches() {
+        let root = temp_pack("route-eval-fixture");
+
+        let result = route(&root, "PMM", "linkedin outbound copy", false, true)
+            .expect("route should succeed");
+
+        assert_eq!(result["eval_fixture"]["command"], "route");
+        assert_eq!(result["eval_fixture"]["persona"], "PMM");
+        assert_eq!(result["eval_fixture"]["job"], "linkedin outbound copy");
+        assert!(
+            result["eval_fixture"]["expect_load_order_contains"]
+                .as_array()
+                .expect("expected load order should be an array")
+                .iter()
+                .any(|path| path == ".mdp/cards/ctas.yaml")
+        );
+        assert!(
+            result["eval_fixture"]["notes"][0]
+                .as_str()
+                .expect("fixture note should be a string")
+                .contains("Review before committing")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

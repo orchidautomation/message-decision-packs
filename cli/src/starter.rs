@@ -113,6 +113,52 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
     ]
 }
 
+pub(crate) fn starter_source_ledger(_template: &str) -> Value {
+    json!({
+        "format": "mdp.sources.v0",
+        "purpose": "Source ledger for evidence used in cards. Keep direct source claims separate from interpretation, and preserve gaps instead of inventing proof.",
+        "rules": [
+            "Add public URLs, user-provided docs, or note identifiers before bulk card writing.",
+            "Use direct_claims for facts the source states, and interpretations for how the pack may use them.",
+            "Mark confidence and freshness when known.",
+            "Do not include private customer data, raw call notes, local browser data, or sensitive local files."
+        ],
+        "sources": [
+            {
+                "id": "mdp-readme",
+                "kind": "repo-doc",
+                "locator": "README.md",
+                "freshness": "repo-current",
+                "confidence": "high",
+                "direct_claims": [
+                    "MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.",
+                    "MDP stores decision context and routing contracts; it is not execution infrastructure."
+                ],
+                "interpretations": [
+                    "Use this source for category boundaries, not for third-party customer proof."
+                ],
+                "gaps": []
+            },
+            {
+                "id": "example-prospect",
+                "kind": "synthetic-example",
+                "locator": "examples/clay-row.json",
+                "freshness": "generated",
+                "confidence": "demo-only",
+                "direct_claims": [
+                    "This row is fictional starter data for exercising fit, route, and brief commands."
+                ],
+                "interpretations": [
+                    "Do not treat the example prospect as a real account, customer, or source of market evidence."
+                ],
+                "gaps": [
+                    "Replace with a real or intentionally sanitized prospect row before production copy work."
+                ]
+            }
+        ]
+    })
+}
+
 pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
     vec![
         (
@@ -305,6 +351,8 @@ pub(crate) fn starter_prospect(_template: &str) -> Value {
         "name": "Alex Rivera",
         "title": "GTM Engineering Lead",
         "company": "ExampleCo",
+        "source_kind": "synthetic-example",
+        "synthetic": true,
         "linkedin_url": "https://www.linkedin.com/in/example-mdp-demo",
         "company_url": "https://example.com",
         "background": "building repeatable agent-assisted GTM workflows across Clay, Codex, and Claude Code",

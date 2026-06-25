@@ -20,16 +20,22 @@ Hard-stop on `disqualified` or `insufficient-context` unless the user explicitly
 2. With a prospect row, build the brief:
 
 ```bash
-mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel>
+```
+
+If the user expects a created file, save it explicitly:
+
+```bash
+mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
 3. Without a prospect row, build a persona/job brief:
 
 ```bash
-mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
+mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-4. Read only the returned `required_load_order` card files. If `draft_status` is `no-draft`, surface the fit decision and do not draft.
+4. Read only the returned `required_load_order` card files. If `draft_status` is `no-draft`, surface the fit decision and do not draft. If the brief says the prospect is synthetic, treat it as a demo fixture.
 5. Build a copy brief with:
 
 - audience/persona

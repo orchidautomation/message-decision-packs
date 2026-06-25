@@ -146,14 +146,10 @@ pub(crate) fn entry_route(
                 .iter()
                 .any(|candidate| candidate.eq_ignore_ascii_case(persona));
             let entry_tokens = tokens(&entry_text);
-            let card_tag_match = card
-                .tags
-                .iter()
-                .any(|tag| token_overlap(&job_tokens, &tokens(tag)));
             let entry_job_match = token_overlap(&job_tokens, &entry_tokens);
-            let job_match = card_tag_match || entry_job_match;
+            let job_match = entry_job_match;
             let persona_match = entry_text.contains(&persona_lower);
-            if matches!(card.kind, CardKind::ChannelPolicies) && !entry_job_match {
+            if matches!(card.kind, CardKind::ChannelPolicies) && !job_match {
                 continue;
             }
             if applies || job_match || persona_match {
@@ -164,7 +160,7 @@ pub(crate) fn entry_route(
                     "entry_id": entry.id,
                     "title": entry.title,
                     "status": if matches!(card.kind, CardKind::AvoidRules | CardKind::FitRules | CardKind::Claims | CardKind::Positioning | CardKind::ChannelPolicies) { "required" } else { "supporting" },
-                    "reason": if applies { "persona applies" } else if job_match { "job/tag match" } else { "persona text match" },
+                    "reason": if applies { "persona applies" } else if job_match { "entry job match" } else { "persona text match" },
                     "evidence_count": entry.evidence.len(),
                     "avoid_count": entry.avoid.len()
                 }));

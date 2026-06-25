@@ -8,6 +8,12 @@ use std::path::PathBuf;
 pub(crate) struct Cli {
     #[arg(long, global = true, help = "Emit stable machine-readable JSON")]
     pub(crate) json: bool,
+    #[arg(
+        long,
+        global = true,
+        help = "Emit a concise status summary instead of the full command payload"
+    )]
+    pub(crate) summary: bool,
     #[command(subcommand)]
     pub(crate) command: Commands,
 }
@@ -52,6 +58,8 @@ pub(crate) enum Commands {
         job: String,
         #[arg(long, help = "Include entry-level route matches and gaps")]
         entries: bool,
+        #[arg(long, help = "Include an eval fixture scaffold based on this route")]
+        eval_fixture: bool,
     },
     #[command(about = "Evaluate prospect/account fit against pack fit rules")]
     Fit {

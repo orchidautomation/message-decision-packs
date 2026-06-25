@@ -59,6 +59,11 @@ pub(crate) fn prospect_brief_from_value(
         .persona
         .as_deref()
         .unwrap_or_else(|| infer_persona(&prospect.title));
+    let prospect_source_kind = prospect
+        .source_kind
+        .clone()
+        .unwrap_or_else(|| "prospect-json".to_string());
+    let prospect_is_synthetic = prospect.synthetic;
     let job_text = job.unwrap_or("write outbound message");
     let route = select_cards(&manifest, Some(persona), Some(job_text));
     let load_order: Vec<String> = route
@@ -75,6 +80,11 @@ pub(crate) fn prospect_brief_from_value(
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
         "channel": channel,
         "prospect": prospect,
+        "prospect_source": {
+            "kind": prospect_source_kind,
+            "synthetic": prospect_is_synthetic,
+            "guidance": if prospect_is_synthetic { "Synthetic example fixture. Replace with a real or intentionally sanitized prospect row before production use." } else { "User-provided or sanitized prospect row." }
+        },
         "persona": persona,
         "fit": fit_result,
         "draft_status": draft_status,
@@ -193,6 +203,26 @@ mod tests {
 
         assert_eq!(result["fit"]["status"], "insufficient-context");
         assert_eq!(result["draft_status"], "no-draft");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn brief_marks_starter_prospect_as_synthetic_example() {
+        let root = temp_pack("brief-synthetic");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result =
+            prospect_brief(&root, &prospect_path, "linkedin", None).expect("brief should succeed");
+
+        assert_eq!(result["prospect_source"]["kind"], "synthetic-example");
+        assert_eq!(result["prospect_source"]["synthetic"], true);
+        assert!(
+            result["prospect_source"]["guidance"]
+                .as_str()
+                .expect("guidance should be a string")
+                .contains("Synthetic example fixture")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
