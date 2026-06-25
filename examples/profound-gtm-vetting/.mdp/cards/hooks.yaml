@@ -1,0 +1,58 @@
+id: hooks
+kind: hooks
+title: Message hooks
+description: Reusable angles for explaining why a target account belongs in Profound's market slice.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+tags:
+- hook
+- copy
+- message
+entries:
+- id: answer-engine-visibility-hook
+  title: Answer-engine visibility hook
+  body: "If the target owns search or organic growth, frame the hook around knowing where the brand appears, which prompts matter, and where competitors are winning in AI answers."
+  applies_to:
+  - AEO Lead
+  evidence:
+  - profound-answer-engine-insights
+  - profound-aeo-teams
+  avoid: []
+- id: content-gap-to-brief-hook
+  title: Content gap to brief hook
+  body: "If the target owns content, frame the hook around turning prompt volume, citations, and top-cited pages into briefs, refreshes, and new content workflows."
+  applies_to:
+  - Content Lead
+  evidence:
+  - profound-content-teams
+  - profound-agents
+  avoid: []
+- id: brand-narrative-hook
+  title: Brand narrative hook
+  body: "If the target owns PR or brand, frame the hook around how AI systems describe the brand, which domains shape that answer, and where earned media can influence the narrative."
+  applies_to:
+  - "PR & Brand Lead"
+  evidence:
+  - profound-pr-teams
+  - profound-answer-engine-insights
+  avoid: []
+- id: ai-crawler-attribution-hook
+  title: AI crawler attribution hook
+  body: "If the target has analytics or infrastructure signals, frame the hook around seeing which AI crawlers access the site and which pages connect to AI-driven traffic."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  evidence:
+  - profound-agent-analytics
+  avoid: []
+- id: agency-scale-hook
+  title: Agency scale hook
+  body: "If the target is an agency or multi-brand team, frame the hook around repeatable prompt, visibility, citation, and reporting workflows across clients or brands."
+  applies_to:
+  - Agency Partner
+  evidence:
+  - profound-pricing
+  avoid: []

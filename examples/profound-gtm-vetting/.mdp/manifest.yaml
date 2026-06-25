@@ -1,0 +1,253 @@
+format: mdp.v0
+id: profound-gtm-vetting-example
+name: Profound GTM Vetting Example
+version: 0.1.0
+description: A canonical seller-side example pack that models how Profound can codify the market slice, target buyer personas, fit rules, hooks, CTA policy, evidence, gaps, and brief routing for AI search visibility GTM work.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+target_personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+operator_roles:
+- Profound GTM
+- Profound Product Marketing
+- Profound Marketing Engineering
+supported_channels:
+- linkedin
+- email
+- call-prep
+- agent-brief
+persona_mappings:
+- persona: AEO Lead
+  title_keywords:
+  - seo
+  - aeo
+  - organic growth
+  - search
+  - growth
+  - demand generation
+- persona: Content Lead
+  title_keywords:
+  - content
+  - editorial
+  - lifecycle
+  - demand
+  - organic
+- persona: "PR & Brand Lead"
+  title_keywords:
+  - pr
+  - communications
+  - comms
+  - brand
+  - reputation
+- persona: Agency Partner
+  title_keywords:
+  - agency
+  - partner
+  - client strategy
+  - account director
+  - consultant
+cards:
+- id: personas
+  path: cards/personas.yaml
+  kind: personas
+  description: Target buyer personas Profound wants to reach and what each buyer needs to decide.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - persona
+- id: positioning
+  path: cards/positioning.yaml
+  kind: positioning
+  description: Profound category, market slice, boundaries, and MDP role in the GTM workflow.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - positioning
+  - category
+  - boundary
+- id: fit-rules
+  path: cards/fit-rules.yaml
+  kind: fit-rules
+  description: ICP, fit, disqualification, and no-message rules for Profound target-account vetting.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - fit
+  - icp
+  - disqualifier
+  - no-message
+- id: signals
+  path: cards/signals.yaml
+  kind: signals
+  description: Observable account and persona signals that make Profound relevant.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - signal
+  - trigger
+  - source
+  - linkedin
+- id: pains
+  path: cards/pains.yaml
+  kind: pains
+  description: Buyer pains, triggers, stakes, and why the account may need Profound.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - pain
+  - trigger
+- id: claims
+  path: cards/claims.yaml
+  kind: claims
+  description: Approved Profound claims and proof requirements an agent may use.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - claim
+  - proof
+  - evidence
+- id: motions
+  path: cards/motions.yaml
+  kind: motions
+  description: Approved Profound GTM motions and handoff boundaries.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - motion
+  - workflow
+- id: channel-policies
+  path: cards/channel-policies.yaml
+  kind: channel-policies
+  description: Channel-specific policy for LinkedIn, email, call prep, and agent briefs.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - channel
+  - linkedin
+  - email
+  - call
+  - prep
+  - agent
+  - brief
+- id: hooks
+  path: cards/hooks.yaml
+  kind: hooks
+  description: Reusable Profound message hooks after fit and evidence checks.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - hook
+  - copy
+  - message
+- id: ctas
+  path: cards/ctas.yaml
+  kind: ctas
+  description: CTA rules, reply paths, and ask boundaries for Profound outreach.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - cta
+  - ask
+  - reply
+  - copy
+  - outbound
+  - message
+- id: avoid-rules
+  path: cards/avoid-rules.yaml
+  kind: avoid-rules
+  description: Claims, category drift, execution boundaries, and tone that agents must avoid.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - guardrail
+  - avoid
+- id: copy-patterns
+  path: cards/copy-patterns.yaml
+  kind: copy-patterns
+  description: Reusable message and brief structures for Profound GTM outputs.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - copy
+  - brief
+  - outbound
+  - message
+- id: objections
+  path: cards/objections.yaml
+  kind: objections
+  description: Expected objections, alternatives, and approved response logic.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - objection
+  - alternative
+  - response
+- id: gaps
+  path: cards/gaps.yaml
+  kind: gaps
+  description: Known gaps and open questions agents must surface instead of filling in.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - gap
+  - unknown
+  - open-question
+policy:
+  progressive_disclosure: true
+  load_manifest_first: true
+  max_cards_per_route: 14
+  json_contract: mdp.cli.v0
+  no_auth_required: true
+provenance:
+  owner: local-example
+  created_by: codex
+  notes:
+  - Public-source canonical example for Profound seller-side GTM vetting.

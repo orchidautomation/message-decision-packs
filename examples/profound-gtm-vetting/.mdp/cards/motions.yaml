@@ -1,0 +1,60 @@
+id: motions
+kind: motions
+title: Approved motions
+description: Profound-side workflows this pack can support as local GTM decision context.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+tags:
+- motion
+- workflow
+entries:
+- id: target-account-vetting
+  title: Target account vetting
+  body: "Use the pack to decide whether a supplied company/person row matches Profound's target slice before any outbound copy is written."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - user-mdp-hypothesis
+  - mdp-readme
+  avoid: []
+- id: outbound-brief
+  title: Outbound brief
+  body: "Use the pack to generate a bounded brief with persona, fit status, public/supplied signals, allowed claims, CTA policy, avoid-rules, and gaps."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: call-prep
+  title: Call prep
+  body: "Use the pack to prepare a source-backed account summary, likely buyer pain, approved proof, disqualifiers, and discovery questions."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - profound-homepage
+  - mdp-readme
+  avoid: []
+- id: source-to-card-maintenance
+  title: Source to card maintenance
+  body: "Use the pack to turn new public product pages, customer stories, or strategy notes into auditable cards rather than one large prompt."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - user-mdp-hypothesis
+  - mdp-readme
+  avoid: []

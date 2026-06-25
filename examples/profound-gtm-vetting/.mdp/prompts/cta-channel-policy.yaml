@@ -1,0 +1,115 @@
+description: Turns supplied person, company, and account context into reviewable CTA rules and channel boundaries.
+format: mdp.prompt.v0
+id: extract-cta-channel-policy
+inputs:
+- default: N/A
+  description: Company domain when available.
+  missing_behavior: Use N/A and do not infer company identity from absent data.
+  name: company_domain
+  required: false
+- default: N/A
+  description: Arbitrary user-provided company, website, firmographic, product, hiring, funding, or research context.
+  missing_behavior: Use N/A, emit gaps, and avoid creating candidate entries from missing context.
+  name: company_data
+  required: false
+- default: N/A
+  description: Optional user-provided person-level context such as title, role, profile notes, responsibilities, posts, or background.
+  missing_behavior: Use N/A and do not infer role, seniority, priorities, or persona from absent person data.
+  name: person_data
+  required: false
+- default: N/A
+  description: Optional account-level context such as segment, lifecycle stage, trigger, current workflow, tech stack, or qualification notes.
+  missing_behavior: Use N/A and emit fit or gap entries instead of forcing ICP classification.
+  name: account_data
+  required: false
+- default: N/A
+  description: Optional source excerpts, URLs, file references, or user notes.
+  missing_behavior: Use empty evidence arrays unless a supplied source supports the entry.
+  name: source_notes
+  required: false
+- default: N/A
+  description: Optional existing MDP card context to prevent duplicate or conflicting entries.
+  missing_behavior: Do not assume previous pack decisions when this field is N/A.
+  name: existing_pack_context
+  required: false
+instructions:
+- Use only supplied person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.
+- Extract CTA and channel rules for handoff only. Do not imply sending, sequencing, CRM updates, or external-system execution.
+- Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
+- 'Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid.'
+- Each candidate entry must also include confidence, provenance, and status so a reviewer can decide whether it may become a card entry.
+- Use body N/A, empty arrays, confidence unknown, and status gap when data is missing or weak.
+- Put unsupported, quantified, customer, integration, compliance, or execution claims in rejected_claims instead of card_patches.
+- MDP is a local/offline decision and context layer, not a sender, CRM, sequencer, enrichment provider, scraper, BI tool, AI SDR, or generic automation system.
+output_contract:
+  contract: mdp.prompt-output.v0
+  entry_defaults:
+    applies_to: []
+    avoid: []
+    body: N/A
+    confidence: unknown
+    evidence: []
+    provenance: []
+  example:
+    card_patches:
+    - card_id: ctas
+      entries:
+      - applies_to:
+        - Content Lead
+        avoid: []
+        body: When fit is plausible but not proven, ask a routing question that identifies the owner or current workflow before asking for a meeting.
+        confidence: low
+        evidence:
+        - company_data
+        id: cta-routing-question
+        notes: []
+        provenance:
+        - 'company_data: supplied company data'
+        status: needs-review
+        title: Routing question
+      kind: ctas
+    - card_id: channel-policies
+      entries:
+      - applies_to:
+        - AEO Lead
+        - Content Lead
+        avoid: []
+        body: Return fit status, loaded card candidates, supported claims, avoid rules, and gaps. Do not send or update external systems.
+        confidence: medium
+        evidence:
+        - source_notes
+        id: channel-agent-brief
+        notes: []
+        provenance:
+        - 'source_notes: supplied source notes'
+        status: needs-review
+        title: Agent brief
+      kind: channel-policies
+    contract: mdp.prompt-output.v0
+    gaps: []
+    prompt_id: extract-cta-channel-policy
+    rejected_claims: []
+    source_summary:
+      account_name: N/A
+      company_domain: N/A
+      company_name: N/A
+      confidence: unknown
+      inputs_used: []
+      person_name: N/A
+      person_title: N/A
+  required_top_level:
+  - contract
+  - prompt_id
+  - source_summary
+  - card_patches
+  - gaps
+  - rejected_claims
+  strict_json_only: true
+tags:
+- prompt
+- cta
+- channel
+target_card_kinds:
+- ctas
+- channel-policies
+title: Extract CTA and channel policy

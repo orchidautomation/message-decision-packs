@@ -28,7 +28,7 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 For the first-use walkthrough, see [Getting Started](docs/getting-started.md).
 
-Canonical example: [Anthropic Market Vetting](examples/anthropic-market-vetting/README.md) shows a complete public-source pack for how Anthropic could define a target market slice, vet a company, use a public person locator, and produce fit, route, brief, gaps, and eval artifacts.
+Canonical example: [Profound GTM Vetting](examples/profound-gtm-vetting/README.md) shows a complete public-source pack for how a company like Profound can codify ICP, target personas, fit rules, hooks, CTAs, guardrails, source-backed claims, prospect brief generation, gaps, and evals before any downstream agent drafts or executes outreach.
 
 Portable shell fallback:
 
