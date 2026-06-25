@@ -14,6 +14,9 @@ tags:
 - copy
 - outbound
 - message
+- brief
+- linkedin
+- email
 entries:
 - id: owner-validation-ask
   title: Owner validation ask

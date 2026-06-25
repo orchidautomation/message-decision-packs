@@ -134,23 +134,19 @@ cards:
   path: cards/motions.yaml
   kind: motions
   description: Approved Profound GTM motions and handoff boundaries.
-  personas:
-  - AEO Lead
-  - Content Lead
-  - "PR & Brand Lead"
-  - Agency Partner
+  personas: []
   tags:
   - motion
   - workflow
+  - handoff
+  - maintenance
+  - call
+  - prep
 - id: channel-policies
   path: cards/channel-policies.yaml
   kind: channel-policies
   description: Channel-specific policy for LinkedIn, email, call prep, and agent briefs.
-  personas:
-  - AEO Lead
-  - Content Lead
-  - "PR & Brand Lead"
-  - Agency Partner
+  personas: []
   tags:
   - channel
   - linkedin
@@ -176,11 +172,7 @@ cards:
   path: cards/ctas.yaml
   kind: ctas
   description: CTA rules, reply paths, and ask boundaries for Profound outreach.
-  personas:
-  - AEO Lead
-  - Content Lead
-  - "PR & Brand Lead"
-  - Agency Partner
+  personas: []
   tags:
   - cta
   - ask
@@ -188,6 +180,9 @@ cards:
   - copy
   - outbound
   - message
+  - brief
+  - linkedin
+  - email
 - id: avoid-rules
   path: cards/avoid-rules.yaml
   kind: avoid-rules
@@ -204,29 +199,27 @@ cards:
   path: cards/copy-patterns.yaml
   kind: copy-patterns
   description: Reusable message and brief structures for Profound GTM outputs.
-  personas:
-  - AEO Lead
-  - Content Lead
-  - "PR & Brand Lead"
-  - Agency Partner
+  personas: []
   tags:
   - copy
   - brief
   - outbound
   - message
+  - linkedin
+  - email
+  - follow-up
 - id: objections
   path: cards/objections.yaml
   kind: objections
   description: Expected objections, alternatives, and approved response logic.
-  personas:
-  - AEO Lead
-  - Content Lead
-  - "PR & Brand Lead"
-  - Agency Partner
+  personas: []
   tags:
   - objection
   - alternative
   - response
+  - reply
+  - call
+  - prep
 - id: gaps
   path: cards/gaps.yaml
   kind: gaps
@@ -243,7 +236,7 @@ cards:
 policy:
   progressive_disclosure: true
   load_manifest_first: true
-  max_cards_per_route: 14
+  max_cards_per_route: 12
   json_contract: mdp.cli.v0
   no_auth_required: true
 provenance:
