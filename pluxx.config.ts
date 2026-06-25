@@ -5,12 +5,16 @@ export default definePlugin({
   version: '0.1.0',
   description: 'Author, validate, and use Message Decision Packs with the local mdp CLI.',
   author: {
-    name: 'Brandon Guerrero',
+    name: 'Orchid Labs',
   },
   brand: {
     "displayName": "Message Decision Packs",
     "shortDescription": "Create and route GTM message context.",
-    "longDescription": "Message Decision Packs helps Codex orchestrate end-to-end MDP workflows, create modular GTM messaging packs, sharpen ICP and fit rules, capture signals, maintain approved claims, brainstorm message angles, codify channel and CTA rules, enforce avoid-rules, surface gaps, run eval fixtures, extract source evidence, validate with the mdp CLI, and route Clay, Deepline, CSV, or enrichment-style prospect rows into agent-readable copy briefs without turning the pack into a sender, CRM, sequencer, or enrichment tool.",
+    "longDescription": "Message Decision Packs helps supported agents create, validate, and use local GTM messaging decision packs. MDP stores ICP, fit rules, signals, approved claims, message angles, CTA policy, avoid-rules, source evidence, eval fixtures, and explicit gaps, then routes the right cards into agent-readable briefs with the local mdp CLI. MDP stops at pack validation, fit checks, claim checks, and briefs; sending, CRM updates, enrichment, scraping, and sequencing stay outside MDP.",
+    "icon": "./assets/brand/icon.png",
+    "screenshots": [
+      "./assets/brand/screenshot.png"
+    ],
     "category": "Productivity",
     "defaultPrompts": [
       "Use $mdp-lfg to orchestrate this Message Decision Pack workflow.",
@@ -26,7 +30,7 @@ export default definePlugin({
   platforms: {
     "codex": {
       "interface": {
-        "developerName": "Brandon Guerrero",
+        "developerName": "Orchid Labs",
         "capabilities": [
           "Interactive",
           "Write"

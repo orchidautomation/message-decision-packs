@@ -1,6 +1,6 @@
 ---
 name: mdp-lfg
-description: Use as the master orchestrator for end-to-end Message Decision Pack work when the user says LFG, asks what to do next, gives messy GTM context, wants to create/use/review a pack, or needs routing across ICP, source extraction, message angles, CTA rules, avoid-rules, prospect briefs, copy briefs, copy evals, and pack QA.
+description: "Use as the master orchestrator for fuzzy or multi-step Message Decision Pack work: create, use, review, route, brief, evaluate, or improve a pack."
 ---
 
 # MDP LFG
@@ -39,7 +39,7 @@ Choose the narrow path and use that skill's workflow:
 - Hooks, objections, message angles, copy structures: `$mdp-message-angles`
 - CTA, ask style, reply path, meeting boundary: `$mdp-cta-builder`
 - Forbidden claims, category boundaries, unsupported promises: `$mdp-avoid-rules`
-- Clay, Deepline, CSV, LinkedIn, or enrichment row to brief: `$mdp-prospect-brief`
+- Existing prospect row to local MDP prospect JSON and brief: `$mdp-prospect-brief`
 - Model-ready writing contract: `$mdp-copy-brief`
 - Generated copy QA, claim checks, or revision: `$mdp-copy-eval`
 - Full pack audit, routing QA, completeness check: `$mdp-pack-review`
@@ -93,7 +93,7 @@ Treat `ctas.yaml` as the policy for the ask or reply path. Treat `claims.yaml` a
 
 ## Boundaries
 
-- Do not send messages, update Clay, update CRM, enroll sequences, enrich leads, or scrape private data unless the user explicitly asks and a separate tool is available.
+- Do not send messages, update Clay, update CRM, enroll sequences, enrich leads, or scrape private data. MDP can produce an explicit handoff; execution happens outside MDP.
 - Do not call MDP a sender, CRM, sequencer, enrichment provider, AI SDR, BI tool, or generic automation system.
 - Do not invent unsupported claims. Put gaps in the brief or card entries.
 - Keep `--json` on for CLI output that another tool, script, or agent will parse.

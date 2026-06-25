@@ -1,6 +1,6 @@
 ---
 name: mdp
-description: Use when the user explicitly wants to create, validate, inspect, route, or use a Message Decision Pack, `.mdp/` pack, MDP CLI, MDP skills, or agent-readable MDP brief. Prefer the installed `mdp` CLI for validation and routing before manually reading `.mdp/` YAML files.
+description: Use when the user explicitly wants to create, validate, inspect, route, or use a Message Decision Pack, `.mdp/` pack, MDP CLI, MDP skills, or MDP brief. Prefer `mdp` CLI before reading `.mdp/` YAML.
 ---
 
 # MDP
@@ -61,7 +61,7 @@ mdp --json validate --dir .
 
 ## Use A Prospect Row
 
-Convert Clay, Deepline, CSV, LinkedIn research, or enrichment output into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Do not commit private prospect data. Check the expected shape:
+Convert an existing prospect row, CSV row, research note, or user-provided source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Do not commit private prospect data. Check the expected shape:
 
 ```bash
 mdp --json schema prospect
@@ -74,7 +74,7 @@ Run fit first and stop on `disqualified` or `insufficient-context` unless the us
 Then create a brief:
 
 ```bash
-mdp --json brief --dir . --prospect examples/clay-row.json --channel linkedin
+mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
 ```
 
 Read only `data.required_load_order`. Draft only when `data.draft_status` is `ready`.
@@ -92,7 +92,7 @@ Use `load_order` or `required_load_order` as the progressive-disclosure contract
 Before drafting from a prospect row, check fit:
 
 ```bash
-mdp --json fit --dir . --prospect examples/clay-row.json
+mdp --json fit --dir . --prospect <prospect.json>
 ```
 
 Before approving generated copy, check claims and guardrails:
@@ -113,7 +113,7 @@ mdp --json eval --dir .
 For local demos only:
 
 ```bash
-mdp --json copy --dir . --prospect examples/clay-row.json --channel linkedin
+mdp --json copy --dir . --prospect <prospect.json> --channel <channel>
 ```
 
 For production-quality output, use `brief` and draft from the returned contract and routed cards.

@@ -1,6 +1,6 @@
 ---
 name: mdp-cta-builder
-description: Use when the user wants to create, refine, audit, or codify calls to action, reply paths, asks, meeting asks, handoff prompts, or no-send CTA guidance for a Message Decision Pack.
+description: Use to codify MDP CTA card rules, reply paths, ask styles, meeting boundaries, handoff prompts, or no-send CTA guidance.
 ---
 
 # MDP CTA Builder
@@ -31,11 +31,11 @@ mdp --json route --entries --dir . --persona "<persona>" --job "<channel> CTA po
 - reply path when a meeting ask is too strong
 - avoid phrases or pressure tactics
 
-5. Keep CTAs small and reusable. Do not draft final messages unless the user asks.
+5. Keep CTAs small and reusable. If final copy is requested, route to `$mdp-copy-brief` or `$mdp-copy-eval`; this skill only maintains CTA policy.
 6. Validate routing:
 
 ```bash
-mdp --json route --entries --dir . --persona "<persona>" --job "linkedin outbound copy"
+mdp --json route --entries --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
 Confirm `.mdp/cards/ctas.yaml` and `.mdp/cards/channel-policies.yaml` appear in `load_order` for outbound, message, CTA, or copy jobs.

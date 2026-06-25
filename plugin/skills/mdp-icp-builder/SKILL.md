@@ -1,6 +1,6 @@
 ---
 name: mdp-icp-builder
-description: Use when the user needs to define, sharpen, or codify ICP, segments, personas, disqualifiers, pains, triggers, buying committees, or fit logic for a Message Decision Pack. Produces content for MDP personas, fit-rules, signals, pains, motions, objections, gaps, and avoid-rules cards.
+description: "Use to codify MDP ICP and fit cards: segments, personas, disqualifiers, pains, triggers, buying committees, signals, and no-message logic."
 ---
 
 # MDP ICP Builder
@@ -48,8 +48,9 @@ Write results into:
 
 - Each persona should have a clear reason to care.
 - Each pain should imply a specific message angle.
-- Each trigger should be observable from enrichment, research, or user-supplied data.
+- Each trigger should be observable from user-provided sources, public research, or structured prospect rows.
 - Disqualifiers should be concrete enough for an agent to apply.
+- No-message cases belong in `fit-rules.yaml`, not only in persona notes or examples.
 - Do not make the ICP so broad that every company qualifies.
 
 ## Validate

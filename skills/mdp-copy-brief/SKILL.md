@@ -1,6 +1,6 @@
 ---
 name: mdp-copy-brief
-description: Use when the user wants a model-ready copywriting brief from a Message Decision Pack, routed MDP cards, persona, prospect row, channel, motion, or job. Produces a controlled writing contract before drafting.
+description: Use to produce an MDP-routed writing contract from pack cards, fit status, persona, prospect row, channel, motion, or job before drafting.
 ---
 
 # MDP Copy Brief
@@ -17,13 +17,13 @@ mdp --json fit --dir . --prospect <prospect.json>
 
 Hard-stop on `disqualified` or `insufficient-context` unless the user explicitly overrides.
 
-2. Build the brief:
+2. With a prospect row, build the brief:
 
 ```bash
 mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
 ```
 
-3. If no prospect row exists, run:
+3. Without a prospect row, build a persona/job brief:
 
 ```bash
 mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"

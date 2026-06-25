@@ -1,6 +1,6 @@
 ---
 name: mdp-avoid-rules
-description: Use when the user needs claim boundaries, forbidden claims, tone rules, legal/compliance guardrails, category boundaries, disallowed personas, no-send criteria, or other avoid rules for a Message Decision Pack.
+description: Use to codify MDP avoid-rule cards for claim boundaries, forbidden claims, tone, compliance-sensitive language, category boundaries, bad-fit personas, and no-send criteria.
 ---
 
 # MDP Avoid Rules
@@ -9,11 +9,12 @@ Create guardrails that prevent agents from overclaiming or drifting into the wro
 
 ## Workflow
 
-1. Review current positioning, claims, ICP, and planned copy patterns.
-2. Identify the ways an agent might overreach.
-3. Add explicit entries to `.mdp/cards/avoid-rules.yaml`, and use `.mdp/cards/fit-rules.yaml` for no-message or disqualification rules.
-4. If needed, add supporting constraints to positioning, claims, personas, pains, hooks, channel-policies, ctas, or copy patterns.
-5. Validate the pack.
+1. Validate the current pack.
+2. Review current positioning, claims, ICP, and planned copy patterns.
+3. Identify the ways an agent might overreach.
+4. Add explicit entries to `.mdp/cards/avoid-rules.yaml`, and use `.mdp/cards/fit-rules.yaml` for no-message or disqualification rules.
+5. If needed, add supporting constraints to positioning, claims, personas, pains, hooks, channel-policies, ctas, or copy patterns.
+6. Validate the pack again.
 
 ## Avoid Rule Categories
 
@@ -42,7 +43,7 @@ Each avoid rule should include:
 
 ```bash
 mdp --json validate --dir .
-mdp --json brief --dir . --prospect examples/clay-row.json --channel linkedin
+mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
 mdp --json check-claims --dir . --text "<draft copy>"
 ```
 

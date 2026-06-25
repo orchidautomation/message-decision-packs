@@ -35,52 +35,62 @@ Keep gaps explicit.
 
 ## Installation Model
 
-Codex plugins are installed through the Codex plugin directory and marketplaces. The current repo already has a plugin manifest at `plugin/.codex-plugin/plugin.json`, skills under `plugin/skills/`, and a local/offline CLI in `cli/`.
+MDP is distributed as a GitHub Release backed by Pluxx-generated agent bundles and native `mdp` CLI binaries. The public install path is one command:
 
-For a real first-user journey, MDP needs two distribution pieces:
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
 
-1. A CLI release channel for `mdp`.
-2. A Codex plugin marketplace entry for the plugin.
+That command should install:
 
-The recommended near-term package shape is:
+1. The local `mdp` CLI binary for the user's OS and architecture.
+2. Agent/plugin bundles for the supported Pluxx targets.
+
+The release shape is:
 
 ```text
 GitHub release
 - mdp-aarch64-apple-darwin
 - mdp-x86_64-apple-darwin
 - mdp-x86_64-unknown-linux-gnu
-- checksums.txt
-- source archive
-
-Git-backed Codex marketplace
-- .agents/plugins/marketplace.json
-- plugin source path
+- install.sh
+- install-codex.sh
+- install-all.sh
+- Pluxx-generated plugin archives
+- release-manifest.json
+- SHA256SUMS.txt
 ```
 
-The plugin install should not require the user to clone the whole repo manually if we can avoid it. A good target experience is:
+For users on other skill-aware agents that are not Pluxx release targets, document `skills.sh` as an optional compatibility path:
 
 ```bash
-codex plugin marketplace add orchidautomation/message-decision-packs --ref v0.1.0
-codex plugin add message-decision-packs@<marketplace-name>
+npx skills add orchidautomation/message-decision-packs --skill '*' -g -a <agent> -y
 ```
 
-There is one packaging decision to make before shipping this:
+or:
 
-- Option A: keep the existing `plugin/` folder and create a repo marketplace entry that points at `./plugin`.
-- Option B: add a `plugins/message-decision-packs/` distribution copy to match the standard scaffold convention for repo marketplaces.
+```bash
+npx skills add orchidautomation/message-decision-packs --skill '*' -g -a universal -y
+```
 
-I recommend Option A only if we verify Codex accepts `./plugin` as the marketplace source path. Otherwise use Option B to avoid making the install path clever.
+That fallback installs skills only. It does not replace the MDP installer because it does not install the `mdp` CLI binary or release runtime scripts.
 
 ## First Run Journey
 
 ### Step 1: The user installs the plugin
 
-The user opens Codex, adds the MDP marketplace, installs the plugin, and starts a new thread.
+The user runs:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+The installer fetches the latest MDP release, installs the local CLI, and installs the supported agent/plugin bundles.
 
 Expected user thought:
 
 ```text
-I added a plugin. What do I do now?
+I ran one command. What can I do now?
 ```
 
 What Codex should do:
@@ -100,13 +110,16 @@ command -v mdp
 mdp --json doctor --dir .
 ```
 
-If the CLI is missing, the user needs a direct install path. With GitHub Releases, the plugin can tell them to install the matching binary for their OS and put it on `PATH`.
+If the CLI is missing, the agent should point back to the public installer instead of asking the user to build from source:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
 
 Expected lift:
 
 ```text
-Current repo-only lift: clone repo, build Rust CLI, wire plugin locally.
-Target release lift: download/install CLI binary, install plugin from marketplace, start new Codex thread.
+Current public lift: run one install command, restart/open the agent, check mdp is on PATH.
 ```
 
 ### Step 3: The user creates their first pack
@@ -265,8 +278,8 @@ The value is not only better copy. The value is making Codex safer to use on GTM
 
 | Stage | Current lift | Target lift |
 |---|---:|---:|
-| Install CLI | Medium: build from source | Low: install release binary |
-| Install plugin | Medium: local plugin setup | Low: install from marketplace |
+| Install CLI | Low: release installer | Low: release installer |
+| Install plugin | Low: `--agents` install | Low: one command for supported hosts |
 | Create starter pack | Low | Low |
 | Make pack useful | Medium | Medium |
 | Use for one prospect | Low | Low |
@@ -279,10 +292,15 @@ The main lift is not technical setup after packaging exists. The real lift is de
 
 ### Required
 
-1. Add GitHub Release automation for CLI binaries and checksums.
-2. Decide the marketplace source shape: `./plugin` versus `./plugins/message-decision-packs`.
-3. Add a repo marketplace file once the source shape is chosen.
-4. Document install commands for Codex app and CLI users.
+1. Keep GitHub Release automation green for CLI binaries, Pluxx bundles, installers, and checksums.
+2. Keep the vanity installer URL working:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+3. Document install commands for Codex app, CLI users, and long-tail `skills.sh` users.
+4. Re-run release QA on a fresh machine before each public release.
 5. Add release validation that runs:
 
 ```bash
@@ -299,6 +317,7 @@ python <plugin-validator> plugin
 2. A short demo video or appshot showing install -> create pack -> brief -> claim check.
 3. A `mdp doctor install` style command that explains missing CLI/plugin pieces.
 4. A sample real-ish pack that is more substantive than the neutral starter but still contains no private customer data.
+5. First-class Pluxx targets for additional agents if `skills.sh` fallback usage becomes common.
 
 ## Activation Moment
 
@@ -334,8 +353,9 @@ A brand new Codex user succeeds when they can do all of this without asking Bran
 Ship the next milestone as a local/offline developer preview:
 
 ```text
-GitHub Releases for CLI binaries.
-Git-backed Codex marketplace for plugin install.
+GitHub Releases for CLI binaries and Pluxx plugin bundles.
+Vanity installer URL for the default one-command path.
+skills.sh documented as a skills-only fallback for long-tail agents.
 Starter pack plus evals.
 Docs for first use and boundaries.
 No hosted API.

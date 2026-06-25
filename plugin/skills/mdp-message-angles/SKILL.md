@@ -1,6 +1,6 @@
 ---
 name: mdp-message-angles
-description: Use when the user wants to brainstorm, refine, or codify GTM messaging angles, hooks, proof patterns, objections, channel-specific copy structures, LinkedIn/email openers, CTA styles, reply paths, or message themes for a Message Decision Pack.
+description: Use to codify MDP hooks, message-angle, copy-pattern, objection, channel-policy, and CTA card entries from grounded GTM context.
 ---
 
 # MDP Message Angles
@@ -18,7 +18,7 @@ mdp --json route --entries --dir . --persona "<persona>" --job "<channel> outbou
 ```
 
 3. Read only routed cards plus any card you are explicitly updating.
-4. Generate candidate hooks, proof-backed claims, channel policies, objections, copy patterns, and CTA options.
+4. Generate candidate card entries for hooks, proof-backed claims, channel policies, objections, copy patterns, and CTA options.
 5. Keep only angles grounded in source context or explicitly marked assumptions.
 6. Update:
 

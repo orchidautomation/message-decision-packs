@@ -1,6 +1,6 @@
 ---
 name: mdp-copy-eval
-description: Use when the user wants to evaluate, QA, score, or revise generated LinkedIn/email copy against a Message Decision Pack, including ICP fit, loaded card fidelity, claims, avoid-rules, tone, CTA fit, channel constraints, and evidence gaps.
+description: Use to evaluate copy against an MDP pack, including fit, routed card fidelity, claims, avoid-rules, CTA fit, channel constraints, and evidence gaps.
 ---
 
 # MDP Copy Eval
@@ -42,6 +42,7 @@ mdp --json check-claims --dir . --text "<draft copy>"
 - gaps the copy should surface rather than hide
 - channel length and ask style
 - unsupported or invented claims
+- loaded card ids, missing card ids, or unrouted card references
 
 ## Scoring
 

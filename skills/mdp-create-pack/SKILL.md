@@ -1,6 +1,6 @@
 ---
 name: mdp-create-pack
-description: Use when the user wants to create a new Message Decision Pack from messy GTM context, product notes, ICP notes, positioning docs, website research, sales context, or a blank workspace. Creates or improves `.mdp/manifest.yaml` and starter card files, then validates with the `mdp` CLI.
+description: Use when the user wants to create a new Message Decision Pack from messy GTM context, product notes, ICP notes, positioning docs, sales context, or a blank workspace. Creates or improves `.mdp/` cards and validates with `mdp`.
 ---
 
 # MDP Create Pack
@@ -29,7 +29,7 @@ mdp --json init --template gtm --name "<pack name>" --dir .
 - target segments
 - buying personas and user personas
 - fit rules, disqualifiers, and no-message cases
-- structured signals from enrichment, LinkedIn, website, or source material
+- structured signals from prospect rows, public research, website, or source material
 - pains and triggers
 - approved claims and proof requirements
 - allowed message motions

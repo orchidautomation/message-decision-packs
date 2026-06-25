@@ -1,0 +1,109 @@
+# Getting Started
+
+Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions, routing contracts, fit rules, approved claims, avoid-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, or act as an AI SDR.
+
+## Install
+
+Install the CLI and supported agent bundles:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+Portable shell fallback:
+
+```bash
+curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --agents -y
+```
+
+The installer fetches the latest GitHub Release, installs the `mdp` CLI for your platform, and installs Pluxx-generated bundles for supported agent hosts.
+
+## Verify
+
+```bash
+mdp --version
+mdp --json doctor --dir .
+```
+
+If `mdp` is not found, make sure the install directory printed by the installer is on `PATH`, then restart your agent host.
+
+## Create A Starter Pack
+
+```bash
+mdp --json init --template gtm --name "Example Message Pack" --dir ./mdp-demo --force
+mdp --json validate --dir ./mdp-demo
+mdp --json eval --dir ./mdp-demo
+```
+
+The starter creates:
+
+```text
+mdp-demo/
+  .mdp/
+    manifest.yaml
+    cards/
+    evals/
+  examples/
+```
+
+## Route Context
+
+Ask which cards matter for a persona and job:
+
+```bash
+mdp --json route --entries --dir ./mdp-demo --persona "PMM" --job "linkedin outbound copy"
+```
+
+Agents should load only the returned cards instead of reading the entire pack by default.
+
+## Use A Prospect Row
+
+Keep private prospect data in ignored scratch unless you intentionally commit a sanitized example. Check fit before drafting:
+
+```bash
+mdp --json fit --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json
+```
+
+If fit returns `disqualified` or `insufficient-context`, do not draft unless the user explicitly overrides.
+
+When fit is acceptable, build the brief:
+
+```bash
+mdp --json brief --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json --channel linkedin
+```
+
+Draft from the brief's `required_load_order`, the prospect context, and the approved pack cards.
+
+## Check Claims
+
+Before approving copy, run:
+
+```bash
+mdp --json check-claims --dir ./mdp-demo --text "<draft copy>"
+```
+
+Unsupported claims, execution claims, compliance/security claims, named-customer claims, and quantified outcome claims should be fixed or backed with source evidence before use.
+
+## Update
+
+Rerun the installer:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+To check whether your local CLI/plugin version is current:
+
+```bash
+scripts/check-update.sh
+```
+
+## Long-Tail Skill Clients
+
+For skill-aware agents that are not first-class Pluxx release targets, `skills.sh` can install the `SKILL.md` files only:
+
+```bash
+npx skills add orchidautomation/message-decision-packs --skill '*' -g -a <agent> -y
+```
+
+This does not install the `mdp` CLI. Use the MDP installer for the full CLI plus agent bundle setup.

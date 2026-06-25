@@ -59,3 +59,29 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
 The tag-based release workflow installs Pluxx in CI, builds host plugin bundles, publishes Pluxx release assets, and uploads `mdp-*` CLI binaries plus `install.sh`. The installer scripts then install the plugin and use `scripts/bootstrap-runtime.sh` to prepare the local `mdp` CLI when it is missing.
+
+## Updates
+
+The public update path is to rerun the same installer:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+That keeps the update mechanism explicit and auditable. MDP changes can affect local CLI behavior, pack validation, routing, fit checks, claim checks, and agent skill instructions, so the plugin should not silently replace itself during normal agent work.
+
+Use `scripts/check-update.sh` as a lightweight drift check:
+
+```bash
+scripts/check-update.sh
+```
+
+The script compares the local `mdp --version` and nearby plugin manifest version against the latest GitHub Release tag, then returns the install command to run when either side is stale.
+
+Host hooks may call this check at session start or plugin load time, but they should only notify. They should not auto-update by default. If a future host supports a trusted, user-approved update flow, the hook can offer the installer command as the next action.
+
+Version policy:
+
+- Release tags, `cli/Cargo.toml`, `pluxx.config.ts`, and plugin manifests should stay on the same semver.
+- A user who pins `MDP_VERSION` should not be nudged to latest unless they ask for update checks against latest.
+- `scripts/bootstrap-runtime.sh` should keep bootstrapping missing CLIs, not replacing an existing CLI unless the user reruns the installer or a future explicit `--force` update path is added.

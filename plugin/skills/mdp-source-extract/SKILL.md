@@ -1,6 +1,6 @@
 ---
 name: mdp-source-extract
-description: Use when the user wants to turn source material such as websites, positioning docs, sales notes, call summaries, customer research, product docs, or competitive notes into Message Decision Pack card entries with evidence and gaps.
+description: Use to turn user-provided or public source material into MDP card entries with evidence, confidence, freshness, and explicit gaps.
 ---
 
 # MDP Source Extract
@@ -11,6 +11,7 @@ Extract pack-ready card entries from source material. Preserve evidence and do n
 
 - Prefer primary sources and user-provided source files.
 - If using URLs, fetch current source content when facts may have changed.
+- Do not scrape private, gated, or authenticated sources. Use user-provided files, notes, or public/current URLs.
 - Keep source URLs, document names, or note identifiers in `evidence`.
 - Separate direct source claims from interpretation.
 - Mark missing evidence as a gap instead of inventing proof.
@@ -36,7 +37,7 @@ Map source material into:
 
 ## Workflow
 
-1. Read or fetch the source material.
+1. Read the provided source material or fetch public/current URLs when appropriate.
 2. Extract candidate entries by card kind.
 3. Deduplicate overlapping claims.
 4. Add evidence per entry.
@@ -54,5 +55,6 @@ Report:
 
 - sources used
 - entries added or changed
+- confidence and freshness for extracted entries when known
 - evidence gaps
 - claims that should become avoid-rules

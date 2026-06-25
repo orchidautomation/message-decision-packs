@@ -23,6 +23,8 @@ One-command install:
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
+For the first-use walkthrough, see [Getting Started](docs/getting-started.md).
+
 Portable shell fallback:
 
 ```bash
