@@ -433,6 +433,13 @@ mod tests {
         assert!(titles.contains(&"LinkedIn opener"));
         assert!(!titles.contains(&"Email follow-up"));
         assert!(!titles.contains(&"Call prep"));
+        assert!(
+            result["entry_route"]["matches"]
+                .as_array()
+                .expect("entry matches array")
+                .iter()
+                .all(|entry| entry.get("body").is_none())
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

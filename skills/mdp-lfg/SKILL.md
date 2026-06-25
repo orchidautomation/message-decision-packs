@@ -68,7 +68,7 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 8. If a prospect row is involved, produce the brief. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
 
 ```bash
-mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
 ## Required Card Coverage

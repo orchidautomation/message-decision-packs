@@ -79,16 +79,16 @@ Run fit first and stop on `disqualified` or `insufficient-context` unless the us
 Then create a brief:
 
 ```bash
-mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel>
 ```
 
 If the user expects a created artifact, save it explicitly:
 
 ```bash
-mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
-Read only `data.required_load_order`. Draft only when `data.draft_status` is `ready`.
+Read `data.context.entries` first. Open `data.context.full_card_required` paths only when present. Draft only when `data.draft_status` is `ready`.
 
 ## Route Without A Prospect
 

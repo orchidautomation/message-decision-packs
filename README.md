@@ -88,7 +88,7 @@ mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo
 mdp --json validate --dir /tmp/mdp-demo
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
-mdp --json --summary brief --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
+mdp --json --summary brief --context --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
 mdp --json check-claims --dir /tmp/mdp-demo --text "MDP is a local offline CLI for modular message context."
 mdp --json gaps --dir /tmp/mdp-demo
 mdp --json eval --dir /tmp/mdp-demo
@@ -123,7 +123,36 @@ examples/
   clay-row.json
 ```
 
-Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then only load the cards returned by `mdp route`, `mdp route --entries`, or `mdp brief`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy, `gaps` to expose missing evidence, and `eval` to test route, fit, brief, and claim behavior.
+## Decision Flow
+
+MDP routes messaging context as a decision tree. The prospect JSON supplies the account/person context, including optional fields such as `persona`, `segment`, `signals`, `background`, and `trigger`. If `persona` is present, MDP uses it; otherwise the CLI infers a persona from the prospect title. The `trigger` is the situational reason to write now, not a card by itself.
+
+```text
+prospect.json
+  |
+  +-- title/persona -> persona
+  +-- trigger ------> why now
+  +-- segment ------> market/context
+  +-- signals ------> evidence or hypotheses
+  |
+  v
+fit gate
+  |
+  +-- no fit/too thin -> no-draft
+  |
+  v
+persona -> pains -> hooks -> claims/proof -> CTA/channel policy
+                              |
+                              v
+                         avoid rules
+                              |
+                              v
+                      bounded context.entries
+```
+
+With `brief --context`, the CLI reads the routed card files locally, selects the relevant entries, and gives the agent those entries first. Whole card paths stay in `context.full_card_required` only when the bounded entry set is not enough.
+
+Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy, `gaps` to expose missing evidence, and `eval` to test route, fit, brief, and claim behavior.
 
 Packs can declare `persona_mappings` in `.mdp/manifest.yaml` so prospect titles map into pack-owned personas before fit and brief routing. Explicit `prospect.persona` still wins. Legacy title fallbacks are reported as low-confidence and do not unlock the fit gate by themselves.
 

@@ -48,12 +48,12 @@ mdp --json fit --dir . --prospect <prospect.json>
 7. Run the brief:
 
 ```bash
-mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel>
 ```
 
 Use `--out .mdp/briefs/<brief-name>.json` when the user expects a durable created brief file. Without `--out`, the brief is stdout-only.
 
-8. Read only `data.required_load_order` if drafting is requested and `data.draft_status` is `ready`.
+8. Read `data.context.entries` first if drafting is requested and `data.draft_status` is `ready`. Open `data.context.full_card_required` paths only when present.
 
 ## Response
 

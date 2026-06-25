@@ -73,6 +73,7 @@ fn summarize(command: &str, data: &Value) -> Value {
             "fit_status": data["fit"]["status"],
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
+            "context": context_summary(&data["context"]),
             "prospect_source": data["prospect_source"],
             "input_artifact": data["input_artifact"],
             "artifact": data["artifact"]
@@ -131,6 +132,21 @@ fn print_summary(command: &str, summary: &Value) -> Result<()> {
 
 fn array_len(value: &Value) -> usize {
     value.as_array().map(Vec::len).unwrap_or(0)
+}
+
+fn context_summary(context: &Value) -> Value {
+    if !context.is_object() {
+        return Value::Null;
+    }
+    json!({
+        "contract": context["contract"],
+        "status": context["status"],
+        "entry_count": context["summary"]["entry_count"],
+        "required_entry_count": context["summary"]["required_entry_count"],
+        "supporting_entry_count": context["summary"]["supporting_entry_count"],
+        "guardrail_entry_count": context["summary"]["guardrail_entry_count"],
+        "full_card_required": context["full_card_required"]
+    })
 }
 
 fn failing_fixtures(data: &Value) -> Vec<String> {
@@ -226,6 +242,41 @@ mod tests {
         assert_eq!(summary["required_card_count"], 2);
         assert_eq!(summary["prospect_source"]["kind"], "synthetic-example");
         assert_eq!(summary["artifact"]["status"], "stdout-only");
+    }
+
+    #[test]
+    fn brief_summary_exposes_context_counts_without_entry_bodies() {
+        let summary = summarize(
+            "brief",
+            &json!({
+                "contract": "mdp.message-brief.v0",
+                "channel": "linkedin",
+                "persona": "PMM",
+                "job": "write outbound message",
+                "draft_status": "ready",
+                "fit": {"status": "fit"},
+                "required_load_order": [".mdp/cards/personas.yaml"],
+                "context": {
+                    "contract": "mdp.context.v0",
+                    "status": "ready",
+                    "entries": [{"body": "should not appear in summary"}],
+                    "full_card_required": [],
+                    "summary": {
+                        "entry_count": 4,
+                        "required_entry_count": 2,
+                        "supporting_entry_count": 2,
+                        "guardrail_entry_count": 1
+                    }
+                },
+                "prospect_source": {"kind": "synthetic-example", "synthetic": true},
+                "input_artifact": {"kind": "prospect", "path": "examples/clay-row.json"},
+                "artifact": {"status": "stdout-only", "kind": "stdout", "path": null}
+            }),
+        );
+
+        assert_eq!(summary["context"]["contract"], "mdp.context.v0");
+        assert_eq!(summary["context"]["entry_count"], 4);
+        assert!(summary["context"].get("entries").is_none());
     }
 
     #[test]

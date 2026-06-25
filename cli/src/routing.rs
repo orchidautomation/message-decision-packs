@@ -1,10 +1,17 @@
 use crate::constants::DEFAULT_DIR;
-use crate::models::{CardKind, Manifest};
+use crate::models::{CardKind, Entry, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::path::Path;
+
+struct EntryRouteDetails {
+    matches: Vec<Value>,
+    context_entries: Vec<Value>,
+    gaps: Vec<Value>,
+    full_card_required: Vec<Value>,
+}
 
 pub(crate) fn select_cards(
     manifest: &Manifest,
@@ -117,6 +124,89 @@ pub(crate) fn entry_route(
     persona: &str,
     job: &str,
 ) -> Result<Value> {
+    let details = route_entry_details(root, manifest, persona, job, false)?;
+
+    Ok(json!({
+        "contract": "mdp.entry-route.v0",
+        "persona": persona,
+        "job": job,
+        "matches": details.matches,
+        "gaps": details.gaps,
+        "policy": "Load matched entries first. Load the full card only when an entry is ambiguous, missing, or a guardrail card needs complete review."
+    }))
+}
+
+pub(crate) fn entry_context(
+    root: &Path,
+    manifest: &Manifest,
+    persona: &str,
+    job: &str,
+    draft_ready: bool,
+) -> Result<Value> {
+    let load_order: Vec<Value> = select_cards(manifest, Some(persona), Some(job))
+        .iter()
+        .filter_map(|value| value["path"].as_str().map(|path| json!(path)))
+        .collect();
+    if !draft_ready {
+        return Ok(json!({
+            "contract": "mdp.context.v0",
+            "status": "blocked",
+            "reason": "draft_status no-draft",
+            "persona": persona,
+            "job": job,
+            "source_load_order": load_order,
+            "entries": [],
+            "full_card_required": [],
+            "summary": {
+                "card_count": load_order.len(),
+                "entry_count": 0,
+                "required_entry_count": 0,
+                "supporting_entry_count": 0,
+                "guardrail_entry_count": 0
+            },
+            "policy": "Do not draft from bounded context when draft_status is no-draft."
+        }));
+    }
+
+    let details = route_entry_details(root, manifest, persona, job, true)?;
+    let required_entry_count = details
+        .context_entries
+        .iter()
+        .filter(|entry| entry["status"].as_str() == Some("required"))
+        .count();
+    let guardrail_entry_count = details
+        .context_entries
+        .iter()
+        .filter(|entry| entry["selection"].as_str() == Some("guardrail"))
+        .count();
+    let entry_count = details.context_entries.len();
+
+    Ok(json!({
+        "contract": "mdp.context.v0",
+        "status": "ready",
+        "persona": persona,
+        "job": job,
+        "source_load_order": load_order,
+        "entries": details.context_entries,
+        "full_card_required": details.full_card_required,
+        "summary": {
+            "card_count": load_order.len(),
+            "entry_count": entry_count,
+            "required_entry_count": required_entry_count,
+            "supporting_entry_count": entry_count.saturating_sub(required_entry_count),
+            "guardrail_entry_count": guardrail_entry_count
+        },
+        "policy": "Use context.entries first. Open full_card_required paths only when present, or when the user asks for a full pack/card audit."
+    }))
+}
+
+fn route_entry_details(
+    root: &Path,
+    manifest: &Manifest,
+    persona: &str,
+    job: &str,
+    include_context: bool,
+) -> Result<EntryRouteDetails> {
     let selected = select_cards(manifest, Some(persona), Some(job));
     let selected_ids: BTreeSet<String> = selected
         .iter()
@@ -125,14 +215,19 @@ pub(crate) fn entry_route(
     let persona_lower = persona.to_lowercase();
     let job_tokens = tokens(job);
     let mut matches = Vec::new();
+    let mut context_entries = Vec::new();
     let mut gaps = Vec::new();
+    let mut full_card_required = Vec::new();
 
     for card_ref in &manifest.cards {
         if !selected_ids.contains(&card_ref.id) {
             continue;
         }
         let card = read_card(&resolve_pack_path(root, &card_ref.path)?)?;
+        let display_path = format!("{DEFAULT_DIR}/{}", card_ref.path);
         let mut card_match_count = 0usize;
+        let mut selected_entry_count = 0usize;
+
         for entry in &card.entries {
             let entry_text = format!(
                 "{} {} {}",
@@ -146,43 +241,135 @@ pub(crate) fn entry_route(
                 .iter()
                 .any(|candidate| candidate.eq_ignore_ascii_case(persona));
             let entry_tokens = tokens(&entry_text);
-            let entry_job_match = token_overlap(&job_tokens, &entry_tokens);
-            let job_match = entry_job_match;
+            let job_match = token_overlap(&job_tokens, &entry_tokens);
             let persona_match = entry_text.contains(&persona_lower);
-            if matches!(card.kind, CardKind::ChannelPolicies) && !job_match {
-                continue;
-            }
-            if applies || job_match || persona_match {
+            let matched = !(matches!(card.kind, CardKind::ChannelPolicies) && !job_match)
+                && (applies || job_match || persona_match);
+            let guardrail = include_context && is_context_guardrail(&card.kind, entry);
+
+            if matched {
                 card_match_count += 1;
-                matches.push(json!({
-                    "card_id": card.id,
-                    "card_kind": card.kind,
-                    "entry_id": entry.id,
-                    "title": entry.title,
-                    "status": if matches!(card.kind, CardKind::AvoidRules | CardKind::FitRules | CardKind::Claims | CardKind::Positioning | CardKind::ChannelPolicies) { "required" } else { "supporting" },
-                    "reason": if applies { "persona applies" } else if job_match { "entry job match" } else { "persona text match" },
-                    "evidence_count": entry.evidence.len(),
-                    "avoid_count": entry.avoid.len()
-                }));
+                matches.push(entry_summary(
+                    &card.id,
+                    &card.kind,
+                    entry,
+                    match_reason(applies, job_match),
+                ));
+            }
+            if include_context && (matched || guardrail) {
+                selected_entry_count += 1;
+                context_entries.push(entry_context_value(
+                    &card.id,
+                    &card.kind,
+                    &display_path,
+                    entry,
+                    if guardrail { "guardrail" } else { "matched" },
+                    if matched {
+                        match_reason(applies, job_match)
+                    } else {
+                        guardrail_reason(&card.kind)
+                    },
+                ));
             }
         }
         if card_match_count == 0 {
             gaps.push(json!({
                 "card_id": card.id,
-                "path": format!("{DEFAULT_DIR}/{}", card_ref.path),
+                "path": display_path,
                 "reason": "card routed, but no entry matched persona/job cleanly"
+            }));
+        }
+        if include_context && selected_entry_count == 0 {
+            full_card_required.push(json!({
+                "card_id": card.id,
+                "card_kind": card.kind,
+                "path": display_path,
+                "reason": "routed card had no bounded entries; open full card only if this card is needed for the task"
             }));
         }
     }
 
-    Ok(json!({
-        "contract": "mdp.entry-route.v0",
-        "persona": persona,
-        "job": job,
-        "matches": matches,
-        "gaps": gaps,
-        "policy": "Load matched entries first. Load the full card only when an entry is ambiguous, missing, or a guardrail card needs complete review."
-    }))
+    Ok(EntryRouteDetails {
+        matches,
+        context_entries,
+        gaps,
+        full_card_required,
+    })
+}
+
+fn entry_summary(card_id: &str, card_kind: &CardKind, entry: &Entry, reason: &str) -> Value {
+    json!({
+        "card_id": card_id,
+        "card_kind": card_kind,
+        "entry_id": entry.id,
+        "title": entry.title,
+        "status": entry_status(card_kind),
+        "reason": reason,
+        "evidence_count": entry.evidence.len(),
+        "avoid_count": entry.avoid.len()
+    })
+}
+
+fn entry_context_value(
+    card_id: &str,
+    card_kind: &CardKind,
+    card_path: &str,
+    entry: &Entry,
+    selection: &str,
+    reason: &str,
+) -> Value {
+    json!({
+        "card_id": card_id,
+        "card_kind": card_kind,
+        "card_path": card_path,
+        "entry_id": entry.id,
+        "title": entry.title,
+        "body": entry.body,
+        "applies_to": entry.applies_to,
+        "evidence": entry.evidence,
+        "avoid": entry.avoid,
+        "status": entry_status(card_kind),
+        "selection": selection,
+        "reason": reason
+    })
+}
+
+fn entry_status(card_kind: &CardKind) -> &'static str {
+    if matches!(
+        card_kind,
+        CardKind::AvoidRules
+            | CardKind::FitRules
+            | CardKind::Claims
+            | CardKind::Positioning
+            | CardKind::ChannelPolicies
+    ) {
+        "required"
+    } else {
+        "supporting"
+    }
+}
+
+fn match_reason(applies: bool, job_match: bool) -> &'static str {
+    if applies {
+        "persona applies"
+    } else if job_match {
+        "entry job match"
+    } else {
+        "persona text match"
+    }
+}
+
+fn is_context_guardrail(card_kind: &CardKind, entry: &Entry) -> bool {
+    matches!(card_kind, CardKind::AvoidRules)
+        || (matches!(card_kind, CardKind::FitRules) && !entry.avoid.is_empty())
+}
+
+fn guardrail_reason(card_kind: &CardKind) -> &'static str {
+    if matches!(card_kind, CardKind::FitRules) {
+        "fit guardrail included"
+    } else {
+        "avoid-rule guardrail included"
+    }
 }
 
 pub(crate) fn tokens(input: &str) -> Vec<String> {

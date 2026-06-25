@@ -43,8 +43,8 @@ Each avoid rule should include:
 
 ```bash
 mdp --json validate --dir .
-mdp --json brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json brief --context --dir . --prospect <prospect.json> --channel <channel>
 mdp --json check-claims --dir . --text "<draft copy>"
 ```
 
-Check that avoid-rules appear in `required_load_order` for copy jobs.
+Check that avoid-rules appear in `required_load_order` and guardrail entries appear in `context.entries` for copy jobs.

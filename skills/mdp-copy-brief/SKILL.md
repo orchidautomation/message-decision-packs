@@ -20,13 +20,13 @@ Hard-stop on `disqualified` or `insufficient-context` unless the user explicitly
 2. With a prospect row, build the brief:
 
 ```bash
-mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel>
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel>
 ```
 
 If the user expects a created file, save it explicitly:
 
 ```bash
-mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
 3. Without a prospect row, build a persona/job brief:
@@ -35,14 +35,14 @@ mdp --json --summary brief --dir . --prospect <prospect.json> --channel <channel
 mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-4. Read only the returned `required_load_order` card files. If `draft_status` is `no-draft`, surface the fit decision and do not draft. If the brief says the prospect is synthetic, treat it as a demo fixture.
+4. Read `data.context.entries` first. Open `data.context.full_card_required` paths only when present. If `draft_status` is `no-draft`, surface the fit decision and do not draft. If the brief says the prospect is synthetic, treat it as a demo fixture.
 5. Build a copy brief with:
 
 - audience/persona
 - fit status or insufficient-context decision
 - channel and motion
 - prospect context, signals, and assumptions
-- loaded card ids
+- loaded context entry ids and card ids
 - approved positioning and claims
 - approved hooks
 - pains and triggers
@@ -55,6 +55,6 @@ mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> o
 
 ## Drafting Rules
 
-If the user asks for copy after the brief, draft only from loaded cards and the prospect row, including the routed CTA card when present. Keep unsupported claims out. State assumptions when source context is weak.
+If the user asks for copy after the brief, draft from bounded context entries and the prospect row first, including the routed CTA entry when present. Open fallback card files only when `full_card_required` lists them. Keep unsupported claims out. State assumptions when source context is weak.
 
 Do not send or schedule the copy.

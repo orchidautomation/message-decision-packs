@@ -36,7 +36,7 @@ mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo
 mdp --json validate --dir /tmp/mdp-demo
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
-mdp --json --summary brief --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
+mdp --json --summary brief --context --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
 mdp --json check-claims --dir /tmp/mdp-demo --text "MDP is a local offline CLI for modular message context."
 mdp --json gaps --dir /tmp/mdp-demo
 mdp --json eval --dir /tmp/mdp-demo
@@ -68,10 +68,10 @@ Error:
 1. Run `mdp --json doctor` and `mdp --json validate`.
 2. Convert the Clay, Deepline, CSV, or enrichment row into `mdp schema prospect`. Use explicit `persona` when known; otherwise `.mdp/manifest.yaml` can define `persona_mappings` from title keywords to pack personas.
 3. Run `mdp --json fit --prospect <row.json>` and stop if it returns `disqualified` or `insufficient-context`.
-4. Run `mdp --json --summary brief --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
+4. Run `mdp --json --summary brief --context --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
 5. Stop if `data.draft_status` is `no-draft`.
-6. Read only the files in `data.required_load_order`.
-7. Draft from the brief plus routed cards, then run `mdp --json check-claims` before approval.
+6. Draft from `data.context.entries` first; open `data.context.full_card_required` paths only when present.
+7. Run `mdp --json check-claims` before approval.
 
 Generated starter rows are synthetic examples. They include `source_kind: synthetic-example` and `synthetic: true`; do not present them as real prospects.
 

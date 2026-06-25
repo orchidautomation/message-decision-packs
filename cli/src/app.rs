@@ -1,7 +1,7 @@
 use crate::cli::{Cli, Commands};
 use crate::commands::{
     check_claims, demo_copy, doctor, emit_brief, eval_pack, explain, fit, gaps, init_pack, pack,
-    prospect_brief, route, schema, validate_pack,
+    prospect_brief_with_context, route, schema, validate_pack,
 };
 use crate::output::print_output;
 use crate::pack_io::write_json_file;
@@ -62,9 +62,11 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             prospect,
             channel,
             job,
+            context,
             out,
         } => {
-            let mut data = prospect_brief(&dir, &prospect, &channel, job.as_deref())?;
+            let mut data =
+                prospect_brief_with_context(&dir, &prospect, &channel, job.as_deref(), context)?;
             data = attach_input_artifact(data, "prospect", &prospect);
             if let Some(path) = out {
                 data = attach_artifact(data, &path);
@@ -219,6 +221,7 @@ mod tests {
                 prospect,
                 channel: "linkedin".to_string(),
                 job: None,
+                context: true,
                 out: Some(out.clone()),
             },
         })
@@ -230,6 +233,7 @@ mod tests {
         .expect("saved brief should parse");
         assert_eq!(saved["artifact"]["status"], "saved");
         assert_eq!(saved["input_artifact"]["kind"], "prospect");
+        assert_eq!(saved["context"]["contract"], "mdp.context.v0");
 
         let _ = std::fs::remove_dir_all(root);
     }
