@@ -1,7 +1,9 @@
 command: route
 expect_entry_titles_contains:
-- LinkedIn opener
+- LinkedIn initial touch
 expect_entry_titles_excludes:
+- LinkedIn follow-up
+- Initial email
 - Email follow-up
 - Call prep
 expect_load_order_contains:

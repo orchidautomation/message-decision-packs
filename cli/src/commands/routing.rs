@@ -418,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn linkedin_entry_route_excludes_email_and_call_prep_entries() {
+    fn linkedin_entry_route_excludes_email_follow_up_and_call_prep_entries() {
         let root = temp_pack("linkedin-entry-route");
 
         let result = route(&root, "PMM", "linkedin outbound copy", true, false)
@@ -430,7 +430,9 @@ mod tests {
             .filter_map(|entry| entry["title"].as_str())
             .collect();
 
-        assert!(titles.contains(&"LinkedIn opener"));
+        assert!(titles.contains(&"LinkedIn initial touch"));
+        assert!(!titles.contains(&"LinkedIn follow-up"));
+        assert!(!titles.contains(&"Initial email"));
         assert!(!titles.contains(&"Email follow-up"));
         assert!(!titles.contains(&"Call prep"));
         assert!(
@@ -440,6 +442,50 @@ mod tests {
                 .iter()
                 .all(|entry| entry.get("body").is_none())
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn initial_email_entry_route_excludes_follow_up_and_linkedin_entries() {
+        let root = temp_pack("initial-email-entry-route");
+
+        let result = route(&root, "PMM", "initial email outbound message", true, false)
+            .expect("route should succeed");
+        let titles: Vec<&str> = result["entry_route"]["matches"]
+            .as_array()
+            .expect("entry matches array")
+            .iter()
+            .filter_map(|entry| entry["title"].as_str())
+            .collect();
+
+        assert!(titles.contains(&"Initial email"));
+        assert!(!titles.contains(&"Email follow-up"));
+        assert!(!titles.contains(&"LinkedIn initial touch"));
+        assert!(!titles.contains(&"LinkedIn follow-up"));
+        assert!(!titles.contains(&"Call prep"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn linkedin_follow_up_entry_route_excludes_initial_and_email_entries() {
+        let root = temp_pack("linkedin-follow-up-entry-route");
+
+        let result = route(&root, "PMM", "linkedin follow up message", true, false)
+            .expect("route should succeed");
+        let titles: Vec<&str> = result["entry_route"]["matches"]
+            .as_array()
+            .expect("entry matches array")
+            .iter()
+            .filter_map(|entry| entry["title"].as_str())
+            .collect();
+
+        assert!(titles.contains(&"LinkedIn follow-up"));
+        assert!(!titles.contains(&"LinkedIn initial touch"));
+        assert!(!titles.contains(&"Initial email"));
+        assert!(!titles.contains(&"Email follow-up"));
+        assert!(!titles.contains(&"Call prep"));
 
         let _ = std::fs::remove_dir_all(root);
     }

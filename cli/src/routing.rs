@@ -13,6 +13,20 @@ struct EntryRouteDetails {
     full_card_required: Vec<Value>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MessageLifecycle {
+    Initial,
+    FollowUp,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum MessageChannel {
+    Linkedin,
+    Email,
+    Call,
+    Agent,
+}
+
 pub(crate) fn select_cards(
     manifest: &Manifest,
     persona: Option<&str>,
@@ -243,7 +257,9 @@ fn route_entry_details(
             let entry_tokens = tokens(&entry_text);
             let job_match = token_overlap(&job_tokens, &entry_tokens);
             let persona_match = entry_text.contains(&persona_lower);
+            let entry_allowed = entry_policy_compatible(&card.kind, &job_tokens, &entry_tokens);
             let matched = !(matches!(card.kind, CardKind::ChannelPolicies) && !job_match)
+                && entry_allowed
                 && (applies || job_match || persona_match);
             let guardrail = include_context && is_context_guardrail(&card.kind, entry);
 
@@ -386,6 +402,74 @@ pub(crate) fn token_overlap(left: &[String], right: &[String]) -> bool {
         .any(|token| right.iter().any(|other| other == token))
 }
 
+fn entry_policy_compatible(
+    card_kind: &CardKind,
+    job_tokens: &[String],
+    entry_tokens: &[String],
+) -> bool {
+    if matches!(card_kind, CardKind::ChannelPolicies) {
+        channel_compatible(job_tokens, entry_tokens)
+            && lifecycle_compatible(job_tokens, entry_tokens)
+    } else {
+        true
+    }
+}
+
+fn lifecycle_compatible(job_tokens: &[String], entry_tokens: &[String]) -> bool {
+    match (lifecycle_stage(job_tokens), lifecycle_stage(entry_tokens)) {
+        (Some(job_stage), Some(entry_stage)) => job_stage == entry_stage,
+        (Some(_), None) => true,
+        (None, Some(MessageLifecycle::FollowUp)) => false,
+        (None, Some(MessageLifecycle::Initial)) | (None, None) => true,
+    }
+}
+
+fn lifecycle_stage(tokens: &[String]) -> Option<MessageLifecycle> {
+    if has_token(tokens, "followup") || (has_token(tokens, "follow") && has_token(tokens, "up")) {
+        Some(MessageLifecycle::FollowUp)
+    } else if has_token(tokens, "initial")
+        || has_token(tokens, "opener")
+        || has_token(tokens, "opening")
+        || (has_token(tokens, "first") && has_token(tokens, "touch"))
+    {
+        Some(MessageLifecycle::Initial)
+    } else {
+        None
+    }
+}
+
+fn channel_compatible(job_tokens: &[String], entry_tokens: &[String]) -> bool {
+    let job_channels = message_channels(job_tokens);
+    let entry_channels = message_channels(entry_tokens);
+    if job_channels.is_empty() || entry_channels.is_empty() {
+        return true;
+    }
+    job_channels
+        .iter()
+        .any(|channel| entry_channels.contains(channel))
+}
+
+fn message_channels(tokens: &[String]) -> BTreeSet<MessageChannel> {
+    let mut channels = BTreeSet::new();
+    if has_token(tokens, "linkedin") {
+        channels.insert(MessageChannel::Linkedin);
+    }
+    if has_token(tokens, "email") {
+        channels.insert(MessageChannel::Email);
+    }
+    if has_token(tokens, "call") {
+        channels.insert(MessageChannel::Call);
+    }
+    if has_token(tokens, "agent") {
+        channels.insert(MessageChannel::Agent);
+    }
+    channels
+}
+
+fn has_token(tokens: &[String], needle: &str) -> bool {
+    tokens.iter().any(|token| token == needle)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,5 +554,41 @@ mod tests {
             .filter_map(|card| card["id"].as_str())
             .collect();
         assert_eq!(ids, vec!["personas", "avoid-rules"]);
+    }
+
+    #[test]
+    fn lifecycle_gate_defaults_generic_message_jobs_to_initial_entries() {
+        let generic_job = tokens("linkedin outbound copy");
+        let initial_entry = tokens("LinkedIn initial touch");
+        let follow_up_entry = tokens("LinkedIn follow up");
+
+        assert!(lifecycle_compatible(&generic_job, &initial_entry));
+        assert!(!lifecycle_compatible(&generic_job, &follow_up_entry));
+    }
+
+    #[test]
+    fn lifecycle_gate_separates_initial_and_follow_up_entries() {
+        let initial_job = tokens("initial email outbound message");
+        let follow_up_job = tokens("email follow up message");
+        let initial_entry = tokens("Initial email");
+        let follow_up_entry = tokens("Email follow up");
+
+        assert!(lifecycle_compatible(&initial_job, &initial_entry));
+        assert!(!lifecycle_compatible(&initial_job, &follow_up_entry));
+        assert!(!lifecycle_compatible(&follow_up_job, &initial_entry));
+        assert!(lifecycle_compatible(&follow_up_job, &follow_up_entry));
+    }
+
+    #[test]
+    fn channel_gate_excludes_wrong_channel_policy_entries() {
+        let email_job = tokens("initial email outbound message");
+        let linkedin_job = tokens("linkedin follow up message");
+        let email_entry = tokens("Initial email");
+        let linkedin_entry = tokens("LinkedIn follow up");
+
+        assert!(channel_compatible(&email_job, &email_entry));
+        assert!(!channel_compatible(&email_job, &linkedin_entry));
+        assert!(channel_compatible(&linkedin_job, &linkedin_entry));
+        assert!(!channel_compatible(&linkedin_job, &email_entry));
     }
 }
