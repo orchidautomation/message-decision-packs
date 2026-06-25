@@ -25,9 +25,9 @@ entries:
   evidence:
   - README.md
   avoid: []
-- id: clay-row-to-brief
-  title: Enriched row to brief
-  body: Convert a Clay/Deepline-style row into a message brief before drafting. Keep source fields as inputs, not as proof of claims.
+- id: source-row-to-brief
+  title: Source row to brief
+  body: Convert a provider-neutral prospect/source row into a message brief before drafting. Keep source fields as inputs, not as proof of claims.
   applies_to:
   - GTM Engineering
   - PMM

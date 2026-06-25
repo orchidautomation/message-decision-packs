@@ -200,7 +200,7 @@ Important skills include:
 - `mdp-message-angles`: codifies hooks and angles
 - `mdp-cta-builder`: codifies CTA and reply-path policy
 - `mdp-avoid-rules`: enforces category and claim boundaries
-- `mdp-prospect-brief`: turns enriched rows into briefs
+- `mdp-prospect-brief`: turns provider-neutral prospect/source rows into fit decisions and briefs
 - `mdp-copy-brief`: produces model-ready writing contracts
 - `mdp-copy-eval`: evaluates generated copy against the pack
 - `mdp-pack-review`: reviews pack quality
@@ -236,7 +236,7 @@ examples/
   clay-row.json
 ```
 
-The example prospect row is synthetic. It is only there to test the workflow. Real or sensitive prospect data should live in ignored scratch unless someone intentionally commits a sanitized example.
+The example prospect row is synthetic and kept at `examples/clay-row.json` for compatibility with starter scripts and tests. It is only there to test the workflow. Real or sensitive prospect data should live in ignored scratch unless someone intentionally commits a sanitized example. Clay, CSV, CRM export, spreadsheet, Deepline, or user-provided notes are all just possible sources for the same normalized MDP prospect JSON.
 
 ## How The Workflow Works
 
@@ -248,7 +248,7 @@ A normal MDP workflow looks like this:
 4. Fill the cards with personas, fit rules, claims, avoid rules, CTAs, and gaps.
 5. Validate the pack.
 6. Route a persona and job to the minimum required cards.
-7. Convert a prospect row into the expected prospect JSON shape.
+7. Convert a provider-neutral prospect/source row into the expected prospect JSON shape.
 8. Run fit before drafting.
 9. Generate a brief only when fit is acceptable.
 10. Draft from the brief and routed cards.
@@ -282,6 +282,8 @@ The pack stores judgment.
 The CLI turns that judgment into contracts.
 The agent uses those contracts to decide what to load and what to do next.
 ```
+
+There should not be a separate row-evaluation skill that reimplements fit. The row path is: normalize supplied row-like context into MDP prospect JSON, run `mdp fit`, stop on a no-draft decision, and use `mdp brief --context` only after fit allows a message brief.
 
 ## What MDP Is Not
 

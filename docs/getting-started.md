@@ -2,7 +2,7 @@
 
 Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions, routing contracts, fit rules, approved claims, avoid-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, or act as an AI SDR.
 
-If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a prospect row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, and bounded context for drafting.
+If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a provider-neutral prospect/source row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, and bounded context for drafting.
 
 ## Install
 
@@ -62,9 +62,9 @@ Agents should load only the returned cards instead of reading the entire pack by
 
 Use the returned `eval_fixture` as a scaffold for route tests. Review it before committing so evals encode intended behavior, not accidental routing noise.
 
-## Use A Prospect Row
+## Use A Prospect Or Source Row
 
-Keep private prospect data in ignored scratch unless you intentionally commit a sanitized example. Check fit before drafting:
+Keep private prospect data in ignored scratch unless you intentionally commit a sanitized example. A row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it is normalized into MDP prospect JSON. Check fit before drafting:
 
 ```bash
 mdp --json fit --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json
@@ -82,9 +82,9 @@ mdp --json --summary brief --context --dir ./mdp-demo --prospect ./mdp-demo/exam
 
 Draft from the brief's `context.entries`, the prospect context, and any paths in `context.full_card_required`. Use `--out` when the brief should exist as a file; without it, the CLI reports the artifact as stdout-only.
 
-The generated `examples/clay-row.json` is a synthetic fixture, not a real prospect. It includes `source_kind: synthetic-example` and `synthetic: true`.
+The generated `examples/clay-row.json` is a synthetic fixture, not a real prospect. It includes `source_kind: synthetic-example` and `synthetic: true`. The fixture name is kept for compatibility; Clay is not required and is not the default source system.
 
-The prospect row is where the situational trigger comes from. `trigger` is optional, but when present it should describe why the outreach is timely. The pack then decides how to use that input:
+The prospect/source row is where the situational trigger comes from. `trigger` is optional, but when present it should describe why the outreach is timely. The pack then decides how to use that input:
 
 ```text
 prospect row
@@ -106,6 +106,8 @@ persona -> pains -> hooks -> claims/proof -> CTA/channel policy
 ```
 
 `brief --context` makes the selected path explicit in `context.entries`, so agents draft from the relevant persona, pain, hook, proof, CTA, channel, and avoid-rule entries instead of loading every card in the pack.
+
+Do not create a separate row evaluator for this step. The workflow is row normalization, `mdp fit`, and then `mdp brief --context` only when fit allows it. If the input is account-only and lacks a person name and title, ask for a person row or treat the prospect brief as insufficient-context instead of inventing a contact.
 
 ## Source Ledger
 

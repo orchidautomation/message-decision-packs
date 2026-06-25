@@ -1,4 +1,4 @@
 interface:
   display_name: "MDP Prospect Brief"
   short_description: "Normalize prospects into briefs"
-  default_prompt: "Use $mdp-prospect-brief to turn an existing prospect row into an MDP brief."
+  default_prompt: "Use $mdp-prospect-brief to turn an existing provider-neutral prospect/source row into an MDP fit decision and brief."

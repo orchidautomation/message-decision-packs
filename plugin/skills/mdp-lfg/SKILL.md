@@ -41,7 +41,7 @@ Choose the narrow path and use that skill's workflow:
 - Hooks, objections, message angles, copy structures: `$mdp-message-angles`
 - CTA, ask style, reply path, meeting boundary: `$mdp-cta-builder`
 - Forbidden claims, category boundaries, unsupported promises: `$mdp-avoid-rules`
-- Existing prospect row to local MDP prospect JSON and brief: `$mdp-prospect-brief`
+- Existing provider-neutral prospect/source row to local MDP prospect JSON, fit decision, and brief: `$mdp-prospect-brief`
 - Model-ready writing contract: `$mdp-copy-brief`
 - Generated copy QA, claim checks, or revision: `$mdp-copy-eval`
 - Full pack audit, routing QA, completeness check: `$mdp-pack-review`
@@ -65,7 +65,7 @@ For most requests, run this loop:
 mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-8. If a prospect row is involved, produce the brief. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
+8. If a prospect/source row is involved, normalize it through `$mdp-prospect-brief`, run `mdp fit`, and produce the brief only when fit allows. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
 
 ```bash
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
@@ -102,7 +102,8 @@ Treat `ctas.yaml` as the policy for the ask or reply path. Treat `claims.yaml` a
 - Do not invent unsupported claims. Put gaps in the brief or card entries.
 - Keep `--json` on for CLI output that another tool, script, or agent will parse.
 - Use `--summary` for status checks instead of piping JSON into ad hoc scripts.
-- Starter `examples/clay-row.json` rows are synthetic fixtures unless the prospect says otherwise. Do not present them as real prospects.
+- Starter `examples/clay-row.json` rows are synthetic fixtures kept for compatibility unless the prospect says otherwise. Do not present them as real prospects, and do not treat Clay as the required or default source system.
+- Do not add a parallel row-evaluation skill for fit. Use `$mdp-prospect-brief` and the CLI-owned `mdp fit` decision instead.
 
 ## Closeout
 

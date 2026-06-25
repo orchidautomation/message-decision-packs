@@ -9,7 +9,7 @@ Create a writing brief from MDP routing. The brief should constrain a copywriter
 
 ## Workflow
 
-1. If a prospect row exists, run fit first:
+1. If a prospect/source row exists, use the normalized MDP prospect JSON and run fit first:
 
 ```bash
 mdp --json fit --dir . --prospect <prospect.json>
@@ -17,7 +17,9 @@ mdp --json fit --dir . --prospect <prospect.json>
 
 Hard-stop on `disqualified` or `insufficient-context` unless the user explicitly overrides.
 
-2. With a prospect row, build the brief:
+Do not redo row normalization or fit evaluation in this skill. `$mdp-prospect-brief` owns row normalization, and `mdp fit` owns the decision.
+
+2. With a prospect/source row, build the brief:
 
 ```bash
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel>
@@ -29,7 +31,7 @@ If the user expects a created file, save it explicitly:
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
-3. Without a prospect row, build a persona/job brief:
+3. Without a prospect/source row, build a persona/job brief:
 
 ```bash
 mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
@@ -42,7 +44,7 @@ mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> o
 - fit status or insufficient-context decision
 - channel and motion
 - lifecycle when relevant: initial touch vs follow-up
-- prospect context, signals, and assumptions
+- prospect/source row context, signals, and assumptions
 - loaded context entry ids and card ids
 - approved positioning and claims
 - approved hooks

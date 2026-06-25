@@ -25,9 +25,11 @@ A pack is a local `.mdp/` folder:
   cards/objections.yaml
   cards/gaps.yaml
   evals/*.yaml
-examples/
+  examples/
   clay-row.json
 ```
+
+The starter fixture path is kept for compatibility. It is a synthetic provider-neutral prospect/source row, not a Clay dependency.
 
 Quick demo:
 
@@ -66,13 +68,13 @@ Error:
 ## Agent handoff
 
 1. Run `mdp --json doctor` and `mdp --json validate`.
-2. Convert the Clay, Deepline, CSV, or enrichment row into `mdp schema prospect`. Use explicit `persona` when known; otherwise `.mdp/manifest.yaml` can define `persona_mappings` from title keywords to pack personas.
+2. Convert the supplied user note, CSV, CRM export, Clay, Deepline, spreadsheet, or other source row into `mdp schema prospect`. Use explicit `persona` when known; otherwise `.mdp/manifest.yaml` can define `persona_mappings` from title keywords to pack personas.
 3. Run `mdp --json fit --prospect <row.json>` and stop if it returns `disqualified` or `insufficient-context`.
 4. Run `mdp --json --summary brief --context --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
 5. Stop if `data.draft_status` is `no-draft`.
 6. Draft from `data.context.entries` first; open `data.context.full_card_required` paths only when present.
 7. Run `mdp --json check-claims` before approval.
 
-Generated starter rows are synthetic examples. They include `source_kind: synthetic-example` and `synthetic: true`; do not present them as real prospects.
+Generated starter rows are synthetic examples. They include `source_kind: synthetic-example` and `synthetic: true`; do not present them as real prospects. Production rows can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after they are normalized into MDP prospect JSON.
 
 `mdp` is not a sender, CRM, sequencer, lead enricher, scraper, or AI SDR. It is the local decision contract layer.
