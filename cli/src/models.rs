@@ -51,6 +51,48 @@ pub(crate) enum CardKind {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct PromptFile {
+    pub(crate) format: String,
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) target_card_kinds: Vec<CardKind>,
+    #[serde(default)]
+    pub(crate) tags: Vec<String>,
+    pub(crate) inputs: Vec<PromptInput>,
+    pub(crate) instructions: Vec<String>,
+    pub(crate) output_contract: PromptOutputContract,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct PromptInput {
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) required: bool,
+    pub(crate) default: String,
+    pub(crate) missing_behavior: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct PromptOutputContract {
+    pub(crate) contract: String,
+    pub(crate) strict_json_only: bool,
+    pub(crate) required_top_level: Vec<String>,
+    pub(crate) entry_defaults: PromptEntryDefaults,
+    pub(crate) example: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct PromptEntryDefaults {
+    pub(crate) body: String,
+    pub(crate) applies_to: Vec<String>,
+    pub(crate) evidence: Vec<String>,
+    pub(crate) avoid: Vec<String>,
+    pub(crate) confidence: String,
+    pub(crate) provenance: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Policy {
     pub(crate) progressive_disclosure: bool,
     pub(crate) load_manifest_first: bool,
