@@ -13,13 +13,12 @@
     "developerName": "Orchid Labs",
     "category": "Productivity",
     "capabilities": [
-      "Workflow",
+      "Interactive",
       "Write"
     ],
     "defaultPrompt": [
       "Use $mdp-lfg to orchestrate this Message Decision Pack workflow.",
       "Use Message Decision Packs to create an MDP for this ICP.",
-      "Build ICP, fit rules, signals, claims, angles, CTA rules, gaps, and avoid-rules for this MDP.",
       "Review this .mdp pack and produce a LinkedIn brief."
     ]
   }

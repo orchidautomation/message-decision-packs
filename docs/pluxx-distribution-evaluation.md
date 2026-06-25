@@ -133,13 +133,7 @@ Fixed:
 - Reduced Codex default prompts from four to three because Codex supports at most three.
 - Replaced unknown Codex capability `Workflow` with `Interactive`.
 
-Remaining warnings:
-
-- `brand.icon` is missing.
-- `brand.screenshots` is missing.
-- Four skill descriptions exceed Claude Code's display limit and will be truncated there.
-
-These are release polish issues, not functional blockers.
+Current Pluxx validation passes with zero warnings after adding brand icon and screenshot metadata and tightening long skill descriptions.
 
 ## What Pluxx Solves
 

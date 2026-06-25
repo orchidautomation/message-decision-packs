@@ -38,7 +38,9 @@ case "$(uname -s):$(uname -m)" in
     TARGET="x86_64-unknown-linux-gnu"
     ;;
   Linux:aarch64|Linux:arm64)
-    TARGET="aarch64-unknown-linux-gnu"
+    echo "Linux ARM64 is not published in the current MDP release assets." >&2
+    echo "Install mdp manually from source, or use macOS arm64 / Linux x86_64 release assets." >&2
+    exit 1
     ;;
   *)
     echo "Unsupported platform for automatic mdp install: $(uname -s) $(uname -m)" >&2

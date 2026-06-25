@@ -129,10 +129,15 @@ run_installer() {
   local target="$1"
   local installer="$tmp_dir/install-$target.sh"
   local url="$base_url/install-$target.sh"
+  local installer_args=()
+
+  if [ "$yes" = "1" ]; then
+    installer_args+=(--yes)
+  fi
 
   echo "Installing Message Decision Packs for $target..."
   curl -fsSL "$url" -o "$installer"
-  bash "$installer"
+  bash "$installer" "${installer_args[@]}"
 }
 
 for target in "${targets[@]}"; do
