@@ -1,0 +1,81 @@
+format: mdp.sources.v0
+purpose: Source ledger for evidence used in cards. Keep direct source claims separate from interpretation, and preserve gaps instead of inventing proof.
+rules:
+- Add public URLs, user-provided docs, or note identifiers before bulk card writing.
+- Use direct_claims for facts the source states, and interpretations for how the pack may use them.
+- Mark confidence and freshness when known.
+- Do not include private customer data, raw call notes, local browser data, or sensitive local files.
+sources:
+- confidence: high
+  direct_claims:
+  - MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.
+  - MDP stores decision context and routing contracts; it is not execution infrastructure.
+  freshness: repo-current
+  gaps: []
+  id: mdp-readme
+  interpretations:
+  - Use this source for category boundaries, not for third-party customer proof.
+  kind: repo-doc
+  locator: ../../../README.md
+- confidence: high
+  direct_claims:
+  - Anthropic says it aims to build frontier AI systems that are reliable, interpretable, and steerable.
+  - Anthropic describes itself as an AI safety and research company.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: anthropic-company
+  interpretations:
+  - Use this source to classify Anthropic as an AI research and product company.
+  - Do not infer Anthropic's internal GTM process, vendor needs, budget, or buying intent from this source.
+  kind: public-web
+  locator: https://www.anthropic.com/company
+- confidence: high
+  direct_claims:
+  - Claude Code is Anthropic's agentic coding system.
+  - The Claude Code page says the system can read a codebase, make changes across files, run tests, and deliver committed code.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: anthropic-claude-code
+  interpretations:
+  - Use this source to define a developer-tooling market slice where agentic coding, codebase context, tests, and committed code matter.
+  - Do not infer that a target account uses Claude Code unless a target-account source says so.
+  kind: public-web
+  locator: https://www.anthropic.com/product/claude-code
+- confidence: high
+  direct_claims:
+  - Anthropic announced Claude for Small Business as a package of connectors and ready-to-run workflows.
+  - The source frames Claude inside business tools and professional workflows.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: anthropic-small-business
+  interpretations:
+  - Use this source to define a second target slice: small and mid-market teams with repeatable workflows and tool-connectivity needs.
+  - Do not treat this as proof that every small business is a fit; require workflow intensity and data-boundary signals.
+  kind: public-web
+  locator: https://www.anthropic.com/news/claude-for-small-business
+- confidence: medium
+  direct_claims:
+  - Cursor's public site describes Cursor as an AI coding agent.
+  - Anysphere's public site describes Cursor as an applied research lab working on the future of programming.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: cursor-anysphere-public
+  interpretations:
+  - Use this as the sample target account for the developer-tooling slice.
+  - Treat fit as plausible but not proven until the brief checks account signals, use case, buying center, and disqualifiers.
+  kind: public-web
+  locator: https://cursor.com/
+- confidence: medium
+  direct_claims:
+  - Public search metadata for LinkedIn returned a profile at linkedin.com/in/michael-t-5b1bbb122 with the title "Michael T. - Building Cursor - LinkedIn."
+  - The result description listed Experience Cursor and Location San Francisco.
+  freshness: retrieved-2026-06-25
+  gaps:
+  - The Apify MCP requested by the user was not available in this Codex session, so this pack records public LinkedIn search metadata rather than an Apify-scraped profile payload.
+  - The pack intentionally stores no email, phone number, private profile fields, or inferred personal data.
+  id: linkedin-michael-truell-public-result
+  interpretations:
+  - Use the LinkedIn URL as a public target-contact locator only.
+  - Do not treat profile existence as evidence of interest, pain, activity, or permission to contact.
+  kind: public-search-result
+  locator: https://www.linkedin.com/in/michael-t-5b1bbb122

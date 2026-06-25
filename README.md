@@ -9,6 +9,7 @@ message-decision-packs/
   cli/      # Rust `mdp` CLI
   plugin/   # Pluxx source plugin with MDP skills, templates, and helper scripts
   docs/     # Project notes and distribution guidance
+  examples/ # Canonical public-source example packs
 ```
 
 MDP is a decision/context layer. It is not a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.
@@ -26,6 +27,8 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
 For the first-use walkthrough, see [Getting Started](docs/getting-started.md).
+
+Canonical example: [Anthropic Market Vetting](examples/anthropic-market-vetting/README.md) shows a complete public-source pack for how Anthropic could define a target market slice, vet a company, use a public person locator, and produce fit, route, brief, gaps, and eval artifacts.
 
 Portable shell fallback:
 

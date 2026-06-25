@@ -119,7 +119,7 @@ pub(crate) fn prospect_brief_from_value_with_context(
         "required_load_order": load_order,
         "route": route,
         "decision_trace": [
-            {"step": "read_prospect", "reason": "use enriched Clay/Deepline-style row as task input"},
+            {"step": "read_prospect", "reason": "use supplied prospect/account JSON as task input"},
             {"step": "infer_or_use_persona", "reason": "map person title to pack persona"},
             {"step": "route_cards", "reason": "load only relevant message decision cards"},
             {"step": "generate_or_handoff", "reason": "use the brief as the agent/model input contract"}

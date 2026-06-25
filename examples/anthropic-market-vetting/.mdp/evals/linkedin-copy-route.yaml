@@ -1,0 +1,13 @@
+command: route
+expect_entry_titles_contains:
+- LinkedIn account-vetting note
+- Public person locator
+- No contact enrichment
+expect_load_order_contains:
+- .mdp/cards/personas.yaml
+- .mdp/cards/avoid-rules.yaml
+- .mdp/cards/channel-policies.yaml
+- .mdp/cards/signals.yaml
+id: linkedin-account-vetting-route
+job: linkedin account qualification brief
+persona: Anthropic Account Strategy

@@ -1,0 +1,4 @@
+command: check-claims
+expect_valid: false
+id: claim-check-unsupported
+text: This will guarantee 50 percent ROI, scrape contacts, and prove Cursor is actively evaluating Claude.

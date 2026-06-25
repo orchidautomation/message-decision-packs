@@ -1,0 +1,39 @@
+{
+  "background": "Cursor / Anysphere is a public AI developer-tooling company. Cursor's public site describes Cursor as an AI coding agent, and Anysphere's site describes Cursor as an applied research lab working on the future of programming.",
+  "company": "Cursor / Anysphere",
+  "company_url": "https://cursor.com/",
+  "linkedin_url": "https://www.linkedin.com/in/michael-t-5b1bbb122",
+  "name": "Michael T.",
+  "persona": "Anthropic Account Strategy",
+  "segment": "AI developer tooling",
+  "signals": [
+    {
+      "confidence": "high",
+      "freshness": "retrieved-2026-06-25",
+      "id": "cursor-ai-coding-agent",
+      "source": "cursor-anysphere-public",
+      "state_as": "fact",
+      "title": "Cursor publicly positions itself as an AI coding agent"
+    },
+    {
+      "confidence": "medium",
+      "freshness": "retrieved-2026-06-25",
+      "id": "anysphere-future-of-programming",
+      "source": "cursor-anysphere-public",
+      "state_as": "fact",
+      "title": "Anysphere describes Cursor as an applied research lab working on the future of programming"
+    },
+    {
+      "confidence": "medium",
+      "freshness": "retrieved-2026-06-25",
+      "id": "public-linkedin-profile-locator",
+      "source": "linkedin-michael-truell-public-result",
+      "state_as": "locator-only",
+      "title": "Public LinkedIn result for Michael T. at Cursor"
+    }
+  ],
+  "source_kind": "public-example",
+  "synthetic": false,
+  "title": "Building Cursor",
+  "trigger": "public developer-tooling account signal for Anthropic target-account vetting"
+}

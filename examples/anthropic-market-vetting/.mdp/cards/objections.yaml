@@ -1,0 +1,40 @@
+id: objections
+kind: objections
+title: Account-vetting objections
+description: Category confusion and response logic for target-account qualification.
+personas:
+- Anthropic Account Strategy
+- Anthropic Product GTM
+- Anthropic Developer Platform
+tags:
+- objection
+- alternative
+- response
+entries:
+- id: why-not-just-search
+  title: Why not just search the web?
+  body: Search finds raw source material. The MDP records how Anthropic-side operators interpret sources into segment, fit, disqualification, gap, and next-step decisions.
+  applies_to:
+  - Anthropic Account Strategy
+  - Anthropic Product GTM
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: why-not-crm
+  title: Why not CRM?
+  body: CRM can store account state. This pack stores the reasoning contract for whether public evidence supports targeting a company in a specific market slice.
+  applies_to:
+  - Anthropic Account Strategy
+  - Anthropic Product GTM
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: why-not-enrichment
+  title: Why not enrichment?
+  body: Enrichment can add fields, but this pack does not enrich or scrape. It uses supplied public context to decide whether evidence is enough to proceed.
+  applies_to:
+  - Anthropic Account Strategy
+  - Anthropic Developer Platform
+  evidence:
+  - mdp-readme
+  avoid: []

@@ -1,0 +1,52 @@
+id: positioning
+kind: positioning
+title: Positioning and boundaries
+description: Market-vetting boundaries for an Anthropic account qualification pack.
+personas:
+- Anthropic Account Strategy
+- Anthropic Product GTM
+- Anthropic Developer Platform
+tags:
+- positioning
+- category
+- boundary
+entries:
+- id: decision-layer
+  title: Vetting decision layer
+  body: Use the pack as a local decision layer for target account qualification. It stores the target slice, fit rules, signal interpretation, claims, disqualifiers, and gaps before any account motion.
+  applies_to:
+  - Anthropic Account Strategy
+  - Anthropic Product GTM
+  - Anthropic Developer Platform
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: not-execution-system
+  title: Not execution
+  body: Do not describe MDP as a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.
+  applies_to:
+  - Anthropic Account Strategy
+  - Anthropic Product GTM
+  - Anthropic Developer Platform
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: progressive-disclosure
+  title: Progressive disclosure
+  body: Agents should start from the manifest, source ledger, and routed cards. For account vetting, load only the segment, fit, signal, claim, avoid-rule, and gap entries returned for the target company.
+  applies_to:
+  - Anthropic Account Strategy
+  - Anthropic Product GTM
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: target-slice-not-total-market
+  title: Target slice, not total market
+  body: The example narrows Anthropic's broad market into two inspectable slices; developer-tooling companies building AI coding workflows, and small or mid-market businesses with repeatable tool-connected workflows.
+  applies_to:
+  - Anthropic Account Strategy
+  - Anthropic Product GTM
+  evidence:
+  - anthropic-claude-code
+  - anthropic-small-business
+  avoid: []

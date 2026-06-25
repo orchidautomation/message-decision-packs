@@ -1,0 +1,1195 @@
+{
+  "agent_instruction": "Use data.context.entries before opening card files. Open full_card_required paths only when present. Combine bounded context with prospect, use the routed CTA policy when present, and do not invent claims outside the loaded context.",
+  "artifact": {
+    "kind": "json-file",
+    "path": "examples/anthropic-market-vetting/.mdp/briefs/cursor-anysphere-vetting.json",
+    "status": "saved",
+    "stdout": "also-emitted"
+  },
+  "channel": "linkedin",
+  "context": {
+    "contract": "mdp.context.v0",
+    "entries": [
+      {
+        "applies_to": [
+          "Anthropic Account Strategy"
+        ],
+        "avoid": [],
+        "body": "Needs a practical account-vetting contract; which company slice is worth pursuing, what public signals prove fit, what disqualifies an account, and what gaps block outreach.",
+        "card_id": "personas",
+        "card_kind": "personas",
+        "card_path": ".mdp/cards/personas.yaml",
+        "entry_id": "anthropic-account-strategy",
+        "evidence": [
+          "mdp-readme",
+          "anthropic-small-business"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Anthropic Account Strategy"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "Use the pack as a local decision layer for target account qualification. It stores the target slice, fit rules, signal interpretation, claims, disqualifiers, and gaps before any account motion.",
+        "card_id": "positioning",
+        "card_kind": "positioning",
+        "card_path": ".mdp/cards/positioning.yaml",
+        "entry_id": "decision-layer",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "Vetting decision layer"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "Do not describe MDP as a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.",
+        "card_id": "positioning",
+        "card_kind": "positioning",
+        "card_path": ".mdp/cards/positioning.yaml",
+        "entry_id": "not-execution-system",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "Not execution"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Agents should start from the manifest, source ledger, and routed cards. For account vetting, load only the segment, fit, signal, claim, avoid-rule, and gap entries returned for the target company.",
+        "card_id": "positioning",
+        "card_kind": "positioning",
+        "card_path": ".mdp/cards/positioning.yaml",
+        "entry_id": "progressive-disclosure",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "Progressive disclosure"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "The example narrows Anthropic's broad market into two inspectable slices; developer-tooling companies building AI coding workflows, and small or mid-market businesses with repeatable tool-connected workflows.",
+        "card_id": "positioning",
+        "card_kind": "positioning",
+        "card_path": ".mdp/cards/positioning.yaml",
+        "entry_id": "target-slice-not-total-market",
+        "evidence": [
+          "anthropic-claude-code",
+          "anthropic-small-business"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "Target slice, not total market"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "Use when the target account is an AI-native company building developer tools, coding agents, engineering workflow software, or products where codebase context, test execution, and reliable model behavior matter.",
+        "card_id": "fit-rules",
+        "card_kind": "fit-rules",
+        "card_path": ".mdp/cards/fit-rules.yaml",
+        "entry_id": "good-fit-ai-developer-tooling",
+        "evidence": [
+          "anthropic-claude-code",
+          "cursor-anysphere-public"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "Good fit: AI developer tooling company"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Use when the target account has repeatable professional workflows, tool-connected work, or small/mid-market operating processes where Claude for business can plausibly fit.",
+        "card_id": "fit-rules",
+        "card_kind": "fit-rules",
+        "card_path": ".mdp/cards/fit-rules.yaml",
+        "entry_id": "good-fit-workflow-heavy-business",
+        "evidence": [
+          "anthropic-small-business"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "Good fit: workflow-heavy business"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [
+          "no source",
+          "unknown persona",
+          "no trigger"
+        ],
+        "body": "If the account row has no company source, segment, trigger, person locator, or account signal, return insufficient-context instead of forcing a target-account recommendation.",
+        "card_id": "fit-rules",
+        "card_kind": "fit-rules",
+        "card_path": ".mdp/cards/fit-rules.yaml",
+        "entry_id": "no-context-no-vetting",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "guardrail",
+        "status": "required",
+        "title": "No account vetting without public context"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [
+          "consumer-only",
+          "scrape contacts",
+          "blast",
+          "auto-send",
+          "sequence everyone"
+        ],
+        "body": "If the target is only a consumer app with no clear work/developer use case, or the request is to scrape contact data, auto-send, sequence, or update CRM records, treat it as out of scope for this pack.",
+        "card_id": "fit-rules",
+        "card_kind": "fit-rules",
+        "card_path": ".mdp/cards/fit-rules.yaml",
+        "entry_id": "bad-fit-consumer-only-or-contact-harvest",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "guardrail",
+        "status": "required",
+        "title": "Bad fit: consumer-only or contact-harvest ask"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "Strong fit signal when the target company publicly builds coding agents, developer tools, code editors, engineering workflow software, or products where codebase context and test execution matter.",
+        "card_id": "signals",
+        "card_kind": "signals",
+        "card_path": ".mdp/cards/signals.yaml",
+        "entry_id": "developer-tooling-fit-signal",
+        "evidence": [
+          "anthropic-claude-code",
+          "cursor-anysphere-public"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Developer-tooling fit signal"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Fit signal when public sources show repeatable work across documents, support, operations, analysis, or tool-connected workflows where Claude for business could be relevant.",
+        "card_id": "signals",
+        "card_kind": "signals",
+        "card_path": ".mdp/cards/signals.yaml",
+        "entry_id": "workflow-heavy-business-signal",
+        "evidence": [
+          "anthropic-small-business"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Workflow-heavy business signal"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "AI-native companies are plausible targets when the public product depends on model quality, developer experience, applied research, or AI workflow reliability.",
+        "card_id": "signals",
+        "card_kind": "signals",
+        "card_path": ".mdp/cards/signals.yaml",
+        "entry_id": "ai-native-company-signal",
+        "evidence": [
+          "anthropic-company",
+          "cursor-anysphere-public"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "AI-native company signal"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy"
+        ],
+        "avoid": [
+          "inferred intent",
+          "contact enrichment"
+        ],
+        "body": "Use a public LinkedIn result only to identify a likely operator or contact path at the target account. It does not prove interest, budget, authority, pain, or permission to contact.",
+        "card_id": "signals",
+        "card_kind": "signals",
+        "card_path": ".mdp/cards/signals.yaml",
+        "entry_id": "public-person-locator",
+        "evidence": [
+          "linkedin-michael-truell-public-result"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Public person locator"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "Developer-tooling accounts are stronger fits when their product requires codebase understanding, multi-file changes, test execution, or reliable coding-agent behavior.",
+        "card_id": "pains",
+        "card_kind": "pains",
+        "card_path": ".mdp/cards/pains.yaml",
+        "entry_id": "codebase-context-job",
+        "evidence": [
+          "anthropic-claude-code",
+          "cursor-anysphere-public"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Codebase context job"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Workflow-heavy businesses are stronger fits when they need Claude inside existing tools, repeatable workflows, and grounded assistance across operational tasks.",
+        "card_id": "pains",
+        "card_kind": "pains",
+        "card_path": ".mdp/cards/pains.yaml",
+        "entry_id": "workflow-automation-job",
+        "evidence": [
+          "anthropic-small-business"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Workflow automation job"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "Anthropic says it aims to build frontier AI systems that are reliable, interpretable, and steerable.",
+        "card_id": "claims",
+        "card_kind": "claims",
+        "card_path": ".mdp/cards/claims.yaml",
+        "entry_id": "anthropic-reliable-steerable-ai",
+        "evidence": [
+          "anthropic-company"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "Reliable, interpretable, steerable AI"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "Anthropic positions Claude Code as an agentic coding system that can read a codebase, make changes across files, run tests, and deliver committed code.",
+        "card_id": "claims",
+        "card_kind": "claims",
+        "card_path": ".mdp/cards/claims.yaml",
+        "entry_id": "claude-code-agentic-coding",
+        "evidence": [
+          "anthropic-claude-code"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "Claude Code agentic coding"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Anthropic announced Claude for Small Business as connectors and ready-to-run workflows for business tools.",
+        "card_id": "claims",
+        "card_kind": "claims",
+        "card_path": ".mdp/cards/claims.yaml",
+        "entry_id": "claude-small-business-workflows",
+        "evidence": [
+          "anthropic-small-business"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "Claude for small business workflows"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "MDP can store account-vetting decisions in a manifest plus modular cards so agents route source-backed market, fit, claim, and gap context before a brief.",
+        "card_id": "claims",
+        "card_kind": "claims",
+        "card_path": ".mdp/cards/claims.yaml",
+        "entry_id": "mdp-vetting-context",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "MDP vetting context"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy"
+        ],
+        "avoid": [],
+        "body": "Given a public company/person fixture, route fit rules, signals, claims, gaps, and account questions to decide whether the company belongs in the target slice.",
+        "card_id": "motions",
+        "card_kind": "motions",
+        "card_path": ".mdp/cards/motions.yaml",
+        "entry_id": "target-account-vetting",
+        "evidence": [
+          "mdp-readme",
+          "examples/cursor-anysphere.json"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Target account vetting"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Produce a brief with fit status, source-backed account signals, likely use cases, disqualifiers, gaps, and safe next questions before any outbound copy is drafted.",
+        "card_id": "motions",
+        "card_kind": "motions",
+        "card_path": ".mdp/cards/motions.yaml",
+        "entry_id": "account-brief-before-outreach",
+        "evidence": [
+          "mdp-readme",
+          "examples/cursor-anysphere.json"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Account brief before outreach"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy"
+        ],
+        "avoid": [],
+        "body": "If LinkedIn output is requested, use it as a restrained account-vetting note: one public company signal, one hypothesis about fit, and one question about the right owner. Do not imply private activity or intent.",
+        "card_id": "channel-policies",
+        "card_kind": "channel-policies",
+        "card_path": ".mdp/cards/channel-policies.yaml",
+        "entry_id": "linkedin-opener",
+        "evidence": [
+          "linkedin-michael-truell-public-result",
+          "cursor-anysphere-public"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "required",
+        "title": "LinkedIn account-vetting note"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "This account is interesting if its public product is close to agentic coding, codebase context, developer workflows, or engineering productivity.",
+        "card_id": "hooks",
+        "card_kind": "hooks",
+        "card_path": ".mdp/cards/hooks.yaml",
+        "entry_id": "developer-tooling-slice",
+        "evidence": [
+          "anthropic-claude-code",
+          "cursor-anysphere-public"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Developer tooling slice"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "This account is interesting if the company has repeatable professional workflows where Claude could sit inside existing tools or operating loops.",
+        "card_id": "hooks",
+        "card_kind": "hooks",
+        "card_path": ".mdp/cards/hooks.yaml",
+        "entry_id": "workflow-heavy-slice",
+        "evidence": [
+          "anthropic-small-business"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Workflow-heavy slice"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "The useful move is to turn public company evidence into a fit decision, not to infer budget, pain, or interest from a LinkedIn profile.",
+        "card_id": "hooks",
+        "card_kind": "hooks",
+        "card_path": ".mdp/cards/hooks.yaml",
+        "entry_id": "source-backed-vetting",
+        "evidence": [
+          "mdp-readme",
+          "linkedin-michael-truell-public-result"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Source-backed vetting"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy"
+        ],
+        "avoid": [],
+        "body": "Default to a qualification ask: confirm the right owner, validate the use case, or ask whether the account is exploring Claude/API/developer workflow needs before proposing a meeting.",
+        "card_id": "ctas",
+        "card_kind": "ctas",
+        "card_path": ".mdp/cards/ctas.yaml",
+        "entry_id": "qualify-before-meeting",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Qualify before meeting"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Do not manufacture urgency or imply the target company asked for help unless the source row says so.",
+        "card_id": "ctas",
+        "card_kind": "ctas",
+        "card_path": ".mdp/cards/ctas.yaml",
+        "entry_id": "no-false-urgency",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "No false urgency"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "When the best next step is not a meeting, ask a routing question that helps identify owner, use case, timing, or current AI workflow.",
+        "card_id": "ctas",
+        "card_kind": "ctas",
+        "card_path": ".mdp/cards/ctas.yaml",
+        "entry_id": "reply-path",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Reply path"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "If fit is plausible but gaps remain, route to internal review with evidence and questions instead of drafting external copy.",
+        "card_id": "ctas",
+        "card_kind": "ctas",
+        "card_path": ".mdp/cards/ctas.yaml",
+        "entry_id": "internal-review-first",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Internal review first"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [
+          "AI SDR",
+          "sequencer",
+          "CRM replacement",
+          "generic automation",
+          "scraper"
+        ],
+        "body": "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, or generic RevOps automation system.",
+        "card_id": "avoid-rules",
+        "card_kind": "avoid-rules",
+        "card_path": ".mdp/cards/avoid-rules.yaml",
+        "entry_id": "not-execution",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "guardrail",
+        "status": "required",
+        "title": "Do not claim execution"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [
+          "guaranteed",
+          "proven ROI",
+          "fully automated"
+        ],
+        "body": "Do not add quantified outcomes, integrations, customer names, compliance claims, target-account tech stack details, intent, budget, or product capabilities unless they are present in the claims card or supplied source material.",
+        "card_id": "avoid-rules",
+        "card_kind": "avoid-rules",
+        "card_path": ".mdp/cards/avoid-rules.yaml",
+        "entry_id": "no-unsourced-claims",
+        "evidence": [],
+        "reason": "persona applies",
+        "selection": "guardrail",
+        "status": "required",
+        "title": "No unsourced claims"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy"
+        ],
+        "avoid": [
+          "scrape contacts",
+          "find email",
+          "phone number",
+          "private profile"
+        ],
+        "body": "Do not scrape, infer, buy, expose, or invent private contact data. Public LinkedIn metadata is a locator only.",
+        "card_id": "avoid-rules",
+        "card_kind": "avoid-rules",
+        "card_path": ".mdp/cards/avoid-rules.yaml",
+        "entry_id": "no-contact-enrichment",
+        "evidence": [
+          "linkedin-michael-truell-public-result"
+        ],
+        "reason": "persona applies",
+        "selection": "guardrail",
+        "status": "required",
+        "title": "No contact enrichment"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [
+          "they are looking for",
+          "they need Claude",
+          "active evaluation"
+        ],
+        "body": "Do not infer that Cursor, Anysphere, or a public person is interested in Anthropic, evaluating Claude, or experiencing a known pain unless a source explicitly says so.",
+        "card_id": "avoid-rules",
+        "card_kind": "avoid-rules",
+        "card_path": ".mdp/cards/avoid-rules.yaml",
+        "entry_id": "no-false-account-intent",
+        "evidence": [
+          "cursor-anysphere-public",
+          "linkedin-michael-truell-public-result"
+        ],
+        "reason": "persona applies",
+        "selection": "guardrail",
+        "status": "required",
+        "title": "No false account intent"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Return target account, market slice, fit decision, public signals, likely jobs, allowed claims, disqualifiers, gaps, and recommended next step.",
+        "card_id": "copy-patterns",
+        "card_kind": "copy-patterns",
+        "card_path": ".mdp/cards/copy-patterns.yaml",
+        "entry_id": "brief-contract",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Brief contract"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "When evidence is missing, write the gap explicitly instead of smoothing over it with generic GTM language.",
+        "card_id": "copy-patterns",
+        "card_kind": "copy-patterns",
+        "card_path": ".mdp/cards/copy-patterns.yaml",
+        "entry_id": "claim-gap",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Claim gap"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Structure account vetting as observed public signal, fit rule matched, gaps that still matter, and the smallest next step.",
+        "card_id": "copy-patterns",
+        "card_kind": "copy-patterns",
+        "card_path": ".mdp/cards/copy-patterns.yaml",
+        "entry_id": "signal-fit-gap-next-step",
+        "evidence": [
+          "examples/cursor-anysphere.json",
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Signal -> fit -> gap -> next step"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy"
+        ],
+        "avoid": [],
+        "body": "For external copy, use one public account signal, one explicitly framed fit hypothesis, and one routing question. Do not present the vetting hypothesis as fact.",
+        "card_id": "copy-patterns",
+        "card_kind": "copy-patterns",
+        "card_path": ".mdp/cards/copy-patterns.yaml",
+        "entry_id": "external-note-pattern",
+        "evidence": [
+          "linkedin-michael-truell-public-result",
+          "cursor-anysphere-public"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "External note pattern"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "Search finds raw source material. The MDP records how Anthropic-side operators interpret sources into segment, fit, disqualification, gap, and next-step decisions.",
+        "card_id": "objections",
+        "card_kind": "objections",
+        "card_path": ".mdp/cards/objections.yaml",
+        "entry_id": "why-not-just-search",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Why not just search the web?"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM"
+        ],
+        "avoid": [],
+        "body": "CRM can store account state. This pack stores the reasoning contract for whether public evidence supports targeting a company in a specific market slice.",
+        "card_id": "objections",
+        "card_kind": "objections",
+        "card_path": ".mdp/cards/objections.yaml",
+        "entry_id": "why-not-crm",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Why not CRM?"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "Enrichment can add fields, but this pack does not enrich or scrape. It uses supplied public context to decide whether evidence is enough to proceed.",
+        "card_id": "objections",
+        "card_kind": "objections",
+        "card_path": ".mdp/cards/objections.yaml",
+        "entry_id": "why-not-enrichment",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Why not enrichment?"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "Public sources may show a company belongs near the developer-tooling slice, but they do not prove which Claude use case, model requirement, or buying motion matters.",
+        "card_id": "gaps",
+        "card_kind": "gaps",
+        "card_path": ".mdp/cards/gaps.yaml",
+        "entry_id": "missing-use-case-proof",
+        "evidence": [
+          "cursor-anysphere-public"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Missing use-case proof"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy"
+        ],
+        "avoid": [],
+        "body": "A public LinkedIn locator does not prove the right owner, budget holder, evaluator, or technical buyer. Ask for owner validation before external outreach.",
+        "card_id": "gaps",
+        "card_kind": "gaps",
+        "card_path": ".mdp/cards/gaps.yaml",
+        "entry_id": "missing-buying-center",
+        "evidence": [
+          "linkedin-michael-truell-public-result"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Missing buying center"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy"
+        ],
+        "avoid": [],
+        "body": "The user requested Apify MCP LinkedIn lookup, but Apify was not installed or listed as installable here. This example records public search metadata and does not store scraped profile payloads.",
+        "card_id": "gaps",
+        "card_kind": "gaps",
+        "card_path": ".mdp/cards/gaps.yaml",
+        "entry_id": "apify-unavailable",
+        "evidence": [
+          "linkedin-michael-truell-public-result"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Apify MCP unavailable in this session"
+      },
+      {
+        "applies_to": [
+          "Anthropic Account Strategy",
+          "Anthropic Product GTM",
+          "Anthropic Developer Platform"
+        ],
+        "avoid": [],
+        "body": "MDP can model the account-vetting decision, but it does not perform scraping, enrichment, sequencing, sending, CRM updates, or proof of production Anthropic strategy.",
+        "card_id": "gaps",
+        "card_kind": "gaps",
+        "card_path": ".mdp/cards/gaps.yaml",
+        "entry_id": "mdp-boundary-gap",
+        "evidence": [
+          "mdp-readme"
+        ],
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "MDP boundary"
+      }
+    ],
+    "full_card_required": [],
+    "job": "write linkedin outbound message",
+    "persona": "Anthropic Account Strategy",
+    "policy": "Use context.entries first. Open full_card_required paths only when present, or when the user asks for a full pack/card audit.",
+    "source_load_order": [
+      ".mdp/cards/personas.yaml",
+      ".mdp/cards/avoid-rules.yaml",
+      ".mdp/cards/fit-rules.yaml",
+      ".mdp/cards/positioning.yaml",
+      ".mdp/cards/pains.yaml",
+      ".mdp/cards/signals.yaml",
+      ".mdp/cards/hooks.yaml",
+      ".mdp/cards/claims.yaml",
+      ".mdp/cards/copy-patterns.yaml",
+      ".mdp/cards/ctas.yaml",
+      ".mdp/cards/channel-policies.yaml",
+      ".mdp/cards/objections.yaml",
+      ".mdp/cards/motions.yaml",
+      ".mdp/cards/gaps.yaml"
+    ],
+    "status": "ready",
+    "summary": {
+      "card_count": 14,
+      "entry_count": 44,
+      "guardrail_entry_count": 6,
+      "required_entry_count": 17,
+      "supporting_entry_count": 27
+    }
+  },
+  "contract": "mdp.message-brief.v0",
+  "decision_trace": [
+    {
+      "reason": "use supplied prospect/account JSON as task input",
+      "step": "read_prospect"
+    },
+    {
+      "reason": "map person title to pack persona",
+      "step": "infer_or_use_persona"
+    },
+    {
+      "reason": "load only relevant message decision cards",
+      "step": "route_cards"
+    },
+    {
+      "reason": "use the brief as the agent/model input contract",
+      "step": "generate_or_handoff"
+    }
+  ],
+  "draft_decision": "Proceed with routed brief using stated assumptions.",
+  "draft_status": "ready",
+  "fit": {
+    "context": {
+      "has_background": true,
+      "missing": [],
+      "ready": true
+    },
+    "contract": "mdp.fit.v0",
+    "decision": "Proceed to route/brief with stated assumptions.",
+    "disqualifiers": [],
+    "matches": [
+      {
+        "id": "good-fit-ai-developer-tooling",
+        "reason": "segment/persona match",
+        "title": "Good fit: AI developer tooling company"
+      },
+      {
+        "id": "good-fit-workflow-heavy-business",
+        "reason": "segment/persona match",
+        "title": "Good fit: workflow-heavy business"
+      }
+    ],
+    "persona_resolution": {
+      "confidence": "explicit",
+      "fit_usable": true,
+      "matched_keywords": [],
+      "needs_review": false,
+      "persona": "Anthropic Account Strategy",
+      "reason": "prospect persona was provided explicitly",
+      "source": "prospect.persona"
+    },
+    "prospect": {
+      "background": "Cursor / Anysphere is a public AI developer-tooling company. Cursor's public site describes Cursor as an AI coding agent, and Anysphere's site describes Cursor as an applied research lab working on the future of programming.",
+      "company": "Cursor / Anysphere",
+      "company_url": "https://cursor.com/",
+      "linkedin_url": "https://www.linkedin.com/in/michael-t-5b1bbb122",
+      "name": "Michael T.",
+      "persona": "Anthropic Account Strategy",
+      "segment": "AI developer tooling",
+      "signals": [
+        {
+          "confidence": "high",
+          "freshness": "retrieved-2026-06-25",
+          "id": "cursor-ai-coding-agent",
+          "source": "cursor-anysphere-public",
+          "state_as": "fact",
+          "title": "Cursor publicly positions itself as an AI coding agent"
+        },
+        {
+          "confidence": "medium",
+          "freshness": "retrieved-2026-06-25",
+          "id": "anysphere-future-of-programming",
+          "source": "cursor-anysphere-public",
+          "state_as": "fact",
+          "title": "Anysphere describes Cursor as an applied research lab working on the future of programming"
+        },
+        {
+          "confidence": "medium",
+          "freshness": "retrieved-2026-06-25",
+          "id": "public-linkedin-profile-locator",
+          "source": "linkedin-michael-truell-public-result",
+          "state_as": "locator-only",
+          "title": "Public LinkedIn result for Michael T. at Cursor"
+        }
+      ],
+      "source_kind": "public-example",
+      "synthetic": false,
+      "title": "Building Cursor",
+      "trigger": "public developer-tooling account signal for Anthropic target-account vetting"
+    },
+    "status": "fit"
+  },
+  "input_artifact": {
+    "kind": "prospect",
+    "path": "examples/anthropic-market-vetting/examples/cursor-anysphere.json"
+  },
+  "job": "write linkedin outbound message",
+  "pack": {
+    "id": "anthropic-market-vetting-example",
+    "name": "Anthropic Market Vetting Example",
+    "version": "0.1.0"
+  },
+  "persona": "Anthropic Account Strategy",
+  "persona_resolution": {
+    "confidence": "explicit",
+    "fit_usable": true,
+    "matched_keywords": [],
+    "needs_review": false,
+    "persona": "Anthropic Account Strategy",
+    "reason": "prospect persona was provided explicitly",
+    "source": "prospect.persona"
+  },
+  "prospect": {
+    "background": "Cursor / Anysphere is a public AI developer-tooling company. Cursor's public site describes Cursor as an AI coding agent, and Anysphere's site describes Cursor as an applied research lab working on the future of programming.",
+    "company": "Cursor / Anysphere",
+    "company_url": "https://cursor.com/",
+    "linkedin_url": "https://www.linkedin.com/in/michael-t-5b1bbb122",
+    "name": "Michael T.",
+    "persona": "Anthropic Account Strategy",
+    "segment": "AI developer tooling",
+    "signals": [
+      {
+        "confidence": "high",
+        "freshness": "retrieved-2026-06-25",
+        "id": "cursor-ai-coding-agent",
+        "source": "cursor-anysphere-public",
+        "state_as": "fact",
+        "title": "Cursor publicly positions itself as an AI coding agent"
+      },
+      {
+        "confidence": "medium",
+        "freshness": "retrieved-2026-06-25",
+        "id": "anysphere-future-of-programming",
+        "source": "cursor-anysphere-public",
+        "state_as": "fact",
+        "title": "Anysphere describes Cursor as an applied research lab working on the future of programming"
+      },
+      {
+        "confidence": "medium",
+        "freshness": "retrieved-2026-06-25",
+        "id": "public-linkedin-profile-locator",
+        "source": "linkedin-michael-truell-public-result",
+        "state_as": "locator-only",
+        "title": "Public LinkedIn result for Michael T. at Cursor"
+      }
+    ],
+    "source_kind": "public-example",
+    "synthetic": false,
+    "title": "Building Cursor",
+    "trigger": "public developer-tooling account signal for Anthropic target-account vetting"
+  },
+  "prospect_source": {
+    "guidance": "User-provided or sanitized prospect row.",
+    "kind": "public-example",
+    "synthetic": false
+  },
+  "required_load_order": [
+    ".mdp/cards/personas.yaml",
+    ".mdp/cards/avoid-rules.yaml",
+    ".mdp/cards/fit-rules.yaml",
+    ".mdp/cards/positioning.yaml",
+    ".mdp/cards/pains.yaml",
+    ".mdp/cards/signals.yaml",
+    ".mdp/cards/hooks.yaml",
+    ".mdp/cards/claims.yaml",
+    ".mdp/cards/copy-patterns.yaml",
+    ".mdp/cards/ctas.yaml",
+    ".mdp/cards/channel-policies.yaml",
+    ".mdp/cards/objections.yaml",
+    ".mdp/cards/motions.yaml",
+    ".mdp/cards/gaps.yaml"
+  ],
+  "route": [
+    {
+      "description": "Who the decision pack serves and what each persona needs.",
+      "id": "personas",
+      "kind": "personas",
+      "path": ".mdp/cards/personas.yaml",
+      "reason": "base guardrail"
+    },
+    {
+      "description": "Claims and categories the agent must avoid.",
+      "id": "avoid-rules",
+      "kind": "avoid-rules",
+      "path": ".mdp/cards/avoid-rules.yaml",
+      "reason": "base guardrail"
+    },
+    {
+      "description": "ICP, fit, disqualification, and no-message rules.",
+      "id": "fit-rules",
+      "kind": "fit-rules",
+      "path": ".mdp/cards/fit-rules.yaml",
+      "reason": "persona and job/tag match"
+    },
+    {
+      "description": "Category, product boundaries, value pillars, and what this pack is not.",
+      "id": "positioning",
+      "kind": "positioning",
+      "path": ".mdp/cards/positioning.yaml",
+      "reason": "persona match"
+    },
+    {
+      "description": "Buyer pains, triggers, and evidence requirements.",
+      "id": "pains",
+      "kind": "pains",
+      "path": ".mdp/cards/pains.yaml",
+      "reason": "persona match"
+    },
+    {
+      "description": "Structured buying signals, triggers, and source interpretation rules.",
+      "id": "signals",
+      "kind": "signals",
+      "path": ".mdp/cards/signals.yaml",
+      "reason": "persona and job/tag match"
+    },
+    {
+      "description": "Messaging hooks that can be reused after evidence checks.",
+      "id": "hooks",
+      "kind": "hooks",
+      "path": ".mdp/cards/hooks.yaml",
+      "reason": "persona and job/tag match"
+    },
+    {
+      "description": "Approved claims and proof requirements an agent may use.",
+      "id": "claims",
+      "kind": "claims",
+      "path": ".mdp/cards/claims.yaml",
+      "reason": "persona match"
+    },
+    {
+      "description": "Copy structures and brief patterns for GTM outputs.",
+      "id": "copy-patterns",
+      "kind": "copy-patterns",
+      "path": ".mdp/cards/copy-patterns.yaml",
+      "reason": "persona and job/tag match"
+    },
+    {
+      "description": "CTA rules, reply paths, and ask boundaries for outbound copy.",
+      "id": "ctas",
+      "kind": "ctas",
+      "path": ".mdp/cards/ctas.yaml",
+      "reason": "persona and job/tag match"
+    },
+    {
+      "description": "Channel-specific policy for LinkedIn, email, call prep, and agent briefs.",
+      "id": "channel-policies",
+      "kind": "channel-policies",
+      "path": ".mdp/cards/channel-policies.yaml",
+      "reason": "persona and job/tag match"
+    },
+    {
+      "description": "Expected objections, category confusion, and approved response logic.",
+      "id": "objections",
+      "kind": "objections",
+      "path": ".mdp/cards/objections.yaml",
+      "reason": "persona match"
+    },
+    {
+      "description": "Approved GTM motions and motion boundaries.",
+      "id": "motions",
+      "kind": "motions",
+      "path": ".mdp/cards/motions.yaml",
+      "reason": "persona match"
+    },
+    {
+      "description": "Known gaps and open questions agents must surface instead of filling in.",
+      "id": "gaps",
+      "kind": "gaps",
+      "path": ".mdp/cards/gaps.yaml",
+      "reason": "persona match"
+    }
+  ]
+}
