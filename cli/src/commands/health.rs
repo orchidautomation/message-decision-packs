@@ -105,6 +105,51 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
             "policy.progressive_disclosure should be true",
         ));
     }
+    let persona_names: BTreeSet<String> = manifest
+        .personas
+        .iter()
+        .map(|persona| persona.to_lowercase())
+        .collect();
+    for (index, mapping) in manifest.persona_mappings.iter().enumerate() {
+        if mapping.persona.trim().is_empty() {
+            issues.push(issue(
+                "persona_mapping_persona_empty",
+                "error",
+                format!(".mdp/manifest.yaml#/persona_mappings/{index}/persona"),
+                "persona_mappings entries must name a persona",
+            ));
+        } else if !persona_names.contains(&mapping.persona.to_lowercase()) {
+            issues.push(issue(
+                "persona_mapping_unknown_persona",
+                "warning",
+                format!(".mdp/manifest.yaml#/persona_mappings/{index}/persona"),
+                format!(
+                    "persona mapping references {}, which is not listed in manifest personas",
+                    mapping.persona
+                ),
+            ));
+        }
+        if mapping.title_keywords.is_empty() {
+            issues.push(issue(
+                "persona_mapping_keywords_empty",
+                "warning",
+                format!(".mdp/manifest.yaml#/persona_mappings/{index}/title_keywords"),
+                "persona mapping has no title keywords and cannot infer from prospect titles",
+            ));
+        }
+        for (keyword_index, keyword) in mapping.title_keywords.iter().enumerate() {
+            if keyword.trim().is_empty() {
+                issues.push(issue(
+                    "persona_mapping_keyword_empty",
+                    "warning",
+                    format!(
+                        ".mdp/manifest.yaml#/persona_mappings/{index}/title_keywords/{keyword_index}"
+                    ),
+                    "persona mapping title keywords should not be empty",
+                ));
+            }
+        }
+    }
     for card_ref in &manifest.cards {
         if !card_ids.insert(card_ref.id.clone()) {
             issues.push(issue(
@@ -725,6 +770,30 @@ output_contract:
                 .expect("issues array")
                 .iter()
                 .any(|issue| issue["code"] == "prompt_example_entry_unproven")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_warns_on_unknown_persona_mapping_persona() {
+        let root = temp_pack("persona-mapping-unknown");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("persona: PMM", "persona: Sales Development"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "persona_mapping_unknown_persona")
         );
 
         let _ = std::fs::remove_dir_all(root);

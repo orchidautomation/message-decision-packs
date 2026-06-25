@@ -1,7 +1,7 @@
 use crate::pack_io::{read_card_by_id, read_manifest, read_prospect};
 use crate::routing::{entry_route, select_cards};
-use crate::utils::prospect_haystack;
 use crate::utils::slugify;
+use crate::utils::{prospect_haystack_with_persona, resolve_persona};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::fs;
@@ -73,11 +73,16 @@ pub(crate) fn fit(root: &Path, prospect_path: &Path) -> Result<Value> {
 }
 
 pub(crate) fn fit_prospect(root: &Path, prospect: crate::models::Prospect) -> Result<Value> {
+    let manifest = read_manifest(root)?;
     let fit_card = read_card_by_id(root, "fit-rules")?;
     let mut matches = Vec::new();
     let mut disqualifiers = Vec::new();
-    let haystack = prospect_haystack(&prospect);
-    let context = fit_context(&prospect);
+    let persona_resolution = resolve_persona(&manifest, &prospect);
+    let resolved_persona_for_fit = persona_resolution
+        .fit_usable
+        .then_some(persona_resolution.persona.as_str());
+    let haystack = prospect_haystack_with_persona(&prospect, resolved_persona_for_fit);
+    let context = fit_context(&prospect, &persona_resolution);
 
     for entry in &fit_card.entries {
         let entry_text = format!("{} {}", entry.title, entry.body).to_lowercase();
@@ -116,6 +121,7 @@ pub(crate) fn fit_prospect(root: &Path, prospect: crate::models::Prospect) -> Re
     Ok(json!({
         "contract": "mdp.fit.v0",
         "prospect": prospect,
+        "persona_resolution": persona_resolution,
         "status": status,
         "context": context,
         "matches": matches,
@@ -128,15 +134,15 @@ pub(crate) fn fit_prospect(root: &Path, prospect: crate::models::Prospect) -> Re
     }))
 }
 
-fn fit_context(prospect: &crate::models::Prospect) -> Value {
+fn fit_context(
+    prospect: &crate::models::Prospect,
+    persona_resolution: &crate::utils::PersonaResolution,
+) -> Value {
     let has_trigger = prospect
         .trigger
         .as_ref()
         .is_some_and(|value| !value.trim().is_empty());
-    let has_persona = prospect
-        .persona
-        .as_ref()
-        .is_some_and(|value| !value.trim().is_empty());
+    let has_persona = persona_resolution.fit_usable;
     let has_segment = prospect
         .segment
         .as_ref()
@@ -459,6 +465,68 @@ mod tests {
         assert_eq!(result["contract"], "mdp.fit.v0");
         assert_eq!(result["status"], "fit");
         assert!(result["matches"].as_array().expect("matches array").len() > 0);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_gate_uses_manifest_persona_mapping_for_titles() {
+        let root = temp_pack("fit-persona-mapping");
+        let prospect_path = root.join("examples").join("demand-gen.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "fit");
+        assert_eq!(result["persona_resolution"]["persona"], "PMM");
+        assert_eq!(
+            result["persona_resolution"]["source"],
+            "manifest.persona_mappings.title_keywords"
+        );
+        assert_eq!(result["context"]["missing"].as_array().unwrap().len(), 0);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_gate_still_requires_persona_when_no_mapping_matches() {
+        let root = temp_pack("fit-no-persona-mapping");
+        let prospect_path = root.join("examples").join("chief-of-staff.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Chief of Staff",
+  "company": "ExampleCo",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert_eq!(result["persona_resolution"]["source"], "fallback");
+        assert!(
+            result["context"]["missing"]
+                .as_array()
+                .expect("missing context array")
+                .iter()
+                .any(|item| item == "persona")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

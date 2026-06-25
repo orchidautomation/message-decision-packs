@@ -14,9 +14,18 @@ pub(crate) struct Manifest {
     pub(crate) operator_roles: Vec<String>,
     #[serde(default)]
     pub(crate) supported_channels: Vec<String>,
+    #[serde(default)]
+    pub(crate) persona_mappings: Vec<PersonaMapping>,
     pub(crate) cards: Vec<CardRef>,
     pub(crate) policy: Policy,
     pub(crate) provenance: Provenance,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct PersonaMapping {
+    pub(crate) persona: String,
+    #[serde(default)]
+    pub(crate) title_keywords: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
