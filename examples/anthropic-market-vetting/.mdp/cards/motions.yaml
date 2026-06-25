@@ -1,0 +1,41 @@
+id: motions
+kind: motions
+title: Approved motions
+description: Anthropic-side workflows this pack can support as local account-vetting context.
+personas:
+- Anthropic Account Strategy
+- Anthropic Product GTM
+- Anthropic Developer Platform
+tags:
+- motion
+- workflow
+entries:
+- id: target-account-vetting
+  title: Target account vetting
+  body: Given a public company/person fixture, route fit rules, signals, claims, gaps, and account questions to decide whether the company belongs in the target slice.
+  applies_to:
+  - Anthropic Account Strategy
+  evidence:
+  - mdp-readme
+  - examples/cursor-anysphere.json
+  avoid: []
+- id: market-slice-brief
+  title: Market slice brief
+  body: "Explain the target segment in a reusable way: why it matters, which public signals count, which accounts are excluded, and what evidence is still missing."
+  applies_to:
+  - Anthropic Product GTM
+  - Anthropic Developer Platform
+  evidence:
+  - anthropic-claude-code
+  - anthropic-small-business
+  avoid: []
+- id: account-brief-before-outreach
+  title: Account brief before outreach
+  body: Produce a brief with fit status, source-backed account signals, likely use cases, disqualifiers, gaps, and safe next questions before any outbound copy is drafted.
+  applies_to:
+  - Anthropic Account Strategy
+  - Anthropic Product GTM
+  evidence:
+  - mdp-readme
+  - examples/cursor-anysphere.json
+  avoid: []

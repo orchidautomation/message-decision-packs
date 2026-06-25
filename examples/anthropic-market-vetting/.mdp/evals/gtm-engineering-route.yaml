@@ -1,0 +1,14 @@
+command: route
+expect_entry_titles_contains:
+- 'Good fit: AI developer tooling company'
+- Developer-tooling fit signal
+- Codebase context job
+- Account brief before outreach
+expect_load_order_contains:
+- .mdp/cards/fit-rules.yaml
+- .mdp/cards/signals.yaml
+- .mdp/cards/pains.yaml
+- .mdp/cards/motions.yaml
+id: developer-tooling-account-route
+job: target account vetting for developer tooling
+persona: Anthropic Account Strategy

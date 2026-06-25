@@ -1,0 +1,38 @@
+id: personas
+kind: personas
+title: Core personas
+description: Anthropic-side operators who use this pack to define a market slice, qualify companies, and brief account work.
+personas:
+- Anthropic Account Strategy
+- Anthropic Product GTM
+- Anthropic Developer Platform
+tags:
+- persona
+entries:
+- id: anthropic-account-strategy
+  title: Anthropic Account Strategy
+  body: Needs a practical account-vetting contract; which company slice is worth pursuing, what public signals prove fit, what disqualifies an account, and what gaps block outreach.
+  applies_to:
+  - Anthropic Account Strategy
+  evidence:
+  - mdp-readme
+  - anthropic-small-business
+  avoid: []
+- id: anthropic-product-gtm
+  title: Anthropic Product GTM
+  body: Needs source-backed segment language, claims, objections, and routeable messaging context for target slices such as developer-tooling companies and workflow-heavy small businesses.
+  applies_to:
+  - Anthropic Product GTM
+  evidence:
+  - anthropic-claude-code
+  - anthropic-small-business
+  avoid: []
+- id: anthropic-developer-platform
+  title: Anthropic Developer Platform
+  body: Needs technical fit signals for companies building developer products, code agents, internal engineering workflows, or API-powered AI experiences.
+  applies_to:
+  - Anthropic Developer Platform
+  evidence:
+  - anthropic-claude-code
+  - cursor-anysphere-public
+  avoid: []
