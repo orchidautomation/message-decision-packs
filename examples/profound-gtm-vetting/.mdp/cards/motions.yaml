@@ -10,6 +10,10 @@ personas:
 tags:
 - motion
 - workflow
+- handoff
+- maintenance
+- call
+- prep
 entries:
 - id: target-account-vetting
   title: Target account vetting

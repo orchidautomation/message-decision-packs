@@ -1,0 +1,13 @@
+command: route
+expect_entry_titles_contains:
+- Target account vetting
+- Source to card maintenance
+expect_load_order_contains:
+- .mdp/cards/personas.yaml
+- .mdp/cards/avoid-rules.yaml
+- .mdp/cards/motions.yaml
+expect_load_order_excludes:
+- .mdp/cards/objections.yaml
+id: workflow-handoff-route
+job: workflow handoff
+persona: AEO Lead

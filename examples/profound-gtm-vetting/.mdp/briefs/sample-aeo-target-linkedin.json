@@ -436,93 +436,6 @@
           "Agency Partner"
         ],
         "avoid": [],
-        "body": "Use the pack to decide whether a supplied company/person row matches Profound's target slice before any outbound copy is written.",
-        "card_id": "motions",
-        "card_kind": "motions",
-        "card_path": ".mdp/cards/motions.yaml",
-        "entry_id": "target-account-vetting",
-        "evidence": [
-          "user-mdp-hypothesis",
-          "mdp-readme"
-        ],
-        "reason": "persona applies",
-        "selection": "matched",
-        "status": "supporting",
-        "title": "Target account vetting"
-      },
-      {
-        "applies_to": [
-          "AEO Lead",
-          "Content Lead",
-          "PR & Brand Lead",
-          "Agency Partner"
-        ],
-        "avoid": [],
-        "body": "Use the pack to generate a bounded brief with persona, fit status, public/supplied signals, allowed claims, CTA policy, avoid-rules, and gaps.",
-        "card_id": "motions",
-        "card_kind": "motions",
-        "card_path": ".mdp/cards/motions.yaml",
-        "entry_id": "outbound-brief",
-        "evidence": [
-          "mdp-readme"
-        ],
-        "reason": "persona applies",
-        "selection": "matched",
-        "status": "supporting",
-        "title": "Outbound brief"
-      },
-      {
-        "applies_to": [
-          "AEO Lead",
-          "Content Lead",
-          "PR & Brand Lead",
-          "Agency Partner"
-        ],
-        "avoid": [],
-        "body": "Use the pack to prepare a source-backed account summary, likely buyer pain, approved proof, disqualifiers, and discovery questions.",
-        "card_id": "motions",
-        "card_kind": "motions",
-        "card_path": ".mdp/cards/motions.yaml",
-        "entry_id": "call-prep",
-        "evidence": [
-          "profound-homepage",
-          "mdp-readme"
-        ],
-        "reason": "persona applies",
-        "selection": "matched",
-        "status": "supporting",
-        "title": "Call prep"
-      },
-      {
-        "applies_to": [
-          "AEO Lead",
-          "Content Lead",
-          "PR & Brand Lead",
-          "Agency Partner"
-        ],
-        "avoid": [],
-        "body": "Use the pack to turn new public product pages, customer stories, or strategy notes into auditable cards rather than one large prompt.",
-        "card_id": "motions",
-        "card_kind": "motions",
-        "card_path": ".mdp/cards/motions.yaml",
-        "entry_id": "source-to-card-maintenance",
-        "evidence": [
-          "user-mdp-hypothesis",
-          "mdp-readme"
-        ],
-        "reason": "persona applies",
-        "selection": "matched",
-        "status": "supporting",
-        "title": "Source to card maintenance"
-      },
-      {
-        "applies_to": [
-          "AEO Lead",
-          "Content Lead",
-          "PR & Brand Lead",
-          "Agency Partner"
-        ],
-        "avoid": [],
         "body": "Use one public or supplied signal, one fit hypothesis, and one low-pressure owner or relevance question. Do not imply the prospect has intent or that Profound measured their current visibility.",
         "card_id": "channel-policies",
         "card_kind": "channel-policies",
@@ -827,45 +740,6 @@
       },
       {
         "applies_to": [
-          "AEO Lead"
-        ],
-        "avoid": [],
-        "body": "Response logic: acknowledge the overlap, then distinguish answer-engine visibility, citations, prompt tracking, sentiment, and AI crawler behavior from traditional search reporting.",
-        "card_id": "objections",
-        "card_kind": "objections",
-        "card_path": ".mdp/cards/objections.yaml",
-        "entry_id": "isnt-this-seo",
-        "evidence": [
-          "profound-answer-engine-insights",
-          "profound-agent-analytics"
-        ],
-        "reason": "persona applies",
-        "selection": "matched",
-        "status": "supporting",
-        "title": "Isn't this just SEO?"
-      },
-      {
-        "applies_to": [
-          "AEO Lead",
-          "Agency Partner"
-        ],
-        "avoid": [],
-        "body": "Response logic: offer a demo or AEO report path when relevant, and avoid claiming a custom analysis has already been performed.",
-        "card_id": "objections",
-        "card_kind": "objections",
-        "card_path": ".mdp/cards/objections.yaml",
-        "entry_id": "need-proof-first",
-        "evidence": [
-          "profound-homepage",
-          "profound-pricing"
-        ],
-        "reason": "persona applies",
-        "selection": "matched",
-        "status": "supporting",
-        "title": "Need proof first"
-      },
-      {
-        "applies_to": [
           "AEO Lead",
           "PR & Brand Lead"
         ],
@@ -981,17 +855,15 @@
       ".mdp/cards/copy-patterns.yaml",
       ".mdp/cards/ctas.yaml",
       ".mdp/cards/channel-policies.yaml",
-      ".mdp/cards/objections.yaml",
-      ".mdp/cards/motions.yaml",
       ".mdp/cards/gaps.yaml"
     ],
     "status": "ready",
     "summary": {
-      "card_count": 14,
-      "entry_count": 45,
+      "card_count": 12,
+      "entry_count": 39,
       "guardrail_entry_count": 8,
       "required_entry_count": 20,
-      "supporting_entry_count": 25
+      "supporting_entry_count": 19
     }
   },
   "contract": "mdp.message-brief.v0",
@@ -1172,8 +1044,6 @@
     ".mdp/cards/copy-patterns.yaml",
     ".mdp/cards/ctas.yaml",
     ".mdp/cards/channel-policies.yaml",
-    ".mdp/cards/objections.yaml",
-    ".mdp/cards/motions.yaml",
     ".mdp/cards/gaps.yaml"
   ],
   "route": [
@@ -1238,35 +1108,21 @@
       "id": "copy-patterns",
       "kind": "copy-patterns",
       "path": ".mdp/cards/copy-patterns.yaml",
-      "reason": "persona and job/tag match"
+      "reason": "job/tag match"
     },
     {
       "description": "CTA rules, reply paths, and ask boundaries for Profound outreach.",
       "id": "ctas",
       "kind": "ctas",
       "path": ".mdp/cards/ctas.yaml",
-      "reason": "persona and job/tag match"
+      "reason": "job/tag match"
     },
     {
       "description": "Channel-specific policy for LinkedIn, email, call prep, and agent briefs.",
       "id": "channel-policies",
       "kind": "channel-policies",
       "path": ".mdp/cards/channel-policies.yaml",
-      "reason": "persona and job/tag match"
-    },
-    {
-      "description": "Expected objections, alternatives, and approved response logic.",
-      "id": "objections",
-      "kind": "objections",
-      "path": ".mdp/cards/objections.yaml",
-      "reason": "persona match"
-    },
-    {
-      "description": "Approved Profound GTM motions and handoff boundaries.",
-      "id": "motions",
-      "kind": "motions",
-      "path": ".mdp/cards/motions.yaml",
-      "reason": "persona match"
+      "reason": "job/tag match"
     },
     {
       "description": "Known gaps and open questions agents must surface instead of filling in.",
