@@ -1,0 +1,62 @@
+id: copy-patterns
+kind: copy-patterns
+title: Copy and brief patterns
+description: Reusable structures for Profound GTM outputs.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+tags:
+- copy
+- brief
+- outbound
+- message
+entries:
+- id: brief-contract
+  title: Brief contract
+  body: "Return target account, target persona, segment, fit decision, observed signals, likely pain, approved claims, CTA rule, avoid-rules, gaps, and recommended next step."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: signal-hypothesis-question
+  title: Signal -> hypothesis -> question
+  body: "For outbound, structure copy as one observable signal, one fit hypothesis, one Profound-relevant pain, and one owner or relevance question."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: content-gap-pattern
+  title: Prompt or citation gap pattern
+  body: "For content buyers, connect prompt/citation insight to a content brief, refresh, or new page angle, then ask whether that workflow is owned today."
+  applies_to:
+  - Content Lead
+  evidence:
+  - profound-content-teams
+  - profound-agents
+  avoid: []
+- id: pr-citation-pattern
+  title: PR citation pattern
+  body: "For PR and brand buyers, connect AI sentiment or citation domains to earned media strategy, then ask who owns AI narrative monitoring."
+  applies_to:
+  - "PR & Brand Lead"
+  evidence:
+  - profound-pr-teams
+  avoid: []
+- id: agency-reporting-pattern
+  title: Agency reporting pattern
+  body: "For agency partners, connect repeated client reporting across answer engines to a reusable visibility workflow, then ask whether clients are already asking about AI search."
+  applies_to:
+  - Agency Partner
+  evidence:
+  - profound-pricing
+  avoid: []

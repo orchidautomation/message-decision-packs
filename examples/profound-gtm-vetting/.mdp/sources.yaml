@@ -1,0 +1,133 @@
+format: mdp.sources.v0
+purpose: Source ledger for evidence used in cards. Keep direct source claims separate from interpretation, and preserve gaps instead of inventing proof.
+rules:
+- Add public URLs, user-provided docs, or note identifiers before bulk card writing.
+- Use direct_claims for facts the source states, and interpretations for how the pack may use them.
+- Mark confidence and freshness when known.
+- Keep sensitive or non-public material out of committed examples.
+sources:
+- confidence: high
+  direct_claims:
+  - MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.
+  - MDP stores decision context and routing contracts; it is not execution infrastructure.
+  freshness: repo-current
+  gaps: []
+  id: mdp-readme
+  interpretations:
+  - Use this source for MDP category boundaries and workflow limits.
+  - MDP can produce route, fit, claim, gap, eval, and brief contracts, but execution happens elsewhere.
+  kind: repo-doc
+  locator: ../../../README.md
+- confidence: high
+  direct_claims:
+  - User hypothesis says a company should be able to create an MDP that codifies ICP, target company characteristics, person types, product relevance, hooks, CTAs, and decision-tree rules.
+  - User hypothesis says skills should help research, build personas, hooks, CTAs, and make the result clean and auditable for downstream agents.
+  freshness: provided-2026-06-25
+  gaps: []
+  id: user-mdp-hypothesis
+  interpretations:
+  - Use this as the example's narrative contract; Profound is the seller building a pack for its own target-customer motion.
+  - Keep the result as a decision pack, not an execution workflow.
+  kind: user-provided-context
+  locator: current Codex thread, 2026-06-25
+- confidence: high
+  direct_claims:
+  - Profound helps brands gain visibility in AI-generated answers and optimize their presence in LLM-based answer engines.
+  - Profound describes its platform surfaces as Answer Engine Insights, Prompt Volumes, Shopping, Agent Analytics, and Agents.
+  - Profound's homepage names answer engines including ChatGPT, Claude, Gemini, Perplexity, Grok, Microsoft Copilot, Meta AI, DeepSeek, and Google AI Overviews.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: profound-homepage
+  interpretations:
+  - Use this source for Profound's category and high-level product positioning.
+  - Do not infer a target account's current AI visibility, budget, or intent from this source.
+  kind: public-web
+  locator: https://www.tryprofound.com/
+- confidence: high
+  direct_claims:
+  - Answer Engine Insights tracks AI visibility, brand mentions, citations, sentiment, competitive benchmarking, and differences across major AI engines.
+  - The page says Profound runs tracked prompts daily and captures responses directly from the consumer experience rather than API outputs.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: profound-answer-engine-insights
+  interpretations:
+  - Use this source for AEO Lead pains, claims, and message hooks about measurement, citations, share of voice, and answer-engine representation.
+  - Do not claim a prospect has poor visibility without prospect-specific evidence.
+  kind: public-web
+  locator: https://www.tryprofound.com/features/answer-engine-insights
+- confidence: high
+  direct_claims:
+  - Profound for AEO Teams frames the job as showing up in answer engines, increasing visibility, earning citations, and winning share of voice.
+  - The page includes an AEO-team case study for Statsig and a quote from Xero's Head of SEO.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: profound-aeo-teams
+  interpretations:
+  - Use this source to define the AEO Lead persona and target-account slice.
+  - Do not reuse customer quotes as claims about a new prospect unless explicitly framed as public Profound proof.
+  kind: public-web
+  locator: https://www.tryprofound.com/solutions/aeo-teams
+- confidence: high
+  direct_claims:
+  - Profound for Content Teams says content teams can automate optimization of existing content and create net new content faster.
+  - The page describes data-backed content strategy, templates, content optimization, and a Ramp case study.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: profound-content-teams
+  interpretations:
+  - Use this source to define the Content Lead persona and hooks about content gap discovery, brief generation, and content optimization.
+  - Do not promise a quantified lift to a new prospect unless that exact proof is sourced and allowed for the message.
+  kind: public-web
+  locator: https://www.tryprofound.com/solutions/content-teams
+- confidence: high
+  direct_claims:
+  - Profound for PR & Brand Teams says PR and brand teams can control brand narrative in AI, understand brand sentiment, see citation domains, and drive earned media placements.
+  - The page describes surfacing opportunities to get mentioned on relevant media and Reddit threads.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: profound-pr-teams
+  interpretations:
+  - Use this source to define the PR & Brand Lead persona and hooks about brand narrative, sentiment, citations, and earned media.
+  - Do not let agents drift into spam or unapproved outreach.
+  kind: public-web
+  locator: https://www.tryprofound.com/solutions/pr-teams
+- confidence: high
+  direct_claims:
+  - Profound Agents are described as custom agents that extend a brand's reach.
+  - The Agents page describes templates for content refresh, AEO FAQ generation, competitive research, and net-new content creation.
+  - The page states Agents use a drag-and-drop builder, brand kit and knowledge base context, human-in-the-loop approvals, and CMS integration.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: profound-agents
+  interpretations:
+  - Use this source for content workflow and marketing-engineering hooks.
+  - Do not claim Profound sends outbound messages or replaces a customer's GTM execution stack.
+  kind: public-web
+  locator: https://www.tryprofound.com/features/agents
+- confidence: high
+  direct_claims:
+  - Agent Analytics tracks which AI systems crawl a site, how they interpret content, and whether that activity converts to real traffic.
+  - The page says Agent Analytics uses server logs instead of JavaScript trackers, verifies AI crawlers, and integrates with cloud, edge, and web platforms.
+  - The page states enterprise security capabilities including SOC 2 Type II, SSO, RBAC, encryption, and GDPR compliance.
+  freshness: retrieved-2026-06-25
+  gaps: []
+  id: profound-agent-analytics
+  interpretations:
+  - Use this source for technical and analytics buyer hooks around AI crawler visibility, attribution, and infrastructure fit.
+  - Use compliance/security claims only when source-backed and routed.
+  kind: public-web
+  locator: https://www.tryprofound.com/features/agent-analytics
+- confidence: high
+  direct_claims:
+  - Profound pricing describes Starter, Growth, and Enterprise tiers.
+  - Growth tracks ChatGPT, Perplexity, and Google AI Overviews; Enterprise can track up to 10 answer engines and supports custom needs.
+  - Pricing describes Enterprise support for multiple companies, tailored prompt tracking, dedicated Slack support, SSO/SAML, and SOC2 compliance.
+  freshness: retrieved-2026-06-25
+  gaps:
+  - Numeric prices were not used because rendered pricing text was not reliable in the extracted source.
+  id: profound-pricing
+  interpretations:
+  - Use this source for fit rules around company complexity, multiple brands, agencies, enterprise needs, and plan-level constraints.
+  - Do not quote exact prices from this extracted page.
+  kind: public-web
+  locator: https://www.tryprofound.com/pricing

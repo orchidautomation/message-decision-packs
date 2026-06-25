@@ -1,4 +1,0 @@
-command: check-claims
-expect_valid: true
-id: claim-check-approved
-text: Anthropic positions Claude Code as an agentic coding system, and MDP can store source-backed account-vetting context before a brief.

@@ -1,0 +1,60 @@
+id: channel-policies
+kind: channel-policies
+title: Channel policies
+description: Output policies for account qualification, LinkedIn, email, call prep, and agent briefs.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+tags:
+- channel
+- linkedin
+- email
+- brief
+entries:
+- id: linkedin-opener
+  title: LinkedIn opener
+  body: "Use one public or supplied signal, one fit hypothesis, and one low-pressure owner or relevance question. Do not imply the prospect has intent or that Profound measured their current visibility."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: email-follow-up
+  title: Email follow-up
+  body: "Lead with the account-vetting reason, map it to one Profound capability, and ask for the right owner or a quick relevance check instead of forcing a calendar ask."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  - profound-homepage
+  avoid: []
+- id: call-prep
+  title: Call prep
+  body: "Return target slice, persona, fit status, signals, pains, approved claims, avoid-rules, open gaps, and discovery questions. Do not present the brief as CRM history."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: agent-brief
+  title: Agent brief
+  body: "Return the routed context contract for another agent: fit, loaded cards, bounded entries, allowed claims, CTA policy, disqualifiers, and gaps. Execution requires a separate explicit tool."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid: []

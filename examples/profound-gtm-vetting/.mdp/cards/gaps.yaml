@@ -1,0 +1,64 @@
+id: gaps
+kind: gaps
+title: Known gaps
+description: Durable gaps and open questions agents should surface instead of inventing answers.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+tags:
+- gap
+- unknown
+- open-question
+entries:
+- id: missing-prospect-visibility-data
+  title: Missing prospect visibility data
+  body: "The pack can identify a plausible target slice, but it does not know the prospect's current answer-engine visibility score, citation share, sentiment, or prompt performance unless supplied."
+  applies_to:
+  - AEO Lead
+  - "PR & Brand Lead"
+  evidence:
+  - profound-answer-engine-insights
+  avoid: []
+- id: missing-current-owner
+  title: Missing current owner
+  body: "A title or persona guess does not prove who owns AI search, AEO content, PR narrative, or agency reporting internally. Ask an owner-validation question."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: missing-stack-and-workflow-proof
+  title: Missing stack and workflow proof
+  body: "Do not assume the prospect uses a specific CMS, analytics setup, edge provider, or approval workflow unless the row supplies that context."
+  applies_to:
+  - Content Lead
+  - AEO Lead
+  evidence:
+  - profound-agent-analytics
+  - profound-agents
+  avoid: []
+- id: pricing-not-quoted
+  title: Pricing not quoted
+  body: "The extracted pricing page showed plan structure but not reliable exact numbers, so this example does not quote exact prices."
+  applies_to:
+  - Agency Partner
+  - AEO Lead
+  evidence:
+  - profound-pricing
+  avoid: []
+- id: mdp-boundary-gap
+  title: MDP boundary
+  body: "MDP can model target-account decisions and produce a brief, but it does not perform external execution or prove production Profound strategy."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid: []
