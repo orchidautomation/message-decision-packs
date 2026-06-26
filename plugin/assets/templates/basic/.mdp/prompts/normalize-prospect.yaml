@@ -1,0 +1,118 @@
+description: Turns a supplied messy person, company, account, CRM, CSV, Clay, Deepline, spreadsheet, or research row into provider-neutral MDP prospect JSON before mdp fit or brief runs.
+format: mdp.prompt.v0
+id: normalize-prospect-row
+inputs:
+- default: N/A
+  description: The full messy source row, note, webhook payload, CSV row, CRM export row, Clay/Deepline row, spreadsheet row, or pasted research record.
+  missing_behavior: Return gaps and do not create normalized_prospect fields from absent source material.
+  name: raw_row
+  required: true
+- default: N/A
+  description: Company domain when available.
+  missing_behavior: Use N/A and do not infer company identity from absent data.
+  name: company_domain
+  required: false
+- default: N/A
+  description: Relevant manifest personas, persona_mappings, fit rules, signal definitions, avoid-rules, and source policy from this MDP.
+  missing_behavior: Do not assume pack-owned persona mappings, fit rules, or signal names when this field is N/A.
+  name: existing_pack_context
+  required: false
+- default: user-provided-row
+  description: Provider-neutral source marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example.
+  missing_behavior: Use user-provided-row unless the caller supplies a more specific source kind.
+  name: source_kind
+  required: false
+instructions:
+- Use only raw_row, company_domain, existing_pack_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.
+- Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
+- 'Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, and signals.'
+- Use explicit persona from the row when present. Otherwise use pack-owned persona_mappings from existing_pack_context; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.
+- 'Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.'
+- Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.
+- If the input is account-only and lacks person name or title, do not invent a contact. Put missing fields in gaps and set normalization_trace.fit_readiness.ready_for_mdp_fit to false.
+- Keep card_patches empty. This prompt normalizes runtime prospect input; it does not propose edits to MDP cards.
+output_contract:
+  contract: mdp.prompt-output.v0
+  entry_defaults:
+    applies_to: []
+    avoid: []
+    body: N/A
+    confidence: unknown
+    evidence: []
+    provenance: []
+  example:
+    card_patches: []
+    contract: mdp.prompt-output.v0
+    gaps: []
+    normalization_trace:
+      fit_readiness:
+        has_persona: true
+        has_segment: true
+        has_signal_source: true
+        has_signals: true
+        has_trigger: true
+        ready_for_mdp_fit: true
+      missing_required: []
+      persona:
+        confidence: medium
+        matched_keywords:
+        - revenue operations
+        needs_review: false
+        source: existing_pack_context.persona_mappings
+      preserved_raw_fields:
+      - raw_row.name
+      - raw_row.title
+      - raw_row.company
+      - raw_row.operations_note
+    normalized_prospect:
+      background: Source row says the team is standardizing campaign qualification data across CRM exports, spreadsheets, and research notes.
+      company: ExampleCo
+      company_url: https://example.com
+      name: Alex Rivera
+      persona: Revenue Operations
+      segment: B2B GTM operations
+      signals:
+      - confidence: medium
+        freshness: N/A
+        id: qualification-data-standardization
+        source: raw_row.operations_note
+        state_as: supplied
+        title: Standardizing prospect qualification data
+      source_kind: user-provided-row
+      synthetic: false
+      title: Revenue Operations Lead
+      trigger: Standardizing prospect qualification data before routing new campaigns.
+    prompt_id: normalize-prospect-row
+    rejected_claims: []
+    source_summary:
+      account_name: ExampleCo
+      company_domain: example.com
+      company_name: ExampleCo
+      confidence: medium
+      inputs_used:
+      - raw_row
+      - existing_pack_context
+      person_name: Alex Rivera
+      person_title: Revenue Operations Lead
+  output_kind: prospect-normalization
+  required_top_level:
+  - contract
+  - prompt_id
+  - source_summary
+  - normalized_prospect
+  - normalization_trace
+  - card_patches
+  - gaps
+  - rejected_claims
+  strict_json_only: true
+tags:
+- prompt
+- normalization
+- prospect
+- fit
+- routing
+target_card_kinds:
+- personas
+- fit-rules
+- signals
+title: Normalize prospect row

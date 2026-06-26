@@ -108,29 +108,35 @@ fn prompt_schema(card_kinds: [&str; 14]) -> Value {
                 "minItems": 1,
                 "items": {"type": "string"}
             },
-            "output_contract": {
-                "type": "object",
-                "required": [
-                    "contract",
-                    "strict_json_only",
+                    "output_contract": {
+                        "type": "object",
+                        "required": [
+                            "contract",
+                            "strict_json_only",
                     "required_top_level",
                     "entry_defaults",
                     "example"
-                ],
-                "properties": {
-                    "contract": {"const": PROMPT_OUTPUT_CONTRACT},
-                    "strict_json_only": {"const": true},
-                    "required_top_level": {
-                        "type": "array",
-                        "items": {
-                            "enum": [
-                                "contract",
-                                "prompt_id",
-                                "source_summary",
-                                "card_patches",
-                                "gaps",
-                                "rejected_claims"
-                            ]
+                        ],
+                        "properties": {
+                            "contract": {"const": PROMPT_OUTPUT_CONTRACT},
+                            "output_kind": {
+                                "enum": ["card-patches", "prospect-normalization"],
+                                "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs MDP prospect JSON for mdp fit/brief."
+                            },
+                            "strict_json_only": {"const": true},
+                            "required_top_level": {
+                                "type": "array",
+                                "items": {
+                                    "enum": [
+                                        "contract",
+                                        "prompt_id",
+                                        "source_summary",
+                                        "normalized_prospect",
+                                        "normalization_trace",
+                                        "card_patches",
+                                        "gaps",
+                                        "rejected_claims"
+                                    ]
                         }
                     },
                     "entry_defaults": {
@@ -161,83 +167,128 @@ fn prompt_schema(card_kinds: [&str; 14]) -> Value {
 
 fn prompt_output_schema(card_kinds: [&str; 14]) -> Value {
     json!({
-        "type": "object",
-        "required": [
-            "contract",
-            "prompt_id",
-            "source_summary",
-            "card_patches",
-            "gaps",
-            "rejected_claims"
-        ],
-        "properties": {
-            "contract": {"const": PROMPT_OUTPUT_CONTRACT},
-            "prompt_id": {"type": "string"},
-            "source_summary": {
+    "type": "object",
+    "required": [
+        "contract",
+        "prompt_id",
+        "source_summary",
+        "card_patches",
+        "gaps",
+        "rejected_claims"
+    ],
+    "properties": {
+        "contract": {"const": PROMPT_OUTPUT_CONTRACT},
+        "prompt_id": {"type": "string"},
+        "source_summary": {
+            "type": "object",
+            "required": ["company_domain", "company_name", "inputs_used", "confidence"],
+            "properties": {
+                "company_domain": {"type": "string"},
+                "company_name": {"type": "string"},
+                "person_name": {"type": "string"},
+                "person_title": {"type": "string"},
+                "account_name": {"type": "string"},
+                "inputs_used": string_array(),
+                "confidence": {"type": "string"}
+            }
+        },
+        "card_patches": {
+            "type": "array",
+            "items": {
                 "type": "object",
-                "required": ["company_domain", "company_name", "inputs_used", "confidence"],
+                "required": ["card_id", "kind", "entries"],
                 "properties": {
-                    "company_domain": {"type": "string"},
-                    "company_name": {"type": "string"},
-                    "person_name": {"type": "string"},
-                    "person_title": {"type": "string"},
-                    "account_name": {"type": "string"},
-                    "inputs_used": string_array(),
-                    "confidence": {"type": "string"}
-                }
-            },
-            "card_patches": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["card_id", "kind", "entries"],
-                    "properties": {
-                        "card_id": {"type": "string"},
-                        "kind": {"enum": card_kinds},
-                        "entries": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "required": [
-                                    "id",
-                                    "title",
-                                    "body",
-                                    "applies_to",
-                                    "evidence",
-                                    "avoid",
-                                    "confidence",
-                                    "provenance",
-                                    "status"
-                                ],
-                                "properties": {
-                                    "id": {"type": "string"},
-                                    "title": {"type": "string"},
-                                    "body": {"type": "string"},
-                                    "applies_to": string_array(),
-                                    "evidence": string_array(),
-                                    "avoid": string_array(),
-                                    "confidence": {"enum": ["high", "medium", "low", "unknown"]},
-                                    "provenance": string_array(),
-                                    "status": {
-                                        "enum": ["candidate", "needs-review", "gap", "rejected"]
-                                    },
-                                    "notes": string_array()
-                                }
+                    "card_id": {"type": "string"},
+                    "kind": {"enum": card_kinds},
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "id",
+                                "title",
+                                "body",
+                                "applies_to",
+                                "evidence",
+                                "avoid",
+                                "confidence",
+                                "provenance",
+                                "status"
+                            ],
+                            "properties": {
+                                "id": {"type": "string"},
+                                "title": {"type": "string"},
+                                "body": {"type": "string"},
+                                "applies_to": string_array(),
+                                "evidence": string_array(),
+                                "avoid": string_array(),
+                                "confidence": {"enum": ["high", "medium", "low", "unknown"]},
+                                "provenance": string_array(),
+                                "status": {
+                                    "enum": ["candidate", "needs-review", "gap", "rejected"]
+                                },
+                                "notes": string_array()
                             }
                         }
                     }
                 }
-            },
-            "gaps": string_array(),
-            "rejected_claims": {
+            }
+        },
+        "normalized_prospect": prospect_schema(),
+        "normalization_trace": {
+            "type": "object",
+            "properties": {
+                "persona": {"type": "object"},
+                "fit_readiness": {"type": "object"},
+                "preserved_raw_fields": string_array(),
+                "missing_required": string_array()
+            }
+        },
+        "gaps": string_array(),
+        "rejected_claims": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["claim", "reason"],
+                "properties": {
+                    "claim": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "source": {"type": "string"}
+                }
+            }
+        }
+    }
+    })
+}
+
+fn prospect_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["name", "title", "company"],
+        "properties": {
+            "name": {"type": "string"},
+            "title": {"type": "string"},
+            "company": {"type": "string"},
+            "source_kind": {"type": "string"},
+            "synthetic": {"type": "boolean"},
+            "linkedin_url": {"type": "string"},
+            "company_url": {"type": "string"},
+            "background": {"type": "string"},
+            "trigger": {"type": "string"},
+            "persona": {"type": "string"},
+            "segment": {"type": "string"},
+            "signals": {
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": ["claim", "reason"],
+                    "required": ["id", "title"],
                     "properties": {
-                        "claim": {"type": "string"},
-                        "reason": {"type": "string"},
-                        "source": {"type": "string"}
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "source": {"type": "string"},
+                        "confidence": {"type": "string"},
+                        "freshness": {"type": "string"},
+                        "state_as": {"type": "string"}
                     }
                 }
             }
@@ -307,6 +358,24 @@ mod tests {
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["example"]["required"][0],
             "contract"
+        );
+        let required_fields = result["properties"]["output_contract"]["properties"]
+            ["required_top_level"]["items"]["enum"]
+            .as_array()
+            .expect("required_top_level enum should be an array");
+        assert!(
+            required_fields
+                .iter()
+                .any(|field| field == "normalized_prospect")
+        );
+        assert!(
+            required_fields
+                .iter()
+                .any(|field| field == "normalization_trace")
+        );
+        assert_eq!(
+            result["properties"]["output_contract"]["properties"]["output_kind"]["enum"][1],
+            "prospect-normalization"
         );
     }
 }

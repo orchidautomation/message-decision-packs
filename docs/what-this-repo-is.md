@@ -248,7 +248,7 @@ A normal MDP workflow looks like this:
 4. Fill the cards with personas, fit rules, claims, avoid rules, CTAs, and gaps.
 5. Validate the pack.
 6. Route a persona and job to the minimum required cards.
-7. Convert a provider-neutral prospect/source row into the expected prospect JSON shape.
+7. Use the pack-owned normalization prompt when needed to convert a messy prospect/source row into the expected prospect JSON shape.
 8. Run fit before drafting.
 9. Generate a brief only when fit is acceptable.
 10. Draft from the brief and routed cards.
@@ -278,12 +278,13 @@ Examples:
 That is the distinction:
 
 ```text
-The pack stores judgment.
-The CLI turns that judgment into contracts.
+The pack stores judgment and prompt contracts.
+Upstream agents use prompt contracts to normalize messy data.
+The CLI turns reviewed judgment into decision contracts.
 The agent uses those contracts to decide what to load and what to do next.
 ```
 
-There should not be a separate row-evaluation skill that reimplements fit. The row path is: normalize supplied row-like context into MDP prospect JSON, run `mdp fit`, stop on a no-draft decision, and use `mdp brief --context` only after fit allows a message brief.
+There should not be a separate row-evaluation skill that reimplements fit. The row path is: normalize supplied row-like context into MDP prospect JSON, preferably through `.mdp/prompts/normalize-prospect.yaml`; run `mdp fit`; stop on a no-draft decision; and use `mdp brief --context` only after fit allows a message brief.
 
 ## What MDP Is Not
 

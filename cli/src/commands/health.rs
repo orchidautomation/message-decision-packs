@@ -347,6 +347,15 @@ fn validate_prompt_file(
 
 fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
     let contract = &prompt.output_contract;
+    let output_kind = contract.output_kind.as_deref().unwrap_or("card-patches");
+    if !matches!(output_kind, "card-patches" | "prospect-normalization") {
+        issues.push(issue(
+            "prompt_output_kind_unknown",
+            "error",
+            format!("{path}#/output_contract/output_kind"),
+            format!("prompt output_kind must be card-patches or prospect-normalization, found {output_kind}"),
+        ));
+    }
     if contract.contract != PROMPT_OUTPUT_CONTRACT {
         issues.push(issue(
             "prompt_output_contract",
@@ -389,6 +398,22 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             ));
         }
     }
+    if output_kind == "prospect-normalization" {
+        for field in ["normalized_prospect", "normalization_trace"] {
+            if !contract
+                .required_top_level
+                .iter()
+                .any(|required_field| required_field == field)
+            {
+                issues.push(issue(
+                    "prompt_normalization_required_field_missing",
+                    "error",
+                    format!("{path}#/output_contract/required_top_level"),
+                    format!("prospect-normalization prompts must require {field}"),
+                ));
+            }
+        }
+    }
     if contract.entry_defaults.body != "N/A"
         || !contract.entry_defaults.applies_to.is_empty()
         || !contract.entry_defaults.evidence.is_empty()
@@ -405,6 +430,9 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     }
 
     validate_prompt_example(prompt, path, issues);
+    if output_kind == "prospect-normalization" {
+        validate_prompt_normalization_example(prompt, path, issues);
+    }
 }
 
 fn validate_prompt_example(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
@@ -504,6 +532,77 @@ fn validate_prompt_example(prompt: &PromptFile, path: &str, issues: &mut Vec<Val
                 ));
             }
         }
+    }
+}
+
+fn validate_prompt_normalization_example(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
+    let example = &prompt.output_contract.example;
+    let Some(prospect) = example["normalized_prospect"].as_object() else {
+        issues.push(issue(
+            "prompt_normalized_prospect_missing",
+            "error",
+            format!("{path}#/output_contract/example/normalized_prospect"),
+            "prospect-normalization examples must include normalized_prospect object",
+        ));
+        return;
+    };
+    for field in ["name", "title", "company"] {
+        if prospect
+            .get(field)
+            .and_then(|value| value.as_str())
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            issues.push(issue(
+                "prompt_normalized_prospect_required_field",
+                "error",
+                format!("{path}#/output_contract/example/normalized_prospect/{field}"),
+                format!("normalized_prospect must include non-empty {field}"),
+            ));
+        }
+    }
+    if let Some(signals) = prospect.get("signals") {
+        let Some(signals) = signals.as_array() else {
+            issues.push(issue(
+                "prompt_normalized_prospect_signals",
+                "error",
+                format!("{path}#/output_contract/example/normalized_prospect/signals"),
+                "normalized_prospect.signals must be an array when present",
+            ));
+            return;
+        };
+        for signal in signals {
+            for field in ["id", "title"] {
+                if signal
+                    .get(field)
+                    .and_then(|value| value.as_str())
+                    .is_none_or(|value| value.trim().is_empty())
+                {
+                    issues.push(issue(
+                        "prompt_normalized_prospect_signal_required_field",
+                        "error",
+                        format!("{path}#/output_contract/example/normalized_prospect/signals"),
+                        format!("normalized_prospect signals must include non-empty {field}"),
+                    ));
+                }
+            }
+        }
+    }
+    let Some(trace) = example["normalization_trace"].as_object() else {
+        issues.push(issue(
+            "prompt_normalization_trace_missing",
+            "error",
+            format!("{path}#/output_contract/example/normalization_trace"),
+            "prospect-normalization examples must include normalization_trace object",
+        ));
+        return;
+    };
+    if !trace.contains_key("fit_readiness") {
+        issues.push(issue(
+            "prompt_normalization_trace_fit_readiness",
+            "error",
+            format!("{path}#/output_contract/example/normalization_trace/fit_readiness"),
+            "normalization_trace must include fit_readiness so upstream agents expose whether mdp fit has enough context",
+        ));
     }
 }
 
@@ -666,7 +765,7 @@ mod tests {
         assert_eq!(result["valid"], true);
         assert_eq!(
             result["prompts"].as_array().expect("prompts array").len(),
-            8
+            9
         );
 
         let _ = std::fs::remove_dir_all(root);

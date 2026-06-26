@@ -6,9 +6,15 @@ MDP does not send messages, enrich leads, update CRM, scrape the web, run sequen
 
 ## Mental Model
 
-A provider-neutral prospect/source row supplies row-level inputs. The row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it has been normalized into MDP prospect JSON. The pack supplies modular decision entries. The CLI and skills route the row through a decision tree and return only the context needed for the job.
+A provider-neutral prospect/source row supplies row-level inputs. The row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it has been normalized into MDP prospect JSON. The pack supplies both modular decision entries and prompt contracts. The prompt contracts help upstream agents normalize messy source data; the CLI applies the reviewed pack decisions without asking a model to make the final fit or route decision.
 
 ```text
+messy source row
+  |
+  v
+.mdp/prompts/normalize-prospect.yaml
+  |
+  v
 prospect JSON
   |
   +-- title/persona
@@ -81,6 +87,27 @@ The row should preserve source and confidence when available. Weak signals shoul
 
 If the input is account-only and does not include a person name and title, do not invent a contact just to satisfy the prospect schema. Ask for a person row or return an insufficient-context decision until MDP has a provider-neutral account input contract.
 
+## Runtime Normalization Prompt
+
+New packs include `.mdp/prompts/normalize-prospect.yaml`. This prompt contract is meant for the upstream AI or workflow that sees messy source rows before the CLI runs. Its job is to return strict JSON with:
+
+- `normalized_prospect`: the exact MDP prospect shape accepted by `mdp --json schema prospect`.
+- `normalization_trace`: how persona, trigger, segment, signals, source, and missing fields were handled.
+- `gaps`: missing or weak data that should not be invented.
+- empty `card_patches`: runtime normalization does not edit pack cards.
+
+That makes the boundary explicit:
+
+```text
+AI handles ambiguity:
+  messy row -> normalized_prospect + trace
+
+MDP CLI handles consistency:
+  normalized_prospect -> fit -> route -> brief -> claim checks
+```
+
+Do not use normalization prompts to smooth over disqualifying language. If a row says "scrape contacts" or "auto-send a sequence", preserve that wording in the normalized context or trace so the fit gate can apply avoid-rules and disqualifiers.
+
 ## Pack Entries
 
 The pack is modular. Each card holds entries with ids, bodies, applicability rules, evidence, and avoid terms.
@@ -120,7 +147,7 @@ row fields
 fit | insufficient-context | disqualified
 ```
 
-`mdp fit` is the fit evaluator. Skills should not create a parallel row-evaluation path; they should normalize row-like input, call `mdp fit`, and report that decision.
+`mdp fit` is the fit evaluator. Skills should not create a parallel row-evaluation path; they should normalize row-like input, call `mdp fit`, and report that decision. A normalization prompt can prepare the row, but it should not replace the deterministic fit gate.
 
 For the starter example row, `mdp fit` returns `fit` because the row has an explicit persona, segment, trigger, sourced signals, and a matching fit entry:
 

@@ -64,10 +64,11 @@ mdp --json init --template gtm --name "<pack name>" --dir .
 - `.mdp/cards/objections.yaml`
 - `.mdp/cards/gaps.yaml`
 - `.mdp/evals/*.yaml`
+- `.mdp/prompts/normalize-prospect.yaml`
 
 Work in slices instead of rewriting the whole pack at once:
 
-- First: positioning, fit-rules, claims, gaps, and the source ledger.
+- First: positioning, fit-rules, claims, gaps, source ledger, and runtime prospect normalization prompt.
 - Second: personas, signals, pains, and motions.
 - Third: channel-policies, hooks, ctas, copy-patterns, objections, and evals.
 

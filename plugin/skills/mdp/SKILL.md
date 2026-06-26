@@ -7,7 +7,7 @@ description: Use when the user explicitly wants to create, validate, inspect, ro
 
 For fuzzy or multi-step MDP work, use `$mdp-lfg` first, then route to the narrower skill or CLI command.
 
-Use Message Decision Packs as the source of messaging decisions, not as the execution system. The pack stores ICP, fit rules, personas, pains, signals, positioning, claims, hooks, channel policies, avoid rules, CTA rules, objections, gaps, and copy patterns. The `mdp` CLI validates, routes, checks fit, checks claims, lists gaps, and runs eval fixtures. Draft only after the CLI returns the relevant cards and fit is acceptable.
+Use Message Decision Packs as the source of messaging decisions, not as the execution system. The pack stores ICP, fit rules, personas, pains, signals, positioning, claims, hooks, channel policies, avoid rules, CTA rules, objections, gaps, copy patterns, and prompt contracts. Prompt contracts normalize messy upstream rows or propose reviewed card entries; the `mdp` CLI validates, routes, checks fit, checks claims, lists gaps, and runs eval fixtures. Draft only after the CLI returns the relevant cards and fit is acceptable.
 
 ## First Check
 
@@ -53,6 +53,7 @@ When brainstorming the pack, help fill these files:
 - `.mdp/cards/objections.yaml`
 - `.mdp/cards/gaps.yaml`
 - `.mdp/evals/*.yaml`
+- `.mdp/prompts/normalize-prospect.yaml`
 
 After edits:
 
@@ -62,7 +63,7 @@ mdp --json validate --dir .
 
 ## Use A Prospect Or Source Row
 
-Convert an existing provider-neutral prospect/source row, CSV row, CRM export row, research note, Clay/Deepline row, spreadsheet row, or user-provided source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Do not commit private prospect data. Check the expected shape:
+Convert an existing prospect/source row, CSV row, CRM export row, research note, Clay/Deepline row, spreadsheet row, or user-provided source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Prefer the pack-owned `.mdp/prompts/normalize-prospect.yaml` contract for messy rows; save its `normalized_prospect` output as the file that feeds `mdp fit`. Do not commit private prospect data. Check the expected shape:
 
 ```bash
 mdp --json schema prospect
@@ -71,6 +72,8 @@ mdp --json schema prospect
 Minimum fields: `name`, `title`, `company`. Prefer adding `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, structured `signals`, `source_kind`, and `synthetic` when relevant.
 
 Use provider-neutral `source_kind` values unless the source itself matters: `user-provided-row`, `csv-row`, `crm-export-row`, `clay-row`, `deepline-row`, `private-scratch-row`, `sanitized-example`, or `synthetic-example`. Clay is one possible source, not the default MDP mental model.
+
+Normalization prompts may map messy titles into pack-owned personas and signals, but they must preserve raw evidence, uncertainty, missing fields, and disqualifying execution asks. The CLI still owns final fit and route decisions.
 
 If the input is account-only and lacks a person name and title, do not invent a contact. Ask for the missing person fields or return the fit gate's insufficient-context decision.
 
@@ -140,10 +143,11 @@ For production-quality output, use `brief` and draft from the returned contract 
 Frameworks such as Flue or Vercel Eve may wrap MDP for webhook admission, durable runs, filesystem staging, model drafting, and artifact collection. Keep that layer as an adapter around the CLI:
 
 1. Verify and normalize the inbound event in trusted application code.
-2. Write the raw payload and normalized prospect JSON to ignored scratch.
-3. Run `mdp --json fit` before drafting.
-4. Run `mdp --json brief --context` and draft only from the returned brief/context.
-5. Run `mdp --json check-claims` before treating draft text as ready.
+2. Use `.mdp/prompts/normalize-prospect.yaml` when an upstream AI normalizer is needed; preserve its `normalization_trace`.
+3. Write the raw payload and normalized prospect JSON to ignored scratch.
+4. Run `mdp --json fit` before drafting.
+5. Run `mdp --json brief --context` and draft only from the returned brief/context.
+6. Run `mdp --json check-claims` before treating draft text as ready.
 
 Do not move fit logic, route selection, claim checks, or card interpretation into the framework layer. Do not let the framework wrapper send, schedule, enrich, scrape, update a CRM, or write to a sequencer unless the user explicitly asks for that separate system action outside MDP.
 
