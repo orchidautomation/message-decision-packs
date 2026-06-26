@@ -4,6 +4,7 @@ pub(crate) mod health;
 pub(crate) mod init;
 pub(crate) mod pack;
 pub(crate) mod routing;
+pub(crate) mod sample_leads;
 pub(crate) mod schemas;
 
 pub(crate) use briefs::{demo_copy, emit_brief, prospect_brief_with_context};
@@ -12,4 +13,5 @@ pub(crate) use health::{doctor, explain, gaps, validate_pack};
 pub(crate) use init::init_pack;
 pub(crate) use pack::pack;
 pub(crate) use routing::{check_claims, fit, route};
+pub(crate) use sample_leads::sample_leads;
 pub(crate) use schemas::schema;

@@ -31,7 +31,15 @@ mdp --json eval --dir .
 mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>" --job "<job>"
 ```
 
-4. For prospect cases, run:
+4. When outbound-copy testing needs prospect-shaped inputs but no real or sanitized row was supplied, generate fake fixture leads:
+
+```bash
+mdp sample-leads --dir . --persona "<persona>" --job "<channel> outbound copy" --count 3 --format yaml
+```
+
+Treat these as synthetic fixtures only. For each fixture row, evaluate route, fit, brief context, and `check-claims`; draft only against `safe_personalization` and `known_gaps`, and never treat the fixture as a real prospect.
+
+5. For prospect cases, run:
 
 ```bash
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel>
