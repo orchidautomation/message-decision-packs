@@ -47,6 +47,7 @@ mdp-demo/
     briefs/
     cards/
     evals/
+    prompts/
   examples/
 ```
 
@@ -64,7 +65,15 @@ Use the returned `eval_fixture` as a scaffold for route tests. Review it before 
 
 ## Use A Prospect Or Source Row
 
-Keep private prospect data in ignored scratch unless you intentionally commit a sanitized example. A row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it is normalized into MDP prospect JSON. Check fit before drafting:
+Keep private prospect data in ignored scratch unless you intentionally commit a sanitized example. A row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it is normalized into MDP prospect JSON.
+
+For messy upstream rows, use the pack-owned runtime prompt contract:
+
+```text
+.mdp/prompts/normalize-prospect.yaml
+```
+
+That prompt asks an upstream agent to return strict JSON with `normalized_prospect`, `normalization_trace`, `gaps`, and empty `card_patches`. Save `normalized_prospect` as the prospect JSON file that the CLI will ingest. Then check fit before drafting:
 
 ```bash
 mdp --json fit --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json
@@ -89,6 +98,8 @@ The prospect/source row is where the situational trigger comes from. `trigger` i
 ```text
 prospect row
   |
+  +-- normalize-prospect prompt -> provider-neutral JSON
+  |
   +-- title/persona -> choose persona
   +-- trigger ------> why now
   +-- signals ------> evidence/hypotheses
@@ -110,7 +121,7 @@ persona -> pains -> hooks -> claims/proof -> CTA/channel policy
 
 `brief --context` makes the selected path explicit in `context.entries`, so agents draft from the relevant persona, pain, hook, proof, CTA, channel, avoid-rule, and output-rule entries instead of loading every card in the pack.
 
-Do not create a separate row evaluator for this step. The workflow is row normalization, `mdp fit`, and then `mdp brief --context` only when fit allows it. If the input is account-only and lacks a person name and title, ask for a person row or treat the prospect brief as insufficient-context instead of inventing a contact.
+Do not create a separate row evaluator for this step. The workflow is pack-owned prompt normalization, `mdp fit`, and then `mdp brief --context` only when fit allows it. If the input is account-only and lacks a person name and title, ask for a person row or treat the prospect brief as insufficient-context instead of inventing a contact.
 
 ## Source Ledger
 

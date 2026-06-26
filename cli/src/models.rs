@@ -86,6 +86,8 @@ pub(crate) struct PromptInput {
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct PromptOutputContract {
     pub(crate) contract: String,
+    #[serde(default)]
+    pub(crate) output_kind: Option<String>,
     pub(crate) strict_json_only: bool,
     pub(crate) required_top_level: Vec<String>,
     pub(crate) entry_defaults: PromptEntryDefaults,

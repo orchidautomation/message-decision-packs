@@ -66,7 +66,7 @@ For most requests, run this loop:
 mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-8. If a prospect/source row is involved, normalize it through `$mdp-prospect-brief`, run `mdp fit`, and produce the brief only when fit allows. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
+8. If a prospect/source row is involved, normalize it through `$mdp-prospect-brief`, using `.mdp/prompts/normalize-prospect.yaml` when the pack provides it. Then run `mdp fit`, and produce the brief only when fit allows. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
 
 ```bash
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
@@ -94,6 +94,7 @@ A usable GTM messaging pack should usually have:
 - `.mdp/cards/objections.yaml`
 - `.mdp/cards/gaps.yaml`
 - `.mdp/evals/*.yaml`
+- `.mdp/prompts/normalize-prospect.yaml`
 
 Treat `ctas.yaml` as the policy for the ask or reply path. Treat `output-rules.yaml` as the global style and structure policy. Treat `claims.yaml` as the approved proof ledger, `fit-rules.yaml` as the no-message gate, and `gaps.yaml` as the place to preserve known unknowns. Do not bury these rules only inside copy examples.
 
