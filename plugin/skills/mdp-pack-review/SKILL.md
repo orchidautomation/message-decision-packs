@@ -23,7 +23,7 @@ mdp --json eval --dir .
 
 - format and version
 - personas, target personas, and operator roles
-- supported channels
+- supported channels, including any custom channel names used by channel-policies
 - card index
 - progressive disclosure policy
 - max cards per route
@@ -44,6 +44,8 @@ mdp --json eval --dir .
 - missing durable gaps
 - duplicated hooks or pains
 - copy patterns that imply unsupported claims or bury global style rules outside output-rules
+- arbitrary unsupported YAML fields that should move under entry `metadata` or become first-class card content
+- metadata that agents can inspect but should not treat as an enforceable CLI rule
 
 4. Test routing with representative jobs:
 

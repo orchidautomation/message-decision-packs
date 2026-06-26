@@ -7,6 +7,7 @@ use crate::models::{
     Policy, Provenance,
 };
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manifest {
     let personas = vec![
@@ -65,8 +66,8 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
         ])),
         ("fit-rules.yaml", card("fit-rules", CardKind::FitRules, "Fit rules", "ICP, qualification, disqualification, and no-message rules.", &["GTM Engineering", "PMM", "PM"], &["fit", "icp", "disqualifier", "no-message"], vec![
             entry_with_evidence("good-fit-agent-gtm", "Good fit: agent-assisted GTM", "Use when the account is building GTM workflows with agents, provider-neutral source rows, Codex/Claude Code/OpenCode, or multiple systems that need consistent message context.", &["GTM Engineering", "PMM"], &["README.md", "examples/clay-row.json"]),
-            Entry { id: "no-context-no-copy".to_string(), title: "No message without context".to_string(), body: "If the row has no persona, trigger, source, or useful account context, return insufficient-context instead of drafting polished copy.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["no source".to_string(), "unknown persona".to_string(), "no trigger".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default() },
-            Entry { id: "bad-fit-sending-only".to_string(), title: "Bad fit: sending-only ask".to_string(), body: "If the request is only to blast, sequence, or auto-send messages without decision context, treat it as out of scope for MDP.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["blast".to_string(), "auto-send".to_string(), "sequence everyone".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default() },
+            Entry { id: "no-context-no-copy".to_string(), title: "No message without context".to_string(), body: "If the row has no persona, trigger, source, or useful account context, return insufficient-context instead of drafting polished copy.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["no source".to_string(), "unknown persona".to_string(), "no trigger".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "bad-fit-sending-only".to_string(), title: "Bad fit: sending-only ask".to_string(), body: "If the request is only to blast, sequence, or auto-send messages without decision context, treat it as out of scope for MDP.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["blast".to_string(), "auto-send".to_string(), "sequence everyone".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
         ])),
         ("signals.yaml", card("signals", CardKind::Signals, "Signals and triggers", "How to interpret source rows, LinkedIn context, source material, and account signals.", &["GTM Engineering", "PMM", "PM"], &["signal", "trigger", "source", "source-row", "csv", "crm", "linkedin"], vec![
             entry_with_evidence("source-row-signal", "Source row signal", "Treat user-provided rows, CSVs, CRM exports, Clay, Deepline, or other supplied row-like inputs as evidence inputs. Preserve source and confidence when present, and state weak signals as hypotheses.", &["GTM Engineering", "PMM"], &["examples/clay-row.json"]),
@@ -91,7 +92,7 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
         ("channel-policies.yaml", card("channel-policies", CardKind::ChannelPolicies, "Channel policies", "Channel and lifecycle rules for how routed message decisions should be used.", &["GTM Engineering", "PMM"], &["channel", "linkedin", "email", "initial", "follow-up", "call", "prep", "agent", "brief"], vec![
             entry_with_evidence("linkedin-initial-touch", "LinkedIn initial touch", "For a first LinkedIn touch, use one sourced observation or explicitly labeled hypothesis, one relevant angle, and one low-friction ask. Keep it brief and do not make the first note feel like a full pitch.", &["PMM"], &["README.md"]),
             entry_with_evidence("linkedin-follow-up", "LinkedIn follow-up", "For a later LinkedIn note, reference the earlier outreach lightly, add one new relevance angle or question, and keep the ask low-friction. Do not use guilt, breakup framing, or a bare bump.", &["PMM"], &["README.md"]),
-            Entry { id: "email-initial-touch".to_string(), title: "Email initial touch".to_string(), body: "For a first cold email, use the email output rules, one source-backed reason or explicit hypothesis, one approved angle, and one reply path. Keep one soft CTA and one question only. Do not lead with a calendar ask unless fit is strong and the source context supports it. Default to no links, attachments, images, HTML polish, or tracking unless the user explicitly overrides.".to_string(), applies_to: vec!["PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec![], exact_paragraphs: None, constraints: initial_email_constraints() },
+            Entry { id: "email-initial-touch".to_string(), title: "Email initial touch".to_string(), body: "For a first cold email, use the email output rules, one source-backed reason or explicit hypothesis, one approved angle, and one reply path. Keep one soft CTA and one question only. Do not lead with a calendar ask unless fit is strong and the source context supports it. Default to no links, attachments, images, HTML polish, or tracking unless the user explicitly overrides.".to_string(), applies_to: vec!["PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec![], exact_paragraphs: None, constraints: initial_email_constraints(), metadata: BTreeMap::new() },
             entry_with_evidence("email-follow-up", "Email follow-up", "For follow-up email copy, assume a maximum of three follow-up notes after the initial email. Refer back without assuming interest, add one concrete reason, question, angle, or proof gap, and keep the reply path to owner validation or relevance. Do not use bump language, bare bumps, guilt breakup framing, or imply a longer follow-up sequence than the user supplied.", &["PMM"], &["README.md"]),
             entry_with_evidence("call-prep", "Call prep", "Return likely persona, pains, allowed claims, avoid-rules, open questions, and the exact cards loaded. Do not pretend this is CRM history.", &["GTM Engineering", "PMM"], &["README.md"]),
             entry_with_evidence("agent-brief", "Agent brief", "Return fit status, loaded cards, approved claims, avoid-rules, source hypotheses, open gaps, and exact handoff boundaries. Do not send, enrich, or update external systems.", &["GTM Engineering", "PMM"], &["README.md"]),
@@ -108,12 +109,12 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("reply-path", "Reply path", "When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.", &["PMM", "GTM Engineering"], &["README.md"]),
         ])),
         ("avoid-rules.yaml", card("avoid-rules", CardKind::AvoidRules, "Avoid rules", "Category and claim boundaries agents must keep intact.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"], vec![
-            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default() },
-            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance claims, or product capabilities unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "fully automated".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default() },
+            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance claims, or product capabilities unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "fully automated".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
         ])),
         ("output-rules.yaml", card("output-rules", CardKind::OutputRules, "Output rules", "Global style, formatting, and output-structure rules generated text must follow.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"], vec![
-            Entry { id: "no-em-dashes".to_string(), title: "No em dashes".to_string(), body: "Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec![], avoid: vec!["—".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default() },
-            Entry { id: "plain-text-by-default".to_string(), title: "Plain text by default".to_string(), body: "For outbound email or LinkedIn copy, default to plain text. Do not include links, attachments, images, HTML, tracking parameters, or decorative formatting unless the user explicitly asks and the pack supports it.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["http://".to_string(), "https://".to_string(), "<html".to_string(), "<img".to_string(), "utm_".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default() },
+            Entry { id: "no-em-dashes".to_string(), title: "No em dashes".to_string(), body: "Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec![], avoid: vec!["—".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "plain-text-by-default".to_string(), title: "Plain text by default".to_string(), body: "For outbound email or LinkedIn copy, default to plain text. Do not include links, attachments, images, HTML, tracking parameters, or decorative formatting unless the user explicitly asks and the pack supports it.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["http://".to_string(), "https://".to_string(), "<html".to_string(), "<img".to_string(), "utm_".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
             entry("initial-email-shape", "Initial email shape", "When drafting an initial cold email, aim for roughly 90-125 words, use a short non-clickbait subject, and avoid fake Re: or Fwd: framing. Put detailed narrative structure in copy-patterns, not here.", &["PMM"]),
             entry("no-fake-personalization", "No fake personalization", "Do not imply the sender read, watched, met, noticed, or personally researched something unless that source context is present. Use hypotheses when the source signal is weak.", &["PMM", "GTM Engineering"]),
             entry("honor-paragraph-count", "Honor paragraph count", "If the user or pack states a paragraph count, match it exactly. Do not add setup, recap, or explanation paragraphs outside the requested structure.", &["PMM", "GTM Engineering", "PM"]),
@@ -828,6 +829,7 @@ fn entry(id: &str, title: &str, body: &str, applies_to: &[&str]) -> Entry {
         avoid: vec![],
         exact_paragraphs: None,
         constraints: EntryConstraints::default(),
+        metadata: BTreeMap::new(),
     }
 }
 
@@ -847,6 +849,7 @@ fn entry_with_evidence(
         avoid: vec![],
         exact_paragraphs: None,
         constraints: EntryConstraints::default(),
+        metadata: BTreeMap::new(),
     }
 }
 
@@ -1080,7 +1083,7 @@ fn prompt_contract(
             "Use only supplied person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.",
             task_instruction,
             "Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.",
-            "Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid. Use constraints for deterministic output limits such as word counts, subject word counts, max questions, or forbidden links/html/tracking when the source explicitly calls for them.",
+            "Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid. Use constraints for deterministic output limits such as word counts, subject word counts, max questions, or forbidden links/html/tracking when the source explicitly calls for them. Use metadata only for advisory custom annotations that should be preserved for agents but not enforced by the CLI.",
             "Each candidate entry must also include confidence, provenance, and status so a reviewer can decide whether it may become a card entry.",
             "Use body N/A, empty arrays, confidence unknown, and status gap when data is missing or weak.",
             "Put unsupported, quantified, customer, integration, compliance, or execution claims in rejected_claims instead of card_patches.",
@@ -1383,6 +1386,11 @@ fn candidate_entry_output_schema() -> Value {
                 "description": "Optional exact paragraph count for output-rules entries."
             },
             "constraints": constraints_output_schema(),
+            "metadata": {
+                "type": "object",
+                "description": "Optional advisory extension data preserved for agents but not enforced by the CLI.",
+                "additionalProperties": true
+            },
             "confidence": {
                 "enum": ["high", "medium", "low", "unknown"]
             },

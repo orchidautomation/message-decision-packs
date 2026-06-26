@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Manifest {
@@ -153,6 +154,8 @@ pub(crate) struct Entry {
     pub(crate) exact_paragraphs: Option<usize>,
     #[serde(default, skip_serializing_if = "EntryConstraints::is_empty")]
     pub(crate) constraints: EntryConstraints,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) metadata: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]

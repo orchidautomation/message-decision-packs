@@ -53,7 +53,8 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                                 "evidence": {"type": "array", "items": {"type": "string"}},
                                 "avoid": {"type": "array", "items": {"type": "string"}},
                                 "exact_paragraphs": {"type": "integer", "minimum": 1},
-                                "constraints": constraints_schema()
+                                "constraints": constraints_schema(),
+                                "metadata": metadata_schema()
                             }
                         }
                     }
@@ -79,7 +80,7 @@ fn brief_schema() -> Value {
 }
 
 fn context_schema() -> Value {
-    json!({"type": "object", "required": ["contract", "status", "persona", "job", "source_load_order", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "source_load_order": string_array(), "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "evidence", "avoid", "constraints", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+    json!({"type": "object", "required": ["contract", "status", "persona", "job", "source_load_order", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "source_load_order": string_array(), "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "evidence", "avoid", "constraints", "metadata", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
 }
 
 fn string_array() -> Value {
@@ -122,6 +123,14 @@ fn count_constraint_schema(description: &str) -> Value {
             "target_min": {"type": "integer", "minimum": 0},
             "target_max": {"type": "integer", "minimum": 0}
         }
+    })
+}
+
+fn metadata_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Optional advisory extension data preserved in route and brief context. The CLI surfaces metadata for agents but does not enforce unknown metadata keys.",
+        "additionalProperties": true
     })
 }
 
@@ -325,6 +334,7 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                                     "avoid": string_array(),
                                     "exact_paragraphs": {"type": "integer", "minimum": 1},
                                     "constraints": constraints_schema(),
+                                    "metadata": metadata_schema(),
                                     "confidence": {"enum": ["high", "medium", "low", "unknown"]},
                                     "provenance": string_array(),
                                     "status": {
