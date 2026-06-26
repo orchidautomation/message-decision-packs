@@ -92,6 +92,7 @@ Create a pack:
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
 mdp --json validate --dir /tmp/mdp-demo
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
+mdp sample-leads --dir /tmp/mdp-demo --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
 mdp --json --summary brief --context --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
 mdp --json check-claims --dir /tmp/mdp-demo --text "MDP is a local offline CLI for modular message context."
@@ -183,6 +184,14 @@ Use human-readable `body` text for these policies. Use `avoid` terms when a lite
 
 Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Routed entries can include structured `constraints` for deterministic output checks such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy to catch unsupported claims, avoid-rule hits, output-rule hits, hard constraint violations in `guardrail_hits`, advisory target misses in `constraint_warnings`, and text-only limitations in `unchecked_constraints`. Use `gaps` to expose missing evidence, and use `eval` to test route, fit, brief, and claim behavior.
 
+For outbound-copy testing when no real or intentionally sanitized prospect row exists, generate clearly fake fixtures first:
+
+```bash
+mdp sample-leads --dir . --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
+```
+
+`sample-leads` emits 2 to 5 deterministic synthetic fixture rows with `source_kind: synthetic-fixture`, `synthetic: true`, `do_not_contact: true`, route context, `safe_personalization`, and `known_gaps`. Save one fixture row to ignored scratch if you need to pass it to `mdp fit` or `mdp brief --context`, route each fixture through MDP, draft only against the safe personalization and stated gaps, then run `check-claims`. Never enrich, research, upload, sequence, contact, or treat these fixture leads as real prospects.
+
 ## Extensions
 
 Pack authors can add advisory custom annotations to card entries with `metadata`:
@@ -208,7 +217,7 @@ Channels are open strings. Add custom channels to `manifest.yaml` `supported_cha
 
 Packs can declare `persona_mappings` in `.mdp/manifest.yaml` so prospect titles map into pack-owned personas before fit and brief routing. Explicit `prospect.persona` still wins. Legacy title fallbacks are reported as low-confidence and do not unlock the fit gate by themselves.
 
-Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures kept for compatibility and include `source_kind: synthetic-example` plus `synthetic: true`; the file name is not a requirement to use Clay.
+Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures kept for compatibility and include `source_kind: synthetic-example` plus `synthetic: true`; the file name is not a requirement to use Clay. `mdp sample-leads` creates additional fake testing rows only; it does not generate real leads, enrich data, browse the web, write to a CRM, or imply any person or account exists.
 
 Do not add a separate row-evaluation skill or workflow for fit. Normalize the supplied row into MDP prospect JSON, run `mdp fit`, stop on `disqualified` or `insufficient-context`, and only then run `mdp brief --context` when a brief is needed. True account-only evaluation is a schema/product question for a future provider-neutral account input, not a reason to invent a contact or bypass the prospect fit gate.
 

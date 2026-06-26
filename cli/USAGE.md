@@ -38,6 +38,7 @@ Quick demo:
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
 mdp --json validate --dir /tmp/mdp-demo
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
+mdp sample-leads --dir /tmp/mdp-demo --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
 mdp --json --summary brief --context --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
 mdp --json check-claims --dir /tmp/mdp-demo --text "MDP is a local offline CLI for modular message context."
@@ -70,13 +71,19 @@ Error:
 ## Agent handoff
 
 1. Run `mdp --json doctor` and `mdp --json validate`.
-2. Convert the supplied user note, CSV, CRM export, Clay, Deepline, spreadsheet, or other source row into `mdp schema prospect`. Use explicit `persona` when known; otherwise `.mdp/manifest.yaml` can define `persona_mappings` from title keywords to pack personas.
-3. Run `mdp --json fit --prospect <row.json>` and stop if it returns `disqualified` or `insufficient-context`.
-4. Run `mdp --json --summary brief --context --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
-5. Stop if `data.draft_status` is `no-draft`.
-6. Draft from `data.context.entries` first; open `data.context.full_card_required` paths only when present.
-7. Run `mdp --json check-claims` before approval; it reports unsupported claims plus avoid-rule, output-rule, and hard structured-constraint guardrail hits. Include `--subject`, `--persona`, and `--job` when checking routed subject or channel constraints. Target-range misses appear in `constraint_warnings`; actual attachments, embedded images, and send-surface tracking may appear in `unchecked_constraints` because they cannot be proven from a single draft body.
+2. If outbound-copy testing needs lead-specific inputs and no real or sanitized prospect row was supplied, generate 2 to 5 fake fixtures:
 
-Generated starter rows are synthetic examples. They include `source_kind: synthetic-example` and `synthetic: true`; do not present them as real prospects. Production rows can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after they are normalized into MDP prospect JSON.
+```bash
+mdp sample-leads --dir . --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
+```
+
+3. Convert the supplied user note, CSV, CRM export, Clay, Deepline, spreadsheet, or other source row into `mdp schema prospect`. Use explicit `persona` when known; otherwise `.mdp/manifest.yaml` can define `persona_mappings` from title keywords to pack personas. For fixture testing, save one generated row to ignored scratch before passing it as `--prospect`.
+4. Run `mdp --json fit --prospect <row.json>` and stop if it returns `disqualified` or `insufficient-context`.
+5. Run `mdp --json --summary brief --context --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
+6. Stop if `data.draft_status` is `no-draft`.
+7. Draft from `data.context.entries` first; for generated fixtures, draft against `safe_personalization` and `known_gaps` and never imply the fixture is a real prospect. Open `data.context.full_card_required` paths only when present.
+8. Run `mdp --json check-claims` before approval; it reports unsupported claims plus avoid-rule, output-rule, and hard structured-constraint guardrail hits. Include `--subject`, `--persona`, and `--job` when checking routed subject or channel constraints. Target-range misses appear in `constraint_warnings`; actual attachments, embedded images, and send-surface tracking may appear in `unchecked_constraints` because they cannot be proven from a single draft body.
+
+Generated starter rows are synthetic examples. `sample-leads` rows are synthetic fixtures. Both include synthetic provenance and must not be presented as real prospects. Production rows can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after they are normalized into MDP prospect JSON.
 
 `mdp` is not a sender, CRM, sequencer, lead enricher, scraper, or AI SDR. It is the local decision contract layer.

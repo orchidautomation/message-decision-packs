@@ -1,7 +1,7 @@
-use crate::cli::{Cli, Commands};
+use crate::cli::{Cli, Commands, SampleLeadsFormat};
 use crate::commands::{
     check_claims, demo_copy, doctor, emit_brief, eval_pack, explain, fit, gaps, init_pack, pack,
-    prospect_brief_with_context, route, schema, validate_pack,
+    prospect_brief_with_context, route, sample_leads, schema, validate_pack,
 };
 use crate::output::print_output;
 use crate::pack_io::write_json_file;
@@ -46,6 +46,17 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             "route",
             route(&dir, &persona, &job, entries, eval_fixture)?,
         ),
+        Commands::SampleLeads {
+            dir,
+            persona,
+            job,
+            count,
+            seed,
+            format,
+        } => {
+            let data = sample_leads(&dir, &persona, &job, count, seed)?;
+            print_sample_leads(json_mode, summary_mode, format, data)
+        }
         Commands::Fit { dir, prospect } => {
             print_output(json_mode, summary_mode, "fit", fit(&dir, &prospect)?)
         }
@@ -137,6 +148,20 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             print_output(json_mode, summary_mode, "schema", schema(target))
         }
     }
+}
+
+fn print_sample_leads(
+    json_mode: bool,
+    summary_mode: bool,
+    format: SampleLeadsFormat,
+    data: Value,
+) -> Result<()> {
+    if json_mode || summary_mode || format == SampleLeadsFormat::Json {
+        return print_output(json_mode, summary_mode, "sample-leads", data);
+    }
+
+    println!("{}", serde_yaml::to_string(&data)?);
+    Ok(())
 }
 
 fn print_checked(json_mode: bool, summary_mode: bool, command: &str, data: Value) -> Result<()> {

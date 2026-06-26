@@ -31,13 +31,21 @@ If the user expects a created file, save it explicitly:
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
-3. Without a prospect/source row, build a persona/job brief:
+3. Without a prospect/source row, do not draft lead-specific copy from a persona/job route alone. If the user needs outbound-copy testing, generate clearly fake fixture leads first:
+
+```bash
+mdp sample-leads --dir . --persona "<persona>" --job "<channel> outbound copy" --count 3 --format yaml
+```
+
+Then save one fixture row to ignored scratch if needed, run `mdp fit`, build `mdp brief --context`, and draft only against `safe_personalization` and `known_gaps`. Never treat fixture leads as real prospects.
+
+If the user only needs a route-level writing contract, build a persona/job brief:
 
 ```bash
 mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-4. Read `data.context.entries` first. Open `data.context.full_card_required` paths only when present. If `draft_status` is `no-draft`, surface the fit decision and do not draft. If the brief says the prospect is synthetic, treat it as a demo fixture.
+4. Read `data.context.entries` first. Open `data.context.full_card_required` paths only when present. If `draft_status` is `no-draft`, surface the fit decision and do not draft. If the brief says the prospect is synthetic, treat it as a demo or fixture lead.
 5. Build a copy brief with:
 
 - audience/persona

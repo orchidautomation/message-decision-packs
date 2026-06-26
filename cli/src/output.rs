@@ -57,6 +57,22 @@ fn summarize(command: &str, data: &Value) -> Value {
             "entry_gap_count": array_len(&data["entry_route"]["gaps"]),
             "eval_fixture": data["eval_fixture"]
         }),
+        "sample-leads" => json!({
+            "contract": data["contract"],
+            "persona": data["inputs"]["persona"],
+            "job": data["inputs"]["job"],
+            "count": array_len(&data["fixture_leads"]),
+            "seed": data["inputs"]["seed"],
+            "source_kind": data["fixture_notice"]["source_kind"],
+            "synthetic": data["fixture_notice"]["synthetic"],
+            "do_not_contact": data["fixture_notice"]["do_not_contact"],
+            "route_card_count": array_len(&data["route"]["load_order"]),
+            "lead_ids": data["fixture_leads"].as_array().map(|rows| {
+                rows.iter()
+                    .filter_map(|row| row["id"].as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            }).unwrap_or_default()
+        }),
         "fit" => json!({
             "status": data["status"],
             "decision": data["decision"],
@@ -242,6 +258,29 @@ mod tests {
         assert_eq!(summary["required_card_count"], 2);
         assert_eq!(summary["prospect_source"]["kind"], "synthetic-example");
         assert_eq!(summary["artifact"]["status"], "stdout-only");
+    }
+
+    #[test]
+    fn sample_leads_summary_exposes_fixture_safety() {
+        let summary = summarize(
+            "sample-leads",
+            &json!({
+                "contract": "mdp.sample-leads.v0",
+                "inputs": {"persona": "PMM", "job": "initial email outbound copy", "seed": 7},
+                "fixture_notice": {"source_kind": "synthetic-fixture", "synthetic": true, "do_not_contact": true},
+                "route": {"load_order": [".mdp/cards/personas.yaml"]},
+                "fixture_leads": [
+                    {"id": "fixture-lead-1"},
+                    {"id": "fixture-lead-2"}
+                ]
+            }),
+        );
+
+        assert_eq!(summary["contract"], "mdp.sample-leads.v0");
+        assert_eq!(summary["count"], 2);
+        assert_eq!(summary["source_kind"], "synthetic-fixture");
+        assert_eq!(summary["do_not_contact"], true);
+        assert_eq!(summary["route_card_count"], 1);
     }
 
     #[test]

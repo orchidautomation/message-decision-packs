@@ -86,6 +86,25 @@ If `persona` is missing, the CLI can resolve it from pack-owned `.mdp/manifest.y
 
 Generated starter rows include `source_kind: synthetic-example` and `synthetic: true`. Treat those as demo fixtures, not real prospects. For production work, use a real row in ignored scratch or an intentionally sanitized example.
 
+## Outbound Testing Without A Prospect
+
+When the user wants cold email, LinkedIn, or outbound-copy testing but has not supplied a real or intentionally sanitized prospect row, generate fake fixtures before drafting:
+
+```bash
+mdp sample-leads --dir . --persona "<persona>" --job "<channel> outbound copy" --count 3 --format yaml
+```
+
+Use this workflow:
+
+1. Generate 2 to 5 fixture leads.
+2. Save one fixture row to ignored scratch if a CLI command needs `--prospect`.
+3. Route each fixture through MDP, then run `mdp fit` and `mdp brief --context`.
+4. Draft only against `safe_personalization` and `known_gaps`; label weak context as a hypothesis.
+5. Run `mdp check-claims` before treating copy as ready.
+6. Never treat fixture leads as real prospects.
+
+Fixture leads are `source_kind: synthetic-fixture`, `synthetic: true`, and `do_not_contact: true`. Do not enrich, research, upload, sequence, send to, or imply they represent real people or accounts.
+
 Run fit first and stop on `disqualified` or `insufficient-context` unless the user explicitly overrides. If the user only asked whether a row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, and gaps instead of drafting or creating a parallel evaluation.
 
 Then create a brief:

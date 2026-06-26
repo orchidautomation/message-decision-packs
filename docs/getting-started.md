@@ -63,6 +63,14 @@ Agents should load only the returned cards instead of reading the entire pack by
 
 Use the returned `eval_fixture` as a scaffold for route tests. Review it before committing so evals encode intended behavior, not accidental routing noise.
 
+For outbound-copy testing without a real or intentionally sanitized prospect row, generate fake fixture leads before drafting:
+
+```bash
+mdp sample-leads --dir ./mdp-demo --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
+```
+
+These rows are deterministic synthetic fixtures with `source_kind: synthetic-fixture`, `synthetic: true`, and `do_not_contact: true`. Route, fit, and brief each fixture before drafting. Use only `safe_personalization` and `known_gaps` for personalization assumptions, then run `check-claims`. Never treat fixture leads as real prospects.
+
 ## Use A Prospect Or Source Row
 
 Keep private prospect data in ignored scratch unless you intentionally commit a sanitized example. A row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it is normalized into MDP prospect JSON.

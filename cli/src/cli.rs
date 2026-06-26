@@ -66,6 +66,21 @@ pub(crate) enum Commands {
         #[arg(long, help = "Include an eval fixture scaffold based on this route")]
         eval_fixture: bool,
     },
+    #[command(about = "Generate clearly fake prospect fixtures for outbound-copy testing")]
+    SampleLeads {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long)]
+        persona: String,
+        #[arg(long, default_value = "initial email outbound copy testing")]
+        job: String,
+        #[arg(long, default_value_t = 3, help = "Fixture row count, from 2 to 5")]
+        count: usize,
+        #[arg(long, default_value_t = 0, help = "Deterministic fixture variant seed")]
+        seed: u64,
+        #[arg(long, value_enum, default_value_t = SampleLeadsFormat::Json)]
+        format: SampleLeadsFormat,
+    },
     #[command(about = "Evaluate prospect/account fit against pack fit rules")]
     Fit {
         #[arg(long, default_value = ".")]
@@ -162,4 +177,10 @@ pub(crate) enum SchemaTarget {
     Brief,
     Prospect,
     Eval,
+}
+
+#[derive(Clone, ValueEnum, PartialEq, Eq)]
+pub(crate) enum SampleLeadsFormat {
+    Json,
+    Yaml,
 }
