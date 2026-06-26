@@ -171,6 +171,29 @@ With `brief --context`, the CLI reads the routed card files locally, selects the
 
 Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy to catch unsupported claims, avoid-rule hits, and output-rule hits, use `gaps` to expose missing evidence, and use `eval` to test route, fit, brief, and claim behavior.
 
+## Extensions
+
+Pack authors can add advisory custom annotations to card entries with `metadata`:
+
+```yaml
+entries:
+  - id: linkedin-initial-touch
+    title: LinkedIn initial touch
+    body: Keep the opener short and use one sourced trigger.
+    applies_to: [PMM]
+    evidence: [README.md]
+    metadata:
+      owner: pmm
+      review_status: draft
+      source_priority: 2
+```
+
+`metadata` is preserved in `mdp route --entries` and `mdp brief --context` output so agents can see it. The CLI does not enforce unknown metadata keys. Put enforceable rules in first-class fields such as `avoid`, `exact_paragraphs`, fit rules, claims, channel policies, or output rules.
+
+Arbitrary fields outside the supported schema are not extension points. Serde may still parse those YAML files, but `mdp validate` warns that unsupported fields are ignored. Move advisory custom data under entry `metadata` instead.
+
+Channels are open strings. Add custom channels to `manifest.yaml` `supported_channels`, then write matching channel-policy entries and route with jobs or brief channels that use the same words. For example, `supported_channels: [linkedin, email, partner-intro]` lets `partner intro outbound message` match a `Partner intro` channel-policy entry without adding a new Rust enum variant.
+
 Packs can declare `persona_mappings` in `.mdp/manifest.yaml` so prospect titles map into pack-owned personas before fit and brief routing. Explicit `prospect.persona` still wins. Legacy title fallbacks are reported as low-confidence and do not unlock the fit gate by themselves.
 
 Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures kept for compatibility and include `source_kind: synthetic-example` plus `synthetic: true`; the file name is not a requirement to use Clay.

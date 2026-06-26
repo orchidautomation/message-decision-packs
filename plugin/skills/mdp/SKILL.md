@@ -62,6 +62,8 @@ After edits:
 mdp --json validate --dir .
 ```
 
+Pack extensions must use supported surfaces. Put advisory custom annotations on card entries under `metadata`; `mdp route --entries` and `mdp brief --context` surface that metadata for agents, but the CLI does not enforce unknown metadata keys. Do not add arbitrary sibling fields to entries, cards, or manifests as if they were supported contract fields; `mdp validate` warns that unsupported fields are ignored. For custom channels, add the channel string to `.mdp/manifest.yaml` `supported_channels`, then write matching channel-policy entries.
+
 ## Use A Prospect Or Source Row
 
 Convert an existing prospect/source row, CSV row, CRM export row, research note, Clay/Deepline row, spreadsheet row, or user-provided source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Prefer the pack-owned `.mdp/prompts/normalize-prospect.yaml` contract for messy rows; save its `normalized_prospect` output as the file that feeds `mdp fit`. Do not commit private prospect data. Check the expected shape:

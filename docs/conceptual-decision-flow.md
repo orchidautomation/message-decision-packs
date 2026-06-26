@@ -116,6 +116,24 @@ Do not use normalization prompts to smooth over disqualifying language. If a row
 The pack is modular. Each card holds entries with ids, bodies, applicability rules, evidence, and avoid terms.
 Output-rule entries can also set `exact_paragraphs` when a fixed paragraph count should be checked deterministically.
 
+Entries may also include `metadata` for advisory custom annotations:
+
+```yaml
+entries:
+  - id: partner-intro
+    title: Partner intro
+    body: Use for partner-referred introductions.
+    applies_to: [PMM]
+    evidence: [partner-notes.md]
+    metadata:
+      owner: partnerships
+      review_status: draft
+```
+
+The CLI preserves `metadata` in route and brief context so agents can inspect it, but metadata keys are not enforceable constraints. Unknown arbitrary fields outside the schema are unsupported; `mdp validate` warns that those fields are ignored. Use first-class fields and cards for rules the CLI should route or check.
+
+Custom channels are declared in `manifest.yaml` `supported_channels`. Channel-policy routing uses those strings as tokenized channel names, so a pack can add `partner-intro`, `webinar-followup`, or another local channel without changing the CLI enum set.
+
 ```text
 .mdp/manifest.yaml
   |

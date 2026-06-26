@@ -19,14 +19,6 @@ enum MessageLifecycle {
     FollowUp,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum MessageChannel {
-    Linkedin,
-    Email,
-    Call,
-    Agent,
-}
-
 pub(crate) fn select_cards(
     manifest: &Manifest,
     persona: Option<&str>,
@@ -153,7 +145,7 @@ pub(crate) fn entry_route(
         "job": job,
         "matches": details.matches,
         "gaps": details.gaps,
-        "policy": "Load matched entries first. Load the full card only when an entry is ambiguous, missing, or a guardrail card needs complete review."
+        "policy": "Load matched entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Load the full card only when an entry is ambiguous, missing, or a guardrail card needs complete review."
     }))
 }
 
@@ -185,7 +177,7 @@ pub(crate) fn entry_context(
                 "supporting_entry_count": 0,
                 "guardrail_entry_count": 0
             },
-            "policy": "Do not draft from bounded context when draft_status is no-draft."
+            "policy": "Do not draft from bounded context when draft_status is no-draft. Entry metadata is advisory context only."
         }));
     }
 
@@ -217,7 +209,7 @@ pub(crate) fn entry_context(
             "supporting_entry_count": entry_count.saturating_sub(required_entry_count),
             "guardrail_entry_count": guardrail_entry_count
         },
-        "policy": "Use context.entries first. Open full_card_required paths only when present, or when the user asks for a full pack/card audit."
+        "policy": "Use context.entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Open full_card_required paths only when present, or when the user asks for a full pack/card audit."
     }))
 }
 
@@ -264,7 +256,8 @@ fn route_entry_details(
             let entry_tokens = tokens(&entry_text);
             let job_match = token_overlap(&job_tokens, &entry_tokens);
             let persona_match = entry_text.contains(&persona_lower);
-            let entry_allowed = entry_policy_compatible(&card.kind, &job_tokens, &entry_tokens);
+            let entry_allowed =
+                entry_policy_compatible(&card.kind, manifest, &job_tokens, &entry_tokens);
             let matched = !(matches!(card.kind, CardKind::ChannelPolicies) && !job_match)
                 && entry_allowed
                 && (applies || job_match || persona_match);
@@ -328,6 +321,7 @@ fn entry_summary(card_id: &str, card_kind: &CardKind, entry: &Entry, reason: &st
         "title": entry.title,
         "status": entry_status(card_kind),
         "reason": reason,
+        "metadata": entry.metadata,
         "evidence_count": entry.evidence.len(),
         "avoid_count": entry.avoid.len()
     })
@@ -352,6 +346,7 @@ fn entry_context_value(
         "evidence": entry.evidence,
         "avoid": entry.avoid,
         "exact_paragraphs": entry.exact_paragraphs,
+        "metadata": entry.metadata,
         "status": entry_status(card_kind),
         "selection": selection,
         "reason": reason
@@ -415,11 +410,12 @@ pub(crate) fn token_overlap(left: &[String], right: &[String]) -> bool {
 
 fn entry_policy_compatible(
     card_kind: &CardKind,
+    manifest: &Manifest,
     job_tokens: &[String],
     entry_tokens: &[String],
 ) -> bool {
     if matches!(card_kind, CardKind::ChannelPolicies) {
-        channel_compatible(job_tokens, entry_tokens)
+        channel_compatible(&manifest.supported_channels, job_tokens, entry_tokens)
             && lifecycle_compatible(job_tokens, entry_tokens)
     } else {
         true
@@ -449,9 +445,13 @@ fn lifecycle_stage(tokens: &[String]) -> Option<MessageLifecycle> {
     }
 }
 
-fn channel_compatible(job_tokens: &[String], entry_tokens: &[String]) -> bool {
-    let job_channels = message_channels(job_tokens);
-    let entry_channels = message_channels(entry_tokens);
+fn channel_compatible(
+    supported_channels: &[String],
+    job_tokens: &[String],
+    entry_tokens: &[String],
+) -> bool {
+    let job_channels = message_channels(supported_channels, job_tokens);
+    let entry_channels = message_channels(supported_channels, entry_tokens);
     if job_channels.is_empty() || entry_channels.is_empty() {
         return true;
     }
@@ -460,21 +460,23 @@ fn channel_compatible(job_tokens: &[String], entry_tokens: &[String]) -> bool {
         .any(|channel| entry_channels.contains(channel))
 }
 
-fn message_channels(tokens: &[String]) -> BTreeSet<MessageChannel> {
+fn message_channels(supported_channels: &[String], tokens: &[String]) -> BTreeSet<String> {
     let mut channels = BTreeSet::new();
-    if has_token(tokens, "linkedin") {
-        channels.insert(MessageChannel::Linkedin);
-    }
-    if has_token(tokens, "email") {
-        channels.insert(MessageChannel::Email);
-    }
-    if has_token(tokens, "call") {
-        channels.insert(MessageChannel::Call);
-    }
-    if has_token(tokens, "agent") {
-        channels.insert(MessageChannel::Agent);
+    for channel in supported_channels {
+        let channel_tokens = tokens_for_channel(channel);
+        if !channel_tokens.is_empty()
+            && channel_tokens
+                .iter()
+                .all(|channel_token| has_token(tokens, channel_token))
+        {
+            channels.insert(channel.to_lowercase());
+        }
     }
     channels
+}
+
+fn tokens_for_channel(channel: &str) -> Vec<String> {
+    tokens(channel)
 }
 
 fn has_token(tokens: &[String], needle: &str) -> bool {
@@ -496,7 +498,12 @@ mod tests {
             personas: vec!["PMM".to_string()],
             target_personas: vec![],
             operator_roles: vec![],
-            supported_channels: vec![],
+            supported_channels: vec![
+                "linkedin".to_string(),
+                "email".to_string(),
+                "call-prep".to_string(),
+                "partner-intro".to_string(),
+            ],
             persona_mappings: vec![],
             cards: vec![
                 CardRef {
@@ -608,9 +615,72 @@ mod tests {
         let email_entry = tokens("Initial email");
         let linkedin_entry = tokens("LinkedIn follow up");
 
-        assert!(channel_compatible(&email_job, &email_entry));
-        assert!(!channel_compatible(&email_job, &linkedin_entry));
-        assert!(channel_compatible(&linkedin_job, &linkedin_entry));
-        assert!(!channel_compatible(&linkedin_job, &email_entry));
+        let supported_channels = ["linkedin".to_string(), "email".to_string()];
+
+        assert!(channel_compatible(
+            &supported_channels,
+            &email_job,
+            &email_entry
+        ));
+        assert!(!channel_compatible(
+            &supported_channels,
+            &email_job,
+            &linkedin_entry
+        ));
+        assert!(channel_compatible(
+            &supported_channels,
+            &linkedin_job,
+            &linkedin_entry
+        ));
+        assert!(!channel_compatible(
+            &supported_channels,
+            &linkedin_job,
+            &email_entry
+        ));
+    }
+
+    #[test]
+    fn channel_gate_uses_manifest_supported_custom_channels() {
+        let supported_channels = ["partner-intro".to_string(), "email".to_string()];
+        let job = tokens("partner intro outbound message");
+        let partner_entry = tokens("Partner intro");
+        let email_entry = tokens("Initial email");
+
+        assert!(channel_compatible(
+            &supported_channels,
+            &job,
+            &partner_entry
+        ));
+        assert!(!channel_compatible(&supported_channels, &job, &email_entry));
+    }
+
+    #[test]
+    fn entry_outputs_preserve_advisory_metadata() {
+        let entry = Entry {
+            id: "custom".to_string(),
+            title: "Custom annotation".to_string(),
+            body: "Use this entry for custom context.".to_string(),
+            applies_to: vec!["PMM".to_string()],
+            evidence: vec![],
+            avoid: vec![],
+            exact_paragraphs: None,
+            metadata: [(
+                "segment_hint".to_string(),
+                Value::String("enterprise".to_string()),
+            )]
+            .into_iter()
+            .collect(),
+        };
+
+        let value = entry_context_value(
+            "hooks",
+            &CardKind::Hooks,
+            ".mdp/cards/hooks.yaml",
+            &entry,
+            "matched",
+            "entry job match",
+        );
+
+        assert_eq!(value["metadata"]["segment_hint"], "enterprise");
     }
 }

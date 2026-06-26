@@ -9,6 +9,7 @@ use crate::pack_io::{
 use crate::routing::select_cards;
 use anyhow::Result;
 use serde_json::{Value, json};
+use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -69,6 +70,7 @@ pub(crate) fn doctor(root: &Path) -> Value {
 pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let mut issues = Vec::new();
+    validate_manifest_shape(root, &mut issues);
     let mut card_ids = BTreeSet::new();
     let mut loaded_cards = Vec::new();
     if manifest.format != FORMAT_VERSION {
@@ -175,6 +177,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         let display_path = display_pack_path(&card_ref.path);
         match read_card(&path) {
             Ok(card) => {
+                validate_card_shape(&path, &display_path, &mut issues);
                 if card.id != card_ref.id {
                     issues.push(issue(
                         "card_id_mismatch",
@@ -213,6 +216,177 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     Ok(
         json!({"valid": issues.is_empty(), "manifest": format!("{DEFAULT_DIR}/manifest.yaml"), "cards": loaded_cards, "prompts": loaded_prompts, "issues": issues}),
     )
+}
+
+fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
+    let path = root.join(DEFAULT_DIR).join("manifest.yaml");
+    let Ok(raw) = fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(value) = serde_yaml::from_str::<YamlValue>(&raw) else {
+        return;
+    };
+
+    validate_object_keys(
+        &value,
+        &[
+            "format",
+            "id",
+            "name",
+            "version",
+            "description",
+            "personas",
+            "target_personas",
+            "operator_roles",
+            "supported_channels",
+            "persona_mappings",
+            "cards",
+            "policy",
+            "provenance",
+        ],
+        ".mdp/manifest.yaml",
+        "manifest_unknown_field",
+        issues,
+    );
+    validate_sequence_object_keys(
+        yaml_get(&value, "cards"),
+        &["id", "path", "kind", "description", "personas", "tags"],
+        ".mdp/manifest.yaml#/cards",
+        "manifest_card_ref_unknown_field",
+        issues,
+    );
+    validate_sequence_object_keys(
+        yaml_get(&value, "persona_mappings"),
+        &["persona", "title_keywords"],
+        ".mdp/manifest.yaml#/persona_mappings",
+        "manifest_persona_mapping_unknown_field",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(&value, "policy").unwrap_or(&YamlValue::Null),
+        &[
+            "progressive_disclosure",
+            "load_manifest_first",
+            "max_cards_per_route",
+            "json_contract",
+            "no_auth_required",
+        ],
+        ".mdp/manifest.yaml#/policy",
+        "manifest_policy_unknown_field",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(&value, "provenance").unwrap_or(&YamlValue::Null),
+        &["owner", "created_by", "notes"],
+        ".mdp/manifest.yaml#/provenance",
+        "manifest_provenance_unknown_field",
+        issues,
+    );
+}
+
+fn validate_card_shape(path: &Path, display_path: &str, issues: &mut Vec<Value>) {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(value) = serde_yaml::from_str::<YamlValue>(&raw) else {
+        return;
+    };
+
+    validate_object_keys(
+        &value,
+        &[
+            "id",
+            "kind",
+            "title",
+            "description",
+            "personas",
+            "tags",
+            "entries",
+        ],
+        display_path,
+        "card_unknown_field",
+        issues,
+    );
+
+    let Some(entries) = yaml_get(&value, "entries").and_then(YamlValue::as_sequence) else {
+        return;
+    };
+    for (index, entry) in entries.iter().enumerate() {
+        let entry_path = format!("{display_path}#/entries/{index}");
+        validate_object_keys(
+            entry,
+            &[
+                "id",
+                "title",
+                "body",
+                "applies_to",
+                "evidence",
+                "avoid",
+                "exact_paragraphs",
+                "metadata",
+            ],
+            &entry_path,
+            "card_entry_unknown_field",
+            issues,
+        );
+        if let Some(metadata) = yaml_get(entry, "metadata") {
+            if !metadata.is_mapping() {
+                issues.push(issue(
+                    "card_entry_metadata_type",
+                    "error",
+                    format!("{entry_path}/metadata"),
+                    "entry metadata must be an object/map; metadata is surfaced for agents but not enforced by the CLI",
+                ));
+            }
+        }
+    }
+}
+
+fn yaml_get<'a>(value: &'a YamlValue, key: &str) -> Option<&'a YamlValue> {
+    value.as_mapping()?.get(YamlValue::String(key.to_string()))
+}
+
+fn validate_sequence_object_keys(
+    value: Option<&YamlValue>,
+    allowed: &[&str],
+    path: &str,
+    code: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(items) = value.and_then(YamlValue::as_sequence) else {
+        return;
+    };
+    for (index, item) in items.iter().enumerate() {
+        validate_object_keys(item, allowed, &format!("{path}/{index}"), code, issues);
+    }
+}
+
+fn validate_object_keys(
+    value: &YamlValue,
+    allowed: &[&str],
+    path: &str,
+    code: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(map) = value.as_mapping() else {
+        return;
+    };
+    let allowed = allowed.iter().copied().collect::<BTreeSet<_>>();
+    for key in map.keys() {
+        let Some(key) = key.as_str() else {
+            continue;
+        };
+        if !allowed.contains(key) {
+            issues.push(issue(
+                code,
+                "warning",
+                format!("{path}/{key}"),
+                format!(
+                    "unsupported field {key} is parsed but ignored; put advisory extension data under entry metadata"
+                ),
+            ));
+        }
+    }
 }
 
 fn validate_prompts(root: &Path, issues: &mut Vec<Value>) -> Result<Vec<Value>> {
@@ -1177,6 +1351,64 @@ output_contract:
                 .expect("issues array")
                 .iter()
                 .any(|issue| issue["code"] == "persona_mapping_unknown_persona")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_warns_on_unsupported_entry_fields() {
+        let root = temp_pack("entry-unknown-field");
+        let card_path = root.join(".mdp").join("cards").join("hooks.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        std::fs::write(
+            &card_path,
+            raw.replace(
+                "  body: Position the pack",
+                "  owner: PMM\n  body: Position the pack",
+            ),
+        )
+        .expect("card should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "card_entry_unknown_field"
+                    && issue["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with("/owner")))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_accepts_entry_metadata_map() {
+        let root = temp_pack("entry-metadata");
+        let card_path = root.join(".mdp").join("cards").join("hooks.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        std::fs::write(
+            &card_path,
+            raw.replace(
+                "  body: Position the pack",
+                "  metadata:\n    owner: PMM\n    lifecycle: advisory\n  body: Position the pack",
+            ),
+        )
+        .expect("card should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .all(|issue| issue["code"] != "card_entry_unknown_field"
+                    && issue["code"] != "card_entry_metadata_type")
         );
 
         let _ = std::fs::remove_dir_all(root);
