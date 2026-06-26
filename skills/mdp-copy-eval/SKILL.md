@@ -1,6 +1,6 @@
 ---
 name: mdp-copy-eval
-description: Use to evaluate copy against an MDP pack, including fit, routed card fidelity, claims, avoid-rules, CTA fit, channel constraints, and evidence gaps.
+description: Use to evaluate copy against an MDP pack, including fit, routed card fidelity, claims, avoid-rules, output-rules, CTA fit, channel constraints, and evidence gaps.
 ---
 
 # MDP Copy Eval
@@ -27,7 +27,7 @@ mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound co
 mdp --json check-claims --dir . --text "<draft copy>"
 ```
 
-3. Use `check-claims` for `valid`, `matched_claims`, `claim_gaps`, `guardrail_hits`, and `unsupported_claims`. It does not return card paths.
+3. Use `check-claims` for `valid`, `matched_claims`, `claim_gaps`, `guardrail_hits`, and `unsupported_claims`. `guardrail_hits` can come from avoid-rules or output-rules.
 4. Read `context.entries` first for prospect briefs. Open card files only from `context.full_card_required`, a brief `required_load_order`, or route `load_order` when the bounded context is missing or insufficient.
 5. Compare the copy to:
 
@@ -38,9 +38,11 @@ mdp --json check-claims --dir . --text "<draft copy>"
 - CTA style and reply path
 - channel policy
 - avoid-rules
+- output-rules
 - evidence requirements
 - gaps the copy should surface rather than hide
 - channel length and ask style
+- global style, punctuation, and structure rules
 - unsupported or invented claims
 - loaded card ids, missing card ids, or unrouted card references
 
@@ -53,6 +55,7 @@ Use a compact scorecard:
 - Specificity: 1-5
 - CTA fit: 1-5
 - Channel fit: 1-5
+- Output rules: pass/fail plus note
 - Revision needed: yes/no
 
 If revising, make the smallest change that fixes the issue. Do not add new claims.

@@ -39,13 +39,13 @@ pub(crate) fn select_cards(
     let mut candidates = Vec::new();
 
     for card in &manifest.cards {
-        if matches!(card.kind, CardKind::Personas | CardKind::AvoidRules) {
+        if is_base_guardrail(&card.kind) {
             selected.push(json!({"id": card.id, "kind": card.kind, "path": format!("{DEFAULT_DIR}/{}", card.path), "reason": "base guardrail", "description": card.description}));
         }
     }
 
     for (index, card) in manifest.cards.iter().enumerate() {
-        if matches!(card.kind, CardKind::Personas | CardKind::AvoidRules) {
+        if is_base_guardrail(&card.kind) {
             continue;
         }
         let persona_match = persona_lower
@@ -96,10 +96,17 @@ fn is_message_job(job_tokens: &[String]) -> bool {
     .any(|token| job_tokens.iter().any(|candidate| candidate == token))
 }
 
+fn is_base_guardrail(kind: &CardKind) -> bool {
+    matches!(
+        kind,
+        CardKind::Personas | CardKind::AvoidRules | CardKind::OutputRules
+    )
+}
+
 fn card_priority(kind: &CardKind, is_message_job: bool) -> usize {
     if is_message_job {
         match kind {
-            CardKind::Personas | CardKind::AvoidRules => 0,
+            CardKind::Personas | CardKind::AvoidRules | CardKind::OutputRules => 0,
             CardKind::FitRules => 5,
             CardKind::Positioning => 10,
             CardKind::Pains => 20,
@@ -115,7 +122,7 @@ fn card_priority(kind: &CardKind, is_message_job: bool) -> usize {
         }
     } else {
         match kind {
-            CardKind::Personas | CardKind::AvoidRules => 0,
+            CardKind::Personas | CardKind::AvoidRules | CardKind::OutputRules => 0,
             CardKind::FitRules => 5,
             CardKind::Positioning => 10,
             CardKind::Motions => 20,
@@ -344,6 +351,7 @@ fn entry_context_value(
         "applies_to": entry.applies_to,
         "evidence": entry.evidence,
         "avoid": entry.avoid,
+        "exact_paragraphs": entry.exact_paragraphs,
         "status": entry_status(card_kind),
         "selection": selection,
         "reason": reason
@@ -354,6 +362,7 @@ fn entry_status(card_kind: &CardKind) -> &'static str {
     if matches!(
         card_kind,
         CardKind::AvoidRules
+            | CardKind::OutputRules
             | CardKind::FitRules
             | CardKind::Claims
             | CardKind::Positioning
@@ -376,13 +385,15 @@ fn match_reason(applies: bool, job_match: bool) -> &'static str {
 }
 
 fn is_context_guardrail(card_kind: &CardKind, entry: &Entry) -> bool {
-    matches!(card_kind, CardKind::AvoidRules)
+    matches!(card_kind, CardKind::AvoidRules | CardKind::OutputRules)
         || (matches!(card_kind, CardKind::FitRules) && !entry.avoid.is_empty())
 }
 
 fn guardrail_reason(card_kind: &CardKind) -> &'static str {
     if matches!(card_kind, CardKind::FitRules) {
         "fit guardrail included"
+    } else if matches!(card_kind, CardKind::OutputRules) {
+        "output-rule guardrail included"
     } else {
         "avoid-rule guardrail included"
     }
@@ -505,6 +516,14 @@ mod tests {
                     tags: vec!["avoid".to_string()],
                 },
                 CardRef {
+                    id: "output-rules".to_string(),
+                    path: "cards/output-rules.yaml".to_string(),
+                    kind: CardKind::OutputRules,
+                    description: "Output rules".to_string(),
+                    personas: vec!["PMM".to_string()],
+                    tags: vec!["style".to_string()],
+                },
+                CardRef {
                     id: "ctas".to_string(),
                     path: "cards/ctas.yaml".to_string(),
                     kind: CardKind::Ctas,
@@ -538,12 +557,15 @@ mod tests {
 
     #[test]
     fn select_cards_keeps_base_guardrails_and_message_priority() {
-        let selected = select_cards(&manifest(4), Some("PMM"), Some("linkedin outbound copy"));
+        let selected = select_cards(&manifest(5), Some("PMM"), Some("linkedin outbound copy"));
         let ids: Vec<&str> = selected
             .iter()
             .filter_map(|card| card["id"].as_str())
             .collect();
-        assert_eq!(ids, vec!["personas", "avoid-rules", "ctas", "motions"]);
+        assert_eq!(
+            ids,
+            vec!["personas", "avoid-rules", "output-rules", "ctas", "motions"]
+        );
     }
 
     #[test]
@@ -553,7 +575,7 @@ mod tests {
             .iter()
             .filter_map(|card| card["id"].as_str())
             .collect();
-        assert_eq!(ids, vec!["personas", "avoid-rules"]);
+        assert_eq!(ids, vec!["personas", "avoid-rules", "output-rules"]);
     }
 
     #[test]

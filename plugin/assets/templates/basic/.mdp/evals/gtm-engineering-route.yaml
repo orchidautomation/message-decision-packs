@@ -4,6 +4,7 @@ expect_entry_titles_contains:
 expect_load_order_contains:
 - .mdp/cards/personas.yaml
 - .mdp/cards/avoid-rules.yaml
+- .mdp/cards/output-rules.yaml
 - .mdp/cards/fit-rules.yaml
 - .mdp/cards/signals.yaml
 - .mdp/cards/channel-policies.yaml

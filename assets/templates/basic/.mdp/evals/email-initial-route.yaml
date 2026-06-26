@@ -1,0 +1,14 @@
+command: route
+expect_entry_titles_contains:
+- Initial email
+expect_entry_titles_excludes:
+- Email follow-up
+- LinkedIn initial touch
+- LinkedIn follow-up
+- Call prep
+expect_load_order_contains:
+- .mdp/cards/channel-policies.yaml
+- .mdp/cards/copy-patterns.yaml
+id: email-initial-route
+job: initial email outbound message
+persona: PMM

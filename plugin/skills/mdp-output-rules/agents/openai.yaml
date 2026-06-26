@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Output Rules"
+  short_description: "Codify global output rules"
+  default_prompt: "Use $mdp-output-rules to define style, punctuation, formatting, and structure constraints."
