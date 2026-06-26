@@ -121,6 +121,8 @@ persona -> pains -> hooks -> claims/proof -> CTA/channel policy
 
 `brief --context` makes the selected path explicit in `context.entries`, so agents draft from the relevant persona, pain, hook, proof, CTA, channel, avoid-rule, and output-rule entries instead of loading every card in the pack.
 
+When adding channel rules, keep the starter taxonomy intact: `channel-policies` for channel/lifecycle rules, `output-rules` for generated-text and formatting constraints, `ctas` for ask boundaries and reply paths, and `copy-patterns` for reusable structures like trigger or hypothesis -> proof gap -> approved angle -> one soft CTA.
+
 Do not create a separate row evaluator for this step. The workflow is pack-owned prompt normalization, `mdp fit`, and then `mdp brief --context` only when fit allows it. If the input is account-only and lacks a person name and title, ask for a person row or treat the prospect brief as insufficient-context instead of inventing a contact.
 
 ## Source Ledger

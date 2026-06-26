@@ -169,6 +169,17 @@ persona -> pains -> hooks -> claims/proof -> CTA/channel policy
 
 With `brief --context`, the CLI reads the routed card files locally, selects the relevant entries, and gives the agent those entries first. Whole card paths stay in `context.full_card_required` only when the bounded entry set is not enough.
 
+## Channel Rule Taxonomy
+
+Keep outbound rules split by responsibility:
+
+- `channel-policies.yaml`: channel and lifecycle policy, such as email initial, email follow-up, LinkedIn initial touch, LinkedIn follow-up, call prep, and agent briefs.
+- `output-rules.yaml`: global text and formatting constraints, such as plain text by default, no links/HTML/tracking by default, no fake personalization, initial email 90-125 word guidance, subject guidance, paragraph counts, and no meta commentary.
+- `ctas.yaml`: ask boundaries and reply paths, including soft asks, calendar-second policy, owner-routing questions, and false-urgency limits.
+- `copy-patterns.yaml`: reusable message structures, such as trigger or hypothesis -> proof gap -> approved angle -> one soft CTA.
+
+Use human-readable `body` text for these policies. Use existing `avoid` terms only when a literal should be caught by current guardrail checks, and use `exact_paragraphs` only when a fixed paragraph count is truly required. Do not add structured enforcement fields for channel rules until the model contract explicitly supports them.
+
 Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy to catch unsupported claims, avoid-rule hits, and output-rule hits, use `gaps` to expose missing evidence, and use `eval` to test route, fit, brief, and claim behavior.
 
 Packs can declare `persona_mappings` in `.mdp/manifest.yaml` so prospect titles map into pack-owned personas before fit and brief routing. Explicit `prospect.persona` still wins. Legacy title fallbacks are reported as low-confidence and do not unlock the fit gate by themselves.

@@ -1,6 +1,6 @@
 command: route
 expect_entry_titles_contains:
-- Initial email
+- Email initial touch
 expect_entry_titles_excludes:
 - Email follow-up
 - LinkedIn initial touch

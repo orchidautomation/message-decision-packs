@@ -21,6 +21,34 @@ entries:
   evidence: []
   avoid:
   - —
+- id: plain-text-by-default
+  title: Plain text by default
+  body: For outbound email or LinkedIn copy, default to plain text. Do not include links, attachments, images, HTML, tracking parameters, or decorative formatting unless the user explicitly asks and the pack supports it.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid:
+  - http://
+  - https://
+  - <html
+  - <img
+  - utm_
+- id: initial-email-shape
+  title: Initial email shape
+  body: 'When drafting an initial cold email, aim for roughly 90-125 words, use a short non-clickbait subject, and avoid fake Re: or Fwd: framing. Put detailed narrative structure in copy-patterns, not here.'
+  applies_to:
+  - PMM
+  evidence: []
+  avoid: []
+- id: no-fake-personalization
+  title: No fake personalization
+  body: Do not imply the sender read, watched, met, noticed, or personally researched something unless that source context is present. Use hypotheses when the source signal is weak.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid: []
 - id: honor-paragraph-count
   title: Honor paragraph count
   body: If the user or pack states a paragraph count, match it exactly. Do not add setup, recap, or explanation paragraphs outside the requested structure.

@@ -85,11 +85,11 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("agent-preflight", "Agent preflight", "Let an agent inspect the pack before doing GTM work and report missing evidence or unsupported claims.", &["GTM Engineering"], &["README.md"]),
             entry_with_evidence("source-row-to-brief", "Source row to brief", "Convert a provider-neutral prospect/source row into a message brief before drafting. Keep source fields as inputs, not as proof of claims.", &["GTM Engineering", "PMM"], &["README.md", "examples/clay-row.json"]),
         ])),
-        ("channel-policies.yaml", card("channel-policies", CardKind::ChannelPolicies, "Channel policies", "Channel-specific rules for how to use the routed message decisions.", &["GTM Engineering", "PMM"], &["channel", "linkedin", "email", "initial", "follow-up", "call", "prep", "agent", "brief"], vec![
-            entry_with_evidence("linkedin-initial-touch", "LinkedIn initial touch", "For a first LinkedIn touch, keep the opener short, use one sourced or explicitly hypothetical trigger, one relevant angle, and one low-friction ask.", &["PMM"], &["README.md"]),
-            entry_with_evidence("linkedin-follow-up", "LinkedIn follow-up", "For a later LinkedIn note, reference the earlier outreach lightly, add one new relevance angle or question, and keep the ask low-friction.", &["PMM"], &["README.md"]),
-            entry_with_evidence("initial-email", "Initial email", "For a first email, use a clear subject, one source-backed reason for relevance, one approved claim, and a reply path that does not force a meeting too early.", &["PMM"], &["README.md"]),
-            entry_with_evidence("email-follow-up", "Email follow-up", "For a later email, refer back to the initial note without assuming interest, add one concrete angle, and keep the reply path to owner validation or relevance.", &["PMM"], &["README.md"]),
+        ("channel-policies.yaml", card("channel-policies", CardKind::ChannelPolicies, "Channel policies", "Channel and lifecycle rules for how routed message decisions should be used.", &["GTM Engineering", "PMM"], &["channel", "linkedin", "email", "initial", "follow-up", "call", "prep", "agent", "brief"], vec![
+            entry_with_evidence("linkedin-initial-touch", "LinkedIn initial touch", "For a first LinkedIn touch, use one sourced observation or explicitly labeled hypothesis, one relevant angle, and one low-friction ask. Keep it brief and do not make the first note feel like a full pitch.", &["PMM"], &["README.md"]),
+            entry_with_evidence("linkedin-follow-up", "LinkedIn follow-up", "For a later LinkedIn note, reference the earlier outreach lightly, add one new relevance angle or question, and keep the ask low-friction. Do not use guilt, breakup framing, or a bare bump.", &["PMM"], &["README.md"]),
+            entry_with_evidence("email-initial-touch", "Email initial touch", "For a first cold email, use the email output rules, one source-backed reason or explicit hypothesis, one approved angle, and one reply path. Do not lead with a calendar ask unless fit is strong and the source context supports it.", &["PMM"], &["README.md"]),
+            entry_with_evidence("email-follow-up", "Email follow-up", "For follow-up email copy, assume a maximum of three follow-up notes after the initial email. Each follow-up should add one concrete reason, question, or proof gap, and should avoid bare bumps or guilt-based breakups.", &["PMM"], &["README.md"]),
             entry_with_evidence("call-prep", "Call prep", "Return likely persona, pains, allowed claims, avoid-rules, open questions, and the exact cards loaded. Do not pretend this is CRM history.", &["GTM Engineering", "PMM"], &["README.md"]),
             entry_with_evidence("agent-brief", "Agent brief", "Return fit status, loaded cards, approved claims, avoid-rules, source hypotheses, open gaps, and exact handoff boundaries. Do not send, enrich, or update external systems.", &["GTM Engineering", "PMM"], &["README.md"]),
         ])),
@@ -99,7 +99,8 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("one-context-many-agents", "One context, many agents", "Use when the account has Claude Code, Codex, OpenCode, Clay, or other systems that need the same source of messaging truth.", &["PMM", "GTM Engineering"], &["README.md", "examples/clay-row.json"]),
         ])),
         ("ctas.yaml", card("ctas", CardKind::Ctas, "CTA rules", "Calls to action, reply paths, and ask boundaries for outbound copy.", &["PMM", "GTM Engineering"], &["cta", "ask", "reply", "copy", "outbound", "message"], vec![
-            entry_with_evidence("soft-ask", "Soft ask", "Default to a low-friction ask such as comparing notes, sanity-checking the hypothesis, or asking who owns the problem.", &["PMM", "GTM Engineering"], &["README.md"]),
+            entry_with_evidence("soft-ask", "Soft ask", "Default to a low-friction ask that optimizes for a human reply: compare notes, sanity-check the hypothesis, ask who owns the problem, or ask whether the angle is worth a quick look.", &["PMM", "GTM Engineering"], &["README.md"]),
+            entry_with_evidence("calendar-second", "Calendar second", "Do not make the first CTA a calendar booking unless fit is strong, the reason for urgency is sourced, and the channel policy allows it. Use a reply-path question first when fit or ownership is uncertain.", &["PMM", "GTM Engineering"], &["README.md"]),
             entry_with_evidence("no-false-urgency", "No false urgency", "Do not manufacture urgency or imply the prospect has asked for help unless the source row says so.", &["PMM"], &["README.md"]),
             entry_with_evidence("reply-path", "Reply path", "When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.", &["PMM", "GTM Engineering"], &["README.md"]),
         ])),
@@ -109,13 +110,16 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
         ])),
         ("output-rules.yaml", card("output-rules", CardKind::OutputRules, "Output rules", "Global style, formatting, and output-structure rules generated text must follow.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"], vec![
             Entry { id: "no-em-dashes".to_string(), title: "No em dashes".to_string(), body: "Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec![], avoid: vec!["—".to_string()], exact_paragraphs: None },
+            Entry { id: "plain-text-by-default".to_string(), title: "Plain text by default".to_string(), body: "For outbound email or LinkedIn copy, default to plain text. Do not include links, attachments, images, HTML, tracking parameters, or decorative formatting unless the user explicitly asks and the pack supports it.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["http://".to_string(), "https://".to_string(), "<html".to_string(), "<img".to_string(), "utm_".to_string()], exact_paragraphs: None },
+            entry("initial-email-shape", "Initial email shape", "When drafting an initial cold email, aim for roughly 90-125 words, use a short non-clickbait subject, and avoid fake Re: or Fwd: framing. Put detailed narrative structure in copy-patterns, not here.", &["PMM"]),
+            entry("no-fake-personalization", "No fake personalization", "Do not imply the sender read, watched, met, noticed, or personally researched something unless that source context is present. Use hypotheses when the source signal is weak.", &["PMM", "GTM Engineering"]),
             entry("honor-paragraph-count", "Honor paragraph count", "If the user or pack states a paragraph count, match it exactly. Do not add setup, recap, or explanation paragraphs outside the requested structure.", &["PMM", "GTM Engineering", "PM"]),
             entry("no-meta-commentary", "No meta commentary", "Do not explain why the copy works, describe the structure, or include drafting notes unless the user asks for critique or rationale.", &["PMM", "GTM Engineering", "PM"]),
         ])),
         ("copy-patterns.yaml", card("copy-patterns", CardKind::CopyPatterns, "Copy patterns", "Reusable structures for brief and copy outputs.", &["PMM"], &["copy", "brief", "outbound", "message"], vec![
             entry_with_evidence("brief-contract", "Brief contract", "Return audience, job, loaded cards, decision trace, approved claims, avoid rules, open questions, and draft direction.", &["PMM"], &["README.md"]),
             entry_with_evidence("claim-gap", "Claim gap", "When evidence is missing, write the gap explicitly instead of smoothing over it with generic GTM language.", &["PMM", "PM"], &["README.md"]),
-            entry_with_evidence("trigger-pain-angle-ask", "Trigger -> pain -> angle -> ask", "Structure outbound copy as observed trigger, likely pain, approved angle, and low-friction ask. Mark weak inputs as hypotheses.", &["PMM"], &["README.md", "examples/clay-row.json"]),
+            entry_with_evidence("trigger-hypothesis-proof-gap-angle-cta", "Trigger/hypothesis -> proof gap -> angle -> CTA", "Structure outbound copy as observed trigger or explicit hypothesis, proof gap or missing context, approved MDP angle, and one soft CTA. Mark weak inputs as hypotheses instead of fake personalization.", &["PMM"], &["README.md", "examples/clay-row.json"]),
         ])),
         ("objections.yaml", card("objections", CardKind::Objections, "Objections and alternatives", "Category confusion and response logic for agents to preserve.", &["PMM", "GTM Engineering"], &["objection", "alternative", "response"], vec![
             entry_with_evidence("why-not-prompt", "Why not one giant prompt?", "Explain that MDP favors versioned, testable, progressively loaded cards so agents can fetch only the context needed for the current job.", &["PMM", "GTM Engineering"], &["README.md"]),
@@ -193,7 +197,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     ".mdp/cards/ctas.yaml"
                 ],
                 "expect_entry_titles_contains": ["LinkedIn initial touch"],
-                "expect_entry_titles_excludes": ["LinkedIn follow-up", "Initial email", "Email follow-up", "Call prep"]
+                "expect_entry_titles_excludes": ["LinkedIn follow-up", "Email initial touch", "Email follow-up", "Call prep"]
             }),
         ),
         (
@@ -208,7 +212,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     ".mdp/cards/copy-patterns.yaml"
                 ],
                 "expect_entry_titles_contains": ["LinkedIn follow-up"],
-                "expect_entry_titles_excludes": ["LinkedIn initial touch", "Initial email", "Email follow-up", "Call prep"]
+                "expect_entry_titles_excludes": ["LinkedIn initial touch", "Email initial touch", "Email follow-up", "Call prep"]
             }),
         ),
         (
@@ -255,7 +259,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     ".mdp/cards/channel-policies.yaml",
                     ".mdp/cards/copy-patterns.yaml"
                 ],
-                "expect_entry_titles_contains": ["Initial email"],
+                "expect_entry_titles_contains": ["Email initial touch"],
                 "expect_entry_titles_excludes": ["Email follow-up", "LinkedIn initial touch", "LinkedIn follow-up", "Call prep"]
             }),
         ),
@@ -271,7 +275,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     ".mdp/cards/copy-patterns.yaml"
                 ],
                 "expect_entry_titles_contains": ["Email follow-up"],
-                "expect_entry_titles_excludes": ["Initial email", "LinkedIn initial touch", "LinkedIn follow-up", "Call prep"]
+                "expect_entry_titles_excludes": ["Email initial touch", "LinkedIn initial touch", "LinkedIn follow-up", "Call prep"]
             }),
         ),
         (
@@ -286,7 +290,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     ".mdp/cards/fit-rules.yaml"
                 ],
                 "expect_entry_titles_contains": ["Call prep"],
-                "expect_entry_titles_excludes": ["LinkedIn initial touch", "LinkedIn follow-up", "Initial email", "Email follow-up"]
+                "expect_entry_titles_excludes": ["LinkedIn initial touch", "LinkedIn follow-up", "Email initial touch", "Email follow-up"]
             }),
         ),
         (

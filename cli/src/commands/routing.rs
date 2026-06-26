@@ -492,7 +492,7 @@ mod tests {
 
         assert!(titles.contains(&"LinkedIn initial touch"));
         assert!(!titles.contains(&"LinkedIn follow-up"));
-        assert!(!titles.contains(&"Initial email"));
+        assert!(!titles.contains(&"Email initial touch"));
         assert!(!titles.contains(&"Email follow-up"));
         assert!(!titles.contains(&"Call prep"));
         assert!(
@@ -508,7 +508,7 @@ mod tests {
 
     #[test]
     fn initial_email_entry_route_excludes_follow_up_and_linkedin_entries() {
-        let root = temp_pack("initial-email-entry-route");
+        let root = temp_pack("email-initial-entry-route");
 
         let result = route(&root, "PMM", "initial email outbound message", true, false)
             .expect("route should succeed");
@@ -519,7 +519,7 @@ mod tests {
             .filter_map(|entry| entry["title"].as_str())
             .collect();
 
-        assert!(titles.contains(&"Initial email"));
+        assert!(titles.contains(&"Email initial touch"));
         assert!(!titles.contains(&"Email follow-up"));
         assert!(!titles.contains(&"LinkedIn initial touch"));
         assert!(!titles.contains(&"LinkedIn follow-up"));
@@ -543,7 +543,7 @@ mod tests {
 
         assert!(titles.contains(&"LinkedIn follow-up"));
         assert!(!titles.contains(&"LinkedIn initial touch"));
-        assert!(!titles.contains(&"Initial email"));
+        assert!(!titles.contains(&"Email initial touch"));
         assert!(!titles.contains(&"Email follow-up"));
         assert!(!titles.contains(&"Call prep"));
 

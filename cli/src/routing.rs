@@ -592,7 +592,7 @@ mod tests {
     fn lifecycle_gate_separates_initial_and_follow_up_entries() {
         let initial_job = tokens("initial email outbound message");
         let follow_up_job = tokens("email follow up message");
-        let initial_entry = tokens("Initial email");
+        let initial_entry = tokens("Email initial touch");
         let follow_up_entry = tokens("Email follow up");
 
         assert!(lifecycle_compatible(&initial_job, &initial_entry));
@@ -605,7 +605,7 @@ mod tests {
     fn channel_gate_excludes_wrong_channel_policy_entries() {
         let email_job = tokens("initial email outbound message");
         let linkedin_job = tokens("linkedin follow up message");
-        let email_entry = tokens("Initial email");
+        let email_entry = tokens("Email initial touch");
         let linkedin_entry = tokens("LinkedIn follow up");
 
         assert!(channel_compatible(&email_job, &email_entry));

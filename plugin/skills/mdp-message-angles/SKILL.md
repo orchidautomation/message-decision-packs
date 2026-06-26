@@ -54,10 +54,12 @@ Each useful angle should include:
 Use patterns like:
 
 - trigger -> pain -> specific angle -> low-pressure ask
+- trigger or hypothesis -> proof gap -> approved angle -> one soft CTA
 - source observation -> hypothesis -> relevance -> question
 - current workflow -> cost of status quo -> safer next step
 
 Avoid generic "AI transformation" language unless the source material supports it.
+Put channel/lifecycle rules in channel-policies, ask boundaries in ctas, generated-text constraints in output-rules, and only reusable narrative structures in copy-patterns.
 
 ## Validate
 

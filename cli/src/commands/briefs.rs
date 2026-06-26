@@ -286,7 +286,7 @@ mod tests {
         assert!(titles.contains(&"No message without context"));
         assert!(titles.contains(&"LinkedIn initial touch"));
         assert!(!titles.contains(&"LinkedIn follow-up"));
-        assert!(!titles.contains(&"Initial email"));
+        assert!(!titles.contains(&"Email initial touch"));
         assert!(!titles.contains(&"Email follow-up"));
         assert!(!titles.contains(&"Call prep"));
         assert!(

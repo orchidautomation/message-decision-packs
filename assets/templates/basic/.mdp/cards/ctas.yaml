@@ -15,7 +15,16 @@ tags:
 entries:
 - id: soft-ask
   title: Soft ask
-  body: Default to a low-friction ask such as comparing notes, sanity-checking the hypothesis, or asking who owns the problem.
+  body: 'Default to a low-friction ask that optimizes for a human reply: compare notes, sanity-check the hypothesis, ask who owns the problem, or ask whether the angle is worth a quick look.'
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence:
+  - README.md
+  avoid: []
+- id: calendar-second
+  title: Calendar second
+  body: Do not make the first CTA a calendar booking unless fit is strong, the reason for urgency is sourced, and the channel policy allows it. Use a reply-path question first when fit or ownership is uncertain.
   applies_to:
   - PMM
   - GTM Engineering

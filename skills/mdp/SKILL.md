@@ -56,6 +56,8 @@ When brainstorming the pack, help fill these files:
 - `.mdp/evals/*.yaml`
 - `.mdp/prompts/normalize-prospect.yaml`
 
+For outbound rules, preserve the channel taxonomy. Put channel and lifecycle policy in `channel-policies.yaml` (`email-initial-touch`, `email-follow-up`, `linkedin-initial-touch`, `linkedin-follow-up`, plus non-copy entries such as `call-prep` and `agent-brief`). Put generated-text constraints such as plain text by default, no links/HTML/tracking by default, subject guidance, and no fake personalization in `output-rules.yaml`. Put ask boundaries such as soft asks, calendar-second policy, and owner-routing questions in `ctas.yaml`. Put reusable narrative structures such as trigger or hypothesis -> proof gap -> approved angle -> one soft CTA in `copy-patterns.yaml`.
+
 After edits:
 
 ```bash

@@ -97,6 +97,7 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 - Mark guesses as assumptions in the card body.
 - Prefer concrete disqualifiers over vague ICP language.
 - Put global style and structure rules, such as banned punctuation or fixed paragraph counts, in `output-rules.yaml` instead of burying them in examples.
+- Keep channel rule responsibilities separate: `channel-policies.yaml` owns channel/lifecycle entries such as email initial, email follow-up, LinkedIn initial, LinkedIn follow-up, call prep, and agent brief; `output-rules.yaml` owns generated-text and formatting constraints; `ctas.yaml` owns ask boundaries and reply paths; `copy-patterns.yaml` owns reusable structures.
 - Do not describe the pack as a sender, CRM, sequencer, enrichment provider, AI SDR, or execution agent.
 - Do not invent customer names, pricing, integrations, or proof points.
 - Mark generated example prospects as synthetic fixtures and do not confuse them with real target accounts.

@@ -3,7 +3,7 @@ expect_entry_titles_contains:
 - LinkedIn follow-up
 expect_entry_titles_excludes:
 - LinkedIn initial touch
-- Initial email
+- Email initial touch
 - Email follow-up
 - Call prep
 expect_load_order_contains:

@@ -245,15 +245,20 @@ hooks:one-context-many-agents
 claims:modular-pack-routing
 claims:versionable-context
 ctas:soft-ask
+ctas:calendar-second
 ctas:no-false-urgency
 ctas:reply-path
 channel-policies:linkedin-initial-touch
 avoid-rules:not-execution
 avoid-rules:no-unsourced-claims
 output-rules:no-em-dashes
+output-rules:plain-text-by-default
+output-rules:no-fake-personalization
 ```
 
 That selected set is the bounded context for the drafting step. Current CLI contracts expose this as route output, `entry_route`, and brief `required_load_order`. A future bounded-context command or flag can package the same concept more tightly without changing the model: the drafting agent should receive selected context, not the whole pack.
+
+Channel rules should stay split by responsibility. `channel-policies.yaml` owns channel and lifecycle policy, including `email-initial-touch`, `email-follow-up`, `linkedin-initial-touch`, `linkedin-follow-up`, `call-prep`, and `agent-brief`. `output-rules.yaml` owns formatting and generated-text constraints, including plain text by default, no links/HTML/tracking by default, initial email 90-125 word guidance, subject guidance, no fake personalization, and no meta commentary. `ctas.yaml` owns ask boundaries and reply paths, including soft asks and calendar-second policy. `copy-patterns.yaml` owns reusable structures such as trigger or hypothesis -> proof gap -> approved angle -> one soft CTA.
 
 ## Drafting Boundary
 

@@ -29,6 +29,7 @@ mdp --json route --entries --dir . --persona "<persona>" --job "<channel> CTA po
 - persona fit
 - source or evidence requirement
 - reply path when a meeting ask is too strong
+- calendar-second policy when the first ask should not be a meeting
 - avoid phrases or pressure tactics
 
 5. Keep CTAs small and reusable. If final copy is requested, route to `$mdp-copy-brief` or `$mdp-copy-eval`; this skill only maintains CTA policy.
@@ -51,3 +52,4 @@ Prefer concrete patterns such as:
 - should I send the short version
 
 Avoid hard calendar pushes, false urgency, implied prior interest, and unsupported pain certainty.
+Default toward asks that optimize for a human reply before a meeting: compare notes, sanity-check the hypothesis, identify the owner, or ask whether the angle is worth a quick look.

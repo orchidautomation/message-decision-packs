@@ -4,7 +4,7 @@ expect_entry_titles_contains:
 expect_entry_titles_excludes:
 - LinkedIn initial touch
 - LinkedIn follow-up
-- Initial email
+- Email initial touch
 - Email follow-up
 expect_load_order_contains:
 - .mdp/cards/channel-policies.yaml

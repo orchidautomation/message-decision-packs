@@ -24,11 +24,15 @@ Cover the categories that apply:
 - exact paragraph requirements using `exact_paragraphs`
 - sentence or bullet-count requirements described in the body
 - channel formatting constraints
+- plain-text defaults for outbound copy, including no links, attachments, images, HTML, or tracking parameters unless explicitly allowed
+- initial cold email text constraints such as 90-125 word guidance, short non-clickbait subjects, and no fake Re:/Fwd: framing
+- no fake personalization when the source context is not present
 - no meta commentary, rationale, or drafting notes
 - tone/style preferences not tied to claim safety
 - required sections or omitted sections
 
 Use `.mdp/cards/avoid-rules.yaml` instead for forbidden claims, compliance-sensitive language, category boundaries, bad-fit personas, and no-send criteria.
+Use `.mdp/cards/channel-policies.yaml` for channel/lifecycle policy, `.mdp/cards/ctas.yaml` for ask boundaries, and `.mdp/cards/copy-patterns.yaml` for reusable message structure.
 
 ## Entry Requirements
 

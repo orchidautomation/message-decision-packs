@@ -27,9 +27,9 @@ entries:
   evidence:
   - README.md
   avoid: []
-- id: trigger-pain-angle-ask
-  title: Trigger -> pain -> angle -> ask
-  body: Structure outbound copy as observed trigger, likely pain, approved angle, and low-friction ask. Mark weak inputs as hypotheses.
+- id: trigger-hypothesis-proof-gap-angle-cta
+  title: Trigger/hypothesis -> proof gap -> angle -> CTA
+  body: Structure outbound copy as observed trigger or explicit hypothesis, proof gap or missing context, approved MDP angle, and one soft CTA. Mark weak inputs as hypotheses instead of fake personalization.
   applies_to:
   - PMM
   evidence:

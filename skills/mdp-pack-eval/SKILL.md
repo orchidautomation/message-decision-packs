@@ -19,8 +19,8 @@ mdp --json eval --dir .
 2. Choose representative cases:
 
 - each primary persona
-- LinkedIn opener
-- email follow-up
+- LinkedIn initial touch and LinkedIn follow-up
+- initial email and email follow-up
 - call prep
 - source extraction or pack review if relevant
 - one bad-fit or unsupported persona
@@ -48,6 +48,7 @@ For each case, check:
 - avoid-rules included for copy jobs
 - output-rules included for copy jobs
 - ctas and channel-policies included for outbound/message/copy jobs
+- initial vs follow-up channel-policy entries route separately for email and LinkedIn
 - persona-specific cards included
 - entry-level route is useful, not noisy
 - irrelevant cards omitted

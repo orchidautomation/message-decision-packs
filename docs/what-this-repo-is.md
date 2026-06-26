@@ -277,6 +277,8 @@ Examples:
 - "Do not say this integrates with Salesforce unless that claim is explicitly approved."
 - "Do not draft if the prospect row has no trigger, persona, segment, signal, or source."
 - "For LinkedIn, use a low-friction compare-notes CTA instead of a hard demo ask."
+- "For email initial touch, keep lifecycle policy in channel-policies, text constraints in output-rules, the ask boundary in ctas, and the narrative structure in copy-patterns."
+- "For follow-up email, add one concrete reason or question, cap follow-up copy at three notes, and avoid bare bumps or guilt-based breakups."
 - "If the evidence is missing, put it in gaps instead of making it sound true."
 
 That is the distinction:

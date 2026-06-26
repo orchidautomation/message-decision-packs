@@ -2,7 +2,7 @@ command: route
 expect_entry_titles_contains:
 - Email follow-up
 expect_entry_titles_excludes:
-- Initial email
+- Email initial touch
 - LinkedIn initial touch
 - LinkedIn follow-up
 - Call prep
