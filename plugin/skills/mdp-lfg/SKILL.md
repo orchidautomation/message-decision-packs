@@ -41,6 +41,7 @@ Choose the narrow path and use that skill's workflow:
 - Hooks, objections, message angles, copy structures: `$mdp-message-angles`
 - CTA, ask style, reply path, meeting boundary: `$mdp-cta-builder`
 - Forbidden claims, category boundaries, unsupported promises: `$mdp-avoid-rules`
+- Global style, punctuation, formatting, and structure constraints: `$mdp-output-rules`
 - Existing provider-neutral prospect/source row to local MDP prospect JSON, fit decision, and brief: `$mdp-prospect-brief`
 - Model-ready writing contract: `$mdp-copy-brief`
 - Generated copy QA, claim checks, or revision: `$mdp-copy-eval`
@@ -57,7 +58,7 @@ For most requests, run this loop:
 2. Run `mdp --json doctor --dir .` and `mdp --json validate --dir .` when a pack exists.
 3. Capture source facts in `.mdp/sources.yaml` before bulk card writing. Keep direct source claims separate from interpretation, and put missing proof in `gaps.yaml`.
 4. Identify which card files matter; do not load the entire pack unless reviewing the whole pack.
-5. Make the smallest useful pack edits. For new packs, fill cards in slices: positioning/fit/claims/gaps first, then personas/signals/pains, then motions/hooks/ctas/copy-patterns/evals.
+5. Make the smallest useful pack edits. For new packs, fill cards in slices: positioning/fit/claims/gaps first, then personas/signals/pains, then motions/hooks/ctas/output-rules/copy-patterns/evals.
 6. Validate again.
 7. Test one representative route:
 
@@ -88,13 +89,14 @@ A usable GTM messaging pack should usually have:
 - `.mdp/cards/hooks.yaml`
 - `.mdp/cards/ctas.yaml`
 - `.mdp/cards/avoid-rules.yaml`
+- `.mdp/cards/output-rules.yaml`
 - `.mdp/cards/copy-patterns.yaml`
 - `.mdp/cards/objections.yaml`
 - `.mdp/cards/gaps.yaml`
 - `.mdp/evals/*.yaml`
 - `.mdp/prompts/normalize-prospect.yaml`
 
-Treat `ctas.yaml` as the policy for the ask or reply path. Treat `claims.yaml` as the approved proof ledger, `fit-rules.yaml` as the no-message gate, and `gaps.yaml` as the place to preserve known unknowns. Do not bury these rules only inside copy examples.
+Treat `ctas.yaml` as the policy for the ask or reply path. Treat `output-rules.yaml` as the global style and structure policy. Treat `claims.yaml` as the approved proof ledger, `fit-rules.yaml` as the no-message gate, and `gaps.yaml` as the place to preserve known unknowns. Do not bury these rules only inside copy examples.
 
 ## Boundaries
 

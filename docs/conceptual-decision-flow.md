@@ -1,6 +1,6 @@
 # Conceptual Decision Flow
 
-Message Decision Packs (MDP) are a local decision/context layer for GTM messaging. An MDP pack stores the decisions an agent needs before writing or evaluating a message: fit rules, personas, pains, hooks, approved claims, CTA and channel policy, avoid-rules, evidence, and gaps.
+Message Decision Packs (MDP) are a local decision/context layer for GTM messaging. An MDP pack stores the decisions an agent needs before writing or evaluating a message: fit rules, personas, pains, hooks, approved claims, CTA and channel policy, avoid-rules, output-rules, evidence, and gaps.
 
 MDP does not send messages, enrich leads, update CRM, scrape the web, run sequences, or act as an AI SDR. It decides what context is allowed into the drafting task and what should block the task.
 
@@ -48,6 +48,9 @@ CTA and channel policy
   |
   v
 avoid-rules
+  |
+  v
+output-rules
   |
   v
 bounded context for drafting
@@ -111,6 +114,7 @@ Do not use normalization prompts to smooth over disqualifying language. If a row
 ## Pack Entries
 
 The pack is modular. Each card holds entries with ids, bodies, applicability rules, evidence, and avoid terms.
+Output-rule entries can also set `exact_paragraphs` when a fixed paragraph count should be checked deterministically.
 
 ```text
 .mdp/manifest.yaml
@@ -124,6 +128,7 @@ The pack is modular. Each card holds entries with ids, bodies, applicability rul
   +-- cards/ctas.yaml
   +-- cards/channel-policies.yaml
   +-- cards/avoid-rules.yaml
+  +-- cards/output-rules.yaml
   +-- cards/gaps.yaml
 ```
 
@@ -212,6 +217,7 @@ For `persona = PMM` and `job = linkedin outbound copy`, the starter pack routes 
 ```text
 .mdp/cards/personas.yaml
 .mdp/cards/avoid-rules.yaml
+.mdp/cards/output-rules.yaml
 .mdp/cards/fit-rules.yaml
 .mdp/cards/positioning.yaml
 .mdp/cards/pains.yaml
@@ -244,6 +250,7 @@ ctas:reply-path
 channel-policies:linkedin-initial-touch
 avoid-rules:not-execution
 avoid-rules:no-unsourced-claims
+output-rules:no-em-dashes
 ```
 
 That selected set is the bounded context for the drafting step. Current CLI contracts expose this as route output, `entry_route`, and brief `required_load_order`. A future bounded-context command or flag can package the same concept more tightly without changing the model: the drafting agent should receive selected context, not the whole pack.
@@ -258,6 +265,7 @@ draft_status: ready
 required_load_order:
   - personas
   - avoid-rules
+  - output-rules
   - fit-rules
   - positioning
   - signals
@@ -296,7 +304,7 @@ source row + versioned pack
 fit gate
   |
   v
-selected persona, pains, hooks, proof, CTA, channel policy, avoid-rules
+selected persona, pains, hooks, proof, CTA, channel policy, avoid-rules, output-rules
   |
   v
 bounded drafting context

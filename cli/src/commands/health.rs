@@ -613,6 +613,7 @@ fn card_kind_name(kind: &CardKind) -> &'static str {
         CardKind::Motions => "motions",
         CardKind::Hooks => "hooks",
         CardKind::AvoidRules => "avoid-rules",
+        CardKind::OutputRules => "output-rules",
         CardKind::CopyPatterns => "copy-patterns",
         CardKind::Ctas => "ctas",
         CardKind::FitRules => "fit-rules",
@@ -657,7 +658,7 @@ pub(crate) fn gaps(root: &Path) -> Result<Value> {
             if entry.evidence.is_empty()
                 && !matches!(
                     card.kind,
-                    CardKind::AvoidRules | CardKind::Gaps | CardKind::Ctas
+                    CardKind::AvoidRules | CardKind::OutputRules | CardKind::Gaps | CardKind::Ctas
                 )
             {
                 evidence_gaps.push(json!({"card_id": card.id, "entry_id": entry.id, "title": entry.title, "reason": "missing evidence"}));
@@ -765,7 +766,7 @@ mod tests {
         assert_eq!(result["valid"], true);
         assert_eq!(
             result["prompts"].as_array().expect("prompts array").len(),
-            9
+            10
         );
 
         let _ = std::fs::remove_dir_all(root);

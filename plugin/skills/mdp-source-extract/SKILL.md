@@ -31,6 +31,7 @@ Map source material into:
 - channel-policies: LinkedIn/email/call-prep rules
 - hooks: reusable claims or angles with source evidence
 - avoid-rules: unsupported claims, risks, category boundaries
+- output-rules: global style, punctuation, formatting, and structure constraints
 - objections: alternatives and response logic
 - copy-patterns: reusable message structures, not final sends
 - ctas: asks, reply paths, and meeting boundaries
@@ -60,3 +61,4 @@ Report:
 - confidence and freshness for extracted entries when known
 - evidence gaps
 - claims that should become avoid-rules
+- style or structure preferences that should become output-rules

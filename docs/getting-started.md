@@ -1,8 +1,8 @@
 # Getting Started
 
-Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions, routing contracts, fit rules, approved claims, avoid-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, or act as an AI SDR.
+Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions, routing contracts, fit rules, approved claims, avoid-rules, output-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, or act as an AI SDR.
 
-If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a provider-neutral prospect/source row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, and bounded context for drafting.
+If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a provider-neutral prospect/source row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, output-rules, and bounded context for drafting.
 
 ## Install
 
@@ -114,9 +114,12 @@ persona -> pains -> hooks -> claims/proof -> CTA/channel policy
                               |
                               v
                          avoid rules
+                              |
+                              v
+                         output rules
 ```
 
-`brief --context` makes the selected path explicit in `context.entries`, so agents draft from the relevant persona, pain, hook, proof, CTA, channel, and avoid-rule entries instead of loading every card in the pack.
+`brief --context` makes the selected path explicit in `context.entries`, so agents draft from the relevant persona, pain, hook, proof, CTA, channel, avoid-rule, and output-rule entries instead of loading every card in the pack.
 
 Do not create a separate row evaluator for this step. The workflow is pack-owned prompt normalization, `mdp fit`, and then `mdp brief --context` only when fit allows it. If the input is account-only and lacks a person name and title, ask for a person row or treat the prospect brief as insufficient-context instead of inventing a contact.
 
@@ -132,7 +135,7 @@ Before approving copy, run:
 mdp --json check-claims --dir ./mdp-demo --text "<draft copy>"
 ```
 
-Unsupported claims, execution claims, compliance/security claims, named-customer claims, and quantified outcome claims should be fixed or backed with source evidence before use.
+Unsupported claims, execution claims, compliance/security claims, named-customer claims, quantified outcome claims, and output-rule hits such as blocked punctuation should be fixed or backed with source evidence before use.
 
 ## Update
 

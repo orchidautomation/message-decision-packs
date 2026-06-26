@@ -66,7 +66,7 @@ mod tests {
 
         assert_eq!(
             result["prompts"].as_array().expect("prompts array").len(),
-            9
+            10
         );
         assert_eq!(
             result["prompts"][0]["path"],

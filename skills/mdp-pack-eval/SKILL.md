@@ -46,6 +46,7 @@ For each case, check:
 - fit-rules and positioning included when relevant
 - claims included for copy jobs that use proof
 - avoid-rules included for copy jobs
+- output-rules included for copy jobs
 - ctas and channel-policies included for outbound/message/copy jobs
 - persona-specific cards included
 - entry-level route is useful, not noisy

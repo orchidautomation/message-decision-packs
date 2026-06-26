@@ -2,7 +2,7 @@ format: mdp.v0
 id: basic-mdp-template
 name: Basic MDP Template
 version: 0.1.0
-description: A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, and copy guidance.
+description: A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, output rules, and copy guidance.
 personas:
 - GTM Engineering
 - PMM
@@ -177,6 +177,18 @@ cards:
   tags:
   - guardrail
   - avoid
+- id: output-rules
+  path: cards/output-rules.yaml
+  kind: output-rules
+  description: Global style, formatting, and output-structure rules for generated text.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - guardrail
+  - style
+  - format
 - id: copy-patterns
   path: cards/copy-patterns.yaml
   kind: copy-patterns
@@ -214,7 +226,7 @@ cards:
 policy:
   progressive_disclosure: true
   load_manifest_first: true
-  max_cards_per_route: 12
+  max_cards_per_route: 13
   json_contract: mdp.cli.v0
   no_auth_required: true
 provenance:

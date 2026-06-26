@@ -18,7 +18,7 @@ mdp --json route --entries --dir . --persona "<persona>" --job "<channel> outbou
 ```
 
 3. Read only routed cards plus any card you are explicitly updating.
-4. Generate candidate card entries for hooks, proof-backed claims, channel policies, objections, copy patterns, and CTA options.
+4. Generate candidate card entries for hooks, proof-backed claims, channel policies, objections, copy patterns, output rules, and CTA options.
 5. Keep only angles grounded in source context or explicitly marked assumptions.
 6. Update:
 
@@ -31,6 +31,7 @@ mdp --json route --entries --dir . --persona "<persona>" --job "<channel> outbou
 - `.mdp/cards/pains.yaml` when the angle depends on a missing pain
 - `.mdp/cards/gaps.yaml` when evidence is missing
 - `.mdp/cards/avoid-rules.yaml` when an angle risks overclaiming
+- `.mdp/cards/output-rules.yaml` when an angle creates global style or structure constraints
 
 ## Angle Structure
 
@@ -43,6 +44,7 @@ Each useful angle should include:
 - avoid-rule risk
 - best channel
 - CTA or reply path
+- output-rule constraints
 - persona fit
 
 ## Copy Pattern Structure

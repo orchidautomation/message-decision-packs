@@ -19,6 +19,7 @@ It gives AI coding agents a shared source of truth for:
 - what claims are not allowed
 - what CTAs are acceptable
 - what channel rules apply
+- what output style and structure rules apply
 - what gaps should be surfaced instead of invented
 
 MDP is not the system that sends messages. It is the decision layer that tells an agent what context to load, what it is allowed to say, and when it should stop.
@@ -76,6 +77,7 @@ A Message Decision Pack gives the agent a quality floor:
 - Fit rules stop the agent before it drafts for a bad or thin prospect.
 - Approved claims tell the agent what it may say.
 - Avoid rules tell the agent what it must not say.
+- Output rules tell the agent how generated text must be structured and styled.
 - Gaps preserve missing evidence instead of hiding it.
 - Evals make routing and behavior testable.
 - Briefs create a durable handoff between decision context and drafting.
@@ -200,6 +202,7 @@ Important skills include:
 - `mdp-message-angles`: codifies hooks and angles
 - `mdp-cta-builder`: codifies CTA and reply-path policy
 - `mdp-avoid-rules`: enforces category and claim boundaries
+- `mdp-output-rules`: codifies global style and structure constraints
 - `mdp-prospect-brief`: turns provider-neutral prospect/source rows into fit decisions and briefs
 - `mdp-copy-brief`: produces model-ready writing contracts
 - `mdp-copy-eval`: evaluates generated copy against the pack
@@ -228,6 +231,7 @@ It shows the intended `.mdp/` structure:
   cards/hooks.yaml
   cards/ctas.yaml
   cards/avoid-rules.yaml
+  cards/output-rules.yaml
   cards/copy-patterns.yaml
   cards/objections.yaml
   cards/gaps.yaml
@@ -245,7 +249,7 @@ A normal MDP workflow looks like this:
 1. Install the CLI and agent bundle.
 2. Create or open a `.mdp/` pack.
 3. Add source material to `.mdp/sources.yaml`.
-4. Fill the cards with personas, fit rules, claims, avoid rules, CTAs, and gaps.
+4. Fill the cards with personas, fit rules, claims, avoid rules, output rules, CTAs, and gaps.
 5. Validate the pack.
 6. Route a persona and job to the minimum required cards.
 7. Use the pack-owned normalization prompt when needed to convert a messy prospect/source row into the expected prospect JSON shape.

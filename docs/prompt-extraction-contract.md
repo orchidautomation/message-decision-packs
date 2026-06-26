@@ -83,6 +83,7 @@ It also includes extraction prompt contracts for:
 - Claims and proof.
 - Fit and disqualification rules.
 - Avoid rules.
+- Output rules.
 - CTA and channel policy.
 - Gaps and missing evidence.
 
@@ -182,6 +183,6 @@ Use `mdp --json schema prompt` to inspect the machine-readable prompt contract.
   "person_data": "Alex Rivera, Revenue Operations Lead. Owns CRM hygiene, campaign routing, and prospect qualification workflows.",
   "account_data": "Mid-market B2B SaaS. Trigger: consolidating qualification context across CRM exports, spreadsheets, and research notes.",
   "source_notes": ["User-provided account research note from 2026-06-25."],
-  "existing_pack_context": "Current MDP pack has personas, fit-rules, pains, hooks, claims, avoid-rules, CTAs, channel policies, and gaps cards."
+  "existing_pack_context": "Current MDP pack has personas, fit-rules, pains, hooks, claims, avoid-rules, output-rules, CTAs, channel policies, and gaps cards."
 }
 ```

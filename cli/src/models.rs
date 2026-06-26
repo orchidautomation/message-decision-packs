@@ -48,6 +48,7 @@ pub(crate) enum CardKind {
     Motions,
     Hooks,
     AvoidRules,
+    OutputRules,
     CopyPatterns,
     Ctas,
     FitRules,
@@ -144,6 +145,8 @@ pub(crate) struct Entry {
     pub(crate) evidence: Vec<String>,
     #[serde(default)]
     pub(crate) avoid: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) exact_paragraphs: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

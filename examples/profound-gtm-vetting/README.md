@@ -64,6 +64,7 @@ Without MDP, an agent sees "find customers for Profound" and can drift into vagu
 - `claims.yaml` limits what can be said about Profound.
 - `hooks.yaml`, `ctas.yaml`, and `copy-patterns.yaml` give reusable messaging decisions.
 - `avoid-rules.yaml` blocks overclaiming, scraping, fake urgency, and unsupported outcome claims.
+- `output-rules.yaml` keeps generated text inside global style and structure constraints.
 - `gaps.yaml` preserves unknowns like current visibility, owner, tech stack, and timing.
 - `evals/` proves that fit, routing, brief, and claim checks keep working.
 

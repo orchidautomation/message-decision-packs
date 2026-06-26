@@ -2,6 +2,7 @@ command: route
 expect_load_order_contains:
 - .mdp/cards/personas.yaml
 - .mdp/cards/avoid-rules.yaml
+- .mdp/cards/output-rules.yaml
 - .mdp/cards/positioning.yaml
 id: pm-route
 job: product boundary review

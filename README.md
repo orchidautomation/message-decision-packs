@@ -1,6 +1,6 @@
 # Message Decision Packs
 
-Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest, a source ledger, routed card files, and optional extraction prompt contracts for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, objections, gaps, and copy patterns.
+Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest, a source ledger, routed card files, and optional extraction prompt contracts for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, output-rules, objections, gaps, and copy patterns.
 
 This repo contains both the local CLI and the Pluxx source plugin for supported agent hosts:
 
@@ -28,7 +28,7 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 For the first-use walkthrough, see [Getting Started](docs/getting-started.md).
 
-Canonical example: [Profound GTM Vetting](examples/profound-gtm-vetting/README.md) shows a complete public-source pack for how a company like Profound can codify ICP, target personas, fit rules, hooks, CTAs, guardrails, source-backed claims, prospect brief generation, gaps, and evals before any downstream agent drafts or executes outreach.
+Canonical example: [Profound GTM Vetting](examples/profound-gtm-vetting/README.md) shows a complete public-source pack for how a company like Profound can codify ICP, target personas, fit rules, hooks, CTAs, guardrails, output rules, source-backed claims, prospect brief generation, gaps, and evals before any downstream agent drafts or executes outreach.
 
 The Profound example also includes a runnable [Flue webhook agent scaffold](examples/profound-gtm-vetting/flue-webhook-agent/README.md) that accepts a webhook-style prospect row, writes ignored local scratch, runs `mdp fit` and `mdp brief --context`, and returns a draft contract or model draft without sending or updating external systems.
 
@@ -120,6 +120,7 @@ A pack is a local `.mdp/` folder:
   cards/hooks.yaml
   cards/ctas.yaml
   cards/avoid-rules.yaml
+  cards/output-rules.yaml
   cards/copy-patterns.yaml
   cards/objections.yaml
   cards/gaps.yaml
@@ -160,12 +161,15 @@ persona -> pains -> hooks -> claims/proof -> CTA/channel policy
                          avoid rules
                               |
                               v
+                         output rules
+                              |
+                              v
                       bounded context.entries
 ```
 
 With `brief --context`, the CLI reads the routed card files locally, selects the relevant entries, and gives the agent those entries first. Whole card paths stay in `context.full_card_required` only when the bounded entry set is not enough.
 
-Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy, `gaps` to expose missing evidence, and `eval` to test route, fit, brief, and claim behavior.
+Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy to catch unsupported claims, avoid-rule hits, and output-rule hits, use `gaps` to expose missing evidence, and use `eval` to test route, fit, brief, and claim behavior.
 
 Packs can declare `persona_mappings` in `.mdp/manifest.yaml` so prospect titles map into pack-owned personas before fit and brief routing. Explicit `prospect.persona` still wins. Legacy title fallbacks are reported as low-confidence and do not unlock the fit gate by themselves.
 
@@ -193,6 +197,7 @@ Important skills include:
 - `mdp-message-angles`: codify hooks and angles
 - `mdp-cta-builder`: codify CTA and reply-path policy
 - `mdp-avoid-rules`: enforce category and claim boundaries
+- `mdp-output-rules`: codify global style, punctuation, formatting, and structure constraints
 - `mdp-prospect-brief`: turn provider-neutral prospect/source rows into fit decisions and briefs
 - `mdp-copy-brief`: produce model-ready writing contracts
 - `mdp-copy-eval`: evaluate generated copy against the pack

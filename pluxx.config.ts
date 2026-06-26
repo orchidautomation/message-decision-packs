@@ -12,7 +12,7 @@ export default definePlugin({
   brand: {
     "displayName": "Message Decision Packs",
     "shortDescription": "Create and route GTM message context.",
-    "longDescription": "Message Decision Packs helps supported agents create, validate, and use local GTM messaging decision packs. MDP stores ICP, fit rules, signals, approved claims, message angles, CTA policy, avoid-rules, source evidence, eval fixtures, and explicit gaps, then routes the right cards into agent-readable briefs with the local mdp CLI. MDP stops at pack validation, fit checks, claim checks, and briefs; sending, CRM updates, enrichment, scraping, and sequencing stay outside MDP.",
+    "longDescription": "Message Decision Packs helps supported agents create, validate, and use local GTM messaging decision packs. MDP stores ICP, fit rules, signals, approved claims, message angles, CTA policy, avoid-rules, output-rules, source evidence, eval fixtures, and explicit gaps, then routes the right cards into agent-readable briefs with the local mdp CLI. MDP stops at pack validation, fit checks, claim and output checks, and briefs; sending, CRM updates, enrichment, scraping, and sequencing stay outside MDP.",
     "icon": "./assets/brand/icon.png",
     "screenshots": [
       "./assets/brand/screenshot.png"

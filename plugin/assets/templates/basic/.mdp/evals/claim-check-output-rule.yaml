@@ -1,0 +1,4 @@
+command: check-claims
+expect_valid: false
+id: claim-check-output-rule
+text: MDP is local — it stores message context in modular cards.

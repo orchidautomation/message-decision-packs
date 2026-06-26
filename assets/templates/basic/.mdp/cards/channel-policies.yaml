@@ -9,11 +9,32 @@ tags:
 - channel
 - linkedin
 - email
+- initial
+- follow-up
+- call
+- prep
+- agent
 - brief
 entries:
-- id: linkedin-opener
-  title: LinkedIn opener
-  body: Keep the opener short, use one sourced or explicitly hypothetical trigger, one relevant angle, and one low-friction ask.
+- id: linkedin-initial-touch
+  title: LinkedIn initial touch
+  body: For a first LinkedIn touch, keep the opener short, use one sourced or explicitly hypothetical trigger, one relevant angle, and one low-friction ask.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: linkedin-follow-up
+  title: LinkedIn follow-up
+  body: For a later LinkedIn note, reference the earlier outreach lightly, add one new relevance angle or question, and keep the ask low-friction.
+  applies_to:
+  - PMM
+  evidence:
+  - README.md
+  avoid: []
+- id: initial-email
+  title: Initial email
+  body: For a first email, use a clear subject, one source-backed reason for relevance, one approved claim, and a reply path that does not force a meeting too early.
   applies_to:
   - PMM
   evidence:
@@ -21,7 +42,7 @@ entries:
   avoid: []
 - id: email-follow-up
   title: Email follow-up
-  body: Use a clearer subject, one source-backed reason for relevance, one approved claim, and a reply path that does not force a meeting too early.
+  body: For a later email, refer back to the initial note without assuming interest, add one concrete angle, and keep the reply path to owner validation or relevance.
   applies_to:
   - PMM
   evidence:

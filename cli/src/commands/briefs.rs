@@ -28,9 +28,10 @@ pub(crate) fn emit_brief(
             {"step": "load_manifest", "reason": "discover pack metadata and card index"},
             {"step": "route_cards", "reason": "preserve progressive disclosure"},
             {"step": "apply_avoid_rules", "reason": "prevent category drift and unsupported claims"},
+            {"step": "apply_output_rules", "reason": "preserve global style and output-structure constraints"},
             {"step": "draft_or_decide", "reason": "use only loaded card evidence and cite gaps"}
         ],
-        "output_requirements": {"state_assumptions": true, "cite_loaded_cards": true, "surface_gaps": true, "avoid_execution_claims": true, "use_loaded_cta_policy": true}
+        "output_requirements": {"state_assumptions": true, "cite_loaded_cards": true, "surface_gaps": true, "avoid_execution_claims": true, "use_loaded_cta_policy": true, "use_loaded_output_rules": true}
     }))
 }
 
@@ -126,9 +127,9 @@ pub(crate) fn prospect_brief_from_value_with_context(
         ],
         "agent_instruction": if draft_status == "ready" {
             if include_context {
-                "Use data.context.entries before opening card files. Open full_card_required paths only when present. Combine bounded context with prospect, use the routed CTA policy when present, and do not invent claims outside the loaded context."
+                "Use data.context.entries before opening card files. Open full_card_required paths only when present. Combine bounded context with prospect, use the routed CTA and output rules when present, and do not invent claims outside the loaded context."
             } else {
-                "Read only required_load_order card files, combine them with prospect, then draft copy. Use the routed CTA policy when present. Do not invent claims outside the loaded cards."
+                "Read only required_load_order card files, combine them with prospect, then draft copy. Use the routed CTA policy and output rules when present. Do not invent claims outside the loaded cards."
             }
         } else { "Stop before drafting. Surface the fit status and missing context/disqualifiers, then ask for explicit user override before creating outbound copy." }
     });
