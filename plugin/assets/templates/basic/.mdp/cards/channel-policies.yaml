@@ -34,15 +34,35 @@ entries:
   avoid: []
 - id: email-initial-touch
   title: Email initial touch
-  body: For a first cold email, use the email output rules, one source-backed reason or explicit hypothesis, one approved angle, and one reply path. Do not lead with a calendar ask unless fit is strong and the source context supports it.
+  body: For a first cold email, use the email output rules, one source-backed reason or explicit hypothesis, one approved angle, and one reply path. Keep one soft CTA and one question only. Do not lead with a calendar ask unless fit is strong and the source context supports it. Default to no links, attachments, images, HTML polish, or tracking unless the user explicitly overrides.
   applies_to:
   - PMM
   evidence:
   - README.md
   avoid: []
+  constraints:
+    word_count:
+      min: 50
+      max: 125
+      target_min: 75
+      target_max: 110
+    subject_words:
+      min: 3
+      max: 6
+    subject_avoid:
+    - 'Re:'
+    - 'Fwd:'
+    - urgent
+    - quick question
+    max_questions: 1
+    forbid_links: true
+    forbid_attachments: true
+    forbid_images: true
+    forbid_html: true
+    forbid_tracking: true
 - id: email-follow-up
   title: Email follow-up
-  body: For follow-up email copy, assume a maximum of three follow-up notes after the initial email. Each follow-up should add one concrete reason, question, or proof gap, and should avoid bare bumps or guilt-based breakups.
+  body: For follow-up email copy, assume a maximum of three follow-up notes after the initial email. Refer back without assuming interest, add one concrete reason, question, angle, or proof gap, and keep the reply path to owner validation or relevance. Do not use bump language, bare bumps, guilt breakup framing, or imply a longer follow-up sequence than the user supplied.
   applies_to:
   - PMM
   evidence:

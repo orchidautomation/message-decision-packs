@@ -81,6 +81,15 @@ pub(crate) enum Commands {
         text: Option<String>,
         #[arg(long)]
         file: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Optional subject line to check against routed subject constraints"
+        )]
+        subject: Option<String>,
+        #[arg(long, help = "Optional persona for route-scoped constraint checks")]
+        persona: Option<String>,
+        #[arg(long, help = "Optional job for route-scoped constraint checks")]
+        job: Option<String>,
     },
     #[command(about = "List durable gaps and open questions from a pack")]
     Gaps {

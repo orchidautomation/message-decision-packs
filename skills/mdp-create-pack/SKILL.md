@@ -41,7 +41,7 @@ mdp --json init --template gtm --name "<pack name>" --dir .
 - hooks and proof points
 - CTA style, reply paths, and ask boundaries
 - avoid-rules and claim boundaries
-- output rules for global style, formatting, and structure constraints
+- output rules for global style, formatting, deterministic constraints, and structure constraints
 - objections and alternatives
 - copy patterns by channel
 - open gaps that need source evidence
@@ -98,6 +98,7 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 - Prefer concrete disqualifiers over vague ICP language.
 - Put global style and structure rules, such as banned punctuation or fixed paragraph counts, in `output-rules.yaml` instead of burying them in examples.
 - Keep channel rule responsibilities separate: `channel-policies.yaml` owns channel/lifecycle entries such as email initial, email follow-up, LinkedIn initial, LinkedIn follow-up, call prep, and agent brief; `output-rules.yaml` owns generated-text and formatting constraints; `ctas.yaml` owns ask boundaries and reply paths; `copy-patterns.yaml` owns reusable structures.
+- Use entry `constraints` for deterministic output limits such as body word counts, subject word counts, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking. Keep sequence-wide policies such as max follow-up count in prose or evals unless the supplied draft includes enough context to check them.
 - Do not describe the pack as a sender, CRM, sequencer, enrichment provider, AI SDR, or execution agent.
 - Do not invent customer names, pricing, integrations, or proof points.
 - Mark generated example prospects as synthetic fixtures and do not confuse them with real target accounts.

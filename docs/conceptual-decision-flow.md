@@ -113,8 +113,8 @@ Do not use normalization prompts to smooth over disqualifying language. If a row
 
 ## Pack Entries
 
-The pack is modular. Each card holds entries with ids, bodies, applicability rules, evidence, and avoid terms.
-Output-rule entries can also set `exact_paragraphs` when a fixed paragraph count should be checked deterministically.
+The pack is modular. Each card holds entries with ids, bodies, applicability rules, evidence, avoid terms, and optional structured `constraints`.
+Output-rule entries can also set `exact_paragraphs` when a fixed paragraph count should be checked deterministically. Entry `constraints` cover deterministic output limits such as body word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking. Min/max violations fail `check-claims`; target ranges are advisory warnings. Actual send metadata such as file attachments or tracking pixels cannot be proven from a single draft body, so those checks surface caveats in `unchecked_constraints`.
 
 ```text
 .mdp/manifest.yaml

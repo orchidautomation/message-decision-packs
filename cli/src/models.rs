@@ -151,6 +151,60 @@ pub(crate) struct Entry {
     pub(crate) avoid: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) exact_paragraphs: Option<usize>,
+    #[serde(default, skip_serializing_if = "EntryConstraints::is_empty")]
+    pub(crate) constraints: EntryConstraints,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct EntryConstraints {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) word_count: Option<CountConstraint>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) subject_words: Option<CountConstraint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) subject_avoid: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) max_questions: Option<usize>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) forbid_links: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) forbid_attachments: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) forbid_images: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) forbid_html: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) forbid_tracking: bool,
+}
+
+impl EntryConstraints {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.word_count.is_none()
+            && self.subject_words.is_none()
+            && self.subject_avoid.is_empty()
+            && self.max_questions.is_none()
+            && !self.forbid_links
+            && !self.forbid_attachments
+            && !self.forbid_images
+            && !self.forbid_html
+            && !self.forbid_tracking
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CountConstraint {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) min: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) max: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) target_min: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) target_max: Option<usize>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

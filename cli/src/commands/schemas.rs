@@ -52,7 +52,8 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                                 "applies_to": {"type": "array", "items": {"type": "string"}},
                                 "evidence": {"type": "array", "items": {"type": "string"}},
                                 "avoid": {"type": "array", "items": {"type": "string"}},
-                                "exact_paragraphs": {"type": "integer", "minimum": 1}
+                                "exact_paragraphs": {"type": "integer", "minimum": 1},
+                                "constraints": constraints_schema()
                             }
                         }
                     }
@@ -65,13 +66,9 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
             json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Prospect Input v0", "type": "object", "required": ["name", "title", "company"], "properties": {"name": {"type": "string"}, "title": {"type": "string"}, "company": {"type": "string"}, "source_kind": {"type": "string", "description": "Optional provenance marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example."}, "synthetic": {"type": "boolean", "description": "True only for generated or fictional fixtures that must not be mistaken for real prospects."}, "linkedin_url": {"type": "string"}, "company_url": {"type": "string"}, "background": {"type": "string"}, "trigger": {"type": "string"}, "persona": {"type": "string"}, "segment": {"type": "string"}, "signals": {"type": "array", "items": {"type": "object", "required": ["id", "title"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "source": {"type": "string"}, "confidence": {"type": "string"}, "freshness": {"type": "string"}, "state_as": {"type": "string"}}}}}})
         }
         SchemaTarget::Eval => {
-            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Eval Fixture v0", "type": "object", "required": ["id", "command"], "properties": {"id": {"type": "string"}, "command": {"enum": ["route", "fit", "brief", "check-claims"]}, "persona": {"type": "string"}, "job": {"type": "string"}, "channel": {"type": "string"}, "prospect": {"type": "object"}, "text": {"type": "string"}, "expect_load_order_contains": string_array(), "expect_load_order_excludes": string_array(), "expect_entry_titles_contains": string_array(), "expect_entry_titles_excludes": string_array(), "expect_status": {"type": "string"}, "expect_draft_status": {"type": "string"}, "expect_valid": {"type": "boolean"}}})
+            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Eval Fixture v0", "type": "object", "required": ["id", "command"], "properties": {"id": {"type": "string"}, "command": {"enum": ["route", "fit", "brief", "check-claims"]}, "persona": {"type": "string"}, "job": {"type": "string"}, "channel": {"type": "string"}, "prospect": {"type": "object"}, "text": {"type": "string"}, "subject": {"type": "string"}, "expect_load_order_contains": string_array(), "expect_load_order_excludes": string_array(), "expect_entry_titles_contains": string_array(), "expect_entry_titles_excludes": string_array(), "expect_status": {"type": "string"}, "expect_draft_status": {"type": "string"}, "expect_valid": {"type": "boolean"}}})
         }
     }
-}
-
-fn string_array() -> Value {
-    json!({"type": "array", "items": {"type": "string"}})
 }
 
 fn brief_schema() -> Value {
@@ -82,7 +79,50 @@ fn brief_schema() -> Value {
 }
 
 fn context_schema() -> Value {
-    json!({"type": "object", "required": ["contract", "status", "persona", "job", "source_load_order", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "source_load_order": string_array(), "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "evidence", "avoid", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+    json!({"type": "object", "required": ["contract", "status", "persona", "job", "source_load_order", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "source_load_order": string_array(), "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "evidence", "avoid", "constraints", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+}
+
+fn string_array() -> Value {
+    json!({"type": "array", "items": {"type": "string"}})
+}
+
+fn constraints_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Optional deterministic output constraints for generated drafts. Hard min/max and forbid fields can be checked from supplied draft text when the relevant draft part is present; target ranges are advisory.",
+        "properties": {
+            "word_count": count_constraint_schema("Body word count limits."),
+            "subject_words": count_constraint_schema("Subject line word count limits."),
+            "subject_avoid": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Case-insensitive subject literals to avoid, such as Re: or Fwd:."
+            },
+            "max_questions": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Maximum number of question marks allowed in the supplied draft body."
+            },
+            "forbid_links": {"type": "boolean"},
+            "forbid_attachments": {"type": "boolean"},
+            "forbid_images": {"type": "boolean"},
+            "forbid_html": {"type": "boolean"},
+            "forbid_tracking": {"type": "boolean"}
+        }
+    })
+}
+
+fn count_constraint_schema(description: &str) -> Value {
+    json!({
+        "type": "object",
+        "description": description,
+        "properties": {
+            "min": {"type": "integer", "minimum": 0},
+            "max": {"type": "integer", "minimum": 0},
+            "target_min": {"type": "integer", "minimum": 0},
+            "target_max": {"type": "integer", "minimum": 0}
+        }
+    })
 }
 
 fn pack_schema() -> Value {
@@ -284,6 +324,7 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                                     "evidence": string_array(),
                                     "avoid": string_array(),
                                     "exact_paragraphs": {"type": "integer", "minimum": 1},
+                                    "constraints": constraints_schema(),
                                     "confidence": {"enum": ["high", "medium", "low", "unknown"]},
                                     "provenance": string_array(),
                                     "status": {
@@ -385,6 +426,26 @@ mod tests {
             result["properties"]["persona_mappings"]["items"]["properties"]["title_keywords"]["type"],
             "array"
         );
+    }
+
+    #[test]
+    fn card_schema_exposes_structured_entry_constraints() {
+        let result = schema(SchemaTarget::Card);
+        let constraints =
+            &result["properties"]["entries"]["items"]["properties"]["constraints"]["properties"];
+
+        assert_eq!(
+            constraints["word_count"]["properties"]["min"]["type"],
+            "integer"
+        );
+        assert_eq!(
+            constraints["subject_words"]["properties"]["max"]["type"],
+            "integer"
+        );
+        assert_eq!(constraints["subject_avoid"]["type"], "array");
+        assert_eq!(constraints["max_questions"]["type"], "integer");
+        assert_eq!(constraints["forbid_links"]["type"], "boolean");
+        assert_eq!(constraints["forbid_tracking"]["type"], "boolean");
     }
 
     #[test]

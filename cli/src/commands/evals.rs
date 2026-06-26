@@ -19,6 +19,7 @@ struct EvalFixture {
     channel: Option<String>,
     prospect: Option<Value>,
     text: Option<String>,
+    subject: Option<String>,
     expect_load_order_contains: Option<Vec<String>>,
     expect_load_order_excludes: Option<Vec<String>>,
     expect_entry_titles_contains: Option<Vec<String>>,
@@ -111,7 +112,14 @@ fn run_fixture(root: &Path, path: &Path, fixture: &EvalFixture) -> Result<Value>
             fixture.channel.as_deref().unwrap_or("linkedin"),
             fixture.job.as_deref(),
         )?,
-        "check-claims" => check_claims(root, fixture.text.as_deref(), None)?,
+        "check-claims" => check_claims(
+            root,
+            fixture.text.as_deref(),
+            None,
+            fixture.subject.as_deref(),
+            fixture.persona.as_deref(),
+            fixture.job.as_deref(),
+        )?,
         other => {
             issues.push(issue(
                 "eval_fixture_unknown_command",
