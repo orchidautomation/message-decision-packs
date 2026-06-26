@@ -1,6 +1,6 @@
 ---
 name: mdp-pack-review
-description: Use when the user asks to review, audit, harden, QA, or improve a Message Decision Pack. Checks structure, routing, ICP clarity, evidence strength, CTA policy, avoid-rules, duplication, claim risk, and missing cards.
+description: Use when the user asks to review, audit, harden, QA, or improve a Message Decision Pack. Checks structure, routing, ICP clarity, evidence strength, CTA policy, avoid-rules, output-rules, duplication, claim risk, and missing cards.
 ---
 
 # MDP Pack Review
@@ -39,10 +39,11 @@ mdp --json eval --dir .
 - missing channel policies
 - missing CTA rules or hard-sell asks
 - missing avoid-rules
+- missing output-rules for global style or structure constraints
 - missing objections or alternatives
 - missing durable gaps
 - duplicated hooks or pains
-- copy patterns that imply unsupported claims
+- copy patterns that imply unsupported claims or bury global style rules outside output-rules
 
 4. Test routing with representative jobs:
 

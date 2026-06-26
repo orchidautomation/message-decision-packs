@@ -41,6 +41,7 @@ mdp --json init --template gtm --name "<pack name>" --dir .
 - hooks and proof points
 - CTA style, reply paths, and ask boundaries
 - avoid-rules and claim boundaries
+- output rules for global style, formatting, and structure constraints
 - objections and alternatives
 - copy patterns by channel
 - open gaps that need source evidence
@@ -59,6 +60,7 @@ mdp --json init --template gtm --name "<pack name>" --dir .
 - `.mdp/cards/channel-policies.yaml`
 - `.mdp/cards/hooks.yaml`
 - `.mdp/cards/avoid-rules.yaml`
+- `.mdp/cards/output-rules.yaml`
 - `.mdp/cards/copy-patterns.yaml`
 - `.mdp/cards/ctas.yaml`
 - `.mdp/cards/objections.yaml`
@@ -69,7 +71,7 @@ Work in slices instead of rewriting the whole pack at once:
 
 - First: positioning, fit-rules, claims, gaps, and the source ledger.
 - Second: personas, signals, pains, and motions.
-- Third: channel-policies, hooks, ctas, copy-patterns, objections, and evals.
+- Third: channel-policies, hooks, ctas, output-rules, copy-patterns, objections, and evals.
 
 7. Validate after each meaningful slice:
 
@@ -93,6 +95,7 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 - Put source inventory and interpretation notes in `.mdp/sources.yaml` before compressing research into cards.
 - Mark guesses as assumptions in the card body.
 - Prefer concrete disqualifiers over vague ICP language.
+- Put global style and structure rules, such as banned punctuation or fixed paragraph counts, in `output-rules.yaml` instead of burying them in examples.
 - Do not describe the pack as a sender, CRM, sequencer, enrichment provider, AI SDR, or execution agent.
 - Do not invent customer names, pricing, integrations, or proof points.
 - Mark generated example prospects as synthetic fixtures and do not confuse them with real target accounts.

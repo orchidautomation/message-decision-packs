@@ -4,7 +4,7 @@
 
 This document describes the first useful experience for a brand new Codex user who installs the Message Decision Packs plugin and wants to understand what it does, how much work it takes, and why it matters.
 
-MDP is a local/offline standard, CLI, and Codex plugin for modular GTM messaging decision context. It stores decisions, evidence, routing contracts, fit rules, approved claims, avoid-rules, gaps, and brief inputs. It does not send messages, enrich leads, update CRM, scrape data, sequence outbound, or act as an AI SDR.
+MDP is a local/offline standard, CLI, and Codex plugin for modular GTM messaging decision context. It stores decisions, evidence, routing contracts, fit rules, approved claims, avoid-rules, output-rules, gaps, and brief inputs. It does not send messages, enrich leads, update CRM, scrape data, sequence outbound, or act as an AI SDR.
 
 ## Target User
 
@@ -173,6 +173,7 @@ channel-policies
 hooks
 ctas
 avoid-rules
+output-rules
 copy-patterns
 objections
 gaps

@@ -197,6 +197,19 @@ cards:
   tags:
   - guardrail
   - avoid
+- id: output-rules
+  path: cards/output-rules.yaml
+  kind: output-rules
+  description: Global style, formatting, and output-structure rules for generated Profound GTM text.
+  personas:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  tags:
+  - guardrail
+  - style
+  - format
 - id: copy-patterns
   path: cards/copy-patterns.yaml
   kind: copy-patterns
@@ -238,7 +251,7 @@ cards:
 policy:
   progressive_disclosure: true
   load_manifest_first: true
-  max_cards_per_route: 12
+  max_cards_per_route: 13
   json_contract: mdp.cli.v0
   no_auth_required: true
 provenance:

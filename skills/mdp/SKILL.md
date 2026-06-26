@@ -7,7 +7,7 @@ description: Use when the user explicitly wants to create, validate, inspect, ro
 
 For fuzzy or multi-step MDP work, use `$mdp-lfg` first, then route to the narrower skill or CLI command.
 
-Use Message Decision Packs as the source of messaging decisions, not as the execution system. The pack stores ICP, fit rules, personas, pains, signals, positioning, claims, hooks, channel policies, avoid rules, CTA rules, objections, gaps, and copy patterns. The `mdp` CLI validates, routes, checks fit, checks claims, lists gaps, and runs eval fixtures. Draft only after the CLI returns the relevant cards and fit is acceptable.
+Use Message Decision Packs as the source of messaging decisions, not as the execution system. The pack stores ICP, fit rules, personas, pains, signals, positioning, claims, hooks, channel policies, avoid rules, output rules, CTA rules, objections, gaps, and copy patterns. The `mdp` CLI validates, routes, checks fit, checks claims and output guardrails, lists gaps, and runs eval fixtures. Draft only after the CLI returns the relevant cards and fit is acceptable.
 
 ## First Check
 
@@ -48,6 +48,7 @@ When brainstorming the pack, help fill these files:
 - `.mdp/cards/channel-policies.yaml`
 - `.mdp/cards/hooks.yaml`
 - `.mdp/cards/avoid-rules.yaml`
+- `.mdp/cards/output-rules.yaml`
 - `.mdp/cards/copy-patterns.yaml`
 - `.mdp/cards/ctas.yaml`
 - `.mdp/cards/objections.yaml`

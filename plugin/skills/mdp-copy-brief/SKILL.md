@@ -52,13 +52,14 @@ mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> o
 - CTA style and reply path
 - channel policy
 - avoid-rules
+- output-rules
 - objections or alternatives
 - evidence gaps
 - output requirements
 
 ## Drafting Rules
 
-If the user asks for copy after the brief, draft from bounded context entries and the prospect row first, including the routed CTA entry when present. Open fallback card files only when `full_card_required` lists them. Keep unsupported claims out. State assumptions when source context is weak.
+If the user asks for copy after the brief, draft from bounded context entries and the prospect row first, including the routed CTA and output-rule entries when present. Open fallback card files only when `full_card_required` lists them. Keep unsupported claims out. State assumptions when source context is weak.
 
 For outbound copy, preserve lifecycle distinctions. An initial email/LinkedIn touch should not use follow-up policy, and a follow-up should not use first-touch policy unless the route returns both intentionally.
 

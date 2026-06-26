@@ -46,6 +46,7 @@ For each case, check:
 - fit-rules and positioning included when relevant
 - claims included for copy jobs that use proof
 - avoid-rules included for copy jobs
+- output-rules included for copy jobs
 - ctas and channel-policies included for outbound/message/copy jobs
 - initial vs follow-up channel-policy entries route separately for email and LinkedIn
 - persona-specific cards included

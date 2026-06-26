@@ -190,9 +190,11 @@ pub(crate) fn check_claims(root: &Path, text: Option<&str>, file: Option<&Path>)
         (Some(_), Some(_)) => return Err(anyhow!("pass either --text or --file, not both")),
         (None, None) => return Err(anyhow!("pass --text or --file")),
     };
+    let paragraph_count = count_paragraphs(&raw);
     let lower = raw.to_lowercase();
     let claims_card = read_card_by_id(root, "claims")?;
     let avoid_card = read_card_by_id(root, "avoid-rules")?;
+    let output_rules_card = read_card_by_id(root, "output-rules").ok();
     let approved_claim_context = claims_card
         .entries
         .iter()
@@ -223,13 +225,15 @@ pub(crate) fn check_claims(root: &Path, text: Option<&str>, file: Option<&Path>)
             }
         }
     }
-    for entry in &avoid_card.entries {
-        for term in &entry.avoid {
-            if lower.contains(&term.to_lowercase()) {
-                guardrail_hits
-                    .push(json!({"entry_id": entry.id, "term": term, "title": entry.title}));
-            }
-        }
+    collect_guardrail_hits(
+        &mut guardrail_hits,
+        &lower,
+        "avoid-rules",
+        &avoid_card.entries,
+    );
+    if let Some(card) = output_rules_card {
+        collect_guardrail_hits(&mut guardrail_hits, &lower, "output-rules", &card.entries);
+        collect_output_structure_hits(&mut guardrail_hits, paragraph_count, &card.entries);
     }
     let valid = guardrail_hits.is_empty() && claim_gaps.is_empty() && unsupported_claims.is_empty();
     Ok(json!({
@@ -241,6 +245,58 @@ pub(crate) fn check_claims(root: &Path, text: Option<&str>, file: Option<&Path>)
         "unsupported_claims": unsupported_claims,
         "decision": if valid { "claim-safe" } else { "needs-revision" }
     }))
+}
+
+fn collect_guardrail_hits(
+    guardrail_hits: &mut Vec<Value>,
+    lower: &str,
+    card_id: &str,
+    entries: &[crate::models::Entry],
+) {
+    for entry in entries {
+        for term in &entry.avoid {
+            if lower.contains(&term.to_lowercase()) {
+                guardrail_hits.push(
+                    json!({"card_id": card_id, "entry_id": entry.id, "term": term, "title": entry.title}),
+                );
+            }
+        }
+    }
+}
+
+fn collect_output_structure_hits(
+    guardrail_hits: &mut Vec<Value>,
+    paragraph_count: usize,
+    entries: &[crate::models::Entry],
+) {
+    for entry in entries {
+        if let Some(expected) = entry.exact_paragraphs {
+            if paragraph_count != expected {
+                guardrail_hits.push(json!({
+                    "card_id": "output-rules",
+                    "entry_id": entry.id,
+                    "title": entry.title,
+                    "rule": "exact_paragraphs",
+                    "expected": expected,
+                    "actual": paragraph_count
+                }));
+            }
+        }
+    }
+}
+
+fn count_paragraphs(raw: &str) -> usize {
+    let mut count = 0;
+    let mut in_paragraph = false;
+    for line in raw.lines() {
+        if line.trim().is_empty() {
+            in_paragraph = false;
+        } else if !in_paragraph {
+            count += 1;
+            in_paragraph = true;
+        }
+    }
+    count
 }
 
 fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
@@ -408,11 +464,15 @@ mod tests {
             .collect();
 
         assert_eq!(
-            &load_order[..2],
-            &[".mdp/cards/personas.yaml", ".mdp/cards/avoid-rules.yaml"]
+            &load_order[..3],
+            &[
+                ".mdp/cards/personas.yaml",
+                ".mdp/cards/avoid-rules.yaml",
+                ".mdp/cards/output-rules.yaml",
+            ]
         );
         assert!(load_order.contains(&".mdp/cards/ctas.yaml"));
-        assert!(load_order.len() <= 12);
+        assert!(load_order.len() <= 13);
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -503,7 +563,7 @@ mod tests {
             .filter_map(|entry| entry["id"].as_str())
             .collect();
 
-        assert_eq!(ids, vec!["personas", "avoid-rules"]);
+        assert_eq!(ids, vec!["personas", "avoid-rules", "output-rules"]);
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -655,6 +715,65 @@ mod tests {
                 .iter()
                 .any(|hit| hit["term"] == "AI SDR")
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_flags_output_rule_terms() {
+        let root = temp_pack("output-rule-contract");
+
+        let result = check_claims(
+            &root,
+            Some("MDP is local — it keeps message context in a pack."),
+            None,
+        )
+        .expect("claim check should succeed");
+
+        assert_eq!(result["contract"], "mdp.claim-check.v0");
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["guardrail_hits"]
+                .as_array()
+                .expect("guardrail_hits array")
+                .iter()
+                .any(|hit| hit["card_id"] == "output-rules" && hit["entry_id"] == "no-em-dashes")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_flags_exact_paragraph_count_rules() {
+        let root = temp_pack("output-rule-paragraph-count");
+        let output_rules_path = root.join(".mdp").join("cards").join("output-rules.yaml");
+        let raw = std::fs::read_to_string(&output_rules_path).expect("output rules readable");
+        std::fs::write(
+            &output_rules_path,
+            raw.replace(
+                "  avoid: []\n- id: no-meta-commentary",
+                "  avoid: []\n  exact_paragraphs: 2\n- id: no-meta-commentary",
+            ),
+        )
+        .expect("output rules writable");
+
+        let one_paragraph =
+            check_claims(&root, Some("First paragraph only."), None).expect("check should run");
+        assert_eq!(one_paragraph["valid"], false);
+        assert!(
+            one_paragraph["guardrail_hits"]
+                .as_array()
+                .expect("guardrail_hits array")
+                .iter()
+                .any(|hit| hit["rule"] == "exact_paragraphs"
+                    && hit["expected"] == 2
+                    && hit["actual"] == 1)
+        );
+
+        let two_paragraphs =
+            check_claims(&root, Some("First paragraph.\n\nSecond paragraph."), None)
+                .expect("check should run");
+        assert_eq!(two_paragraphs["valid"], true);
 
         let _ = std::fs::remove_dir_all(root);
     }

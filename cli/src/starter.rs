@@ -13,7 +13,7 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
         id: slug.to_string(),
         name: name.to_string(),
         version: "0.1.0".to_string(),
-        description: Some("A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, and copy guidance.".to_string()),
+        description: Some("A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, output rules, and copy guidance.".to_string()),
         personas: personas.clone(),
         target_personas: personas,
         operator_roles: vec!["GTM Engineering".to_string(), "PMM".to_string()],
@@ -35,11 +35,12 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
             card_ref("hooks", "cards/hooks.yaml", CardKind::Hooks, "Messaging hooks that can be reused after evidence checks.", &["PMM"], &["hook", "copy", "message"]),
             card_ref("ctas", "cards/ctas.yaml", CardKind::Ctas, "CTA rules, reply paths, and ask boundaries for outbound copy.", &["PMM", "GTM Engineering"], &["cta", "ask", "reply", "copy", "outbound", "message"]),
             card_ref("avoid-rules", "cards/avoid-rules.yaml", CardKind::AvoidRules, "Claims and categories the agent must avoid.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"]),
+            card_ref("output-rules", "cards/output-rules.yaml", CardKind::OutputRules, "Global style, formatting, and output-structure rules for generated text.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"]),
             card_ref("copy-patterns", "cards/copy-patterns.yaml", CardKind::CopyPatterns, "Copy structures and brief patterns for GTM outputs.", &["PMM"], &["copy", "brief", "outbound", "message"]),
             card_ref("objections", "cards/objections.yaml", CardKind::Objections, "Expected objections, category confusion, and approved response logic.", &["PMM", "GTM Engineering"], &["objection", "alternative", "response"]),
             card_ref("gaps", "cards/gaps.yaml", CardKind::Gaps, "Known gaps and open questions agents must surface instead of filling in.", &["GTM Engineering", "PMM", "PM"], &["gap", "unknown", "open-question"]),
         ],
-        policy: Policy { progressive_disclosure: true, load_manifest_first: true, max_cards_per_route: 12, json_contract: "mdp.cli.v0".to_string(), no_auth_required: true },
+        policy: Policy { progressive_disclosure: true, load_manifest_first: true, max_cards_per_route: 13, json_contract: "mdp.cli.v0".to_string(), no_auth_required: true },
         provenance: Provenance { owner: "local".to_string(), created_by: "mdp init".to_string(), notes: vec!["This pack is guidance and evidence context, not an execution system.".to_string(), "Agents should load only routed cards unless the user asks for a full audit.".to_string()] },
     }
 }
@@ -58,8 +59,8 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
         ])),
         ("fit-rules.yaml", card("fit-rules", CardKind::FitRules, "Fit rules", "ICP, qualification, disqualification, and no-message rules.", &["GTM Engineering", "PMM", "PM"], &["fit", "icp", "disqualifier", "no-message"], vec![
             entry_with_evidence("good-fit-agent-gtm", "Good fit: agent-assisted GTM", "Use when the account is building GTM workflows with agents, provider-neutral source rows, Codex/Claude Code/OpenCode, or multiple systems that need consistent message context.", &["GTM Engineering", "PMM"], &["README.md", "examples/clay-row.json"]),
-            Entry { id: "no-context-no-copy".to_string(), title: "No message without context".to_string(), body: "If the row has no persona, trigger, source, or useful account context, return insufficient-context instead of drafting polished copy.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["no source".to_string(), "unknown persona".to_string(), "no trigger".to_string()] },
-            Entry { id: "bad-fit-sending-only".to_string(), title: "Bad fit: sending-only ask".to_string(), body: "If the request is only to blast, sequence, or auto-send messages without decision context, treat it as out of scope for MDP.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["blast".to_string(), "auto-send".to_string(), "sequence everyone".to_string()] },
+            Entry { id: "no-context-no-copy".to_string(), title: "No message without context".to_string(), body: "If the row has no persona, trigger, source, or useful account context, return insufficient-context instead of drafting polished copy.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["no source".to_string(), "unknown persona".to_string(), "no trigger".to_string()], exact_paragraphs: None },
+            Entry { id: "bad-fit-sending-only".to_string(), title: "Bad fit: sending-only ask".to_string(), body: "If the request is only to blast, sequence, or auto-send messages without decision context, treat it as out of scope for MDP.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["blast".to_string(), "auto-send".to_string(), "sequence everyone".to_string()], exact_paragraphs: None },
         ])),
         ("signals.yaml", card("signals", CardKind::Signals, "Signals and triggers", "How to interpret source rows, LinkedIn context, source material, and account signals.", &["GTM Engineering", "PMM", "PM"], &["signal", "trigger", "source", "source-row", "csv", "crm", "linkedin"], vec![
             entry_with_evidence("source-row-signal", "Source row signal", "Treat user-provided rows, CSVs, CRM exports, Clay, Deepline, or other supplied row-like inputs as evidence inputs. Preserve source and confidence when present, and state weak signals as hypotheses.", &["GTM Engineering", "PMM"], &["examples/clay-row.json"]),
@@ -100,8 +101,13 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("reply-path", "Reply path", "When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.", &["PMM", "GTM Engineering"], &["README.md"]),
         ])),
         ("avoid-rules.yaml", card("avoid-rules", CardKind::AvoidRules, "Avoid rules", "Category and claim boundaries agents must keep intact.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"], vec![
-            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string()] },
-            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance claims, or product capabilities unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "fully automated".to_string()] },
+            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string()], exact_paragraphs: None },
+            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance claims, or product capabilities unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "fully automated".to_string()], exact_paragraphs: None },
+        ])),
+        ("output-rules.yaml", card("output-rules", CardKind::OutputRules, "Output rules", "Global style, formatting, and output-structure rules generated text must follow.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"], vec![
+            Entry { id: "no-em-dashes".to_string(), title: "No em dashes".to_string(), body: "Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec![], avoid: vec!["—".to_string()], exact_paragraphs: None },
+            entry("honor-paragraph-count", "Honor paragraph count", "If the user or pack states a paragraph count, match it exactly. Do not add setup, recap, or explanation paragraphs outside the requested structure.", &["PMM", "GTM Engineering", "PM"]),
+            entry("no-meta-commentary", "No meta commentary", "Do not explain why the copy works, describe the structure, or include drafting notes unless the user asks for critique or rationale.", &["PMM", "GTM Engineering", "PM"]),
         ])),
         ("copy-patterns.yaml", card("copy-patterns", CardKind::CopyPatterns, "Copy patterns", "Reusable structures for brief and copy outputs.", &["PMM"], &["copy", "brief", "outbound", "message"], vec![
             entry_with_evidence("brief-contract", "Brief contract", "Return audience, job, loaded cards, decision trace, approved claims, avoid rules, open questions, and draft direction.", &["PMM"], &["README.md"]),
@@ -178,6 +184,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
                     ".mdp/cards/avoid-rules.yaml",
+                    ".mdp/cards/output-rules.yaml",
                     ".mdp/cards/positioning.yaml",
                     ".mdp/cards/claims.yaml",
                     ".mdp/cards/ctas.yaml"
@@ -211,6 +218,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
                     ".mdp/cards/avoid-rules.yaml",
+                    ".mdp/cards/output-rules.yaml",
                     ".mdp/cards/fit-rules.yaml",
                     ".mdp/cards/signals.yaml",
                     ".mdp/cards/channel-policies.yaml"
@@ -228,6 +236,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
                     ".mdp/cards/avoid-rules.yaml",
+                    ".mdp/cards/output-rules.yaml",
                     ".mdp/cards/positioning.yaml"
                 ]
             }),
@@ -286,7 +295,8 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "job": "task hygiene",
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
-                    ".mdp/cards/avoid-rules.yaml"
+                    ".mdp/cards/avoid-rules.yaml",
+                    ".mdp/cards/output-rules.yaml"
                 ],
                 "expect_load_order_excludes": [
                     ".mdp/cards/ctas.yaml",
@@ -304,8 +314,18 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
                     ".mdp/cards/avoid-rules.yaml",
+                    ".mdp/cards/output-rules.yaml",
                     ".mdp/cards/ctas.yaml"
                 ]
+            }),
+        ),
+        (
+            "claim-check-output-rule.yaml",
+            json!({
+                "id": "claim-check-output-rule",
+                "command": "check-claims",
+                "text": "MDP is local — it stores message context in modular cards.",
+                "expect_valid": false
             }),
         ),
         (
@@ -589,6 +609,37 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
             ),
         ),
         (
+            "output-rules.yaml",
+            prompt_contract(
+                "extract-output-rules",
+                "Extract output rules",
+                "Turns supplied style guidance, editorial preferences, and channel constraints into reviewable output-rule entries.",
+                &["output-rules"],
+                &["prompt", "style", "format", "guardrail"],
+                "Extract global style and output-structure rules for generated text. Put forbidden punctuation, phrases, or formats in avoid, and keep structural requirements in the body.",
+                json!([
+                    {
+                        "card_id": "output-rules",
+                        "kind": "output-rules",
+                        "entries": [
+                            prompt_entry(
+                                "avoid-em-dashes",
+                                "Avoid em dashes",
+                                "Do not use em dashes in generated copy; use commas, periods, colons, or shorter sentences instead.",
+                                &["PMM", "GTM Engineering"],
+                                &["style_guidance"],
+                                &["—"],
+                                "medium",
+                                &["style_guidance: supplied style preference"],
+                                "needs-review"
+                            )
+                        ]
+                    }
+                ]),
+                &[],
+            ),
+        ),
+        (
             "cta-channel-policy.yaml",
             prompt_contract(
                 "extract-cta-channel-policy",
@@ -752,6 +803,7 @@ fn entry(id: &str, title: &str, body: &str, applies_to: &[&str]) -> Entry {
         applies_to: applies_to.iter().map(|s| s.to_string()).collect(),
         evidence: vec![],
         avoid: vec![],
+        exact_paragraphs: None,
     }
 }
 
@@ -769,6 +821,7 @@ fn entry_with_evidence(
         applies_to: applies_to.iter().map(|s| s.to_string()).collect(),
         evidence: evidence.iter().map(|s| s.to_string()).collect(),
         avoid: vec![],
+        exact_paragraphs: None,
     }
 }
 

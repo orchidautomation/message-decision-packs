@@ -20,6 +20,7 @@ A pack is a local `.mdp/` folder:
   cards/channel-policies.yaml
   cards/hooks.yaml
   cards/avoid-rules.yaml
+  cards/output-rules.yaml
   cards/copy-patterns.yaml
   cards/ctas.yaml
   cards/objections.yaml
@@ -45,7 +46,7 @@ mdp --json eval --dir /tmp/mdp-demo
 mdp --json copy --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin
 ```
 
-Use `brief` for production handoff. Add `--out <path>` when the brief should be saved; otherwise the artifact is stdout-only. Use `copy` only for local demos. Source inventory lives in `.mdp/sources.yaml`, reusable extraction prompts live in `.mdp/prompts/*.yaml`, CTA guidance lives in `cards/ctas.yaml`, channel rules live in `cards/channel-policies.yaml`, approved claims live in `cards/claims.yaml`, and durable unknowns live in `cards/gaps.yaml`.
+Use `brief` for production handoff. Add `--out <path>` when the brief should be saved; otherwise the artifact is stdout-only. Use `copy` only for local demos. Source inventory lives in `.mdp/sources.yaml`, reusable extraction prompts live in `.mdp/prompts/*.yaml`, CTA guidance lives in `cards/ctas.yaml`, channel rules live in `cards/channel-policies.yaml`, approved claims live in `cards/claims.yaml`, global style and structure rules live in `cards/output-rules.yaml`, and durable unknowns live in `cards/gaps.yaml`. Output-rule entries can use `avoid` for blocked literals and `exact_paragraphs` for fixed paragraph counts.
 
 ## JSON contract
 
@@ -73,7 +74,7 @@ Error:
 4. Run `mdp --json --summary brief --context --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
 5. Stop if `data.draft_status` is `no-draft`.
 6. Draft from `data.context.entries` first; open `data.context.full_card_required` paths only when present.
-7. Run `mdp --json check-claims` before approval.
+7. Run `mdp --json check-claims` before approval; it reports unsupported claims plus avoid-rule and output-rule guardrail hits.
 
 Generated starter rows are synthetic examples. They include `source_kind: synthetic-example` and `synthetic: true`; do not present them as real prospects. Production rows can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after they are normalized into MDP prospect JSON.
 

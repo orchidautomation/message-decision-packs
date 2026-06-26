@@ -1,0 +1,41 @@
+id: output-rules
+kind: output-rules
+title: Output rules
+description: Global style, formatting, and output-structure rules generated text must follow.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- guardrail
+- style
+- format
+entries:
+- id: no-em-dashes
+  title: No em dashes
+  body: Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  - PM
+  evidence: []
+  avoid:
+  - —
+- id: honor-paragraph-count
+  title: Honor paragraph count
+  body: If the user or pack states a paragraph count, match it exactly. Do not add setup, recap, or explanation paragraphs outside the requested structure.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  - PM
+  evidence: []
+  avoid: []
+- id: no-meta-commentary
+  title: No meta commentary
+  body: Do not explain why the copy works, describe the structure, or include drafting notes unless the user asks for critique or rationale.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  - PM
+  evidence: []
+  avoid: []

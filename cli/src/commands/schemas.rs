@@ -9,6 +9,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         "motions",
         "hooks",
         "avoid-rules",
+        "output-rules",
         "copy-patterns",
         "ctas",
         "fit-rules",
@@ -24,7 +25,36 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
             json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Manifest v0", "type": "object", "required": ["format", "id", "name", "version", "personas", "cards", "policy", "provenance"], "properties": {"format": {"const": FORMAT_VERSION}, "id": {"type": "string"}, "name": {"type": "string"}, "version": {"type": "string"}, "description": {"type": "string"}, "personas": {"type": "array", "items": {"type": "string"}}, "target_personas": {"type": "array", "items": {"type": "string"}}, "operator_roles": {"type": "array", "items": {"type": "string"}}, "supported_channels": {"type": "array", "items": {"type": "string"}}, "persona_mappings": {"type": "array", "items": {"type": "object", "required": ["persona"], "properties": {"persona": {"type": "string"}, "title_keywords": {"type": "array", "items": {"type": "string"}}}}}, "cards": {"type": "array", "items": {"type": "object", "required": ["id", "path", "kind", "description"], "properties": {"id": {"type": "string"}, "path": {"type": "string", "pattern": "^cards/[^/].*\\.ya?ml$"}, "kind": {"enum": card_kinds}, "description": {"type": "string"}, "personas": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}}}}}, "policy": {"type": "object", "required": ["progressive_disclosure", "load_manifest_first", "max_cards_per_route", "json_contract", "no_auth_required"], "properties": {"progressive_disclosure": {"type": "boolean"}, "load_manifest_first": {"type": "boolean"}, "max_cards_per_route": {"type": "integer", "minimum": 1}, "json_contract": {"type": "string"}, "no_auth_required": {"type": "boolean"}}}, "provenance": {"type": "object", "required": ["owner", "created_by", "notes"], "properties": {"owner": {"type": "string"}, "created_by": {"type": "string"}, "notes": {"type": "array", "items": {"type": "string"}}}}}})
         }
         SchemaTarget::Card => {
-            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Card v0", "type": "object", "required": ["id", "kind", "title", "description", "entries"], "properties": {"id": {"type": "string"}, "kind": {"enum": card_kinds}, "title": {"type": "string"}, "description": {"type": "string"}, "personas": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}}, "entries": {"type": "array", "items": {"type": "object", "required": ["id", "title", "body"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": {"type": "array", "items": {"type": "string"}}, "evidence": {"type": "array", "items": {"type": "string"}}, "avoid": {"type": "array", "items": {"type": "string"}}}}}}})
+            json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "title": "MDP Card v0",
+                "type": "object",
+                "required": ["id", "kind", "title", "description", "entries"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "kind": {"enum": card_kinds},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "personas": {"type": "array", "items": {"type": "string"}},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["id", "title", "body"],
+                            "properties": {
+                                "id": {"type": "string"},
+                                "title": {"type": "string"},
+                                "body": {"type": "string"},
+                                "applies_to": {"type": "array", "items": {"type": "string"}},
+                                "evidence": {"type": "array", "items": {"type": "string"}},
+                                "avoid": {"type": "array", "items": {"type": "string"}},
+                                "exact_paragraphs": {"type": "integer", "minimum": 1}
+                            }
+                        }
+                    }
+                }
+            })
         }
         SchemaTarget::Prompt => prompt_schema(card_kinds),
         SchemaTarget::Brief => brief_schema(),
@@ -49,14 +79,14 @@ fn brief_schema() -> Value {
 }
 
 fn context_schema() -> Value {
-    json!({"type": "object", "required": ["contract", "status", "persona", "job", "source_load_order", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "source_load_order": string_array(), "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "evidence", "avoid", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "evidence": string_array(), "avoid": string_array(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+    json!({"type": "object", "required": ["contract", "status", "persona", "job", "source_load_order", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "source_load_order": string_array(), "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "evidence", "avoid", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
 }
 
 fn pack_schema() -> Value {
     json!({"type": "object", "required": ["id", "name", "version"], "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "version": {"type": "string"}}})
 }
 
-fn prompt_schema(card_kinds: [&str; 14]) -> Value {
+fn prompt_schema(card_kinds: [&str; 15]) -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "MDP Extraction Prompt Contract v0",
@@ -159,7 +189,7 @@ fn prompt_schema(card_kinds: [&str; 14]) -> Value {
     })
 }
 
-fn prompt_output_schema(card_kinds: [&str; 14]) -> Value {
+fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
     json!({
         "type": "object",
         "required": [
@@ -216,6 +246,7 @@ fn prompt_output_schema(card_kinds: [&str; 14]) -> Value {
                                     "applies_to": string_array(),
                                     "evidence": string_array(),
                                     "avoid": string_array(),
+                                    "exact_paragraphs": {"type": "integer", "minimum": 1},
                                     "confidence": {"enum": ["high", "medium", "low", "unknown"]},
                                     "provenance": string_array(),
                                     "status": {

@@ -2,7 +2,9 @@ command: route
 expect_entry_titles_contains:
 - Call prep
 expect_entry_titles_excludes:
-- LinkedIn opener
+- LinkedIn initial touch
+- LinkedIn follow-up
+- Initial email
 - Email follow-up
 expect_load_order_contains:
 - .mdp/cards/channel-policies.yaml
