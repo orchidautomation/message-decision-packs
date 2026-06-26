@@ -120,6 +120,12 @@ Before approving generated copy, check claims and guardrails:
 mdp --json check-claims --dir . --text "<draft copy>"
 ```
 
+When route-specific constraints or subject rules matter, include the subject and route:
+
+```bash
+mdp --json check-claims --dir . --text "<draft copy>" --subject "<subject>" --persona "<persona>" --job "<channel> outbound copy"
+```
+
 For pack QA:
 
 ```bash
@@ -148,7 +154,7 @@ Frameworks such as Flue or Vercel Eve may wrap MDP for webhook admission, durabl
 3. Write the raw payload and normalized prospect JSON to ignored scratch.
 4. Run `mdp --json fit` before drafting.
 5. Run `mdp --json brief --context` and draft only from the returned brief/context.
-6. Run `mdp --json check-claims` before treating draft text as ready.
+6. Run `mdp --json check-claims` before treating draft text as ready. Include `--subject`, `--persona`, and `--job` when routed constraints cover subject length, word count, max questions, or forbidden links/html/tracking.
 
 Do not move fit logic, route selection, claim checks, or card interpretation into the framework layer. Do not let the framework wrapper send, schedule, enrich, scrape, update a CRM, or write to a sequencer unless the user explicitly asks for that separate system action outside MDP.
 

@@ -36,7 +36,7 @@ instructions:
 - Use only supplied person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.
 - Extract avoid rules that prevent category confusion, unsafe claims, or unsupported copy. Do not turn product aspirations into approved claims.
 - Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
-- 'Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid.'
+- 'Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid. Use constraints for deterministic output limits such as word counts, subject word counts, max questions, or forbidden links/html/tracking when the source explicitly calls for them.'
 - Each candidate entry must also include confidence, provenance, and status so a reviewer can decide whether it may become a card entry.
 - Use body N/A, empty arrays, confidence unknown, and status gap when data is missing or weak.
 - Put unsupported, quantified, customer, integration, compliance, or execution claims in rejected_claims instead of card_patches.

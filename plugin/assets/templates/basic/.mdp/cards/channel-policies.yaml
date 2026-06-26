@@ -34,15 +34,35 @@ entries:
   avoid: []
 - id: initial-email
   title: Initial email
-  body: For a first email, use a clear subject, one source-backed reason for relevance, one approved claim, and a reply path that does not force a meeting too early.
+  body: For a first email, use a clear subject, one source-backed reason for relevance, one approved claim, and a reply path that does not force a meeting too early. Keep one soft CTA and one question only; default to no links, attachments, images, HTML polish, or tracking unless the user explicitly overrides.
   applies_to:
   - PMM
   evidence:
   - README.md
   avoid: []
+  constraints:
+    word_count:
+      min: 50
+      max: 125
+      target_min: 75
+      target_max: 110
+    subject_words:
+      min: 3
+      max: 6
+    subject_avoid:
+    - 'Re:'
+    - 'Fwd:'
+    - urgent
+    - quick question
+    max_questions: 1
+    forbid_links: true
+    forbid_attachments: true
+    forbid_images: true
+    forbid_html: true
+    forbid_tracking: true
 - id: email-follow-up
   title: Email follow-up
-  body: For a later email, refer back to the initial note without assuming interest, add one concrete angle, and keep the reply path to owner validation or relevance.
+  body: For a later email, refer back to the initial note without assuming interest, add one concrete angle, and keep the reply path to owner validation or relevance. Do not use bump language, guilt breakup framing, or imply a longer follow-up sequence than the user supplied.
   applies_to:
   - PMM
   evidence:

@@ -329,7 +329,8 @@ fn entry_summary(card_id: &str, card_kind: &CardKind, entry: &Entry, reason: &st
         "status": entry_status(card_kind),
         "reason": reason,
         "evidence_count": entry.evidence.len(),
-        "avoid_count": entry.avoid.len()
+        "avoid_count": entry.avoid.len(),
+        "constraints": entry.constraints
     })
 }
 
@@ -352,6 +353,7 @@ fn entry_context_value(
         "evidence": entry.evidence,
         "avoid": entry.avoid,
         "exact_paragraphs": entry.exact_paragraphs,
+        "constraints": entry.constraints,
         "status": entry_status(card_kind),
         "selection": selection,
         "reason": reason

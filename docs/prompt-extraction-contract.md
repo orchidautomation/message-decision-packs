@@ -43,7 +43,14 @@ Candidate entries carry normal MDP entry fields:
   "body": "Supplied source material describes the product as local decision context for GTM messaging.",
   "applies_to": ["PMM", "GTM Engineering"],
   "evidence": ["source_notes"],
-  "avoid": []
+  "avoid": [],
+  "constraints": {
+    "word_count": {"min": 50, "max": 125, "target_min": 75, "target_max": 110},
+    "subject_words": {"min": 3, "max": 6},
+    "subject_avoid": ["Re:", "Fwd:"],
+    "max_questions": 1,
+    "forbid_links": true
+  }
 }
 ```
 
@@ -58,7 +65,7 @@ They also carry review metadata:
 }
 ```
 
-Only the normal MDP entry fields should be copied into `.mdp/cards/*.yaml` after review. Keep confidence, provenance, status, gaps, and rejected claims in the review artifact or source ledger.
+Only the normal MDP entry fields should be copied into `.mdp/cards/*.yaml` after review. `constraints` is a normal optional MDP entry field when the source explicitly calls for deterministic output limits. Keep confidence, provenance, status, gaps, and rejected claims in the review artifact or source ledger.
 
 ## Safe Defaults
 

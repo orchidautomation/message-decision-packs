@@ -49,8 +49,22 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Commands::Fit { dir, prospect } => {
             print_output(json_mode, summary_mode, "fit", fit(&dir, &prospect)?)
         }
-        Commands::CheckClaims { dir, text, file } => {
-            let data = check_claims(&dir, text.as_deref(), file.as_deref())?;
+        Commands::CheckClaims {
+            dir,
+            text,
+            file,
+            subject,
+            persona,
+            job,
+        } => {
+            let data = check_claims(
+                &dir,
+                text.as_deref(),
+                file.as_deref(),
+                subject.as_deref(),
+                persona.as_deref(),
+                job.as_deref(),
+            )?;
             print_checked(json_mode, summary_mode, "check-claims", data)
         }
         Commands::Gaps { dir } => print_output(json_mode, summary_mode, "gaps", gaps(&dir)?),
