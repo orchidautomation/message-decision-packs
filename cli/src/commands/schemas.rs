@@ -1,5 +1,8 @@
 use crate::cli::SchemaTarget;
-use crate::constants::{FORMAT_VERSION, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT};
+use crate::constants::{
+    FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+};
 use serde_json::{Value, json};
 
 pub(crate) fn schema(target: SchemaTarget) -> Value {
@@ -147,6 +150,10 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     "entry_defaults",
                     "example"
                 ],
+                "anyOf": [
+                    {"required": ["schema_ref"]},
+                    {"required": ["schema"]}
+                ],
                 "properties": {
                     "contract": {"const": PROMPT_OUTPUT_CONTRACT},
                     "output_kind": {
@@ -188,9 +195,33 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                             "provenance": {"type": "array", "maxItems": 0}
                         }
                     },
+                    "schema_ref": {
+                        "enum": [
+                            PROMPT_CARD_PATCH_SCHEMA_REF,
+                            PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
+                        ],
+                        "description": "Compact reference to the response schema family. The CLI derives the concrete schema from this ref, output_kind, prompt_id, and target_card_kinds."
+                    },
+                    "schema": prompt_response_schema_contract(),
                     "example": prompt_output_schema(card_kinds)
                 }
             }
+        }
+    })
+}
+
+fn prompt_response_schema_contract() -> Value {
+    json!({
+        "type": "object",
+        "description": "JSON Schema object for the model response. Prompt authors should narrow const, enum, required, and description fields for each prompt.",
+        "required": ["type", "additionalProperties", "required", "properties"],
+        "properties": {
+            "$schema": {"type": "string"},
+            "title": {"type": "string"},
+            "type": {"const": "object"},
+            "additionalProperties": {"const": false},
+            "required": {"type": "array", "items": {"type": "string"}},
+            "properties": {"type": "object"}
         }
     })
 }
@@ -389,6 +420,23 @@ mod tests {
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["example"]["required"][0],
             "contract"
+        );
+        let contract_required = result["properties"]["output_contract"]["required"]
+            .as_array()
+            .expect("output_contract required should be an array");
+        assert!(!contract_required.iter().any(|field| field == "schema"));
+        assert_eq!(
+            result["properties"]["output_contract"]["anyOf"][0]["required"][0],
+            "schema_ref"
+        );
+        assert_eq!(
+            result["properties"]["output_contract"]["properties"]["schema_ref"]["enum"][0],
+            PROMPT_CARD_PATCH_SCHEMA_REF
+        );
+        assert_eq!(
+            result["properties"]["output_contract"]["properties"]["schema"]["properties"]["additionalProperties"]
+                ["const"],
+            false
         );
         let required_fields = result["properties"]["output_contract"]["properties"]
             ["required_top_level"]["items"]["enum"]

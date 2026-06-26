@@ -87,6 +87,7 @@ output_contract:
   - card_patches
   - gaps
   - rejected_claims
+  schema_ref: mdp.prompt-output.card-patches.v0
   strict_json_only: true
 tags:
 - prompt

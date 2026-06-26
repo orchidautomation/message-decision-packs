@@ -1,5 +1,6 @@
 use crate::constants::{
-    DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
+    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{CardKind, PromptFile};
 use crate::pack_io::{
@@ -430,9 +431,213 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     }
 
     validate_prompt_example(prompt, path, issues);
+    validate_prompt_schema_ref(prompt, path, output_kind, issues);
+    if let Some(schema) = prompt.output_contract.schema.as_ref() {
+        validate_prompt_output_schema(prompt, schema, path, output_kind, issues);
+    } else if prompt.output_contract.schema_ref.is_none() {
+        issues.push(issue(
+            "prompt_output_schema_missing",
+            "error",
+            format!("{path}#/output_contract"),
+            "prompt output contract must include schema_ref or an explicit JSON Schema object",
+        ));
+    }
     if output_kind == "prospect-normalization" {
         validate_prompt_normalization_example(prompt, path, issues);
     }
+}
+
+fn validate_prompt_schema_ref(
+    prompt: &PromptFile,
+    path: &str,
+    output_kind: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(schema_ref) = prompt.output_contract.schema_ref.as_deref() else {
+        return;
+    };
+    let expected = if output_kind == "prospect-normalization" {
+        PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
+    } else {
+        PROMPT_CARD_PATCH_SCHEMA_REF
+    };
+    if schema_ref != expected {
+        issues.push(issue(
+            "prompt_output_schema_ref",
+            "error",
+            format!("{path}#/output_contract/schema_ref"),
+            format!("prompt schema_ref must be {expected} for output_kind {output_kind}, found {schema_ref}"),
+        ));
+    }
+}
+
+fn validate_prompt_output_schema(
+    prompt: &PromptFile,
+    schema: &Value,
+    path: &str,
+    output_kind: &str,
+    issues: &mut Vec<Value>,
+) {
+    if !schema.is_object() {
+        issues.push(issue(
+            "prompt_output_schema_missing",
+            "error",
+            format!("{path}#/output_contract/schema"),
+            "prompt output contract must include an explicit JSON Schema object",
+        ));
+        return;
+    }
+
+    if schema["type"].as_str() != Some("object") {
+        issues.push(issue(
+            "prompt_output_schema_root_type",
+            "error",
+            format!("{path}#/output_contract/schema/type"),
+            "prompt output schema root type must be object",
+        ));
+    }
+    if schema["additionalProperties"].as_bool() != Some(false) {
+        issues.push(issue(
+            "prompt_output_schema_allows_extra_keys",
+            "error",
+            format!("{path}#/output_contract/schema/additionalProperties"),
+            "prompt output schema must set additionalProperties: false at the root",
+        ));
+    }
+
+    let Some(properties) = schema["properties"].as_object() else {
+        issues.push(issue(
+            "prompt_output_schema_properties",
+            "error",
+            format!("{path}#/output_contract/schema/properties"),
+            "prompt output schema must define properties",
+        ));
+        return;
+    };
+
+    for field in &prompt.output_contract.required_top_level {
+        if !schema_array_contains(&schema["required"], field) {
+            issues.push(issue(
+                "prompt_output_schema_required_field_missing",
+                "error",
+                format!("{path}#/output_contract/schema/required"),
+                format!("prompt output schema must require {field}"),
+            ));
+        }
+        if !properties.contains_key(field) {
+            issues.push(issue(
+                "prompt_output_schema_property_missing",
+                "error",
+                format!("{path}#/output_contract/schema/properties"),
+                format!("prompt output schema must define property {field}"),
+            ));
+        }
+    }
+
+    if schema["properties"]["contract"]["const"].as_str() != Some(PROMPT_OUTPUT_CONTRACT) {
+        issues.push(issue(
+            "prompt_output_schema_contract_const",
+            "error",
+            format!("{path}#/output_contract/schema/properties/contract/const"),
+            format!("prompt output schema contract const must be {PROMPT_OUTPUT_CONTRACT}"),
+        ));
+    }
+    if schema["properties"]["prompt_id"]["const"].as_str() != Some(prompt.id.as_str()) {
+        issues.push(issue(
+            "prompt_output_schema_prompt_id_const",
+            "error",
+            format!("{path}#/output_contract/schema/properties/prompt_id/const"),
+            "prompt output schema prompt_id const must match prompt id",
+        ));
+    }
+
+    if output_kind == "prospect-normalization" {
+        validate_prompt_normalization_output_schema(schema, path, issues);
+    } else {
+        validate_prompt_card_patch_output_schema(prompt, schema, path, issues);
+    }
+}
+
+fn validate_prompt_normalization_output_schema(
+    schema: &Value,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    if schema["properties"]["card_patches"]["maxItems"].as_u64() != Some(0) {
+        issues.push(issue(
+            "prompt_output_schema_normalization_card_patches",
+            "error",
+            format!("{path}#/output_contract/schema/properties/card_patches/maxItems"),
+            "prospect-normalization schemas must force card_patches to an empty array",
+        ));
+    }
+    for field in ["name", "title", "company"] {
+        if !schema_array_contains(
+            &schema["properties"]["normalized_prospect"]["required"],
+            field,
+        ) {
+            issues.push(issue(
+                "prompt_output_schema_prospect_required_field",
+                "error",
+                format!("{path}#/output_contract/schema/properties/normalized_prospect/required"),
+                format!("normalized_prospect schema must require {field}"),
+            ));
+        }
+    }
+}
+
+fn validate_prompt_card_patch_output_schema(
+    prompt: &PromptFile,
+    schema: &Value,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let target_kinds = prompt
+        .target_card_kinds
+        .iter()
+        .map(card_kind_name)
+        .collect::<BTreeSet<_>>();
+    let kind_enum = &schema["properties"]["card_patches"]["items"]["properties"]["kind"]["enum"];
+    for target_kind in target_kinds {
+        if !schema_array_contains(kind_enum, target_kind) {
+            issues.push(issue(
+                "prompt_output_schema_target_kind",
+                "error",
+                format!("{path}#/output_contract/schema/properties/card_patches/items/properties/kind/enum"),
+                format!("card_patches.kind enum must include target card kind {target_kind}"),
+            ));
+        }
+    }
+
+    let entry_required = &schema["properties"]["card_patches"]["items"]["properties"]["entries"]["items"]
+        ["required"];
+    for field in [
+        "id",
+        "title",
+        "body",
+        "applies_to",
+        "evidence",
+        "avoid",
+        "confidence",
+        "provenance",
+        "status",
+        "notes",
+    ] {
+        if !schema_array_contains(entry_required, field) {
+            issues.push(issue(
+                "prompt_output_schema_entry_required_field",
+                "error",
+                format!("{path}#/output_contract/schema/properties/card_patches/items/properties/entries/items/required"),
+                format!("candidate entry schema must require {field}"),
+            ));
+        }
+    }
+}
+
+fn schema_array_contains(value: &Value, expected: &str) -> bool {
+    value
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(expected)))
 }
 
 fn validate_prompt_example(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
@@ -702,7 +907,7 @@ mod tests {
             .expect("system clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-{name}-{nonce}"));
-        init_pack(&root, "Example Message Pack", "gtm", true)
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
         root
     }
@@ -792,6 +997,84 @@ mod tests {
                 .expect("issues array")
                 .iter()
                 .any(|issue| issue["code"] == "prompt_output_not_strict_json")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_prompt_without_output_schema() {
+        let root = temp_pack("prompt-output-schema");
+        let prompt_path = root.join(".mdp").join("prompts").join("bad.yaml");
+        std::fs::write(
+            &prompt_path,
+            r#"format: mdp.prompt.v0
+id: bad-prompt
+title: Bad prompt
+description: Bad prompt
+target_card_kinds:
+- claims
+inputs:
+- name: company_data
+  description: Company data
+  required: false
+  default: N/A
+  missing_behavior: Use N/A.
+instructions:
+- Return strict JSON only.
+output_contract:
+  contract: mdp.prompt-output.v0
+  strict_json_only: true
+  required_top_level:
+  - contract
+  - prompt_id
+  - source_summary
+  - card_patches
+  - gaps
+  - rejected_claims
+  entry_defaults:
+    body: N/A
+    applies_to: []
+    evidence: []
+    avoid: []
+    confidence: unknown
+    provenance: []
+  example:
+    contract: mdp.prompt-output.v0
+    prompt_id: bad-prompt
+    source_summary:
+      company_domain: N/A
+      company_name: N/A
+      inputs_used: []
+      confidence: unknown
+    card_patches:
+    - card_id: claims
+      kind: claims
+      entries:
+      - id: gap-claim-proof
+        title: Missing claim proof
+        body: N/A
+        applies_to: []
+        evidence: []
+        avoid: []
+        confidence: unknown
+        provenance: []
+        status: gap
+    gaps: []
+    rejected_claims: []
+"#,
+        )
+        .expect("bad prompt should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "prompt_output_schema_missing")
         );
 
         let _ = std::fs::remove_dir_all(root);

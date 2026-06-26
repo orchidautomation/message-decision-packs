@@ -10,7 +10,13 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 
-pub(crate) fn init_pack(root: &Path, name: &str, template: &str, force: bool) -> Result<Value> {
+pub(crate) fn init_pack(
+    root: &Path,
+    name: &str,
+    template: &str,
+    force: bool,
+    include_output_schemas: bool,
+) -> Result<Value> {
     if template != "gtm" {
         return Err(anyhow!("unsupported template '{template}'; available: gtm"));
     }
@@ -43,7 +49,7 @@ pub(crate) fn init_pack(root: &Path, name: &str, template: &str, force: bool) ->
     for (filename, eval) in starter_evals() {
         write_yaml(&evals_dir.join(filename), &eval, force)?;
     }
-    for (filename, prompt) in starter_prompts() {
+    for (filename, prompt) in starter_prompts(include_output_schemas) {
         write_yaml(&prompts_dir.join(filename), &prompt, force)?;
     }
     let prospect_path = examples_dir.join("clay-row.json");
@@ -90,7 +96,7 @@ mod tests {
             .expect("system clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-golden-{nonce}"));
-        init_pack(&root, "Basic MDP Template", "gtm", true)
+        init_pack(&root, "Basic MDP Template", "gtm", true, false)
             .expect("starter pack should initialize");
         let plugin_template =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/basic");
@@ -106,6 +112,46 @@ mod tests {
                 .expect("plugin template file should be readable");
             assert_eq!(generated, checked_in, "template drift in {relative}");
         }
+
+        let claims_prompt =
+            std::fs::read_to_string(root.join(".mdp").join("prompts").join("claims-proof.yaml"))
+                .expect("claims prompt should be readable");
+        assert!(claims_prompt.contains("schema_ref: mdp.prompt-output.card-patches.v0"));
+        assert!(!claims_prompt.contains("\n  schema:\n"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn init_can_inline_prompt_output_schemas_when_requested() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-inline-schemas-{nonce}"));
+
+        init_pack(&root, "Inline Schema Pack", "gtm", true, true)
+            .expect("starter pack should initialize");
+
+        let claims_prompt =
+            std::fs::read_to_string(root.join(".mdp").join("prompts").join("claims-proof.yaml"))
+                .expect("claims prompt should be readable");
+        assert!(claims_prompt.contains("schema_ref: mdp.prompt-output.card-patches.v0"));
+        assert!(claims_prompt.contains("\n  schema:\n"));
+        assert!(claims_prompt.contains("additionalProperties: false"));
+
+        let normalization_prompt = std::fs::read_to_string(
+            root.join(".mdp")
+                .join("prompts")
+                .join("normalize-prospect.yaml"),
+        )
+        .expect("normalization prompt should be readable");
+        assert!(
+            normalization_prompt
+                .contains("schema_ref: mdp.prompt-output.prospect-normalization.v0")
+        );
+        assert!(normalization_prompt.contains("\n  schema:\n"));
+        assert!(normalization_prompt.contains("normalized_prospect:"));
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -140,7 +186,7 @@ mod tests {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-source-ledger-{nonce}"));
 
-        let result = init_pack(&root, "Source Ledger Pack", "gtm", true)
+        let result = init_pack(&root, "Source Ledger Pack", "gtm", true, false)
             .expect("starter pack should initialize");
 
         let source_ledger_path = root.join(".mdp").join("sources.yaml");

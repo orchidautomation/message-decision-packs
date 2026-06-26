@@ -18,8 +18,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             dir,
             template,
             force,
+            include_output_schemas,
         } => {
-            let data = init_pack(&dir, &name, &template, force)?;
+            let data = init_pack(&dir, &name, &template, force, include_output_schemas)?;
             print_output(json_mode, summary_mode, "init", data)
         }
         Commands::Doctor { dir } => print_output(json_mode, summary_mode, "doctor", doctor(&dir)),
@@ -209,7 +210,7 @@ mod tests {
             .expect("system clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-brief-out-{nonce}"));
-        init_pack(&root, "Brief Out Pack", "gtm", true).expect("pack should initialize");
+        init_pack(&root, "Brief Out Pack", "gtm", true, false).expect("pack should initialize");
         let prospect = root.join("examples").join("clay-row.json");
         let out = root.join(".mdp").join("briefs").join("brief.json");
 
