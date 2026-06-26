@@ -74,7 +74,7 @@ Minimum fields: `name`, `title`, `company`. Prefer adding `linkedin_url`, `compa
 
 Use provider-neutral `source_kind` values unless the source itself matters: `user-provided-row`, `csv-row`, `crm-export-row`, `clay-row`, `deepline-row`, `private-scratch-row`, `sanitized-example`, or `synthetic-example`. Clay is one possible source, not the default MDP mental model.
 
-Normalization prompts may map messy titles into pack-owned personas and signals, but they must preserve raw evidence, uncertainty, missing fields, and disqualifying execution asks. The CLI still owns final fit and route decisions.
+Normalization prompts may map messy titles into pack-owned personas and signals, but they must preserve raw evidence, uncertainty, missing fields, and disqualifying execution asks. When using any `.mdp/prompts/*.yaml` prompt contract, treat `output_contract.schema_ref` as the response contract; if the prompt includes `output_contract.schema`, give that literal schema to the model or host. `output_contract.example` is only a reference. The CLI still owns final fit and route decisions.
 
 If the input is account-only and lacks a person name and title, do not invent a contact. Ask for the missing person fields or return the fit gate's insufficient-context decision.
 

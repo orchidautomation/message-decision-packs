@@ -91,6 +91,10 @@ pub(crate) struct PromptOutputContract {
     pub(crate) strict_json_only: bool,
     pub(crate) required_top_level: Vec<String>,
     pub(crate) entry_defaults: PromptEntryDefaults,
+    #[serde(default)]
+    pub(crate) schema_ref: Option<String>,
+    #[serde(default)]
+    pub(crate) schema: Option<serde_json::Value>,
     pub(crate) example: serde_json::Value,
 }
 

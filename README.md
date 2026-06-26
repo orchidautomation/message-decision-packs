@@ -182,7 +182,7 @@ Prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for 
 - Runtime normalization prompts, such as `normalize-prospect.yaml`, turn messy supplied rows into `normalized_prospect` JSON plus a trace that can feed `mdp fit` and `mdp brief`.
 - Extraction prompts classify supplied person, company, account, domain, row, or research data into reviewable `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance for pack authors.
 
-Both use `format: mdp.prompt.v0` and output `contract: mdp.prompt-output.v0`. They do not browse, scrape, enrich, send, sequence, or update external systems. See [Prompt Extraction Contract](docs/prompt-extraction-contract.md) and `mdp --json schema prompt`.
+Both use `format: mdp.prompt.v0` and output `contract: mdp.prompt-output.v0`. Each prompt carries `output_contract.schema_ref`, a compact reference to its JSON output contract, plus a safe example. Use `mdp init --include-output-schemas` when you need starter prompt files with full inline JSON Schemas under `output_contract.schema`. They do not browse, scrape, enrich, send, sequence, or update external systems. See [Prompt Extraction Contract](docs/prompt-extraction-contract.md) and `mdp --json schema prompt`.
 
 ## Agent Plugin
 

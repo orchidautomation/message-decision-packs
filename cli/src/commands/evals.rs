@@ -307,7 +307,7 @@ mod tests {
             .expect("system clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-{name}-{nonce}"));
-        init_pack(&root, "Example Message Pack", "gtm", true)
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
         root
     }

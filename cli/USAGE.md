@@ -52,7 +52,7 @@ Use `brief` for production handoff. Add `--out <path>` when the brief should be 
 
 All commands support `--json`; add `--summary` for compact status output. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.
 
-Use `mdp --json schema prompt` to inspect the reusable extraction prompt contract. Prompt outputs use `contract: mdp.prompt-output.v0` and must preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance. Prompt files classify supplied person, company, account, domain, row, or research data into candidate MDP entries. They are local decision contracts, not browsing, scraping, enrichment, sending, or CRM-update workflows.
+Use `mdp --json schema prompt` to inspect the reusable prompt contract. Prompt outputs use `contract: mdp.prompt-output.v0` and must match the contract named by each prompt's `output_contract.schema_ref`; starter prompts can inline the full JSON Schema with `mdp init --include-output-schemas`. Extraction prompts preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance; normalization prompts preserve `normalized_prospect`, `normalization_trace`, gaps, and empty `card_patches`. Prompt files are local decision contracts, not browsing, scraping, enrichment, sending, sequencing, or CRM-update workflows.
 
 Success:
 

@@ -16,7 +16,9 @@ Each prompt file declares:
 - `target_card_kinds`: one or more MDP card kinds the prompt may populate or consult.
 - `inputs`: named inputs with explicit defaults and missing-data behavior.
 - `instructions`: model-facing rules for using only supplied input.
-- `output_contract`: strict JSON output requirements and a safe example.
+- `output_contract`: strict JSON output requirements, a compact schema reference, optional inline JSON Schema, and a safe example.
+
+`output_contract.schema_ref` names the authoritative response contract. Starter prompt files keep that reference compact by default. Use `mdp init --include-output-schemas` when an agent host or model API needs a literal JSON Schema object in each prompt file under `output_contract.schema`. `output_contract.example` is still useful as a model-friendly reference, but it does not replace the schema contract.
 
 Prompt outputs use `contract: mdp.prompt-output.v0` and must include:
 
@@ -67,7 +69,7 @@ Use safe defaults instead of inventing facts:
 - Missing or weak support: `confidence: "unknown"` and `status: "gap"`.
 - Unsupported claims: put them in `rejected_claims`, not `card_patches`.
 
-Validation rejects prompt files that do not require strict JSON output, omit provenance/confidence fields, or include non-gap example entries with a real body and no evidence or provenance.
+Validation rejects prompt files that do not require strict JSON output, omit both `schema_ref` and an inline response schema, use the wrong schema reference for the prompt output kind, let an inline response root accept extra keys, omit provenance/confidence fields, or include non-gap example entries with a real body and no evidence or provenance.
 
 ## Starter Prompt Contracts
 
@@ -92,7 +94,7 @@ It also includes extraction prompt contracts for:
 1. Run `mdp --json validate --dir <pack>` before using prompt files.
 2. Load `.mdp/prompts/normalize-prospect.yaml`.
 3. Supply the messy row as `raw_row`, plus relevant `existing_pack_context` from the manifest, persona mappings, fit-rules, signals, and avoid-rules.
-4. Run the prompt with strict JSON output.
+4. Run the prompt with strict JSON output matching `output_contract.schema_ref`, or `output_contract.schema` when the prompt file was generated with inline schemas.
 5. Save `normalized_prospect` to ignored scratch as `<prospect>.json`.
 6. Run:
 
@@ -107,7 +109,7 @@ Do not let the normalization prompt silently decide final fit. It should preserv
 1. Run `mdp --json validate --dir <pack>` before using prompt files.
 2. Pick the prompt whose `target_card_kinds` match the card area you want to populate.
 3. Fill `company_domain`, `company_data`, `person_data`, `account_data`, `source_notes`, and `existing_pack_context` from user-provided or local pack context.
-4. Run the prompt with strict JSON output.
+4. Run the prompt with strict JSON output matching `output_contract.schema_ref`, or `output_contract.schema` when the prompt file was generated with inline schemas.
 5. Review `card_patches`, `gaps`, and `rejected_claims`.
 6. Copy only reviewed MDP entry fields into cards, then run `mdp --json validate` again.
 

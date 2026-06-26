@@ -30,6 +30,11 @@ pub(crate) enum Commands {
         template: String,
         #[arg(long, help = "Overwrite existing starter files")]
         force: bool,
+        #[arg(
+            long,
+            help = "Inline full JSON Schemas in prompt output contracts instead of compact schema refs"
+        )]
+        include_output_schemas: bool,
     },
     #[command(about = "Report local setup and pack health")]
     Doctor {

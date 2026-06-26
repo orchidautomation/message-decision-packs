@@ -1,4 +1,7 @@
-use crate::constants::{FORMAT_VERSION, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT};
+use crate::constants::{
+    FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+};
 use crate::models::{Card, CardKind, CardRef, Entry, Manifest, PersonaMapping, Policy, Provenance};
 use serde_json::{Value, json};
 
@@ -403,11 +406,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
     ]
 }
 
-pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
+pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str, Value)> {
     vec![
         (
             "normalize-prospect.yaml",
-            prospect_normalization_prompt_contract(),
+            prospect_normalization_prompt_contract(include_output_schemas),
         ),
         (
             "icp-persona.yaml",
@@ -455,6 +458,7 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
                     }
                 ]),
                 &[],
+                include_output_schemas,
             ),
         ),
         (
@@ -486,6 +490,7 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
                     }
                 ]),
                 &[],
+                include_output_schemas,
             ),
         ),
         (
@@ -517,6 +522,7 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
                     }
                 ]),
                 &[],
+                include_output_schemas,
             ),
         ),
         (
@@ -548,6 +554,7 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
                     }
                 ]),
                 &[],
+                include_output_schemas,
             ),
         ),
         (
@@ -579,6 +586,7 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
                     }
                 ]),
                 &[],
+                include_output_schemas,
             ),
         ),
         (
@@ -610,6 +618,7 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
                     }
                 ]),
                 &[],
+                include_output_schemas,
             ),
         ),
         (
@@ -641,6 +650,7 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
                     }
                 ]),
                 &[],
+                include_output_schemas,
             ),
         ),
         (
@@ -689,6 +699,7 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
                     }
                 ]),
                 &[],
+                include_output_schemas,
             ),
         ),
         (
@@ -720,6 +731,7 @@ pub(crate) fn starter_prompts() -> Vec<(&'static str, Value)> {
                     }
                 ]),
                 &["Need concrete source material before creating approved claims."],
+                include_output_schemas,
             ),
         ),
     ]
@@ -829,8 +841,8 @@ fn entry_with_evidence(
     }
 }
 
-fn prospect_normalization_prompt_contract() -> Value {
-    json!({
+fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value {
+    let mut prompt = json!({
         "format": PROMPT_FORMAT_VERSION,
         "id": "normalize-prospect-row",
         "title": "Normalize prospect row",
@@ -899,6 +911,7 @@ fn prospect_normalization_prompt_contract() -> Value {
                 "confidence": "unknown",
                 "provenance": []
             },
+            "schema_ref": PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
             "example": {
                 "contract": PROMPT_OUTPUT_CONTRACT,
                 "prompt_id": "normalize-prospect-row",
@@ -956,7 +969,11 @@ fn prospect_normalization_prompt_contract() -> Value {
                 "rejected_claims": []
             }
         }
-    })
+    });
+    if include_output_schemas {
+        prompt["output_contract"]["schema"] = prospect_normalization_output_schema();
+    }
+    prompt
 }
 
 fn prompt_contract(
@@ -968,8 +985,9 @@ fn prompt_contract(
     task_instruction: &str,
     card_patches: Value,
     gaps: &[&str],
+    include_output_schemas: bool,
 ) -> Value {
-    json!({
+    let mut prompt = json!({
         "format": PROMPT_FORMAT_VERSION,
         "id": id,
         "title": title,
@@ -1049,6 +1067,7 @@ fn prompt_contract(
                 "confidence": "unknown",
                 "provenance": []
             },
+            "schema_ref": PROMPT_CARD_PATCH_SCHEMA_REF,
             "example": {
                 "contract": PROMPT_OUTPUT_CONTRACT,
                 "prompt_id": id,
@@ -1066,6 +1085,301 @@ fn prompt_contract(
                 "rejected_claims": []
             }
         }
+    });
+    if include_output_schemas {
+        prompt["output_contract"]["schema"] = card_patch_output_schema(id, target_card_kinds);
+    }
+    prompt
+}
+
+fn prospect_normalization_output_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP prospect normalization output",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "contract",
+            "prompt_id",
+            "source_summary",
+            "normalized_prospect",
+            "normalization_trace",
+            "card_patches",
+            "gaps",
+            "rejected_claims"
+        ],
+        "properties": {
+            "contract": {
+                "const": PROMPT_OUTPUT_CONTRACT,
+                "description": "Stable MDP prompt output contract identifier."
+            },
+            "prompt_id": {
+                "const": "normalize-prospect-row",
+                "description": "The prompt contract that produced this response."
+            },
+            "source_summary": source_summary_output_schema(),
+            "normalized_prospect": normalized_prospect_output_schema(),
+            "normalization_trace": normalization_trace_output_schema(),
+            "card_patches": {
+                "type": "array",
+                "maxItems": 0,
+                "description": "Always empty for prospect normalization prompts; this prompt does not edit MDP cards."
+            },
+            "gaps": string_array_output_schema("Missing source data, weak inferences, or review questions that block confident fit/routing."),
+            "rejected_claims": rejected_claims_output_schema()
+        }
+    })
+}
+
+fn card_patch_output_schema(id: &str, target_card_kinds: &[&str]) -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": format!("MDP card patch output: {id}"),
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "contract",
+            "prompt_id",
+            "source_summary",
+            "card_patches",
+            "gaps",
+            "rejected_claims"
+        ],
+        "properties": {
+            "contract": {
+                "const": PROMPT_OUTPUT_CONTRACT,
+                "description": "Stable MDP prompt output contract identifier."
+            },
+            "prompt_id": {
+                "const": id,
+                "description": "The prompt contract that produced this response."
+            },
+            "source_summary": source_summary_output_schema(),
+            "card_patches": {
+                "type": "array",
+                "description": "Candidate MDP card entries grouped by target card. These require human review before being copied into cards.",
+                "items": card_patch_item_output_schema(target_card_kinds)
+            },
+            "gaps": string_array_output_schema("Missing source data, weak inferences, or review questions that block stronger candidate entries."),
+            "rejected_claims": rejected_claims_output_schema()
+        }
+    })
+}
+
+fn source_summary_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["company_domain", "company_name", "inputs_used", "confidence"],
+        "properties": {
+            "company_domain": {
+                "type": "string",
+                "description": "Supplied company domain, or N/A when absent."
+            },
+            "company_name": {
+                "type": "string",
+                "description": "Normalized company name from supplied input, or N/A when absent."
+            },
+            "person_name": {
+                "type": "string",
+                "description": "Supplied person name, or N/A when absent."
+            },
+            "person_title": {
+                "type": "string",
+                "description": "Supplied person title, or N/A when absent."
+            },
+            "account_name": {
+                "type": "string",
+                "description": "Supplied account name, or N/A when absent."
+            },
+            "inputs_used": string_array_output_schema("Input fields used to create this output."),
+            "confidence": {
+                "enum": ["high", "medium", "low", "unknown"],
+                "description": "Overall confidence in the source summary."
+            }
+        }
+    })
+}
+
+fn normalized_prospect_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "title", "company"],
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Person name from the supplied row. Do not invent a contact."
+            },
+            "title": {
+                "type": "string",
+                "description": "Person title from the supplied row. Do not invent a title."
+            },
+            "company": {
+                "type": "string",
+                "description": "Company or account name from the supplied row."
+            },
+            "source_kind": {
+                "type": "string",
+                "description": "Provider-neutral source marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example."
+            },
+            "synthetic": {
+                "type": "boolean",
+                "description": "True only for generated or fictional fixtures."
+            },
+            "linkedin_url": {"type": "string"},
+            "company_url": {"type": "string"},
+            "background": {
+                "type": "string",
+                "description": "Short source-backed context that may help fit or brief creation."
+            },
+            "trigger": {
+                "type": "string",
+                "description": "Source-backed trigger or reason this row may be relevant."
+            },
+            "persona": {
+                "type": "string",
+                "description": "Explicit row persona or pack-owned persona mapping. Omit when unsupported."
+            },
+            "segment": {
+                "type": "string",
+                "description": "Source-backed segment or account category."
+            },
+            "signals": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "title"],
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "source": {"type": "string"},
+                        "confidence": {"enum": ["high", "medium", "low", "unknown"]},
+                        "freshness": {"type": "string"},
+                        "state_as": {
+                            "type": "string",
+                            "description": "How to state the signal, such as supplied, observed, or hypothesis."
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn normalization_trace_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["persona", "fit_readiness", "preserved_raw_fields", "missing_required"],
+        "properties": {
+            "persona": {
+                "type": "object",
+                "description": "How persona was preserved, mapped, omitted, or marked review-needed."
+            },
+            "fit_readiness": {
+                "type": "object",
+                "description": "Booleans that tell the caller whether mdp fit has enough context."
+            },
+            "preserved_raw_fields": string_array_output_schema("Raw row fields preserved in the normalized prospect or trace."),
+            "missing_required": string_array_output_schema("Required prospect fields missing from the supplied row.")
+        }
+    })
+}
+
+fn card_patch_item_output_schema(target_card_kinds: &[&str]) -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["card_id", "kind", "entries"],
+        "properties": {
+            "card_id": {
+                "type": "string",
+                "description": "Target MDP card id for these candidate entries."
+            },
+            "kind": {
+                "enum": target_card_kinds,
+                "description": "Target MDP card kind; must be one of this prompt's target_card_kinds."
+            },
+            "entries": {
+                "type": "array",
+                "items": candidate_entry_output_schema()
+            }
+        }
+    })
+}
+
+fn candidate_entry_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "id",
+            "title",
+            "body",
+            "applies_to",
+            "evidence",
+            "avoid",
+            "confidence",
+            "provenance",
+            "status",
+            "notes"
+        ],
+        "properties": {
+            "id": {
+                "type": "string",
+                "description": "Stable kebab-case candidate entry id."
+            },
+            "title": {"type": "string"},
+            "body": {
+                "type": "string",
+                "description": "Candidate MDP entry body, or N/A when the source is too weak."
+            },
+            "applies_to": string_array_output_schema("Personas or operator roles this entry applies to."),
+            "evidence": string_array_output_schema("Source ids, source fields, URLs, or notes supporting this entry."),
+            "avoid": string_array_output_schema("Phrases, claims, audiences, or conditions this entry should avoid."),
+            "exact_paragraphs": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Optional exact paragraph count for output-rules entries."
+            },
+            "confidence": {
+                "enum": ["high", "medium", "low", "unknown"]
+            },
+            "provenance": string_array_output_schema("Specific source references that explain where this candidate came from."),
+            "status": {
+                "enum": ["candidate", "needs-review", "gap", "rejected"]
+            },
+            "notes": string_array_output_schema("Reviewer notes, caveats, or unresolved questions.")
+        }
+    })
+}
+
+fn rejected_claims_output_schema() -> Value {
+    json!({
+        "type": "array",
+        "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["claim", "reason"],
+            "properties": {
+                "claim": {"type": "string"},
+                "reason": {"type": "string"},
+                "source": {
+                    "type": "string",
+                    "description": "Source field or reference for the rejected claim, or N/A when absent."
+                }
+            }
+        }
+    })
+}
+
+fn string_array_output_schema(description: &str) -> Value {
+    json!({
+        "type": "array",
+        "description": description,
+        "items": {"type": "string"}
     })
 }
 

@@ -60,7 +60,7 @@ mod tests {
             .expect("system clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-pack-prompts-{nonce}"));
-        init_pack(&root, "Pack Prompts", "gtm", true).expect("pack should initialize");
+        init_pack(&root, "Pack Prompts", "gtm", true, false).expect("pack should initialize");
 
         let result = pack(&root).expect("pack should compile");
 

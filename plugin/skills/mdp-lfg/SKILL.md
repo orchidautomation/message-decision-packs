@@ -66,7 +66,7 @@ For most requests, run this loop:
 mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-8. If a prospect/source row is involved, normalize it through `$mdp-prospect-brief`, using `.mdp/prompts/normalize-prospect.yaml` when the pack provides it. Then run `mdp fit`, and produce the brief only when fit allows. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
+8. If a prospect/source row is involved, normalize it through `$mdp-prospect-brief`, using `.mdp/prompts/normalize-prospect.yaml` when the pack provides it. Treat the prompt's `output_contract.schema_ref` as the response contract; if it includes `output_contract.schema`, give that literal schema to the model or host. Use the example as a reference, not the contract. Then run `mdp fit`, and produce the brief only when fit allows. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
 
 ```bash
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
