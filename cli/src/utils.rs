@@ -44,7 +44,9 @@ pub(crate) fn prospect_haystack_with_persona(
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct PersonaResolution {
+    pub(crate) input: String,
     pub(crate) persona: String,
+    pub(crate) resolved: bool,
     pub(crate) source: String,
     pub(crate) confidence: String,
     pub(crate) matched_keywords: Vec<String>,
@@ -60,8 +62,14 @@ pub(crate) fn resolve_persona(manifest: &Manifest, prospect: &Prospect) -> Perso
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
+        if let Some(resolution) = resolve_pack_persona_label(manifest, persona, "prospect.persona")
+        {
+            return resolution;
+        }
         return PersonaResolution {
+            input: persona.to_string(),
             persona: persona.to_string(),
+            resolved: false,
             source: "prospect.persona".to_string(),
             confidence: "explicit".to_string(),
             matched_keywords: Vec::new(),
@@ -80,7 +88,9 @@ pub(crate) fn resolve_persona(manifest: &Manifest, prospect: &Prospect) -> Perso
             .collect();
         if !matched_keywords.is_empty() {
             return PersonaResolution {
+                input: prospect.title.clone(),
                 persona: mapping.persona.clone(),
+                resolved: true,
                 source: "manifest.persona_mappings.title_keywords".to_string(),
                 confidence: "medium".to_string(),
                 matched_keywords,
@@ -93,7 +103,9 @@ pub(crate) fn resolve_persona(manifest: &Manifest, prospect: &Prospect) -> Perso
 
     if let Some((persona, matched_keywords)) = builtin_persona_match(&prospect.title) {
         return PersonaResolution {
+            input: prospect.title.clone(),
             persona: persona.to_string(),
+            resolved: true,
             source: "builtin.title_keywords".to_string(),
             confidence: "low".to_string(),
             matched_keywords: matched_keywords.iter().map(|value| value.to_string()).collect(),
@@ -104,7 +116,9 @@ pub(crate) fn resolve_persona(manifest: &Manifest, prospect: &Prospect) -> Perso
     }
 
     PersonaResolution {
+        input: prospect.title.clone(),
         persona: "Operator".to_string(),
+        resolved: false,
         source: "fallback".to_string(),
         confidence: "none".to_string(),
         matched_keywords: Vec::new(),
@@ -112,6 +126,108 @@ pub(crate) fn resolve_persona(manifest: &Manifest, prospect: &Prospect) -> Perso
         needs_review: true,
         reason: "no explicit persona or pack-owned title mapping matched".to_string(),
     }
+}
+
+pub(crate) fn resolve_persona_label(manifest: &Manifest, persona: &str) -> PersonaResolution {
+    let input = persona.trim();
+    if let Some(resolution) = resolve_pack_persona_label(manifest, input, "input.persona") {
+        return resolution;
+    }
+
+    if let Some((persona, matched_keywords)) = builtin_persona_match(input) {
+        return PersonaResolution {
+            input: input.to_string(),
+            persona: persona.to_string(),
+            resolved: !persona.eq_ignore_ascii_case(input),
+            source: "builtin.title_keywords".to_string(),
+            confidence: "low".to_string(),
+            matched_keywords: matched_keywords.iter().map(|value| value.to_string()).collect(),
+            fit_usable: false,
+            needs_review: true,
+            reason: "input persona matched legacy fallback keywords; add persona_mappings to make this pack-owned".to_string(),
+        };
+    }
+
+    PersonaResolution {
+        input: input.to_string(),
+        persona: input.to_string(),
+        resolved: false,
+        source: "input.persona".to_string(),
+        confidence: "explicit".to_string(),
+        matched_keywords: Vec::new(),
+        fit_usable: true,
+        needs_review: false,
+        reason: "input persona was provided explicitly but did not match a pack-owned alias"
+            .to_string(),
+    }
+}
+
+pub(crate) fn routable_persona<'a>(
+    requested_persona: &'a str,
+    resolution: &'a PersonaResolution,
+) -> &'a str {
+    if resolution.fit_usable {
+        resolution.persona.as_str()
+    } else {
+        requested_persona
+    }
+}
+
+fn resolve_pack_persona_label(
+    manifest: &Manifest,
+    input: &str,
+    source: &str,
+) -> Option<PersonaResolution> {
+    for persona in manifest
+        .personas
+        .iter()
+        .chain(manifest.target_personas.iter())
+        .chain(manifest.operator_roles.iter())
+        .chain(
+            manifest
+                .persona_mappings
+                .iter()
+                .map(|mapping| &mapping.persona),
+        )
+    {
+        if persona.eq_ignore_ascii_case(input) {
+            return Some(PersonaResolution {
+                input: input.to_string(),
+                persona: persona.clone(),
+                resolved: persona != input,
+                source: source.to_string(),
+                confidence: "explicit".to_string(),
+                matched_keywords: Vec::new(),
+                fit_usable: true,
+                needs_review: false,
+                reason: "input matched a pack-owned persona".to_string(),
+            });
+        }
+    }
+
+    for mapping in &manifest.persona_mappings {
+        let matched_keywords: Vec<String> = mapping
+            .title_keywords
+            .iter()
+            .filter(|keyword| title_keyword_matches(input, keyword))
+            .cloned()
+            .collect();
+        if !matched_keywords.is_empty() {
+            return Some(PersonaResolution {
+                input: input.to_string(),
+                persona: mapping.persona.clone(),
+                resolved: !mapping.persona.eq_ignore_ascii_case(input),
+                source: "manifest.persona_mappings.title_keywords".to_string(),
+                confidence: "medium".to_string(),
+                matched_keywords,
+                fit_usable: true,
+                needs_review: false,
+                reason: "input matched pack-owned persona mapping".to_string(),
+            });
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -239,11 +355,60 @@ mod tests {
         let resolution = resolve_persona(&manifest, &prospect);
 
         assert_eq!(resolution.persona, "PMM");
+        assert_eq!(resolution.input, "Director of Demand Gen");
+        assert!(resolution.resolved);
         assert_eq!(
             resolution.source,
             "manifest.persona_mappings.title_keywords"
         );
         assert!(resolution.fit_usable);
         assert!(!resolution.needs_review);
+    }
+
+    #[test]
+    fn resolve_persona_label_uses_pack_owned_alias_mapping() {
+        let manifest = Manifest {
+            format: "mdp.v0".to_string(),
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            version: "0.1.0".to_string(),
+            description: None,
+            personas: vec!["GTM Engineering".to_string()],
+            target_personas: vec![],
+            operator_roles: vec![],
+            supported_channels: vec![],
+            persona_mappings: vec![crate::models::PersonaMapping {
+                persona: "GTM Engineering".to_string(),
+                title_keywords: vec!["growth engineer".to_string()],
+            }],
+            cards: vec![],
+            policy: crate::models::Policy {
+                progressive_disclosure: true,
+                load_manifest_first: true,
+                max_cards_per_route: 12,
+                json_contract: "mdp.cli.v0".to_string(),
+                no_auth_required: true,
+            },
+            provenance: crate::models::Provenance {
+                owner: "test".to_string(),
+                created_by: "test".to_string(),
+                notes: vec![],
+            },
+        };
+
+        let resolution = resolve_persona_label(&manifest, "Growth Engineer");
+
+        assert_eq!(resolution.input, "Growth Engineer");
+        assert_eq!(resolution.persona, "GTM Engineering");
+        assert!(resolution.resolved);
+        assert_eq!(
+            resolution.source,
+            "manifest.persona_mappings.title_keywords"
+        );
+        assert!(resolution.fit_usable);
+        assert_eq!(
+            routable_persona("Growth Engineer", &resolution),
+            "GTM Engineering"
+        );
     }
 }

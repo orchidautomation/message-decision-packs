@@ -37,7 +37,7 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 mdp sample-leads --dir . --persona "<persona>" --job "<channel> outbound copy" --count 3 --format yaml
 ```
 
-Treat these as synthetic fixtures only. For each fixture row, evaluate route, fit, brief context, and `check-claims`; draft only against `safe_personalization` and `known_gaps`, and never treat the fixture as a real prospect.
+Treat these as synthetic examples only. They should have `source_kind: synthetic-example`, `synthetic: true`, and `do_not_contact: true`. For each fixture row, evaluate route, fit, brief context, and `check-claims`; draft only against `safe_personalization` and `known_gaps`, and never treat the fixture as a real prospect.
 
 5. For prospect cases, run:
 

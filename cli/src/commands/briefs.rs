@@ -1,7 +1,7 @@
 use crate::models::Prospect;
 use crate::pack_io::{read_manifest, read_prospect};
 use crate::routing::{entry_context, select_cards};
-use crate::utils::resolve_persona;
+use crate::utils::{resolve_persona, resolve_persona_label, routable_persona};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -14,7 +14,9 @@ pub(crate) fn emit_brief(
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let job_text = job.unwrap_or("unspecified GTM decision task");
-    let selected = select_cards(&manifest, Some(persona), Some(job_text));
+    let persona_resolution = resolve_persona_label(&manifest, persona);
+    let resolved_persona = routable_persona(persona, &persona_resolution);
+    let selected = select_cards(&manifest, Some(resolved_persona), Some(job_text));
     let load_order: Vec<String> = selected
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
@@ -22,10 +24,14 @@ pub(crate) fn emit_brief(
     Ok(json!({
         "contract": "mdp.brief.v0",
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
-        "inputs": {"persona": persona, "motion": motion, "job": job_text},
+        "persona": resolved_persona,
+        "requested_persona": persona,
+        "persona_resolution": persona_resolution,
+        "inputs": {"persona": resolved_persona, "requested_persona": persona, "motion": motion, "job": job_text},
         "required_load_order": load_order,
         "decision_trace": [
             {"step": "load_manifest", "reason": "discover pack metadata and card index"},
+            {"step": "resolve_persona", "reason": "map aliases through pack-owned persona mappings when available"},
             {"step": "route_cards", "reason": "preserve progressive disclosure"},
             {"step": "apply_avoid_rules", "reason": "prevent category drift and unsupported claims"},
             {"step": "apply_output_rules", "reason": "preserve global style and output-structure constraints"},
@@ -325,6 +331,34 @@ mod tests {
                 .expect("entries array")
                 .len(),
             0
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn emit_brief_resolves_manifest_persona_aliases() {
+        let root = temp_pack("emit-brief-persona-alias");
+
+        let result = emit_brief(
+            &root,
+            "Growth Engineer",
+            None,
+            Some("agent brief for enriched row"),
+        )
+        .expect("emit brief should succeed");
+
+        assert_eq!(result["requested_persona"], "Growth Engineer");
+        assert_eq!(result["persona"], "GTM Engineering");
+        assert_eq!(result["inputs"]["requested_persona"], "Growth Engineer");
+        assert_eq!(result["inputs"]["persona"], "GTM Engineering");
+        assert_eq!(result["persona_resolution"]["resolved"], true);
+        assert!(
+            result["required_load_order"]
+                .as_array()
+                .expect("load order should be an array")
+                .iter()
+                .any(|path| path == ".mdp/cards/fit-rules.yaml")
         );
 
         let _ = std::fs::remove_dir_all(root);
