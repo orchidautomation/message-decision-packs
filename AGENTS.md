@@ -23,6 +23,16 @@ Do not describe MDP as:
 - `plugin/assets/templates/basic`: neutral example pack.
 - `docs/`: distribution and design notes.
 
+## Linear Coordination
+
+- Default Linear team: `MDP`.
+- Team overview: https://linear.app/orchid-automation/team/MDP/overview
+- Issue prefix: `MDP`.
+
+Use the MDP Linear team for this repo's bugs, feature work, planning, and closeout. When work is tied to a Linear issue, include the issue ID in branch names, PR titles/descriptions, and relevant comments, for example `MDP-123`.
+
+This is a public-facing OSS repo. Keep public GitHub references limited to issue identifiers, public links, and sanitized summaries; do not expose private Linear discussion details, customer data, raw transcripts, tokens, or local-only paths in commits, PRs, or public docs.
+
 ## Feature Change Hygiene
 
 When adding, changing, or removing MDP behavior, update the matching agent-facing skill instructions in `plugin/skills/` in the same change. The CLI contract, starter/template pack, docs, and skills should not drift apart.
