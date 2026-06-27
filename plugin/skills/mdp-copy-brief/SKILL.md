@@ -45,6 +45,8 @@ If the user only needs a route-level writing contract, build a persona/job brief
 mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
+Route-style commands resolve pack-owned persona aliases before routing. Check `requested_persona` and `persona_resolution` when the user supplied an alias.
+
 4. Read `data.context.entries` first. Open `data.context.full_card_required` paths only when present. If `draft_status` is `no-draft`, surface the fit decision and do not draft. If the brief says the prospect is synthetic, treat it as a demo or fixture lead.
 5. Build a copy brief with:
 

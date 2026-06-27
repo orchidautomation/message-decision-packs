@@ -69,7 +69,7 @@ For outbound-copy testing without a real or intentionally sanitized prospect row
 mdp sample-leads --dir ./mdp-demo --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
 ```
 
-These rows are deterministic synthetic fixtures with `source_kind: synthetic-fixture`, `synthetic: true`, and `do_not_contact: true`. Route, fit, and brief each fixture before drafting. Use only `safe_personalization` and `known_gaps` for personalization assumptions, then run `check-claims`. Never treat fixture leads as real prospects.
+These rows are deterministic synthetic example fixtures with `source_kind: synthetic-example`, `synthetic: true`, and `do_not_contact: true`. Route, fit, and brief each fixture before drafting. Use only `safe_personalization` and `known_gaps` for personalization assumptions, then run `check-claims`. Never treat fixture leads as real prospects.
 
 ## Use A Prospect Or Source Row
 
@@ -88,6 +88,8 @@ mdp --json fit --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json
 ```
 
 If a prospect row has no explicit `persona`, the CLI can use pack-owned `.mdp/manifest.yaml` `persona_mappings` to map title keywords to personas. Unmapped title fallbacks are reported as low-confidence and still require review.
+
+Direct persona/job commands such as `route`, `emit-brief`, and `sample-leads` use the same pack-owned persona mappings. JSON output includes `requested_persona` and `persona_resolution` when an alias is resolved.
 
 If fit returns `disqualified` or `insufficient-context`, do not draft unless the user explicitly overrides.
 

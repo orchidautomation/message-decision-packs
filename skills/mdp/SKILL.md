@@ -103,7 +103,7 @@ Use this workflow:
 5. Run `mdp check-claims` before treating copy as ready.
 6. Never treat fixture leads as real prospects.
 
-Fixture leads are `source_kind: synthetic-fixture`, `synthetic: true`, and `do_not_contact: true`. Do not enrich, research, upload, sequence, send to, or imply they represent real people or accounts.
+Fixture leads are `source_kind: synthetic-example`, `synthetic: true`, and `do_not_contact: true`. Do not enrich, research, upload, sequence, send to, or imply they represent real people or accounts.
 
 Run fit first and stop on `disqualified` or `insufficient-context` unless the user explicitly overrides. If the user only asked whether a row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, and gaps instead of drafting or creating a parallel evaluation.
 
@@ -127,6 +127,8 @@ Read `data.context.entries` first. Open `data.context.full_card_required` paths 
 mdp --json --summary route --entries --eval-fixture --dir . --persona "VP Finance" --job "linkedin outbound copy"
 mdp --json emit-brief --dir . --persona "VP Finance" --job "linkedin outbound copy"
 ```
+
+Direct persona/job commands resolve pack-owned persona aliases before routing. Check `requested_persona` and `persona_resolution` before drafting so alias resolution stays visible.
 
 Use `load_order` or `required_load_order` as the progressive-disclosure contract.
 

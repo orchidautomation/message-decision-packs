@@ -1,7 +1,9 @@
 use crate::pack_io::{read_card_by_id, read_manifest, read_prospect};
 use crate::routing::{entry_context, entry_route, select_cards};
 use crate::utils::slugify;
-use crate::utils::{prospect_haystack_with_persona, resolve_persona};
+use crate::utils::{
+    prospect_haystack_with_persona, resolve_persona, resolve_persona_label, routable_persona,
+};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::fs;
@@ -15,27 +17,33 @@ pub(crate) fn route(
     include_eval_fixture: bool,
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
-    let selected = select_cards(&manifest, Some(persona), Some(job));
+    let persona_resolution = resolve_persona_label(&manifest, persona);
+    let resolved_persona = routable_persona(persona, &persona_resolution);
+    let selected = select_cards(&manifest, Some(resolved_persona), Some(job));
     let load_order: Vec<String> = selected
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
         .collect();
     let mut payload = json!({
-        "persona": persona,
+        "persona": resolved_persona,
+        "requested_persona": persona,
+        "persona_resolution": persona_resolution,
         "job": job,
         "route": selected,
         "decision_trace": [
             "manifest loaded",
-            "persona matched against card metadata",
+            "persona resolved through pack-owned mappings when available",
+            "resolved persona matched against card metadata",
             "job keywords matched against card descriptions and tags",
             "base policy cards included for guardrails"
         ],
         "load_order": load_order
     });
     if include_entries || include_eval_fixture {
-        let routed_entries = entry_route(root, &manifest, persona, job)?;
+        let routed_entries = entry_route(root, &manifest, resolved_persona, job)?;
         if include_eval_fixture {
-            payload["eval_fixture"] = eval_fixture(persona, job, &payload, &routed_entries);
+            payload["eval_fixture"] =
+                eval_fixture(persona, resolved_persona, job, &payload, &routed_entries);
         }
         if include_entries {
             payload["entry_route"] = json!(routed_entries);
@@ -44,7 +52,13 @@ pub(crate) fn route(
     Ok(payload)
 }
 
-fn eval_fixture(persona: &str, job: &str, route_output: &Value, routed_entries: &Value) -> Value {
+fn eval_fixture(
+    requested_persona: &str,
+    persona: &str,
+    job: &str,
+    route_output: &Value,
+    routed_entries: &Value,
+) -> Value {
     let expected_titles: Vec<Value> = routed_entries["matches"]
         .as_array()
         .into_iter()
@@ -57,6 +71,7 @@ fn eval_fixture(persona: &str, job: &str, route_output: &Value, routed_entries: 
         "id": slugify(&format!("{persona}-{job}")),
         "command": "route",
         "persona": persona,
+        "requested_persona": requested_persona,
         "job": job,
         "expect_load_order_contains": route_output["load_order"],
         "expect_entry_titles_contains": expected_titles,
@@ -227,6 +242,8 @@ pub(crate) fn check_claims(
     let mut constraint_warnings = Vec::new();
     let mut unchecked_constraints = Vec::new();
     let unsupported_claims = unsupported_claims(&lower, &approved_claim_context);
+    let mut route_persona_resolution = Value::Null;
+    let mut resolved_persona_for_output: Option<String> = None;
 
     for entry in &claims_card.entries {
         let title = entry.title.to_lowercase();
@@ -260,7 +277,11 @@ pub(crate) fn check_claims(
     }
     if let (Some(persona), Some(job)) = (persona, job) {
         let manifest = read_manifest(root)?;
-        let context = entry_context(root, &manifest, persona, job, true)?;
+        let persona_resolution = resolve_persona_label(&manifest, persona);
+        let resolved_persona = routable_persona(persona, &persona_resolution);
+        resolved_persona_for_output = Some(resolved_persona.to_string());
+        let context = entry_context(root, &manifest, resolved_persona, job, true)?;
+        route_persona_resolution = serde_json::to_value(&persona_resolution)?;
         collect_context_constraint_hits(
             &mut guardrail_hits,
             &mut constraint_warnings,
@@ -278,8 +299,10 @@ pub(crate) fn check_claims(
             "subject": subject.is_some(),
             "route_scoped": persona.is_some() && job.is_some(),
             "persona": persona,
+            "resolved_persona": resolved_persona_for_output,
             "job": job
         },
+        "persona_resolution": route_persona_resolution,
         "matched_claims": matched_claims,
         "claim_gaps": claim_gaps,
         "guardrail_hits": guardrail_hits,
@@ -936,6 +959,50 @@ mod tests {
         assert_eq!(initial_email["constraints"]["word_count"]["min"], 50);
         assert_eq!(initial_email["constraints"]["subject_words"]["max"], 6);
         assert_eq!(initial_email["constraints"]["max_questions"], 1);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn route_resolves_manifest_persona_alias_before_card_and_entry_routing() {
+        let root = temp_pack("route-persona-alias");
+
+        let result = route(
+            &root,
+            "Growth Engineer",
+            "agent brief for enriched row",
+            true,
+            true,
+        )
+        .expect("route should succeed");
+        let ids: Vec<&str> = result["route"]
+            .as_array()
+            .expect("route array")
+            .iter()
+            .filter_map(|entry| entry["id"].as_str())
+            .collect();
+        let titles: Vec<&str> = result["entry_route"]["matches"]
+            .as_array()
+            .expect("entry matches array")
+            .iter()
+            .filter_map(|entry| entry["title"].as_str())
+            .collect();
+
+        assert_eq!(result["requested_persona"], "Growth Engineer");
+        assert_eq!(result["persona"], "GTM Engineering");
+        assert_eq!(
+            result["persona_resolution"]["source"],
+            "manifest.persona_mappings.title_keywords"
+        );
+        assert_eq!(result["persona_resolution"]["resolved"], true);
+        assert!(ids.contains(&"fit-rules"));
+        assert!(ids.contains(&"signals"));
+        assert!(titles.contains(&"Agent brief"));
+        assert_eq!(
+            result["eval_fixture"]["requested_persona"],
+            "Growth Engineer"
+        );
+        assert_eq!(result["eval_fixture"]["persona"], "GTM Engineering");
 
         let _ = std::fs::remove_dir_all(root);
     }

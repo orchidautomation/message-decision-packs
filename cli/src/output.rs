@@ -50,6 +50,8 @@ fn summarize(command: &str, data: &Value) -> Value {
         }),
         "route" => json!({
             "persona": data["persona"],
+            "requested_persona": data["requested_persona"],
+            "persona_resolution": data["persona_resolution"],
             "job": data["job"],
             "card_count": array_len(&data["load_order"]),
             "load_order": data["load_order"],
@@ -60,6 +62,8 @@ fn summarize(command: &str, data: &Value) -> Value {
         "sample-leads" => json!({
             "contract": data["contract"],
             "persona": data["inputs"]["persona"],
+            "requested_persona": data["inputs"]["requested_persona"],
+            "persona_resolution": data["persona_resolution"],
             "job": data["inputs"]["job"],
             "count": array_len(&data["fixture_leads"]),
             "seed": data["inputs"]["seed"],
@@ -97,6 +101,8 @@ fn summarize(command: &str, data: &Value) -> Value {
         "emit-brief" => json!({
             "contract": data["contract"],
             "persona": data["inputs"]["persona"],
+            "requested_persona": data["inputs"]["requested_persona"],
+            "persona_resolution": data["persona_resolution"],
             "job": data["inputs"]["job"],
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
@@ -267,7 +273,8 @@ mod tests {
             &json!({
                 "contract": "mdp.sample-leads.v0",
                 "inputs": {"persona": "PMM", "job": "initial email outbound copy", "seed": 7},
-                "fixture_notice": {"source_kind": "synthetic-fixture", "synthetic": true, "do_not_contact": true},
+                "persona_resolution": {"persona": "PMM", "source": "input.persona"},
+                "fixture_notice": {"source_kind": "synthetic-example", "synthetic": true, "do_not_contact": true},
                 "route": {"load_order": [".mdp/cards/personas.yaml"]},
                 "fixture_leads": [
                     {"id": "fixture-lead-1"},
@@ -278,7 +285,7 @@ mod tests {
 
         assert_eq!(summary["contract"], "mdp.sample-leads.v0");
         assert_eq!(summary["count"], 2);
-        assert_eq!(summary["source_kind"], "synthetic-fixture");
+        assert_eq!(summary["source_kind"], "synthetic-example");
         assert_eq!(summary["do_not_contact"], true);
         assert_eq!(summary["route_card_count"], 1);
     }

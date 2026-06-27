@@ -26,7 +26,7 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
         operator_roles: vec!["GTM Engineering".to_string(), "PMM".to_string()],
         supported_channels: vec!["linkedin".to_string(), "email".to_string(), "call-prep".to_string(), "agent-brief".to_string()],
         persona_mappings: vec![
-            persona_mapping("GTM Engineering", &["gtm engineering", "revops", "revenue operations", "sales ops", "sales operations", "growth ops"]),
+            persona_mapping("GTM Engineering", &["gtm engineering", "gtm engineer", "growth engineer", "growth engineering", "revops", "revenue operations", "sales ops", "sales operations", "growth ops"]),
             persona_mapping("PMM", &["pmm", "product marketing", "demand gen", "demand generation", "growth marketing", "messaging", "positioning"]),
             persona_mapping("PM", &["product manager", "head of product", "vp product", "chief product officer"]),
         ],

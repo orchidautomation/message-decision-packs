@@ -1,10 +1,12 @@
 use crate::pack_io::read_manifest;
 use crate::routing::{entry_route, select_cards};
+use crate::utils::{resolve_persona_label, routable_persona};
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::path::Path;
 
 const FIXTURE_CONTRACT: &str = "mdp.sample-leads.v0";
+const FIXTURE_SOURCE_KIND: &str = "synthetic-example";
 
 pub(crate) fn sample_leads(
     root: &Path,
@@ -18,12 +20,14 @@ pub(crate) fn sample_leads(
     }
 
     let manifest = read_manifest(root)?;
-    let route = select_cards(&manifest, Some(persona), Some(job));
+    let persona_resolution = resolve_persona_label(&manifest, persona);
+    let resolved_persona = routable_persona(persona, &persona_resolution);
+    let route = select_cards(&manifest, Some(resolved_persona), Some(job));
     let load_order: Vec<Value> = route
         .iter()
         .filter_map(|card| card["path"].as_str().map(|path| json!(path)))
         .collect();
-    let entries = entry_route(root, &manifest, persona, job)?;
+    let entries = entry_route(root, &manifest, resolved_persona, job)?;
     let matched_entry_titles: Vec<Value> = entries["matches"]
         .as_array()
         .into_iter()
@@ -32,21 +36,32 @@ pub(crate) fn sample_leads(
         .take(6)
         .collect();
     let fixture_leads: Vec<Value> = (0..count)
-        .map(|index| fixture_lead(persona, job, seed, index, &matched_entry_titles))
+        .map(|index| {
+            fixture_lead(
+                persona,
+                resolved_persona,
+                job,
+                seed,
+                index,
+                &matched_entry_titles,
+            )
+        })
         .collect();
 
     Ok(json!({
         "contract": FIXTURE_CONTRACT,
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
         "inputs": {
-            "persona": persona,
+            "persona": resolved_persona,
+            "requested_persona": persona,
             "job": job,
             "count": count,
             "seed": seed,
             "deterministic": true
         },
+        "persona_resolution": persona_resolution,
         "fixture_notice": {
-            "source_kind": "synthetic-fixture",
+            "source_kind": FIXTURE_SOURCE_KIND,
             "synthetic": true,
             "do_not_contact": true,
             "guidance": "Fake fixture prospects for local outbound-copy testing only. Do not enrich, research, upload, sequence, send to, or treat them as real people or accounts."
@@ -69,6 +84,7 @@ pub(crate) fn sample_leads(
 }
 
 fn fixture_lead(
+    requested_persona: &str,
     persona: &str,
     job: &str,
     seed: u64,
@@ -152,10 +168,11 @@ fn fixture_lead(
         "name": name,
         "title": title,
         "company": company,
-        "source_kind": "synthetic-fixture",
+        "source_kind": FIXTURE_SOURCE_KIND,
         "synthetic": true,
         "do_not_contact": true,
         "persona": persona,
+        "requested_persona": requested_persona,
         "segment": "agent-assisted GTM",
         "trigger": focus,
         "background": observed_context,
@@ -166,7 +183,7 @@ fn fixture_lead(
         "safe_personalization": safe_personalization,
         "signals": [
             {
-                "id": "synthetic-mdp-fixture",
+                "id": "synthetic-mdp-example",
                 "title": focus,
                 "source": source_signal,
                 "confidence": "fixture-only",
@@ -254,12 +271,38 @@ mod tests {
 
         assert_eq!(result["contract"], FIXTURE_CONTRACT);
         assert_eq!(rows.len(), 3);
-        assert_eq!(rows[0]["source_kind"], "synthetic-fixture");
+        assert_eq!(result["fixture_notice"]["source_kind"], "synthetic-example");
+        assert_eq!(rows[0]["source_kind"], "synthetic-example");
         assert_eq!(rows[0]["synthetic"], true);
         assert_eq!(rows[0]["do_not_contact"], true);
         assert!(rows[0]["safe_personalization"].is_array());
         assert!(rows[0]["known_gaps"].is_array());
         assert!(result["route"]["load_order"].is_array());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sample_leads_resolves_persona_aliases_before_routing() {
+        let root = temp_pack("persona-alias");
+
+        let result = sample_leads(
+            &root,
+            "Growth Engineer",
+            "agent brief for enriched row",
+            2,
+            0,
+        )
+        .expect("sample leads should generate");
+
+        assert_eq!(result["inputs"]["requested_persona"], "Growth Engineer");
+        assert_eq!(result["inputs"]["persona"], "GTM Engineering");
+        assert_eq!(result["persona_resolution"]["resolved"], true);
+        assert_eq!(result["fixture_leads"][0]["persona"], "GTM Engineering");
+        assert_eq!(
+            result["fixture_leads"][0]["requested_persona"],
+            "Growth Engineer"
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
