@@ -1,0 +1,70 @@
+id: claims
+kind: claims
+title: Approved claims
+description: Claims agents may use when source context supports them.
+personas:
+- GTM Engineer
+- PMM
+- RevOps
+- Founder
+- Agency Operator
+tags:
+- claim
+- proof
+- evidence
+entries:
+- id: mdp-decision-context
+  title: MDP decision context
+  body: MDP is a local/offline standard, CLI, and plugin for modular GTM messaging decision context.
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - RevOps
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: mdp-stores-cards
+  title: MDP stores modular cards
+  body: An MDP pack can store ICP, personas, fit rules, signals, pains, positioning, claims, hooks, channel policies, CTA rules, avoid rules, output rules, objections, gaps, source ledgers, prompt contracts, and eval fixtures.
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - Agency Operator
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: mdp-cli-workflow
+  title: MDP CLI workflow
+  body: The CLI can validate packs, route jobs to bounded cards, evaluate prospect fit, build briefs with routed context, check claims and guardrails, list gaps, and run eval fixtures.
+  applies_to:
+  - GTM Engineer
+  - RevOps
+  - PMM
+  evidence:
+  - mdp-readme
+  - mdp-getting-started
+  avoid: []
+- id: mdp-no-draft-gate
+  title: MDP no-draft gate
+  body: MDP fit and brief flows can return disqualified or insufficient-context states so agents stop before drafting when source context is missing or disqualifying.
+  applies_to:
+  - GTM Engineer
+  - RevOps
+  - PMM
+  evidence:
+  - mdp-conceptual-flow
+  avoid: []
+- id: mdp-not-execution-system
+  title: MDP not execution system
+  body: MDP stops at local pack, route, fit, brief, claim-check, gaps, and eval contracts. Sending, scheduling, enrichment, CRM updates, scraping, sequencing, and downstream automation belong to separate systems.
+  applies_to:
+  - GTM Engineer
+  - RevOps
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-readme
+  - mdp-what-this-repo-is
+  avoid: []

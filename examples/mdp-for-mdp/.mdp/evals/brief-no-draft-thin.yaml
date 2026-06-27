@@ -1,0 +1,15 @@
+id: brief-no-draft-thin
+command: brief
+channel: linkedin
+expect_draft_status: no-draft
+prospect:
+  name: Jordan Unknown
+  title: Unknown
+  company: ThinContext Co
+  source_kind: synthetic-example
+  synthetic: true
+  company_url: https://example.org
+  background: Synthetic row intentionally lacks source evidence.
+  trigger: ""
+  segment: ""
+  signals: []

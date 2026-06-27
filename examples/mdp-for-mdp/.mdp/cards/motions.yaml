@@ -1,0 +1,51 @@
+id: motions
+kind: motions
+title: Motions
+description: Approved ways to use the MDP pack.
+personas: []
+tags:
+- motion
+- workflow
+- handoff
+entries:
+- id: education-demo
+  title: Education demo
+  body: Use this pack to show how a source row becomes normalized context, how fit blocks or allows drafting, how routing loads bounded cards, and how claims and evals keep behavior testable.
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - RevOps
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-getting-started
+  avoid: []
+- id: pack-authoring
+  title: Pack authoring
+  body: Start with source facts and gaps, then write personas, positioning, fit rules, claims, avoid rules, output rules, CTAs, channel policy, copy patterns, and evals as separate reviewable cards.
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - Agency Operator
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: prospect-normalization
+  title: Prospect normalization
+  body: Normalize messy supplied rows into provider-neutral prospect JSON, preserve raw evidence and uncertainty, run `mdp fit`, and only run `mdp brief --context` when the fit gate allows it.
+  applies_to:
+  - RevOps
+  - GTM Engineer
+  evidence:
+  - mdp-conceptual-flow
+  avoid: []
+- id: execution-handoff
+  title: Execution handoff
+  body: If downstream execution is needed, hand off the fit decision, brief, loaded cards, gaps, and boundaries to a separate approved system. Do not imply MDP performed that action.
+  applies_to:
+  - RevOps
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-readme
+  avoid: []

@@ -28,7 +28,10 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 For the first-use walkthrough, see [Getting Started](docs/getting-started.md).
 
-Canonical example: [Profound GTM Vetting](examples/profound-gtm-vetting/README.md) shows a complete public-source pack for how a company like Profound can codify ICP, target personas, fit rules, hooks, CTAs, guardrails, output rules, source-backed claims, prospect brief generation, gaps, and evals before any downstream agent drafts or executes outreach.
+Canonical examples:
+
+- [MDP for MDP](examples/mdp-for-mdp/README.md) is the fastest public demo for explaining what a pack stores, how messy source rows become normalized context, why no-draft states matter, and how route, fit, brief, claim-check, gaps, and eval commands work together.
+- [Profound GTM Vetting](examples/profound-gtm-vetting/README.md) shows a complete public-source pack for how a company like Profound can codify ICP, target personas, fit rules, hooks, CTAs, guardrails, output rules, source-backed claims, prospect brief generation, gaps, and evals before any downstream agent drafts or executes outreach.
 
 The Profound example also includes a runnable [Flue webhook agent scaffold](examples/profound-gtm-vetting/flue-webhook-agent/README.md) that accepts a webhook-style prospect row, writes ignored local scratch, runs `mdp fit` and `mdp brief --context`, and returns a draft contract or model draft without sending or updating external systems.
 

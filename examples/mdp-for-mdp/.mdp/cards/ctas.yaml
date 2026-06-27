@@ -1,0 +1,60 @@
+id: ctas
+kind: ctas
+title: CTA policy
+description: Ask boundaries and reply paths for MDP education.
+personas: []
+tags:
+- cta
+- ask
+- reply
+- outbound
+entries:
+- id: compare-current-workflow
+  title: Compare current workflow
+  body: Ask whether it would be useful to compare the current prompt or row-to-copy workflow against a pack that validates fit, routes context, checks claims, and preserves gaps.
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - Founder
+  evidence:
+  - mdp-1-education-thesis
+  avoid: []
+- id: owner-routing-question
+  title: Owner routing question
+  body: When ownership is unclear, ask who owns messaging source truth, GTM agent workflow, RevOps handoffs, or campaign quality. Do not assume the recipient is the only buyer.
+  applies_to:
+  - RevOps
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-1-education-thesis
+  avoid: []
+- id: calendar-second
+  title: Calendar second
+  body: Do not lead with a calendar ask in initial outreach. First ask for relevance, ownership, or a quick comparison unless the user explicitly asks for a meeting-oriented draft.
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - RevOps
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-1-education-thesis
+  avoid:
+  - book a meeting
+  - grab time
+- id: no-false-urgency
+  title: No false urgency
+  body: Do not imply urgency, scarcity, a pending deadline, or prior engagement unless the source row proves it.
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - RevOps
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-conceptual-flow
+  avoid:
+  - urgent
+  - last chance
+  - final notice

@@ -1,0 +1,87 @@
+id: fit-rules
+kind: fit-rules
+title: Fit rules
+description: Qualification, insufficient-context, and no-message rules for MDP education and adoption conversations.
+personas:
+- GTM Engineer
+- PMM
+- RevOps
+- Founder
+- Agency Operator
+tags:
+- fit
+- gate
+- no-draft
+entries:
+- id: good-fit-agent-assisted-gtm
+  title: "Good fit: agent-assisted GTM workflow"
+  body: Use when the person is building, governing, or operating agent-assisted GTM work and needs fit rules, source context, approved claims, CTAs, avoid rules, or output rules to be reusable across agents.
+  applies_to:
+  - GTM Engineer
+  - Founder
+  evidence:
+  - mdp-readme
+  - mdp-1-education-thesis
+  avoid: []
+- id: good-fit-message-governance
+  title: "Good fit: message governance"
+  body: Use when the person owns positioning, claims, objections, campaign messaging, sales enablement, or channel rules and needs agents to draft from approved context instead of improvising.
+  applies_to:
+  - PMM
+  - Agency Operator
+  evidence:
+  - mdp-1-education-thesis
+  avoid: []
+- id: good-fit-source-row-normalization
+  title: "Good fit: source row normalization"
+  body: Use when the person works with CRM exports, spreadsheets, CSV rows, research notes, Clay or Deepline-style rows, or other messy upstream inputs and needs fit to run before drafting.
+  applies_to:
+  - RevOps
+  - GTM Engineer
+  evidence:
+  - mdp-conceptual-flow
+  avoid: []
+- id: no-source-no-copy
+  title: No source, no copy
+  body: If the row lacks persona, segment, trigger, signals, or source context, return insufficient-context and surface missing fields instead of drafting.
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - RevOps
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-conceptual-flow
+  avoid:
+  - no source
+  - no trigger
+  - unknown persona
+  - missing signals
+- id: bad-fit-execution-request
+  title: "Bad fit: execution request"
+  body: Disqualify rows that ask MDP itself to scrape, enrich, sequence, auto-send, update CRM, write to a sequencer, or otherwise perform execution outside the decision-context layer.
+  applies_to:
+  - GTM Engineer
+  - RevOps
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-readme
+  avoid:
+  - scrape
+  - enrich leads
+  - sequence prospects
+  - auto-send
+  - update CRM
+  - write to sequencer
+- id: bad-fit-generic-copy-only
+  title: "Bad fit: generic copy-only ask"
+  body: If the only ask is generic copy generation and there is no durable messaging decision, source fidelity, fit gate, or reusable agent handoff problem, MDP may be more structure than the task needs.
+  applies_to:
+  - Founder
+  - PMM
+  evidence:
+  - mdp-what-this-repo-is
+  avoid:
+  - just write copy
+  - generic prompt
