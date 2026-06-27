@@ -1,0 +1,77 @@
+format: mdp.sources.v0
+purpose: Source ledger for the MDP-for-MDP example. Keep source facts, interpretations, and gaps separate so agents do not turn education copy into unsupported product claims.
+rules:
+- Use direct_claims only for facts stated by a public repo doc or sanitized planning summary.
+- Use interpretations for how a claim may be used in messaging.
+- Preserve missing proof in gaps instead of inventing case studies, performance numbers, integrations, or adoption claims.
+- Do not include private customer data, raw transcripts, local browser data, or sensitive local files.
+sources:
+- id: mdp-readme
+  kind: repo-doc
+  locator: README.md
+  confidence: high
+  freshness: repo-current
+  direct_claims:
+  - MDP is a modular, agent-readable GTM messaging pack format with a local CLI and plugin.
+  - A pack gives agents a manifest, source ledger, routed cards, prompt contracts, fit, route, brief, claim-check, gaps, and eval workflows.
+  - MDP is a decision/context layer, not execution infrastructure.
+  interpretations:
+  - Use this source for the core category definition and command walkthrough.
+  gaps:
+  - Public README does not prove downstream revenue, reply-rate, or adoption outcomes.
+- id: mdp-what-this-repo-is
+  kind: repo-doc
+  locator: docs/what-this-repo-is.md
+  confidence: high
+  freshness: repo-current
+  direct_claims:
+  - MDP stores modular GTM messaging context in files instead of relying on one large prompt.
+  - MDP preserves boundaries between decision context and external execution systems.
+  interpretations:
+  - Use this source for boundary language and product framing.
+  gaps: []
+- id: mdp-conceptual-flow
+  kind: repo-doc
+  locator: docs/conceptual-decision-flow.md
+  confidence: high
+  freshness: repo-current
+  direct_claims:
+  - MDP routes from messy source row to normalized prospect, fit gate, routed context, and bounded brief.
+  - Insufficient or disqualified rows should stop before drafting.
+  interpretations:
+  - Use this source for the messy-row, fit, route, and no-draft story.
+  gaps: []
+- id: mdp-getting-started
+  kind: repo-doc
+  locator: docs/getting-started.md
+  confidence: high
+  freshness: repo-current
+  direct_claims:
+  - Users can install MDP, initialize a pack, validate it, route context, run fit, build a brief, check claims, and run evals locally.
+  interpretations:
+  - Use this source for first-use command sequence examples.
+  gaps: []
+- id: mdp-1-education-thesis
+  kind: sanitized-linear-summary
+  locator: MDP-1
+  confidence: medium
+  freshness: 2026-06-27
+  direct_claims:
+  - MDP education should explain the shift from pasted context and giant prompts to local, testable decision context.
+  - Priority audiences include GTM engineers, PMMs, RevOps, growth and outbound leaders, founders, agencies, PMs, and agent-platform buyers.
+  - The no-draft state, source ledger, fit gates, claim checks, gaps, and evals are part of the product value.
+  interpretations:
+  - Use this source for education framing and persona selection, not for private planning details.
+  gaps:
+  - This source is a planning summary, not customer evidence.
+- id: synthetic-mdp-demo-rows
+  kind: synthetic-example
+  locator: examples/*.json
+  confidence: demo-only
+  freshness: generated
+  direct_claims:
+  - The committed source rows and normalized prospect rows are fictional fixtures for exercising MDP commands.
+  interpretations:
+  - Do not treat these rows as real prospects, customers, or source evidence.
+  gaps:
+  - Replace with a real or intentionally sanitized row before production work.

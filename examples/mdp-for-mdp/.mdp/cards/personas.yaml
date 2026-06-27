@@ -1,0 +1,63 @@
+id: personas
+kind: personas
+title: Personas
+description: Audiences who need to understand MDP as durable GTM decision context.
+personas:
+- GTM Engineer
+- PMM
+- RevOps
+- Founder
+- Agency Operator
+tags:
+- persona
+entries:
+- id: gtm-engineer
+  title: GTM Engineer
+  body: Builds agent-assisted GTM workflows and needs machine-readable contracts for source rows, routing, fit gates, claims, and handoffs without hard-coding messaging judgment into a single prompt.
+  applies_to:
+  - GTM Engineer
+  evidence:
+  - mdp-1-education-thesis
+  avoid: []
+  metadata:
+    priority: primary
+- id: pmm
+  title: PMM
+  body: Owns positioning, approved claims, objections, pains, CTA policy, and channel rules. Needs agents to draft from governed context instead of repeatedly pasting messaging docs into chat.
+  applies_to:
+  - PMM
+  evidence:
+  - mdp-1-education-thesis
+  avoid: []
+  metadata:
+    priority: primary
+- id: revops
+  title: RevOps
+  body: Handles CRM exports, spreadsheet rows, campaign inputs, and routing operations. Needs messy source rows normalized without turning weak or missing evidence into fake certainty.
+  applies_to:
+  - RevOps
+  evidence:
+  - mdp-1-education-thesis
+  avoid: []
+  metadata:
+    priority: primary
+- id: founder
+  title: Founder
+  body: Needs lightweight GTM governance before adopting a larger stack, especially when early agents can draft faster than the team can keep messaging judgment consistent.
+  applies_to:
+  - Founder
+  evidence:
+  - mdp-1-education-thesis
+  avoid: []
+  metadata:
+    priority: secondary
+- id: agency-operator
+  title: Agency Operator
+  body: Needs reusable client-specific message decision packs so source truth, claims, fit logic, and avoid rules survive across clients, agents, and campaigns.
+  applies_to:
+  - Agency Operator
+  evidence:
+  - mdp-1-education-thesis
+  avoid: []
+  metadata:
+    priority: secondary

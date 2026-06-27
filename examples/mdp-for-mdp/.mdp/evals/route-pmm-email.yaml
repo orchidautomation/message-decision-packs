@@ -1,0 +1,20 @@
+id: route-pmm-email
+command: route
+persona: PMM
+job: initial email outbound message
+expect_load_order_contains:
+- .mdp/cards/personas.yaml
+- .mdp/cards/avoid-rules.yaml
+- .mdp/cards/output-rules.yaml
+- .mdp/cards/fit-rules.yaml
+- .mdp/cards/positioning.yaml
+- .mdp/cards/claims.yaml
+- .mdp/cards/channel-policies.yaml
+expect_entry_titles_contains:
+- PMM
+- Approved claims belong in files
+- Proof before claim
+- Email initial touch
+- Initial email shape
+expect_entry_titles_excludes:
+- Email follow-up

@@ -1,0 +1,4 @@
+id: claim-check-approved
+command: check-claims
+expect_valid: true
+text: MDP decision context is a local/offline standard, CLI, and plugin for modular GTM messaging decision context. It helps teams keep fit rules, approved claims, CTA policy, avoid rules, output rules, source gaps, and brief routing in reviewable files before a downstream agent drafts copy. That makes the handoff more testable than one giant prompt.
