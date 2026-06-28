@@ -61,4 +61,34 @@ entries:
   - Founder
   evidence:
   - mdp-what-this-repo-is
+  - mdp-apify-aligned-gtm-builders
+  avoid: []
+- id: claude-context-repository
+  title: Claude context repository
+  body: The team already externalizes GTM context into CLAUDE.md, CONTEXT.md, client folders, context repositories, or similar files with ICP, personas, positioning, objections, signals, disqualifiers, review rules, or feedback memory.
+  applies_to:
+  - GTM Engineer
+  - RevOps
+  - Agency Operator
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid: []
+- id: skill-library-sprawl
+  title: Skill library sprawl
+  body: The team manages many Claude Skills, markdown workflows, sub-agents, or cross-team agent capability files and needs route-scoped governance so each skill reads the right decision context.
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - Agency Operator
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid: []
+- id: platform-decision-fixtures
+  title: Platform decision fixtures
+  body: The person builds an AI-native GTM platform, buyer-intelligence workflow, qualification agent, MCP-connected agent, or brief generator that could use customer-owned fixtures for ICP, fit, signal, claim, CTA, and no-draft rules.
+  applies_to:
+  - GTM Engineer
+  - Founder
+  evidence:
+  - mdp-apify-aligned-gtm-builders
   avoid: []

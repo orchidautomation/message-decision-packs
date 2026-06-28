@@ -41,6 +41,25 @@ entries:
   evidence:
   - mdp-conceptual-flow
   avoid: []
+- id: good-fit-claude-context-repo
+  title: "Good fit: Claude context repo"
+  body: Use when the person already keeps GTM judgment in CLAUDE.md, CONTEXT.md, Claude Skills, MCP-connected workflows, client folders, context repositories, or large markdown workflow libraries and needs routing, validation, evals, or no-draft gates around that context.
+  applies_to:
+  - GTM Engineer
+  - RevOps
+  - Agency Operator
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid: []
+- id: good-fit-platform-fixture
+  title: "Good fit: platform decision fixture"
+  body: Use when an agentic GTM platform builder needs a neutral, customer-owned test fixture for ICP, fit, signal, claim, CTA, channel, output, and no-draft rules without replacing the execution platform.
+  applies_to:
+  - GTM Engineer
+  - Founder
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid: []
 - id: no-source-no-copy
   title: No source, no copy
   body: If the row lacks persona, segment, trigger, signals, or source context, return insufficient-context and surface missing fields instead of drafting.

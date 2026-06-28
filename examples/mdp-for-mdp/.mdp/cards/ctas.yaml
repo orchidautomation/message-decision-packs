@@ -29,6 +29,16 @@ entries:
   evidence:
   - mdp-1-education-thesis
   avoid: []
+- id: decision-fixture-question
+  title: Decision fixture question
+  body: For platform builders or Claude Skills operators, ask whether their agents, briefs, or workflows need customer-owned decision fixtures for ICP, fit, signals, claims, CTAs, output rules, and no-draft gates.
+  applies_to:
+  - GTM Engineer
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid: []
 - id: calendar-second
   title: Calendar second
   body: Do not lead with a calendar ask in initial outreach. First ask for relevance, ownership, or a quick comparison unless the user explicitly asks for a meeting-oriented draft.

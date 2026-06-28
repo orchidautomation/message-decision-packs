@@ -52,6 +52,25 @@ entries:
   - sequence prospects
   - scrape contacts
   - enrich leads
+- id: no-platform-replacement-claims
+  title: No platform replacement claims
+  body: Do not claim MDP replaces Clay, Common Room, Miro, Claude Skills, MCPs, n8n, Apify, buyer-intelligence tools, workflow builders, or orchestration systems. MDP can complement those systems as a local decision/context pack.
+  applies_to:
+  - GTM Engineer
+  - Founder
+  - Agency Operator
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid:
+  - replaces Clay
+  - replaces Common Room
+  - replaces Miro
+  - replaces Claude Skills
+  - replaces n8n
+  - replaces Apify
+  - runs MCP
+  - MCP server
+  - workflow builder
 - id: no-unsupported-outcomes
   title: No unsupported outcomes
   body: Do not promise reply rates, meetings, pipeline, revenue, conversion lift, ROI, or guaranteed outcomes unless an approved claim and source exist.

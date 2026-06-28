@@ -58,3 +58,22 @@ entries:
   evidence:
   - mdp-readme
   avoid: []
+- id: skills-need-decision-contracts
+  title: Skills need decision contracts
+  body: Claude Skills, MCP-connected workflows, and markdown agent systems still need a durable source for ICP, fit, signals, approved claims, CTA rules, avoid rules, output rules, and no-draft gates. MDP is that local decision contract, not the skill runner.
+  applies_to:
+  - GTM Engineer
+  - RevOps
+  - Agency Operator
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid: []
+- id: customer-owned-test-fixture
+  title: Customer-owned test fixture
+  body: For agentic GTM platform builders, MDP can be framed as a customer-owned fixture for testing and exchanging decision context across agents, briefs, and workflows without replacing the platform that executes them.
+  applies_to:
+  - GTM Engineer
+  - Founder
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid: []

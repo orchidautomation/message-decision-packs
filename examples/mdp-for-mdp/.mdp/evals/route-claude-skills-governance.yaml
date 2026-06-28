@@ -1,0 +1,18 @@
+id: route-claude-skills-governance
+command: route
+persona: GTM Engineer
+job: audit Claude Skills GTM context repository
+expect_load_order_contains:
+- .mdp/cards/personas.yaml
+- .mdp/cards/avoid-rules.yaml
+- .mdp/cards/output-rules.yaml
+- .mdp/cards/fit-rules.yaml
+- .mdp/cards/positioning.yaml
+- .mdp/cards/signals.yaml
+expect_entry_titles_contains:
+- Skills need decision contracts
+- Customer-owned test fixture
+- Claude context repository
+- Skill library sprawl
+- "Good fit: Claude context repo"
+- No platform replacement claims

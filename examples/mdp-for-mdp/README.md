@@ -4,6 +4,8 @@ This is a public, self-referential Message Decision Pack: an MDP that explains M
 
 Use it when you want to show a GTM engineer, PMM, RevOps person, founder, or agency operator what a pack stores and why it is better than pasting a giant prompt into every agent thread.
 
+The example also reflects public GTM research from the ledger: teams using `CLAUDE.md`, `CONTEXT.md`, Claude Skills, MCP-connected workflows, client folders, context repositories, or large markdown skill libraries are strong MDP-fit when they need reusable fit gates, claim governance, routing, and no-draft behavior.
+
 The point is not that MDP writes better copy by itself. The point is that MDP stores the decision context an agent should use before drafting:
 
 - who the message is for
@@ -224,9 +226,10 @@ Expected outcome: `valid: false`, with link, subject, and word-count guardrail h
 mdp --json eval --dir examples/mdp-for-mdp
 ```
 
-Expected outcome: `valid: true` with 10 fixtures asserting the main route, fit, brief, claim-check, and output-rule outcomes:
+Expected outcome: `valid: true` with 11 fixtures asserting the main route, Claude Skills governance route, fit, brief, claim-check, and output-rule outcomes:
 
 - GTM Engineer LinkedIn route
+- GTM Engineer Claude Skills governance route
 - PMM initial email route
 - fit-ready prospect
 - insufficient-context prospect
@@ -248,6 +251,7 @@ This pack makes the decisions inspectable:
 - `sources.yaml` separates facts, interpretations, and gaps.
 - `manifest.yaml` defines personas, channels, cards, and routing policy.
 - `fit-rules.yaml` owns the stop/go decision before drafting.
+- `signals.yaml` captures adoption signals such as Claude context repos, Skills/MCP-heavy workflows, and skill-library sprawl.
 - `claims.yaml` owns what can be said.
 - `avoid-rules.yaml` owns category and execution boundaries.
 - `ctas.yaml` and `channel-policies.yaml` own the ask and channel behavior.
