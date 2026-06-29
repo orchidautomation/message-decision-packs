@@ -102,5 +102,6 @@ jobs:
           chmod +x release-assets/mdp-*
           shasum -a 256 release-assets/mdp-* > release-assets/MDP_CLI_SHA256SUMS.txt
           cp scripts/install.sh release-assets/install.sh
-          chmod +x release-assets/install.sh
-          gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/install.sh --clobber
+          cp scripts/bootstrap-runtime.sh release-assets/install-cli.sh
+          chmod +x release-assets/install.sh release-assets/install-cli.sh
+          gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/install.sh release-assets/install-cli.sh --clobber

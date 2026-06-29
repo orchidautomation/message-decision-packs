@@ -18,7 +18,19 @@ command -v mdp
 mdp --json doctor --dir .
 ```
 
-If `mdp` is missing, say the CLI is not installed and ask whether to install or locate it. Do not fake validation by reading YAML manually.
+If `mdp` is missing, say the CLI is not installed and ask whether to install or locate it. When only the CLI is needed, suggest:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
+When the user also wants supported agent/plugin bundles, suggest:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+Do not fake validation by reading YAML manually.
 
 ## Create Or Improve A Pack
 

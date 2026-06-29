@@ -35,13 +35,19 @@ Keep gaps explicit.
 
 ## Installation Model
 
-MDP is distributed as a GitHub Release backed by Pluxx-generated agent bundles and native `mdp` CLI binaries. The public install path is one command:
+MDP is distributed as a GitHub Release backed by Pluxx-generated agent bundles and native `mdp` CLI binaries. The public install path for the CLI plus supported agent bundles is one command:
 
 ```bash
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
-That command should install:
+Users who only need the CLI can run:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
+The `--agents` command should install:
 
 1. The local `mdp` CLI binary for the user's OS and architecture.
 2. Agent/plugin bundles for the supported Pluxx targets.
@@ -54,6 +60,7 @@ GitHub release
 - mdp-x86_64-apple-darwin
 - mdp-x86_64-unknown-linux-gnu
 - install.sh
+- install-cli.sh
 - install-codex.sh
 - install-all.sh
 - Pluxx-generated plugin archives
@@ -64,13 +71,13 @@ GitHub release
 For users on other skill-aware agents that are not Pluxx release targets, document `skills.sh` as an optional compatibility path:
 
 ```bash
-npx skills add orchidautomation/message-decision-packs --skill '*' -g -a <agent> -y
+npx skills add https://github.com/orchidautomation/message-decision-packs --skill '*' --agent '*' -g -y
 ```
 
 or:
 
 ```bash
-npx skills add orchidautomation/message-decision-packs --skill '*' -g -a universal -y
+npx skills add https://github.com/orchidautomation/message-decision-packs --skill '*' --agent universal -g -y
 ```
 
 That fallback installs skills only. It does not replace the MDP installer because it does not install the `mdp` CLI binary or release runtime scripts.
@@ -113,13 +120,13 @@ mdp --json doctor --dir .
 If the CLI is missing, the agent should point back to the public installer instead of asking the user to build from source:
 
 ```bash
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
 ```
 
 Expected lift:
 
 ```text
-Current public lift: run one install command, restart/open the agent, check mdp is on PATH.
+Current public lift: run one install command, restart/open the agent if a plugin bundle was installed, check mdp is on PATH.
 ```
 
 ### Step 3: The user creates their first pack
@@ -338,7 +345,7 @@ The main lift is not technical setup after packaging exists. The real lift is de
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
-3. Document install commands for Codex app, CLI users, and long-tail `skills.sh` users.
+3. Document install commands for Codex app, CLI-only users, supported agent bundles, and long-tail `skills.sh` users.
 4. Re-run release QA on a fresh machine before each public release.
 5. Add release validation that runs:
 

@@ -20,10 +20,16 @@ For a deeper explanation of what this repo is, why it matters, and how to ask yo
 
 Latest release: [release page](https://github.com/orchidautomation/message-decision-packs/releases/latest)
 
-One-command install:
+Install the CLI plus supported agent bundles:
 
 ```bash
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+Install only the `mdp` CLI:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
 ```
 
 For the first-use walkthrough, see [Getting Started](docs/getting-started.md).
@@ -41,9 +47,18 @@ Portable shell fallback:
 curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --agents -y
 ```
 
+CLI-only portable shell fallback:
+
+```bash
+curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --cli -y
+```
+
 Copy-paste installers - pick the AI tool you use:
 
 ```bash
+# CLI only
+curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-cli.sh | bash
+
 # Claude Code
 curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-claude-code.sh | bash
 
@@ -55,15 +70,13 @@ curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/l
 
 # OpenCode
 curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-opencode.sh | bash
-
-# All of the above
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-all.sh | bash
 ```
 
-The release installers install the plugin bundle and prepare the local `mdp` CLI if it is not already on `PATH`. For noninteractive installs, set `MDP_VERSION`, `MDP_INSTALL_DIR`, or `MDP_DOWNLOAD_URL` before running the installer.
+The `--agents` installer prepares the local `mdp` CLI once, then installs supported host bundles for Claude Code, Cursor, Codex, and OpenCode. If Claude Code is not available on `PATH`, `--agents` skips that host with a warning; use `--claude-code` when Claude Code installation should be required. Single-host installers install that plugin bundle and prepare the local `mdp` CLI if needed. For noninteractive installs, set `MDP_VERSION`, `MDP_INSTALL_DIR`, or `MDP_DOWNLOAD_URL` before running the installer.
 
 Direct downloads:
 
+- [CLI installer](https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-cli.sh)
 - [Claude Code plugin](https://github.com/orchidautomation/message-decision-packs/releases/latest/download/message-decision-packs-claude-code-latest.tar.gz)
 - [Cursor plugin](https://github.com/orchidautomation/message-decision-packs/releases/latest/download/message-decision-packs-cursor-latest.tar.gz)
 - [Codex plugin](https://github.com/orchidautomation/message-decision-packs/releases/latest/download/message-decision-packs-codex-latest.tar.gz)

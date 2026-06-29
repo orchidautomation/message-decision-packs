@@ -27,6 +27,12 @@ Install the CLI:
 make install-cli
 ```
 
+Install the released CLI binary only:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
 Use the plugin source at `plugin/` when testing local Codex plugin installs.
 
 ## Future Distribution
@@ -58,7 +64,19 @@ The preferred one-command installer mirrors Railway's agent installer shape:
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
-The tag-based release workflow installs Pluxx in CI, builds host plugin bundles, publishes Pluxx release assets, and uploads `mdp-*` CLI binaries plus `install.sh`. The installer scripts then install the plugin and use `scripts/bootstrap-runtime.sh` to prepare the local `mdp` CLI when it is missing.
+Use the CLI-only release installer when an agent/plugin bundle is not needed:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
+The top-level installer keeps the surfaces distinct:
+
+- `--cli` / `--cli-only`: install only the `mdp` CLI.
+- `--agents`: install the CLI once, then install supported host bundles for Claude Code, Cursor, Codex, and OpenCode. If Claude Code is not available, this path skips it with a warning.
+- `--codex`, `--cursor`, `--claude-code`, `--opencode`: install one host bundle.
+
+The tag-based release workflow installs Pluxx in CI, builds host plugin bundles, publishes Pluxx release assets, and uploads `mdp-*` CLI binaries plus `install.sh` and `install-cli.sh`. Host installer scripts install the plugin and use `scripts/bootstrap-runtime.sh` to prepare the local `mdp` CLI when it is missing.
 
 ## Updates
 
@@ -66,6 +84,12 @@ The public update path is to rerun the same installer:
 
 ```bash
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+For CLI-only installs:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
 ```
 
 That keeps the update mechanism explicit and auditable. MDP changes can affect local CLI behavior, pack validation, routing, fit checks, claim checks, and agent skill instructions, so the plugin should not silently replace itself during normal agent work.
@@ -76,7 +100,7 @@ Use `scripts/check-update.sh` as a lightweight drift check:
 scripts/check-update.sh
 ```
 
-The script compares the local `mdp --version` and nearby plugin manifest version against the latest GitHub Release tag, then returns the install command to run when either side is stale.
+The script compares the local `mdp --version` and nearby plugin manifest version against the latest GitHub Release tag, then returns both the full install command and the CLI-only install command to run when either side is stale.
 
 Host hooks may call this check at session start or plugin load time, but they should only notify. They should not auto-update by default. If a future host supports a trusted, user-approved update flow, the hook can offer the installer command as the next action.
 

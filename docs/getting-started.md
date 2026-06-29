@@ -12,13 +12,25 @@ Install the CLI and supported agent bundles:
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
+Install only the `mdp` CLI:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
 Portable shell fallback:
 
 ```bash
 curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --agents -y
 ```
 
-The installer fetches the latest GitHub Release, installs the `mdp` CLI for your platform, and installs Pluxx-generated bundles for supported agent hosts.
+CLI-only portable shell fallback:
+
+```bash
+curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --cli -y
+```
+
+The installer fetches the latest GitHub Release. `--cli` installs only the `mdp` binary for your platform. `--agents` installs the CLI once, then installs Pluxx-generated bundles for supported agent hosts. Single-host flags are also available: `--codex`, `--cursor`, `--claude-code`, and `--opencode`.
 
 ## Verify
 
@@ -157,6 +169,12 @@ Rerun the installer:
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
+For CLI-only installs, rerun:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
 To check whether your local CLI/plugin version is current:
 
 ```bash
@@ -168,7 +186,7 @@ scripts/check-update.sh
 For skill-aware agents that are not first-class Pluxx release targets, `skills.sh` can install the `SKILL.md` files only:
 
 ```bash
-npx skills add orchidautomation/message-decision-packs --skill '*' -g -a <agent> -y
+npx skills add https://github.com/orchidautomation/message-decision-packs --skill '*' --agent '*' -g -y
 ```
 
 This does not install the `mdp` CLI. Use the MDP installer for the full CLI plus agent bundle setup.
