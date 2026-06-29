@@ -23,11 +23,11 @@ Agents that need a fast project briefing can fetch curated Markdown instead of r
 - [llms.txt](llms.txt): concise project, install, workflow, and command context
 - [llms-full.txt](llms-full.txt): fuller pack layout, CLI contract, safety boundaries, plugin skills, examples, and validation context
 
-After release, the same files should be served from:
+Hosted copies are served from the latest release assets:
 
-```text
-https://mdp.orchidlabs.dev/llms.txt
-https://mdp.orchidlabs.dev/llms-full.txt
+```bash
+curl -fsSL https://mdp.orchidlabs.dev/llms.txt
+curl -fsSL https://mdp.orchidlabs.dev/llms-full.txt
 ```
 
 ## Install
