@@ -47,3 +47,13 @@ entries:
   evidence:
   - mdp-readme
   avoid: []
+- id: skill-library-to-pack
+  title: Skill library to pack
+  body: "Pattern: name the Claude Skill, MCP, context repo, or markdown workflow sprawl -> identify the routing or governance risk -> frame MDP as a customer-owned decision pack -> ask whether one fixture would make the workflow easier to audit."
+  applies_to:
+  - GTM Engineer
+  - Agency Operator
+  - Founder
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid: []
