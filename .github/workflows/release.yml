@@ -102,5 +102,7 @@ jobs:
           chmod +x release-assets/mdp-*
           shasum -a 256 release-assets/mdp-* > release-assets/MDP_CLI_SHA256SUMS.txt
           cp scripts/install.sh release-assets/install.sh
+          cp llms.txt release-assets/llms.txt
+          cp llms-full.txt release-assets/llms-full.txt
           chmod +x release-assets/install.sh
-          gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/install.sh --clobber
+          gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/install.sh release-assets/llms.txt release-assets/llms-full.txt --clobber

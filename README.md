@@ -16,6 +16,20 @@ MDP is a decision/context layer. It is not a sender, CRM, sequencer, enrichment 
 
 For a deeper explanation of what this repo is, why it matters, and how to ask your agent to explain it accurately, read [What This Repo Is](docs/what-this-repo-is.md). For the conceptual model behind fit, routing, and bounded drafting context, see [Conceptual Decision Flow](docs/conceptual-decision-flow.md).
 
+## Agent Context
+
+Agents that need a fast project briefing can fetch curated Markdown instead of reconstructing the repo from scratch:
+
+- [llms.txt](llms.txt): concise project, install, workflow, and command context
+- [llms-full.txt](llms-full.txt): fuller pack layout, CLI contract, safety boundaries, plugin skills, examples, and validation context
+
+After release, the same files should be served from:
+
+```text
+https://mdp.orchidlabs.dev/llms.txt
+https://mdp.orchidlabs.dev/llms-full.txt
+```
+
 ## Install
 
 Latest release: [release page](https://github.com/orchidautomation/message-decision-packs/releases/latest)
@@ -45,22 +59,22 @@ Copy-paste installers - pick the AI tool you use:
 
 ```bash
 # Claude Code
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-claude-code.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --claude-code -y
 
 # Cursor
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-cursor.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cursor -y
 
 # Codex
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-codex.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --codex -y
 
 # OpenCode
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-opencode.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
 
-# All of the above
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-all.sh | bash
+# All supported hosts
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
-The release installers install the plugin bundle and prepare the local `mdp` CLI if it is not already on `PATH`. For noninteractive installs, set `MDP_VERSION`, `MDP_INSTALL_DIR`, or `MDP_DOWNLOAD_URL` before running the installer.
+The release installers install the selected plugin bundle and prepare the local `mdp` CLI if it is not already on `PATH`. For noninteractive installs, set `MDP_VERSION`, `MDP_INSTALL_DIR`, or `MDP_DOWNLOAD_URL` before running the installer.
 
 Direct downloads:
 
