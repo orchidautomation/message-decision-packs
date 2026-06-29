@@ -16,6 +16,7 @@ The CLI and plugin are tightly coupled:
 - the CLI defines the pack schema, JSON contracts, validation, routing, entry routing, fit checks, claim checks, gaps, eval fixtures, and brief emission
 - the plugin teaches agents how to author, inspect, and use those contracts
 - examples, eval fixtures, and templates need to stay aligned with CLI behavior
+- `mdp capabilities` exposes the installed CLI command surface, side-effect classes, dry-run support, strict-mode support, and stable error codes so agent hosts can drive the CLI without guessing from help text
 
 Keeping them together avoids version drift while the standard is young.
 
@@ -79,6 +80,8 @@ scripts/check-update.sh
 The script compares the local `mdp --version` and nearby plugin manifest version against the latest GitHub Release tag, then returns the install command to run when either side is stale.
 
 Host hooks may call this check at session start or plugin load time, but they should only notify. They should not auto-update by default. If a future host supports a trusted, user-approved update flow, the hook can offer the installer command as the next action.
+
+Agent hosts should prefer `mdp --json capabilities` before invoking advanced flows. Use `--dry-run` for selected local write paths before mutating packs, and use `--strict` when warnings should fail an automated gate. These affordances do not change the update policy: the CLI should not silently replace itself or plugin bundles during ordinary pack work.
 
 Version policy:
 

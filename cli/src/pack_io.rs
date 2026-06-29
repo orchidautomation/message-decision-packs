@@ -2,7 +2,7 @@ use crate::constants::DEFAULT_DIR;
 use crate::models::{Card, Manifest, PromptFile, Prospect};
 use anyhow::{Context, Result, anyhow};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -88,4 +88,124 @@ pub(crate) fn write_json_file(path: &Path, value: &Value) -> Result<()> {
     file.write_all(serde_json::to_string_pretty(value)?.as_bytes())?;
     file.write_all(b"\n")?;
     Ok(())
+}
+
+pub(crate) fn planned_directory(path: &Path) -> Value {
+    let exists = path.exists();
+    let parent_exists = path.parent().map(Path::exists).unwrap_or(true);
+    json_plan(
+        "directory",
+        path,
+        if exists { "exists" } else { "create" },
+        !exists,
+        parent_exists,
+    )
+}
+
+pub(crate) fn planned_yaml_write_after_dirs(path: &Path, force: bool) -> Value {
+    planned_file_write_with_parent(path, "yaml-file", force, true)
+}
+
+pub(crate) fn planned_json_write(path: &Path) -> Value {
+    let parent_exists = path.parent().map(Path::exists).unwrap_or(true);
+    let action = if !parent_exists {
+        "parent-missing"
+    } else if path.exists() {
+        "overwrite"
+    } else {
+        "create"
+    };
+    json_plan("json-file", path, action, parent_exists, parent_exists)
+}
+
+pub(crate) fn planned_json_write_after_dirs(path: &Path, force: bool) -> Value {
+    planned_file_write_with_parent(path, "json-file", force, true)
+}
+
+fn planned_file_write_with_parent(
+    path: &Path,
+    kind: &str,
+    force: bool,
+    parent_exists: bool,
+) -> Value {
+    let action = if !parent_exists {
+        "parent-missing"
+    } else if path.exists() && force {
+        "overwrite"
+    } else if path.exists() {
+        "blocked"
+    } else {
+        "create"
+    };
+    let would_write = matches!(action, "create" | "overwrite");
+    json_plan(kind, path, action, would_write, parent_exists)
+}
+
+fn json_plan(
+    kind: &str,
+    path: &Path,
+    action: &str,
+    would_write: bool,
+    parent_exists: bool,
+) -> Value {
+    json!({
+        "kind": kind,
+        "path": path.display().to_string(),
+        "action": action,
+        "exists": path.exists(),
+        "parent_exists": parent_exists,
+        "would_write": would_write
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{planned_directory, planned_json_write};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn planned_directory_does_not_rewrite_existing_directory() {
+        let root = std::env::temp_dir().join(format!("mdp-plan-dir-{}", nonce()));
+        std::fs::create_dir_all(&root).expect("temp dir should be created");
+
+        let plan = planned_directory(&root);
+
+        assert_eq!(plan["action"], "exists");
+        assert_eq!(plan["would_write"], false);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn planned_directory_reports_recursive_create() {
+        let root = std::env::temp_dir()
+            .join(format!("mdp-plan-missing-parent-{}", nonce()))
+            .join(".mdp");
+
+        let plan = planned_directory(&root);
+
+        assert_eq!(plan["action"], "create");
+        assert_eq!(plan["parent_exists"], false);
+        assert_eq!(plan["would_write"], true);
+    }
+
+    #[test]
+    fn planned_json_write_blocks_missing_parent() {
+        let path = std::env::temp_dir()
+            .join(format!("mdp-plan-parent-{}", nonce()))
+            .join("artifact.json");
+
+        let plan = planned_json_write(&path);
+
+        assert_eq!(plan["action"], "parent-missing");
+        assert_eq!(plan["parent_exists"], false);
+        assert_eq!(plan["would_write"], false);
+    }
+
+    fn nonce() -> u128 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos()
+    }
 }

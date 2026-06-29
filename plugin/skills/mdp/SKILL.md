@@ -15,22 +15,27 @@ From the workspace that contains or should contain a pack:
 
 ```bash
 command -v mdp
+mdp --json capabilities
 mdp --json doctor --dir .
 ```
 
 If `mdp` is missing, say the CLI is not installed and ask whether to install or locate it. Do not fake validation by reading YAML manually.
+
+Use `mdp --json capabilities` before advanced agent orchestration to inspect command contracts, coarse side effects, `--out` support, dry-run support, strict-mode support, and stable JSON error codes. Keep `--json` on whenever another agent, script, or tool will parse output.
 
 ## Create Or Improve A Pack
 
 For a new generic pack:
 
 ```bash
+mdp --json init --name "Message Pack" --dir . --dry-run
 mdp --json init --name "Message Pack" --dir .
 ```
 
 For a neutral demo:
 
 ```bash
+mdp --json init --template gtm --name "Example Message Pack" --dir . --dry-run
 mdp --json init --template gtm --name "Example Message Pack" --dir .
 ```
 
@@ -62,6 +67,12 @@ After edits:
 
 ```bash
 mdp --json validate --dir .
+```
+
+Use `--strict` when warnings should fail an agent or CI gate:
+
+```bash
+mdp --json validate --strict --dir .
 ```
 
 Pack extensions must use supported surfaces. Put advisory custom annotations on card entries under `metadata`; `mdp route --entries` and `mdp brief --context` surface that metadata for agents, but the CLI does not enforce unknown metadata keys. Do not add arbitrary sibling fields to entries, cards, or manifests as if they were supported contract fields; `mdp validate` warns that unsupported fields are ignored. For custom channels, add the channel string to `.mdp/manifest.yaml` `supported_channels`, then write matching channel-policy entries.
@@ -119,6 +130,12 @@ If the user expects a created artifact, save it explicitly:
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
+Preview the brief artifact write before mutating the pack when needed:
+
+```bash
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json --dry-run
+```
+
 Read `data.context.entries` first. Open `data.context.full_card_required` paths only when present. Draft only when `data.draft_status` is `ready`.
 
 ## Route Without A Prospect
@@ -151,11 +168,14 @@ When route-specific constraints or subject rules matter, include the subject and
 mdp --json check-claims --dir . --text "<draft copy>" --subject "<subject>" --persona "<persona>" --job "<channel> outbound copy"
 ```
 
+Add `--strict` when advisory constraint warnings should fail the approval gate.
+
 For pack QA:
 
 ```bash
 mdp --json gaps --dir .
 mdp --json eval --dir .
+mdp --json eval --strict --dir .
 ```
 
 Use `--summary` for compact status instead of piping JSON into one-off scripts.
@@ -191,3 +211,5 @@ Do not move fit logic, route selection, claim checks, or card interpretation int
 - Do not call MDP an AI SDR, CRM, sequencer, enrichment provider, BI tool, or generic automation system.
 - Do not invent missing claims. Surface gaps in the brief.
 - Keep `--json` on when another agent, script, or tool will parse the output.
+- Use `--dry-run` before selected local write paths (`init`, `brief --out`, `emit-brief --out`, `pack --out`) when mutation should be previewed.
+- Handle JSON failures by `error.code` first. Stable codes include `pack_not_found`, `invalid_manifest`, `missing_card`, `unsupported_claim`, `insufficient_context`, `write_conflict`, `invalid_argument`, and fallback `mdp_error`.

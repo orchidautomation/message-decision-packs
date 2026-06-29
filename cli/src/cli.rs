@@ -20,6 +20,8 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand)]
 pub(crate) enum Commands {
+    #[command(about = "Print agent-readable CLI capabilities and contracts")]
+    Capabilities,
     #[command(about = "Create a starter MDP package")]
     Init {
         #[arg(long)]
@@ -35,6 +37,8 @@ pub(crate) enum Commands {
             help = "Inline full JSON Schemas in prompt output contracts instead of compact schema refs"
         )]
         include_output_schemas: bool,
+        #[arg(long, help = "Show files that would be written without writing them")]
+        dry_run: bool,
     },
     #[command(about = "Report local setup and pack health")]
     Doctor {
@@ -45,6 +49,8 @@ pub(crate) enum Commands {
     Validate {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
+        #[arg(long, help = "Fail validation-style flows on warnings where supported")]
+        strict: bool,
     },
     #[command(about = "Explain what an agent should load")]
     Explain {
@@ -105,6 +111,8 @@ pub(crate) enum Commands {
         persona: Option<String>,
         #[arg(long, help = "Optional job for route-scoped constraint checks")]
         job: Option<String>,
+        #[arg(long, help = "Treat advisory constraint warnings as failures")]
+        strict: bool,
     },
     #[command(about = "List durable gaps and open questions from a pack")]
     Gaps {
@@ -115,6 +123,8 @@ pub(crate) enum Commands {
     Eval {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
+        #[arg(long, help = "Fail validation-style flows on warnings where supported")]
+        strict: bool,
     },
     #[command(about = "Build a message brief from a pack and enriched prospect JSON")]
     Brief {
@@ -130,6 +140,8 @@ pub(crate) enum Commands {
         context: bool,
         #[arg(long)]
         out: Option<PathBuf>,
+        #[arg(long, help = "Show the output artifact write without writing it")]
+        dry_run: bool,
     },
     #[command(about = "Generate deterministic demo copy from a pack and prospect JSON")]
     Copy {
@@ -154,6 +166,8 @@ pub(crate) enum Commands {
         job: Option<String>,
         #[arg(long)]
         out: Option<PathBuf>,
+        #[arg(long, help = "Show the output artifact write without writing it")]
+        dry_run: bool,
     },
     #[command(about = "Compile a bounded portable representation with card hashes")]
     Pack {
@@ -161,6 +175,8 @@ pub(crate) enum Commands {
         dir: PathBuf,
         #[arg(long)]
         out: Option<PathBuf>,
+        #[arg(long, help = "Show the output artifact write without writing it")]
+        dry_run: bool,
     },
     #[command(about = "Print a schema contract")]
     Schema {

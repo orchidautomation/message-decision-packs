@@ -1,5 +1,8 @@
 use crate::constants::{DEFAULT_DIR, FORMAT_VERSION};
-use crate::pack_io::{write_json_file, write_yaml};
+use crate::pack_io::{
+    planned_directory, planned_json_write_after_dirs, planned_yaml_write_after_dirs,
+    write_json_file, write_yaml,
+};
 use crate::starter::{
     starter_cards, starter_evals, starter_manifest, starter_prompts, starter_prospect,
     starter_source_ledger,
@@ -60,8 +63,99 @@ pub(crate) fn init_pack(
         ));
     }
     write_json_file(&prospect_path, &starter_prospect(template))?;
+    Ok(init_payload(
+        root,
+        &pack_dir,
+        &manifest_path,
+        &source_ledger_path,
+        &cards_dir,
+        &evals_dir,
+        &prompts_dir,
+        &prospect_path,
+    ))
+}
+
+pub(crate) fn init_pack_dry_run(
+    root: &Path,
+    name: &str,
+    template: &str,
+    force: bool,
+    include_output_schemas: bool,
+) -> Result<Value> {
+    if template != "gtm" {
+        return Err(anyhow!("unsupported template '{template}'; available: gtm"));
+    }
+    let pack_dir = root.join(DEFAULT_DIR);
+    let cards_dir = pack_dir.join("cards");
+    let briefs_dir = pack_dir.join("briefs");
+    let evals_dir = pack_dir.join("evals");
+    let prompts_dir = pack_dir.join("prompts");
+    let examples_dir = root.join("examples");
+    let manifest_path = pack_dir.join("manifest.yaml");
+    let source_ledger_path = pack_dir.join("sources.yaml");
+    let prospect_path = examples_dir.join("clay-row.json");
+    let mut payload = init_payload(
+        root,
+        &pack_dir,
+        &manifest_path,
+        &source_ledger_path,
+        &cards_dir,
+        &evals_dir,
+        &prompts_dir,
+        &prospect_path,
+    );
+    let slug = slugify(name);
+    let mut write_plan = vec![
+        planned_directory(&pack_dir),
+        planned_directory(&cards_dir),
+        planned_directory(&briefs_dir),
+        planned_directory(&evals_dir),
+        planned_directory(&prompts_dir),
+        planned_directory(&examples_dir),
+        planned_yaml_write_after_dirs(&manifest_path, force),
+        planned_yaml_write_after_dirs(&source_ledger_path, force),
+    ];
+    for (filename, _) in starter_cards(template) {
+        write_plan.push(planned_yaml_write_after_dirs(
+            &cards_dir.join(filename),
+            force,
+        ));
+    }
+    for (filename, _) in starter_evals() {
+        write_plan.push(planned_yaml_write_after_dirs(
+            &evals_dir.join(filename),
+            force,
+        ));
+    }
+    for (filename, _) in starter_prompts(include_output_schemas) {
+        write_plan.push(planned_yaml_write_after_dirs(
+            &prompts_dir.join(filename),
+            force,
+        ));
+    }
+    write_plan.push(planned_json_write_after_dirs(&prospect_path, force));
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("dry_run".to_string(), json!(true));
+        object.insert("template".to_string(), json!(template));
+        object.insert("slug".to_string(), json!(slug));
+        object.insert("force".to_string(), json!(force));
+        object.insert("write_plan".to_string(), Value::Array(write_plan));
+    }
+    Ok(payload)
+}
+
+fn init_payload(
+    root: &Path,
+    pack_dir: &Path,
+    manifest_path: &Path,
+    source_ledger_path: &Path,
+    cards_dir: &Path,
+    evals_dir: &Path,
+    prompts_dir: &Path,
+    prospect_path: &Path,
+) -> Value {
     let example_persona = "GTM Engineering";
-    Ok(json!({
+    json!({
         "format": FORMAT_VERSION,
         "root": root.display().to_string(),
         "pack_dir": pack_dir.display().to_string(),
@@ -79,7 +173,7 @@ pub(crate) fn init_pack(
             format!("mdp --json --summary brief --dir {} --prospect {} --channel linkedin", root.display(), prospect_path.display()),
             format!("mdp --json eval --dir {}", root.display())
         ]
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -206,6 +300,61 @@ mod tests {
             serde_json::from_str(&prospect_raw).expect("example prospect should parse");
         assert_eq!(prospect["source_kind"], "synthetic-example");
         assert_eq!(prospect["synthetic"], true);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn init_dry_run_reports_writes_without_creating_pack() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-dry-run-{nonce}"));
+
+        let result = init_pack_dry_run(&root, "Dry Run Pack", "gtm", false, false)
+            .expect("dry run should return plan");
+
+        assert_eq!(result["dry_run"], true);
+        assert!(!root.exists());
+        assert!(
+            result["write_plan"]
+                .as_array()
+                .expect("write plan array")
+                .iter()
+                .any(|entry| entry["path"]
+                    == root
+                        .join(".mdp")
+                        .join("manifest.yaml")
+                        .display()
+                        .to_string()
+                    && entry["action"] == "create")
+        );
+    }
+
+    #[test]
+    fn init_dry_run_reports_existing_example_prospect_conflict() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-dry-run-conflict-{nonce}"));
+        let examples_dir = root.join("examples");
+        let prospect_path = examples_dir.join("clay-row.json");
+        std::fs::create_dir_all(&examples_dir).expect("examples dir should be created");
+        std::fs::write(&prospect_path, "{}").expect("example prospect should be written");
+
+        let result = init_pack_dry_run(&root, "Dry Run Pack", "gtm", false, false)
+            .expect("dry run should return plan");
+
+        let prospect_plan = result["write_plan"]
+            .as_array()
+            .expect("write plan array")
+            .iter()
+            .find(|entry| entry["path"] == prospect_path.display().to_string())
+            .expect("prospect plan should be present");
+        assert_eq!(prospect_plan["action"], "blocked");
+        assert_eq!(prospect_plan["would_write"], false);
 
         let _ = std::fs::remove_dir_all(root);
     }
