@@ -262,6 +262,12 @@ make validate
 
 This validates the Rust CLI, the bundled template pack, and, when local Codex validator scripts are available, the plugin and skill metadata.
 
+## License And Commercial Use
+
+This repository is source-available under the [Elastic License 2.0](LICENSE). It is intended for local/offline MDP authoring, validation, agent-plugin workflows, examples, release assets, and pack evaluation tooling.
+
+Internal use is allowed under the license terms. Offering MDP to third parties as a hosted or managed service, including a hosted registry, API, MCP endpoint, cloud workspace, approval workflow, audit trail, or similar SaaS surface that exposes a substantial set of MDP functionality, requires a separate commercial license. See [Commercial Use](COMMERCIAL.md).
+
 ## Status
 
 This is an MVP local/offline implementation. No auth is required. No hosted API, sending, CRM update, enrichment writeback, scraping, sequencing, or public package release workflow is included.

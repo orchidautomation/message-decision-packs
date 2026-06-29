@@ -29,6 +29,8 @@ make install-cli
 
 Use the plugin source at `plugin/` when testing local Codex plugin installs.
 
+This repository is source-available under the Elastic License 2.0. Local/offline and internal use are within the intended public distribution boundary. Offering MDP as a hosted or managed service requires a separate commercial license; see [Commercial Use](../COMMERCIAL.md).
+
 ## Future Distribution
 
 Possible later channels:
@@ -38,7 +40,7 @@ Possible later channels:
 - Homebrew formula for `mdp`
 - npm wrapper only if agent workflows need Node distribution
 - Codex/agent plugin marketplace entry for `plugin/`
-- hosted MDP API that can serve validated packs and briefs
+- commercially licensed hosted MDP API that can serve validated packs and briefs
 
 Do not treat hosted serving as part of the local MVP. The current implementation is offline and auth-free.
 
