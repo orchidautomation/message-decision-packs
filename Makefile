@@ -3,9 +3,9 @@ PYTHON ?= $(shell if [ -x "$(HOME)/.pyenv/versions/3.13.5/bin/python3" ]; then e
 SKILL_VALIDATOR ?= $(HOME)/.codex/skills/.system/skill-creator/scripts/quick_validate.py
 PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py
 
-.PHONY: validate validate-cli validate-template validate-skills validate-plugin install-cli demo
+.PHONY: validate validate-cli validate-template validate-skills validate-plugin validate-installers install-cli demo
 
-validate: validate-cli validate-template validate-skills validate-plugin
+validate: validate-cli validate-template validate-skills validate-plugin validate-installers
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
@@ -19,6 +19,10 @@ validate-skills:
 
 validate-plugin:
 	@if [ -f "$(PLUGIN_VALIDATOR)" ]; then 		$(PYTHON) "$(PLUGIN_VALIDATOR)" plugin; 	else 		echo "Skipping plugin validation; missing $(PLUGIN_VALIDATOR)"; 	fi
+
+validate-installers:
+	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/test-install.sh
+	scripts/test-install.sh
 
 install-cli:
 	$(MAKE) -C cli install-local

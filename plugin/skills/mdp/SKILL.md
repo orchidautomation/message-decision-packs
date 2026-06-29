@@ -19,7 +19,19 @@ mdp --json capabilities
 mdp --json doctor --dir .
 ```
 
-If `mdp` is missing, say the CLI is not installed and ask whether to install or locate it. Do not fake validation by reading YAML manually.
+If `mdp` is missing, say the CLI is not installed and ask whether to install or locate it. When only the CLI is needed, suggest:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
+When the user also wants supported agent/plugin bundles, suggest:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+Do not fake validation by reading YAML manually.
 
 Use `mdp --json capabilities` before advanced agent orchestration to inspect command contracts, coarse side effects, `--out` support, dry-run support, strict-mode support, and stable JSON error codes. Keep `--json` on whenever another agent, script, or tool will parse output.
 

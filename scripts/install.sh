@@ -9,7 +9,8 @@ Usage:
   bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 Options:
-  --agents              Install agent plugin bundles for Claude Code, Cursor, Codex, and OpenCode.
+  --cli, --cli-only     Install only the mdp CLI.
+  --agents              Install the mdp CLI plus supported agent plugin bundles.
   --claude-code         Install only the Claude Code plugin bundle.
   --cursor              Install only the Cursor plugin bundle.
   --codex               Install only the Codex plugin bundle.
@@ -25,6 +26,7 @@ Environment:
   MDP_VERSION           Release version or tag. Defaults to latest.
   MDP_RELEASE_BASE_URL  Release asset base URL override.
   MDP_INSTALL_DIR       Directory where the mdp CLI should be installed by plugin bootstrap.
+  MDP_SKIP_CLI_UPDATE   Set automatically after --agents installs the CLI once.
 EOF
 }
 
@@ -44,6 +46,10 @@ targets=()
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --cli|--cli-only)
+      targets+=(cli)
+      shift
+      ;;
     --agents)
       agents=1
       shift
@@ -110,7 +116,7 @@ if [ -z "$base_url" ]; then
 fi
 
 if [ "$agents" = "1" ]; then
-  targets=(all)
+  targets=(cli claude-code cursor codex opencode)
 elif [ "${#targets[@]}" -eq 0 ]; then
   targets=(codex)
 fi
@@ -132,6 +138,12 @@ run_installer() {
   local url="$base_url/install-$target.sh"
   local installer_args=()
 
+  if [ "$agents" = "1" ] && [ "$target" = "claude-code" ] && ! command -v claude >/dev/null 2>&1; then
+    echo "Skipping Claude Code bundle because the claude CLI is not available on PATH." >&2
+    echo "Run with --claude-code to require Claude Code installation and fail if prerequisites are missing." >&2
+    return 0
+  fi
+
   if [ "$yes" = "1" ]; then
     installer_args+=(--yes)
   fi
@@ -139,6 +151,10 @@ run_installer() {
   echo "Installing Message Decision Packs for $target..."
   curl -fsSL "$url" -o "$installer"
   bash "$installer" "${installer_args[@]}"
+
+  if [ "$target" = "cli" ]; then
+    export MDP_SKIP_CLI_UPDATE=1
+  fi
 }
 
 for target in "${targets[@]}"; do
