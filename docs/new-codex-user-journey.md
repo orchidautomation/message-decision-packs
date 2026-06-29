@@ -61,8 +61,7 @@ GitHub release
 - mdp-x86_64-unknown-linux-gnu
 - install.sh
 - install-cli.sh
-- install-codex.sh
-- install-all.sh
+- Pluxx-generated host installer scripts, such as install-codex.sh
 - Pluxx-generated plugin archives
 - release-manifest.json
 - SHA256SUMS.txt

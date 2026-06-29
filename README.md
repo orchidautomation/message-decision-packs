@@ -57,19 +57,19 @@ Copy-paste installers - pick the AI tool you use:
 
 ```bash
 # CLI only
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-cli.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
 
 # Claude Code
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-claude-code.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --claude-code -y
 
 # Cursor
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-cursor.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cursor -y
 
 # Codex
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-codex.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --codex -y
 
 # OpenCode
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-opencode.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
 ```
 
 The `--agents` installer prepares the local `mdp` CLI once, then installs supported host bundles for Claude Code, Cursor, Codex, and OpenCode. If Claude Code is not available on `PATH`, `--agents` skips that host with a warning; use `--claude-code` when Claude Code installation should be required. Single-host installers install that plugin bundle and prepare the local `mdp` CLI if needed. For noninteractive installs, set `MDP_VERSION`, `MDP_INSTALL_DIR`, or `MDP_DOWNLOAD_URL` before running the installer.

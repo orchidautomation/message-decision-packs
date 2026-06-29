@@ -125,7 +125,6 @@ Planned release assets:
 message-decision-packs-codex-v0.1.0.tar.gz
 message-decision-packs-codex-latest.tar.gz
 install-codex.sh
-install-all.sh
 release-manifest.json
 SHA256SUMS.txt
 ```
@@ -285,6 +284,6 @@ Full Daytona QA was attempted against the public latest-release installer URL on
 DAYTONA_SANDBOX_NAME=mdp-release-qa-latest-20260624d scripts/daytona-mdp-release-qa.sh
 ```
 
-Result: blocked at the expected first release gate. The sandbox was created successfully, had no preinstalled `mdp`, and failed because `https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-codex.sh` returned `404`. No plugin was installed. The sandbox was deleted after the check.
+Result: blocked at the expected first release gate. The sandbox was created successfully, had no preinstalled `mdp`, and failed because the latest-release installer asset did not exist yet. No plugin was installed. The sandbox was deleted after the check.
 
-Rerun the same command after the first GitHub Release exists with `install.sh`, `install-codex.sh`, and the matching `mdp-*` binary assets.
+Rerun the same command after the first GitHub Release exists with `install.sh`, host installer assets such as `install-codex.sh`, and the matching `mdp-*` binary assets.

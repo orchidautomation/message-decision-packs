@@ -52,13 +52,13 @@ See [Pluxx Distribution Evaluation](pluxx-distribution-evaluation.md) for the cu
 
 ## Release Installers
 
-The public install path should match the Pluxx-generated release pattern used by Orchid plugins:
+The public single-host install path uses the top-level installer plus a host flag:
 
 ```bash
-curl -fsSL https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-codex.sh | bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --codex -y
 ```
 
-The preferred one-command installer mirrors Railway's agent installer shape:
+The CLI plus supported agent-bundle installer mirrors Railway's agent installer shape:
 
 ```bash
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
