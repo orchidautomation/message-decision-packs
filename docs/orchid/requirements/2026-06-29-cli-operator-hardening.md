@@ -21,7 +21,7 @@ Linear: MDP-2 parent, MDP-3 version command, MDP-4 upgrade guidance, MDP-5 agent
 
 This gap is real and worth fixing. MDP is a local/offline decision contract layer, but the user experience around install health and updates is currently too repo-script-shaped. Users who install the release binary should be able to ask the binary what it is, whether it is current, and what the safe upgrade path is.
 
-The upgrade path should stay explicit and auditable. The current docs intentionally say to rerun the installer instead of silently replacing the plugin/CLI during normal agent work. A first `mdp upgrade` should therefore either print the canonical installer command or run it only behind an explicit flag, rather than doing hidden background replacement by default.
+The upgrade path should stay explicit and auditable. The current docs intentionally say to rerun the installer instead of silently replacing the plugin/CLI during normal agent work. Because the CLI and installed agent skills need to stay in lockstep, the canonical update unit is the release installer, not a CLI-only self-update. A first `mdp upgrade` should therefore be deferred or stay non-mutating guidance that prints the canonical installer command; it should not replace only the binary while leaving installed skills on an older contract.
 
 ## Recommended Scope
 
@@ -31,6 +31,7 @@ The upgrade path should stay explicit and auditable. The current docs intentiona
    - Keep `mdp --version` as the terse compatibility flag.
 
 2. Add `mdp upgrade`.
+   - Deferred from the MDP-5 agent-driving slice.
    - Default behavior should be non-destructive: print current version, the canonical installer command, and pinned-version examples.
    - Add `--check` only if the implementation can query GitHub releases without making the core CLI brittle.
    - Add `--run` or `--yes` only if the command makes network and installer execution explicit before it mutates local tools.
@@ -62,11 +63,9 @@ The upgrade path should stay explicit and auditable. The current docs intentiona
 
 ## Definition Of Ready For Implementation
 
-- Decide whether `mdp upgrade` should only print guidance in the first iteration, or whether an explicit `--run` path should be included immediately.
-- Confirm whether network-based `--check` belongs inside the Rust CLI now or should remain delegated to `scripts/check-update.sh` until distribution matures.
 - Split implementation if needed:
   - `version` command can ship independently.
-  - `upgrade` command and `doctor` update visibility can ship as the next slice.
+  - `upgrade` command and `doctor` update visibility can ship as the next slice, but `upgrade` should not mutate only the CLI unless it also preserves skill/plugin version alignment.
   - `capabilities`, selected `--dry-run`, strict gates, and stable error codes can ship as an agent-driving slice.
 
 Linear breakdown:
@@ -86,13 +85,12 @@ cargo run --manifest-path cli/Cargo.toml -- --json validate --dir plugin/assets/
 make validate
 ```
 
-Manual smoke checks:
+Manual smoke checks for the MDP-5 agent-driving slice:
 
 ```bash
-mdp version
-mdp --json version
-mdp upgrade
-mdp --json upgrade
-mdp doctor
-mdp --json doctor
+mdp --json capabilities
+mdp --json init --template gtm --name "Dry Run Pack" --dir /tmp/mdp-dry-run --dry-run
+mdp --json validate --strict --dir plugin/assets/templates/basic
+mdp --json pack --dir plugin/assets/templates/basic --out /tmp/mdp-pack.json --dry-run
+mdp --json definitely-not-a-command
 ```
