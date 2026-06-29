@@ -1,0 +1,23 @@
+{
+  "fixture_note": "Synthetic raw row for demonstrating normalization. This is not a real person, company, lead, or contact target.",
+  "synthetic": true,
+  "do_not_contact": true,
+  "source_kind": "synthetic-example",
+  "raw_person": {
+    "full_name": "Maya Chen",
+    "role": "GTM Engineering Lead",
+    "profile": "https://www.linkedin.com/in/example-maya-chen"
+  },
+  "raw_account": {
+    "name": "ExampleStack Labs",
+    "domain": "example.com",
+    "segment_guess": "B2B software, agent-assisted GTM systems"
+  },
+  "current_workflow": "Team has one large prompt that mixes ICP, claims, CTAs, avoid rules, and channel instructions. Different agents drift when asked for LinkedIn, email, or call prep.",
+  "notes": [
+    "Needs local files that can be reviewed and tested.",
+    "Wants fit to stop rows with missing evidence before drafting.",
+    "Does not need MDP to send messages or update a CRM."
+  ],
+  "normalization_target": ".mdp/examples/clay-row.json"
+}

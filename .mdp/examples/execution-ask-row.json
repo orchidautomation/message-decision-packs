@@ -1,0 +1,21 @@
+{
+  "fixture_note": "Synthetic disqualified row. It demonstrates the boundary between MDP decision context and separate execution systems.",
+  "synthetic": true,
+  "do_not_contact": true,
+  "source_kind": "synthetic-example",
+  "raw_person": {
+    "full_name": "Riley Stone",
+    "role": "Founder",
+    "profile": "https://www.linkedin.com/in/example-riley-stone"
+  },
+  "raw_account": {
+    "name": "SequenceNow Demo",
+    "domain": "example.net"
+  },
+  "current_workflow": "Asked the agent to scrape contacts, enrich leads, sequence prospects, auto-send LinkedIn messages, and update CRM records.",
+  "notes": [
+    "The execution ask is intentionally disqualifying for MDP itself.",
+    "A separate approved system would be needed after a valid MDP handoff."
+  ],
+  "normalization_target": ".mdp/examples/execution-ask-prospect.json"
+}

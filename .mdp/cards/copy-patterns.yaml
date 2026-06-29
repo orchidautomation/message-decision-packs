@@ -1,0 +1,59 @@
+id: copy-patterns
+kind: copy-patterns
+title: Copy patterns
+description: Reusable narrative structures for MDP education and handoffs.
+personas: []
+tags:
+- copy
+- brief
+- structure
+entries:
+- id: source-row-to-decision
+  title: Source row to decision
+  body: "Pattern: source row or hypothesis -> normalized evidence -> fit gate -> routed cards -> approved angle -> one CTA. Use this when demonstrating why MDP sits before drafting."
+  applies_to:
+  - GTM Engineer
+  - RevOps
+  - PMM
+  evidence:
+  - mdp-conceptual-flow
+  avoid: []
+- id: prompt-vs-pack
+  title: Prompt versus pack
+  body: "Pattern: name the current giant-prompt habit -> show the failure mode -> explain modular decision cards -> show one CLI command that makes the boundary testable."
+  applies_to:
+  - GTM Engineer
+  - PMM
+  - Founder
+  evidence:
+  - mdp-1-education-thesis
+  avoid: []
+- id: no-draft-value
+  title: No-draft value
+  body: "Pattern: acknowledge that writing is easy -> name the risk of bad drafts from weak evidence -> show no-draft as the system telling the truth -> ask whether that gate would help the current workflow."
+  applies_to:
+  - RevOps
+  - PMM
+  - Founder
+  evidence:
+  - mdp-conceptual-flow
+  avoid: []
+- id: proof-before-claim
+  title: Proof before claim
+  body: "Pattern: approved claim -> evidence source -> avoid rule -> gap if proof is missing -> draft only from loaded context."
+  applies_to:
+  - PMM
+  - Agency Operator
+  evidence:
+  - mdp-readme
+  avoid: []
+- id: skill-library-to-pack
+  title: Skill library to pack
+  body: "Pattern: name the Claude Skill, MCP, context repo, or markdown workflow sprawl -> identify the routing or governance risk -> frame MDP as a customer-owned decision pack -> ask whether one fixture would make the workflow easier to audit."
+  applies_to:
+  - GTM Engineer
+  - Agency Operator
+  - Founder
+  evidence:
+  - mdp-apify-aligned-gtm-builders
+  avoid: []

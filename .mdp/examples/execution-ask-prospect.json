@@ -1,0 +1,23 @@
+{
+  "name": "Riley Stone",
+  "title": "Founder",
+  "company": "SequenceNow Demo",
+  "source_kind": "synthetic-example",
+  "synthetic": true,
+  "linkedin_url": "https://www.linkedin.com/in/example-riley-stone",
+  "company_url": "https://example.net",
+  "background": "Synthetic founder row asking MDP to perform execution work directly.",
+  "trigger": "Asked to scrape contacts, enrich leads, sequence prospects, auto-send LinkedIn messages, and update CRM records.",
+  "persona": "Founder",
+  "segment": "Early GTM operator",
+  "signals": [
+    {
+      "id": "execution-boundary-request",
+      "title": "Execution request is outside MDP boundaries",
+      "source": ".mdp/examples/execution-ask-row.json#current_workflow",
+      "confidence": "high",
+      "freshness": "synthetic-current",
+      "state_as": "supplied"
+    }
+  ]
+}
