@@ -35,7 +35,9 @@ The starter fixture path is kept for compatibility. It is a synthetic provider-n
 Quick demo:
 
 ```bash
+mdp --json capabilities
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
+mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --dry-run
 mdp --json validate --dir /tmp/mdp-demo
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp sample-leads --dir /tmp/mdp-demo --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
@@ -52,7 +54,26 @@ Use `brief` for production handoff. Add `--out <path>` when the brief should be 
 
 ## JSON contract
 
-All commands support `--json`; add `--summary` for compact status output. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.
+All commands support `--json`; add `--summary` for compact status output. Run `mdp --json capabilities` when an agent or wrapper needs to inspect command names, coarse side effects, output contracts, `--out` support, dry-run support, strict-mode support, and stable error codes. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.
+
+Selected write paths support `--dry-run` so agents can inspect local file writes before mutating a pack:
+
+```bash
+mdp --json init --name "Message Pack" --dir . --dry-run
+mdp --json brief --context --dir . --prospect <prospect.json> --channel linkedin --out .mdp/briefs/example.json --dry-run
+mdp --json emit-brief --dir . --persona "PMM" --job "linkedin outbound copy" --out .mdp/briefs/route.json --dry-run
+mdp --json pack --dir . --out /tmp/mdp-pack.json --dry-run
+```
+
+Use `--strict` on validation/checking flows when warnings should fail an agent or CI gate:
+
+```bash
+mdp --json validate --strict --dir .
+mdp --json check-claims --strict --dir . --text "<draft copy>" --subject "<subject>" --persona "PMM" --job "initial email outbound message"
+mdp --json eval --strict --dir .
+```
+
+JSON errors use stable top-level codes where the CLI can classify the failure: `pack_not_found`, `invalid_manifest`, `missing_card`, `unsupported_claim`, `insufficient_context`, `write_conflict`, `invalid_argument`, and fallback `mdp_error`.
 
 Use `mdp --json schema prompt` to inspect the reusable prompt contract. Prompt outputs use `contract: mdp.prompt-output.v0` and must match the contract named by each prompt's `output_contract.schema_ref`; starter prompts can inline the full JSON Schema with `mdp init --include-output-schemas`. Extraction prompts preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance; normalization prompts preserve `normalized_prospect`, `normalization_trace`, gaps, and empty `card_patches`. Prompt files are local decision contracts, not browsing, scraping, enrichment, sending, sequencing, or CRM-update workflows.
 
@@ -70,7 +91,7 @@ Error:
 
 ## Agent handoff
 
-1. Run `mdp --json doctor` and `mdp --json validate`.
+1. Run `mdp --json capabilities`, then `mdp --json doctor` and `mdp --json validate`.
 2. If outbound-copy testing needs lead-specific inputs and no real or sanitized prospect row was supplied, generate 2 to 5 fake fixtures:
 
 ```bash
@@ -82,7 +103,7 @@ mdp sample-leads --dir . --persona "PMM" --job "initial email outbound copy" --c
 5. Run `mdp --json --summary brief --context --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
 6. Stop if `data.draft_status` is `no-draft`.
 7. Draft from `data.context.entries` first; for generated fixtures, draft against `safe_personalization` and `known_gaps` and never imply the fixture is a real prospect. Open `data.context.full_card_required` paths only when present.
-8. Run `mdp --json check-claims` before approval; it reports unsupported claims plus avoid-rule, output-rule, and hard structured-constraint guardrail hits. Include `--subject`, `--persona`, and `--job` when checking routed subject or channel constraints. Target-range misses appear in `constraint_warnings`; actual attachments, embedded images, and send-surface tracking may appear in `unchecked_constraints` because they cannot be proven from a single draft body.
+8. Run `mdp --json check-claims` before approval; add `--strict` when advisory target-range misses should fail the gate. It reports unsupported claims plus avoid-rule, output-rule, and hard structured-constraint guardrail hits. Include `--subject`, `--persona`, and `--job` when checking routed subject or channel constraints. Target-range misses appear in `constraint_warnings`; actual attachments, embedded images, and send-surface tracking may appear in `unchecked_constraints` because they cannot be proven from a single draft body.
 
 Generated starter rows and `sample-leads` rows are synthetic examples. They include `source_kind: synthetic-example`, `synthetic: true`, and must not be presented as real prospects. Production rows can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after they are normalized into MDP prospect JSON.
 

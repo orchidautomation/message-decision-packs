@@ -1,10 +1,11 @@
 use crate::cli::{Cli, Commands, SampleLeadsFormat};
 use crate::commands::{
-    check_claims, demo_copy, doctor, emit_brief, eval_pack, explain, fit, gaps, init_pack, pack,
-    prospect_brief_with_context, route, sample_leads, schema, validate_pack,
+    capabilities, check_claims, demo_copy, doctor, emit_brief, eval_pack, explain, fit, gaps,
+    init_pack, init_pack_dry_run, pack, prospect_brief_with_context, route, sample_leads, schema,
+    validate_pack,
 };
 use crate::output::print_output;
-use crate::pack_io::write_json_file;
+use crate::pack_io::{planned_json_write, write_json_file};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -13,19 +14,27 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
     let json_mode = cli.json;
     let summary_mode = cli.summary;
     match cli.command {
+        Commands::Capabilities => {
+            print_output(json_mode, summary_mode, "capabilities", capabilities())
+        }
         Commands::Init {
             name,
             dir,
             template,
             force,
             include_output_schemas,
+            dry_run,
         } => {
-            let data = init_pack(&dir, &name, &template, force, include_output_schemas)?;
+            let data = if dry_run {
+                init_pack_dry_run(&dir, &name, &template, force, include_output_schemas)?
+            } else {
+                init_pack(&dir, &name, &template, force, include_output_schemas)?
+            };
             print_output(json_mode, summary_mode, "init", data)
         }
         Commands::Doctor { dir } => print_output(json_mode, summary_mode, "doctor", doctor(&dir)),
-        Commands::Validate { dir } => {
-            let data = validate_pack(&dir)?;
+        Commands::Validate { dir, strict } => {
+            let data = apply_strict(validate_pack(&dir)?, strict, StrictWarningSource::Issues);
             print_checked(json_mode, summary_mode, "validate", data)
         }
         Commands::Explain { dir, persona } => print_output(
@@ -67,6 +76,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             subject,
             persona,
             job,
+            strict,
         } => {
             let data = check_claims(
                 &dir,
@@ -76,11 +86,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 persona.as_deref(),
                 job.as_deref(),
             )?;
+            let data = apply_strict(data, strict, StrictWarningSource::ConstraintWarnings);
             print_checked(json_mode, summary_mode, "check-claims", data)
         }
         Commands::Gaps { dir } => print_output(json_mode, summary_mode, "gaps", gaps(&dir)?),
-        Commands::Eval { dir } => {
-            let data = eval_pack(&dir)?;
+        Commands::Eval { dir, strict } => {
+            let data = apply_strict(eval_pack(&dir)?, strict, StrictWarningSource::Issues);
             print_checked(json_mode, summary_mode, "eval", data)
         }
         Commands::Brief {
@@ -90,13 +101,18 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             job,
             context,
             out,
+            dry_run,
         } => {
             let mut data =
                 prospect_brief_with_context(&dir, &prospect, &channel, job.as_deref(), context)?;
             data = attach_input_artifact(data, "prospect", &prospect);
             if let Some(path) = out {
-                data = attach_artifact(data, &path);
-                write_json_file(&path, &data)?;
+                if dry_run {
+                    data = attach_dry_run_artifact(data, &path);
+                } else {
+                    data = attach_artifact(data, &path);
+                    write_json_file(&path, &data)?;
+                }
             } else {
                 data = attach_stdout_artifact(data);
             }
@@ -124,21 +140,30 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             motion,
             job,
             out,
+            dry_run,
         } => {
             let mut data = emit_brief(&dir, &persona, motion.as_deref(), job.as_deref())?;
             if let Some(path) = out {
-                data = attach_artifact(data, &path);
-                write_json_file(&path, &data)?;
+                if dry_run {
+                    data = attach_dry_run_artifact(data, &path);
+                } else {
+                    data = attach_artifact(data, &path);
+                    write_json_file(&path, &data)?;
+                }
             } else {
                 data = attach_stdout_artifact(data);
             }
             print_output(json_mode, summary_mode, "emit-brief", data)
         }
-        Commands::Pack { dir, out } => {
+        Commands::Pack { dir, out, dry_run } => {
             let mut data = pack(&dir)?;
             if let Some(path) = out {
-                data = attach_artifact(data, &path);
-                write_json_file(&path, &data)?;
+                if dry_run {
+                    data = attach_dry_run_artifact(data, &path);
+                } else {
+                    data = attach_artifact(data, &path);
+                    write_json_file(&path, &data)?;
+                }
             } else {
                 data = attach_stdout_artifact(data);
             }
@@ -174,6 +199,52 @@ fn print_checked(json_mode: bool, summary_mode: bool, command: &str, data: Value
     }
 }
 
+#[derive(Clone, Copy)]
+enum StrictWarningSource {
+    Issues,
+    ConstraintWarnings,
+}
+
+fn apply_strict(mut data: Value, strict: bool, source: StrictWarningSource) -> Value {
+    if !strict {
+        return data;
+    }
+
+    let warnings = match source {
+        StrictWarningSource::Issues => data["issues"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|issue| issue["severity"].as_str() == Some("warning"))
+            .cloned()
+            .collect::<Vec<_>>(),
+        StrictWarningSource::ConstraintWarnings => data["constraint_warnings"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+    };
+
+    if let Some(object) = data.as_object_mut() {
+        object.insert(
+            "strict".to_string(),
+            json!({
+                "enabled": true,
+                "warning_count": warnings.len(),
+                "warnings_fail": true,
+                "source": match source {
+                    StrictWarningSource::Issues => "issues",
+                    StrictWarningSource::ConstraintWarnings => "constraint_warnings",
+                }
+            }),
+        );
+        if !warnings.is_empty() {
+            object.insert("valid".to_string(), json!(false));
+            object.insert("strict_warnings".to_string(), Value::Array(warnings));
+        }
+    }
+    data
+}
+
 fn attach_artifact(mut data: Value, path: &Path) -> Value {
     if let Some(object) = data.as_object_mut() {
         object.insert(
@@ -185,6 +256,24 @@ fn attach_artifact(mut data: Value, path: &Path) -> Value {
                 "stdout": "also-emitted"
             }),
         );
+    }
+    data
+}
+
+fn attach_dry_run_artifact(mut data: Value, path: &Path) -> Value {
+    let write_plan = planned_json_write(path);
+    if let Some(object) = data.as_object_mut() {
+        object.insert(
+            "artifact".to_string(),
+            json!({
+                "status": "dry-run",
+                "kind": "json-file",
+                "path": path.display().to_string(),
+                "stdout": "also-emitted"
+            }),
+        );
+        object.insert("dry_run".to_string(), json!(true));
+        object.insert("write_plan".to_string(), Value::Array(vec![write_plan]));
     }
     data
 }
@@ -263,6 +352,7 @@ mod tests {
                 job: None,
                 context: true,
                 out: Some(out.clone()),
+                dry_run: false,
             },
         })
         .expect("brief command should run");
@@ -276,5 +366,31 @@ mod tests {
         assert_eq!(saved["context"]["contract"], "mdp.context.v0");
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn strict_claim_check_warnings_can_fail_validity() {
+        let data = apply_strict(
+            json!({
+                "valid": true,
+                "constraint_warnings": [{"code": "target_word_count", "message": "too short"}]
+            }),
+            true,
+            StrictWarningSource::ConstraintWarnings,
+        );
+
+        assert_eq!(data["valid"], false);
+        assert_eq!(data["strict"]["warning_count"], 1);
+        assert_eq!(data["strict_warnings"][0]["code"], "target_word_count");
+    }
+
+    #[test]
+    fn dry_run_artifact_does_not_mark_saved() {
+        let path = PathBuf::from("/tmp/brief.json");
+        let result = attach_dry_run_artifact(json!({"contract": "mdp.message-brief.v0"}), &path);
+
+        assert_eq!(result["artifact"]["status"], "dry-run");
+        assert_eq!(result["dry_run"], true);
+        assert_eq!(result["write_plan"][0]["path"], "/tmp/brief.json");
     }
 }

@@ -72,7 +72,7 @@ mdp --json fit --dir . --prospect <prospect.json>
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel>
 ```
 
-Use `--out .mdp/briefs/<brief-name>.json` when the user expects a durable created brief file. Without `--out`, the brief is stdout-only.
+Use `--out .mdp/briefs/<brief-name>.json` when the user expects a durable created brief file. Add `--dry-run` first when an agent should preview the file write before mutating the pack. Without `--out`, the brief is stdout-only.
 
 10. Read `data.context.entries` first if drafting is requested and `data.draft_status` is `ready`. Open `data.context.full_card_required` paths only when present.
 

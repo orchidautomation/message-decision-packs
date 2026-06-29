@@ -16,6 +16,13 @@ mdp --json validate --dir .
 mdp --json eval --dir .
 ```
 
+Use `--strict` when warnings should fail the agent or CI gate:
+
+```bash
+mdp --json validate --strict --dir .
+mdp --json eval --strict --dir .
+```
+
 2. Choose representative cases:
 
 - each primary persona
