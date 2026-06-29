@@ -31,7 +31,7 @@ Do not describe MDP as:
 
 Use the MDP Linear team for this repo's bugs, feature work, planning, and closeout. When work is tied to a Linear issue, include the issue ID in branch names, PR titles/descriptions, and relevant comments, for example `MDP-123`.
 
-This is a public-facing OSS repo. Keep public GitHub references limited to issue identifiers, public links, and sanitized summaries; do not expose private Linear discussion details, customer data, raw transcripts, tokens, or local-only paths in commits, PRs, or public docs.
+This is a public-facing source-available repo. Keep public GitHub references limited to issue identifiers, public links, and sanitized summaries; do not expose private Linear discussion details, customer data, raw transcripts, tokens, or local-only paths in commits, PRs, or public docs.
 
 ## Feature Change Hygiene
 
