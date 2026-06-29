@@ -53,6 +53,11 @@ need_cmd tar
 need_cmd node
 
 curl -fsSL "$MDP_INSTALL_URL" -o /tmp/install-mdp.sh
+bash /tmp/install-mdp.sh --cli -y
+
+command -v mdp
+mdp --version
+
 bash /tmp/install-mdp.sh --agents -y
 
 command -v mdp

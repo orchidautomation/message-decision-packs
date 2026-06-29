@@ -35,16 +35,25 @@ pub(crate) fn print_output(
 fn summarize(command: &str, data: &Value) -> Value {
     match command {
         "init" => json!({
+            "dry_run": data["dry_run"],
             "root": data["root"],
             "pack_dir": data["pack_dir"],
             "manifest": data["manifest"],
             "source_ledger": data["source_ledger"],
             "example_prospect": data["example_prospect"],
             "example_prospect_kind": data["example_prospect_kind"],
+            "write_count": array_len(&data["write_plan"]),
             "next_commands": data["next_commands"]
+        }),
+        "capabilities" => json!({
+            "contract": data["contract"],
+            "command_count": array_len(&data["commands"]),
+            "stable_error_code_count": array_len(&data["stable_error_codes"]),
+            "offline_by_default": data["defaults"]["offline_by_default"]
         }),
         "doctor" | "validate" => json!({
             "valid": data["valid"],
+            "strict": data["strict"],
             "issue_count": array_len(&data["issues"]),
             "issues": data["issues"]
         }),
@@ -96,7 +105,9 @@ fn summarize(command: &str, data: &Value) -> Value {
             "context": context_summary(&data["context"]),
             "prospect_source": data["prospect_source"],
             "input_artifact": data["input_artifact"],
-            "artifact": data["artifact"]
+            "artifact": data["artifact"],
+            "dry_run": data["dry_run"],
+            "write_plan": data["write_plan"]
         }),
         "emit-brief" => json!({
             "contract": data["contract"],
@@ -106,7 +117,9 @@ fn summarize(command: &str, data: &Value) -> Value {
             "job": data["inputs"]["job"],
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
-            "artifact": data["artifact"]
+            "artifact": data["artifact"],
+            "dry_run": data["dry_run"],
+            "write_plan": data["write_plan"]
         }),
         "copy" => json!({
             "contract": data["contract"],
@@ -122,11 +135,14 @@ fn summarize(command: &str, data: &Value) -> Value {
             "contract": data["contract"],
             "pack": data["pack"],
             "card_count": array_len(&data["cards"]),
-            "artifact": data["artifact"]
+            "artifact": data["artifact"],
+            "dry_run": data["dry_run"],
+            "write_plan": data["write_plan"]
         }),
         "check-claims" => json!({
             "valid": data["valid"],
             "decision": data["decision"],
+            "strict": data["strict"],
             "matched_claim_count": array_len(&data["matched_claims"]),
             "claim_gap_count": array_len(&data["claim_gaps"]),
             "guardrail_hit_count": array_len(&data["guardrail_hits"]),
@@ -138,6 +154,7 @@ fn summarize(command: &str, data: &Value) -> Value {
         }),
         "eval" => json!({
             "valid": data["valid"],
+            "strict": data["strict"],
             "fixture_count": data["summary"]["fixture_count"],
             "issue_count": array_len(&data["issues"]),
             "failing_fixtures": failing_fixtures(data)
@@ -182,7 +199,15 @@ fn failing_fixtures(data: &Value) -> Vec<String> {
 }
 
 pub(crate) fn print_error(json_mode: bool, err: anyhow::Error) -> Result<()> {
-    let payload = json!({"ok": false, "error": {"code": "mdp_error", "message": err.to_string(), "details": []}});
+    let message = err.to_string();
+    let details = err
+        .chain()
+        .skip(1)
+        .map(|cause| cause.to_string())
+        .collect::<Vec<_>>();
+    let code = classify_error(&message, &details);
+    let payload =
+        json!({"ok": false, "error": {"code": code, "message": message, "details": details}});
     if json_mode {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
@@ -191,17 +216,67 @@ pub(crate) fn print_error(json_mode: bool, err: anyhow::Error) -> Result<()> {
     Ok(())
 }
 
+fn classify_error(message: &str, details: &[String]) -> &'static str {
+    let lower = format!("{} {}", message, details.join(" ")).to_lowercase();
+    if lower.contains("unrecognized subcommand")
+        || lower.contains("unexpected argument")
+        || lower.contains("required arguments")
+        || lower.contains("pass either --text or --file")
+        || lower.contains("pass --text or --file")
+        || lower.contains("unsupported template")
+        || lower.contains("--count must")
+    {
+        "invalid_argument"
+    } else if lower.contains("already exists; pass --force") {
+        "write_conflict"
+    } else if lower.contains(".mdp/manifest.yaml") && lower.contains("parsing") {
+        "invalid_manifest"
+    } else if lower.contains(".mdp/manifest.yaml") && lower.contains("reading") {
+        "pack_not_found"
+    } else if lower.contains("missing card id")
+        || (lower.contains(".mdp/cards/") && lower.contains("reading"))
+    {
+        "missing_card"
+    } else if lower.contains("unsupported claim") {
+        "unsupported_claim"
+    } else if lower.contains("insufficient-context") || lower.contains("insufficient context") {
+        "insufficient_context"
+    } else {
+        "mdp_error"
+    }
+}
+
 fn print_human(command: &str, data: &Value) -> Result<()> {
     match command {
         "init" => {
-            println!(
-                "Created MDP package at {}",
-                data["pack_dir"].as_str().unwrap_or("")
-            );
+            if data["dry_run"].as_bool() == Some(true) {
+                println!(
+                    "init: dry run for {}",
+                    data["pack_dir"].as_str().unwrap_or("")
+                );
+                print_write_plan(data);
+            } else {
+                println!(
+                    "Created MDP package at {}",
+                    data["pack_dir"].as_str().unwrap_or("")
+                );
+            }
             println!(
                 "Next: mdp validate --dir {}",
                 data["root"].as_str().unwrap_or(".")
             );
+        }
+        "capabilities" => {
+            println!("mdp capabilities:");
+            if let Some(commands) = data["commands"].as_array() {
+                for command in commands {
+                    println!(
+                        "- {}: {}",
+                        command["name"].as_str().unwrap_or("command"),
+                        command["side_effects"].as_str().unwrap_or("unknown")
+                    );
+                }
+            }
         }
         "doctor" | "validate" => {
             println!(
@@ -219,9 +294,26 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                 }
             }
         }
+        "brief" | "emit-brief" | "pack" if data["dry_run"].as_bool() == Some(true) => {
+            println!("{command}: dry run");
+            print_write_plan(data);
+        }
         _ => println!("{}", serde_json::to_string_pretty(data)?),
     }
     Ok(())
+}
+
+fn print_write_plan(data: &Value) {
+    if let Some(items) = data["write_plan"].as_array() {
+        for item in items {
+            println!(
+                "- {} {} ({})",
+                item["action"].as_str().unwrap_or("write"),
+                item["path"].as_str().unwrap_or(""),
+                item["kind"].as_str().unwrap_or("file")
+            );
+        }
+    }
 }
 
 fn issue_message(item: &Value) -> String {
@@ -344,5 +436,24 @@ mod tests {
         assert_eq!(summary["fixture_count"], 2);
         assert_eq!(summary["issue_count"], 1);
         assert_eq!(summary["failing_fixtures"][0], "bad");
+    }
+
+    #[test]
+    fn json_errors_are_classified_for_agents() {
+        assert_eq!(
+            classify_error("unsupported template 'x'; available: gtm", &[]),
+            "invalid_argument"
+        );
+        assert_eq!(
+            classify_error(
+                "/tmp/.mdp/manifest.yaml already exists; pass --force to overwrite",
+                &[]
+            ),
+            "write_conflict"
+        );
+        assert_eq!(
+            classify_error("reading .mdp/manifest.yaml", &[]),
+            "pack_not_found"
+        );
     }
 }

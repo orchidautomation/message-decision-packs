@@ -21,25 +21,31 @@ Date: 2026-06-24
 
 Use `skills.sh` as a documented compatibility path for skill-aware agents that are not first-class Pluxx release targets.
 
-MDP should keep Pluxx as the primary release packaging path because Pluxx builds the host plugin bundles and release installers used by the one-command install. The public installer remains the default user path because it installs both the `mdp` CLI and the agent/plugin files:
+MDP should keep Pluxx as the primary release packaging path because Pluxx builds the host plugin bundles and release installers used by the one-command install. The public installer remains the default user path because it can install both the `mdp` CLI and the agent/plugin files:
 
 ```bash
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
+For CLI-only users, use:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
 For agents outside the Pluxx-supported release set, document `skills.sh` as an optional fallback for installing MDP's `SKILL.md` files:
 
 ```bash
-npx skills add orchidautomation/message-decision-packs --skill '*' -g -a <agent> -y
+npx skills add https://github.com/orchidautomation/message-decision-packs --skill '*' --agent '*' -g -y
 ```
 
 Use the `universal` target when the user's agent follows the shared `.agents/skills/` convention:
 
 ```bash
-npx skills add orchidautomation/message-decision-packs --skill '*' -g -a universal -y
+npx skills add https://github.com/orchidautomation/message-decision-packs --skill '*' --agent universal -g -y
 ```
 
-This fallback installs skill instructions only. It does not replace the MDP installer because `skills.sh` does not install the Rust `mdp` CLI binary, release assets, or plugin runtime scripts. Users who install skills this way still need the CLI from the MDP release installer or another supported binary install path.
+This fallback installs skill instructions only. It does not replace the MDP installer because `skills.sh` does not install the Rust `mdp` CLI binary, release assets, or plugin runtime scripts. Users who install skills this way still need the CLI from the MDP release installer, usually `--cli`, or another supported binary install path.
 
 This is intentionally a documentation decision, not a new product surface. Do not add another release system unless user demand shows that a fifth host needs a first-class Pluxx target or a dedicated generic skills install flag.
 
@@ -119,7 +125,6 @@ Planned release assets:
 message-decision-packs-codex-v0.1.0.tar.gz
 message-decision-packs-codex-latest.tar.gz
 install-codex.sh
-install-all.sh
 release-manifest.json
 SHA256SUMS.txt
 ```
@@ -279,6 +284,6 @@ Full Daytona QA was attempted against the public latest-release installer URL on
 DAYTONA_SANDBOX_NAME=mdp-release-qa-latest-20260624d scripts/daytona-mdp-release-qa.sh
 ```
 
-Result: blocked at the expected first release gate. The sandbox was created successfully, had no preinstalled `mdp`, and failed because `https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-codex.sh` returned `404`. No plugin was installed. The sandbox was deleted after the check.
+Result: blocked at the expected first release gate. The sandbox was created successfully, had no preinstalled `mdp`, and failed because the latest-release installer asset did not exist yet. No plugin was installed. The sandbox was deleted after the check.
 
-Rerun the same command after the first GitHub Release exists with `install.sh`, `install-codex.sh`, and the matching `mdp-*` binary assets.
+Rerun the same command after the first GitHub Release exists with `install.sh`, host installer assets such as `install-codex.sh`, and the matching `mdp-*` binary assets.

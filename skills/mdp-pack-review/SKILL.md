@@ -19,6 +19,8 @@ mdp --json gaps --dir .
 mdp --json eval --dir .
 ```
 
+Use `mdp --json capabilities` when reviewing agent-facing CLI support, and use `--strict` on `validate` or `eval` when warnings should fail the review gate. Use `mdp --json pack --dir . --out <path> --dry-run` before saving a portable pack artifact.
+
 2. Review the manifest:
 
 - format and version

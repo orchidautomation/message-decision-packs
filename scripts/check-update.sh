@@ -80,7 +80,8 @@ elif [ -n "$plugin_version" ] && [ -n "$latest_version" ]; then
   plugin_status="stale"
 fi
 
-install_command="bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y"
+full_install_command="bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y"
+cli_only_install_command="bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y"
 
 cat <<JSON
 {
@@ -98,6 +99,8 @@ cat <<JSON
     "cli": $(printf '%s' "$cli_status" | json_escape),
     "plugin": $(printf '%s' "$plugin_status" | json_escape)
   },
-  "update_command": $(printf '%s' "$install_command" | json_escape)
+  "update_command": $(printf '%s' "$full_install_command" | json_escape),
+  "full_install_command": $(printf '%s' "$full_install_command" | json_escape),
+  "cli_only_install_command": $(printf '%s' "$cli_only_install_command" | json_escape)
 }
 JSON

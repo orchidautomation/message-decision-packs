@@ -34,10 +34,16 @@ https://mdp.orchidlabs.dev/llms-full.txt
 
 Latest release: [release page](https://github.com/orchidautomation/message-decision-packs/releases/latest)
 
-One-command install:
+Install the CLI plus supported agent bundles:
 
 ```bash
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+Install only the `mdp` CLI:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
 ```
 
 For the first-use walkthrough, see [Getting Started](docs/getting-started.md).
@@ -55,9 +61,18 @@ Portable shell fallback:
 curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --agents -y
 ```
 
+CLI-only portable shell fallback:
+
+```bash
+curl -fsSL https://mdp.orchidlabs.dev/install.sh | bash -s -- --cli -y
+```
+
 Copy-paste installers - pick the AI tool you use:
 
 ```bash
+# CLI only
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+
 # Claude Code
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --claude-code -y
 
@@ -74,10 +89,11 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
-The release installers install the selected plugin bundle and prepare the local `mdp` CLI if it is not already on `PATH`. For noninteractive installs, set `MDP_VERSION`, `MDP_INSTALL_DIR`, or `MDP_DOWNLOAD_URL` before running the installer.
+The `--agents` installer prepares the local `mdp` CLI once, then installs supported host bundles for Claude Code, Cursor, Codex, and OpenCode. If Claude Code is not available on `PATH`, `--agents` skips that host with a warning; use `--claude-code` when Claude Code installation should be required. Single-host installers install that plugin bundle and prepare the local `mdp` CLI if needed. For noninteractive installs, set `MDP_VERSION`, `MDP_INSTALL_DIR`, or `MDP_DOWNLOAD_URL` before running the installer.
 
 Direct downloads:
 
+- [CLI installer](https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install-cli.sh)
 - [Claude Code plugin](https://github.com/orchidautomation/message-decision-packs/releases/latest/download/message-decision-packs-claude-code-latest.tar.gz)
 - [Cursor plugin](https://github.com/orchidautomation/message-decision-packs/releases/latest/download/message-decision-packs-cursor-latest.tar.gz)
 - [Codex plugin](https://github.com/orchidautomation/message-decision-packs/releases/latest/download/message-decision-packs-codex-latest.tar.gz)
@@ -106,6 +122,8 @@ mdp --json doctor --dir .
 Create a pack:
 
 ```bash
+mdp --json capabilities
+mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --dry-run
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
 mdp --json validate --dir /tmp/mdp-demo
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
@@ -199,7 +217,7 @@ Keep outbound rules split by responsibility:
 
 Use human-readable `body` text for these policies. Use `avoid` terms when a literal should be caught by guardrail checks, `exact_paragraphs` when a fixed paragraph count is truly required, and `constraints` for deterministic output checks such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking.
 
-Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Routed entries can include structured `constraints` for deterministic output checks such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy to catch unsupported claims, avoid-rule hits, output-rule hits, hard constraint violations in `guardrail_hits`, advisory target misses in `constraint_warnings`, and text-only limitations in `unchecked_constraints`. Use `gaps` to expose missing evidence, and use `eval` to test route, fit, brief, and claim behavior.
+Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. Agents and wrappers can run `mdp --json capabilities` to inspect command contracts, coarse side effects, dry-run support, strict-mode support, and stable JSON error codes before driving the CLI. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Routed entries can include structured `constraints` for deterministic output checks such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy to catch unsupported claims, avoid-rule hits, output-rule hits, hard constraint violations in `guardrail_hits`, advisory target misses in `constraint_warnings`, and text-only limitations in `unchecked_constraints`; add `--strict` when advisory warnings should fail an agent or CI gate. Use `gaps` to expose missing evidence, and use `eval` to test route, fit, brief, and claim behavior.
 
 For outbound-copy testing when no real or intentionally sanitized prospect row exists, generate clearly fake fixtures first:
 
@@ -236,7 +254,7 @@ Packs can declare `persona_mappings` in `.mdp/manifest.yaml` so prospect titles 
 
 `mdp fit` currently owns the binary fit gate: `fit`, `disqualified`, or `insufficient-context`. A future first-class qualification scorecard should be additive to the `mdp.fit.v0` contract, for example an optional `qualification_stage` or `scorecard` object derived from fit-rule entries, matched evidence, missing context, and disqualifiers. Do not overload card `metadata` or agent skills as a parallel scoring system; keep qualification scoring behind an explicit CLI/schema extension so route, brief, eval, and downstream agents can test it consistently.
 
-Use `--summary` for compact status output. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures kept for compatibility and include `source_kind: synthetic-example` plus `synthetic: true`; the file name is not a requirement to use Clay. `mdp sample-leads` creates additional fake testing rows with the same synthetic-example provenance only; it does not generate real leads, enrich data, browse the web, write to a CRM, or imply any person or account exists.
+Use `--summary` for compact status output. Use `--dry-run` before selected write commands when an agent needs to preview local file writes: `init`, `brief --out`, `emit-brief --out`, and `pack --out`. Use `brief --out <path>` when a brief should be saved; otherwise the CLI marks the artifact as `stdout-only`. Starter `examples/clay-row.json` files are synthetic fixtures kept for compatibility and include `source_kind: synthetic-example` plus `synthetic: true`; the file name is not a requirement to use Clay. `mdp sample-leads` creates additional fake testing rows with the same synthetic-example provenance only; it does not generate real leads, enrich data, browse the web, write to a CRM, or imply any person or account exists.
 
 Do not add a separate row-evaluation skill or workflow for fit. Normalize the supplied row into MDP prospect JSON, run `mdp fit`, stop on `disqualified` or `insufficient-context`, and only then run `mdp brief --context` when a brief is needed. True account-only evaluation is a schema/product question for a future provider-neutral account input, not a reason to invent a contact or bypass the prospect fit gate.
 
@@ -275,6 +293,12 @@ make validate
 ```
 
 This validates the Rust CLI, the bundled template pack, and, when local Codex validator scripts are available, the plugin and skill metadata.
+
+## License And Commercial Use
+
+This repository is source-available under the [Elastic License 2.0](LICENSE). It is intended for local/offline MDP authoring, validation, agent-plugin workflows, examples, release assets, and pack evaluation tooling.
+
+Internal use is allowed under the license terms. Offering MDP to third parties as a hosted or managed service, including a hosted registry, API, MCP endpoint, cloud workspace, approval workflow, audit trail, or similar SaaS surface that exposes a substantial set of MDP functionality, requires a separate commercial license. See [Commercial Use](COMMERCIAL.md).
 
 ## Status
 

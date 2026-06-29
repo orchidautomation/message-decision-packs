@@ -3,9 +3,9 @@ PYTHON ?= $(shell if [ -x "$(HOME)/.pyenv/versions/3.13.5/bin/python3" ]; then e
 SKILL_VALIDATOR ?= $(HOME)/.codex/skills/.system/skill-creator/scripts/quick_validate.py
 PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py
 
-.PHONY: validate validate-cli validate-template validate-skills validate-plugin validate-llms install-cli demo
+.PHONY: validate validate-cli validate-template validate-skills validate-plugin validate-installers validate-llms install-cli demo
 
-validate: validate-cli validate-template validate-skills validate-plugin validate-llms
+validate: validate-cli validate-template validate-skills validate-plugin validate-installers validate-llms
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
@@ -27,6 +27,10 @@ validate-llms:
 	@grep -q '^# Message Decision Packs - Full Agent Context' llms-full.txt
 	@grep -q 'MDP is not:' llms-full.txt
 	@grep -q 'https://mdp.orchidlabs.dev/llms.txt' llms-full.txt
+
+validate-installers:
+	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/test-install.sh
+	scripts/test-install.sh
 
 install-cli:
 	$(MAKE) -C cli install-local

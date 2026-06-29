@@ -88,7 +88,7 @@ This is the practical operator value:
 The agent can move faster without turning GTM judgment into vibes.
 ```
 
-## This Repo Is For Everyone Because Of Pluxx
+## This Repo Is Portable Because Of Pluxx
 
 This repo is not tied to one agent host.
 
@@ -99,6 +99,8 @@ The core is host-agnostic:
 - the pack schema is agent-readable.
 - the workflow does not require a hosted API.
 - the same pack can be inspected, validated, routed, and tested outside any single AI host.
+
+The repository is source-available under the Elastic License 2.0. That supports local/offline and internal use, but it is not permission to offer MDP as a hosted or managed service. Hosted registries, API/MCP endpoints, cloud workspaces, approval workflows, audit trails, and similar SaaS surfaces require a separate commercial license.
 
 Pluxx is what makes the agent layer portable.
 
