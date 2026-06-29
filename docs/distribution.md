@@ -106,6 +106,11 @@ https://mdp.orchidlabs.dev/llms-full.txt
 
 The vanity URLs should serve the current released copies, or the same files from `main` when explicitly operating as latest docs.
 
+The source for `mdp.orchidlabs.dev` lives in `deploy/mdp-installer/`.
+It is a Vercel redirect-only project named `mdp-installer`; keep those
+vanity routes pointed at GitHub Release assets so installs and agent context
+stay aligned with the current released version.
+
 ## Updates
 
 The public update path is to rerun the same installer:
