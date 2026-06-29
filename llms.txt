@@ -1,0 +1,105 @@
+# Message Decision Packs
+
+> Message Decision Packs, or MDP, is a local/offline standard, CLI, and plugin for making GTM messaging judgment explicit. It turns scattered product notes, ICP notes, source evidence, fit rules, claims, hooks, CTAs, avoid-rules, output rules, and eval fixtures into a versioned `.mdp/` folder that agents can inspect, route, validate, and use without rebuilding context from scratch.
+
+> MDP is a decision/context layer. It is not an AI SDR, CRM, sequencer, enrichment provider, scraper, BI tool, or generic automation system. It does not send messages or update external systems.
+
+Agents should start here when they need to understand the project quickly.
+
+## Install
+
+Latest release: <https://github.com/orchidautomation/message-decision-packs/releases/latest>
+
+Install the CLI and supported agent bundles:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+Install one supported host bundle and bootstrap the local `mdp` CLI when it is missing:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --codex -y
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --claude-code -y
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cursor -y
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
+```
+
+## What MDP Gives Agents
+
+- A local `.mdp/manifest.yaml` that declares pack identity, personas, channels, and routing shape.
+- A `.mdp/sources.yaml` ledger that separates source facts, interpretations, and evidence gaps.
+- Modular card files for personas, fit rules, pains, signals, positioning, approved claims, motions, channel policies, hooks, CTAs, avoid-rules, output rules, objections, gaps, and copy patterns.
+- Optional prompt contracts under `.mdp/prompts/` for normalizing messy supplied rows and extracting reviewable card patches.
+- CLI commands with stable JSON output so agents can validate, route, fit, brief, check claims, list gaps, and run evals.
+- Plugin skills packaged through Pluxx for Claude Code, Cursor, Codex, and OpenCode.
+
+## Core Workflow
+
+Use MDP as a decision system before drafting:
+
+```text
+source material
+  -> source ledger
+  -> pack cards
+  -> mdp validate
+  -> mdp fit
+  -> mdp brief --context
+  -> agent drafts only from routed context
+  -> mdp check-claims
+  -> mdp eval when behavior changes
+```
+
+When prospect context is missing, weak, disqualified, or unsupported, the agent should stop and surface the no-draft reason instead of smoothing gaps into confident copy.
+
+## Important CLI Commands
+
+```bash
+mdp --json doctor --dir .
+mdp --json validate --dir .
+mdp --json --summary route --entries --dir . --persona "PMM" --job "linkedin outbound copy"
+mdp --json fit --dir . --prospect <prospect.json>
+mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel linkedin
+mdp --json check-claims --dir . --text "<draft copy>"
+mdp --json gaps --dir .
+mdp --json eval --dir .
+```
+
+## Plugin Skills
+
+The plugin source lives in `plugin/` and is distributed through Pluxx. Important skills:
+
+- `mdp-lfg`: end-to-end orchestration
+- `mdp-create-pack`: create or improve a pack
+- `mdp-icp-builder`: sharpen ICP, personas, and fit logic
+- `mdp-source-extract`: turn supplied source material into card entries
+- `mdp-message-angles`: codify hooks and angles
+- `mdp-cta-builder`: codify CTA and reply-path policy
+- `mdp-avoid-rules`: enforce category and claim boundaries
+- `mdp-output-rules`: codify structure, style, and formatting constraints
+- `mdp-prospect-brief`: turn provider-neutral prospect rows into fit decisions and briefs
+- `mdp-copy-brief`: produce model-ready writing contracts
+- `mdp-copy-eval`: evaluate generated copy against the pack
+- `mdp-pack-review` and `mdp-pack-eval`: inspect pack quality and test behavior
+
+## Canonical Public Examples
+
+- [MDP for MDP](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/mdp-for-mdp): fastest public demo for explaining what a pack stores and how route, fit, brief, claim-check, gaps, and eval commands work together.
+- [Profound GTM Vetting](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/profound-gtm-vetting): complete public-source pack showing ICP, target personas, fit rules, hooks, CTAs, guardrails, source-backed claims, gaps, and evals.
+
+## Key Docs
+
+- [What This Repo Is](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/what-this-repo-is.md)
+- [Getting Started](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/getting-started.md)
+- [Conceptual Decision Flow](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/conceptual-decision-flow.md)
+- [Prompt Extraction Contract](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md)
+- [Distribution Notes](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md)
+
+## Programmatic Access
+
+- Repository: <https://github.com/orchidautomation/message-decision-packs>
+- Latest release assets: <https://github.com/orchidautomation/message-decision-packs/releases/latest>
+- Short context file: <https://github.com/orchidautomation/message-decision-packs/raw/main/llms.txt>
+- Full context file: <https://github.com/orchidautomation/message-decision-packs/raw/main/llms-full.txt>
+
+Use `llms-full.txt` when you need deeper context about pack layout, command semantics, safety boundaries, examples, and agent behavior.

@@ -16,6 +16,20 @@ MDP is a decision/context layer. It is not a sender, CRM, sequencer, enrichment 
 
 For a deeper explanation of what this repo is, why it matters, and how to ask your agent to explain it accurately, read [What This Repo Is](docs/what-this-repo-is.md). For the conceptual model behind fit, routing, and bounded drafting context, see [Conceptual Decision Flow](docs/conceptual-decision-flow.md).
 
+## Agent Context
+
+Agents that need a fast project briefing can fetch curated Markdown instead of reconstructing the repo from scratch:
+
+- [llms.txt](llms.txt): concise project, install, workflow, and command context
+- [llms-full.txt](llms-full.txt): fuller pack layout, CLI contract, safety boundaries, plugin skills, examples, and validation context
+
+After release, the same files should be served from:
+
+```text
+https://mdp.orchidlabs.dev/llms.txt
+https://mdp.orchidlabs.dev/llms-full.txt
+```
+
 ## Install
 
 Latest release: [release page](https://github.com/orchidautomation/message-decision-packs/releases/latest)
@@ -70,6 +84,9 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --codex -y
 
 # OpenCode
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
+
+# All supported hosts
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
 The `--agents` installer prepares the local `mdp` CLI once, then installs supported host bundles for Claude Code, Cursor, Codex, and OpenCode. If Claude Code is not available on `PATH`, `--agents` skips that host with a warning; use `--claude-code` when Claude Code installation should be required. Single-host installers install that plugin bundle and prepare the local `mdp` CLI if needed. For noninteractive installs, set `MDP_VERSION`, `MDP_INSTALL_DIR`, or `MDP_DOWNLOAD_URL` before running the installer.

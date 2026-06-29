@@ -67,6 +67,15 @@ The CLI plus supported agent-bundle installer mirrors Railway's agent installer 
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
+Host-specific installs should use the same short vanity installer instead of long release-asset URLs:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --codex -y
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --claude-code -y
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cursor -y
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
+```
+
 Use the CLI-only release installer when an agent/plugin bundle is not needed:
 
 ```bash
@@ -80,6 +89,22 @@ The top-level installer keeps the surfaces distinct:
 - `--codex`, `--cursor`, `--claude-code`, `--opencode`: install one host bundle.
 
 The tag-based release workflow installs Pluxx in CI, builds host plugin bundles, publishes Pluxx release assets, and uploads `mdp-*` CLI binaries plus `install.sh` and `install-cli.sh`. Host installer scripts install the plugin and use `scripts/bootstrap-runtime.sh` to prepare the local `mdp` CLI when it is missing.
+
+## Agent-Readable Context Files
+
+The repo root includes two curated files for agents:
+
+- `llms.txt`: concise project, install, workflow, command, and docs context.
+- `llms-full.txt`: fuller pack layout, CLI contract, safety boundaries, plugin skills, examples, and validation context.
+
+These files are static docs, not a hosted API. The release workflow uploads them next to `install.sh` so vanity routing can serve:
+
+```text
+https://mdp.orchidlabs.dev/llms.txt
+https://mdp.orchidlabs.dev/llms-full.txt
+```
+
+The vanity URLs should serve the current released copies, or the same files from `main` when explicitly operating as latest docs.
 
 ## Updates
 
