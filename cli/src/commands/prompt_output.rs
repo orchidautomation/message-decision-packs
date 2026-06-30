@@ -224,6 +224,13 @@ fn validate_output_against_prompt(
         &format!("{path}#/rejected_claims"),
         issues,
     );
+    validate_plain_string_array(
+        output.get("gaps"),
+        &format!("{path}#/gaps"),
+        "prompt_output_gaps_type",
+        "gaps must be an array of strings",
+        issues,
+    );
 
     if output_kind == "prospect-normalization" {
         validate_normalized_prospect(
@@ -286,7 +293,14 @@ fn validate_source_summary(
         issues,
     );
 
-    for field in ["company_domain", "company_name", "confidence"] {
+    for field in [
+        "company_domain",
+        "company_name",
+        "person_name",
+        "person_title",
+        "account_name",
+        "confidence",
+    ] {
         if summary.get(field).and_then(Value::as_str).is_none() {
             issues.push(issue(
                 "prompt_output_source_summary_field_type",
@@ -586,7 +600,7 @@ fn validate_rejected_claims(value: Option<&Value>, path: &str, issues: &mut Vec<
             "prompt_output_rejected_claim_unknown_field",
             issues,
         );
-        for field in ["claim", "reason"] {
+        for field in ["claim", "reason", "source"] {
             if claim.get(field).and_then(Value::as_str).is_none() {
                 issues.push(issue(
                     "prompt_output_rejected_claim_field_missing",
@@ -1368,6 +1382,57 @@ mod tests {
             "prompt_output_applies_to_type",
             "prompt_output_avoid_type",
             "prompt_output_notes_type",
+        ] {
+            assert!(
+                result["issues"]
+                    .as_array()
+                    .expect("issues array")
+                    .iter()
+                    .any(|issue| issue["code"] == code),
+                "expected issue code {code}"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_non_string_schema_fields() {
+        let root = temp_pack("non-string-schema-fields");
+        let path = write_output(
+            &root,
+            "claims-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "extract-claims-proof",
+  "source_summary": {
+    "company_domain": "N/A",
+    "company_name": "N/A",
+    "person_name": 5,
+    "person_title": "N/A",
+    "account_name": "N/A",
+    "inputs_used": ["source_notes"],
+    "confidence": "medium"
+  },
+  "card_patches": [],
+  "gaps": [1],
+  "rejected_claims": [
+    {
+      "claim": "x",
+      "reason": "y",
+      "source": 5
+    }
+  ]
+}"#,
+        );
+
+        let result = validate_prompt_output_file(&root, &path, None, Some("extract-claims-proof"))
+            .expect("validation should return diagnostics");
+
+        for code in [
+            "prompt_output_source_summary_field_type",
+            "prompt_output_gaps_type",
+            "prompt_output_rejected_claim_field_missing",
         ] {
             assert!(
                 result["issues"]
