@@ -77,7 +77,8 @@ output_contract:
       company_domain: N/A
       company_name: N/A
       confidence: unknown
-      inputs_used: []
+      inputs_used:
+      - company_data
       person_name: N/A
       person_title: N/A
   required_top_level:

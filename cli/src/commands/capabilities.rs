@@ -29,6 +29,7 @@ pub(crate) fn capabilities() -> Value {
             command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
+            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--prompt", "--prompt-id", "--strict"]),
             command("explain", "mdp.explain.v0", "read-only", false, false, false, &["--dir", "--persona"]),
             command("route", "mdp.route.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--entries", "--eval-fixture"]),
             command("sample-leads", "mdp.sample-leads.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--count", "--seed", "--format"]),

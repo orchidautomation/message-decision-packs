@@ -52,6 +52,19 @@ pub(crate) enum Commands {
         #[arg(long, help = "Fail validation-style flows on warnings where supported")]
         strict: bool,
     },
+    #[command(about = "Validate model-produced prompt output JSON against a prompt contract")]
+    ValidatePromptOutput {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long, help = "Prompt file path to validate against")]
+        prompt: Option<PathBuf>,
+        #[arg(long, help = "Prompt id to validate against")]
+        prompt_id: Option<String>,
+        #[arg(long, help = "Fail validation-style flows on warnings where supported")]
+        strict: bool,
+    },
     #[command(about = "Explain what an agent should load")]
     Explain {
         #[arg(long, default_value = ".")]

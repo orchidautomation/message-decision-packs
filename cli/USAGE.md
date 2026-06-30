@@ -39,6 +39,7 @@ mdp --json capabilities
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --dry-run
 mdp --json validate --dir /tmp/mdp-demo
+mdp --json validate-prompt-output --dir /tmp/mdp-demo --prompt-id extract-claims-proof --file /tmp/claims-output.json
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp sample-leads --dir /tmp/mdp-demo --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
@@ -69,6 +70,7 @@ Use `--strict` on validation/checking flows when warnings should fail an agent o
 
 ```bash
 mdp --json validate --strict --dir .
+mdp --json validate-prompt-output --strict --dir . --prompt-id extract-claims-proof --file /tmp/claims-output.json
 mdp --json check-claims --strict --dir . --text "<draft copy>" --subject "<subject>" --persona "PMM" --job "initial email outbound message"
 mdp --json eval --strict --dir .
 ```
@@ -76,6 +78,8 @@ mdp --json eval --strict --dir .
 JSON errors use stable top-level codes where the CLI can classify the failure: `pack_not_found`, `invalid_manifest`, `missing_card`, `unsupported_claim`, `insufficient_context`, `write_conflict`, `invalid_argument`, and fallback `mdp_error`.
 
 Use `mdp --json schema prompt` to inspect the reusable prompt contract. Prompt outputs use `contract: mdp.prompt-output.v0` and must match the contract named by each prompt's `output_contract.schema_ref`; starter prompts can inline the full JSON Schema with `mdp init --include-output-schemas`. Extraction prompts preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance; normalization prompts preserve `normalized_prospect`, `normalization_trace`, gaps, and empty `card_patches`. Prompt files are local decision contracts, not browsing, scraping, enrichment, sending, sequencing, or CRM-update workflows.
+
+Treat model-produced prompt output as untrusted review input. Run `mdp --json validate-prompt-output` before copying reviewed `card_patches` into cards or saving `normalized_prospect` for `mdp fit` and `mdp brief`. The validator rejects markdown-wrapped JSON, wrong prompt identity, undeclared input references, wrong card kinds, fake-person normalization, and candidate ID collisions with existing card entries.
 
 Success:
 

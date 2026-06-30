@@ -2,7 +2,7 @@ use crate::cli::{Cli, Commands, SampleLeadsFormat};
 use crate::commands::{
     capabilities, check_claims, demo_copy, doctor, emit_brief, eval_pack, explain, fit, gaps,
     init_pack, init_pack_dry_run, pack, prospect_brief_with_context, route, sample_leads, schema,
-    validate_pack,
+    validate_pack, validate_prompt_output_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -36,6 +36,20 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Commands::Validate { dir, strict } => {
             let data = apply_strict(validate_pack(&dir)?, strict, StrictWarningSource::Issues);
             print_checked(json_mode, summary_mode, "validate", data)
+        }
+        Commands::ValidatePromptOutput {
+            dir,
+            file,
+            prompt,
+            prompt_id,
+            strict,
+        } => {
+            let data = apply_strict(
+                validate_prompt_output_file(&dir, &file, prompt.as_deref(), prompt_id.as_deref())?,
+                strict,
+                StrictWarningSource::Issues,
+            );
+            print_checked(json_mode, summary_mode, "validate-prompt-output", data)
         }
         Commands::Explain { dir, persona } => print_output(
             json_mode,
