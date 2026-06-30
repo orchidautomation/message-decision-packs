@@ -59,7 +59,11 @@ pub(crate) fn validate_prompt_output_file(
     }))
 }
 
-fn resolve_prompt(root: &Path, prompt_path: Option<&Path>, prompt_id: Option<&str>) -> Result<PromptFile> {
+fn resolve_prompt(
+    root: &Path,
+    prompt_path: Option<&Path>,
+    prompt_id: Option<&str>,
+) -> Result<PromptFile> {
     if let Some(path) = prompt_path {
         return read_prompt(&resolve_prompt_path(root, path));
     }
@@ -82,7 +86,9 @@ fn resolve_prompt(root: &Path, prompt_path: Option<&Path>, prompt_id: Option<&st
         }
     }
 
-    Err(anyhow!("prompt id {resolved_id} was not found under {DEFAULT_DIR}/prompts"))
+    Err(anyhow!(
+        "prompt id {resolved_id} was not found under {DEFAULT_DIR}/prompts"
+    ))
 }
 
 fn resolve_prompt_path(root: &Path, prompt_path: &Path) -> PathBuf {
@@ -161,7 +167,13 @@ fn validate_output_against_prompt(
         .map(|input| input.name.clone())
         .collect::<BTreeSet<_>>();
     let allowed_top_level = allowed_top_level_fields(output_kind);
-    validate_json_object_keys(root, &allowed_top_level, path, "prompt_output_unknown_field", issues);
+    validate_json_object_keys(
+        root,
+        &allowed_top_level,
+        path,
+        "prompt_output_unknown_field",
+        issues,
+    );
 
     for field in &prompt.output_contract.required_top_level {
         if output.get(field).is_none() {
@@ -285,7 +297,10 @@ fn validate_source_summary(
         }
     }
 
-    let confidence = summary.get("confidence").and_then(Value::as_str).unwrap_or_default();
+    let confidence = summary
+        .get("confidence")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     if !matches!(confidence, "high" | "medium" | "low" | "unknown") {
         issues.push(issue(
             "prompt_output_confidence_invalid",
@@ -386,13 +401,18 @@ fn validate_card_patches(
             issues,
         );
 
-        let kind = patch.get("kind").and_then(Value::as_str).unwrap_or_default();
+        let kind = patch
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         if !target_kinds.contains(kind) {
             issues.push(issue(
                 "prompt_output_patch_kind_invalid",
                 "error",
                 format!("{patch_path}/kind"),
-                format!("card_patches.kind must be one of the prompt target_card_kinds, found {kind}"),
+                format!(
+                    "card_patches.kind must be one of the prompt target_card_kinds, found {kind}"
+                ),
             ));
         }
 
@@ -487,18 +507,36 @@ fn validate_card_patches(
                 saw_supporting_reference,
                 issues,
             );
+            validate_plain_string_array(
+                entry.get("applies_to"),
+                &format!("{entry_path}/applies_to"),
+                "prompt_output_applies_to_type",
+                "candidate entry applies_to must be an array of strings",
+                issues,
+            );
+            validate_plain_string_array(
+                entry.get("avoid"),
+                &format!("{entry_path}/avoid"),
+                "prompt_output_avoid_type",
+                "candidate entry avoid must be an array of strings",
+                issues,
+            );
+            validate_plain_string_array(
+                entry.get("notes"),
+                &format!("{entry_path}/notes"),
+                "prompt_output_notes_type",
+                "candidate entry notes must be an array of strings",
+                issues,
+            );
 
-            if entry.get("notes").and_then(Value::as_array).is_none() {
-                issues.push(issue(
-                    "prompt_output_notes_type",
-                    "error",
-                    format!("{entry_path}/notes"),
-                    "candidate entry notes must be an array",
-                ));
-            }
-
-            let body = entry.get("body").and_then(Value::as_str).unwrap_or_default();
-            let status = entry.get("status").and_then(Value::as_str).unwrap_or_default();
+            let body = entry
+                .get("body")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let status = entry
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let evidence_count = entry
                 .get("evidence")
                 .and_then(Value::as_array)
@@ -631,7 +669,14 @@ fn validate_normalized_prospect(value: Option<&Value>, path: &str, issues: &mut 
             };
             validate_json_object_keys(
                 signal,
-                &["id", "title", "source", "confidence", "freshness", "state_as"],
+                &[
+                    "id",
+                    "title",
+                    "source",
+                    "confidence",
+                    "freshness",
+                    "state_as",
+                ],
                 &signal_path,
                 "prompt_output_normalized_prospect_signal_unknown_field",
                 issues,
@@ -667,7 +712,12 @@ fn validate_normalization_trace(value: Option<&Value>, path: &str, issues: &mut 
 
     validate_json_object_keys(
         trace,
-        &["persona", "fit_readiness", "preserved_raw_fields", "missing_required"],
+        &[
+            "persona",
+            "fit_readiness",
+            "preserved_raw_fields",
+            "missing_required",
+        ],
         path,
         "prompt_output_normalization_trace_unknown_field",
         issues,
@@ -706,8 +756,14 @@ fn validate_normalization_invariants(
     };
 
     let has_person_data = inputs_used.contains("person_data") || inputs_used.contains("raw_row");
-    let name = prospect.get("name").and_then(Value::as_str).unwrap_or_default();
-    let title = prospect.get("title").and_then(Value::as_str).unwrap_or_default();
+    let name = prospect
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let title = prospect
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     if !has_person_data && (name != "N/A" || title != "N/A") {
         issues.push(issue(
             "prompt_output_fake_person",
@@ -733,7 +789,10 @@ fn validate_card_collisions(
         cards_by_id.insert(card.id.clone(), card.kind.clone());
         existing_ids_by_card.insert(
             card.id.clone(),
-            card.entries.into_iter().map(|entry| entry.id).collect::<BTreeSet<_>>(),
+            card.entries
+                .into_iter()
+                .map(|entry| entry.id)
+                .collect::<BTreeSet<_>>(),
         );
     }
 
@@ -745,8 +804,14 @@ fn validate_card_collisions(
             continue;
         };
         let patch_path = format!("{path}#/card_patches/{patch_index}");
-        let card_id = patch.get("card_id").and_then(Value::as_str).unwrap_or_default();
-        let kind = patch.get("kind").and_then(Value::as_str).unwrap_or_default();
+        let card_id = patch
+            .get("card_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let kind = patch
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         if let Some(existing_kind) = cards_by_id.get(card_id) {
             if card_kind_name(existing_kind) != kind {
                 issues.push(issue(
@@ -832,6 +897,25 @@ fn validate_string_array(
                 format!("{path}/{index}"),
                 format!("reference {reference} does not match a declared prompt input"),
             ));
+        }
+    }
+}
+
+fn validate_plain_string_array(
+    value: Option<&Value>,
+    path: &str,
+    code: &str,
+    message: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(items) = value.and_then(Value::as_array) else {
+        issues.push(issue(code, "error", path, message));
+        return;
+    };
+
+    for (index, item) in items.iter().enumerate() {
+        if item.as_str().is_none() {
+            issues.push(issue(code, "error", format!("{path}/{index}"), message));
         }
     }
 }
@@ -1087,9 +1171,8 @@ mod tests {
 }"#,
         );
 
-        let result =
-            validate_prompt_output_file(&root, &path, None, Some("extract-output-rules"))
-                .expect("validation should return diagnostics");
+        let result = validate_prompt_output_file(&root, &path, None, Some("extract-output-rules"))
+            .expect("validation should return diagnostics");
 
         assert!(
             result["issues"]
@@ -1223,8 +1306,9 @@ mod tests {
 }"#,
         );
 
-        let result = validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
-            .expect("validation should return diagnostics");
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
+                .expect("validation should return diagnostics");
 
         assert!(
             result["issues"]
@@ -1233,6 +1317,67 @@ mod tests {
                 .iter()
                 .any(|issue| issue["code"] == "prompt_output_fake_person")
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_non_string_candidate_entry_arrays() {
+        let root = temp_pack("non-string-arrays");
+        let path = write_output(
+            &root,
+            "claims-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "extract-claims-proof",
+  "source_summary": {
+    "company_domain": "N/A",
+    "company_name": "N/A",
+    "inputs_used": ["source_notes"],
+    "confidence": "medium"
+  },
+  "card_patches": [
+    {
+      "card_id": "claims",
+      "kind": "claims",
+      "entries": [
+        {
+          "id": "claim-reviewed-local-context",
+          "title": "Local decision context",
+          "body": "Supplied source material describes the product as local decision context for GTM messaging.",
+          "applies_to": ["PMM", 5],
+          "evidence": ["source_notes"],
+          "avoid": [false],
+          "confidence": "medium",
+          "provenance": ["source_notes: supplied source notes"],
+          "status": "needs-review",
+          "notes": [123]
+        }
+      ]
+    }
+  ],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result = validate_prompt_output_file(&root, &path, None, Some("extract-claims-proof"))
+            .expect("validation should return diagnostics");
+
+        for code in [
+            "prompt_output_applies_to_type",
+            "prompt_output_avoid_type",
+            "prompt_output_notes_type",
+        ] {
+            assert!(
+                result["issues"]
+                    .as_array()
+                    .expect("issues array")
+                    .iter()
+                    .any(|issue| issue["code"] == code),
+                "expected issue code {code}"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(root);
     }

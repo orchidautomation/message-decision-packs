@@ -471,7 +471,13 @@ fn validate_prompt_shape(path: &Path, display_path: &str, issues: &mut Vec<Value
     );
     validate_sequence_object_keys(
         yaml_get(&value, "inputs"),
-        &["name", "description", "required", "default", "missing_behavior"],
+        &[
+            "name",
+            "description",
+            "required",
+            "default",
+            "missing_behavior",
+        ],
         &format!("{display_path}#/inputs"),
         "prompt_input_unknown_field",
         issues,
@@ -493,9 +499,19 @@ fn validate_prompt_shape(path: &Path, display_path: &str, issues: &mut Vec<Value
         issues,
     );
     validate_object_keys(
-        yaml_get(yaml_get(&value, "output_contract").unwrap_or(&YamlValue::Null), "entry_defaults")
-            .unwrap_or(&YamlValue::Null),
-        &["body", "applies_to", "evidence", "avoid", "confidence", "provenance"],
+        yaml_get(
+            yaml_get(&value, "output_contract").unwrap_or(&YamlValue::Null),
+            "entry_defaults",
+        )
+        .unwrap_or(&YamlValue::Null),
+        &[
+            "body",
+            "applies_to",
+            "evidence",
+            "avoid",
+            "confidence",
+            "provenance",
+        ],
         &format!("{display_path}#/output_contract/entry_defaults"),
         "prompt_entry_defaults_unknown_field",
         issues,
@@ -985,7 +1001,11 @@ fn validate_prompt_example(prompt: &PromptFile, path: &str, issues: &mut Vec<Val
     }
 }
 
-fn validate_prompt_example_input_references(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
+fn validate_prompt_example_input_references(
+    prompt: &PromptFile,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
     let declared_inputs = prompt
         .inputs
         .iter()
@@ -1073,7 +1093,9 @@ fn validate_prompt_example_references(
                 code,
                 "error",
                 format!("{path}/{index}"),
-                format!("prompt example reference {reference} does not match a declared prompt input"),
+                format!(
+                    "prompt example reference {reference} does not match a declared prompt input"
+                ),
             ));
         }
     }
