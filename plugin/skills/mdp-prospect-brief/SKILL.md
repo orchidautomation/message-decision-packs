@@ -21,14 +21,17 @@ Check the schema:
 mdp --json schema prospect
 ```
 
-Minimum fields:
+Minimum admission fields:
 
 - `name`
 - `title`
 - `company`
 
+New lead workflows should also supply `company_domain` as the stronger account key. The CLI canonicalizes supplied domains and URLs such as `https://www.apple.com/` to `apple.com`; it does not browse, DNS-check, enrich, or infer a domain from company name.
+
 Preferred fields:
 
+- `company_domain`
 - `linkedin_url`
 - `company_url`
 - `background`
@@ -36,7 +39,10 @@ Preferred fields:
 - `persona`
 - `segment`
 - `signals` with source, confidence, freshness, and state_as when available
+- `attributes` for bounded reviewed metadata such as fiscal year or segment tier
 - `source_kind` and `synthetic` when the row is generated, sanitized, private scratch, or sourced from a known row system
+
+Packs may declare readiness requirements in `.mdp/manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`. Treat `mdp fit` as the source of truth for missing or invalid readiness details.
 
 Use provider-neutral `source_kind` values unless a specific source matters:
 
@@ -64,7 +70,7 @@ If the input is account-only and does not include a person name and title, do no
 mdp --json fit --dir . --prospect <prospect.json>
 ```
 
-7. If the user only asked whether the row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, and gaps. Do not draft.
+7. If the user only asked whether the row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, `context.missing_requirements`, `context.invalid_requirements`, and gaps. Do not draft.
 8. If status is `disqualified` or `insufficient-context`, stop before drafting unless the user explicitly overrides.
 9. Run the brief:
 
@@ -84,6 +90,7 @@ Return:
 - normalization trace when produced by a prompt contract
 - inferred persona
 - fit status and disqualifiers
+- missing or invalid readiness requirements
 - required card load order
 - whether the brief was saved or stdout-only
 - decision trace

@@ -91,7 +91,10 @@ fn summarize(command: &str, data: &Value) -> Value {
             "decision": data["decision"],
             "match_count": array_len(&data["matches"]),
             "disqualifier_count": array_len(&data["disqualifiers"]),
-            "missing_context": data["context"]["missing"]
+            "company_domain": data["prospect"]["company_domain"],
+            "missing_context": data["context"]["missing"],
+            "missing_requirements": data["context"]["missing_requirements"],
+            "invalid_requirements": data["context"]["invalid_requirements"]
         }),
         "brief" => json!({
             "contract": data["contract"],
@@ -299,9 +302,32 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
             println!("{command}: dry run");
             print_write_plan(data);
         }
+        "fit" => {
+            println!("fit: {}", data["status"].as_str().unwrap_or("unknown"));
+            println!("{}", data["decision"].as_str().unwrap_or(""));
+            print_requirement_list("missing", &data["context"]["missing_requirements"]);
+            print_requirement_list("invalid", &data["context"]["invalid_requirements"]);
+        }
         _ => println!("{}", serde_json::to_string_pretty(data)?),
     }
     Ok(())
+}
+
+fn print_requirement_list(label: &str, value: &Value) {
+    let Some(items) = value.as_array() else {
+        return;
+    };
+    if items.is_empty() {
+        return;
+    }
+    println!("{label} requirements:");
+    for item in items {
+        println!(
+            "- {}: {}",
+            item["path"].as_str().unwrap_or("unknown"),
+            item["reason"].as_str().unwrap_or("required")
+        );
+    }
 }
 
 fn print_write_plan(data: &Value) {

@@ -14,7 +14,7 @@ message-decision-packs/
 
 MDP is a decision/context layer. It is not a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.
 
-For a deeper explanation of what this repo is, why it matters, and how to ask your agent to explain it accurately, read [What This Repo Is](docs/what-this-repo-is.md). For the conceptual model behind fit, routing, and bounded drafting context, see [Conceptual Decision Flow](docs/conceptual-decision-flow.md).
+For a deeper explanation of what this repo is, why it matters, and how to ask your agent to explain it accurately, read [What This Repo Is](docs/what-this-repo-is.md). For the conceptual model behind fit, routing, and bounded drafting context, see [Conceptual Decision Flow](docs/conceptual-decision-flow.md). For Codex and Claude Code activation/validation hook boundaries, see [Agent Hook Guidance](docs/agent-hook-guidance.md).
 
 ## Agent Context
 
@@ -170,7 +170,7 @@ examples/
 
 MDP routes messaging context as a decision tree. The prospect JSON is a provider-neutral normalized row: it can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow. Packs now include a runtime normalization prompt contract, `.mdp/prompts/normalize-prospect.yaml`, so upstream agents can turn messy source rows into the exact prospect JSON shape the CLI ingests. The CLI still owns the deterministic fit, route, brief, and claim-check decisions.
 
-The prospect JSON supplies the account/person context, including optional fields such as `persona`, `segment`, `signals`, `background`, `source_kind`, and `trigger`. If `persona` is present, MDP uses it; otherwise the CLI infers a persona from pack-owned title mappings. The `trigger` is the situational reason to write now, not a card by itself.
+The prospect JSON supplies the account/person context, including optional fields such as `company_domain`, `persona`, `segment`, `signals`, `attributes`, `background`, `source_kind`, and `trigger`. `company` remains the human-readable company name and legacy admission field; `company_domain` is the preferred account key for new lead workflows when a pack requires it. If `persona` is present, MDP uses it; otherwise the CLI infers a persona from pack-owned title mappings. The `trigger` is the situational reason to write now, not a card by itself.
 
 ```text
 messy source row
@@ -182,9 +182,11 @@ messy source row
 prospect.json
   |
   +-- title/persona -> persona
+  +-- company_domain -> account key
   +-- trigger ------> why now
   +-- segment ------> market/context
   +-- signals ------> evidence or hypotheses
+  +-- attributes ---> bounded metadata
   |
   v
 fit gate
@@ -205,6 +207,8 @@ persona -> pains -> hooks -> claims/proof -> CTA/channel policy
 ```
 
 With `brief --context`, the CLI reads the routed card files locally, selects the relevant entries, and gives the agent those entries first. Whole card paths stay in `context.full_card_required` only when the bounded entry set is not enough.
+
+`mdp fit` stays deterministic and local. It canonicalizes supplied domains and URLs such as `https://www.apple.com/` to `apple.com`, but it does not browse, DNS-check, enrich, or infer a domain from a company name. Packs declare readiness in `manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`; fit output reports missing and invalid requirements instead of asking a model to smooth over gaps.
 
 ## Channel Rule Taxonomy
 

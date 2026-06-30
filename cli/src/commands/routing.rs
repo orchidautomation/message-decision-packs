@@ -2,10 +2,12 @@ use crate::pack_io::{read_card_by_id, read_manifest, read_prospect};
 use crate::routing::{entry_context, entry_route, select_cards};
 use crate::utils::slugify;
 use crate::utils::{
-    prospect_haystack_with_persona, resolve_persona, resolve_persona_label, routable_persona,
+    normalize_supplied_company_domain, prospect_haystack_with_persona, resolve_persona,
+    resolve_persona_label, routable_persona,
 };
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -87,8 +89,9 @@ pub(crate) fn fit(root: &Path, prospect_path: &Path) -> Result<Value> {
     fit_prospect(root, prospect)
 }
 
-pub(crate) fn fit_prospect(root: &Path, prospect: crate::models::Prospect) -> Result<Value> {
+pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -> Result<Value> {
     let manifest = read_manifest(root)?;
+    let company_domain_normalization = normalize_company_domain_for_fit(&mut prospect);
     let fit_card = read_card_by_id(root, "fit-rules")?;
     let mut matches = Vec::new();
     let mut disqualifiers = Vec::new();
@@ -97,7 +100,12 @@ pub(crate) fn fit_prospect(root: &Path, prospect: crate::models::Prospect) -> Re
         .fit_usable
         .then_some(persona_resolution.persona.as_str());
     let haystack = prospect_haystack_with_persona(&prospect, resolved_persona_for_fit);
-    let context = fit_context(&prospect, &persona_resolution);
+    let context = fit_context(
+        &manifest,
+        &prospect,
+        &persona_resolution,
+        company_domain_normalization,
+    );
 
     for entry in &fit_card.entries {
         let entry_text = format!("{} {}", entry.title, entry.body).to_lowercase();
@@ -150,50 +158,293 @@ pub(crate) fn fit_prospect(root: &Path, prospect: crate::models::Prospect) -> Re
 }
 
 fn fit_context(
+    manifest: &crate::models::Manifest,
     prospect: &crate::models::Prospect,
     persona_resolution: &crate::utils::PersonaResolution,
+    company_domain_normalization: Value,
 ) -> Value {
     let has_trigger = prospect
         .trigger
         .as_ref()
-        .is_some_and(|value| !value.trim().is_empty());
+        .is_some_and(|value| present(value));
     let has_persona = persona_resolution.fit_usable;
     let has_segment = prospect
         .segment
         .as_ref()
-        .is_some_and(|value| !value.trim().is_empty());
+        .is_some_and(|value| present(value));
     let has_background = prospect
         .background
         .as_ref()
-        .is_some_and(|value| !value.trim().is_empty());
+        .is_some_and(|value| present(value));
     let has_signal = !prospect.signals.is_empty();
-    let has_source = prospect.signals.iter().any(|signal| {
-        signal
-            .source
-            .as_ref()
-            .is_some_and(|value| !value.trim().is_empty())
-    });
-    let mut missing = Vec::new();
-    if !has_trigger {
-        missing.push("trigger");
+    let has_source = prospect
+        .signals
+        .iter()
+        .any(|signal| signal.source.as_ref().is_some_and(|value| present(value)));
+
+    let mut missing_requirements = Vec::new();
+    let mut invalid_requirements = Vec::new();
+    if company_domain_normalization["status"].as_str() == Some("invalid") {
+        invalid_requirements.push(json!({
+            "scope": "prospect",
+            "field": company_domain_normalization["field"].clone(),
+            "path": company_domain_normalization["field"].clone(),
+            "reason": company_domain_normalization["reason"].clone()
+        }));
     }
-    if !has_persona {
-        missing.push("persona");
+    collect_attribute_issues(prospect, &mut invalid_requirements);
+
+    for field in &manifest.lead_input_requirements.required_fields {
+        if !prospect_field_present(field, prospect, persona_resolution) {
+            missing_requirements.push(json!({
+                "scope": "prospect",
+                "field": field,
+                "path": field,
+                "reason": "required by manifest.lead_input_requirements.required_fields"
+            }));
+        }
     }
-    if !has_segment {
-        missing.push("segment");
+
+    for field in &manifest.lead_input_requirements.required_signal_fields {
+        if prospect.signals.is_empty() {
+            missing_requirements.push(json!({
+                "scope": "signal",
+                "field": field,
+                "path": "signals",
+                "reason": "required signal field cannot be checked because prospect.signals is empty"
+            }));
+            continue;
+        }
+        for (index, signal) in prospect.signals.iter().enumerate() {
+            if !signal_field_present(field, signal) {
+                missing_requirements.push(json!({
+                    "scope": "signal",
+                    "field": field,
+                    "path": format!("signals[{index}].{field}"),
+                    "reason": "required by manifest.lead_input_requirements.required_signal_fields"
+                }));
+            }
+        }
     }
-    if !has_signal {
-        missing.push("signals");
+
+    for attribute in &manifest.lead_input_requirements.required_attributes {
+        if !attribute_present(&prospect.attributes, attribute) {
+            missing_requirements.push(json!({
+                "scope": "attribute",
+                "field": attribute,
+                "path": format!("attributes.{attribute}"),
+                "reason": "required by manifest.lead_input_requirements.required_attributes"
+            }));
+        }
     }
-    if !has_source {
-        missing.push("source");
+
+    let mut missing = BTreeSet::new();
+    for requirement in missing_requirements
+        .iter()
+        .chain(invalid_requirements.iter())
+    {
+        if let Some(path) = requirement["path"].as_str() {
+            if path.starts_with("signals[") && path.ends_with(".source") {
+                missing.insert("signals.source".to_string());
+            } else {
+                missing.insert(path.to_string());
+            }
+        }
     }
     json!({
-        "ready": has_trigger && has_persona && has_segment && has_signal && has_source,
+        "ready": missing_requirements.is_empty() && invalid_requirements.is_empty(),
+        "lead_input_requirements": &manifest.lead_input_requirements,
+        "has_trigger": has_trigger,
+        "has_persona": has_persona,
+        "has_segment": has_segment,
         "has_background": has_background,
-        "missing": missing
+        "has_signals": has_signal,
+        "has_signal_source": has_source,
+        "normalization": {
+            "company_domain": company_domain_normalization
+        },
+        "missing": missing.into_iter().collect::<Vec<_>>(),
+        "missing_requirements": missing_requirements,
+        "invalid_requirements": invalid_requirements
     })
+}
+
+fn normalize_company_domain_for_fit(prospect: &mut crate::models::Prospect) -> Value {
+    if let Some(input) = prospect
+        .company_domain
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    {
+        return match normalize_supplied_company_domain(&input) {
+            Ok(canonical) => {
+                let changed = canonical != input;
+                prospect.company_domain = Some(canonical.clone());
+                json!({
+                    "status": "normalized",
+                    "field": "company_domain",
+                    "input": input,
+                    "value": canonical,
+                    "changed": changed
+                })
+            }
+            Err(err) => json!({
+                "status": "invalid",
+                "field": "company_domain",
+                "input": input,
+                "reason": err.to_string()
+            }),
+        };
+    }
+
+    if let Some(input) = prospect
+        .company_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    {
+        if let Ok(canonical) = normalize_supplied_company_domain(&input) {
+            prospect.company_domain = Some(canonical.clone());
+            return json!({
+                "status": "normalized",
+                "field": "company_url",
+                "input": input,
+                "value": canonical,
+                "changed": true
+            });
+        }
+    }
+
+    json!({
+        "status": "missing",
+        "field": "company_domain",
+        "reason": "no supplied company_domain or domain-like company_url"
+    })
+}
+
+fn prospect_field_present(
+    field: &str,
+    prospect: &crate::models::Prospect,
+    persona_resolution: &crate::utils::PersonaResolution,
+) -> bool {
+    match field {
+        "name" => present(&prospect.name),
+        "title" => present(&prospect.title),
+        "company" => present(&prospect.company),
+        "company_domain" => prospect
+            .company_domain
+            .as_ref()
+            .is_some_and(|value| present(value)),
+        "source_kind" => prospect
+            .source_kind
+            .as_ref()
+            .is_some_and(|value| present(value)),
+        "synthetic" => true,
+        "linkedin_url" => prospect
+            .linkedin_url
+            .as_ref()
+            .is_some_and(|value| present(value)),
+        "company_url" => prospect
+            .company_url
+            .as_ref()
+            .is_some_and(|value| present(value)),
+        "background" => prospect
+            .background
+            .as_ref()
+            .is_some_and(|value| present(value)),
+        "trigger" => prospect
+            .trigger
+            .as_ref()
+            .is_some_and(|value| present(value)),
+        "persona" => persona_resolution.fit_usable,
+        "segment" => prospect
+            .segment
+            .as_ref()
+            .is_some_and(|value| present(value)),
+        "signals" => !prospect.signals.is_empty(),
+        _ => false,
+    }
+}
+
+fn signal_field_present(field: &str, signal: &crate::models::Signal) -> bool {
+    match field {
+        "id" => present(&signal.id),
+        "title" => present(&signal.title),
+        "source" => signal.source.as_ref().is_some_and(|value| present(value)),
+        "confidence" => signal
+            .confidence
+            .as_ref()
+            .is_some_and(|value| present(value)),
+        "freshness" => signal
+            .freshness
+            .as_ref()
+            .is_some_and(|value| present(value)),
+        "state_as" => signal.state_as.as_ref().is_some_and(|value| present(value)),
+        _ => false,
+    }
+}
+
+fn collect_attribute_issues(
+    prospect: &crate::models::Prospect,
+    invalid_requirements: &mut Vec<Value>,
+) {
+    if prospect.attributes.len() > 25 {
+        invalid_requirements.push(json!({
+            "scope": "attribute",
+            "field": "attributes",
+            "path": "attributes",
+            "reason": "attributes must contain at most 25 reviewed metadata keys"
+        }));
+    }
+    for (key, value) in &prospect.attributes {
+        if !valid_attribute_key(key) {
+            invalid_requirements.push(json!({
+                "scope": "attribute",
+                "field": key,
+                "path": format!("attributes.{key}"),
+                "reason": "attribute keys must start with a letter and contain only letters, numbers, underscores, or hyphens"
+            }));
+        }
+        if !supported_attribute_value(value) {
+            invalid_requirements.push(json!({
+                "scope": "attribute",
+                "field": key,
+                "path": format!("attributes.{key}"),
+                "reason": "attribute values must be strings, numbers, or booleans; use signals with sources for evidence"
+            }));
+        }
+    }
+}
+
+fn attribute_present(attributes: &std::collections::BTreeMap<String, Value>, key: &str) -> bool {
+    attributes
+        .get(key)
+        .is_some_and(|value| meaningful_json_value(value))
+}
+
+fn meaningful_json_value(value: &Value) -> bool {
+    if let Some(value) = value.as_str() {
+        return present(value);
+    }
+    value.is_number() || value.is_boolean()
+}
+
+fn supported_attribute_value(value: &Value) -> bool {
+    value.is_string() || value.is_number() || value.is_boolean()
+}
+
+fn valid_attribute_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && key.len() <= 64
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+fn present(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty() && !value.eq_ignore_ascii_case("n/a")
 }
 
 pub(crate) fn check_claims(
@@ -1056,7 +1307,94 @@ mod tests {
 
         assert_eq!(result["contract"], "mdp.fit.v0");
         assert_eq!(result["status"], "fit");
+        assert_eq!(result["prospect"]["company_domain"], "example.com");
         assert!(result["matches"].as_array().expect("matches array").len() > 0);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_canonicalizes_supplied_company_domain_urls() {
+        let root = temp_pack("fit-domain-canonical");
+        let prospect_path = root.join("examples").join("domain-url.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "company_domain": "https://www.example.com/path?x=1",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["prospect"]["company_domain"], "example.com");
+        assert_eq!(
+            result["context"]["normalization"]["company_domain"]["status"],
+            "normalized"
+        );
+        assert_eq!(result["status"], "fit");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_reports_missing_required_attributes() {
+        let root = temp_pack("fit-required-attribute");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let mut manifest =
+            std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        manifest = manifest.replace(
+            "required_attributes: []",
+            "required_attributes:\n  - fiscal_year",
+        );
+        std::fs::write(&manifest_path, manifest).expect("manifest should be writable");
+
+        let result =
+            fit(&root, &root.join("examples").join("clay-row.json")).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert!(
+            result["context"]["missing"]
+                .as_array()
+                .expect("missing array")
+                .iter()
+                .any(|value| value == "attributes.fiscal_year")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_reports_invalid_supplied_company_domain() {
+        let root = temp_pack("fit-invalid-domain");
+        let prospect_path = root.join("examples").join("invalid-domain.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "company_domain": "ExampleCo Inc",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert_eq!(
+            result["context"]["invalid_requirements"][0]["path"],
+            "company_domain"
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1071,6 +1409,7 @@ mod tests {
   "name": "Taylor Lee",
   "title": "Director of Demand Gen",
   "company": "ExampleCo",
+  "company_domain": "example.com",
   "segment": "agent-assisted GTM",
   "trigger": "standardizing outbound context across agents",
   "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]

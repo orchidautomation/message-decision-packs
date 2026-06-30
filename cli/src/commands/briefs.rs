@@ -374,6 +374,7 @@ mod tests {
   "name": "Taylor Lee",
   "title": "Director of Demand Gen",
   "company": "ExampleCo",
+  "company_domain": "example.com",
   "segment": "agent-assisted GTM",
   "trigger": "standardizing outbound context across agents",
   "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]

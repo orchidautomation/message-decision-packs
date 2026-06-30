@@ -41,6 +41,8 @@ mdp --json doctor --dir .
 
 If `mdp` is not found, make sure the install directory printed by the installer is on `PATH`, then restart your agent host.
 
+For Codex and Claude Code hook behavior, start with activation and validation feedback only: detect `.mdp/` and surface MDP guidance, then run focused validation after pack edits. Do not make hooks silently generate full briefs, enrich leads, or write private scratch outside documented ignored paths. See [Agent Hook Guidance](agent-hook-guidance.md).
+
 ## Create A Starter Pack
 
 ```bash
@@ -93,7 +95,53 @@ For messy upstream rows, use the pack-owned runtime prompt contract:
 .mdp/prompts/normalize-prospect.yaml
 ```
 
-That prompt asks an upstream agent to return strict JSON with `normalized_prospect`, `normalization_trace`, `gaps`, and empty `card_patches`. Save `normalized_prospect` as the prospect JSON file that the CLI will ingest. Then check fit before drafting:
+That prompt asks an upstream agent to return strict JSON with `normalized_prospect`, `normalization_trace`, `gaps`, and empty `card_patches`. Save `normalized_prospect` as the prospect JSON file that the CLI will ingest.
+
+Minimum parser admission is still `name`, `title`, and `company`, but the starter pack's fit-ready requirements are stricter:
+
+```yaml
+lead_input_requirements:
+  required_fields:
+    - name
+    - title
+    - company_domain
+    - trigger
+    - persona
+    - segment
+    - signals
+  required_signal_fields:
+    - source
+  required_attributes: []
+```
+
+For a real lead row, prefer this shape:
+
+```json
+{
+  "name": "Alex Rivera",
+  "title": "GTM Engineering Lead",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "persona": "GTM Engineering",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents and systems",
+  "attributes": {
+    "fiscal_year": "FY2027"
+  },
+  "signals": [
+    {
+      "id": "agent-gtm-workflow",
+      "title": "Building multi-agent GTM workflow",
+      "source": "source row note",
+      "confidence": "medium"
+    }
+  ]
+}
+```
+
+`company_domain` is canonicalized only from supplied domain-like values. `https://www.apple.com/` becomes `apple.com`; MDP does not browse, DNS-check, enrich, or infer a domain from `company`. Use `attributes` for bounded reviewed metadata like fiscal year or segment tier, and use `signals[].source` for evidence.
+
+Then check fit before drafting:
 
 ```bash
 mdp --json fit --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json

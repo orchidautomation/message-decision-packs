@@ -190,6 +190,8 @@ Prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for 
 
 Prompt contracts do not browse, scrape, enrich, send, sequence, or update external systems.
 
+Prospect rows keep `name`, `title`, and `company` as compatibility admission fields, but new lead workflows should provide `company_domain` as the stronger account key. `mdp fit` canonicalizes supplied domain-like values, for example `https://www.apple.com/` -> `apple.com`, without browsing, DNS checks, enrichment, or inferring a domain from company name. Packs can declare `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`; fit output reports missing and invalid requirements deterministically.
+
 ## Plugin
 
 The plugin source lives in `plugin/` and includes skills for creating, reviewing, routing, and using MDPs. Pluxx packages this source for Claude Code, Cursor, Codex, and OpenCode.
@@ -225,6 +227,7 @@ When using MDP:
 - Load the manifest first.
 - Preserve source provenance.
 - Run `mdp validate` before relying on a pack.
+- Use `.mdp/prompts/normalize-prospect.yaml` to normalize messy supplied lead rows before CLI ingestion.
 - Use `mdp fit` before drafting from a prospect row.
 - Stop on `disqualified` or `insufficient-context`.
 - Use `mdp brief --context` for bounded drafting context.

@@ -17,9 +17,36 @@ pub(crate) struct Manifest {
     pub(crate) supported_channels: Vec<String>,
     #[serde(default)]
     pub(crate) persona_mappings: Vec<PersonaMapping>,
+    #[serde(default)]
+    pub(crate) lead_input_requirements: LeadInputRequirements,
     pub(crate) cards: Vec<CardRef>,
     pub(crate) policy: Policy,
     pub(crate) provenance: Provenance,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub(crate) struct LeadInputRequirements {
+    #[serde(default)]
+    pub(crate) required_fields: Vec<String>,
+    #[serde(default)]
+    pub(crate) required_signal_fields: Vec<String>,
+    #[serde(default)]
+    pub(crate) required_attributes: Vec<String>,
+}
+
+impl Default for LeadInputRequirements {
+    fn default() -> Self {
+        Self {
+            required_fields: vec![
+                "trigger".to_string(),
+                "persona".to_string(),
+                "segment".to_string(),
+                "signals".to_string(),
+            ],
+            required_signal_fields: vec!["source".to_string()],
+            required_attributes: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -216,6 +243,8 @@ pub(crate) struct Prospect {
     pub(crate) title: String,
     pub(crate) company: String,
     #[serde(default)]
+    pub(crate) company_domain: Option<String>,
+    #[serde(default)]
     pub(crate) source_kind: Option<String>,
     #[serde(default)]
     pub(crate) synthetic: bool,
@@ -233,6 +262,8 @@ pub(crate) struct Prospect {
     pub(crate) segment: Option<String>,
     #[serde(default)]
     pub(crate) signals: Vec<Signal>,
+    #[serde(default)]
+    pub(crate) attributes: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

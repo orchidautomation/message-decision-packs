@@ -3,8 +3,8 @@ use crate::constants::{
     PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
-    Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints, Manifest, PersonaMapping,
-    Policy, Provenance,
+    Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints, LeadInputRequirements,
+    Manifest, PersonaMapping, Policy, Provenance,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -30,6 +30,11 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
             persona_mapping("PMM", &["pmm", "product marketing", "demand gen", "demand generation", "growth marketing", "messaging", "positioning"]),
             persona_mapping("PM", &["product manager", "head of product", "vp product", "chief product officer"]),
         ],
+        lead_input_requirements: LeadInputRequirements {
+            required_fields: vec!["name".to_string(), "title".to_string(), "company_domain".to_string(), "trigger".to_string(), "persona".to_string(), "segment".to_string(), "signals".to_string()],
+            required_signal_fields: vec!["source".to_string()],
+            required_attributes: Vec::new(),
+        },
         cards: vec![
             card_ref("personas", "cards/personas.yaml", CardKind::Personas, "Who the decision pack serves and what each persona needs.", &["GTM Engineering", "PMM", "PM"], &["persona"]),
             card_ref("positioning", "cards/positioning.yaml", CardKind::Positioning, "Category, product boundaries, value pillars, and what this pack is not.", &["GTM Engineering", "PMM", "PM"], &["positioning", "category", "boundary"]),
@@ -759,6 +764,7 @@ pub(crate) fn starter_prospect(_template: &str) -> Value {
         "name": "Alex Rivera",
         "title": "GTM Engineering Lead",
         "company": "ExampleCo",
+        "company_domain": "example.com",
         "source_kind": "synthetic-example",
         "synthetic": true,
         "linkedin_url": "https://www.linkedin.com/in/example-mdp-demo",
@@ -932,7 +938,9 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
         "instructions": [
             "Use only raw_row, company_domain, existing_pack_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.",
             "Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.",
-            "Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, and signals.",
+            "Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional company_domain, source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, signals, and bounded attributes.",
+            "When company_domain or company_url is supplied, normalize only that supplied domain-like value. Do not infer a domain from company name.",
+            "Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.",
             "Use explicit persona from the row when present. Otherwise use pack-owned persona_mappings from existing_pack_context; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.",
             "Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.",
             "Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.",
@@ -978,6 +986,7 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
                     "name": "Alex Rivera",
                     "title": "Revenue Operations Lead",
                     "company": "ExampleCo",
+                    "company_domain": "example.com",
                     "source_kind": "user-provided-row",
                     "synthetic": false,
                     "company_url": "https://example.com",
@@ -985,6 +994,9 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
                     "trigger": "Standardizing prospect qualification data before routing new campaigns.",
                     "persona": "Revenue Operations",
                     "segment": "B2B GTM operations",
+                    "attributes": {
+                        "fiscal_year": "FY2027"
+                    },
                     "signals": [
                         {
                             "id": "qualification-data-standardization",
@@ -1005,13 +1017,14 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
                     },
                     "fit_readiness": {
                         "has_trigger": true,
+                        "has_company_domain": true,
                         "has_persona": true,
                         "has_segment": true,
                         "has_signals": true,
                         "has_signal_source": true,
                         "ready_for_mdp_fit": true
                     },
-                    "preserved_raw_fields": ["raw_row.name", "raw_row.title", "raw_row.company", "raw_row.operations_note"],
+                    "preserved_raw_fields": ["raw_row.name", "raw_row.title", "raw_row.company", "company_domain", "raw_row.operations_note", "raw_row.fiscal_year"],
                     "missing_required": []
                 },
                 "card_patches": [],
@@ -1270,6 +1283,10 @@ fn normalized_prospect_output_schema() -> Value {
                 "type": "string",
                 "description": "Company or account name from the supplied row."
             },
+            "company_domain": {
+                "type": "string",
+                "description": "Preferred account routing key when supplied. Normalize URLs/domains such as https://www.apple.com/ to apple.com; do not infer from company name."
+            },
             "source_kind": {
                 "type": "string",
                 "description": "Provider-neutral source marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example."
@@ -1313,6 +1330,15 @@ fn normalized_prospect_output_schema() -> Value {
                             "description": "How to state the signal, such as supplied, observed, or hypothesis."
                         }
                     }
+                }
+            },
+            "attributes": {
+                "type": "object",
+                "maxProperties": 25,
+                "description": "Bounded reviewed metadata for pack-specific routing, such as fiscal_year or segment tier. Use signals with source fields for evidence instead of dumping raw data here.",
+                "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"},
+                "additionalProperties": {
+                    "type": ["string", "number", "integer", "boolean"]
                 }
             }
         }

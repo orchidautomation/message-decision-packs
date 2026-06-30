@@ -488,7 +488,7 @@ fn has_token(tokens: &[String], needle: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{CardRef, Policy, Provenance};
+    use crate::models::{CardRef, LeadInputRequirements, Policy, Provenance};
 
     fn manifest(max_cards_per_route: usize) -> Manifest {
         Manifest {
@@ -507,6 +507,7 @@ mod tests {
                 "partner-intro".to_string(),
             ],
             persona_mappings: vec![],
+            lead_input_requirements: LeadInputRequirements::default(),
             cards: vec![
                 CardRef {
                     id: "personas".to_string(),

@@ -43,6 +43,7 @@ source material
   -> source ledger
   -> pack cards
   -> mdp validate
+  -> normalize supplied lead rows with .mdp/prompts/normalize-prospect.yaml when needed
   -> mdp fit
   -> mdp brief --context
   -> agent drafts only from routed context
@@ -51,6 +52,8 @@ source material
 ```
 
 When prospect context is missing, weak, disqualified, or unsupported, the agent should stop and surface the no-draft reason instead of smoothing gaps into confident copy.
+
+New lead workflows should prefer `company_domain` as the account key while preserving `company` as the human-readable company name and legacy admission field. `mdp fit` canonicalizes supplied domains/URLs such as `https://www.apple.com/` to `apple.com`, but it does not infer domains from company names. Packs can declare readiness with `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`; fit output reports missing and invalid requirements.
 
 ## Important CLI Commands
 
@@ -93,6 +96,7 @@ The plugin source lives in `plugin/` and is distributed through Pluxx. Important
 - [Getting Started](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/getting-started.md)
 - [Conceptual Decision Flow](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/conceptual-decision-flow.md)
 - [Prompt Extraction Contract](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md)
+- [Agent Hook Guidance](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/agent-hook-guidance.md)
 - [Distribution Notes](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md)
 
 ## Programmatic Access

@@ -153,6 +153,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
             }
         }
     }
+    validate_lead_input_requirements(&manifest, &mut issues);
     for card_ref in &manifest.cards {
         if !card_ids.insert(card_ref.id.clone()) {
             issues.push(issue(
@@ -240,6 +241,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "operator_roles",
             "supported_channels",
             "persona_mappings",
+            "lead_input_requirements",
             "cards",
             "policy",
             "provenance",
@@ -263,6 +265,17 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         issues,
     );
     validate_object_keys(
+        yaml_get(&value, "lead_input_requirements").unwrap_or(&YamlValue::Null),
+        &[
+            "required_fields",
+            "required_signal_fields",
+            "required_attributes",
+        ],
+        ".mdp/manifest.yaml#/lead_input_requirements",
+        "manifest_lead_input_requirements_unknown_field",
+        issues,
+    );
+    validate_object_keys(
         yaml_get(&value, "policy").unwrap_or(&YamlValue::Null),
         &[
             "progressive_disclosure",
@@ -282,6 +295,111 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         "manifest_provenance_unknown_field",
         issues,
     );
+}
+
+fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: &mut Vec<Value>) {
+    let allowed_fields = [
+        "name",
+        "title",
+        "company",
+        "company_domain",
+        "source_kind",
+        "synthetic",
+        "linkedin_url",
+        "company_url",
+        "background",
+        "trigger",
+        "persona",
+        "segment",
+        "signals",
+    ];
+    let allowed_signal_fields = [
+        "id",
+        "title",
+        "source",
+        "confidence",
+        "freshness",
+        "state_as",
+    ];
+    validate_requirement_values(
+        &manifest.lead_input_requirements.required_fields,
+        &allowed_fields,
+        ".mdp/manifest.yaml#/lead_input_requirements/required_fields",
+        "lead_input_required_field_unknown",
+        "required_fields entries must be supported prospect fields",
+        issues,
+    );
+    validate_requirement_values(
+        &manifest.lead_input_requirements.required_signal_fields,
+        &allowed_signal_fields,
+        ".mdp/manifest.yaml#/lead_input_requirements/required_signal_fields",
+        "lead_input_required_signal_field_unknown",
+        "required_signal_fields entries must be supported signal fields",
+        issues,
+    );
+
+    let mut seen_attributes = BTreeSet::new();
+    for (index, attribute) in manifest
+        .lead_input_requirements
+        .required_attributes
+        .iter()
+        .enumerate()
+    {
+        if !valid_attribute_key(attribute) {
+            issues.push(issue(
+                "lead_input_required_attribute_invalid",
+                "error",
+                format!(
+                    ".mdp/manifest.yaml#/lead_input_requirements/required_attributes/{index}"
+                ),
+                "required_attributes entries must start with a letter and contain only letters, numbers, underscores, or hyphens",
+            ));
+        } else if !seen_attributes.insert(attribute.to_lowercase()) {
+            issues.push(issue(
+                "lead_input_required_attribute_duplicate",
+                "warning",
+                format!(".mdp/manifest.yaml#/lead_input_requirements/required_attributes/{index}"),
+                format!("duplicate required attribute {attribute}"),
+            ));
+        }
+    }
+}
+
+fn validate_requirement_values(
+    values: &[String],
+    allowed: &[&str],
+    path: &str,
+    code: &str,
+    message: &str,
+    issues: &mut Vec<Value>,
+) {
+    let allowed = allowed.iter().copied().collect::<BTreeSet<_>>();
+    let mut seen = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        if !allowed.contains(value.as_str()) {
+            issues.push(issue(
+                code,
+                "error",
+                format!("{path}/{index}"),
+                format!("{message}; found {value}"),
+            ));
+        } else if !seen.insert(value.as_str()) {
+            let duplicate_code = format!("{code}_duplicate");
+            issues.push(issue(
+                &duplicate_code,
+                "warning",
+                format!("{path}/{index}"),
+                format!("duplicate requirement {value}"),
+            ));
+        }
+    }
+}
+
+fn valid_attribute_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && key.len() <= 64
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 fn validate_card_shape(path: &Path, display_path: &str, issues: &mut Vec<Value>) {
@@ -1334,6 +1452,41 @@ mod tests {
             result["prompts"].as_array().expect("prompts array").len(),
             10
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_unknown_lead_input_requirements() {
+        let root = temp_pack("lead-input-requirements");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let mut raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        raw = raw.replace(
+            "required_fields:\n  - name",
+            "required_fields:\n  - company_size\n  - name",
+        );
+        raw = raw.replace(
+            "required_signal_fields:\n  - source",
+            "required_signal_fields:\n  - origin\n  - source",
+        );
+        raw = raw.replace(
+            "required_attributes: []",
+            "required_attributes:\n  - fiscal year",
+        );
+        std::fs::write(&manifest_path, raw).expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let codes: Vec<&str> = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        assert!(codes.contains(&"lead_input_required_field_unknown"));
+        assert!(codes.contains(&"lead_input_required_signal_field_unknown"));
+        assert!(codes.contains(&"lead_input_required_attribute_invalid"));
 
         let _ = std::fs::remove_dir_all(root);
     }
