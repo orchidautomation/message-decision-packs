@@ -421,6 +421,7 @@ fn validate_prompts(root: &Path, issues: &mut Vec<Value>) -> Result<Vec<Value>> 
             ));
             continue;
         }
+        validate_prompt_shape(&path, &display_path, issues);
         match read_prompt(&path) {
             Ok(prompt) => {
                 validate_prompt_file(&prompt, &display_path, &mut prompt_ids, issues);
@@ -441,6 +442,64 @@ fn validate_prompts(root: &Path, issues: &mut Vec<Value>) -> Result<Vec<Value>> 
     }
 
     Ok(loaded_prompts)
+}
+
+fn validate_prompt_shape(path: &Path, display_path: &str, issues: &mut Vec<Value>) {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(value) = serde_yaml::from_str::<YamlValue>(&raw) else {
+        return;
+    };
+
+    validate_object_keys(
+        &value,
+        &[
+            "format",
+            "id",
+            "title",
+            "description",
+            "target_card_kinds",
+            "tags",
+            "inputs",
+            "instructions",
+            "output_contract",
+        ],
+        display_path,
+        "prompt_unknown_field",
+        issues,
+    );
+    validate_sequence_object_keys(
+        yaml_get(&value, "inputs"),
+        &["name", "description", "required", "default", "missing_behavior"],
+        &format!("{display_path}#/inputs"),
+        "prompt_input_unknown_field",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(&value, "output_contract").unwrap_or(&YamlValue::Null),
+        &[
+            "contract",
+            "output_kind",
+            "strict_json_only",
+            "required_top_level",
+            "entry_defaults",
+            "schema_ref",
+            "schema",
+            "example",
+        ],
+        &format!("{display_path}#/output_contract"),
+        "prompt_output_contract_unknown_field",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(yaml_get(&value, "output_contract").unwrap_or(&YamlValue::Null), "entry_defaults")
+            .unwrap_or(&YamlValue::Null),
+        &["body", "applies_to", "evidence", "avoid", "confidence", "provenance"],
+        &format!("{display_path}#/output_contract/entry_defaults"),
+        "prompt_entry_defaults_unknown_field",
+        issues,
+    );
 }
 
 fn validate_prompt_file(
@@ -606,6 +665,7 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     }
 
     validate_prompt_example(prompt, path, issues);
+    validate_prompt_example_input_references(prompt, path, issues);
     validate_prompt_schema_ref(prompt, path, output_kind, issues);
     if let Some(schema) = prompt.output_contract.schema.as_ref() {
         validate_prompt_output_schema(prompt, schema, path, output_kind, issues);
@@ -815,6 +875,15 @@ fn schema_array_contains(value: &Value, expected: &str) -> bool {
         .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(expected)))
 }
 
+fn reference_uses_declared_input(reference: &str, declared_inputs: &BTreeSet<&str>) -> bool {
+    declared_inputs.iter().any(|input| {
+        reference == *input
+            || reference.starts_with(&format!("{input}:"))
+            || reference.starts_with(&format!("{input}."))
+            || reference.starts_with(&format!("{input}["))
+    })
+}
+
 fn validate_prompt_example(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
     let example = &prompt.output_contract.example;
     for field in &prompt.output_contract.required_top_level {
@@ -887,6 +956,7 @@ fn validate_prompt_example(prompt: &PromptFile, path: &str, issues: &mut Vec<Val
                 "confidence",
                 "provenance",
                 "status",
+                "notes",
             ] {
                 if entry.get(field).is_none() {
                     issues.push(issue(
@@ -911,6 +981,100 @@ fn validate_prompt_example(prompt: &PromptFile, path: &str, issues: &mut Vec<Val
                     "non-gap example entries with a real body need evidence or provenance",
                 ));
             }
+        }
+    }
+}
+
+fn validate_prompt_example_input_references(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
+    let declared_inputs = prompt
+        .inputs
+        .iter()
+        .map(|input| input.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let example = &prompt.output_contract.example;
+    let inputs_used = example["source_summary"]["inputs_used"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for (index, input) in inputs_used.iter().enumerate() {
+        let Some(input) = input.as_str() else {
+            continue;
+        };
+        if !declared_inputs.contains(input) {
+            issues.push(issue(
+                "prompt_example_inputs_used_undeclared",
+                "error",
+                format!("{path}#/output_contract/example/source_summary/inputs_used/{index}"),
+                format!("prompt example inputs_used references undeclared input {input}"),
+            ));
+        }
+    }
+
+    let Some(card_patches) = example["card_patches"].as_array() else {
+        return;
+    };
+    let mut saw_supporting_reference = false;
+    for (patch_index, patch) in card_patches.iter().enumerate() {
+        let Some(entries) = patch["entries"].as_array() else {
+            continue;
+        };
+        for (entry_index, entry) in entries.iter().enumerate() {
+            validate_prompt_example_references(
+                entry["evidence"].as_array(),
+                &declared_inputs,
+                &format!(
+                    "{path}#/output_contract/example/card_patches/{patch_index}/entries/{entry_index}/evidence"
+                ),
+                "prompt_example_evidence_reference_undeclared",
+                &mut saw_supporting_reference,
+                issues,
+            );
+            validate_prompt_example_references(
+                entry["provenance"].as_array(),
+                &declared_inputs,
+                &format!(
+                    "{path}#/output_contract/example/card_patches/{patch_index}/entries/{entry_index}/provenance"
+                ),
+                "prompt_example_provenance_reference_undeclared",
+                &mut saw_supporting_reference,
+                issues,
+            );
+        }
+    }
+
+    if saw_supporting_reference && inputs_used.is_empty() {
+        issues.push(issue(
+            "prompt_example_inputs_used_empty",
+            "error",
+            format!("{path}#/output_contract/example/source_summary/inputs_used"),
+            "prompt example source_summary.inputs_used must name declared inputs when evidence or provenance is present",
+        ));
+    }
+}
+
+fn validate_prompt_example_references(
+    items: Option<&Vec<Value>>,
+    declared_inputs: &BTreeSet<&str>,
+    path: &str,
+    code: &str,
+    saw_supporting_reference: &mut bool,
+    issues: &mut Vec<Value>,
+) {
+    let Some(items) = items else {
+        return;
+    };
+    for (index, item) in items.iter().enumerate() {
+        let Some(reference) = item.as_str() else {
+            continue;
+        };
+        *saw_supporting_reference = true;
+        if !reference_uses_declared_input(reference, declared_inputs) {
+            issues.push(issue(
+                code,
+                "error",
+                format!("{path}/{index}"),
+                format!("prompt example reference {reference} does not match a declared prompt input"),
+            ));
         }
     }
 }

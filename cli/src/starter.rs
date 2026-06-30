@@ -465,6 +465,7 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
                         ]
                     }
                 ]),
+                &["company_data"],
                 &[],
                 include_output_schemas,
             ),
@@ -497,6 +498,7 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
                         ]
                     }
                 ]),
+                &["company_data"],
                 &[],
                 include_output_schemas,
             ),
@@ -529,6 +531,7 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
                         ]
                     }
                 ]),
+                &["company_data"],
                 &[],
                 include_output_schemas,
             ),
@@ -561,6 +564,7 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
                         ]
                     }
                 ]),
+                &["source_notes"],
                 &[],
                 include_output_schemas,
             ),
@@ -593,6 +597,7 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
                         ]
                     }
                 ]),
+                &["company_data"],
                 &[],
                 include_output_schemas,
             ),
@@ -625,6 +630,7 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
                         ]
                     }
                 ]),
+                &["source_notes"],
                 &[],
                 include_output_schemas,
             ),
@@ -648,15 +654,16 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
                                 "Avoid em dashes",
                                 "Do not use em dashes in generated copy; use commas, periods, colons, or shorter sentences instead.",
                                 &["PMM", "GTM Engineering"],
-                                &["style_guidance"],
+                                &["source_notes"],
                                 &["—"],
                                 "medium",
-                                &["style_guidance: supplied style preference"],
+                                &["source_notes: supplied style guidance"],
                                 "needs-review"
                             )
                         ]
                     }
                 ]),
+                &["source_notes"],
                 &[],
                 include_output_schemas,
             ),
@@ -706,6 +713,7 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
                         ]
                     }
                 ]),
+                &["company_data", "source_notes"],
                 &[],
                 include_output_schemas,
             ),
@@ -738,6 +746,7 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
                         ]
                     }
                 ]),
+                &[],
                 &["Need concrete source material before creating approved claims."],
                 include_output_schemas,
             ),
@@ -1025,6 +1034,7 @@ fn prompt_contract(
     tags: &[&str],
     task_instruction: &str,
     card_patches: Value,
+    inputs_used: &[&str],
     gaps: &[&str],
     include_output_schemas: bool,
 ) -> Value {
@@ -1118,7 +1128,7 @@ fn prompt_contract(
                     "person_name": "N/A",
                     "person_title": "N/A",
                     "account_name": "N/A",
-                    "inputs_used": [],
+                    "inputs_used": inputs_used,
                     "confidence": "unknown"
                 },
                 "card_patches": card_patches,

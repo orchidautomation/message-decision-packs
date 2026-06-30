@@ -51,7 +51,7 @@ fn summarize(command: &str, data: &Value) -> Value {
             "stable_error_code_count": array_len(&data["stable_error_codes"]),
             "offline_by_default": data["defaults"]["offline_by_default"]
         }),
-        "doctor" | "validate" => json!({
+        "doctor" | "validate" | "validate-prompt-output" => json!({
             "valid": data["valid"],
             "strict": data["strict"],
             "issue_count": array_len(&data["issues"]),
@@ -223,6 +223,7 @@ fn classify_error(message: &str, details: &[String]) -> &'static str {
         || lower.contains("required arguments")
         || lower.contains("pass either --text or --file")
         || lower.contains("pass --text or --file")
+        || lower.contains("pass at most one of --prompt and --prompt-id")
         || lower.contains("unsupported template")
         || lower.contains("--count must")
     {

@@ -323,7 +323,8 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                                     "avoid",
                                     "confidence",
                                     "provenance",
-                                    "status"
+                                    "status",
+                                    "notes"
                                 ],
                                 "properties": {
                                     "id": {"type": "string"},
