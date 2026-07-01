@@ -42,6 +42,8 @@ Preferred fields:
 - `attributes` for bounded reviewed metadata such as fiscal year or segment tier
 - `source_kind` and `synthetic` when the row is generated, sanitized, private scratch, or sourced from a known row system
 
+Use prospect `attributes` for reviewed row metadata only. Do not put source evidence there, and do not use entry `metadata` for prospect facts.
+
 Packs may declare readiness requirements in `.mdp/manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`. Treat `mdp fit` as the source of truth for missing or invalid readiness details.
 
 Use provider-neutral `source_kind` values unless a specific source matters:
