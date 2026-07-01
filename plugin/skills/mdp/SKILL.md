@@ -35,6 +35,14 @@ Do not fake validation by reading YAML manually.
 
 Use `mdp --json capabilities` before advanced agent orchestration to inspect command contracts, coarse side effects, `--out` support, dry-run support, strict-mode support, and stable JSON error codes. Keep `--json` on whenever another agent, script, or tool will parse output.
 
+## Hook Activation
+
+When the installed MDP plugin prints activation or post-edit validation output, treat it as visible guidance and validation evidence. Hooks may remind you to run `mdp --json capabilities`, `mdp --json doctor --dir .`, and `mdp --json validate --dir .`, or they may run focused validation after relevant pack, prompt, skill, template, script, docs, or CLI schema edits.
+
+Hook `.mdp/manifest.yaml` checks are relative to the active workspace Pluxx exposes to the hook, not the installed plugin bundle.
+
+Hooks do not authorize hidden execution. Do not use hook activation to enrich prospects, scrape, send outreach, update a CRM, or generate full briefs automatically. If a hook reports a validation failure, read the failure, make explicit reviewed edits, and rerun the relevant command.
+
 ## Create Or Improve A Pack
 
 For a new generic pack:

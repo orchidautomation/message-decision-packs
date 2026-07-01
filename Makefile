@@ -3,9 +3,9 @@ PYTHON ?= $(shell if [ -x "$(HOME)/.pyenv/versions/3.13.5/bin/python3" ]; then e
 SKILL_VALIDATOR ?= $(HOME)/.codex/skills/.system/skill-creator/scripts/quick_validate.py
 PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py
 
-.PHONY: validate validate-cli validate-template validate-skills validate-plugin validate-installers validate-llms install-cli demo
+.PHONY: validate validate-cli validate-template validate-skills validate-plugin validate-pluxx-hooks validate-installers validate-llms install-cli demo
 
-validate: validate-cli validate-template validate-skills validate-plugin validate-installers validate-llms
+validate: validate-cli validate-template validate-skills validate-plugin validate-pluxx-hooks validate-installers validate-llms
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
@@ -20,6 +20,9 @@ validate-skills:
 validate-plugin:
 	@if [ -f "$(PLUGIN_VALIDATOR)" ]; then 		$(PYTHON) "$(PLUGIN_VALIDATOR)" plugin; 	else 		echo "Skipping plugin validation; missing $(PLUGIN_VALIDATOR)"; 	fi
 
+validate-pluxx-hooks:
+	bash scripts/test-pluxx-hooks.sh
+
 validate-llms:
 	@test -s llms.txt
 	@test -s llms-full.txt
@@ -29,7 +32,7 @@ validate-llms:
 	@grep -q 'https://mdp.orchidlabs.dev/llms.txt' llms-full.txt
 
 validate-installers:
-	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/test-install.sh
+	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh
 	scripts/test-install.sh
 
 install-cli:

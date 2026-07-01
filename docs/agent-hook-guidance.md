@@ -2,7 +2,7 @@
 
 MDP hooks should activate context and run validation feedback. They should not become hidden execution infrastructure.
 
-Current default:
+Packaged default:
 
 ```text
 Prompt starts in a workspace.
@@ -12,14 +12,20 @@ If validation fails, show the failure to the agent.
 The agent edits files explicitly and reruns validation.
 ```
 
+The Pluxx source config packages this behavior as bundled command hooks for supported targets. Codex and Claude Code receive native `hooks/hooks.json` files in the generated plugin bundle. Codex also receives `.codex/hooks.generated.json` as a debugging companion because runtime firing still depends on host flags, enabled plugin state, review, trust, and current host behavior.
+
 Do not hook automatic full brief generation as the default. Briefs depend on the user's actual intent, prospect privacy, ignored scratch paths, and whether the fit gate passes. Agents should call `mdp fit`, `mdp brief --context`, and `mdp check-claims` deliberately.
 
 ## Codex
 
-Use Codex hooks, where available, for two visible behaviors:
+The generated Codex bundle includes `hooks/hooks.json` with command hooks for two visible behaviors:
 
-- Prompt-time activation: when the workspace has `.mdp/manifest.yaml`, add a short instruction telling the model to run `mdp --json capabilities`, `mdp --json doctor --dir .`, and `mdp --json validate --dir .` before meaningful pack work.
-- Pack-edit validation: after changes under `.mdp/`, `plugin/assets/templates/basic/.mdp/`, `plugin/skills/`, `docs/`, or the CLI schema/model files, run the focused validation commands that match the edit.
+- Startup or prompt activation: when the active workspace has `.mdp/manifest.yaml`, print MDP boundary guidance and the core commands the agent should run before meaningful pack work.
+- Post-tool validation: after tool use, detect changed pack, prompt, skill, docs, template, script, or CLI schema files and run the focused validation commands that match the edit.
+
+Codex-compatible post-edit validation uses `postToolUse`, not `afterFileEdit`, because Pluxx maps `afterFileEdit` to an event Codex does not support today. The script self-gates to relevant edit paths. Hook scripts run from the installed plugin bundle, so Pluxx 0.1.25+ exposes the active project directory as `PLUXX_HOOK_WORKSPACE_ROOT` when the host provides a reliable workspace signal. MDP uses that value for `.mdp/manifest.yaml` checks and keeps conservative fallbacks for direct script tests or hosts that pass workspace data through common env vars or JSON hook payload fields.
+
+Codex hook activation may require `[features].hooks = true`, an enabled plugin, review/trust, and a host version that supports plugin-bundled hooks. If hooks do not fire, inspect the generated `hooks/hooks.json` and `.codex/hooks.generated.json` files first.
 
 Good focused commands:
 
@@ -34,7 +40,7 @@ Use `make validate` for release-impacting changes or before opening a PR that ch
 
 ## Claude Code
 
-Use Claude Code hooks with the same boundary:
+The generated Claude Code bundle includes `hooks/hooks.json` with the same boundary:
 
 - A prompt/session hook can add MDP activation guidance when `.mdp/` exists.
 - A post-edit/tool hook can run focused validation after pack, prompt, skill, docs, or schema files change.

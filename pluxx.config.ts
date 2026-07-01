@@ -29,6 +29,27 @@ export default definePlugin({
   scripts: './scripts/',
   assets: './assets/',
 
+  hooks: {
+    sessionStart: [
+      {
+        command: 'bash "${PLUGIN_ROOT}/scripts/mdp-activate.sh"',
+        timeout: 10000,
+      },
+    ],
+    beforeSubmitPrompt: [
+      {
+        command: 'bash "${PLUGIN_ROOT}/scripts/mdp-activate.sh"',
+        timeout: 10000,
+      },
+    ],
+    postToolUse: [
+      {
+        command: 'bash "${PLUGIN_ROOT}/scripts/mdp-post-edit-validate.sh"',
+        timeout: 120000,
+      },
+    ],
+  },
+
   platforms: {
     "codex": {
       "interface": {
