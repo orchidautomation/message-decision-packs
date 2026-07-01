@@ -25,7 +25,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
     ];
     match target {
         SchemaTarget::Manifest => {
-            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Manifest v0", "type": "object", "required": ["format", "id", "name", "version", "personas", "cards", "policy", "provenance"], "properties": {"format": {"const": FORMAT_VERSION}, "id": {"type": "string"}, "name": {"type": "string"}, "version": {"type": "string"}, "description": {"type": "string"}, "personas": {"type": "array", "items": {"type": "string"}}, "target_personas": {"type": "array", "items": {"type": "string"}}, "operator_roles": {"type": "array", "items": {"type": "string"}}, "supported_channels": {"type": "array", "items": {"type": "string"}}, "persona_mappings": {"type": "array", "items": {"type": "object", "required": ["persona"], "properties": {"persona": {"type": "string"}, "title_keywords": {"type": "array", "items": {"type": "string"}}}}}, "cards": {"type": "array", "items": {"type": "object", "required": ["id", "path", "kind", "description"], "properties": {"id": {"type": "string"}, "path": {"type": "string", "pattern": "^cards/[^/].*\\.ya?ml$"}, "kind": {"enum": card_kinds}, "description": {"type": "string"}, "personas": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}}}}}, "policy": {"type": "object", "required": ["progressive_disclosure", "load_manifest_first", "max_cards_per_route", "json_contract", "no_auth_required"], "properties": {"progressive_disclosure": {"type": "boolean"}, "load_manifest_first": {"type": "boolean"}, "max_cards_per_route": {"type": "integer", "minimum": 1}, "json_contract": {"type": "string"}, "no_auth_required": {"type": "boolean"}}}, "provenance": {"type": "object", "required": ["owner", "created_by", "notes"], "properties": {"owner": {"type": "string"}, "created_by": {"type": "string"}, "notes": {"type": "array", "items": {"type": "string"}}}}}})
+            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Manifest v0", "type": "object", "required": ["format", "id", "name", "version", "personas", "cards", "policy", "provenance"], "properties": {"format": {"const": FORMAT_VERSION}, "id": {"type": "string"}, "name": {"type": "string"}, "version": {"type": "string"}, "description": {"type": "string"}, "personas": {"type": "array", "items": {"type": "string"}}, "target_personas": {"type": "array", "items": {"type": "string"}}, "operator_roles": {"type": "array", "items": {"type": "string"}}, "supported_channels": {"type": "array", "items": {"type": "string"}}, "persona_mappings": {"type": "array", "items": {"type": "object", "required": ["persona"], "properties": {"persona": {"type": "string"}, "title_keywords": {"type": "array", "items": {"type": "string"}}}}}, "lead_input_requirements": lead_input_requirements_schema(), "cards": {"type": "array", "items": {"type": "object", "required": ["id", "path", "kind", "description"], "properties": {"id": {"type": "string"}, "path": {"type": "string", "pattern": "^cards/[^/].*\\.ya?ml$"}, "kind": {"enum": card_kinds}, "description": {"type": "string"}, "personas": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}}}}}, "policy": {"type": "object", "required": ["progressive_disclosure", "load_manifest_first", "max_cards_per_route", "json_contract", "no_auth_required"], "properties": {"progressive_disclosure": {"type": "boolean"}, "load_manifest_first": {"type": "boolean"}, "max_cards_per_route": {"type": "integer", "minimum": 1}, "json_contract": {"type": "string"}, "no_auth_required": {"type": "boolean"}}}, "provenance": {"type": "object", "required": ["owner", "created_by", "notes"], "properties": {"owner": {"type": "string"}, "created_by": {"type": "string"}, "notes": {"type": "array", "items": {"type": "string"}}}}}})
         }
         SchemaTarget::Card => {
             json!({
@@ -64,7 +64,15 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::Prompt => prompt_schema(card_kinds),
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::Prospect => {
-            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Prospect Input v0", "type": "object", "required": ["name", "title", "company"], "properties": {"name": {"type": "string"}, "title": {"type": "string"}, "company": {"type": "string"}, "source_kind": {"type": "string", "description": "Optional provenance marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example."}, "synthetic": {"type": "boolean", "description": "True only for generated or fictional fixtures that must not be mistaken for real prospects."}, "linkedin_url": {"type": "string"}, "company_url": {"type": "string"}, "background": {"type": "string"}, "trigger": {"type": "string"}, "persona": {"type": "string"}, "segment": {"type": "string"}, "signals": {"type": "array", "items": {"type": "object", "required": ["id", "title"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "source": {"type": "string"}, "confidence": {"type": "string"}, "freshness": {"type": "string"}, "state_as": {"type": "string"}}}}}})
+            let mut value = prospect_schema();
+            if let Some(object) = value.as_object_mut() {
+                object.insert(
+                    "$schema".to_string(),
+                    json!("https://json-schema.org/draft/2020-12/schema"),
+                );
+                object.insert("title".to_string(), json!("MDP Prospect Input v0"));
+            }
+            value
         }
         SchemaTarget::Eval => {
             json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Eval Fixture v0", "type": "object", "required": ["id", "command"], "properties": {"id": {"type": "string"}, "command": {"enum": ["route", "fit", "brief", "check-claims"]}, "persona": {"type": "string"}, "job": {"type": "string"}, "channel": {"type": "string"}, "prospect": {"type": "object"}, "text": {"type": "string"}, "subject": {"type": "string"}, "expect_load_order_contains": string_array(), "expect_load_order_excludes": string_array(), "expect_entry_titles_contains": string_array(), "expect_entry_titles_excludes": string_array(), "expect_status": {"type": "string"}, "expect_draft_status": {"type": "string"}, "expect_valid": {"type": "boolean"}}})
@@ -136,6 +144,45 @@ fn metadata_schema() -> Value {
 
 fn pack_schema() -> Value {
     json!({"type": "object", "required": ["id", "name", "version"], "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "version": {"type": "string"}}})
+}
+
+fn lead_input_requirements_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Pack-owned readiness requirements checked deterministically by mdp fit.",
+        "properties": {
+            "required_fields": {
+                "type": "array",
+                "items": {
+                    "enum": [
+                        "name",
+                        "title",
+                        "company",
+                        "company_domain",
+                        "source_kind",
+                        "synthetic",
+                        "linkedin_url",
+                        "company_url",
+                        "background",
+                        "trigger",
+                        "persona",
+                        "segment",
+                        "signals"
+                    ]
+                }
+            },
+            "required_signal_fields": {
+                "type": "array",
+                "items": {
+                    "enum": ["id", "title", "source", "confidence", "freshness", "state_as"]
+                }
+            },
+            "required_attributes": {
+                "type": "array",
+                "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"}
+            }
+        }
+    })
 }
 
 fn prompt_schema(card_kinds: [&str; 15]) -> Value {
@@ -383,6 +430,10 @@ fn prospect_schema() -> Value {
             "name": {"type": "string"},
             "title": {"type": "string"},
             "company": {"type": "string"},
+            "company_domain": {
+                "type": "string",
+                "description": "Preferred account routing key for new lead workflows. The CLI canonicalizes supplied domains or URLs such as https://www.apple.com/ to apple.com; it does not infer a domain from company."
+            },
             "source_kind": {"type": "string"},
             "synthetic": {"type": "boolean"},
             "linkedin_url": {"type": "string"},
@@ -405,7 +456,20 @@ fn prospect_schema() -> Value {
                         "state_as": {"type": "string"}
                     }
                 }
-            }
+            },
+            "attributes": attribute_schema()
+        }
+    })
+}
+
+fn attribute_schema() -> Value {
+    json!({
+        "type": "object",
+        "maxProperties": 25,
+        "description": "Bounded reviewed metadata for pack-specific routing, such as fiscal_year or segment tier. Use signals with source fields for evidence instead of dumping raw source data here.",
+        "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"},
+        "additionalProperties": {
+            "type": ["string", "number", "integer", "boolean"]
         }
     })
 }
@@ -424,6 +488,9 @@ mod tests {
         assert!(required.iter().any(|field| field == "name"));
         assert!(required.iter().any(|field| field == "title"));
         assert!(required.iter().any(|field| field == "company"));
+        assert!(!required.iter().any(|field| field == "company_domain"));
+        assert_eq!(result["properties"]["company_domain"]["type"], "string");
+        assert_eq!(result["properties"]["attributes"]["maxProperties"], 25);
     }
 
     #[test]
@@ -436,6 +503,11 @@ mod tests {
         assert_eq!(
             result["properties"]["persona_mappings"]["items"]["properties"]["title_keywords"]["type"],
             "array"
+        );
+        assert_eq!(
+            result["properties"]["lead_input_requirements"]["properties"]["required_fields"]["items"]
+                ["enum"][3],
+            "company_domain"
         );
     }
 

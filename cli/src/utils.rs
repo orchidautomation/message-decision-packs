@@ -1,5 +1,51 @@
 use crate::models::{Manifest, Prospect};
+use anyhow::{Result, anyhow};
 use serde::Serialize;
+
+pub(crate) fn normalize_supplied_company_domain(input: &str) -> Result<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!("company_domain is empty"));
+    }
+    if trimmed.eq_ignore_ascii_case("n/a") {
+        return Err(anyhow!("company_domain is N/A"));
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    let without_scheme = if let Some((_, rest)) = lower.split_once("://") {
+        rest
+    } else {
+        lower.as_str()
+    };
+    let authority = without_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .trim_end_matches('.');
+    let authority = authority
+        .strip_prefix("www.")
+        .unwrap_or(authority)
+        .trim_end_matches('.');
+
+    let host = if let Some((candidate, port)) = authority.rsplit_once(':') {
+        if port.chars().all(|c| c.is_ascii_digit()) {
+            candidate
+        } else {
+            authority
+        }
+    } else {
+        authority
+    };
+
+    if !valid_domain_host(host) {
+        return Err(anyhow!(
+            "company_domain must be a supplied domain or URL host, found {trimmed}"
+        ));
+    }
+
+    Ok(host.to_string())
+}
 
 pub(crate) fn prospect_haystack_with_persona(
     prospect: &Prospect,
@@ -10,6 +56,9 @@ pub(crate) fn prospect_haystack_with_persona(
         prospect.title.clone(),
         prospect.company.clone(),
     ];
+    if let Some(value) = &prospect.company_domain {
+        parts.push(value.clone());
+    }
     for value in [
         &prospect.linkedin_url,
         &prospect.company_url,
@@ -37,6 +86,14 @@ pub(crate) fn prospect_haystack_with_persona(
             if let Some(value) = value {
                 parts.push(value.clone());
             }
+        }
+    }
+    for (key, value) in &prospect.attributes {
+        parts.push(key.clone());
+        if let Some(value) = value.as_str() {
+            parts.push(value.to_string());
+        } else if !value.is_object() && !value.is_array() && !value.is_null() {
+            parts.push(value.to_string());
         }
     }
     parts.join(" ").to_lowercase()
@@ -273,6 +330,29 @@ fn normalize_keyword(input: &str) -> String {
         .join(" ")
 }
 
+fn valid_domain_host(host: &str) -> bool {
+    if host.len() > 253 || !host.contains('.') {
+        return false;
+    }
+    host.split('.').all(valid_domain_label)
+}
+
+fn valid_domain_label(label: &str) -> bool {
+    !label.is_empty()
+        && label.len() <= 63
+        && label
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+        && label
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphanumeric())
+        && label
+            .chars()
+            .last()
+            .is_some_and(|character| character.is_ascii_alphanumeric())
+}
+
 pub(crate) fn slugify(input: &str) -> String {
     let mut out = String::new();
     let mut last_dash = false;
@@ -313,6 +393,7 @@ mod tests {
             name: "Taylor Lee".to_string(),
             title: "Director of Demand Gen".to_string(),
             company: "ExampleCo".to_string(),
+            company_domain: None,
             source_kind: None,
             synthetic: false,
             linkedin_url: None,
@@ -322,6 +403,7 @@ mod tests {
             persona: None,
             segment: None,
             signals: Vec::new(),
+            attributes: std::collections::BTreeMap::new(),
         };
         let manifest = Manifest {
             format: "mdp.v0".to_string(),
@@ -337,6 +419,7 @@ mod tests {
                 persona: "PMM".to_string(),
                 title_keywords: vec!["demand gen".to_string()],
             }],
+            lead_input_requirements: crate::models::LeadInputRequirements::default(),
             cards: vec![],
             policy: crate::models::Policy {
                 progressive_disclosure: true,
@@ -381,6 +464,7 @@ mod tests {
                 persona: "GTM Engineering".to_string(),
                 title_keywords: vec!["growth engineer".to_string()],
             }],
+            lead_input_requirements: crate::models::LeadInputRequirements::default(),
             cards: vec![],
             policy: crate::models::Policy {
                 progressive_disclosure: true,
@@ -410,5 +494,32 @@ mod tests {
             routable_persona("Growth Engineer", &resolution),
             "GTM Engineering"
         );
+    }
+
+    #[test]
+    fn normalizes_supplied_company_domains_without_lookup() {
+        assert_eq!(
+            normalize_supplied_company_domain("https://www.apple.com/").unwrap(),
+            "apple.com"
+        );
+        assert_eq!(
+            normalize_supplied_company_domain("http://apple.com/path?x=1").unwrap(),
+            "apple.com"
+        );
+        assert_eq!(
+            normalize_supplied_company_domain("WWW.APPLE.COM").unwrap(),
+            "apple.com"
+        );
+        assert_eq!(
+            normalize_supplied_company_domain("app.store.apple.com/").unwrap(),
+            "app.store.apple.com"
+        );
+    }
+
+    #[test]
+    fn rejects_non_domain_company_values() {
+        assert!(normalize_supplied_company_domain("Apple Inc").is_err());
+        assert!(normalize_supplied_company_domain("not_a_domain").is_err());
+        assert!(normalize_supplied_company_domain("https://").is_err());
     }
 }

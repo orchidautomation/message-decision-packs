@@ -1,6 +1,7 @@
 use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT};
 use crate::models::{CardKind, PromptFile};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
+use crate::utils::normalize_supplied_company_domain;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -324,6 +325,10 @@ fn validate_source_summary(
         ));
     }
 
+    if let Some(domain) = summary.get("company_domain").and_then(Value::as_str) {
+        validate_optional_domain(domain, &format!("{path}/company_domain"), issues);
+    }
+
     let Some(inputs) = summary.get("inputs_used").and_then(Value::as_array) else {
         issues.push(issue(
             "prompt_output_inputs_used_type",
@@ -630,6 +635,7 @@ fn validate_normalized_prospect(value: Option<&Value>, path: &str, issues: &mut 
             "name",
             "title",
             "company",
+            "company_domain",
             "source_kind",
             "synthetic",
             "linkedin_url",
@@ -639,6 +645,7 @@ fn validate_normalized_prospect(value: Option<&Value>, path: &str, issues: &mut 
             "persona",
             "segment",
             "signals",
+            "attributes",
         ],
         path,
         "prompt_output_normalized_prospect_unknown_field",
@@ -711,6 +718,73 @@ fn validate_normalized_prospect(value: Option<&Value>, path: &str, issues: &mut 
             }
         }
     }
+
+    if let Some(domain) = prospect.get("company_domain").and_then(Value::as_str) {
+        validate_optional_domain(domain, &format!("{path}/company_domain"), issues);
+    }
+    if let Some(attributes) = prospect.get("attributes") {
+        validate_attributes(attributes, &format!("{path}/attributes"), issues);
+    }
+}
+
+fn validate_optional_domain(value: &str, path: &str, issues: &mut Vec<Value>) {
+    if value.trim().is_empty() || value.trim().eq_ignore_ascii_case("n/a") {
+        return;
+    }
+    if let Err(err) = normalize_supplied_company_domain(value) {
+        issues.push(issue(
+            "prompt_output_company_domain_invalid",
+            "error",
+            path,
+            err.to_string(),
+        ));
+    }
+}
+
+fn validate_attributes(value: &Value, path: &str, issues: &mut Vec<Value>) {
+    let Some(attributes) = value.as_object() else {
+        issues.push(issue(
+            "prompt_output_attributes_type",
+            "error",
+            path,
+            "attributes must be an object of bounded reviewed metadata",
+        ));
+        return;
+    };
+    if attributes.len() > 25 {
+        issues.push(issue(
+            "prompt_output_attributes_too_many",
+            "error",
+            path,
+            "attributes must contain at most 25 reviewed metadata keys",
+        ));
+    }
+    for (key, value) in attributes {
+        let attribute_path = format!("{path}/{key}");
+        if !valid_attribute_key(key) {
+            issues.push(issue(
+                "prompt_output_attribute_key_invalid",
+                "error",
+                &attribute_path,
+                "attribute keys must start with a letter and contain only letters, numbers, underscores, or hyphens",
+            ));
+        }
+        if !(value.is_string() || value.is_number() || value.is_boolean()) {
+            issues.push(issue(
+                "prompt_output_attribute_value_invalid",
+                "error",
+                &attribute_path,
+                "attribute values must be strings, numbers, or booleans; use signals with sources for evidence",
+            ));
+        }
+    }
+}
+
+fn valid_attribute_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && key.len() <= 64
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 fn validate_normalization_trace(value: Option<&Value>, path: &str, issues: &mut Vec<Value>) {

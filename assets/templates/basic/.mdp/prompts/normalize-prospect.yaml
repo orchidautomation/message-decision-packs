@@ -25,7 +25,9 @@ inputs:
 instructions:
 - Use only raw_row, company_domain, existing_pack_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.
 - Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
-- 'Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, and signals.'
+- 'Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional company_domain, source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, signals, and bounded attributes.'
+- When company_domain or company_url is supplied, normalize only that supplied domain-like value. Do not infer a domain from company name.
+- Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.
 - Use explicit persona from the row when present. Otherwise use pack-owned persona_mappings from existing_pack_context; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.
 - 'Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.'
 - Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.
@@ -46,6 +48,7 @@ output_contract:
     gaps: []
     normalization_trace:
       fit_readiness:
+        has_company_domain: true
         has_persona: true
         has_segment: true
         has_signal_source: true
@@ -63,10 +66,15 @@ output_contract:
       - raw_row.name
       - raw_row.title
       - raw_row.company
+      - company_domain
       - raw_row.operations_note
+      - raw_row.fiscal_year
     normalized_prospect:
+      attributes:
+        fiscal_year: FY2027
       background: Source row says the team is standardizing campaign qualification data across CRM exports, spreadsheets, and research notes.
       company: ExampleCo
+      company_domain: example.com
       company_url: https://example.com
       name: Alex Rivera
       persona: Revenue Operations

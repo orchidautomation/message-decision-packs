@@ -19,7 +19,19 @@ mdp --json capabilities
 mdp --json doctor --dir .
 ```
 
-If `mdp` is missing, say the CLI is not installed and ask whether to install or locate it. Do not fake validation by reading YAML manually.
+If `mdp` is missing, say the CLI is not installed and ask whether to install or locate it. When only the CLI is needed, suggest:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
+When the user also wants supported agent/plugin bundles, suggest:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+```
+
+Do not fake validation by reading YAML manually.
 
 Use `mdp --json capabilities` before advanced agent orchestration to inspect command contracts, coarse side effects, `--out` support, dry-run support, strict-mode support, and stable JSON error codes. Keep `--json` on whenever another agent, script, or tool will parse output.
 
@@ -85,7 +97,27 @@ Convert an existing prospect/source row, CSV row, CRM export row, research note,
 mdp --json schema prospect
 ```
 
-Minimum fields: `name`, `title`, `company`. Prefer adding `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, structured `signals`, `source_kind`, and `synthetic` when relevant.
+Minimum admission fields remain `name`, `title`, and `company` for compatibility. New lead workflows should also supply `company_domain` as the stronger account key. The CLI canonicalizes supplied domain-like values such as `https://www.apple.com/` to `apple.com`; it does not browse, DNS-check, enrich, or infer a domain from the company name.
+
+Prefer adding `company_domain`, `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, structured `signals`, bounded `attributes`, `source_kind`, and `synthetic` when relevant. Use `attributes` only for reviewed metadata such as fiscal year or segment tier; put source evidence in `signals[].source`.
+
+Packs may declare readiness requirements in `.mdp/manifest.yaml`:
+
+```yaml
+lead_input_requirements:
+  required_fields:
+    - name
+    - title
+    - company_domain
+    - trigger
+    - persona
+    - segment
+    - signals
+  required_signal_fields:
+    - source
+  required_attributes:
+    - fiscal_year
+```
 
 Use provider-neutral `source_kind` values unless the source itself matters: `user-provided-row`, `csv-row`, `crm-export-row`, `clay-row`, `deepline-row`, `private-scratch-row`, `sanitized-example`, or `synthetic-example`. Clay is one possible source, not the default MDP mental model.
 
@@ -116,7 +148,7 @@ Use this workflow:
 
 Fixture leads are `source_kind: synthetic-example`, `synthetic: true`, and `do_not_contact: true`. Do not enrich, research, upload, sequence, send to, or imply they represent real people or accounts.
 
-Run fit first and stop on `disqualified` or `insufficient-context` unless the user explicitly overrides. If the user only asked whether a row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, and gaps instead of drafting or creating a parallel evaluation.
+Run fit first and stop on `disqualified` or `insufficient-context` unless the user explicitly overrides. If the user only asked whether a row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, `context.missing_requirements`, `context.invalid_requirements`, and gaps instead of drafting or creating a parallel evaluation.
 
 Then create a brief:
 

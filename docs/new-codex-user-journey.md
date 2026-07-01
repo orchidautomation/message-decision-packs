@@ -292,6 +292,19 @@ trusted by named customers
 
 If a claim is unsupported, Codex revises the copy or asks for source evidence. It should not silently approve the message.
 
+### Step 8: Hooks activate and validate, not draft
+
+The recommended hook model is deliberately small:
+
+```text
+.mdp/ exists -> add MDP guidance to the prompt
+pack files changed -> run focused validation
+validation failed -> show the failure to Codex
+Codex updates the visible diff and reruns validation
+```
+
+Do not make Codex hooks silently generate a full brief, enrich missing lead fields, write private prospect data into committed paths, or send/update anything outside MDP. For the host-specific boundary and Claude Code equivalent, see [Agent Hook Guidance](agent-hook-guidance.md).
+
 ## Why It Matters
 
 MDP gives Codex a durable operating contract for GTM messaging.

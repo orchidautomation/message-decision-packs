@@ -18,9 +18,11 @@ messy source row
 prospect JSON
   |
   +-- title/persona
+  +-- company_domain
   +-- segment
   +-- trigger
   +-- signals
+  +-- attributes
   +-- background
   +-- source/provenance
   |
@@ -60,19 +62,27 @@ The `trigger` field is an input from the prospect JSON. It means why this messag
 
 ## Row Inputs
 
-The prospect schema requires only `name`, `title`, and `company`, but good routing needs more context:
+The prospect schema still admits legacy rows with `name`, `title`, and `company`, but new lead workflows should also provide `company_domain`. `company` stays useful for human-readable drafts; `company_domain` is the stronger account routing key when the pack requires it.
+
+`mdp fit` canonicalizes supplied domains and URLs locally. For example, `https://www.apple.com/` becomes `apple.com`. It does not browse, DNS-check, enrich, or infer a domain from a company name.
+
+Good routing needs more than the admission fields:
 
 ```json
 {
   "name": "Alex Rivera",
   "title": "GTM Engineering Lead",
   "company": "ExampleCo",
+  "company_domain": "example.com",
   "persona": "GTM Engineering",
   "segment": "agent-assisted GTM",
   "trigger": "standardizing outbound context across agents and systems",
   "background": "building repeatable agent-assisted GTM workflows across Clay, Codex, and Claude Code",
   "source_kind": "synthetic-example",
   "synthetic": true,
+  "attributes": {
+    "fiscal_year": "FY2027"
+  },
   "signals": [
     {
       "id": "agent-gtm-workflow",
@@ -86,7 +96,27 @@ The prospect schema requires only `name`, `title`, and `company`, but good routi
 }
 ```
 
-The row should preserve source and confidence when available. Weak signals should stay hypotheses. A LinkedIn URL, CSV row, CRM export, Clay row, Deepline row, spreadsheet row, or user-provided note can inform routing, but it should not be treated as proof of a product need by itself.
+The row should preserve source and confidence when available. Weak signals should stay hypotheses. Use `attributes` only for bounded reviewed metadata such as fiscal year, segment tier, or another pack-specific routing value. Put evidence in `signals` with `source`, not in `attributes`.
+
+Packs can declare readiness requirements in `manifest.yaml`:
+
+```yaml
+lead_input_requirements:
+  required_fields:
+    - name
+    - title
+    - company_domain
+    - trigger
+    - persona
+    - segment
+    - signals
+  required_signal_fields:
+    - source
+  required_attributes:
+    - fiscal_year
+```
+
+A row can parse successfully and still return `insufficient-context` if it does not satisfy the pack's declared requirements.
 
 If the input is account-only and does not include a person name and title, do not invent a contact just to satisfy the prospect schema. Ask for a person row or return an insufficient-context decision until MDP has a provider-neutral account input contract.
 
@@ -159,11 +189,10 @@ The fit gate runs before drafting. It answers whether the row has enough context
 ```text
 row fields
   |
-  +-- trigger present?
-  +-- persona present in the row?
-  +-- segment present?
-  +-- signals present?
-  +-- source present?
+  +-- required prospect fields present?
+  +-- supplied company_domain valid?
+  +-- required signal fields present?
+  +-- required attributes present?
   +-- disqualifier terms present?
   |
   v
@@ -194,7 +223,7 @@ Expected decision:
 
 ```text
 status: insufficient-context
-missing: trigger, persona, segment, signals, source
+missing: company_domain, trigger, persona, segment, signals, signals.source
 decision: Ask for more context before drafting.
 ```
 

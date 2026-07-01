@@ -81,6 +81,26 @@ Use `mdp --json schema prompt` to inspect the reusable prompt contract. Prompt o
 
 Treat model-produced prompt output as untrusted review input. Run `mdp --json validate-prompt-output` before copying reviewed `card_patches` into cards or saving `normalized_prospect` for `mdp fit` and `mdp brief`. The validator rejects markdown-wrapped JSON, wrong prompt identity, undeclared input references, wrong card kinds, fake-person normalization, and candidate ID collisions with existing card entries.
 
+Prospect input keeps a compatibility path for `name`, `title`, and `company`, but new lead workflows should prefer `company_domain` as the account key. `mdp fit` canonicalizes supplied domain-like values such as `https://www.apple.com/` to `apple.com`; it does not infer a domain from a company name. Packs can declare deterministic readiness requirements in `manifest.yaml`:
+
+```yaml
+lead_input_requirements:
+  required_fields:
+    - name
+    - title
+    - company_domain
+    - trigger
+    - persona
+    - segment
+    - signals
+  required_signal_fields:
+    - source
+  required_attributes:
+    - fiscal_year
+```
+
+`mdp fit` reports `data.context.missing_requirements`, `data.context.invalid_requirements`, and the compatibility `data.context.missing` list. Use `attributes` only for bounded reviewed metadata such as fiscal year or segment tier; put evidence and provenance in `signals[].source`.
+
 Success:
 
 ```json
@@ -102,7 +122,7 @@ Error:
 mdp sample-leads --dir . --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
 ```
 
-3. Convert the supplied user note, CSV, CRM export, Clay, Deepline, spreadsheet, or other source row into `mdp schema prospect`. Use explicit `persona` when known; otherwise `.mdp/manifest.yaml` can define `persona_mappings` from title keywords to pack personas. For fixture testing, save one generated row to ignored scratch before passing it as `--prospect`.
+3. Convert the supplied user note, CSV, CRM export, Clay, Deepline, spreadsheet, or other source row into `mdp schema prospect`. Preserve `company_domain` when supplied, add `trigger`, `segment`, sourced `signals`, and bounded `attributes` when the pack requires them. Use explicit `persona` when known; otherwise `.mdp/manifest.yaml` can define `persona_mappings` from title keywords to pack personas. For fixture testing, save one generated row to ignored scratch before passing it as `--prospect`.
 4. Run `mdp --json fit --prospect <row.json>` and stop if it returns `disqualified` or `insufficient-context`.
 5. Run `mdp --json --summary brief --context --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
 6. Stop if `data.draft_status` is `no-draft`.

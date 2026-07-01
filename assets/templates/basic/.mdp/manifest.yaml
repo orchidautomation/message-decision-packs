@@ -46,6 +46,18 @@ persona_mappings:
   - head of product
   - vp product
   - chief product officer
+lead_input_requirements:
+  required_fields:
+  - name
+  - title
+  - company_domain
+  - trigger
+  - persona
+  - segment
+  - signals
+  required_signal_fields:
+  - source
+  required_attributes: []
 cards:
 - id: personas
   path: cards/personas.yaml
