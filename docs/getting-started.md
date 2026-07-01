@@ -41,7 +41,7 @@ mdp --json doctor --dir .
 
 If `mdp` is not found, make sure the install directory printed by the installer is on `PATH`, then restart your agent host.
 
-For Codex and Claude Code hook behavior, start with activation and validation feedback only: detect `.mdp/` and surface MDP guidance, then run focused validation after pack edits. Do not make hooks silently generate full briefs, enrich leads, or write private scratch outside documented ignored paths. See [Agent Hook Guidance](agent-hook-guidance.md).
+Supported agent bundles package activation and validation hooks where the host supports them: detect `.mdp/`, surface MDP guidance, then run focused validation after relevant pack edits. Do not make hooks silently generate full briefs, enrich leads, or write private scratch outside documented ignored paths. See [Agent Hook Guidance](agent-hook-guidance.md).
 
 ## Create A Starter Pack
 
