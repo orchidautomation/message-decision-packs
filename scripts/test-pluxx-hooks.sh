@@ -37,6 +37,33 @@ if [ -n "$plugin_root_output" ]; then
   exit 1
 fi
 
+if command -v cargo >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+  root_fallback_fixture="$(mktemp -d)"
+  trap 'rm -rf "$workspace_fixture" "$plugin_fixture" "$root_fallback_fixture"' EXIT
+  cp -R "$ROOT/plugin/assets/templates/basic/.mdp" "$root_fallback_fixture/.mdp"
+  ln -s "$ROOT/cli" "$root_fallback_fixture/cli"
+  git -C "$root_fallback_fixture" init -q
+
+  cargo_bin="$(dirname -- "$(command -v cargo)")"
+  git_bin="$(dirname -- "$(command -v git)")"
+  bash_bin="$(dirname -- "$(command -v bash)")"
+  hook_path="$cargo_bin:$git_bin:$bash_bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+  if PATH="$hook_path" command -v mdp >/dev/null 2>&1; then
+    echo "Root-pack cargo fallback fixture path unexpectedly includes mdp." >&2
+    exit 1
+  fi
+
+  root_fallback_output="$(
+    PATH="$hook_path" PLUXX_HOOK_WORKSPACE_ROOT="$root_fallback_fixture" bash "$ROOT/scripts/mdp-post-edit-validate.sh"
+  )"
+  if ! printf '%s\n' "$root_fallback_output" | grep -F "MDP validation check: root pack validate" >/dev/null; then
+    echo "Root-pack validation must fall back to the source CLI when mdp is absent from PATH." >&2
+    printf '%s\n' "$root_fallback_output" >&2
+    exit 1
+  fi
+fi
+
 node <<'NODE'
 const fs = require('fs')
 

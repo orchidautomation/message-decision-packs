@@ -87,10 +87,43 @@ if [ -z "$ROOT" ]; then
 fi
 cd "$ROOT"
 
+failed=0
+
+run_check() {
+  local label="$1"
+  shift
+  local output
+
+  echo
+  echo "MDP validation check: $label"
+  if output="$("$@" 2>&1)"; then
+    printf '%s\n' "$output"
+  else
+    local status=$?
+    printf '%s\n' "$output"
+    echo "MDP validation check failed: $label exited with status $status."
+    failed=1
+  fi
+}
+
+run_mdp_command() {
+  if [ -f "cli/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
+    run_check "$1" cargo run --quiet --manifest-path cli/Cargo.toml -- "${@:2}"
+  elif command -v mdp >/dev/null 2>&1; then
+    run_check "$1" mdp "${@:2}"
+  else
+    echo "MDP validation warning: neither cargo source CLI nor mdp executable is available."
+    failed=1
+  fi
+}
+
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  if [ -f ".mdp/manifest.yaml" ] && command -v mdp >/dev/null 2>&1; then
+  if [ -f ".mdp/manifest.yaml" ]; then
     echo "MDP post-edit validation: no git worktree detected; validating root pack."
-    mdp --json --summary validate --dir .
+    run_mdp_command "root pack validate" --json --summary validate --dir .
+    if [ "$failed" -ne 0 ]; then
+      exit 1
+    fi
   fi
   exit 0
 fi
@@ -167,58 +200,25 @@ fi
 echo "MDP post-edit validation: relevant changes detected."
 printf '%s\n' "$changed_files" | sed 's/^/  - /'
 
-failed=0
-
-run_check() {
-  local label="$1"
-  shift
-  local output
-
-  echo
-  echo "MDP validation check: $label"
-  if output="$("$@" 2>&1)"; then
-    printf '%s\n' "$output"
-  else
-    local status=$?
-    printf '%s\n' "$output"
-    echo "MDP validation check failed: $label exited with status $status."
-    failed=1
-  fi
-}
-
-run_mdp_template() {
-  if [ -f "cli/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
-    run_check "$1" cargo run --quiet --manifest-path cli/Cargo.toml -- "${@:2}"
-  elif command -v mdp >/dev/null 2>&1; then
-    run_check "$1" mdp "${@:2}"
-  else
-    echo "MDP validation warning: neither cargo source CLI nor mdp executable is available."
-    failed=1
-  fi
-}
-
 if [ "$run_root_pack" -eq 1 ]; then
-  if [ -f ".mdp/manifest.yaml" ] && command -v mdp >/dev/null 2>&1; then
-    run_check "root pack validate" mdp --json --summary validate --dir .
-  elif [ -f ".mdp/manifest.yaml" ]; then
-    echo "MDP validation warning: root pack changed but mdp is not installed on PATH."
-    failed=1
+  if [ -f ".mdp/manifest.yaml" ]; then
+    run_mdp_command "root pack validate" --json --summary validate --dir .
   fi
 fi
 
 if [ "$run_template_pack" -eq 1 ]; then
   if [ -d "plugin/assets/templates/basic/.mdp" ]; then
-    run_mdp_template "template pack validate" --json --summary validate --dir plugin/assets/templates/basic
+    run_mdp_command "template pack validate" --json --summary validate --dir plugin/assets/templates/basic
   elif [ -d "assets/templates/basic/.mdp" ]; then
-    run_mdp_template "template pack validate" --json --summary validate --dir assets/templates/basic
+    run_mdp_command "template pack validate" --json --summary validate --dir assets/templates/basic
   fi
 fi
 
 if [ "$run_template_eval" -eq 1 ]; then
   if [ -d "plugin/assets/templates/basic/.mdp" ]; then
-    run_mdp_template "template pack eval" --json --summary eval --dir plugin/assets/templates/basic
+    run_mdp_command "template pack eval" --json --summary eval --dir plugin/assets/templates/basic
   elif [ -d "assets/templates/basic/.mdp" ]; then
-    run_mdp_template "template pack eval" --json --summary eval --dir assets/templates/basic
+    run_mdp_command "template pack eval" --json --summary eval --dir assets/templates/basic
   fi
 fi
 
