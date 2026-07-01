@@ -305,16 +305,24 @@ fn normalize_company_domain_for_fit(prospect: &mut crate::models::Prospect) -> V
         .filter(|value| !value.is_empty())
         .map(str::to_string)
     {
-        if let Ok(canonical) = normalize_supplied_company_domain(&input) {
-            prospect.company_domain = Some(canonical.clone());
-            return json!({
-                "status": "normalized",
+        return match normalize_supplied_company_domain(&input) {
+            Ok(canonical) => {
+                prospect.company_domain = Some(canonical.clone());
+                json!({
+                    "status": "normalized",
+                    "field": "company_url",
+                    "input": input,
+                    "value": canonical,
+                    "changed": true
+                })
+            }
+            Err(err) => json!({
+                "status": "invalid",
                 "field": "company_url",
                 "input": input,
-                "value": canonical,
-                "changed": true
-            });
-        }
+                "reason": err.to_string()
+            }),
+        };
     }
 
     json!({
@@ -1394,6 +1402,39 @@ mod tests {
         assert_eq!(
             result["context"]["invalid_requirements"][0]["path"],
             "company_domain"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_reports_invalid_supplied_company_url() {
+        let root = temp_pack("fit-invalid-company-url");
+        let prospect_path = root.join("examples").join("invalid-company-url.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "company_url": "https://",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert_eq!(
+            result["context"]["normalization"]["company_domain"]["status"],
+            "invalid"
+        );
+        assert_eq!(
+            result["context"]["invalid_requirements"][0]["path"],
+            "company_url"
         );
 
         let _ = std::fs::remove_dir_all(root);
