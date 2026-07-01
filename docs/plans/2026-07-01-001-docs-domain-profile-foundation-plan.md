@@ -20,9 +20,9 @@ source_document: Domain Profile Foundation: Product Architecture and Brainstorm
 | Field | Decision |
 |---|---|
 | Objective | Harden the shared planning foundation for MDP-37 and MDP-38 before implementation work starts. |
-| Product authority | The Linear document `Domain Profile Foundation: Product Architecture and Brainstorm` is the source of truth. |
+| Product authority | This checked-in plan is the canonical execution artifact; the Linear document `Domain Profile Foundation: Product Architecture and Brainstorm` is background input. |
 | Current repo baseline | `plugin/assets/templates/basic/.mdp/manifest.yaml` is a GTM-shaped `mdp.v0` pack with fixed `cards.kind` values, prompt contracts for supplied account/company context, and no profile metadata. |
-| Account-context input | The 2026-07-01 account-context coordination decision is planning input only: account/company context is a concrete GTM card or source candidate for MDP-39, not implementation scope for this artifact. |
+| Account-context input | The 2026-07-01 account-context coordination decision is planning input only: account/company context is a concrete GTM representation question for MDP-39, not implementation scope for this artifact. |
 | Planning posture | Start conservative: optional profile metadata, existing packs valid, `primitive_map` as the profile abstraction, and profile validation warning-first. |
 | Stop condition | Do not implement CLI, template, or skill behavior from this artifact without a follow-up issue or PR scope. |
 
@@ -118,7 +118,7 @@ It should be the combined, normalized context that tells an agent what kind of a
 
 | ICP component | Current or candidate home | Planning implication |
 |---|---|---|
-| Account/company context | Current prompt inputs, `company_domain`, `segment`, bounded attributes, `signals`, `gaps`; candidate card/source name `account-context`, `company-context`, or `accounts`. | MDP-39 should use account context as the concrete card-kind and `primitive_map` test case. |
+| Account/company context | Current prompt inputs, `company_domain`, `segment`, bounded attributes, `signals`, `gaps`; possible future representations include a card kind, profile-owned alias, distributed `primitive_map`, or input-contract-backed source lane. | MDP-39 should use account context as the concrete representation and `primitive_map` test case without pre-selecting the representation here. |
 | Persona/actor context | `personas`, `persona_mappings`, prompt-normalized `persona`, and title routing. | `actors` must cover people and organizations; GTM can keep persona compatibility vocabulary. |
 | Relationship context | `trigger`, `background`, source signals, and routing context. | Relationship context explains why this person at this account matters now. |
 | Prompt contracts | `plugin/assets/templates/basic/.mdp/prompts/normalize-prospect.yaml` and extraction prompts. | Prompt contracts are part of the canonical ICP system because they normalize messy source rows into structured CLI inputs. |
@@ -126,7 +126,7 @@ It should be the combined, normalized context that tells an agent what kind of a
 
 Agents should answer company-profile questions in this order: account/company context first, source signals second, persona/actor routes third, prompt contracts fourth, fit/readiness rules fifth.
 Sourcing strategy belongs outside MDP unless a pack explicitly includes a supplied, reviewed source strategy artifact.
-MDP-50 owns the account-context card/source and ICP normalization contract after MDP-39 decides the card-kind and primitive-map approach.
+MDP-50 owns the account/company context and ICP normalization contract after MDP-39 decides whether that context is represented as a card kind, profile-owned alias, distributed `primitive_map`, or input-contract-backed source lane.
 
 ### Proposal Reference Mapping
 
@@ -274,9 +274,9 @@ If profile warnings should be advisory in non-strict mode, MDP-40 should harden 
 - The universal primitive taxonomy.
 - GTM/basic mapping to the taxonomy.
 - Proposal reference mapping as a non-GTM stress test.
-- Account/company context as a concrete GTM primitive-map and card-kind test case for MDP-39.
+- Account/company context as a concrete GTM primitive-map and representation test case for MDP-39.
 - Prompt contracts as part of the canonical ICP system for normalized GTM inputs.
-- MDP-50 as the downstream owner for account-context card/source, normalized account-plus-persona ICP input shape, extraction order, account-only no-draft behavior, and required implementation deltas.
+- MDP-50 as the downstream owner for account/company context representation, normalized account-plus-persona ICP input shape, extraction order, account-only no-draft behavior, and required implementation deltas.
 - Optional manifest/profile contract shape.
 - Backward compatibility rules for existing packs.
 - Warning-first profile validation policy.
@@ -326,10 +326,10 @@ If profile warnings should be advisory in non-strict mode, MDP-40 should harden 
 
 1. MDP-37 and MDP-38 together: finish and accept this shared Domain Profile Foundation plan covering primitives, `primitive_map`, manifest/profile contract, and backward compatibility.
 2. MDP-39: decide card extensibility before any new card is implemented, including whether account context is a new card kind, profile-owned alias, or primitive-map-backed source.
-3. MDP-50: specify the account-context card/source and ICP normalization contract after MDP-39, including account/company profile source, account-plus-persona input shape, extraction order, account-only no-draft behavior, and required implementation deltas.
+3. MDP-50: specify the account/company context representation and ICP normalization contract after MDP-39, including account/company profile source, account-plus-persona input shape, extraction order, account-only no-draft behavior, and required implementation deltas.
 4. MDP-40: define profile-aware validation and eval gates using MDP-50 cases for company-profile extraction, account-only no-draft, prompt-output validation, and primitive coverage.
 5. MDP-43: design migration only if the accepted card/profile approach requires pack-format migration.
-6. Implementation slices: schema/manifest/primitive-map support, template account-context source/card, normalization prompt updates, route/brief context updates, fit/readiness separation, skill/docs updates, eval fixtures, and `make validate`.
+6. Implementation slices: schema/manifest/primitive-map support, the accepted account/company context representation, normalization prompt updates, route/brief context updates, fit/readiness separation, skill/docs updates, eval fixtures, and `make validate`.
 7. MDP-41: update the profile-builder workflow so generated or blessed ICP prompts normalize account and persona data together.
 8. MDP-42: reconcile Proposal AI Lab as the first non-GTM reference profile after the generic foundation is stable.
 
