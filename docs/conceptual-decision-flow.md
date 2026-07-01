@@ -146,7 +146,9 @@ Do not use normalization prompts to smooth over disqualifying language. If a row
 The pack is modular. Each card holds entries with ids, bodies, applicability rules, evidence, avoid terms, and optional structured `constraints`.
 Output-rule entries can also set `exact_paragraphs` when a fixed paragraph count should be checked deterministically. Entry `constraints` cover deterministic output limits such as body word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking. Min/max violations fail `check-claims`; target ranges are advisory warnings. Actual send metadata such as file attachments or tracking pixels cannot be proven from a single draft body, so those checks surface caveats in `unchecked_constraints`.
 
-Entries may also include `metadata` for advisory custom annotations:
+Do not confuse prospect `attributes` with entry `metadata`. Prospect `attributes` live on the input row and are bounded reviewed lead/account metadata that `mdp fit` can require through `manifest.yaml` `lead_input_requirements.required_attributes`. Entry `metadata` lives on card entries and describes the pack content itself for agent or human inspection.
+
+Entries may include `metadata` for advisory custom annotations:
 
 ```yaml
 entries:
@@ -160,7 +162,7 @@ entries:
       review_status: draft
 ```
 
-The CLI preserves `metadata` in route and brief context so agents can inspect it, but metadata keys are not enforceable constraints. Unknown arbitrary fields outside the schema are unsupported; `mdp validate` warns that those fields are ignored. Use first-class fields and cards for rules the CLI should route or check.
+The CLI preserves entry `metadata` in route and brief context so agents can inspect it, but metadata keys are not enforceable constraints. Unknown arbitrary fields outside the schema are unsupported; `mdp validate` warns that those fields are ignored. Use prospect `attributes` for reviewed row metadata, entry `metadata` for advisory card annotations, and first-class fields or cards for rules the CLI should route or check.
 
 Custom channels are declared in `manifest.yaml` `supported_channels`. Channel-policy routing uses those strings as tokenized channel names, so a pack can add `partner-intro`, `webinar-followup`, or another local channel without changing the CLI enum set.
 

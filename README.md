@@ -233,7 +233,52 @@ mdp sample-leads --dir . --persona "PMM" --job "initial email outbound copy" --c
 
 ## Extensions
 
-Pack authors can add advisory custom annotations to card entries with `metadata`:
+MDP has two custom-data surfaces, and they are intentionally not interchangeable:
+
+- Prospect `attributes` live in the input row. Use them for bounded, reviewed lead or account metadata that the fit gate may require, such as `segment_tier`, `fiscal_year`, or another pack-specific readiness value.
+- Entry `metadata` lives on card entries. Use it for advisory annotations about the pack content itself, such as owner, review status, source priority, or internal notes.
+
+For prospect `attributes`, declare any required keys in `.mdp/manifest.yaml`:
+
+```yaml
+lead_input_requirements:
+  required_fields:
+    - company_domain
+    - persona
+    - trigger
+  required_attributes:
+    - segment_tier
+    - fiscal_year
+```
+
+Then supply those keys in the prospect JSON that feeds `mdp fit`:
+
+```json
+{
+  "name": "Avery Chen",
+  "title": "VP Product Marketing",
+  "company": "Northstar Cloud",
+  "company_domain": "northstarcloud.com",
+  "persona": "PMM",
+  "trigger": "Northstar is expanding into enterprise accounts",
+  "signals": [
+    {
+      "id": "enterprise-motion",
+      "title": "Enterprise expansion",
+      "source": "https://example.com/news",
+      "confidence": "medium"
+    }
+  ],
+  "attributes": {
+    "segment_tier": "enterprise",
+    "fiscal_year": "FY27"
+  }
+}
+```
+
+If a required prospect attribute is missing, `mdp fit` reports it in `missing_requirements`. Attribute keys and values are validated as bounded reviewed metadata; put evidence and provenance in `signals[].source`, not in `attributes`.
+
+For entry `metadata`, add advisory custom annotations to card entries:
 
 ```yaml
 entries:
@@ -250,7 +295,18 @@ entries:
 
 `metadata` is preserved in `mdp route --entries` and `mdp brief --context` output so agents can see it. The CLI does not enforce unknown metadata keys. Put enforceable rules in first-class fields such as `avoid`, `exact_paragraphs`, fit rules, claims, channel policies, or output rules.
 
-Arbitrary fields outside the supported schema are not extension points. Serde may still parse those YAML files, but `mdp validate` warns that unsupported fields are ignored. Move advisory custom data under entry `metadata` instead.
+Do not put entry annotations beside supported fields as arbitrary siblings:
+
+```yaml
+entries:
+  - id: linkedin-initial-touch
+    title: LinkedIn initial touch
+    body: Keep the opener short.
+    owner: pmm
+    review_status: draft
+```
+
+Those fields are not extension points. Serde may still parse the YAML file, but `mdp validate` warns that unsupported fields are ignored. Move advisory custom data under entry `metadata` instead.
 
 Channels are open strings. Add custom channels to `manifest.yaml` `supported_channels`, then write matching channel-policy entries and route with jobs or brief channels that use the same words. For example, `supported_channels: [linkedin, email, partner-intro]` lets `partner intro outbound message` match a `Partner intro` channel-policy entry without adding a new Rust enum variant.
 

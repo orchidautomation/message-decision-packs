@@ -46,8 +46,9 @@ Use `mdp --json capabilities` when reviewing agent-facing CLI support, and use `
 - missing durable gaps
 - duplicated hooks or pains
 - copy patterns that imply unsupported claims or bury global style rules outside output-rules
+- prospect `attributes` used as an evidence dump instead of bounded reviewed row metadata
 - arbitrary unsupported YAML fields that should move under entry `metadata` or become first-class card content
-- metadata that agents can inspect but should not treat as an enforceable CLI rule
+- entry `metadata` that agents can inspect but should not treat as an enforceable CLI rule
 
 4. Test routing with representative jobs:
 

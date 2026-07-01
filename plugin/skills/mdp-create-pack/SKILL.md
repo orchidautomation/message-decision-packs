@@ -102,7 +102,8 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 - Do not describe the pack as a sender, CRM, sequencer, enrichment provider, AI SDR, or execution agent.
 - Do not invent customer names, pricing, integrations, or proof points.
 - Mark generated example prospects as synthetic fixtures and do not confuse them with real target accounts.
-- Put custom advisory annotations on entries under `metadata`; do not add arbitrary unsupported fields as if the CLI routes or enforces them.
+- Use prospect `attributes` for bounded reviewed row metadata that `mdp fit` may require through `lead_input_requirements.required_attributes`; put evidence and provenance in `signals[].source`.
+- Put custom advisory annotations about card content under entry `metadata`; do not add arbitrary unsupported fields as if the CLI routes or enforces them.
 - Add custom channel names to `.mdp/manifest.yaml` `supported_channels` before relying on channel-policy routing for those channels.
 
 ## Response
