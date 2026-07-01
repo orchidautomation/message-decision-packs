@@ -42,13 +42,16 @@ Map source material into:
 1. Read the provided source material or fetch public/current URLs when appropriate.
 2. Update `.mdp/sources.yaml` with source id, kind, locator, freshness, confidence, direct claims, interpretations, and gaps.
 3. Extract candidate entries by card kind.
-4. Deduplicate overlapping claims.
-5. Add evidence per entry using source ids, URLs, or document names from the ledger.
-6. Edit only relevant `.mdp/cards/*.yaml` files.
-7. Run validation.
+4. Save the model output as a review artifact before editing cards.
+5. Validate the review artifact against the prompt contract.
+6. Deduplicate overlapping claims.
+7. Add evidence per entry using source ids, URLs, or document names from the ledger.
+8. Copy only reviewed entry fields into relevant `.mdp/cards/*.yaml` files.
+9. Run validation.
 
 ```bash
 mdp --json validate --dir .
+mdp --json validate-prompt-output --dir . --prompt-id <prompt-id> --file <output.json>
 mdp --json gaps --dir .
 ```
 

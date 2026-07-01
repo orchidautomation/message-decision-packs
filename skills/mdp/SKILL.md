@@ -95,7 +95,7 @@ Use `--strict` when warnings should fail an agent or CI gate:
 mdp --json validate --strict --dir .
 ```
 
-Pack extensions must use supported surfaces. Put advisory custom annotations on card entries under `metadata`; `mdp route --entries` and `mdp brief --context` surface that metadata for agents, but the CLI does not enforce unknown metadata keys. Do not add arbitrary sibling fields to entries, cards, or manifests as if they were supported contract fields; `mdp validate` warns that unsupported fields are ignored. For custom channels, add the channel string to `.mdp/manifest.yaml` `supported_channels`, then write matching channel-policy entries.
+Pack extensions must use supported surfaces. Use prospect `attributes` for bounded reviewed row metadata that `mdp fit` may require through `.mdp/manifest.yaml` `lead_input_requirements.required_attributes`. Use entry `metadata` for advisory annotations about card content, such as owner, review status, source priority, or internal notes; `mdp route --entries` and `mdp brief --context` surface that metadata for agents, but the CLI does not enforce unknown metadata keys. Do not add arbitrary sibling fields to entries, cards, or manifests as if they were supported contract fields; `mdp validate` warns that unsupported fields are ignored. For custom channels, add the channel string to `.mdp/manifest.yaml` `supported_channels`, then write matching channel-policy entries.
 
 ## Use A Prospect Or Source Row
 
