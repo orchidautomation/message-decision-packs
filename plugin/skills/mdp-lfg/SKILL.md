@@ -18,10 +18,18 @@ mdp --json doctor --dir .
 
 2. Before initializing, state the exact destination directory. If the user did not specify one, prefer the current repo/workspace root or an ignored scratch path; do not silently create a pack in `$HOME` or an unrelated code folder.
 
-3. If `.mdp/manifest.yaml` is missing and the user wants a pack, initialize:
+3. If `.mdp/manifest.yaml` is missing and the user wants a pack, initialize with exactly one closest template.
+
+For generic GTM packs:
 
 ```bash
 mdp --json init --template gtm --name "<pack name>" --dir .
+```
+
+For proposal, RFP, capture, or bid/no-bid review packs:
+
+```bash
+mdp --json init --template proposal --dir .
 ```
 
 4. If a pack exists, validate before changing it:
@@ -35,7 +43,8 @@ mdp --json explain --dir .
 
 Choose the narrow path and use that skill's workflow:
 
-- New or messy pack: `$mdp-create-pack`
+- New or messy GTM pack: `$mdp-create-pack`
+- Proposal, RFP, capture, bid/no-bid, compliance, proof, red-team, or executive-review pack: `$mdp-proposal-pack-builder`
 - ICP, segments, personas, fit/disqualifiers, signals, and no-message logic: `$mdp-icp-builder`
 - Website, docs, notes, sales calls into card entries: `$mdp-source-extract`
 - Hooks, objections, message angles, copy structures: `$mdp-message-angles`
