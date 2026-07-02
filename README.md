@@ -344,6 +344,7 @@ Important skills include:
 - `mdp-proposal-pack-builder`: create or improve a proposal/RFP review pack from approved source material
 - `mdp-proposal-bid-no-bid-review`: assess supplied proposal pursuit context against bid/no-bid rules
 - `mdp-proposal-compliance-review`: review supplied proposal requirements or answer drafts against compliance rules
+- `mdp-proposal-win-theme-proof-review`: review proposal themes or differentiators against approved proof
 - `mdp-icp-builder`: sharpen ICP/personas/fit logic
 - `mdp-source-extract`: turn source material into card entries
 - `mdp-message-angles`: codify hooks and angles
