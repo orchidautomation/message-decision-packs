@@ -12,3 +12,11 @@ expect_load_order_contains:
 id: call-prep-route
 job: call prep
 persona: GTM Engineering
+profile_eval:
+  category: job-routing
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - decision-criteria
+  - routing-jobs

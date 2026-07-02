@@ -1,4 +1,13 @@
 id: compliance-route
+profile_eval:
+  category: job-routing
+  primitives:
+  - actors
+  - needs-requirements
+  - boundaries
+  - routing-jobs
+  jobs:
+  - compliance-review
 command: route
 persona: Proposal Lead
 job: compliance review

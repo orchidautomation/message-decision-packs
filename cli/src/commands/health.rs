@@ -2,7 +2,10 @@ use crate::constants::{
     DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
     PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
-use crate::models::{AgentSurface, CardKind, Profile, PromptFile, ValueContract};
+use crate::models::{
+    AgentSurface, CardKind, InputContract, Manifest, PrimitiveMapping, Profile, ProfileEval,
+    ProfileJob, PromptFile, ValueContract,
+};
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
@@ -14,6 +17,31 @@ use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+
+pub(crate) const KNOWN_PRIMITIVES: &[&str] = &[
+    "actors",
+    "decision-criteria",
+    "source-signals",
+    "needs-requirements",
+    "evidence-proof",
+    "boundaries",
+    "output-contracts",
+    "routing-jobs",
+    "gaps",
+    "evals",
+];
+
+pub(crate) const KNOWN_PROFILE_EVAL_CATEGORIES: &[&str] = &[
+    "proceed",
+    "insufficient-context",
+    "refusal",
+    "unsafe-output",
+    "job-routing",
+    "account-context-present",
+    "account-context-missing",
+    "account-only-no-draft",
+    "prompt-output-validation",
+];
 
 pub(crate) fn doctor(root: &Path) -> Value {
     let pack_dir = root.join(DEFAULT_DIR);
@@ -216,9 +244,27 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         }
     }
     let loaded_prompts = validate_prompts(root, &mut issues)?;
-    Ok(
-        json!({"valid": issues.is_empty(), "manifest": format!("{DEFAULT_DIR}/manifest.yaml"), "cards": loaded_cards, "prompts": loaded_prompts, "issues": issues}),
-    )
+    let prompt_inventory = prompt_inventory(&loaded_prompts);
+    let eval_inventory = collect_eval_inventory(root, &mut issues)?;
+    let profile = validate_profile_mapping(
+        &manifest,
+        &card_ids,
+        &prompt_inventory,
+        &eval_inventory,
+        &mut issues,
+    );
+    let error_count = issue_count(&issues, "error");
+    let warning_count = issue_count(&issues, "warning");
+    Ok(json!({
+        "valid": error_count == 0,
+        "error_count": error_count,
+        "warning_count": warning_count,
+        "manifest": format!("{DEFAULT_DIR}/manifest.yaml"),
+        "cards": loaded_cards,
+        "prompts": loaded_prompts,
+        "profile": profile,
+        "issues": issues
+    }))
 }
 
 fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
@@ -245,6 +291,11 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "supported_channels",
             "persona_mappings",
             "lead_input_requirements",
+            "required_primitives",
+            "primitive_map",
+            "input_contracts",
+            "jobs",
+            "profile_eval",
             "cards",
             "policy",
             "provenance",
@@ -286,6 +337,49 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         &["job", "skills"],
         ".mdp/manifest.yaml#/profile/agent_surface/job_skills",
         "manifest_job_skill_unknown_field",
+        issues,
+    );
+    validate_primitive_map_shape(
+        yaml_get(&value, "primitive_map"),
+        ".mdp/manifest.yaml#/primitive_map",
+        issues,
+    );
+    validate_sequence_object_keys(
+        yaml_get(&value, "input_contracts"),
+        &["id", "description", "schema_ref", "prompt", "normalizes"],
+        ".mdp/manifest.yaml#/input_contracts",
+        "manifest_input_contract_unknown_field",
+        issues,
+    );
+    validate_sequence_object_keys(
+        yaml_get(&value, "jobs"),
+        &[
+            "id",
+            "label",
+            "description",
+            "required_primitives",
+            "input_contracts",
+        ],
+        ".mdp/manifest.yaml#/jobs",
+        "manifest_profile_job_unknown_field",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(&value, "profile_eval").unwrap_or(&YamlValue::Null),
+        &["required_categories", "activation"],
+        ".mdp/manifest.yaml#/profile_eval",
+        "manifest_profile_eval_unknown_field",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(
+            yaml_get(&value, "profile_eval").unwrap_or(&YamlValue::Null),
+            "activation",
+        )
+        .unwrap_or(&YamlValue::Null),
+        &["status", "summary"],
+        ".mdp/manifest.yaml#/profile_eval/activation",
+        "manifest_profile_eval_activation_unknown_field",
         issues,
     );
     validate_sequence_object_keys(
@@ -517,6 +611,673 @@ fn validate_skill_list(
         }
     }
     seen
+}
+
+fn validate_profile_mapping(
+    manifest: &Manifest,
+    card_ids: &BTreeSet<String>,
+    prompt_inventory: &PromptInventory,
+    eval_inventory: &EvalInventory,
+    issues: &mut Vec<Value>,
+) -> Value {
+    let activation_contract_present = !manifest.required_primitives.is_empty()
+        || !manifest.primitive_map.is_empty()
+        || !manifest.input_contracts.is_empty()
+        || !manifest.jobs.is_empty()
+        || !manifest.profile_eval.is_empty();
+    let profile_present = manifest.profile.is_some() || activation_contract_present;
+    if !profile_present {
+        return json!({
+            "present": false,
+            "activation_ready": Value::Null
+        });
+    }
+    if !activation_contract_present {
+        return json!({
+            "present": true,
+            "id": manifest.profile.as_ref().map(|profile| profile.id.as_str()),
+            "activation_ready": false,
+            "required_primitives": [],
+            "covered_primitives": [],
+            "missing_required_primitives": [],
+            "eval_categories": {},
+            "missing_eval_categories": [],
+            "jobs": [],
+            "activation_policy": "profile.id and profile.agent_surface route agents, but full activation requires required_primitives, primitive_map, input_contracts, jobs, and profile_eval coverage."
+        });
+    }
+
+    let starting_issue_count = issues.len();
+    let known_primitives = KNOWN_PRIMITIVES.iter().copied().collect::<BTreeSet<_>>();
+    let required_primitives = validate_primitive_list(
+        &manifest.required_primitives,
+        ".mdp/manifest.yaml#/required_primitives",
+        "profile_required_primitive",
+        &known_primitives,
+        issues,
+    );
+    let input_contract_ids = validate_input_contracts(
+        &manifest.input_contracts,
+        prompt_inventory,
+        ".mdp/manifest.yaml#/input_contracts",
+        issues,
+    );
+    let job_ids = validate_profile_jobs(
+        &manifest.jobs,
+        &known_primitives,
+        &input_contract_ids,
+        ".mdp/manifest.yaml#/jobs",
+        issues,
+    );
+    let missing_activation_sections = validate_activation_sections(manifest, issues);
+    validate_eval_profile_refs(eval_inventory, &known_primitives, &job_ids, issues);
+
+    let mut covered_primitives = BTreeSet::new();
+    for (primitive, mapping) in &manifest.primitive_map {
+        if !known_primitives.contains(primitive.as_str()) {
+            issues.push(issue(
+                "profile_primitive_unknown",
+                "error",
+                format!(".mdp/manifest.yaml#/primitive_map/{primitive}"),
+                format!(
+                    "unknown primitive id {primitive}; expected one of {}",
+                    KNOWN_PRIMITIVES.join(", ")
+                ),
+            ));
+            continue;
+        }
+        if !mapping.is_empty() {
+            covered_primitives.insert(primitive.clone());
+        }
+        validate_primitive_mapping_refs(
+            primitive,
+            mapping,
+            card_ids,
+            prompt_inventory,
+            &input_contract_ids,
+            &job_ids,
+            eval_inventory,
+            issues,
+        );
+    }
+
+    let mut missing_required_primitives = Vec::new();
+    for primitive in &required_primitives {
+        if !covered_primitives.contains(primitive) {
+            missing_required_primitives.push(primitive.clone());
+            issues.push(issue_with_gate(
+                "profile_required_primitive_unmapped",
+                "warning",
+                format!(".mdp/manifest.yaml#/required_primitives/{primitive}"),
+                format!("required primitive {primitive} has no mapped cards, prompts, input contracts, jobs, or evals"),
+                "fails",
+                "blocks",
+            ));
+        }
+    }
+
+    let mut job_summaries = Vec::new();
+    for job in &manifest.jobs {
+        let mut missing_job_primitives = Vec::new();
+        for primitive in &job.required_primitives {
+            if known_primitives.contains(primitive.as_str())
+                && !covered_primitives.contains(primitive)
+            {
+                missing_job_primitives.push(primitive.clone());
+                issues.push(issue_with_gate(
+                    "profile_job_required_primitive_unmapped",
+                    "warning",
+                    format!(".mdp/manifest.yaml#/jobs/{}/required_primitives/{primitive}", job.id),
+                    format!("job {} requires primitive {primitive}, but that primitive has no mapped coverage", job.id),
+                    "fails",
+                    "blocks-job",
+                ));
+            }
+        }
+        job_summaries.push(json!({
+            "id": &job.id,
+            "label": &job.label,
+            "required_primitives": &job.required_primitives,
+            "missing_required_primitives": missing_job_primitives,
+            "activation_ready": missing_job_primitives.is_empty()
+        }));
+    }
+
+    let (eval_categories, missing_eval_categories) =
+        validate_profile_eval(&manifest.profile_eval, eval_inventory, issues);
+    let profile_error_count = issues[starting_issue_count..]
+        .iter()
+        .filter(|issue| issue["severity"].as_str() == Some("error"))
+        .count();
+    let activation_ready = profile_error_count == 0
+        && missing_activation_sections.is_empty()
+        && missing_required_primitives.is_empty()
+        && missing_eval_categories.is_empty()
+        && job_summaries
+            .iter()
+            .all(|job| job["activation_ready"].as_bool() == Some(true));
+
+    json!({
+        "present": true,
+        "id": manifest.profile.as_ref().map(|profile| profile.id.as_str()),
+        "activation_ready": activation_ready,
+        "required_primitives": &manifest.required_primitives,
+        "covered_primitives": covered_primitives.into_iter().collect::<Vec<_>>(),
+        "missing_activation_sections": missing_activation_sections,
+        "missing_required_primitives": missing_required_primitives,
+        "eval_categories": eval_categories,
+        "missing_eval_categories": missing_eval_categories,
+        "jobs": job_summaries,
+        "activation_policy": "Errors fail validation. Missing required primitive coverage and missing profile eval categories are warning-first by default, fail under --strict, and block profile activation."
+    })
+}
+
+fn validate_activation_sections(manifest: &Manifest, issues: &mut Vec<Value>) -> Vec<String> {
+    let mut missing = Vec::new();
+    if manifest.profile.is_none() {
+        missing.push("profile".to_string());
+        issues.push(issue_with_gate(
+            "profile_activation_section_missing",
+            "warning",
+            ".mdp/manifest.yaml#/profile",
+            "profile activation requires profile metadata",
+            "fails",
+            "blocks",
+        ));
+    }
+    for (section, path, message, missing_when_empty) in [
+        (
+            "required_primitives",
+            ".mdp/manifest.yaml#/required_primitives",
+            "profile activation requires required_primitives",
+            manifest.required_primitives.is_empty(),
+        ),
+        (
+            "primitive_map",
+            ".mdp/manifest.yaml#/primitive_map",
+            "profile activation requires primitive_map",
+            manifest.primitive_map.is_empty(),
+        ),
+        (
+            "input_contracts",
+            ".mdp/manifest.yaml#/input_contracts",
+            "profile activation requires input_contracts",
+            manifest.input_contracts.is_empty(),
+        ),
+        (
+            "jobs",
+            ".mdp/manifest.yaml#/jobs",
+            "profile activation requires jobs",
+            manifest.jobs.is_empty(),
+        ),
+        (
+            "profile_eval.required_categories",
+            ".mdp/manifest.yaml#/profile_eval/required_categories",
+            "profile activation requires profile_eval.required_categories",
+            manifest.profile_eval.required_categories.is_empty(),
+        ),
+    ] {
+        if missing_when_empty {
+            missing.push(section.to_string());
+            issues.push(issue_with_gate(
+                "profile_activation_section_missing",
+                "warning",
+                path,
+                message,
+                "fails",
+                "blocks",
+            ));
+        }
+    }
+    missing
+}
+
+fn validate_primitive_list(
+    values: &[String],
+    path: &str,
+    code_prefix: &str,
+    known_primitives: &BTreeSet<&str>,
+    issues: &mut Vec<Value>,
+) -> BTreeSet<String> {
+    let mut seen = BTreeSet::new();
+    for (index, primitive) in values.iter().enumerate() {
+        if !known_primitives.contains(primitive.as_str()) {
+            issues.push(issue(
+                &format!("{code_prefix}_unknown"),
+                "error",
+                format!("{path}/{index}"),
+                format!(
+                    "unknown primitive id {primitive}; expected one of {}",
+                    KNOWN_PRIMITIVES.join(", ")
+                ),
+            ));
+        } else if !seen.insert(primitive.clone()) {
+            issues.push(issue(
+                &format!("{code_prefix}_duplicate"),
+                "warning",
+                format!("{path}/{index}"),
+                format!("duplicate primitive {primitive}"),
+            ));
+        }
+    }
+    seen
+}
+
+fn validate_input_contracts(
+    input_contracts: &[InputContract],
+    prompt_inventory: &PromptInventory,
+    path: &str,
+    issues: &mut Vec<Value>,
+) -> BTreeSet<String> {
+    let mut seen = BTreeSet::new();
+    for (index, contract) in input_contracts.iter().enumerate() {
+        let contract_path = format!("{path}/{index}");
+        if contract.id.trim().is_empty() {
+            issues.push(issue(
+                "profile_input_contract_id_empty",
+                "error",
+                format!("{contract_path}/id"),
+                "input_contracts entries must name an id",
+            ));
+        } else if !seen.insert(contract.id.clone()) {
+            issues.push(issue(
+                "profile_input_contract_duplicate",
+                "warning",
+                format!("{contract_path}/id"),
+                format!("duplicate input contract {}", contract.id),
+            ));
+        }
+        if contract
+            .schema_ref
+            .as_deref()
+            .is_some_and(|schema_ref| schema_ref.trim().is_empty())
+        {
+            issues.push(issue(
+                "profile_input_contract_schema_ref_empty",
+                "error",
+                format!("{contract_path}/schema_ref"),
+                "input contract schema_ref must not be empty when present",
+            ));
+        }
+        if let Some(prompt) = contract.prompt.as_deref() {
+            if prompt.trim().is_empty() {
+                issues.push(issue(
+                    "profile_input_contract_prompt_empty",
+                    "error",
+                    format!("{contract_path}/prompt"),
+                    "input contract prompt must not be empty when present",
+                ));
+            } else if !prompt_inventory.contains(prompt) {
+                issues.push(issue(
+                    "profile_input_contract_prompt_missing",
+                    "error",
+                    format!("{contract_path}/prompt"),
+                    format!(
+                        "input contract {} references missing prompt {prompt}",
+                        contract.id
+                    ),
+                ));
+            }
+        }
+        validate_non_empty_unique_strings(
+            &contract.normalizes,
+            &format!("{contract_path}/normalizes"),
+            "profile_input_contract_normalizes",
+            issues,
+        );
+    }
+    seen
+}
+
+fn validate_profile_jobs(
+    jobs: &[ProfileJob],
+    known_primitives: &BTreeSet<&str>,
+    input_contract_ids: &BTreeSet<String>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) -> BTreeSet<String> {
+    let mut seen = BTreeSet::new();
+    for (index, job) in jobs.iter().enumerate() {
+        let job_path = format!("{path}/{index}");
+        if job.id.trim().is_empty() {
+            issues.push(issue(
+                "profile_job_id_empty",
+                "error",
+                format!("{job_path}/id"),
+                "jobs entries must name an id",
+            ));
+        } else if !seen.insert(job.id.clone()) {
+            issues.push(issue(
+                "profile_job_duplicate",
+                "warning",
+                format!("{job_path}/id"),
+                format!("duplicate profile job {}", job.id),
+            ));
+        }
+        validate_primitive_list(
+            &job.required_primitives,
+            &format!("{job_path}/required_primitives"),
+            "profile_job_required_primitive",
+            known_primitives,
+            issues,
+        );
+        validate_reference_list(
+            &job.input_contracts,
+            input_contract_ids,
+            &format!("{job_path}/input_contracts"),
+            "profile_job_input_contract_missing",
+            "input contract",
+            issues,
+        );
+    }
+    seen
+}
+
+fn validate_primitive_mapping_refs(
+    primitive: &str,
+    mapping: &PrimitiveMapping,
+    card_ids: &BTreeSet<String>,
+    prompt_inventory: &PromptInventory,
+    input_contract_ids: &BTreeSet<String>,
+    job_ids: &BTreeSet<String>,
+    eval_inventory: &EvalInventory,
+    issues: &mut Vec<Value>,
+) {
+    let path = format!(".mdp/manifest.yaml#/primitive_map/{primitive}");
+    validate_reference_list(
+        &mapping.cards,
+        card_ids,
+        &format!("{path}/cards"),
+        "profile_primitive_card_missing",
+        "card",
+        issues,
+    );
+    validate_prompt_reference_list(
+        &mapping.prompts,
+        prompt_inventory,
+        &format!("{path}/prompts"),
+        issues,
+    );
+    validate_reference_list(
+        &mapping.input_contracts,
+        input_contract_ids,
+        &format!("{path}/input_contracts"),
+        "profile_primitive_input_contract_missing",
+        "input contract",
+        issues,
+    );
+    validate_reference_list(
+        &mapping.jobs,
+        job_ids,
+        &format!("{path}/jobs"),
+        "profile_primitive_job_missing",
+        "job",
+        issues,
+    );
+    validate_eval_reference_list(
+        &mapping.evals,
+        eval_inventory,
+        &format!("{path}/evals"),
+        issues,
+    );
+}
+
+fn validate_reference_list(
+    values: &[String],
+    allowed: &BTreeSet<String>,
+    path: &str,
+    missing_code: &str,
+    label: &str,
+    issues: &mut Vec<Value>,
+) {
+    let mut seen = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        if value.trim().is_empty() {
+            issues.push(issue(
+                &format!("{missing_code}_empty"),
+                "error",
+                format!("{path}/{index}"),
+                format!("{label} references must not be empty"),
+            ));
+        } else if !allowed.contains(value) {
+            issues.push(issue(
+                missing_code,
+                "error",
+                format!("{path}/{index}"),
+                format!("mapped {label} {value} does not exist"),
+            ));
+        } else if !seen.insert(value) {
+            issues.push(issue(
+                &format!("{missing_code}_duplicate"),
+                "warning",
+                format!("{path}/{index}"),
+                format!("duplicate mapped {label} {value}"),
+            ));
+        }
+    }
+}
+
+fn validate_prompt_reference_list(
+    values: &[String],
+    prompt_inventory: &PromptInventory,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let mut seen = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        if value.trim().is_empty() {
+            issues.push(issue(
+                "profile_primitive_prompt_missing_empty",
+                "error",
+                format!("{path}/{index}"),
+                "prompt references must not be empty",
+            ));
+        } else if !prompt_inventory.contains(value) {
+            issues.push(issue(
+                "profile_primitive_prompt_missing",
+                "error",
+                format!("{path}/{index}"),
+                format!("mapped prompt {value} does not exist"),
+            ));
+        } else if !seen.insert(value) {
+            issues.push(issue(
+                "profile_primitive_prompt_missing_duplicate",
+                "warning",
+                format!("{path}/{index}"),
+                format!("duplicate mapped prompt {value}"),
+            ));
+        }
+    }
+}
+
+fn validate_eval_reference_list(
+    values: &[String],
+    eval_inventory: &EvalInventory,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let mut seen = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        if value.trim().is_empty() {
+            issues.push(issue(
+                "profile_primitive_eval_missing_empty",
+                "error",
+                format!("{path}/{index}"),
+                "eval references must not be empty",
+            ));
+        } else if !eval_inventory.contains(value) {
+            issues.push(issue(
+                "profile_primitive_eval_missing",
+                "error",
+                format!("{path}/{index}"),
+                format!("mapped eval {value} does not exist"),
+            ));
+        } else if !seen.insert(value) {
+            issues.push(issue(
+                "profile_primitive_eval_missing_duplicate",
+                "warning",
+                format!("{path}/{index}"),
+                format!("duplicate mapped eval {value}"),
+            ));
+        }
+    }
+}
+
+fn validate_profile_eval(
+    profile_eval: &ProfileEval,
+    eval_inventory: &EvalInventory,
+    issues: &mut Vec<Value>,
+) -> (Value, Vec<String>) {
+    let known_categories = KNOWN_PROFILE_EVAL_CATEGORIES
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let mut seen = BTreeSet::new();
+    let mut missing = Vec::new();
+    let mut categories = BTreeMap::new();
+    for (index, category) in profile_eval.required_categories.iter().enumerate() {
+        if !known_categories.contains(category.as_str()) {
+            issues.push(issue(
+                "profile_eval_category_unknown",
+                "error",
+                format!(".mdp/manifest.yaml#/profile_eval/required_categories/{index}"),
+                format!(
+                    "unknown profile eval category {category}; expected one of {}",
+                    KNOWN_PROFILE_EVAL_CATEGORIES.join(", ")
+                ),
+            ));
+        } else if !seen.insert(category.clone()) {
+            issues.push(issue(
+                "profile_eval_category_duplicate",
+                "warning",
+                format!(".mdp/manifest.yaml#/profile_eval/required_categories/{index}"),
+                format!("duplicate profile eval category {category}"),
+            ));
+        }
+
+        if eval_inventory.categories.contains_key(category) {
+            categories.insert(category.clone(), json!("present"));
+        } else {
+            categories.insert(category.clone(), json!("missing"));
+            missing.push(category.clone());
+            issues.push(issue_with_gate(
+                "profile_eval_category_missing",
+                "warning",
+                format!(".mdp/manifest.yaml#/profile_eval/required_categories/{index}"),
+                format!(
+                    "profile eval category {category} has no matching .mdp/evals fixture metadata"
+                ),
+                "fails",
+                "blocks",
+            ));
+        }
+    }
+    for category in eval_inventory.categories.keys() {
+        categories
+            .entry(category.clone())
+            .or_insert_with(|| json!("present"));
+    }
+    if let Some(status) = profile_eval.activation.status.as_deref() {
+        if !matches!(status, "ready" | "needs-review" | "blocked") {
+            issues.push(issue(
+                "profile_eval_activation_status_unknown",
+                "warning",
+                ".mdp/manifest.yaml#/profile_eval/activation/status",
+                "profile_eval.activation.status should be ready, needs-review, or blocked",
+            ));
+        }
+    }
+    (json!(categories), missing)
+}
+
+fn validate_eval_profile_refs(
+    eval_inventory: &EvalInventory,
+    known_primitives: &BTreeSet<&str>,
+    job_ids: &BTreeSet<String>,
+    issues: &mut Vec<Value>,
+) {
+    for metadata in &eval_inventory.profile_metadata {
+        validate_profile_eval_string_refs(
+            &metadata.primitives,
+            known_primitives,
+            &format!("{}#/profile_eval/primitives", metadata.path),
+            "eval_profile_primitive_unknown",
+            "primitive",
+            issues,
+        );
+        validate_reference_list(
+            &metadata.jobs,
+            job_ids,
+            &format!("{}#/profile_eval/jobs", metadata.path),
+            "eval_profile_job_missing",
+            "profile job",
+            issues,
+        );
+    }
+}
+
+fn validate_profile_eval_string_refs(
+    values: &[String],
+    known: &BTreeSet<&str>,
+    path: &str,
+    code: &str,
+    label: &str,
+    issues: &mut Vec<Value>,
+) {
+    let mut seen = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        if value.trim().is_empty() {
+            issues.push(issue(
+                &format!("{code}_empty"),
+                "error",
+                format!("{path}/{index}"),
+                format!("{label} references must not be empty"),
+            ));
+        } else if !known.contains(value.as_str()) {
+            issues.push(issue(
+                code,
+                "error",
+                format!("{path}/{index}"),
+                format!(
+                    "profile eval fixture references unknown {label} {value}; expected one of {}",
+                    KNOWN_PRIMITIVES.join(", ")
+                ),
+            ));
+        } else if !seen.insert(value) {
+            issues.push(issue(
+                &format!("{code}_duplicate"),
+                "warning",
+                format!("{path}/{index}"),
+                format!("duplicate profile eval {label} {value}"),
+            ));
+        }
+    }
+}
+
+fn validate_non_empty_unique_strings(
+    values: &[String],
+    path: &str,
+    code_prefix: &str,
+    issues: &mut Vec<Value>,
+) {
+    let mut seen = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        if value.trim().is_empty() {
+            issues.push(issue(
+                &format!("{code_prefix}_empty"),
+                "error",
+                format!("{path}/{index}"),
+                "values must not be empty",
+            ));
+        } else if !seen.insert(value) {
+            issues.push(issue(
+                &format!("{code_prefix}_duplicate"),
+                "warning",
+                format!("{path}/{index}"),
+                format!("duplicate value {value}"),
+            ));
+        }
+    }
 }
 
 fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: &mut Vec<Value>) {
@@ -858,6 +1619,191 @@ fn validate_object_keys(
             ));
         }
     }
+}
+
+fn validate_primitive_map_shape(value: Option<&YamlValue>, path: &str, issues: &mut Vec<Value>) {
+    let Some(map) = value.and_then(YamlValue::as_mapping) else {
+        return;
+    };
+    for (primitive, mapping) in map {
+        let Some(primitive) = primitive.as_str() else {
+            continue;
+        };
+        validate_object_keys(
+            mapping,
+            &["cards", "prompts", "input_contracts", "jobs", "evals"],
+            &format!("{path}/{primitive}"),
+            "manifest_primitive_map_unknown_field",
+            issues,
+        );
+    }
+}
+
+#[derive(Debug, Default)]
+struct PromptInventory {
+    refs: BTreeSet<String>,
+}
+
+impl PromptInventory {
+    fn contains(&self, value: &str) -> bool {
+        self.refs.contains(value)
+    }
+}
+
+fn prompt_inventory(loaded_prompts: &[Value]) -> PromptInventory {
+    let mut inventory = PromptInventory::default();
+    for prompt in loaded_prompts {
+        if let Some(id) = prompt["id"].as_str() {
+            inventory.refs.insert(id.to_string());
+        }
+        if let Some(path) = prompt["path"].as_str() {
+            inventory.refs.insert(path.to_string());
+            if let Some(stripped) = path.strip_prefix(".mdp/") {
+                inventory.refs.insert(stripped.to_string());
+            }
+        }
+    }
+    inventory
+}
+
+#[derive(Debug, Default)]
+struct EvalInventory {
+    refs: BTreeSet<String>,
+    categories: BTreeMap<String, Vec<String>>,
+    profile_metadata: Vec<EvalProfileMetadata>,
+}
+
+impl EvalInventory {
+    fn contains(&self, value: &str) -> bool {
+        self.refs.contains(value)
+    }
+}
+
+#[derive(Debug, Default)]
+struct EvalProfileMetadata {
+    path: String,
+    primitives: Vec<String>,
+    jobs: Vec<String>,
+}
+
+fn collect_eval_inventory(root: &Path, issues: &mut Vec<Value>) -> Result<EvalInventory> {
+    let eval_dir = root.join(DEFAULT_DIR).join("evals");
+    let mut inventory = EvalInventory::default();
+    if !eval_dir.exists() {
+        return Ok(inventory);
+    }
+    let mut paths = fs::read_dir(&eval_dir)?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.is_file())
+        .collect::<Vec<_>>();
+    paths.sort();
+    for path in paths {
+        let filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("<invalid>");
+        let display_path = format!("{DEFAULT_DIR}/evals/{filename}");
+        let extension = path.extension().and_then(|extension| extension.to_str());
+        if !matches!(extension, Some("yaml" | "yml")) {
+            issues.push(issue(
+                "eval_path_extension",
+                "error",
+                &display_path,
+                "eval fixture files must use .yaml or .yml",
+            ));
+            continue;
+        }
+        inventory.refs.insert(display_path.clone());
+        inventory
+            .refs
+            .insert(display_path.trim_start_matches(".mdp/").to_string());
+        let Ok(raw) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(value) = serde_yaml::from_str::<YamlValue>(&raw) else {
+            issues.push(issue(
+                "eval_fixture_parse_failed",
+                "error",
+                &display_path,
+                "eval fixture could not be parsed while collecting profile metadata",
+            ));
+            continue;
+        };
+        if let Some(id) = yaml_get(&value, "id").and_then(YamlValue::as_str) {
+            inventory.refs.insert(id.to_string());
+        }
+        let profile_eval = yaml_get(&value, "profile_eval").unwrap_or(&YamlValue::Null);
+        if let Some(category) = yaml_get(profile_eval, "category").and_then(YamlValue::as_str) {
+            if !KNOWN_PROFILE_EVAL_CATEGORIES.contains(&category) {
+                issues.push(issue(
+                    "eval_profile_category_unknown",
+                    "error",
+                    format!("{display_path}#/profile_eval/category"),
+                    format!(
+                        "unknown profile eval category {category}; expected one of {}",
+                        KNOWN_PROFILE_EVAL_CATEGORIES.join(", ")
+                    ),
+                ));
+            }
+            inventory
+                .categories
+                .entry(category.to_string())
+                .or_default()
+                .push(display_path.clone());
+        }
+        if !matches!(profile_eval, YamlValue::Null) {
+            inventory.profile_metadata.push(EvalProfileMetadata {
+                path: display_path.clone(),
+                primitives: yaml_string_sequence(
+                    profile_eval,
+                    "primitives",
+                    &format!("{display_path}#/profile_eval/primitives"),
+                    issues,
+                ),
+                jobs: yaml_string_sequence(
+                    profile_eval,
+                    "jobs",
+                    &format!("{display_path}#/profile_eval/jobs"),
+                    issues,
+                ),
+            });
+        }
+    }
+    Ok(inventory)
+}
+
+fn yaml_string_sequence(
+    value: &YamlValue,
+    key: &str,
+    path: &str,
+    issues: &mut Vec<Value>,
+) -> Vec<String> {
+    let Some(raw) = yaml_get(value, key) else {
+        return vec![];
+    };
+    let Some(items) = raw.as_sequence() else {
+        issues.push(issue(
+            "eval_profile_metadata_not_sequence",
+            "error",
+            path,
+            "profile_eval metadata fields must be sequences of strings",
+        ));
+        return vec![];
+    };
+    let mut values = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        if let Some(value) = item.as_str() {
+            values.push(value.to_string());
+        } else {
+            issues.push(issue(
+                "eval_profile_metadata_not_string",
+                "error",
+                format!("{path}/{index}"),
+                "profile_eval metadata entries must be strings",
+            ));
+        }
+    }
+    values
 }
 
 fn validate_prompts(root: &Path, issues: &mut Vec<Value>) -> Result<Vec<Value>> {
@@ -1725,6 +2671,31 @@ pub(crate) fn issue(
     })
 }
 
+fn issue_with_gate(
+    code: &str,
+    severity: &str,
+    path: impl Into<String>,
+    message: impl Into<String>,
+    strict: &str,
+    activation: &str,
+) -> Value {
+    json!({
+        "code": code,
+        "severity": severity,
+        "path": path.into(),
+        "message": message.into(),
+        "strict": strict,
+        "activation": activation
+    })
+}
+
+fn issue_count(issues: &[Value], severity: &str) -> usize {
+    issues
+        .iter()
+        .filter(|issue| issue["severity"].as_str() == Some(severity))
+        .count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1800,9 +2771,211 @@ mod tests {
         let result = validate_pack(&root).expect("validate should return diagnostics");
 
         assert_eq!(result["valid"], true);
+        assert_eq!(result["error_count"], 0);
+        assert_eq!(result["profile"]["activation_ready"], true);
         assert_eq!(
             result["prompts"].as_array().expect("prompts array").len(),
             10
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_distinguishes_profile_surface_from_activation() {
+        let root = temp_pack("profile-surface-only");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut value: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        let map = value
+            .as_mapping_mut()
+            .expect("manifest should be a mapping");
+        for key in [
+            "required_primitives",
+            "primitive_map",
+            "input_contracts",
+            "jobs",
+            "profile_eval",
+        ] {
+            map.remove(YamlValue::String(key.to_string()));
+        }
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&value).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(result["profile"]["present"], true);
+        assert_eq!(result["profile"]["activation_ready"], false);
+        assert_eq!(
+            result["profile"]["missing_required_primitives"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_marks_partial_activation_metadata_not_ready() {
+        let root = temp_pack("profile-partial-activation");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut value: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        value
+            .as_mapping_mut()
+            .expect("manifest should be a mapping")
+            .remove(YamlValue::String("profile_eval".to_string()));
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&value).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let issues = result["issues"].as_array().expect("issues array");
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(result["profile"]["activation_ready"], false);
+        assert!(
+            result["profile"]["missing_activation_sections"]
+                .as_array()
+                .expect("missing activation sections")
+                .iter()
+                .any(|section| section == "profile_eval.required_categories")
+        );
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_activation_section_missing"
+                && issue["activation"] == "blocks"
+                && issue["strict"] == "fails"
+        }));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_unknown_profile_primitive() {
+        let root = temp_pack("profile-primitive-unknown");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replacen("- actors\n", "- account-context\n- actors\n", 1),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let codes: Vec<&str> = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        assert!(codes.contains(&"profile_required_primitive_unknown"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_missing_profile_mapping_reference() {
+        let root = temp_pack("profile-missing-reference");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("- normalize-prospect-row", "- missing-normalizer"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "profile_primitive_prompt_missing")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_bad_eval_profile_metadata_refs() {
+        let root = temp_pack("profile-eval-metadata-refs");
+        let fixture_path = root
+            .join(".mdp")
+            .join("evals")
+            .join("bad-profile-metadata.yaml");
+        std::fs::write(
+            &fixture_path,
+            r#"id: bad-profile-metadata
+command: route
+persona: PMM
+job: linkedin outbound copy
+profile_eval:
+  category: prompt-output-validation
+  primitives:
+    - account-context
+  jobs:
+    - missing-profile-job
+expect_load_order_contains:
+  - .mdp/cards/personas.yaml
+"#,
+        )
+        .expect("fixture should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let codes: Vec<&str> = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        assert!(codes.contains(&"eval_profile_primitive_unknown"));
+        assert!(codes.contains(&"eval_profile_job_missing"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_warns_when_required_profile_primitive_is_unmapped() {
+        let root = temp_pack("profile-required-unmapped");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace(
+                "  gaps:\n    cards:\n    - gaps\n    evals:\n    - fit-insufficient-context\n    - brief-insufficient-context\n",
+                "",
+            ),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(result["profile"]["activation_ready"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(
+                    |issue| issue["code"] == "profile_required_primitive_unmapped"
+                        && issue["strict"] == "fails"
+                        && issue["activation"] == "blocks"
+                )
         );
 
         let _ = std::fs::remove_dir_all(root);

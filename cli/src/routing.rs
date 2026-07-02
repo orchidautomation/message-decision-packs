@@ -524,6 +524,11 @@ mod tests {
             ],
             persona_mappings: vec![],
             lead_input_requirements: LeadInputRequirements::default(),
+            required_primitives: Vec::new(),
+            primitive_map: std::collections::BTreeMap::new(),
+            input_contracts: Vec::new(),
+            jobs: Vec::new(),
+            profile_eval: crate::models::ProfileEval::default(),
             cards: vec![
                 CardRef {
                     id: "personas".to_string(),

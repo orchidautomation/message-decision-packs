@@ -75,7 +75,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
             value
         }
         SchemaTarget::Eval => {
-            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Eval Fixture v0", "type": "object", "required": ["id", "command"], "properties": {"id": {"type": "string"}, "command": {"enum": ["route", "fit", "brief", "check-claims"]}, "persona": {"type": "string"}, "job": {"type": "string"}, "channel": {"type": "string"}, "prospect": {"type": "object"}, "text": {"type": "string"}, "subject": {"type": "string"}, "expect_load_order_contains": string_array(), "expect_load_order_excludes": string_array(), "expect_entry_titles_contains": string_array(), "expect_entry_titles_excludes": string_array(), "expect_status": {"type": "string"}, "expect_draft_status": {"type": "string"}, "expect_valid": {"type": "boolean"}}})
+            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Eval Fixture v0", "type": "object", "required": ["id", "command"], "properties": {"id": {"type": "string"}, "command": {"enum": ["route", "fit", "brief", "gaps", "check-claims"]}, "profile_eval": profile_eval_fixture_schema(), "persona": {"type": "string"}, "job": {"type": "string"}, "channel": {"type": "string"}, "prospect": {"type": "object"}, "text": {"type": "string"}, "subject": {"type": "string"}, "expect_load_order_contains": string_array(), "expect_load_order_excludes": string_array(), "expect_entry_titles_contains": string_array(), "expect_entry_titles_excludes": string_array(), "expect_status": {"type": "string"}, "expect_draft_status": {"type": "string"}, "expect_valid": {"type": "boolean"}}})
         }
         SchemaTarget::AgentSurface => agent_surface_schema(),
     }
@@ -110,6 +110,11 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
                 }
             },
             "lead_input_requirements": lead_input_requirements_schema(),
+            "required_primitives": primitive_id_array_schema(),
+            "primitive_map": primitive_map_schema(),
+            "input_contracts": input_contracts_schema(),
+            "jobs": profile_jobs_schema(),
+            "profile_eval": profile_eval_schema(),
             "cards": {
                 "type": "array",
                 "items": {
@@ -145,6 +150,132 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
                     "notes": {"type": "array", "items": {"type": "string"}}
                 }
             }
+        }
+    })
+}
+
+fn primitive_ids() -> [&'static str; 10] {
+    [
+        "actors",
+        "decision-criteria",
+        "source-signals",
+        "needs-requirements",
+        "evidence-proof",
+        "boundaries",
+        "output-contracts",
+        "routing-jobs",
+        "gaps",
+        "evals",
+    ]
+}
+
+fn profile_eval_categories() -> [&'static str; 9] {
+    [
+        "proceed",
+        "insufficient-context",
+        "refusal",
+        "unsafe-output",
+        "job-routing",
+        "account-context-present",
+        "account-context-missing",
+        "account-only-no-draft",
+        "prompt-output-validation",
+    ]
+}
+
+fn primitive_id_array_schema() -> Value {
+    json!({
+        "type": "array",
+        "description": "Optional universal primitive IDs this profile must cover before activation.",
+        "items": {"enum": primitive_ids()}
+    })
+}
+
+fn primitive_map_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Manifest-level mapping from universal primitives to profile-owned cards, prompts, input contracts, jobs, and eval fixtures.",
+        "propertyNames": {"enum": primitive_ids()},
+        "additionalProperties": primitive_mapping_schema()
+    })
+}
+
+fn primitive_mapping_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "cards": string_array(),
+            "prompts": string_array(),
+            "input_contracts": string_array(),
+            "jobs": string_array(),
+            "evals": string_array()
+        }
+    })
+}
+
+fn input_contracts_schema() -> Value {
+    json!({
+        "type": "array",
+        "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+                "id": {"type": "string"},
+                "description": {"type": "string"},
+                "schema_ref": {"type": "string"},
+                "prompt": {"type": "string", "description": "Prompt id or .mdp-relative prompt path used to normalize this profile input, when the profile has one."},
+                "normalizes": string_array()
+            }
+        }
+    })
+}
+
+fn profile_jobs_schema() -> Value {
+    json!({
+        "type": "array",
+        "items": {
+            "type": "object",
+            "required": ["id", "required_primitives"],
+            "properties": {
+                "id": {"type": "string"},
+                "label": {"type": "string"},
+                "description": {"type": "string"},
+                "required_primitives": primitive_id_array_schema(),
+                "input_contracts": string_array()
+            }
+        }
+    })
+}
+
+fn profile_eval_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Optional activation metadata for profile eval category coverage. Validation computes readiness from fixture metadata.",
+        "properties": {
+            "required_categories": {
+                "type": "array",
+                "items": {"enum": profile_eval_categories()}
+            },
+            "activation": {
+                "type": "object",
+                "properties": {
+                    "status": {"enum": ["ready", "needs-review", "blocked"]},
+                    "summary": {"type": "string"}
+                }
+            }
+        }
+    })
+}
+
+fn profile_eval_fixture_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["category"],
+        "properties": {
+            "category": {"enum": profile_eval_categories()},
+            "primitives": primitive_id_array_schema(),
+            "jobs": string_array()
         }
     })
 }
@@ -709,6 +840,28 @@ mod tests {
             result["properties"]["lead_input_requirements"]["properties"]["value_contracts"]["additionalProperties"]
                 ["additionalProperties"],
             false
+        );
+        assert_eq!(
+            result["properties"]["required_primitives"]["items"]["enum"][0],
+            "actors"
+        );
+        assert_eq!(
+            result["properties"]["primitive_map"]["propertyNames"]["enum"][9],
+            "evals"
+        );
+        assert_eq!(
+            result["properties"]["input_contracts"]["items"]["properties"]["prompt"]["type"],
+            "string"
+        );
+        assert_eq!(
+            result["properties"]["jobs"]["items"]["properties"]["required_primitives"]["items"]["enum"]
+                [1],
+            "decision-criteria"
+        );
+        assert_eq!(
+            result["properties"]["profile_eval"]["properties"]["required_categories"]["items"]["enum"]
+                [0],
+            "proceed"
         );
     }
 

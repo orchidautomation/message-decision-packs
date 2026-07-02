@@ -54,6 +54,8 @@ fn summarize(command: &str, data: &Value) -> Value {
         "doctor" | "validate" | "validate-prompt-output" => json!({
             "valid": data["valid"],
             "strict": data["strict"],
+            "error_count": data["error_count"],
+            "warning_count": data["warning_count"],
             "issue_count": array_len(&data["issues"]),
             "issues": data["issues"]
         }),

@@ -3,6 +3,15 @@ command: brief
 expect_draft_status: no-draft
 id: brief-insufficient-context
 job: linkedin outbound copy
+profile_eval:
+  category: insufficient-context
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - source-signals
+  - output-contracts
+  - gaps
 prospect:
   company: ExampleCo
   name: Taylor Lee

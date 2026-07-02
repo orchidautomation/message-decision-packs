@@ -1,6 +1,13 @@
 command: fit
 expect_status: disqualified
 id: fit-disqualified
+profile_eval:
+  category: refusal
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - decision-criteria
+  - boundaries
 prospect:
   company: BlastCo
   name: Jordan Smith

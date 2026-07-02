@@ -11,3 +11,11 @@ expect_load_order_contains:
 id: gtm-engineering-route
 job: agent brief for enriched row
 persona: GTM Engineering
+profile_eval:
+  category: job-routing
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - source-signals
+  - routing-jobs

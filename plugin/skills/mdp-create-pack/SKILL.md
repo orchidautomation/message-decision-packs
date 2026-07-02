@@ -120,6 +120,8 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 - Define pack-owned prompt value domains in `.mdp/manifest.yaml` `lead_input_requirements.value_contracts` and `attribute_definitions` when prompts should emit blessed personas, segments, source kinds, date/date-time values, enums, or typed attributes. Do not leave important routing labels as free-form prompt prose.
 - Put custom advisory annotations about card content under entry `metadata`; do not add arbitrary unsupported fields as if the CLI routes or enforces them.
 - Add custom channel names to `.mdp/manifest.yaml` `supported_channels` before relying on channel-policy routing for those channels.
+- For profile-aware packs, keep `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories` in sync with the cards, prompts, jobs, and eval fixtures you add. `profile.id` and `profile.agent_surface` only route skills; `mdp validate` owns activation readiness.
+- Use the fixed universal primitives (`actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evidence-proof`, `boundaries`, `output-contracts`, `routing-jobs`, `gaps`, `evals`) and keep domain vocabulary in profile-owned IDs. Do not add custom core card kinds for account context, opportunity context, or other profile nouns.
 
 ## Response
 

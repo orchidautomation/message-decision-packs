@@ -1,4 +1,12 @@
 id: fit-insufficient-context
+profile_eval:
+  category: insufficient-context
+  primitives:
+  - decision-criteria
+  - source-signals
+  - gaps
+  jobs:
+  - bid-no-bid-review
 command: fit
 expect_status: insufficient-context
 prospect:

@@ -1,4 +1,12 @@
 id: proposal-gaps
+profile_eval:
+  category: insufficient-context
+  primitives:
+  - source-signals
+  - needs-requirements
+  - gaps
+  jobs:
+  - red-team-review
 command: gaps
 expect_gap_titles_contains:
 - Missing RFP text

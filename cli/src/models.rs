@@ -21,6 +21,16 @@ pub(crate) struct Manifest {
     pub(crate) persona_mappings: Vec<PersonaMapping>,
     #[serde(default)]
     pub(crate) lead_input_requirements: LeadInputRequirements,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) required_primitives: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) primitive_map: BTreeMap<String, PrimitiveMapping>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) input_contracts: Vec<InputContract>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) jobs: Vec<ProfileJob>,
+    #[serde(default, skip_serializing_if = "ProfileEval::is_empty")]
+    pub(crate) profile_eval: ProfileEval,
     pub(crate) cards: Vec<CardRef>,
     pub(crate) policy: Policy,
     pub(crate) provenance: Provenance,
@@ -73,6 +83,86 @@ pub(crate) struct JobSkillRoute {
     pub(crate) job: String,
     #[serde(default)]
     pub(crate) skills: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct PrimitiveMapping {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) cards: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) prompts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) input_contracts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) jobs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) evals: Vec<String>,
+}
+
+impl PrimitiveMapping {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.cards.is_empty()
+            && self.prompts.is_empty()
+            && self.input_contracts.is_empty()
+            && self.jobs.is_empty()
+            && self.evals.is_empty()
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct InputContract {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) schema_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) normalizes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProfileJob {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) required_primitives: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) input_contracts: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProfileEval {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) required_categories: Vec<String>,
+    #[serde(default, skip_serializing_if = "ProfileActivation::is_empty")]
+    pub(crate) activation: ProfileActivation,
+}
+
+impl ProfileEval {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.required_categories.is_empty() && self.activation.is_empty()
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProfileActivation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) summary: Option<String>,
+}
+
+impl ProfileActivation {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.status.is_none() && self.summary.is_none()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

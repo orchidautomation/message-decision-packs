@@ -421,6 +421,11 @@ mod tests {
                 title_keywords: vec!["demand gen".to_string()],
             }],
             lead_input_requirements: crate::models::LeadInputRequirements::default(),
+            required_primitives: Vec::new(),
+            primitive_map: std::collections::BTreeMap::new(),
+            input_contracts: Vec::new(),
+            jobs: Vec::new(),
+            profile_eval: crate::models::ProfileEval::default(),
             cards: vec![],
             policy: crate::models::Policy {
                 progressive_disclosure: true,
@@ -467,6 +472,11 @@ mod tests {
                 title_keywords: vec!["growth engineer".to_string()],
             }],
             lead_input_requirements: crate::models::LeadInputRequirements::default(),
+            required_primitives: Vec::new(),
+            primitive_map: std::collections::BTreeMap::new(),
+            input_contracts: Vec::new(),
+            jobs: Vec::new(),
+            profile_eval: crate::models::ProfileEval::default(),
             cards: vec![],
             policy: crate::models::Policy {
                 progressive_disclosure: true,

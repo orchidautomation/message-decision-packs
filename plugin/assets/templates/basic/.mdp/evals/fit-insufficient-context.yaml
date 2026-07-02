@@ -1,6 +1,14 @@
 command: fit
 expect_status: insufficient-context
 id: fit-insufficient-context
+profile_eval:
+  category: insufficient-context
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - decision-criteria
+  - source-signals
+  - gaps
 prospect:
   company: ExampleCo
   name: Taylor Lee

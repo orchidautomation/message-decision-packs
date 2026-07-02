@@ -133,6 +133,145 @@ lead_input_requirements:
     fiscal_year:
       type: string
       description: Optional reviewed account metadata. Keep proof in signals, not attributes.
+required_primitives:
+- actors
+- decision-criteria
+- source-signals
+- needs-requirements
+- evidence-proof
+- boundaries
+- output-contracts
+- routing-jobs
+- gaps
+- evals
+primitive_map:
+  actors:
+    cards:
+    - personas
+    input_contracts:
+    - prospect
+  boundaries:
+    cards:
+    - avoid-rules
+    - objections
+    - positioning
+  decision-criteria:
+    cards:
+    - fit-rules
+  evals:
+    evals:
+    - fit-good
+    - fit-insufficient-context
+    - fit-disqualified
+    - claim-check-unsupported
+    - claim-check-output-rule
+    - linkedin-copy-route
+    - email-initial-route
+    - call-prep-route
+  evidence-proof:
+    cards:
+    - claims
+    - positioning
+  gaps:
+    cards:
+    - gaps
+    evals:
+    - fit-insufficient-context
+    - brief-insufficient-context
+  needs-requirements:
+    cards:
+    - pains
+  output-contracts:
+    cards:
+    - output-rules
+    - copy-patterns
+    - ctas
+    - hooks
+    - channel-policies
+  routing-jobs:
+    cards:
+    - channel-policies
+    - motions
+    jobs:
+    - create-or-improve-gtm-pack
+    - prospect-fit-or-brief
+    - outbound-copy-brief
+    - pack-validation
+  source-signals:
+    cards:
+    - signals
+    prompts:
+    - normalize-prospect-row
+    input_contracts:
+    - prospect
+input_contracts:
+- id: prospect
+  description: Reviewed prospect/source-row input contract for person, account, and relationship context.
+  schema_ref: mdp.input.prospect.v0
+  prompt: prompts/normalize-prospect.yaml
+  normalizes:
+  - account
+  - person
+  - relationship
+jobs:
+- id: create-or-improve-gtm-pack
+  label: Create or improve GTM messaging pack
+  description: Author or revise reviewed GTM decision context, not execution infrastructure.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - needs-requirements
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - gaps
+  - evals
+- id: prospect-fit-or-brief
+  label: Prospect row to fit decision or brief
+  description: Normalize supplied row context, check fit, and route a bounded local brief.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+- id: outbound-copy-brief
+  label: Outbound copy brief
+  description: Produce grounded copy guidance after fit, proof, guardrails, and output contracts are loaded.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+- id: pack-validation
+  label: Pack validation and eval coverage
+  description: Check structural validity, profile primitive coverage, and local eval categories.
+  required_primitives:
+  - boundaries
+  - gaps
+  - evals
+profile_eval:
+  required_categories:
+  - proceed
+  - insufficient-context
+  - refusal
+  - unsafe-output
+  - job-routing
+  activation:
+    status: ready
+    summary: Starter GTM profile includes primitive coverage and minimum local eval categories.
 cards:
 - id: personas
   path: cards/personas.yaml
