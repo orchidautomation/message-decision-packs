@@ -1,0 +1,48 @@
+id: requirements-matrix
+kind: pains
+title: Requirements matrix
+description: Requirements and obligations the proposal review must satisfy.
+personas:
+- Solution Owner
+- Proposal Lead
+tags:
+- requirements
+- matrix
+- compliance
+entries:
+- id: must-answer-sections
+  title: Must-answer sections
+  body: The review must identify whether online intake, notifications, reporting, integration, training, timeline, and support requirements each have a response path or a named gap.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - partial compliance hidden
+  metadata:
+    primitive: needs-requirements
+- id: requirement-status-labels
+  title: Requirement status labels
+  body: Use status labels Supported, Assumed, Gap, Not supported, or Needs reviewer decision. Do not collapse unknown requirements into supported language.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  evidence:
+  - docs/plans/2026-07-01-006-docs-proposal-reference-profile-template-plan.md
+  avoid:
+  - unsupported compliance
+  metadata:
+    primitive: output-contracts
+- id: compliance-review-needed
+  title: Compliance review needed
+  body: Any mandatory requirement with missing source text, missing proof, or a policy implication should be flagged for compliance review instead of being treated as satisfied.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - docs/plans/2026-07-01-007-docs-proposal-privacy-public-repo-guardrails-plan.md
+  avoid:
+  - compliance shortcut
+  metadata:
+    primitive: decision-criteria

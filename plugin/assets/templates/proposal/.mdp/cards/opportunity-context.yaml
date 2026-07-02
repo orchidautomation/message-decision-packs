@@ -1,0 +1,49 @@
+id: opportunity-context
+kind: signals
+title: Opportunity context
+description: Synthetic opportunity facts and source interpretation for the demo scenario.
+personas:
+- Proposal Lead
+- Executive Reviewer
+tags:
+- opportunity
+- context
+- source
+- RFP
+entries:
+- id: exampleton-permit-modernization
+  title: City of Exampleton permit modernization
+  body: The synthetic customer wants a modernized permit intake workflow with online submission, status notifications, reporting, and staff training. This is fictional demo context only.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - real customer
+  metadata:
+    primitive: source-signals
+    source_kind: synthetic-example
+- id: six-week-response-window
+  title: Six-week response window
+  body: The fictional response window is six weeks, which is enough for a lightweight proposal but still requires early bid/no-bid and proof review.
+  applies_to:
+  - Proposal Lead
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - false urgency
+  metadata:
+    primitive: source-signals
+- id: public-safe-scenario
+  title: Public-safe scenario
+  body: The opportunity contains no real agency, solicitation number, customer artifact, pricing, win theme, or source-controlled document.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - docs/plans/2026-07-01-007-docs-proposal-privacy-public-repo-guardrails-plan.md
+  avoid:
+  - private artifact
+  metadata:
+    primitive: source-signals

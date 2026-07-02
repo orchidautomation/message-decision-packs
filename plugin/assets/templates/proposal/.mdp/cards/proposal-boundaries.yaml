@@ -1,0 +1,57 @@
+id: proposal-boundaries
+kind: avoid-rules
+title: Proposal public boundaries
+description: Public repo, privacy, compliance, and execution boundaries for proposal work.
+personas:
+- Proposal Lead
+- Solution Owner
+- Executive Reviewer
+tags:
+- proposal
+- boundaries
+- privacy
+- compliance
+entries:
+- id: no-raw-customer-material
+  title: No raw customer proposal material
+  body: Do not commit raw proposal documents, non-public RFPs, customer names, screenshots, transcripts, confidential win themes, pricing strategy, or access-controlled source material to public repo paths.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  - Executive Reviewer
+  evidence:
+  - AGENTS.md
+  avoid:
+  - raw RFP
+  - customer artifact
+  - private transcript
+  metadata:
+    primitive: boundaries
+- id: no-compliance-guarantee
+  title: No compliance guarantee
+  body: Do not claim the pack makes a team CMMC compliant, NIST compliant, approved for CUI, legally approved, guaranteed secure, or exempt from procurement or security review.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - AGENTS.md
+  avoid:
+  - CMMC compliant
+  - NIST compliant
+  - approved for CUI
+  - guaranteed secure
+  metadata:
+    primitive: boundaries
+- id: review-not-submission
+  title: Review, not submission
+  body: MDP may produce review briefs, matrices, risks, and gaps. It does not submit proposals, manage approvals, replace proposal software, or update external systems.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - docs/plans/2026-07-01-007-docs-proposal-privacy-public-repo-guardrails-plan.md
+  avoid:
+  - submit proposal
+  - manage approvals
+  metadata:
+    primitive: boundaries

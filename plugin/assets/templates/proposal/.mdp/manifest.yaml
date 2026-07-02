@@ -1,0 +1,221 @@
+format: mdp.v0
+id: proposal-mdp-sample
+name: Proposal Reference Profile Sample
+version: 0.1.0
+description: A synthetic proposal-review decision pack for bid/no-bid, compliance, proof, red-team, and executive review workflows.
+personas:
+- Proposal Lead
+- Solution Owner
+- Executive Reviewer
+target_personas:
+- Proposal Lead
+- Solution Owner
+- Executive Reviewer
+operator_roles:
+- Proposal Lead
+- Solution Owner
+supported_channels:
+- bid-no-bid-review
+- compliance-review
+- proof-review
+- red-team-review
+- executive-brief
+persona_mappings:
+- persona: Proposal Lead
+  title_keywords:
+  - proposal lead
+  - capture manager
+  - proposal manager
+- persona: Solution Owner
+  title_keywords:
+  - solution owner
+  - delivery lead
+  - technical lead
+- persona: Executive Reviewer
+  title_keywords:
+  - executive reviewer
+  - partner
+  - vp
+lead_input_requirements:
+  required_fields:
+  - company
+  - company_domain
+  - trigger
+  - segment
+  - signals
+  - synthetic
+  required_signal_fields:
+  - source
+  required_attributes: []
+cards:
+- id: proposal-roles
+  path: cards/proposal-roles.yaml
+  kind: personas
+  description: Proposal actors and review responsibilities for the synthetic opportunity.
+  personas:
+  - Proposal Lead
+  - Solution Owner
+  - Executive Reviewer
+  tags:
+  - proposal
+  - roles
+  - actors
+- id: proposal-boundaries
+  path: cards/proposal-boundaries.yaml
+  kind: avoid-rules
+  description: Public repo, privacy, compliance, and no-execution boundaries for proposal review.
+  personas:
+  - Proposal Lead
+  - Solution Owner
+  - Executive Reviewer
+  tags:
+  - proposal
+  - boundaries
+  - privacy
+  - compliance
+- id: proposal-output-rules
+  path: cards/proposal-output-rules.yaml
+  kind: output-rules
+  description: Output contracts for proposal review briefs, matrices, risks, and gaps.
+  personas:
+  - Proposal Lead
+  - Solution Owner
+  - Executive Reviewer
+  tags:
+  - proposal
+  - output
+  - review
+- id: opportunity-context
+  path: cards/opportunity-context.yaml
+  kind: signals
+  description: Synthetic opportunity facts, source signals, and context confidence.
+  personas:
+  - Proposal Lead
+  - Executive Reviewer
+  tags:
+  - opportunity
+  - context
+  - source
+  - RFP
+- id: requirement-signals
+  path: cards/requirement-signals.yaml
+  kind: signals
+  description: Synthetic RFP requirement signals and source interpretation rules.
+  personas:
+  - Proposal Lead
+  - Solution Owner
+  tags:
+  - requirements
+  - compliance
+  - source
+- id: requirements-matrix
+  path: cards/requirements-matrix.yaml
+  kind: pains
+  description: Requirements and obligations the proposal review must satisfy.
+  personas:
+  - Solution Owner
+  - Proposal Lead
+  tags:
+  - requirements
+  - matrix
+  - compliance
+- id: bid-no-bid-rules
+  path: cards/bid-no-bid-rules.yaml
+  kind: fit-rules
+  description: Bid/no-bid, pause, and escalation criteria for the synthetic opportunity.
+  personas:
+  - Proposal Lead
+  - Executive Reviewer
+  tags:
+  - bid
+  - no-bid
+  - review
+  - gate
+- id: evaluation-criteria
+  path: cards/evaluation-criteria.yaml
+  kind: fit-rules
+  description: Evaluation criteria, scoring priorities, and reviewer decision rules.
+  personas:
+  - Proposal Lead
+  - Solution Owner
+  - Executive Reviewer
+  tags:
+  - evaluation
+  - criteria
+  - proof
+  - scoring
+- id: proof-library
+  path: cards/proof-library.yaml
+  kind: claims
+  description: Approved synthetic proof patterns and unsupported proof boundaries.
+  personas:
+  - Solution Owner
+  - Proposal Lead
+  tags:
+  - proof
+  - claims
+  - past-performance
+- id: compliance-boundaries
+  path: cards/compliance-boundaries.yaml
+  kind: avoid-rules
+  description: Compliance-sensitive language, certification limits, and no-invention rules.
+  personas:
+  - Proposal Lead
+  - Solution Owner
+  - Executive Reviewer
+  tags:
+  - compliance
+  - boundaries
+  - avoid
+- id: review-gates
+  path: cards/review-gates.yaml
+  kind: motions
+  description: Named proposal review jobs and their required gates.
+  personas:
+  - Proposal Lead
+  - Executive Reviewer
+  tags:
+  - review
+  - gate
+  - bid
+  - compliance
+  - proof
+  - red-team
+  - executive
+- id: review-outputs
+  path: cards/review-outputs.yaml
+  kind: copy-patterns
+  description: Review output structures for briefs, matrices, risk reports, and executive summaries.
+  personas:
+  - Proposal Lead
+  - Executive Reviewer
+  tags:
+  - review
+  - output
+  - brief
+  - matrix
+- id: gaps
+  path: cards/gaps.yaml
+  kind: gaps
+  description: Missing context, weak proof, and blockers that must stay visible.
+  personas:
+  - Proposal Lead
+  - Solution Owner
+  - Executive Reviewer
+  tags:
+  - gaps
+  - missing
+  - blocker
+policy:
+  progressive_disclosure: true
+  load_manifest_first: true
+  max_cards_per_route: 13
+  json_contract: mdp.cli.v0
+  no_auth_required: true
+provenance:
+  owner: local
+  created_by: MDP-13 synthetic proposal sample
+  notes:
+  - This proposal sample is fictional and public-safe.
+  - It is a review-context pack, not a proposal submission system.
+  - Replace with private customer-controlled packs for real proposal work.
