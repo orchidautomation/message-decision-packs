@@ -103,8 +103,8 @@ pub(crate) fn validate_runtime_context(value: &Value, path: &str) -> Vec<Runtime
         path,
         "runtime_context_now_utc_format",
         &mut violations,
-        valid_date_time,
-        "runtime_context.now_utc must be an ISO date-time such as 2026-07-02T03:45:00Z",
+        |value| utc_date_from_date_time(value).is_some(),
+        "runtime_context.now_utc must be an ISO UTC date-time such as 2026-07-02T03:45:00Z",
     );
     validate_string_field(
         context,
@@ -133,8 +133,39 @@ pub(crate) fn validate_runtime_context(value: &Value, path: &str) -> Vec<Runtime
         |value| !value.trim().is_empty(),
         "runtime_context.local_time_policy must explain local calendar policy",
     );
+    validate_date_matches_now_utc(context, path, &mut violations);
 
     violations
+}
+
+fn validate_date_matches_now_utc(
+    context: &serde_json::Map<String, Value>,
+    path: &str,
+    violations: &mut Vec<RuntimeContextViolation>,
+) {
+    let Some(now_utc) = context.get("now_utc").and_then(Value::as_str) else {
+        return;
+    };
+    let Some(date_utc) = context.get("date_utc").and_then(Value::as_str) else {
+        return;
+    };
+    let Some(now_date) = utc_date_from_date_time(now_utc) else {
+        return;
+    };
+    if valid_date(date_utc) && now_date != date_utc {
+        violations.push(RuntimeContextViolation {
+            code: "runtime_context_date_utc_mismatch",
+            path: format!("{path}/date_utc"),
+            reason: "runtime_context.date_utc must match the UTC date portion of runtime_context.now_utc"
+                .to_string(),
+        });
+    }
+}
+
+fn utc_date_from_date_time(value: &str) -> Option<&str> {
+    let (date, rest) = value.split_once('T')?;
+    rest.strip_suffix('Z')?;
+    (valid_date_time(value) && valid_date(date)).then_some(date)
 }
 
 fn validate_string_field(
@@ -229,5 +260,41 @@ mod tests {
         assert!(codes.contains(&"runtime_context_date_utc_format"));
         assert!(codes.contains(&"runtime_context_timezone"));
         assert!(codes.contains(&"runtime_context_local_time_policy"));
+    }
+
+    #[test]
+    fn runtime_context_validation_rejects_contradictory_dates() {
+        let context = json!({
+            "contract": RUNTIME_CONTEXT_CONTRACT,
+            "now_utc": "2026-07-02T00:15:00Z",
+            "date_utc": "2026-07-03",
+            "timezone": "UTC",
+            "local_time_policy": LOCAL_TIME_POLICY
+        });
+
+        let codes = validate_runtime_context(&context, "$")
+            .into_iter()
+            .map(|violation| violation.code)
+            .collect::<Vec<_>>();
+
+        assert!(codes.contains(&"runtime_context_date_utc_mismatch"));
+    }
+
+    #[test]
+    fn runtime_context_validation_rejects_offset_now_utc() {
+        let context = json!({
+            "contract": RUNTIME_CONTEXT_CONTRACT,
+            "now_utc": "2026-07-02T00:15:00-04:00",
+            "date_utc": "2026-07-02",
+            "timezone": "UTC",
+            "local_time_policy": LOCAL_TIME_POLICY
+        });
+
+        let codes = validate_runtime_context(&context, "$")
+            .into_iter()
+            .map(|violation| violation.code)
+            .collect::<Vec<_>>();
+
+        assert!(codes.contains(&"runtime_context_now_utc_format"));
     }
 }

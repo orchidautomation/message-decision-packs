@@ -1250,6 +1250,52 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_runtime_context_date_mismatch() {
+        let root = temp_pack("runtime-context-mismatch");
+        let path = write_output(
+            &root,
+            "claims-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "extract-claims-proof",
+  "source_summary": {
+    "company_domain": "N/A",
+    "company_name": "N/A",
+    "person_name": "N/A",
+    "person_title": "N/A",
+    "account_name": "N/A",
+    "inputs_used": ["source_notes", "runtime_context"],
+    "confidence": "medium"
+  },
+  "runtime_context": {
+    "contract": "mdp.runtime-context.v0",
+    "now_utc": "2026-07-02T00:15:00Z",
+    "date_utc": "2026-07-03",
+    "timezone": "UTC",
+    "local_time_policy": "Use supplied source fields for fiscal/calendar logic."
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result = validate_prompt_output_file(&root, &path, None, Some("extract-claims-proof"))
+            .expect("validation should return diagnostics");
+        let codes: Vec<&str> = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        assert!(codes.contains(&"runtime_context_date_utc_mismatch"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn validate_rejects_markdown_wrapped_json() {
         let root = temp_pack("markdown");
         let path = write_output(
