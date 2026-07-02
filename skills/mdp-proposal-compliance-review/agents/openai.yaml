@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Proposal Compliance Review"
+  short_description: "Review proposal requirement coverage"
+  default_prompt: "Use $mdp-proposal-compliance-review to review supplied proposal requirements or answer drafts against proposal compliance rules."
