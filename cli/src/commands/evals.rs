@@ -1,11 +1,13 @@
 use crate::commands::briefs::prospect_brief_from_value;
-use crate::commands::health::{gaps, issue};
+use crate::commands::health::{KNOWN_PRIMITIVES, KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
 use crate::commands::routing::{check_claims, fit_prospect, route};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
+use crate::pack_io::read_manifest;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -55,6 +57,27 @@ pub(crate) fn eval_pack(root: &Path) -> Result<Value> {
     }
     let mut fixtures = Vec::new();
     let mut issues = Vec::new();
+    let profile_job_ids = match read_manifest(root) {
+        Ok(manifest) => Some(
+            manifest
+                .jobs
+                .into_iter()
+                .map(|job| job.id)
+                .collect::<BTreeSet<_>>(),
+        ),
+        Err(err) => {
+            issues.push(issue(
+                "eval_manifest_read_failed",
+                "error",
+                root.join(DEFAULT_DIR)
+                    .join("manifest.yaml")
+                    .display()
+                    .to_string(),
+                err.to_string(),
+            ));
+            None
+        }
+    };
     for entry in
         fs::read_dir(&eval_dir).with_context(|| format!("reading {}", eval_dir.display()))?
     {
@@ -76,7 +99,7 @@ pub(crate) fn eval_pack(root: &Path) -> Result<Value> {
                 continue;
             }
         };
-        match run_fixture(root, &path, &fixture) {
+        match run_fixture(root, &path, &fixture, profile_job_ids.as_ref()) {
             Ok(result) => {
                 issues.extend(result["issues"].as_array().cloned().unwrap_or_default());
                 fixtures.push(result);
@@ -101,8 +124,13 @@ pub(crate) fn eval_pack(root: &Path) -> Result<Value> {
     }))
 }
 
-fn run_fixture(root: &Path, path: &Path, fixture: &EvalFixture) -> Result<Value> {
-    let mut issues = validate_fixture(path, fixture);
+fn run_fixture(
+    root: &Path,
+    path: &Path,
+    fixture: &EvalFixture,
+    profile_job_ids: Option<&BTreeSet<String>>,
+) -> Result<Value> {
+    let mut issues = validate_fixture(path, fixture, profile_job_ids);
     if !issues.is_empty() {
         return Ok(fixture_result(path, fixture, Value::Null, issues));
     }
@@ -149,7 +177,11 @@ fn run_fixture(root: &Path, path: &Path, fixture: &EvalFixture) -> Result<Value>
     Ok(fixture_result(path, fixture, output, issues))
 }
 
-fn validate_fixture(path: &Path, fixture: &EvalFixture) -> Vec<Value> {
+fn validate_fixture(
+    path: &Path,
+    fixture: &EvalFixture,
+    profile_job_ids: Option<&BTreeSet<String>>,
+) -> Vec<Value> {
     let mut issues = Vec::new();
     if let Some(profile_eval) = &fixture.profile_eval {
         if profile_eval.category.trim().is_empty() {
@@ -159,6 +191,21 @@ fn validate_fixture(path: &Path, fixture: &EvalFixture) -> Vec<Value> {
                 format!("{}#/profile_eval/category", path.display()),
                 "profile_eval.category must not be empty when profile eval metadata is present",
             ));
+        } else if !KNOWN_PROFILE_EVAL_CATEGORIES.contains(&profile_eval.category.as_str()) {
+            issues.push(issue(
+                "eval_profile_category_unknown",
+                "error",
+                format!("{}#/profile_eval/category", path.display()),
+                format!(
+                    "unknown profile eval category {}; expected one of {}",
+                    profile_eval.category,
+                    KNOWN_PROFILE_EVAL_CATEGORIES.join(", ")
+                ),
+            ));
+        }
+        validate_profile_eval_primitives(path, &profile_eval.primitives, &mut issues);
+        if let Some(profile_job_ids) = profile_job_ids {
+            validate_profile_eval_jobs(path, &profile_eval.jobs, profile_job_ids, &mut issues);
         }
     }
     match fixture.command.as_str() {
@@ -179,6 +226,70 @@ fn validate_fixture(path: &Path, fixture: &EvalFixture) -> Vec<Value> {
         _ => {}
     }
     issues
+}
+
+fn validate_profile_eval_primitives(path: &Path, values: &[String], issues: &mut Vec<Value>) {
+    let mut seen = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        if value.trim().is_empty() {
+            issues.push(issue(
+                "eval_profile_primitive_unknown_empty",
+                "error",
+                format!("{}#/profile_eval/primitives/{index}", path.display()),
+                "profile_eval.primitives entries must not be empty",
+            ));
+        } else if !KNOWN_PRIMITIVES.contains(&value.as_str()) {
+            issues.push(issue(
+                "eval_profile_primitive_unknown",
+                "error",
+                format!("{}#/profile_eval/primitives/{index}", path.display()),
+                format!(
+                    "profile eval fixture references unknown primitive {value}; expected one of {}",
+                    KNOWN_PRIMITIVES.join(", ")
+                ),
+            ));
+        } else if !seen.insert(value) {
+            issues.push(issue(
+                "eval_profile_primitive_unknown_duplicate",
+                "warning",
+                format!("{}#/profile_eval/primitives/{index}", path.display()),
+                format!("duplicate profile eval primitive {value}"),
+            ));
+        }
+    }
+}
+
+fn validate_profile_eval_jobs(
+    path: &Path,
+    values: &[String],
+    profile_job_ids: &BTreeSet<String>,
+    issues: &mut Vec<Value>,
+) {
+    let mut seen = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        if value.trim().is_empty() {
+            issues.push(issue(
+                "eval_profile_job_missing_empty",
+                "error",
+                format!("{}#/profile_eval/jobs/{index}", path.display()),
+                "profile_eval.jobs entries must not be empty",
+            ));
+        } else if !profile_job_ids.contains(value) {
+            issues.push(issue(
+                "eval_profile_job_missing",
+                "error",
+                format!("{}#/profile_eval/jobs/{index}", path.display()),
+                format!("profile eval fixture references missing profile job {value}"),
+            ));
+        } else if !seen.insert(value) {
+            issues.push(issue(
+                "eval_profile_job_missing_duplicate",
+                "warning",
+                format!("{}#/profile_eval/jobs/{index}", path.display()),
+                format!("duplicate profile eval job {value}"),
+            ));
+        }
+    }
 }
 
 fn require<T>(path: &Path, value: Option<&T>, field: &str, issues: &mut Vec<Value>) {
@@ -467,6 +578,42 @@ expect_load_order_contains:
             result["issues"][0]["code"],
             "eval_expected_load_order_missing"
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn eval_rejects_bad_profile_metadata_refs() {
+        let root = temp_pack("eval-profile-metadata");
+        let fixture_path = root.join(".mdp").join("evals").join("bad-profile.yaml");
+        std::fs::write(
+            &fixture_path,
+            r#"id: bad-profile
+persona: PMM
+job: linkedin outbound copy
+profile_eval:
+  category: prompt-output-validation
+  primitives:
+    - account-context
+  jobs:
+    - missing-profile-job
+expect_load_order_contains:
+  - .mdp/cards/personas.yaml
+"#,
+        )
+        .expect("fixture should be writable");
+
+        let result = eval_pack(&root).expect("eval should succeed");
+        let codes: Vec<&str> = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        assert!(codes.contains(&"eval_profile_primitive_unknown"));
+        assert!(codes.contains(&"eval_profile_job_missing"));
 
         let _ = std::fs::remove_dir_all(root);
     }
