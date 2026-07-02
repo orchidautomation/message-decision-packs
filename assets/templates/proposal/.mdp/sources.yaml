@@ -1,0 +1,32 @@
+format: mdp.sources.v0
+purpose: Source ledger for the synthetic proposal sample. Keep source facts separate from review interpretation.
+rules:
+- All sample sources are fictional and public-safe.
+- Do not add raw customer proposal documents, non-public RFPs, screenshots, transcripts, or access-controlled sources to this public template.
+- Mark real proposal work as private scratch or customer-controlled unless explicitly approved and sanitized.
+sources:
+- id: synthetic-rfp-summary
+  kind: synthetic-example
+  locator: docs/demo-scenario.md
+  freshness: generated
+  confidence: demo-only
+  direct_claims:
+  - City of Exampleton issued a fictional permit modernization RFP.
+  - The fictional RFP asks for online permit intake, status notifications, reporting, and training.
+  - The response is due in six weeks in the synthetic scenario.
+  interpretations:
+  - Use this as source context for route/eval demos only.
+  - Do not treat it as a real opportunity, customer, or market signal.
+  gaps:
+  - No real pricing, certifications, references, or implementation history are included.
+- id: synthetic-proof-inventory
+  kind: synthetic-example
+  locator: .mdp/cards/proof-library.yaml
+  freshness: generated
+  confidence: demo-only
+  direct_claims:
+  - The sample includes fictional proof patterns for integration planning, review governance, and training readiness.
+  interpretations:
+  - Proof may be used only as synthetic demo evidence.
+  gaps:
+  - No named customer, certification, or past performance claim is approved.

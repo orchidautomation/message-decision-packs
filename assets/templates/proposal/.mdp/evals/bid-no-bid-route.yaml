@@ -1,0 +1,17 @@
+id: bid-no-bid-route
+command: route
+persona: Proposal Lead
+job: bid no bid review
+expect_load_order_contains:
+- .mdp/cards/proposal-roles.yaml
+- .mdp/cards/proposal-boundaries.yaml
+- .mdp/cards/proposal-output-rules.yaml
+- .mdp/cards/opportunity-context.yaml
+- .mdp/cards/bid-no-bid-rules.yaml
+- .mdp/cards/review-gates.yaml
+- .mdp/cards/gaps.yaml
+expect_entry_titles_contains:
+- Bid/no-bid review gate
+- Bid/no-bid review job
+expect_entry_titles_excludes:
+- Executive brief job

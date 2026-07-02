@@ -1,0 +1,51 @@
+id: proposal-output-rules
+kind: output-rules
+title: Proposal output rules
+description: Output contracts for synthetic proposal review jobs.
+personas:
+- Proposal Lead
+- Solution Owner
+- Executive Reviewer
+tags:
+- proposal
+- output
+- review
+entries:
+- id: label-source-confidence
+  title: Label source confidence
+  body: Every review output should separate source-backed facts, assumptions, and gaps. Use plain labels such as Source-backed, Assumption, Gap, and Decision needed.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  - Executive Reviewer
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - hidden assumption
+  metadata:
+    primitive: output-contracts
+- id: keep-review-shape
+  title: Keep review shape
+  body: For proposal review jobs, return concise sections for decision, rationale, evidence, gaps, risks, and next action. Do not draft final proposal prose unless a later approved output contract allows it.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - docs/plans/2026-07-01-006-docs-proposal-reference-profile-template-plan.md
+  avoid:
+  - final proposal draft
+  metadata:
+    primitive: output-contracts
+- id: no-invented-proof
+  title: No invented proof
+  body: If proof, certification, reference, or past performance is missing, output the gap. Do not rewrite a gap into a confident claim.
+  applies_to:
+  - Solution Owner
+  - Proposal Lead
+  evidence:
+  - synthetic-proof-inventory
+  avoid:
+  - invented certification
+  - invented case study
+  metadata:
+    primitive: output-contracts

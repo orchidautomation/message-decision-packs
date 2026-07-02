@@ -1,0 +1,47 @@
+id: requirement-signals
+kind: signals
+title: Requirement signals
+description: Synthetic RFP requirement signals and interpretation rules.
+personas:
+- Proposal Lead
+- Solution Owner
+tags:
+- requirements
+- compliance
+- source
+entries:
+- id: online-intake-requirement
+  title: Online intake requirement
+  body: The fictional RFP asks for online permit intake and status notifications. Treat this as a requirement signal, not proof that the team can deliver it.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - delivery guarantee
+  metadata:
+    primitive: needs-requirements
+- id: integration-requirement
+  title: Integration requirement
+  body: The fictional RFP asks for integration with an existing records system. The source does not name a real system, so implementation details remain a gap.
+  applies_to:
+  - Solution Owner
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - invented integration
+  metadata:
+    primitive: source-signals
+- id: training-requirement
+  title: Training requirement
+  body: The fictional RFP asks for staff training. Any response should separate approved training proof from assumptions about delivery capacity.
+  applies_to:
+  - Solution Owner
+  - Proposal Lead
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - unsupported training proof
+  metadata:
+    primitive: needs-requirements

@@ -1,0 +1,75 @@
+id: review-gates
+kind: motions
+title: Review gates
+description: Named proposal review jobs and their required gates.
+personas:
+- Proposal Lead
+- Executive Reviewer
+tags:
+- review
+- gate
+- bid
+- compliance
+- proof
+- red-team
+- executive
+entries:
+- id: bid-no-bid-review
+  title: Bid/no-bid review job
+  body: Route opportunity context, bid/no-bid rules, requirement signals, proof gaps, boundaries, and executive risks before recommending proceed, pause, decline, or ask for more context.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - docs/plans/2026-07-01-006-docs-proposal-reference-profile-template-plan.md
+  avoid:
+  - ungrounded proceed
+  metadata:
+    primitive: routing-jobs
+- id: compliance-review
+  title: Compliance review job
+  body: Route requirements, compliance boundaries, source gaps, and output matrix rules. Return requirement status and reviewer questions, not a compliance certification.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  evidence:
+  - docs/plans/2026-07-01-007-docs-proposal-privacy-public-repo-guardrails-plan.md
+  avoid:
+  - certification claim
+  metadata:
+    primitive: routing-jobs
+- id: proof-review
+  title: Win-theme proof review job
+  body: Route proof library, evaluation criteria, requirement signals, and gaps before writing a win-theme or proof brief.
+  applies_to:
+  - Solution Owner
+  - Proposal Lead
+  evidence:
+  - synthetic-proof-inventory
+  avoid:
+  - invented proof
+  metadata:
+    primitive: routing-jobs
+- id: red-team-review
+  title: Red-team gap review job
+  body: Route boundaries, bid/no-bid rules, gaps, and requirement signals to surface contradictions, missing proof, and unsafe asks.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - docs/plans/2026-07-01-006-docs-proposal-reference-profile-template-plan.md
+  avoid:
+  - hidden risk
+  metadata:
+    primitive: routing-jobs
+- id: executive-brief
+  title: Executive brief job
+  body: Route decision criteria, opportunity context, proof status, risks, gaps, and output rules into a concise decision brief.
+  applies_to:
+  - Executive Reviewer
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - verbose raw notes
+  metadata:
+    primitive: routing-jobs
