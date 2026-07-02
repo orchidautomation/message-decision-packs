@@ -168,6 +168,10 @@ primitive_map:
     - linkedin-copy-route
     - email-initial-route
     - call-prep-route
+    - account-context-present
+    - account-context-missing
+    - account-only-no-draft
+    - prompt-output-validation
   evidence-proof:
     cards:
     - claims
@@ -178,6 +182,9 @@ primitive_map:
     evals:
     - fit-insufficient-context
     - brief-insufficient-context
+    - account-context-missing
+    - account-only-no-draft
+    - prompt-output-validation
   needs-requirements:
     cards:
     - pains
@@ -204,6 +211,10 @@ primitive_map:
     - normalize-prospect-row
     input_contracts:
     - prospect
+    evals:
+    - account-context-present
+    - account-context-missing
+    - prompt-output-validation
 input_contracts:
 - id: prospect
   description: Reviewed prospect/source-row input contract for person, account, and relationship context.
@@ -269,9 +280,13 @@ profile_eval:
   - refusal
   - unsafe-output
   - job-routing
+  - account-context-present
+  - account-context-missing
+  - account-only-no-draft
+  - prompt-output-validation
   activation:
     status: ready
-    summary: Starter GTM profile includes primitive coverage and minimum local eval categories.
+    summary: Starter GTM profile includes primitive coverage, account-context fixtures, no-draft coverage, and prompt-output validation.
 cards:
 - id: personas
   path: cards/personas.yaml
