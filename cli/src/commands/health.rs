@@ -2,11 +2,12 @@ use crate::constants::{
     DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
     PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
-use crate::models::{CardKind, PromptFile};
+use crate::models::{CardKind, PromptFile, ValueContract};
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
 use crate::routing::select_cards;
+use crate::value_contracts::PROSPECT_CONTRACT_FIELDS;
 use anyhow::Result;
 use serde_json::{Value, json};
 use serde_yaml::Value as YamlValue;
@@ -270,6 +271,9 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "required_fields",
             "required_signal_fields",
             "required_attributes",
+            "value_contracts",
+            "attribute_definitions",
+            "allow_undeclared_attributes",
         ],
         ".mdp/manifest.yaml#/lead_input_requirements",
         "manifest_lead_input_requirements_unknown_field",
@@ -360,6 +364,97 @@ fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: 
                 "warning",
                 format!(".mdp/manifest.yaml#/lead_input_requirements/required_attributes/{index}"),
                 format!("duplicate required attribute {attribute}"),
+            ));
+        }
+    }
+
+    for (field, contract) in &manifest.lead_input_requirements.value_contracts {
+        if !PROSPECT_CONTRACT_FIELDS.contains(&field.as_str()) {
+            issues.push(issue(
+                "lead_input_value_contract_field_unknown",
+                "error",
+                format!(".mdp/manifest.yaml#/lead_input_requirements/value_contracts/{field}"),
+                format!("value_contracts key {field} must be a supported prospect scalar field"),
+            ));
+        }
+        validate_value_contract(
+            contract,
+            &format!(".mdp/manifest.yaml#/lead_input_requirements/value_contracts/{field}"),
+            issues,
+        );
+    }
+
+    for (attribute, contract) in &manifest.lead_input_requirements.attribute_definitions {
+        if !valid_attribute_key(attribute) {
+            issues.push(issue(
+                "lead_input_attribute_definition_key_invalid",
+                "error",
+                format!(
+                    ".mdp/manifest.yaml#/lead_input_requirements/attribute_definitions/{attribute}"
+                ),
+                "attribute_definitions keys must start with a letter and contain only letters, numbers, underscores, or hyphens",
+            ));
+        }
+        validate_value_contract(
+            contract,
+            &format!(
+                ".mdp/manifest.yaml#/lead_input_requirements/attribute_definitions/{attribute}"
+            ),
+            issues,
+        );
+    }
+}
+
+fn validate_value_contract(contract: &ValueContract, path: &str, issues: &mut Vec<Value>) {
+    if let Some(value_type) = contract.value_type.as_deref() {
+        if !matches!(value_type, "string" | "number" | "integer" | "boolean") {
+            issues.push(issue(
+                "lead_input_value_contract_type_unknown",
+                "error",
+                format!("{path}/type"),
+                format!("value contract type must be string, number, integer, or boolean; found {value_type}"),
+            ));
+        }
+    }
+
+    if let Some(format) = contract.format.as_deref() {
+        if !matches!(format, "date" | "date-time") {
+            issues.push(issue(
+                "lead_input_value_contract_format_unknown",
+                "error",
+                format!("{path}/format"),
+                format!("value contract format must be date or date-time; found {format}"),
+            ));
+        }
+        if contract
+            .value_type
+            .as_deref()
+            .is_some_and(|value_type| value_type != "string")
+        {
+            issues.push(issue(
+                "lead_input_value_contract_format_type",
+                "error",
+                format!("{path}/format"),
+                "date and date-time formats require type: string",
+            ));
+        }
+    }
+
+    let mut seen = BTreeSet::new();
+    for (index, value) in contract.enum_values.iter().enumerate() {
+        if value.trim().is_empty() {
+            issues.push(issue(
+                "lead_input_value_contract_enum_empty",
+                "error",
+                format!("{path}/enum/{index}"),
+                "enum values must not be empty",
+            ));
+        } else if !seen.insert(value) {
+            issues.push(issue(
+                "lead_input_value_contract_enum_duplicate",
+                "warning",
+                format!("{path}/enum/{index}"),
+                format!("duplicate enum value {value}"),
             ));
         }
     }
@@ -1473,6 +1568,14 @@ mod tests {
             "required_attributes: []",
             "required_attributes:\n  - fiscal year",
         );
+        raw = raw.replace(
+            "value_contracts:\n    segment:",
+            "value_contracts:\n    unsupported_field:\n      type: object\n    segment:",
+        );
+        raw = raw.replace(
+            "attribute_definitions:\n    fiscal_year:",
+            "attribute_definitions:\n    renewal date:\n      type: string\n      format: month\n    fiscal_year:",
+        );
         std::fs::write(&manifest_path, raw).expect("manifest should be writable");
 
         let result = validate_pack(&root).expect("validate should return diagnostics");
@@ -1487,6 +1590,10 @@ mod tests {
         assert!(codes.contains(&"lead_input_required_field_unknown"));
         assert!(codes.contains(&"lead_input_required_signal_field_unknown"));
         assert!(codes.contains(&"lead_input_required_attribute_invalid"));
+        assert!(codes.contains(&"lead_input_value_contract_field_unknown"));
+        assert!(codes.contains(&"lead_input_value_contract_type_unknown"));
+        assert!(codes.contains(&"lead_input_attribute_definition_key_invalid"));
+        assert!(codes.contains(&"lead_input_value_contract_format_unknown"));
 
         let _ = std::fs::remove_dir_all(root);
     }

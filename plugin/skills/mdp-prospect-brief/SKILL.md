@@ -11,7 +11,7 @@ This is the row-evaluation path for MDP. Do not create a parallel evaluator in t
 
 Accepted source rows can come from a user note, CSV, CRM export, Clay, Deepline, a spreadsheet, public research notes, or any other supplied row-like input. Clay is one possible source, not the default mental model.
 
-When the pack has `.mdp/prompts/normalize-prospect.yaml`, use it as the upstream normalization contract for messy rows. The prompt should return `normalized_prospect` plus `normalization_trace`; save `normalized_prospect` as the local prospect JSON that feeds the CLI. Do not let the prompt decide final fit.
+When the pack has `.mdp/prompts/normalize-prospect.yaml`, use it as the upstream normalization contract for messy rows. The prompt should return `normalized_prospect` plus `normalization_trace`; validate the full prompt output with `mdp validate-prompt-output`, then save `normalized_prospect` as the local prospect JSON that feeds the CLI. Do not let the prompt decide final fit.
 
 ## Prospect Shape
 
@@ -44,7 +44,7 @@ Preferred fields:
 
 Use prospect `attributes` for reviewed row metadata only. Do not put source evidence there, and do not use entry `metadata` for prospect facts.
 
-Packs may declare readiness requirements in `.mdp/manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`. Treat `mdp fit` as the source of truth for missing or invalid readiness details.
+Packs may declare readiness requirements in `.mdp/manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`. Treat `mdp validate-prompt-output` and `mdp fit` as the source of truth for missing or invalid readiness details. If a prompt emits a persona, segment, source kind, date/date-time, enum, or declared attribute outside the pack-owned contract, do not repair it silently; return the validation issue and ask for reviewed input or a manifest update.
 
 Use provider-neutral `source_kind` values unless a specific source matters:
 
@@ -66,15 +66,21 @@ If the input is account-only and does not include a person name and title, do no
 3. Do not treat LinkedIn URL presence as proof of any claim.
 4. Preserve raw evidence and uncertainty from the row. Do not smooth away disqualifying asks such as scraping contacts, auto-sending sequences, enrichment, or CRM updates.
 5. Preserve row provenance with `source_kind`; mark fictional starter/demo rows with `source_kind: synthetic-example` and `synthetic: true`; do not present them as real prospects.
-6. Check fit before drafting or creating a copy brief:
+6. If the row came from a prompt output, validate the full prompt artifact before saving or using `normalized_prospect`:
+
+```bash
+mdp --json validate-prompt-output --dir . --prompt-id normalize-prospect-row --file <output.json>
+```
+
+7. Check fit before drafting or creating a copy brief:
 
 ```bash
 mdp --json fit --dir . --prospect <prospect.json>
 ```
 
-7. If the user only asked whether the row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, `context.missing_requirements`, `context.invalid_requirements`, and gaps. Do not draft.
-8. If status is `disqualified` or `insufficient-context`, stop before drafting unless the user explicitly overrides.
-9. Run the brief:
+8. If the user only asked whether the row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, `context.missing_requirements`, `context.invalid_requirements`, and gaps. Do not draft.
+9. If status is `disqualified` or `insufficient-context`, stop before drafting unless the user explicitly overrides.
+10. Run the brief:
 
 ```bash
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel>

@@ -220,7 +220,7 @@ persona -> pains -> hooks -> claims/proof -> CTA/channel policy
 
 With `brief --context`, the CLI reads the routed card files locally, selects the relevant entries, and gives the agent those entries first. Whole card paths stay in `context.full_card_required` only when the bounded entry set is not enough.
 
-`mdp fit` stays deterministic and local. It canonicalizes supplied domains and URLs such as `https://www.apple.com/` to `apple.com`, but it does not browse, DNS-check, enrich, or infer a domain from a company name. Packs declare readiness in `manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`; fit output reports missing and invalid requirements instead of asking a model to smooth over gaps.
+`mdp fit` stays deterministic and local. It canonicalizes supplied domains and URLs such as `https://www.apple.com/` to `apple.com`, but it does not browse, DNS-check, enrich, or infer a domain from a company name. Packs declare readiness in `manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`; fit output reports missing and invalid requirements instead of asking a model to smooth over gaps.
 
 ## Channel Rule Taxonomy
 
@@ -261,6 +261,30 @@ lead_input_requirements:
   required_attributes:
     - segment_tier
     - fiscal_year
+  value_contracts:
+    segment:
+      type: string
+      enum:
+        - agent-assisted GTM
+    source_kind:
+      type: string
+      enum:
+        - user-provided-row
+        - csv-row
+        - crm-export-row
+        - clay-row
+        - deepline-row
+        - private-scratch-row
+        - sanitized-example
+        - synthetic-example
+  attribute_definitions:
+    segment_tier:
+      type: string
+      enum:
+        - enterprise
+        - mid-market
+    fiscal_year:
+      type: string
 ```
 
 Then supply those keys in the prospect JSON that feeds `mdp fit`:
@@ -288,7 +312,7 @@ Then supply those keys in the prospect JSON that feeds `mdp fit`:
 }
 ```
 
-If a required prospect attribute is missing, `mdp fit` reports it in `missing_requirements`. Attribute keys and values are validated as bounded reviewed metadata; put evidence and provenance in `signals[].source`, not in `attributes`.
+If a required prospect attribute is missing, `mdp fit` reports it in `missing_requirements`. If a prompt output or prospect row emits a non-blessed enum, wrong type, invalid date/date-time, or undeclared attribute when the pack opts out of undeclared attributes, the CLI reports it in prompt-output issues or `context.invalid_requirements`. Attribute keys and values are validated as bounded reviewed metadata; put evidence and provenance in `signals[].source`, not in `attributes`.
 
 For entry `metadata`, add advisory custom annotations to card entries:
 

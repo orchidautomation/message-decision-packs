@@ -58,6 +58,28 @@ lead_input_requirements:
   required_signal_fields:
   - source
   required_attributes: []
+  value_contracts:
+    segment:
+      type: string
+      enum:
+      - agent-assisted GTM
+      description: Pack-owned segment labels accepted from normalization prompts.
+    source_kind:
+      type: string
+      enum:
+      - user-provided-row
+      - csv-row
+      - crm-export-row
+      - clay-row
+      - deepline-row
+      - private-scratch-row
+      - sanitized-example
+      - synthetic-example
+      description: Provider-neutral source markers accepted from normalization prompts.
+  attribute_definitions:
+    fiscal_year:
+      type: string
+      description: Optional reviewed account metadata. Keep proof in signals, not attributes.
 cards:
 - id: personas
   path: cards/personas.yaml

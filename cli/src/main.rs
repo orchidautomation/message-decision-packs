@@ -8,6 +8,7 @@ mod pack_io;
 mod routing;
 mod starter;
 mod utils;
+mod value_contracts;
 
 use crate::cli::Cli;
 use crate::output::print_error;

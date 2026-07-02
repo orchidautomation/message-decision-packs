@@ -6,6 +6,7 @@ use crate::utils::{
     normalize_supplied_company_domain, prospect_haystack_with_persona, resolve_persona,
     resolve_persona_label, routable_persona,
 };
+use crate::value_contracts::prospect_contract_violations;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -196,6 +197,14 @@ fn fit_context(
         }));
     }
     collect_attribute_issues(prospect, &mut invalid_requirements);
+    for violation in prospect_contract_violations(manifest, prospect) {
+        invalid_requirements.push(json!({
+            "scope": violation.scope,
+            "field": violation.field,
+            "path": violation.path,
+            "reason": violation.reason
+        }));
+    }
 
     for field in &manifest.lead_input_requirements.required_fields {
         if !prospect_field_present(field, prospect, persona_resolution) {
@@ -1424,6 +1433,42 @@ mod tests {
                 .expect("missing array")
                 .iter()
                 .any(|value| value == "attributes.fiscal_year")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_reports_invalid_pack_owned_segment_value() {
+        let root = temp_pack("fit-invalid-segment-contract");
+        let prospect_path = root.join("examples").join("invalid-segment.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "GTM Engineering Lead",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "persona": "GTM Engineering",
+  "segment": "enterprise SaaS",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert!(
+            result["context"]["invalid_requirements"]
+                .as_array()
+                .expect("invalid requirements array")
+                .iter()
+                .any(|issue| issue["path"] == "segment"
+                    && issue["reason"]
+                        .as_str()
+                        .is_some_and(|reason| reason.contains("agent-assisted GTM")))
         );
 
         let _ = std::fs::remove_dir_all(root);

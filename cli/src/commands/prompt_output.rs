@@ -1,7 +1,8 @@
 use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT};
-use crate::models::{CardKind, PromptFile};
+use crate::models::{CardKind, Manifest, PromptFile};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
 use crate::utils::normalize_supplied_company_domain;
+use crate::value_contracts::normalized_prospect_contract_violations;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -49,7 +50,8 @@ pub(crate) fn validate_prompt_output_file(
         ));
     }
 
-    validate_output_against_prompt(&prompt, &output, &artifact_path, &mut issues);
+    let manifest = read_manifest(root)?;
+    validate_output_against_prompt(&manifest, &prompt, &output, &artifact_path, &mut issues);
     validate_card_collisions(root, &prompt, &output, &artifact_path, &mut issues)?;
 
     Ok(json!({
@@ -142,6 +144,7 @@ fn parse_prompt_output(raw: &str) -> Result<(Value, bool)> {
 }
 
 fn validate_output_against_prompt(
+    manifest: &Manifest,
     prompt: &PromptFile,
     output: &Value,
     path: &str,
@@ -235,6 +238,7 @@ fn validate_output_against_prompt(
 
     if output_kind == "prospect-normalization" {
         validate_normalized_prospect(
+            manifest,
             output.get("normalized_prospect"),
             &format!("{path}#/normalized_prospect"),
             issues,
@@ -618,7 +622,12 @@ fn validate_rejected_claims(value: Option<&Value>, path: &str, issues: &mut Vec<
     }
 }
 
-fn validate_normalized_prospect(value: Option<&Value>, path: &str, issues: &mut Vec<Value>) {
+fn validate_normalized_prospect(
+    manifest: &Manifest,
+    value: Option<&Value>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
     let Some(prospect) = value.and_then(Value::as_object) else {
         issues.push(issue(
             "prompt_output_normalized_prospect_type",
@@ -724,6 +733,15 @@ fn validate_normalized_prospect(value: Option<&Value>, path: &str, issues: &mut 
     }
     if let Some(attributes) = prospect.get("attributes") {
         validate_attributes(attributes, &format!("{path}/attributes"), issues);
+    }
+
+    for violation in normalized_prospect_contract_violations(manifest, prospect, path) {
+        issues.push(issue(
+            violation.code,
+            "error",
+            violation.path,
+            violation.reason,
+        ));
     }
 }
 
@@ -1404,6 +1422,150 @@ mod tests {
                 .expect("issues array")
                 .iter()
                 .any(|issue| issue["code"] == "prompt_output_fake_person")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_non_pack_persona_and_segment_values() {
+        let root = temp_pack("value-contracts");
+        let path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "company_domain": "example.com",
+    "company_name": "ExampleCo",
+    "person_name": "Alex Rivera",
+    "person_title": "Sales Development Lead",
+    "account_name": "ExampleCo",
+    "inputs_used": ["raw_row"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "Alex Rivera",
+    "title": "Sales Development Lead",
+    "company": "ExampleCo",
+    "company_domain": "example.com",
+    "source_kind": "user-provided-row",
+    "persona": "Sales Development",
+    "segment": "enterprise SaaS",
+    "trigger": "testing a value contract",
+    "signals": [
+      {
+        "id": "contract-test",
+        "title": "Contract test",
+        "source": "raw_row.note"
+      }
+    ],
+    "attributes": {
+      "fiscal_year": "FY2027"
+    }
+  },
+  "normalization_trace": {
+    "persona": {},
+    "fit_readiness": {},
+    "preserved_raw_fields": ["raw_row"],
+    "missing_required": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
+                .expect("validation should return diagnostics");
+        let codes: Vec<&str> = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        assert!(codes.contains(&"value_contract_persona_unrecognized"));
+        assert!(codes.contains(&"value_contract_enum_mismatch"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_invalid_declared_attribute_date() {
+        let root = temp_pack("attribute-date-contract");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace(
+                "    fiscal_year:\n      type: string\n      description: Optional reviewed account metadata. Keep proof in signals, not attributes.",
+                "    fiscal_year:\n      type: string\n      description: Optional reviewed account metadata. Keep proof in signals, not attributes.\n    next_review_date:\n      type: string\n      format: date\n      required: true",
+            ),
+        )
+        .expect("manifest should be writable");
+        let path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "company_domain": "example.com",
+    "company_name": "ExampleCo",
+    "person_name": "Alex Rivera",
+    "person_title": "GTM Engineering Lead",
+    "account_name": "ExampleCo",
+    "inputs_used": ["raw_row"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "Alex Rivera",
+    "title": "GTM Engineering Lead",
+    "company": "ExampleCo",
+    "company_domain": "example.com",
+    "source_kind": "user-provided-row",
+    "persona": "GTM Engineering",
+    "segment": "agent-assisted GTM",
+    "trigger": "testing a value contract",
+    "signals": [
+      {
+        "id": "contract-test",
+        "title": "Contract test",
+        "source": "raw_row.note"
+      }
+    ],
+    "attributes": {
+      "fiscal_year": "FY2027",
+      "next_review_date": "next Friday"
+    }
+  },
+  "normalization_trace": {
+    "persona": {},
+    "fit_readiness": {},
+    "preserved_raw_fields": ["raw_row"],
+    "missing_required": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "value_contract_format_mismatch")
         );
 
         let _ = std::fs::remove_dir_all(root);

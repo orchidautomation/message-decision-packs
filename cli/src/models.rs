@@ -32,6 +32,15 @@ pub(crate) struct LeadInputRequirements {
     pub(crate) required_signal_fields: Vec<String>,
     #[serde(default)]
     pub(crate) required_attributes: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) value_contracts: BTreeMap<String, ValueContract>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) attribute_definitions: BTreeMap<String, ValueContract>,
+    #[serde(
+        default = "default_allow_undeclared_attributes",
+        skip_serializing_if = "is_true"
+    )]
+    pub(crate) allow_undeclared_attributes: bool,
 }
 
 impl Default for LeadInputRequirements {
@@ -45,8 +54,33 @@ impl Default for LeadInputRequirements {
             ],
             required_signal_fields: vec!["source".to_string()],
             required_attributes: Vec::new(),
+            value_contracts: BTreeMap::new(),
+            attribute_definitions: BTreeMap::new(),
+            allow_undeclared_attributes: default_allow_undeclared_attributes(),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ValueContract {
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub(crate) value_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) format: Option<String>,
+    #[serde(default, rename = "enum", skip_serializing_if = "Vec::is_empty")]
+    pub(crate) enum_values: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) description: Option<String>,
+}
+
+fn default_allow_undeclared_attributes() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Debug, Serialize, Deserialize)]

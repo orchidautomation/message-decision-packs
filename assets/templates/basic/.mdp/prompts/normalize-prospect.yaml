@@ -77,8 +77,8 @@ output_contract:
       company_domain: example.com
       company_url: https://example.com
       name: Alex Rivera
-      persona: Revenue Operations
-      segment: B2B GTM operations
+      persona: GTM Engineering
+      segment: agent-assisted GTM
       signals:
       - confidence: medium
         freshness: N/A

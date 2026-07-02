@@ -92,7 +92,7 @@ JSON errors use stable top-level codes where the CLI can classify the failure: `
 
 Use `mdp --json schema prompt` to inspect the reusable prompt contract. Prompt outputs use `contract: mdp.prompt-output.v0` and must match the contract named by each prompt's `output_contract.schema_ref`; starter prompts can inline the full JSON Schema with `mdp init --include-output-schemas`. Extraction prompts preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance; normalization prompts preserve `normalized_prospect`, `normalization_trace`, gaps, and empty `card_patches`. Prompt files are local decision contracts, not browsing, scraping, enrichment, sending, sequencing, or CRM-update workflows.
 
-Treat model-produced prompt output as untrusted review input. Run `mdp --json validate-prompt-output` before copying reviewed `card_patches` into cards or saving `normalized_prospect` for `mdp fit` and `mdp brief`. The validator rejects markdown-wrapped JSON, wrong prompt identity, undeclared input references, wrong card kinds, fake-person normalization, and candidate ID collisions with existing card entries.
+Treat model-produced prompt output as untrusted review input. Run `mdp --json validate-prompt-output` before copying reviewed `card_patches` into cards or saving `normalized_prospect` for `mdp fit` and `mdp brief`. The validator rejects markdown-wrapped JSON, wrong prompt identity, undeclared input references, wrong card kinds, fake-person normalization, candidate ID collisions with existing card entries, and normalized values outside pack-owned value contracts.
 
 Prospect input keeps a compatibility path for `name`, `title`, and `company`, but new lead workflows should prefer `company_domain` as the account key. `mdp fit` canonicalizes supplied domain-like values such as `https://www.apple.com/` to `apple.com`; it does not infer a domain from a company name. Packs can declare deterministic readiness requirements in `manifest.yaml`:
 
@@ -110,9 +110,29 @@ lead_input_requirements:
     - source
   required_attributes:
     - fiscal_year
+  value_contracts:
+    segment:
+      type: string
+      enum:
+        - agent-assisted GTM
+    source_kind:
+      type: string
+      enum:
+        - user-provided-row
+        - csv-row
+        - crm-export-row
+        - clay-row
+        - deepline-row
+        - private-scratch-row
+        - sanitized-example
+        - synthetic-example
+  attribute_definitions:
+    fiscal_year:
+      type: string
+      description: Optional reviewed account metadata.
 ```
 
-`mdp fit` reports `data.context.missing_requirements`, `data.context.invalid_requirements`, and the compatibility `data.context.missing` list. Use `attributes` only for bounded reviewed metadata such as fiscal year or segment tier; put evidence and provenance in `signals[].source`.
+`mdp fit` reports `data.context.missing_requirements`, `data.context.invalid_requirements`, and the compatibility `data.context.missing` list. Use `attributes` only for bounded reviewed metadata such as fiscal year or segment tier; put evidence and provenance in `signals[].source`. Use `value_contracts` and `attribute_definitions` when prompt outputs need exact enum, type, date, or date-time validation.
 
 Success:
 

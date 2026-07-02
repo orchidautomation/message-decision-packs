@@ -55,7 +55,7 @@ source material
 
 When prospect context is missing, weak, disqualified, or unsupported, the agent should stop and surface the no-draft reason instead of smoothing gaps into confident copy.
 
-New lead workflows should prefer `company_domain` as the account key while preserving `company` as the human-readable company name and legacy admission field. `mdp fit` canonicalizes supplied domains/URLs such as `https://www.apple.com/` to `apple.com`, but it does not infer domains from company names. Packs can declare readiness with `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`; fit output reports missing and invalid requirements.
+New lead workflows should prefer `company_domain` as the account key while preserving `company` as the human-readable company name and legacy admission field. `mdp fit` canonicalizes supplied domains/URLs such as `https://www.apple.com/` to `apple.com`, but it does not infer domains from company names. Packs can declare readiness with `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`; `validate-prompt-output` and `fit` report missing or invalid enum, type, date/date-time, persona, segment, source_kind, and attribute requirements.
 
 Proposal reference-profile flow:
 

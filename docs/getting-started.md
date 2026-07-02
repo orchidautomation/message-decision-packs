@@ -135,6 +135,26 @@ lead_input_requirements:
   required_signal_fields:
     - source
   required_attributes: []
+  value_contracts:
+    segment:
+      type: string
+      enum:
+        - agent-assisted GTM
+    source_kind:
+      type: string
+      enum:
+        - user-provided-row
+        - csv-row
+        - crm-export-row
+        - clay-row
+        - deepline-row
+        - private-scratch-row
+        - sanitized-example
+        - synthetic-example
+  attribute_definitions:
+    fiscal_year:
+      type: string
+      description: Optional reviewed account metadata.
 ```
 
 For a real lead row, prefer this shape:
@@ -162,7 +182,7 @@ For a real lead row, prefer this shape:
 }
 ```
 
-`company_domain` is canonicalized only from supplied domain-like values. `https://www.apple.com/` becomes `apple.com`; MDP does not browse, DNS-check, enrich, or infer a domain from `company`. Use `attributes` for bounded reviewed metadata like fiscal year or segment tier, and use `signals[].source` for evidence.
+`company_domain` is canonicalized only from supplied domain-like values. `https://www.apple.com/` becomes `apple.com`; MDP does not browse, DNS-check, enrich, or infer a domain from `company`. Use `attributes` for bounded reviewed metadata like fiscal year or segment tier, and use `signals[].source` for evidence. Prompt output and `fit` readiness also enforce pack-owned value contracts, so values such as `segment`, `source_kind`, and declared attributes must match the manifest.
 
 Then check fit before drafting:
 

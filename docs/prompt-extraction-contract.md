@@ -151,8 +151,8 @@ Use `mdp --json schema prompt` to inspect the machine-readable prompt contract.
     "company_url": "https://example.com",
     "background": "Source row says the team is standardizing campaign qualification data across CRM exports, spreadsheets, and research notes.",
     "trigger": "Standardizing prospect qualification data before routing new campaigns.",
-    "persona": "Revenue Operations",
-    "segment": "B2B GTM operations",
+    "persona": "GTM Engineering",
+    "segment": "agent-assisted GTM",
     "signals": [
       {
         "id": "qualification-data-standardization",
