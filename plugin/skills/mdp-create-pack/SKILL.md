@@ -1,6 +1,6 @@
 ---
 name: mdp-create-pack
-description: Use when the user wants to create a new Message Decision Pack from messy GTM context, product notes, ICP notes, positioning docs, sales context, or a blank workspace. Creates or improves `.mdp/` cards and validates with `mdp`.
+description: Use when the user wants to create a new Message Decision Pack from messy GTM or proposal context, product notes, ICP notes, positioning docs, sales/proposal context, or a blank workspace. Creates or improves `.mdp/` cards and validates with `mdp`.
 ---
 
 # MDP Create Pack
@@ -18,10 +18,12 @@ mdp --json doctor --dir .
 
 2. State the destination directory before writing. If Brandon did not specify one, use the current workspace root for durable work or an ignored scratch path for disposable demos. Do not silently create a pack in `$HOME`.
 
-3. If no pack exists, initialize:
+3. If no pack exists, initialize with the closest template. Use `gtm` for generic messaging packs and `proposal` only when the user is explicitly building a proposal/RFP/capture review pack:
 
 ```bash
 mdp --json init --template gtm --name "<pack name>" --dir .
+# or
+mdp --json init --template proposal --dir .
 ```
 
 4. Build the source ledger before writing cards. Add public URLs, user-provided docs, or note identifiers to `.mdp/sources.yaml`; separate direct source claims from interpretation; preserve missing proof in `gaps.yaml`.
@@ -67,6 +69,8 @@ mdp --json init --template gtm --name "<pack name>" --dir .
 - `.mdp/cards/gaps.yaml`
 - `.mdp/evals/*.yaml`
 - `.mdp/prompts/normalize-prospect.yaml`
+
+For proposal packs, keep the template's profile-owned card IDs and review jobs unless the user explicitly asks for a new proposal profile. Proposal packs may not have GTM prompt files by default; do not invent private proposal content or overwrite customer material.
 
 Work in slices instead of rewriting the whole pack at once:
 

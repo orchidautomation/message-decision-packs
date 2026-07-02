@@ -136,6 +136,14 @@ mdp --json gaps --dir /tmp/mdp-demo
 mdp --json eval --dir /tmp/mdp-demo
 ```
 
+Available starter templates are `gtm` for the generic GTM messaging pack and `proposal` for the synthetic proposal reference profile:
+
+```bash
+mdp --json init --template proposal --dir /tmp/mdp-proposal-demo --force
+mdp --json validate --dir /tmp/mdp-proposal-demo
+mdp --json eval --dir /tmp/mdp-proposal-demo
+```
+
 ## Pack Layout
 
 A pack is a local `.mdp/` folder:

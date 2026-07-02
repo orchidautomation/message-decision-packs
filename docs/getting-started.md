@@ -51,6 +51,19 @@ mdp --json validate --dir ./mdp-demo
 mdp --json eval --dir ./mdp-demo
 ```
 
+Available templates are:
+
+- `gtm`: the generic GTM messaging starter.
+- `proposal`: the synthetic proposal reference profile for bid/no-bid, compliance, proof, red-team, and executive review workflows.
+
+For the proposal reference profile:
+
+```bash
+mdp --json init --template proposal --dir ./mdp-proposal-demo --force
+mdp --json validate --dir ./mdp-proposal-demo
+mdp --json eval --dir ./mdp-proposal-demo
+```
+
 The starter creates:
 
 ```text

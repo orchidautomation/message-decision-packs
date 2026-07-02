@@ -10,8 +10,136 @@ use crate::starter::{
 use crate::utils::slugify;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
+use serde_yaml::Value as YamlValue;
+use std::borrow::Cow;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+const AVAILABLE_TEMPLATES: &str = "gtm, proposal";
+const PROPOSAL_TEMPLATE_NAME: &str = "Proposal Reference Profile Sample";
+
+const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
+    (
+        ".mdp/manifest.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/manifest.yaml"),
+    ),
+    (
+        ".mdp/sources.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/sources.yaml"),
+    ),
+    (
+        ".mdp/cards/bid-no-bid-rules.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/bid-no-bid-rules.yaml"),
+    ),
+    (
+        ".mdp/cards/compliance-boundaries.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/cards/compliance-boundaries.yaml"
+        ),
+    ),
+    (
+        ".mdp/cards/evaluation-criteria.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/cards/evaluation-criteria.yaml"
+        ),
+    ),
+    (
+        ".mdp/cards/gaps.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/gaps.yaml"),
+    ),
+    (
+        ".mdp/cards/opportunity-context.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/cards/opportunity-context.yaml"
+        ),
+    ),
+    (
+        ".mdp/cards/proof-library.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/proof-library.yaml"),
+    ),
+    (
+        ".mdp/cards/proposal-boundaries.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/cards/proposal-boundaries.yaml"
+        ),
+    ),
+    (
+        ".mdp/cards/proposal-output-rules.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/cards/proposal-output-rules.yaml"
+        ),
+    ),
+    (
+        ".mdp/cards/proposal-roles.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/proposal-roles.yaml"),
+    ),
+    (
+        ".mdp/cards/requirement-signals.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/cards/requirement-signals.yaml"
+        ),
+    ),
+    (
+        ".mdp/cards/requirements-matrix.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/cards/requirements-matrix.yaml"
+        ),
+    ),
+    (
+        ".mdp/cards/review-gates.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/review-gates.yaml"),
+    ),
+    (
+        ".mdp/cards/review-outputs.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/cards/review-outputs.yaml"),
+    ),
+    (
+        ".mdp/evals/bid-no-bid-route.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/evals/bid-no-bid-route.yaml"),
+    ),
+    (
+        ".mdp/evals/compliance-route.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/evals/compliance-route.yaml"),
+    ),
+    (
+        ".mdp/evals/compliance-unsupported-claim.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/compliance-unsupported-claim.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/fit-insufficient-context.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/fit-insufficient-context.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/fit-policy-bypass-disqualified.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/fit-policy-bypass-disqualified.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/invented-proof-guardrail.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/invented-proof-guardrail.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-review-route.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-review-route.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proposal-gaps.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/evals/proposal-gaps.yaml"),
+    ),
+    (
+        ".mdp/evals/red-team-route.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/evals/red-team-route.yaml"),
+    ),
+];
 
 pub(crate) fn init_pack(
     root: &Path,
@@ -20,9 +148,20 @@ pub(crate) fn init_pack(
     force: bool,
     include_output_schemas: bool,
 ) -> Result<Value> {
-    if template != "gtm" {
-        return Err(anyhow!("unsupported template '{template}'; available: gtm"));
+    match template {
+        "gtm" => init_gtm_pack(root, name, template, force, include_output_schemas),
+        "proposal" => init_proposal_pack(root, name, force),
+        _ => Err(unsupported_template(template)),
     }
+}
+
+fn init_gtm_pack(
+    root: &Path,
+    name: &str,
+    template: &str,
+    force: bool,
+    include_output_schemas: bool,
+) -> Result<Value> {
     let pack_dir = root.join(DEFAULT_DIR);
     let cards_dir = pack_dir.join("cards");
     let briefs_dir = pack_dir.join("briefs");
@@ -82,9 +221,20 @@ pub(crate) fn init_pack_dry_run(
     force: bool,
     include_output_schemas: bool,
 ) -> Result<Value> {
-    if template != "gtm" {
-        return Err(anyhow!("unsupported template '{template}'; available: gtm"));
+    match template {
+        "gtm" => init_gtm_pack_dry_run(root, name, template, force, include_output_schemas),
+        "proposal" => init_proposal_pack_dry_run(root, name, force),
+        _ => Err(unsupported_template(template)),
     }
+}
+
+fn init_gtm_pack_dry_run(
+    root: &Path,
+    name: &str,
+    template: &str,
+    force: bool,
+    include_output_schemas: bool,
+) -> Result<Value> {
     let pack_dir = root.join(DEFAULT_DIR);
     let cards_dir = pack_dir.join("cards");
     let briefs_dir = pack_dir.join("briefs");
@@ -144,6 +294,99 @@ pub(crate) fn init_pack_dry_run(
     Ok(payload)
 }
 
+fn init_proposal_pack(root: &Path, name: &str, force: bool) -> Result<Value> {
+    for directory in proposal_template_dirs(root) {
+        fs::create_dir_all(&directory)
+            .with_context(|| format!("creating {}", directory.display()))?;
+    }
+    for (relative_path, contents) in PROPOSAL_TEMPLATE_FILES {
+        let contents = proposal_template_contents(relative_path, contents, name)?;
+        write_embedded_text(root, relative_path, contents.as_ref(), force)?;
+    }
+    Ok(proposal_init_payload(root, name))
+}
+
+fn init_proposal_pack_dry_run(root: &Path, name: &str, force: bool) -> Result<Value> {
+    let mut payload = proposal_init_payload(root, name);
+    let mut write_plan = proposal_template_dirs(root)
+        .into_iter()
+        .map(|path| planned_directory(&path))
+        .collect::<Vec<_>>();
+    for (relative_path, _) in PROPOSAL_TEMPLATE_FILES {
+        write_plan.push(planned_yaml_write_after_dirs(
+            &root.join(relative_path),
+            force,
+        ));
+    }
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("dry_run".to_string(), json!(true));
+        object.insert("template".to_string(), json!("proposal"));
+        object.insert("slug".to_string(), json!(slugify(name)));
+        object.insert("force".to_string(), json!(force));
+        object.insert("write_plan".to_string(), Value::Array(write_plan));
+    }
+    Ok(payload)
+}
+
+fn proposal_template_dirs(root: &Path) -> Vec<PathBuf> {
+    let pack_dir = root.join(DEFAULT_DIR);
+    vec![
+        pack_dir.clone(),
+        pack_dir.join("briefs"),
+        pack_dir.join("cards"),
+        pack_dir.join("evals"),
+    ]
+}
+
+fn write_embedded_text(
+    root: &Path,
+    relative_path: &str,
+    contents: &str,
+    force: bool,
+) -> Result<()> {
+    let path = root.join(relative_path);
+    if path.exists() && !force {
+        return Err(anyhow!(
+            "{} already exists; pass --force to overwrite",
+            path.display()
+        ));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))
+}
+
+fn proposal_template_contents(
+    relative_path: &str,
+    contents: &'static str,
+    name: &str,
+) -> Result<Cow<'static, str>> {
+    if relative_path != ".mdp/manifest.yaml" || name == PROPOSAL_TEMPLATE_NAME {
+        return Ok(Cow::Borrowed(contents));
+    }
+    let mut manifest: YamlValue =
+        serde_yaml::from_str(contents).context("parsing embedded proposal manifest")?;
+    let map = manifest
+        .as_mapping_mut()
+        .ok_or_else(|| anyhow!("embedded proposal manifest must be a mapping"))?;
+    map.insert(
+        YamlValue::String("id".to_string()),
+        YamlValue::String(slugify(name)),
+    );
+    map.insert(
+        YamlValue::String("name".to_string()),
+        YamlValue::String(name.to_string()),
+    );
+    Ok(Cow::Owned(
+        serde_yaml::to_string(&manifest).context("serializing embedded proposal manifest")?,
+    ))
+}
+
+fn unsupported_template(template: &str) -> anyhow::Error {
+    anyhow!("unsupported template '{template}'; available: {AVAILABLE_TEMPLATES}")
+}
+
 fn init_payload(
     root: &Path,
     pack_dir: &Path,
@@ -172,6 +415,36 @@ fn init_payload(
             format!("mdp --json fit --dir {} --prospect {}", root.display(), prospect_path.display()),
             format!("mdp --json --summary brief --dir {} --prospect {} --channel linkedin", root.display(), prospect_path.display()),
             format!("mdp --json eval --dir {}", root.display())
+        ]
+    })
+}
+
+fn proposal_init_payload(root: &Path, name: &str) -> Value {
+    let pack_dir = root.join(DEFAULT_DIR);
+    let manifest_path = pack_dir.join("manifest.yaml");
+    let source_ledger_path = pack_dir.join("sources.yaml");
+    let cards_dir = pack_dir.join("cards");
+    let evals_dir = pack_dir.join("evals");
+    json!({
+        "format": FORMAT_VERSION,
+        "template": "proposal",
+        "name": name,
+        "slug": slugify(name),
+        "root": root.display().to_string(),
+        "pack_dir": pack_dir.display().to_string(),
+        "manifest": manifest_path.display().to_string(),
+        "source_ledger": source_ledger_path.display().to_string(),
+        "cards_dir": cards_dir.display().to_string(),
+        "evals_dir": evals_dir.display().to_string(),
+        "prompts_dir": Value::Null,
+        "example_prospect": Value::Null,
+        "example_prospect_kind": Value::Null,
+        "next_commands": [
+            format!("mdp --json validate --dir {}", root.display()),
+            format!("mdp --json eval --dir {}", root.display()),
+            format!("mdp --json route --entries --dir {} --persona \\\"Proposal Lead\\\" --job \\\"bid no bid review\\\"", root.display()),
+            format!("mdp --json gaps --dir {}", root.display()),
+            format!("mdp --json check-claims --dir {} --persona \\\"Proposal Lead\\\" --job \\\"compliance review\\\" --text \\\"The sample team is CMMC compliant.\\\"", root.display())
         ]
     })
 }
@@ -248,6 +521,108 @@ mod tests {
         assert!(normalization_prompt.contains("normalized_prospect:"));
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn generated_proposal_starter_matches_plugin_template_pack_files() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-proposal-golden-{nonce}"));
+        let result = init_pack(&root, PROPOSAL_TEMPLATE_NAME, "proposal", true, false)
+            .expect("proposal pack should initialize");
+        let plugin_template =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/proposal");
+
+        let generated_files = collect_files(&root);
+        let mut plugin_files = collect_files(&plugin_template);
+        plugin_files.remove("README.md");
+        assert_eq!(generated_files, plugin_files);
+        assert!(root.join(".mdp").join("briefs").is_dir());
+        assert_eq!(result["template"], "proposal");
+        assert_eq!(result["example_prospect"], Value::Null);
+
+        for relative in generated_files {
+            let generated =
+                std::fs::read(root.join(&relative)).expect("generated file should be readable");
+            let checked_in = std::fs::read(plugin_template.join(&relative))
+                .expect("plugin template file should be readable");
+            assert_eq!(generated, checked_in, "template drift in {relative}");
+        }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn proposal_init_uses_custom_name_when_supplied() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-proposal-name-{nonce}"));
+
+        let result = init_pack(&root, "Proposal Pack", "proposal", true, false)
+            .expect("proposal pack should initialize");
+
+        let manifest = std::fs::read_to_string(root.join(".mdp").join("manifest.yaml"))
+            .expect("proposal manifest should be readable");
+        assert!(manifest.contains("id: proposal-pack"));
+        assert!(manifest.contains("name: Proposal Pack"));
+        assert_eq!(result["name"], "Proposal Pack");
+        assert_eq!(result["slug"], "proposal-pack");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn proposal_dry_run_reports_template_writes_without_creating_pack() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-proposal-dry-run-{nonce}"));
+
+        let result = init_pack_dry_run(&root, "Proposal Pack", "proposal", false, false)
+            .expect("proposal dry run should return plan");
+
+        assert_eq!(result["dry_run"], true);
+        assert_eq!(result["template"], "proposal");
+        assert!(!root.exists());
+        assert!(
+            result["write_plan"]
+                .as_array()
+                .expect("write plan array")
+                .iter()
+                .any(|entry| entry["path"]
+                    == root
+                        .join(".mdp")
+                        .join("evals")
+                        .join("proposal-gaps.yaml")
+                        .display()
+                        .to_string()
+                    && entry["action"] == "create")
+        );
+    }
+
+    #[test]
+    fn unsupported_template_lists_available_templates() {
+        let root = std::env::temp_dir().join(format!("mdp-unsupported-template-{}", nonce()));
+
+        let err = init_pack(&root, "Bad Template", "unknown", true, false)
+            .expect_err("unknown template should fail");
+
+        assert_eq!(
+            err.to_string(),
+            "unsupported template 'unknown'; available: gtm, proposal"
+        );
+    }
+
+    fn nonce() -> u128 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos()
     }
 
     fn collect_files(root: &Path) -> BTreeSet<String> {

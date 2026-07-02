@@ -12,7 +12,8 @@ pub(crate) fn capabilities() -> Value {
         "defaults": {
             "pack_dir": DEFAULT_DIR,
             "offline_by_default": true,
-            "auth_required": false
+            "auth_required": false,
+            "init_templates": ["gtm", "proposal"]
         },
         "global_options": [
             {"name": "--json", "description": "Emit stable machine-readable JSON"},

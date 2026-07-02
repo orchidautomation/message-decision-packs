@@ -24,11 +24,15 @@ pub(crate) enum Commands {
     Capabilities,
     #[command(about = "Create a starter MDP package")]
     Init {
-        #[arg(long)]
-        name: String,
+        #[arg(long, help = "Pack display name; defaults by template")]
+        name: Option<String>,
         #[arg(long, default_value = ".")]
         dir: PathBuf,
-        #[arg(long, default_value = "gtm")]
+        #[arg(
+            long,
+            default_value = "gtm",
+            help = "Starter template to write (available: gtm, proposal)"
+        )]
         template: String,
         #[arg(long, help = "Overwrite existing starter files")]
         force: bool,
