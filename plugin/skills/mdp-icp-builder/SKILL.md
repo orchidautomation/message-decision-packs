@@ -7,6 +7,10 @@ description: "Use to codify MDP ICP and fit cards: segments, personas, disqualif
 
 Turn fuzzy ICP thinking into explicit pack content that agents can route against.
 
+## Progressive References
+
+Read `references/gtm-account-context.md` when the user asks where company-level ICP, account qualification, headcount, revenue, segment tier, account-only no-draft behavior, or person-level readiness should live.
+
 ## Profile Gate
 
 Before editing an existing pack, run:

@@ -5,6 +5,13 @@ description: Use when the user wants to create a new Message Decision Pack from 
 
 # MDP Create Pack
 
+## Progressive References
+
+Load these files only when needed:
+
+- Read `references/profile-primitives-map.md` when mapping GTM or proposal vocabulary onto the universal MDP primitives, or when deciding whether a concept should become a new core object.
+- For fuzzy orchestration, prompt-output validation, or installed-template QA, return to `$mdp-lfg` and its progressive references.
+
 ## Profile Gate
 
 Before using this skill against an existing pack, run:

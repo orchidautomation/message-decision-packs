@@ -1,0 +1,35 @@
+{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "inputs_used": ["source-assets/test-prospects.md"],
+    "account_name": "InventedCo",
+    "company_name": "InventedCo",
+    "company_domain": "invented.example",
+    "person_name": "Invented Person",
+    "person_title": "Chief Automation Buyer",
+    "confidence": "high"
+  },
+  "normalized_prospect": {
+    "name": "Invented Person",
+    "title": "Chief Automation Buyer",
+    "company": "InventedCo",
+    "company_domain": "invented.example",
+    "source_kind": "made-up-source",
+    "synthetic": false,
+    "persona": "Enterprise Revenue Wizard",
+    "segment": "enterprise",
+    "signals": [],
+    "attributes": {}
+  },
+  "normalization_trace": {
+    "fit_readiness": {
+      "ready_for_mdp_fit": true
+    },
+    "missing_required": [],
+    "preserved_raw_fields": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}

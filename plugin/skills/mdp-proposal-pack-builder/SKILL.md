@@ -7,6 +7,14 @@ description: Use when the user wants an agent to build or improve a proposal, RF
 
 Build a proposal reference-profile pack from approved source material. This skill coordinates source intake, extraction, pack edits, validation, and review. It does not submit proposals, manage approvals, certify compliance, replace legal/procurement/security review, or create approved proposal content.
 
+## Progressive References
+
+Load these files only when needed:
+
+- Read `references/proposal-opportunity-context.md` when normalizing messy RFP, capture, opportunity, bid/no-bid, requirement, proof, or review-context notes.
+- Read `references/proposal-boundaries.md` before accepting proposal proof, compliance, certification, past-performance, security, or approval claims.
+- Use `evals/trigger-queries.json` and `evals/output-evals.json` when improving this skill's trigger or output quality.
+
 For bid/no-bid review against an existing proposal pack and supplied pursuit context, use `$mdp-proposal-bid-no-bid-review` instead. For compliance review against existing requirements, matrices, or answer drafts, use `$mdp-proposal-compliance-review` instead. For win-theme or proof review against existing themes, differentiators, or claim-bearing draft text, use `$mdp-proposal-win-theme-proof-review` instead. For red-team or gap review against supplied proposal material, use `$mdp-proposal-red-team-gap-review` instead.
 
 ## Profile Gate

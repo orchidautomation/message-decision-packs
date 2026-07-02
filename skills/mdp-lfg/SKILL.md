@@ -5,6 +5,16 @@ description: "Use as the master orchestrator for fuzzy or multi-step Message Dec
 
 # MDP LFG
 
+## Progressive References
+
+Load these files only when the task needs them:
+
+- Read `references/mdp-mental-model.md` when the user is confused about what MDP is, what landed, or how deterministic MDP flows work.
+- Read `references/prompt-output-validation.md` when the user asks how messy source blobs, prompt outputs, allowed enum values, and CLI validation connect.
+- Read `references/template-qa-recipes.md` when testing a released install, default template, GTM pack, proposal pack, or fresh QA workspace.
+- Use `assets/prompt-output-fixtures/` for public-safe prompt-output skeletons. Treat them as examples to adapt to the current pack, not universal accepted values.
+- Use `evals/trigger-queries.json` and `evals/output-evals.json` when improving this skill's trigger or output quality.
+
 ## Profile Gate
 
 Before using this skill against an existing pack, run:
