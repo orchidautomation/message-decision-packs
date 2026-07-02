@@ -1,0 +1,139 @@
+description: Turns supplied messy proposal, RFP, capture, requirement, proof, or bid/no-bid context into bounded proposal profile vocabulary before proposal review jobs run.
+format: mdp.prompt.v0
+id: normalize-opportunity
+inputs:
+- default: N/A
+  description: The full messy opportunity, RFP, capture note, requirement list, compliance matrix, proof note, or pasted proposal review context.
+  missing_behavior: Return gaps and do not create normalized fields from absent source material.
+  name: raw_opportunity
+  required: true
+- default: N/A
+  description: Relevant manifest personas, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, proposal cards, source policy, review jobs, and avoid-rules from this MDP.
+  missing_behavior: Do not assume proposal roles, stage labels, source kinds, decision labels, proof rules, or review jobs when this field is N/A.
+  name: existing_pack_context
+  required: false
+- default: N/A
+  description: Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing against explicitly supplied proposal dates.
+  missing_behavior: Do not infer deadlines, submission windows, fiscal years, protest periods, or customer calendars from missing runtime context.
+  name: runtime_context
+  required: false
+- default: synthetic-example
+  description: Pack-owned source marker such as user-provided-opportunity, private-scratch-opportunity, public-source, sanitized-example, or synthetic-example.
+  missing_behavior: Use synthetic-example for template fixtures; production users should pass the reviewed source classification.
+  name: source_kind
+  required: false
+instructions:
+- Use only raw_opportunity, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape portals, enrich records, submit proposals, update CRM/opportunity systems, manage approvals, or call external systems from this normalization prompt contract.
+- Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
+- Emit the existing validated normalized_prospect object as a local compatibility bridge. Use name and title only when a real supplied review owner or contact is present; otherwise set name and title to N/A. Do not invent a person.
+- Set company to the supplied customer, agency, buyer organization, or account name when present. Set company_domain only from an explicit supplied domain-like value. Do not infer domains from organization names.
+- Use only pack-owned values from existing_pack_context for persona, segment, source_kind, opportunity_stage, pursuit_decision, and source_safety. If the source contains an out-of-contract value, omit the optional field or add a gap instead of inventing a synonym.
+- Put opportunity/RFP facts in signals with source references. Use signals for due dates, procurement vehicles, requirement excerpts, evaluation criteria, incumbent clues, proof references, compliance-sensitive clauses, and review risks.
+- Use attributes only for bounded reviewed metadata declared in lead_input_requirements.attribute_definitions. Keep proof, citations, RFP excerpts, and customer facts in signals or gaps, not attributes.
+- Preserve raw evidence references. Each signal should name the supplied field, note, snippet, URL, file label, or review note that supports it when available.
+- Preserve uncertainty. Weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth missing context into a proceed decision.
+- If the opportunity lacks customer/agency, due date, requirement, proof, owner, source safety, or review-mode context needed for downstream review, keep the output structurally valid, add gaps, and set normalization_trace.fit_readiness.ready_for_mdp_fit to false.
+- Reject or gap requests to invent certifications, compliance status, past performance, named references, customer results, pricing, evaluator criteria, RFP text, deadlines, or approval status.
+- Keep card_patches empty. This prompt normalizes supplied opportunity context; it does not propose edits to MDP cards.
+output_contract:
+  contract: mdp.prompt-output.v0
+  entry_defaults:
+    applies_to: []
+    avoid: []
+    body: N/A
+    confidence: unknown
+    evidence: []
+    provenance: []
+  example:
+    card_patches: []
+    contract: mdp.prompt-output.v0
+    gaps: []
+    normalization_trace:
+      fit_readiness:
+        has_customer_or_agency: true
+        has_due_date: true
+        has_requirement_signal: true
+        has_review_mode: true
+        has_signal_source: true
+        ready_for_mdp_fit: true
+      missing_required: []
+      persona:
+        confidence: high
+        matched_keywords:
+        - bid/no-bid
+        needs_review: false
+        source: existing_pack_context.personas
+      preserved_raw_fields:
+      - raw_opportunity.customer
+      - raw_opportunity.rfp_summary
+      - raw_opportunity.due_date
+      - raw_opportunity.review_mode
+      - source_kind
+    normalized_prospect:
+      attributes:
+        opportunity_stage: bid-no-bid
+        pursuit_decision: needs-more-info
+        source_safety: synthetic
+      background: Synthetic RFP context says the city wants a local-first review of permit modernization requirements, proof gaps, and bid/no-bid risks.
+      company: City of Exampleton
+      name: N/A
+      persona: Proposal Lead
+      segment: municipal-modernization
+      signals:
+      - confidence: medium
+        freshness: synthetic
+        id: permit-modernization-rfp
+        source: raw_opportunity.rfp_summary
+        state_as: supplied
+        title: Permit modernization RFP context supplied
+      - confidence: medium
+        freshness: synthetic
+        id: due-date-supplied
+        source: raw_opportunity.due_date
+        state_as: supplied
+        title: Proposal due date supplied
+      source_kind: synthetic-example
+      synthetic: true
+      title: N/A
+      trigger: Synthetic permit modernization RFP needs bid/no-bid and compliance review before proposal drafting.
+    prompt_id: normalize-opportunity
+    rejected_claims: []
+    source_summary:
+      account_name: Synthetic permit modernization RFP
+      company_domain: N/A
+      company_name: City of Exampleton
+      confidence: medium
+      inputs_used:
+      - raw_opportunity
+      - existing_pack_context
+      - source_kind
+      person_name: N/A
+      person_title: N/A
+  output_kind: prospect-normalization
+  required_top_level:
+  - contract
+  - prompt_id
+  - source_summary
+  - normalized_prospect
+  - normalization_trace
+  - card_patches
+  - gaps
+  - rejected_claims
+  schema_ref: mdp.prompt-output.prospect-normalization.v0
+  strict_json_only: true
+tags:
+- prompt
+- normalization
+- proposal
+- opportunity
+- requirements
+- proof
+- gaps
+target_card_kinds:
+- signals
+- pains
+- fit-rules
+- claims
+- avoid-rules
+- gaps
+title: Normalize proposal opportunity

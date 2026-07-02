@@ -54,7 +54,15 @@ mdp --json doctor --dir .
 mdp --json validate --dir .
 ```
 
-2. Route the bid/no-bid context:
+2. If the supplied pursuit context is messy, use `.mdp/prompts/normalize-opportunity.yaml` as the normalization scaffold and validate the output before relying on it:
+
+```bash
+mdp --json validate-prompt-output --dir . --prompt-id normalize-opportunity --file <prompt-output.json>
+```
+
+Read `normalization_trace.fit_readiness`, `gaps`, `signals`, and bounded `attributes` before the review. If readiness is false, return `needs-more-info` with the missing source fields instead of deciding `bid`.
+
+3. Route the bid/no-bid context:
 
 ```bash
 mdp --json --summary route --entries --dir . --persona "Proposal Lead" --job "bid no bid review"
@@ -63,7 +71,7 @@ mdp --json gaps --dir .
 
 Read the routed entries first. Open full card files only if the route output requires them or the review needs unresolved card detail.
 
-3. Use these proposal cards when present:
+4. Use these proposal cards when present:
 
 - `bid-no-bid-rules`
 - `evaluation-criteria`
@@ -77,7 +85,7 @@ Read the routed entries first. Open full card files only if the route output req
 - `review-gates`
 - `gaps`
 
-4. Build a review matrix from supplied facts:
+5. Build a review matrix from supplied facts:
 
 - source-backed facts
 - matched proceed criteria
@@ -86,7 +94,7 @@ Read the routed entries first. Open full card files only if the route output req
 - assumptions that need human acceptance
 - source gaps that block a confident decision
 
-5. Decide the support status:
+6. Decide the support status:
 
 - `no-bid`: a hard disqualifier, prohibited request, policy bypass, unrecoverable mandatory requirement gap, or unapproved proof/compliance claim is present.
 - `needs-more-info`: required source text, eligibility, evaluation criteria, due date, proof, owner, or compliance context is missing or too weak.
@@ -94,7 +102,7 @@ Read the routed entries first. Open full card files only if the route output req
 
 When in doubt, choose `needs-more-info` and list the exact questions.
 
-6. Check risky claim-bearing text before presenting it as usable:
+7. Check risky claim-bearing text before presenting it as usable:
 
 ```bash
 mdp --json check-claims --dir . --persona "Proposal Lead" --job "bid no bid review" --text "<claim-bearing text>"

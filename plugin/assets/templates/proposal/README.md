@@ -6,7 +6,7 @@ It demonstrates how a proposal profile can use the existing `mdp.v0` card model 
 
 The sample is fictional. It does not represent a real customer, RFP, agency, opportunity, price, certification, or past performance claim.
 
-The manifest includes a proposal `primitive_map`, an `opportunity` input contract, profile jobs, and categorized `profile_eval` metadata. Run `mdp --json validate --dir plugin/assets/templates/proposal` to inspect `data.profile.activation_ready`; `profile.id: proposal` and `profile.agent_surface` route skills, but they are not the full activation gate.
+The manifest includes a proposal `primitive_map`, an `opportunity` input contract, `prompts/normalize-opportunity.yaml`, profile jobs, and categorized `profile_eval` metadata. Run `mdp --json validate --dir plugin/assets/templates/proposal` to inspect `data.profile.activation_ready`; `profile.id: proposal` and `profile.agent_surface` route skills, but they are not the full activation gate.
 
 ## Demo Scenario
 
@@ -24,6 +24,7 @@ Use the route and eval commands to inspect the sample:
 ```bash
 cargo run --manifest-path cli/Cargo.toml -- --json validate --dir plugin/assets/templates/proposal
 cargo run --manifest-path cli/Cargo.toml -- --json eval --dir plugin/assets/templates/proposal
+cargo run --manifest-path cli/Cargo.toml -- --json validate-prompt-output --dir plugin/assets/templates/proposal --prompt-id normalize-opportunity --file <prompt-output.json>
 cargo run --manifest-path cli/Cargo.toml -- --json route --entries --dir plugin/assets/templates/proposal --persona "Proposal Lead" --job "bid no bid review"
 cargo run --manifest-path cli/Cargo.toml -- --json gaps --dir plugin/assets/templates/proposal
 cargo run --manifest-path cli/Cargo.toml -- --json check-claims --dir plugin/assets/templates/proposal --persona "Proposal Lead" --job "compliance review" --text "The sample team is CMMC compliant."
@@ -31,6 +32,7 @@ cargo run --manifest-path cli/Cargo.toml -- --json check-claims --dir plugin/ass
 
 The eval fixtures cover:
 
+- prompt-output validation for `normalize-opportunity`, including insufficient context and invalid enum values
 - route behavior for bid/no-bid, compliance, proof, and red-team review jobs
 - durable gap surfacing for missing RFP text, missing proof, and public-safety gaps
 - unsupported compliance/security claims and invented proof guardrails

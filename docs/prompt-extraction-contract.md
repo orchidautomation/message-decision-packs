@@ -36,7 +36,7 @@ Runtime normalization prompts set `output_contract.output_kind: prospect-normali
 - `normalized_prospect`: the exact JSON shape accepted by `mdp --json schema prospect`.
 - `normalization_trace`: persona mapping, fit-readiness, missing fields, and raw-field preservation notes.
 
-For normalization prompts, `card_patches` should stay empty. The prompt prepares runtime input; it does not edit cards.
+For normalization prompts, `card_patches` should stay empty. The prompt prepares runtime input; it does not edit cards. Proposal packs use this same validated normalization artifact shape for `.mdp/prompts/normalize-opportunity.yaml`; opportunity, requirements, compliance gaps, proof, and win themes stay profile-owned vocabulary in signals, attributes, trace, and gaps, not new core MDP objects.
 
 Candidate entries carry normal MDP entry fields:
 
@@ -90,6 +90,10 @@ The basic template includes a runtime prompt contract for:
 
 - Prospect/source row normalization into MDP prospect JSON.
 
+The proposal template includes a runtime prompt contract for:
+
+- Opportunity/RFP context normalization into bounded proposal profile vocabulary before bid/no-bid, compliance, proof, or red-team review.
+
 It also includes extraction prompt contracts for:
 
 - ICP/persona and fit candidates.
@@ -117,6 +121,8 @@ mdp --json fit --dir <pack> --prospect <prospect>.json
 ```
 
 Do not let the normalization prompt silently decide final fit. It should preserve ambiguity and disqualifying source language, then the CLI applies the deterministic gate.
+
+For proposal packs, load `.mdp/prompts/normalize-opportunity.yaml`, pass messy proposal/RFP context as `raw_opportunity`, include proposal value contracts and attribute definitions in `existing_pack_context`, then run `mdp --json validate-prompt-output --dir <pack> --prompt-id normalize-opportunity --file <output.json>`. If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, stop at gaps or reviewer questions instead of creating confident proposal review output.
 
 ## Card Extraction Loop
 

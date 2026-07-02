@@ -100,6 +100,8 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                     "expect_status": {"type": "string"},
                     "expect_draft_status": {"type": "string"},
                     "expect_valid": {"type": "boolean"},
+                    "expect_normalization_ready": {"type": "boolean"},
+                    "expect_issue_codes_contains": string_array(),
                     "expect_gap_titles_contains": string_array(),
                     "expect_guardrail_terms_contains": string_array(),
                     "expect_unsupported_claims_contains": string_array()

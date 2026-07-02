@@ -34,6 +34,8 @@ struct EvalFixture {
     expect_status: Option<String>,
     expect_draft_status: Option<String>,
     expect_valid: Option<bool>,
+    expect_normalization_ready: Option<bool>,
+    expect_issue_codes_contains: Option<Vec<String>>,
     expect_gap_titles_contains: Option<Vec<String>>,
     expect_guardrail_terms_contains: Option<Vec<String>>,
     expect_unsupported_claims_contains: Option<Vec<String>>,
@@ -158,16 +160,7 @@ fn run_fixture(
             fixture.job.as_deref(),
         )?,
         "gaps" => gaps(root)?,
-        "validate-prompt-output" => validate_prompt_output_value(
-            root,
-            fixture
-                .prompt_output
-                .as_ref()
-                .expect("validated prompt_output"),
-            &format!("{}#/prompt_output", path.display()),
-            fixture.prompt.as_deref(),
-            fixture.prompt_id.as_deref(),
-        )?,
+        "validate-prompt-output" => validate_prompt_output_fixture(root, path, fixture)?,
         "check-claims" => check_claims(
             root,
             fixture.text.as_deref(),
@@ -330,6 +323,37 @@ fn validate_profile_eval_jobs(
     }
 }
 
+fn validate_prompt_output_fixture(
+    root: &Path,
+    path: &Path,
+    fixture: &EvalFixture,
+) -> Result<Value> {
+    let prompt_output = fixture
+        .prompt_output
+        .as_ref()
+        .context("validated prompt_output")?;
+    let mut result = validate_prompt_output_value(
+        root,
+        prompt_output,
+        &format!("{}#/prompt_output", path.display()),
+        fixture.prompt.as_deref(),
+        fixture.prompt_id.as_deref(),
+    );
+
+    if let Ok(value) = result.as_mut() {
+        if let Some(object) = value.as_object_mut() {
+            if let Some(ready) = prompt_output
+                .pointer("/normalization_trace/fit_readiness/ready_for_mdp_fit")
+                .and_then(Value::as_bool)
+            {
+                object.insert("normalization_ready".to_string(), json!(ready));
+            }
+        }
+    }
+
+    result
+}
+
 fn require<T>(path: &Path, value: Option<&T>, field: &str, issues: &mut Vec<Value>) {
     if value.is_none() {
         issues.push(issue(
@@ -446,6 +470,38 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
                 path.display().to_string(),
                 format!("expected valid {expected_valid}, got {}", output["valid"]),
             ));
+        }
+    }
+    if let Some(expected_ready) = fixture.expect_normalization_ready {
+        if output["normalization_ready"].as_bool() != Some(expected_ready) {
+            issues.push(issue(
+                "eval_normalization_ready_mismatch",
+                "error",
+                path.display().to_string(),
+                format!(
+                    "expected normalization_ready {expected_ready}, got {}",
+                    output["normalization_ready"]
+                ),
+            ));
+        }
+    }
+    if let Some(expected_codes) = &fixture.expect_issue_codes_contains {
+        let actual_codes = output["issues"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|issue| issue["code"].as_str().map(str::to_string))
+            .collect::<Vec<_>>();
+        for expected_code in expected_codes {
+            if !actual_codes.iter().any(|code| code == expected_code) {
+                issues.push(issue(
+                    "eval_expected_issue_code_missing",
+                    "error",
+                    path.display().to_string(),
+                    format!("missing expected prompt-output issue code {expected_code}"),
+                ));
+            }
         }
     }
     if let Some(expected_titles) = &fixture.expect_gap_titles_contains {

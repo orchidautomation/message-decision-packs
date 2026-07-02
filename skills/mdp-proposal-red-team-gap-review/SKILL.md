@@ -53,7 +53,15 @@ mdp --json doctor --dir .
 mdp --json validate --dir .
 ```
 
-2. Route the red-team context using the supplied review role when known. Default to `Executive Reviewer` for cross-section risk review and `Proposal Lead` for section-level ownership:
+2. If the supplied proposal, RFP, capture, requirement, or matrix context is messy, use `.mdp/prompts/normalize-opportunity.yaml` as the normalization scaffold and validate the output before relying on it:
+
+```bash
+mdp --json validate-prompt-output --dir . --prompt-id normalize-opportunity --file <prompt-output.json>
+```
+
+Read `normalization_trace.fit_readiness`, `gaps`, `signals`, and bounded `attributes` before red-team review. If readiness is false, prioritize the missing source fields as blockers instead of critiquing invented requirements.
+
+3. Route the red-team context using the supplied review role when known. Default to `Executive Reviewer` for cross-section risk review and `Proposal Lead` for section-level ownership:
 
 ```bash
 mdp --json --summary route --entries --dir . --persona "Executive Reviewer" --job "red team gap review"
@@ -62,7 +70,7 @@ mdp --json gaps --dir .
 
 Read the routed entries first. Open full card files only if the route output requires them or the review needs unresolved card detail.
 
-3. Use these proposal cards when present:
+4. Use these proposal cards when present:
 
 - `proposal-boundaries`
 - `compliance-boundaries`
@@ -78,7 +86,7 @@ Read the routed entries first. Open full card files only if the route output req
 - `opportunity-context`
 - `gaps`
 
-4. Build a prioritized gap register from supplied facts:
+5. Build a prioritized gap register from supplied facts:
 
 - affected section, requirement, or decision point
 - issue type: missing source, unsupported claim, weak inference, contradiction, boundary risk, unanswered requirement, owner gap, or output-contract gap
@@ -88,7 +96,7 @@ Read the routed entries first. Open full card files only if the route output req
 - owner, reviewer, or SME question
 - suggested next action
 
-5. Use conservative severity labels:
+6. Use conservative severity labels:
 
 - `blocker`: must be resolved before the material is used or reviewed further.
 - `high`: likely to damage compliance, evaluation fit, proof posture, bid/no-bid confidence, or reviewer trust.
@@ -98,7 +106,7 @@ Read the routed entries first. Open full card files only if the route output req
 
 Use `low-confidence-inference` for points that may be true but are not adequately sourced. Use `missing-information` when the absence of source material is the core issue. Do not convert either into a supported claim.
 
-6. Check risky claim-bearing text before treating it as usable:
+7. Check risky claim-bearing text before treating it as usable:
 
 ```bash
 mdp --json check-claims --dir . --persona "Executive Reviewer" --job "red team gap review" --text "<claim-bearing text>"
