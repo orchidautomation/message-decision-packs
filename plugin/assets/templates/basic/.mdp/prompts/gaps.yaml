@@ -28,15 +28,18 @@ inputs:
   name: source_notes
   required: false
 - default: N/A
-  description: Optional existing MDP card context to prevent duplicate or conflicting entries.
-  missing_behavior: Do not assume previous pack decisions when this field is N/A.
+  description: Optional existing MDP manifest/card context to prevent duplicate or conflicting entries, including personas, operator roles, fit rules, claims, avoid-rules, output rules, supported channels, and declared value domains.
+  missing_behavior: Do not assume previous pack decisions, personas, channels, claims, or value domains when this field is N/A.
   name: existing_pack_context
   required: false
 instructions:
-- Use only supplied person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.
+- Use only supplied company_domain, person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.
 - List missing data that blocks confident card entries. Prefer gaps over weak claims whenever source support is absent.
 - Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
+- Use existing_pack_context as the source of truth for pack-owned personas, operator roles, card ids, claims, avoid-rules, output rules, supported channels, and value domains. Do not invent new pack labels when the source is weak; emit gaps or needs-review candidates instead.
+- For source_summary.company_domain, use the supplied company_domain or an explicit supplied URL/domain only. Do not infer a domain from company name.
 - 'Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid. Use constraints for deterministic output limits such as word counts, subject word counts, max questions, or forbidden links/html/tracking when the source explicitly calls for them. Use metadata only for advisory custom annotations that should be preserved for agents but not enforced by the CLI.'
+- Keep source evidence in evidence and provenance. Do not put prospect facts, proof, citations, or raw source excerpts only in metadata.
 - Each candidate entry must also include confidence, provenance, and status so a reviewer can decide whether it may become a card entry.
 - Use body N/A, empty arrays, confidence unknown, and status gap when data is missing or weak.
 - Put unsupported, quantified, customer, integration, compliance, or execution claims in rejected_claims instead of card_patches.

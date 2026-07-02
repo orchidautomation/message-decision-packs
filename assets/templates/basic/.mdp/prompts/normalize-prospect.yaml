@@ -13,8 +13,8 @@ inputs:
   name: company_domain
   required: false
 - default: N/A
-  description: Relevant manifest personas, persona_mappings, fit rules, signal definitions, avoid-rules, and source policy from this MDP.
-  missing_behavior: Do not assume pack-owned persona mappings, fit rules, or signal names when this field is N/A.
+  description: Relevant manifest personas, persona_mappings, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, fit rules, signal definitions, avoid-rules, output rules, and source policy from this MDP.
+  missing_behavior: Do not assume pack-owned persona mappings, value domains, fit rules, attributes, or signal names when this field is N/A.
   name: existing_pack_context
   required: false
 - default: user-provided-row
@@ -27,11 +27,15 @@ instructions:
 - Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
 - 'Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional company_domain, source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, signals, and bounded attributes.'
 - When company_domain or company_url is supplied, normalize only that supplied domain-like value. Do not infer a domain from company name.
+- When existing_pack_context includes lead_input_requirements.value_contracts, emit only values allowed by those pack-owned enum/type/format contracts for persona, segment, source_kind, and other normalized scalar fields. If the source value is outside the contract, omit the optional field or add a gap instead of inventing a synonym.
+- Use explicit persona from the row only when it already matches a pack-owned persona. Otherwise use pack-owned persona_mappings from existing_pack_context and emit the canonical persona label; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.
 - Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.
-- Use explicit persona from the row when present. Otherwise use pack-owned persona_mappings from existing_pack_context; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.
+- When existing_pack_context includes lead_input_requirements.attribute_definitions, emit only declared attributes when allow_undeclared_attributes is false, and match declared type, enum, date, or date-time formats. Invalid or unreviewed metadata belongs in gaps or normalization_trace, not attributes.
 - 'Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.'
 - Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.
 - If the input is account-only and lacks person name or title, do not invent a contact. Put missing fields in gaps and set normalization_trace.fit_readiness.ready_for_mdp_fit to false.
+- 'Missing-field example: if the row has company but no person title, do not fabricate a title; add title to normalization_trace.missing_required and set ready_for_mdp_fit false.'
+- 'Invalid-value example: if the row says segment enterprise but value_contracts.segment only allows agent-assisted GTM, do not output segment enterprise; add a gap asking for a reviewed pack segment or manifest update.'
 - Keep card_patches empty. This prompt normalizes runtime prospect input; it does not propose edits to MDP cards.
 output_contract:
   contract: mdp.prompt-output.v0

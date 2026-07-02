@@ -104,10 +104,11 @@ It also includes extraction prompt contracts for:
 
 1. Run `mdp --json validate --dir <pack>` before using prompt files.
 2. Load `.mdp/prompts/normalize-prospect.yaml`.
-3. Supply the messy row as `raw_row`, plus relevant `existing_pack_context` from the manifest, persona mappings, fit-rules, signals, and avoid-rules.
+3. Supply the messy row as `raw_row`, plus relevant `existing_pack_context` from the manifest: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit-rules, signals, avoid-rules, output rules, and source policy.
 4. Run the prompt with strict JSON output matching `output_contract.schema_ref`, or `output_contract.schema` when the prompt file was generated with inline schemas.
-5. Save `normalized_prospect` to ignored scratch as `<prospect>.json`.
-6. Run:
+5. Run `mdp --json validate-prompt-output --dir <pack> --prompt-id normalize-prospect-row --file <output.json>`.
+6. Save `normalized_prospect` to ignored scratch as `<prospect>.json` only after the full prompt artifact validates.
+7. Run:
 
 ```bash
 mdp --json fit --dir <pack> --prospect <prospect>.json

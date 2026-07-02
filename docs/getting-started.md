@@ -118,7 +118,11 @@ For messy upstream rows, use the pack-owned runtime prompt contract:
 .mdp/prompts/normalize-prospect.yaml
 ```
 
-That prompt asks an upstream agent to return strict JSON with `normalized_prospect`, `normalization_trace`, `gaps`, and empty `card_patches`. Save `normalized_prospect` as the prospect JSON file that the CLI will ingest.
+That prompt asks an upstream agent to return strict JSON with `normalized_prospect`, `normalization_trace`, `gaps`, and empty `card_patches`. When invoking it, include the relevant pack context: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit rules, signal definitions, avoid-rules, output rules, and source policy. Validate the full prompt output before saving `normalized_prospect` as the prospect JSON file that the CLI will ingest:
+
+```bash
+mdp --json validate-prompt-output --dir ./mdp-demo --prompt-id normalize-prospect-row --file ./mdp-demo/scratch/normalize-output.json
+```
 
 Minimum parser admission is still `name`, `title`, and `company`, but the starter pack's fit-ready requirements are stricter:
 
@@ -182,7 +186,7 @@ For a real lead row, prefer this shape:
 }
 ```
 
-`company_domain` is canonicalized only from supplied domain-like values. `https://www.apple.com/` becomes `apple.com`; MDP does not browse, DNS-check, enrich, or infer a domain from `company`. Use `attributes` for bounded reviewed metadata like fiscal year or segment tier, and use `signals[].source` for evidence. Prompt output and `fit` readiness also enforce pack-owned value contracts, so values such as `segment`, `source_kind`, and declared attributes must match the manifest.
+`company_domain` is canonicalized only from supplied domain-like values. `https://www.apple.com/` becomes `apple.com`; MDP does not browse, DNS-check, enrich, or infer a domain from `company`. Use `attributes` for bounded reviewed metadata like fiscal year or segment tier, and use `signals[].source` for evidence. Prompt output and `fit` readiness also enforce pack-owned value contracts, so values such as `persona`, `segment`, `source_kind`, date/date-time attributes, enum attributes, and declared attributes must match the manifest. If a source row contains an out-of-contract value, preserve it in `gaps` or `normalization_trace`; do not silently rename it into a blessed value.
 
 Then check fit before drafting:
 

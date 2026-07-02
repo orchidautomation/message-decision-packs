@@ -11,7 +11,7 @@ This is the row-evaluation path for MDP. Do not create a parallel evaluator in t
 
 Accepted source rows can come from a user note, CSV, CRM export, Clay, Deepline, a spreadsheet, public research notes, or any other supplied row-like input. Clay is one possible source, not the default mental model.
 
-When the pack has `.mdp/prompts/normalize-prospect.yaml`, use it as the upstream normalization contract for messy rows. The prompt should return `normalized_prospect` plus `normalization_trace`; validate the full prompt output with `mdp validate-prompt-output`, then save `normalized_prospect` as the local prospect JSON that feeds the CLI. Do not let the prompt decide final fit.
+When the pack has `.mdp/prompts/normalize-prospect.yaml`, use it as the upstream normalization contract for messy rows. Pass relevant `existing_pack_context`: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit rules, signal definitions, avoid-rules, output rules, and source policy. The prompt should return `normalized_prospect` plus `normalization_trace`; validate the full prompt output with `mdp validate-prompt-output`, then save `normalized_prospect` as the local prospect JSON that feeds the CLI. Do not let the prompt decide final fit.
 
 ## Prospect Shape
 
@@ -44,7 +44,7 @@ Preferred fields:
 
 Use prospect `attributes` for reviewed row metadata only. Do not put source evidence there, and do not use entry `metadata` for prospect facts.
 
-Packs may declare readiness requirements in `.mdp/manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`. Treat `mdp validate-prompt-output` and `mdp fit` as the source of truth for missing or invalid readiness details. If a prompt emits a persona, segment, source kind, date/date-time, enum, or declared attribute outside the pack-owned contract, do not repair it silently; return the validation issue and ask for reviewed input or a manifest update.
+Packs may declare readiness requirements in `.mdp/manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`. Treat `mdp validate-prompt-output` and `mdp fit` as the source of truth for missing or invalid readiness details. If a prompt emits a persona, segment, source kind, date/date-time, enum, or declared attribute outside the pack-owned contract, do not repair it silently; preserve the source value in `gaps` or `normalization_trace`, return the validation issue, and ask for reviewed input or a manifest update.
 
 Use provider-neutral `source_kind` values unless a specific source matters:
 
