@@ -1,0 +1,38 @@
+id: evaluation-criteria
+kind: fit-rules
+title: Evaluation criteria
+description: Synthetic scoring and reviewer decision rules.
+personas:
+- Proposal Lead
+- Solution Owner
+- Executive Reviewer
+tags:
+- evaluation
+- criteria
+- proof
+- scoring
+entries:
+- id: scoring-priorities
+  title: Scoring priorities
+  body: The synthetic evaluator prioritizes requirement coverage, implementation approach, proof, training readiness, and risk transparency.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - invented scoring weight
+  metadata:
+    primitive: decision-criteria
+- id: proof-before-theme
+  title: Proof before theme
+  body: Win themes should be derived from approved proof and requirement fit. If proof is missing, the theme should be marked as a hypothesis or gap.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  evidence:
+  - synthetic-proof-inventory
+  avoid:
+  - unsupported win theme
+  metadata:
+    primitive: evidence-proof

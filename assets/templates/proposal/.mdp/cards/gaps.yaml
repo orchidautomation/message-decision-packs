@@ -1,0 +1,49 @@
+id: gaps
+kind: gaps
+title: Proposal gaps
+description: Missing context, weak proof, and blockers that must stay visible.
+personas:
+- Proposal Lead
+- Solution Owner
+- Executive Reviewer
+tags:
+- gaps
+- missing
+- blocker
+entries:
+- id: missing-rfp-text
+  title: Missing RFP text
+  body: If the actual RFP text or requirement source is missing, do not infer mandatory requirements. Ask for approved source material or keep the requirement as a gap.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - invented requirement
+  metadata:
+    primitive: gaps
+- id: missing-proof
+  title: Missing proof
+  body: If proof, certification, reference, or past performance is not approved, mark a proof gap and avoid claim-bearing language.
+  applies_to:
+  - Solution Owner
+  - Proposal Lead
+  evidence:
+  - synthetic-proof-inventory
+  avoid:
+  - unsupported proof
+  metadata:
+    primitive: gaps
+- id: public-safety-gap
+  title: Public safety gap
+  body: If a source appears private, customer-specific, access-controlled, or regulated, keep it out of the public template and move the work to private scratch or a customer-controlled pack.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - AGENTS.md
+  avoid:
+  - public leak
+  metadata:
+    primitive: gaps

@@ -1,0 +1,46 @@
+id: proposal-roles
+kind: personas
+title: Proposal roles
+description: Actors and responsibilities for the synthetic proposal review.
+personas:
+- Proposal Lead
+- Solution Owner
+- Executive Reviewer
+tags:
+- proposal
+- roles
+- actors
+entries:
+- id: proposal-lead
+  title: Proposal Lead
+  body: Owns bid/no-bid framing, source ledger completeness, review sequencing, and final gap visibility. The Proposal Lead may summarize a decision but must not hide missing proof.
+  applies_to:
+  - Proposal Lead
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - unsourced recommendation
+  metadata:
+    primitive: actors
+- id: solution-owner
+  title: Solution Owner
+  body: Owns solution fit, requirement interpretation, delivery assumptions, and proof boundaries. The Solution Owner must mark assumptions when the synthetic source does not prove feasibility.
+  applies_to:
+  - Solution Owner
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - invented capability
+  metadata:
+    primitive: actors
+- id: executive-reviewer
+  title: Executive Reviewer
+  body: Reviews pursuit risk, strategic fit, required approvals, and blockers. The Executive Reviewer needs concise options, named risks, and the next decision needed.
+  applies_to:
+  - Executive Reviewer
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - rubber stamp
+  metadata:
+    primitive: actors

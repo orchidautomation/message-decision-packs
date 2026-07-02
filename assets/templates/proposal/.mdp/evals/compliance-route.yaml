@@ -1,0 +1,15 @@
+id: compliance-route
+command: route
+persona: Proposal Lead
+job: compliance review
+expect_load_order_contains:
+- .mdp/cards/proposal-boundaries.yaml
+- .mdp/cards/proposal-output-rules.yaml
+- .mdp/cards/requirement-signals.yaml
+- .mdp/cards/requirements-matrix.yaml
+- .mdp/cards/compliance-boundaries.yaml
+- .mdp/cards/review-gates.yaml
+expect_entry_titles_contains:
+- Compliance review job
+- Compliance review boundary
+- Compliance review needed
