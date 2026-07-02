@@ -104,10 +104,13 @@ cards:
   personas:
   - Proposal Lead
   - Solution Owner
+  - Executive Reviewer
   tags:
   - requirements
   - compliance
   - source
+  - red-team
+  - gap
 - id: requirements-matrix
   path: cards/requirements-matrix.yaml
   kind: pains
@@ -151,10 +154,13 @@ cards:
   personas:
   - Solution Owner
   - Proposal Lead
+  - Executive Reviewer
   tags:
   - proof
   - claims
   - past-performance
+  - red-team
+  - gap
 - id: compliance-boundaries
   path: cards/compliance-boundaries.yaml
   kind: avoid-rules

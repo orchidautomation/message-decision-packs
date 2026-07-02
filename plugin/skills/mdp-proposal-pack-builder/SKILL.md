@@ -7,7 +7,7 @@ description: Use when the user wants an agent to build or improve a proposal, RF
 
 Build a proposal reference-profile pack from approved source material. This skill coordinates source intake, extraction, pack edits, validation, and review. It does not submit proposals, manage approvals, certify compliance, replace legal/procurement/security review, or create approved proposal content.
 
-For bid/no-bid review against an existing proposal pack and supplied pursuit context, use `$mdp-proposal-bid-no-bid-review` instead. For compliance review against existing requirements, matrices, or answer drafts, use `$mdp-proposal-compliance-review` instead. For win-theme or proof review against existing themes, differentiators, or claim-bearing draft text, use `$mdp-proposal-win-theme-proof-review` instead.
+For bid/no-bid review against an existing proposal pack and supplied pursuit context, use `$mdp-proposal-bid-no-bid-review` instead. For compliance review against existing requirements, matrices, or answer drafts, use `$mdp-proposal-compliance-review` instead. For win-theme or proof review against existing themes, differentiators, or claim-bearing draft text, use `$mdp-proposal-win-theme-proof-review` instead. For red-team or gap review against supplied proposal material, use `$mdp-proposal-red-team-gap-review` instead.
 
 ## Intake Gate
 
@@ -94,6 +94,7 @@ mdp --json eval --dir .
 ```bash
 mdp --json --summary route --entries --eval-fixture --dir . --persona "Proposal Lead" --job "bid no bid review"
 mdp --json --summary route --entries --eval-fixture --dir . --persona "Solution Owner" --job "compliance review"
+mdp --json --summary route --entries --eval-fixture --dir . --persona "Executive Reviewer" --job "red team gap review"
 mdp --json --summary route --entries --eval-fixture --dir . --persona "Executive Reviewer" --job "executive brief"
 ```
 

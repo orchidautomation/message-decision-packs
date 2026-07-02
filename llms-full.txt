@@ -204,6 +204,7 @@ Important skills:
 - `mdp-proposal-bid-no-bid-review`: assesses supplied proposal pursuit context against bid/no-bid rules
 - `mdp-proposal-compliance-review`: reviews supplied proposal requirements or answer drafts against compliance rules
 - `mdp-proposal-win-theme-proof-review`: reviews proposal themes or differentiators against approved proof
+- `mdp-proposal-red-team-gap-review`: prioritizes proposal gaps, risks, and reviewer questions against pack constraints
 - `mdp-icp-builder`: sharpens ICP, personas, and fit logic
 - `mdp-source-extract`: turns source material into card entries
 - `mdp-message-angles`: codifies hooks and angles

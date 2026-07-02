@@ -5,10 +5,13 @@ description: Synthetic RFP requirement signals and interpretation rules.
 personas:
 - Proposal Lead
 - Solution Owner
+- Executive Reviewer
 tags:
 - requirements
 - compliance
 - source
+- red-team
+- gap
 entries:
 - id: online-intake-requirement
   title: Online intake requirement
@@ -16,6 +19,7 @@ entries:
   applies_to:
   - Proposal Lead
   - Solution Owner
+  - Executive Reviewer
   evidence:
   - synthetic-rfp-summary
   avoid:
@@ -27,6 +31,7 @@ entries:
   body: The fictional RFP asks for integration with an existing records system. The source does not name a real system, so implementation details remain a gap.
   applies_to:
   - Solution Owner
+  - Executive Reviewer
   evidence:
   - synthetic-rfp-summary
   avoid:
@@ -39,6 +44,7 @@ entries:
   applies_to:
   - Solution Owner
   - Proposal Lead
+  - Executive Reviewer
   evidence:
   - synthetic-rfp-summary
   avoid:
