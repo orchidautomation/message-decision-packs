@@ -200,6 +200,7 @@ Important skills include:
 - `mdp-lfg`: orchestrates multi-step MDP work
 - `mdp-create-pack`: creates or improves a pack
 - `mdp-proposal-pack-builder`: creates or improves a proposal/RFP review pack from approved source material
+- `mdp-proposal-bid-no-bid-review`: assesses supplied proposal pursuit context against bid/no-bid rules
 - `mdp-icp-builder`: sharpens ICP, personas, and fit logic
 - `mdp-source-extract`: turns source material into card entries
 - `mdp-message-angles`: codifies hooks and angles
