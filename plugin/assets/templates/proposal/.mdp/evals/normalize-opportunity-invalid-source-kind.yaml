@@ -1,0 +1,64 @@
+id: normalize-opportunity-invalid-source-kind
+profile_eval:
+  category: unsafe-output
+  primitives:
+  - source-signals
+  - boundaries
+  - gaps
+  jobs:
+  - bid-no-bid-review
+command: validate-prompt-output
+prompt_id: normalize-opportunity
+expect_valid: false
+expect_issue_codes_contains:
+- value_contract_enum_mismatch
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-opportunity
+  source_summary:
+    company_domain: N/A
+    company_name: City of Exampleton
+    person_name: N/A
+    person_title: N/A
+    account_name: Synthetic permit modernization RFP
+    inputs_used:
+    - raw_opportunity
+    - source_kind
+    confidence: medium
+  normalized_prospect:
+    name: N/A
+    title: N/A
+    company: City of Exampleton
+    source_kind: portal-scrape
+    synthetic: true
+    background: Synthetic opportunity notes include an unsupported portal-scrape source kind.
+    trigger: Synthetic permit modernization RFP needs review.
+    persona: Proposal Lead
+    segment: municipal-modernization
+    attributes:
+      opportunity_stage: bid-no-bid
+      pursuit_decision: needs-more-info
+      source_safety: synthetic
+    signals:
+    - id: permit-modernization-rfp
+      title: Permit modernization RFP context supplied
+      source: raw_opportunity.rfp_summary
+      confidence: medium
+      freshness: synthetic
+      state_as: supplied
+  normalization_trace:
+    persona:
+      source: existing_pack_context.personas
+      matched_keywords:
+      - bid/no-bid
+      confidence: high
+      needs_review: false
+    fit_readiness:
+      ready_for_mdp_fit: true
+    preserved_raw_fields:
+    - raw_opportunity.rfp_summary
+    - source_kind
+    missing_required: []
+  card_patches: []
+  gaps: []
+  rejected_claims: []

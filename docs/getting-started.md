@@ -62,11 +62,12 @@ For the proposal reference profile:
 mdp --json init --template proposal --dir ./mdp-proposal-demo --force
 mdp --json validate --dir ./mdp-proposal-demo
 mdp --json eval --dir ./mdp-proposal-demo
+mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
 mdp --json route --entries --dir ./mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
 mdp --json gaps --dir ./mdp-proposal-demo
 ```
 
-The proposal starter does not create prospect rows or outbound fixtures. It is a synthetic proposal review profile for bid/no-bid, compliance, proof, red-team, and executive review workflows.
+The proposal starter does not create prospect rows or outbound fixtures. It is a synthetic proposal review profile for bid/no-bid, compliance, proof, red-team, and executive review workflows. Its `normalize-opportunity` prompt normalizes messy proposal/RFP context into bounded profile vocabulary for local validation; it does not submit, scrape, enrich, certify, or manage proposal work.
 
 The starter creates:
 
@@ -123,6 +124,14 @@ That prompt asks an upstream agent to return strict JSON with `normalized_prospe
 ```bash
 mdp --json validate-prompt-output --dir ./mdp-demo --prompt-id normalize-prospect-row --file ./mdp-demo/scratch/normalize-output.json
 ```
+
+For proposal packs, use `.mdp/prompts/normalize-opportunity.yaml` the same way for messy opportunity, RFP, capture, requirement, compliance-matrix, proof, or bid/no-bid context. Include proposal personas, value contracts, attribute definitions, source policy, proposal cards, and review jobs in `existing_pack_context`, then run:
+
+```bash
+mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
+```
+
+If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, keep the missing context in gaps and do not invent proof, certifications, compliance status, deadlines, RFP text, past performance, pricing, evaluator criteria, or approval status.
 
 Minimum parser admission is still `name`, `title`, and `company`, but the starter pack's fit-ready requirements are stricter:
 

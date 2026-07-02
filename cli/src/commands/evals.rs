@@ -1,5 +1,6 @@
 use crate::commands::briefs::prospect_brief_from_value;
 use crate::commands::health::{KNOWN_PRIMITIVES, KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
+use crate::commands::prompt_output::validate_prompt_output_file;
 use crate::commands::routing::{check_claims, fit_prospect, route};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
@@ -10,6 +11,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
 struct EvalFixture {
@@ -21,6 +23,8 @@ struct EvalFixture {
     job: Option<String>,
     channel: Option<String>,
     prospect: Option<Value>,
+    prompt_id: Option<String>,
+    prompt_output: Option<Value>,
     text: Option<String>,
     subject: Option<String>,
     expect_load_order_contains: Option<Vec<String>>,
@@ -30,6 +34,8 @@ struct EvalFixture {
     expect_status: Option<String>,
     expect_draft_status: Option<String>,
     expect_valid: Option<bool>,
+    expect_normalization_ready: Option<bool>,
+    expect_issue_codes_contains: Option<Vec<String>>,
     expect_gap_titles_contains: Option<Vec<String>>,
     expect_guardrail_terms_contains: Option<Vec<String>>,
     expect_unsupported_claims_contains: Option<Vec<String>>,
@@ -162,6 +168,7 @@ fn run_fixture(
             fixture.persona.as_deref(),
             fixture.job.as_deref(),
         )?,
+        "validate-prompt-output" => validate_prompt_output_fixture(root, fixture)?,
         other => {
             issues.push(issue(
                 "eval_fixture_unknown_command",
@@ -222,6 +229,15 @@ fn validate_fixture(
         "gaps" => {}
         "check-claims" => {
             require(path, fixture.text.as_ref(), "text", &mut issues);
+        }
+        "validate-prompt-output" => {
+            require(path, fixture.prompt_id.as_ref(), "prompt_id", &mut issues);
+            require(
+                path,
+                fixture.prompt_output.as_ref(),
+                "prompt_output",
+                &mut issues,
+            );
         }
         _ => {}
     }
@@ -290,6 +306,39 @@ fn validate_profile_eval_jobs(
             ));
         }
     }
+}
+
+fn validate_prompt_output_fixture(root: &Path, fixture: &EvalFixture) -> Result<Value> {
+    let prompt_id = fixture
+        .prompt_id
+        .as_deref()
+        .context("validated prompt_id")?;
+    let prompt_output = fixture
+        .prompt_output
+        .as_ref()
+        .context("validated prompt_output")?;
+    let path = std::env::temp_dir().join(format!(
+        "mdp-eval-prompt-output-{}-{}.json",
+        fixture.id,
+        nonce()
+    ));
+    fs::write(&path, serde_json::to_string_pretty(prompt_output)?)
+        .with_context(|| format!("writing {}", path.display()))?;
+    let mut result = validate_prompt_output_file(root, &path, None, Some(prompt_id));
+    let _ = fs::remove_file(&path);
+
+    if let Ok(value) = result.as_mut() {
+        if let Some(object) = value.as_object_mut() {
+            if let Some(ready) = prompt_output
+                .pointer("/normalization_trace/fit_readiness/ready_for_mdp_fit")
+                .and_then(Value::as_bool)
+            {
+                object.insert("normalization_ready".to_string(), json!(ready));
+            }
+        }
+    }
+
+    result
 }
 
 fn require<T>(path: &Path, value: Option<&T>, field: &str, issues: &mut Vec<Value>) {
@@ -410,6 +459,38 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
             ));
         }
     }
+    if let Some(expected_ready) = fixture.expect_normalization_ready {
+        if output["normalization_ready"].as_bool() != Some(expected_ready) {
+            issues.push(issue(
+                "eval_normalization_ready_mismatch",
+                "error",
+                path.display().to_string(),
+                format!(
+                    "expected normalization_ready {expected_ready}, got {}",
+                    output["normalization_ready"]
+                ),
+            ));
+        }
+    }
+    if let Some(expected_codes) = &fixture.expect_issue_codes_contains {
+        let actual_codes = output["issues"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|issue| issue["code"].as_str().map(str::to_string))
+            .collect::<Vec<_>>();
+        for expected_code in expected_codes {
+            if !actual_codes.iter().any(|code| code == expected_code) {
+                issues.push(issue(
+                    "eval_expected_issue_code_missing",
+                    "error",
+                    path.display().to_string(),
+                    format!("missing expected prompt-output issue code {expected_code}"),
+                ));
+            }
+        }
+    }
     if let Some(expected_titles) = &fixture.expect_gap_titles_contains {
         let titles = gap_titles(output);
         for expected_title in expected_titles {
@@ -512,6 +593,13 @@ fn fixture_result(path: &Path, fixture: &EvalFixture, output: Value, issues: Vec
 
 fn default_command() -> String {
     "route".to_string()
+}
+
+fn nonce() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos()
 }
 
 #[cfg(test)]

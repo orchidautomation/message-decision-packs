@@ -53,7 +53,15 @@ mdp --json doctor --dir .
 mdp --json validate --dir .
 ```
 
-2. Route the compliance context using the supplied review role when known. Default to `Solution Owner` for technical requirement coverage and `Proposal Lead` for proposal matrix coverage:
+2. If the supplied requirement or RFP context is messy, use `.mdp/prompts/normalize-opportunity.yaml` as the normalization scaffold and validate the output before relying on it:
+
+```bash
+mdp --json validate-prompt-output --dir . --prompt-id normalize-opportunity --file <prompt-output.json>
+```
+
+Read `normalization_trace.fit_readiness`, `gaps`, `signals`, and bounded `attributes` before building the matrix. If readiness is false, return a gap list instead of filling missing requirements or statuses.
+
+3. Route the compliance context using the supplied review role when known. Default to `Solution Owner` for technical requirement coverage and `Proposal Lead` for proposal matrix coverage:
 
 ```bash
 mdp --json --summary route --entries --dir . --persona "Solution Owner" --job "compliance review"
@@ -62,7 +70,7 @@ mdp --json gaps --dir .
 
 Read the routed entries first. Open full card files only if the route output requires them or the review needs unresolved card detail.
 
-3. Use these proposal cards when present:
+4. Use these proposal cards when present:
 
 - `requirements-matrix`
 - `requirement-signals`
@@ -76,7 +84,7 @@ Read the routed entries first. Open full card files only if the route output req
 - `proposal-roles`
 - `gaps`
 
-4. Build a requirement review matrix from supplied facts:
+5. Build a requirement review matrix from supplied facts:
 
 - requirement ID or short label
 - requirement source and confidence
@@ -88,7 +96,7 @@ Read the routed entries first. Open full card files only if the route output req
 - risk severity
 - owner or reviewer question
 
-5. Use conservative coverage statuses:
+6. Use conservative coverage statuses:
 
 - `supported`: supplied answer and proof directly cover the requirement.
 - `partial`: some response path exists, but proof, detail, scope, or owner is incomplete.
@@ -99,7 +107,7 @@ Read the routed entries first. Open full card files only if the route output req
 
 Do not use `compliant` as a final status unless the user supplied that exact reviewed status from a named human source, and even then label it as supplied source language.
 
-6. Check risky claim-bearing text before treating it as usable:
+7. Check risky claim-bearing text before treating it as usable:
 
 ```bash
 mdp --json check-claims --dir . --persona "Proposal Lead" --job "compliance review" --text "<claim-bearing text>"

@@ -70,7 +70,15 @@ Preserve the template's `required_primitives`, `primitive_map`, `input_contracts
 
 3. Build or update `.mdp/sources.yaml` before writing cards. Record source kind, locator or note ID, approved use, freshness, confidence, direct source claims, interpretation, and gaps. Keep raw source text out of public paths unless it is synthetic or intentionally sanitized.
 
-4. Extract candidate entries into a review artifact first. Do not treat extracted rules as accepted until the user or designated reviewer accepts them.
+4. When source material arrives as messy opportunity, RFP, capture, requirement, compliance-matrix, or proof notes, use the pack-owned `.mdp/prompts/normalize-opportunity.yaml` contract as the normalization scaffold. Pass `existing_pack_context` with proposal personas, `lead_input_requirements.value_contracts`, `attribute_definitions`, source policy, proposal cards, and review jobs. Validate the model output before relying on it:
+
+```bash
+mdp --json validate-prompt-output --dir . --prompt-id normalize-opportunity --file <prompt-output.json>
+```
+
+Use only the manifest-declared enum values and attributes from the validated output. If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, keep the missing context in gaps and do not smooth it into accepted card entries.
+
+5. Extract candidate entries into a review artifact first. Do not treat extracted rules as accepted until the user or designated reviewer accepts them.
 
 Map source material into proposal cards:
 
@@ -86,15 +94,15 @@ Map source material into proposal cards:
 - `proposal-output-rules` (`output-rules`): deterministic output shape, no submission, no legal/compliance certification language, and review-needed markers.
 - `review-outputs` (`copy-patterns`): reusable brief, matrix, proof review, risk report, and executive summary structures.
 - `gaps` (`gaps`): missing RFP sections, missing proof, weak source confidence, unclear owners, unresolved compliance questions, and privacy blockers.
-- `.mdp/evals/*.yaml`: proceed, insufficient-context, refusal/escalation, unsafe-output, public-safety, and job-routing cases.
+- `.mdp/evals/*.yaml`: proceed, insufficient-context, refusal/escalation, unsafe-output, public-safety, job-routing, and prompt-output validation cases.
 
-5. Edit the pack in slices:
+6. Edit the pack in slices:
 
 - Source ledger, roles, opportunity context, requirement signals, and gaps.
 - Bid/no-bid rules, evaluation criteria, compliance boundaries, and proof library.
 - Review gates, output rules, review output patterns, and eval candidates.
 
-6. Validate after each meaningful slice:
+7. Validate after each meaningful slice:
 
 ```bash
 mdp --json validate --dir .
@@ -102,7 +110,7 @@ mdp --json gaps --dir .
 mdp --json eval --dir .
 ```
 
-7. Test representative proposal routes:
+8. Test representative proposal routes:
 
 ```bash
 mdp --json --summary route --entries --eval-fixture --dir . --persona "Proposal Lead" --job "bid no bid review"
@@ -111,7 +119,7 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "Executive
 mdp --json --summary route --entries --eval-fixture --dir . --persona "Executive Reviewer" --job "executive brief"
 ```
 
-8. Run claim and boundary checks for risky generated or proposed text:
+9. Run claim and boundary checks for risky generated or proposed text:
 
 ```bash
 mdp --json check-claims --dir . --persona "Proposal Lead" --job "compliance review" --text "<claim-bearing text>"
