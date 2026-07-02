@@ -1,6 +1,7 @@
 use crate::constants::DEFAULT_DIR;
 use crate::models::{CardKind, Entry, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
+use crate::runtime_context::current_runtime_context;
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -156,6 +157,18 @@ pub(crate) fn entry_context(
     job: &str,
     draft_ready: bool,
 ) -> Result<Value> {
+    let runtime_context = current_runtime_context()?;
+    entry_context_with_runtime(root, manifest, persona, job, draft_ready, &runtime_context)
+}
+
+pub(crate) fn entry_context_with_runtime(
+    root: &Path,
+    manifest: &Manifest,
+    persona: &str,
+    job: &str,
+    draft_ready: bool,
+    runtime_context: &Value,
+) -> Result<Value> {
     let load_order: Vec<Value> = select_cards(manifest, Some(persona), Some(job))
         .iter()
         .filter_map(|value| value["path"].as_str().map(|path| json!(path)))
@@ -164,6 +177,7 @@ pub(crate) fn entry_context(
         return Ok(json!({
             "contract": "mdp.context.v0",
             "status": "blocked",
+            "runtime_context": runtime_context,
             "reason": "draft_status no-draft",
             "persona": persona,
             "job": job,
@@ -197,6 +211,7 @@ pub(crate) fn entry_context(
     Ok(json!({
         "contract": "mdp.context.v0",
         "status": "ready",
+        "runtime_context": runtime_context,
         "persona": persona,
         "job": job,
         "source_load_order": load_order,

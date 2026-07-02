@@ -208,6 +208,8 @@ mdp --json --summary brief --context --dir ./mdp-demo --prospect ./mdp-demo/exam
 
 Draft from the brief's `context.entries`, the prospect context, and any paths in `context.full_card_required`. Use `--out` when the brief should exist as a file; without it, the CLI reports the artifact as stdout-only.
 
+Briefs include `runtime_context` at the top level, and `brief --context` also includes the same object under `context.runtime_context`. It contains `now_utc`, `date_utc`, `timezone: UTC`, and a local-time policy. Use it as run metadata only; fiscal year, renewal date, event date, and campaign-window fields should still come from pack-declared attributes or supplied source context.
+
 The generated `examples/clay-row.json` is a synthetic fixture, not a real prospect. It includes `source_kind: synthetic-example` and `synthetic: true`. The fixture name is kept for compatibility; Clay is not required and is not the default source system.
 
 The prospect/source row is where the situational trigger comes from. `trigger` is optional, but when present it should describe why the outreach is timely. The pack then decides how to use that input:

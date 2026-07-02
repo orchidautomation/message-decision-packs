@@ -6,6 +6,7 @@ use crate::models::{
     Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints, LeadInputRequirements,
     Manifest, PersonaMapping, Policy, Provenance, ValueContract,
 };
+use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -976,6 +977,13 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
                 "missing_behavior": "Do not assume pack-owned persona mappings, value domains, fit rules, attributes, or signal names when this field is N/A."
             },
             {
+                "name": "runtime_context",
+                "description": "Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing; fiscal year, renewal dates, event dates, and campaign windows remain pack-declared or supplied metadata.",
+                "required": false,
+                "default": "N/A",
+                "missing_behavior": "Do not infer fiscal years, renewal windows, event timing, or local business calendar facts from missing runtime context."
+            },
+            {
                 "name": "source_kind",
                 "description": "Provider-neutral source marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example.",
                 "required": false,
@@ -984,10 +992,11 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             }
         ],
         "instructions": [
-            "Use only raw_row, company_domain, existing_pack_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.",
+            "Use only raw_row, company_domain, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.",
             "Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.",
             "Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional company_domain, source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, signals, and bounded attributes.",
             "When company_domain or company_url is supplied, normalize only that supplied domain-like value. Do not infer a domain from company name.",
+            "Use runtime_context.now_utc and runtime_context.date_utc only to state when this normalization ran or to compare against explicitly supplied timing metadata. Do not hardcode fiscal year or infer customer-specific calendars from the current date.",
             "When existing_pack_context includes lead_input_requirements.value_contracts, emit only values allowed by those pack-owned enum/type/format contracts for persona, segment, source_kind, and other normalized scalar fields. If the source value is outside the contract, omit the optional field or add a gap instead of inventing a synonym.",
             "Use explicit persona from the row only when it already matches a pack-owned persona. Otherwise use pack-owned persona_mappings from existing_pack_context and emit the canonical persona label; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.",
             "Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.",
@@ -1152,13 +1161,21 @@ fn prompt_contract(
                 "required": false,
                 "default": "N/A",
                 "missing_behavior": "Do not assume previous pack decisions, personas, channels, claims, or value domains when this field is N/A."
+            },
+            {
+                "name": "runtime_context",
+                "description": "Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing; fiscal year, renewal dates, event dates, and campaign windows remain pack-declared or supplied metadata.",
+                "required": false,
+                "default": "N/A",
+                "missing_behavior": "Do not infer fiscal years, renewal windows, event timing, or local business calendar facts from missing runtime context."
             }
         ],
         "instructions": [
-            "Use only supplied company_domain, person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.",
+            "Use only supplied company_domain, person_data, company_data, account_data, source_notes, existing_pack_context, and runtime_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.",
             task_instruction,
             "Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.",
             "Use existing_pack_context as the source of truth for pack-owned personas, operator roles, card ids, claims, avoid-rules, output rules, supported channels, and value domains. Do not invent new pack labels when the source is weak; emit gaps or needs-review candidates instead.",
+            "Use runtime_context.now_utc and runtime_context.date_utc only to state when this extraction ran or to compare against explicitly supplied timing metadata. Do not hardcode fiscal year or infer customer-specific calendars from the current date.",
             "For source_summary.company_domain, use the supplied company_domain or an explicit supplied URL/domain only. Do not infer a domain from company name.",
             "Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid. Use constraints for deterministic output limits such as word counts, subject word counts, max questions, or forbidden links/html/tracking when the source explicitly calls for them. Use metadata only for advisory custom annotations that should be preserved for agents but not enforced by the CLI.",
             "Keep source evidence in evidence and provenance. Do not put prospect facts, proof, citations, or raw source excerpts only in metadata.",
@@ -1237,6 +1254,7 @@ fn prospect_normalization_output_schema() -> Value {
                 "description": "The prompt contract that produced this response."
             },
             "source_summary": source_summary_output_schema(),
+            "runtime_context": runtime_context_schema(),
             "normalized_prospect": normalized_prospect_output_schema(),
             "normalization_trace": normalization_trace_output_schema(),
             "card_patches": {
@@ -1274,6 +1292,7 @@ fn card_patch_output_schema(id: &str, target_card_kinds: &[&str]) -> Value {
                 "description": "The prompt contract that produced this response."
             },
             "source_summary": source_summary_output_schema(),
+            "runtime_context": runtime_context_schema(),
             "card_patches": {
                 "type": "array",
                 "description": "Candidate MDP card entries grouped by target card. These require human review before being copied into cards.",

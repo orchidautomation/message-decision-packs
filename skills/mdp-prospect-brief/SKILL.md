@@ -11,7 +11,7 @@ This is the row-evaluation path for MDP. Do not create a parallel evaluator in t
 
 Accepted source rows can come from a user note, CSV, CRM export, Clay, Deepline, a spreadsheet, public research notes, or any other supplied row-like input. Clay is one possible source, not the default mental model.
 
-When the pack has `.mdp/prompts/normalize-prospect.yaml`, use it as the upstream normalization contract for messy rows. Pass relevant `existing_pack_context`: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit rules, signal definitions, avoid-rules, output rules, and source policy. The prompt should return `normalized_prospect` plus `normalization_trace`; validate the full prompt output with `mdp validate-prompt-output`, then save `normalized_prospect` as the local prospect JSON that feeds the CLI. Do not let the prompt decide final fit.
+When the pack has `.mdp/prompts/normalize-prospect.yaml`, use it as the upstream normalization contract for messy rows. Pass relevant `existing_pack_context`: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit rules, signal definitions, avoid-rules, output rules, and source policy. Pass `runtime_context` when timing matters; inspect `mdp --json schema runtime-context` for the shape. The prompt should return `normalized_prospect` plus `normalization_trace`; validate the full prompt output with `mdp validate-prompt-output`, then save `normalized_prospect` as the local prospect JSON that feeds the CLI. Do not let the prompt decide final fit.
 
 ## Prospect Shape
 
@@ -45,6 +45,8 @@ Preferred fields:
 Use prospect `attributes` for reviewed row metadata only. Do not put source evidence there, and do not use entry `metadata` for prospect facts.
 
 Packs may declare readiness requirements in `.mdp/manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`. Treat `mdp validate-prompt-output` and `mdp fit` as the source of truth for missing or invalid readiness details. If a prompt emits a persona, segment, source kind, date/date-time, enum, or declared attribute outside the pack-owned contract, do not repair it silently; preserve the source value in `gaps` or `normalization_trace`, return the validation issue, and ask for reviewed input or a manifest update.
+
+Runtime context is run metadata, not prospect data. Prompt outputs may echo `runtime_context` only when the prompt declares it as an input; validation checks `now_utc`, `date_utc`, `timezone: UTC`, and `local_time_policy`. Fiscal year, renewal date, event date, or campaign window should remain pack-declared or source-supplied metadata, not built-in MDP fields inferred from the current date.
 
 Use provider-neutral `source_kind` values unless a specific source matters:
 
@@ -88,7 +90,7 @@ mdp --json --summary brief --context --dir . --prospect <prospect.json> --channe
 
 Use `--out .mdp/briefs/<brief-name>.json` when the user expects a durable created brief file. Add `--dry-run` first when an agent should preview the file write before mutating the pack. Without `--out`, the brief is stdout-only.
 
-10. Read `data.context.entries` first if drafting is requested and `data.draft_status` is `ready`. Open `data.context.full_card_required` paths only when present.
+10. Read `data.runtime_context` and `data.context.runtime_context` as the brief run timestamp/policy. Then read `data.context.entries` first if drafting is requested and `data.draft_status` is `ready`. Open `data.context.full_card_required` paths only when present.
 
 ## Response
 
@@ -100,6 +102,7 @@ Return:
 - fit status and disqualifiers
 - missing or invalid readiness requirements
 - required card load order
+- runtime context when a brief was produced
 - whether the brief was saved or stdout-only
 - decision trace
 - gaps or assumptions

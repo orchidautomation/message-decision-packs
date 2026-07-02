@@ -484,7 +484,9 @@ mod tests {
             std::fs::read_to_string(root.join(".mdp").join("prompts").join("claims-proof.yaml"))
                 .expect("claims prompt should be readable");
         assert!(claims_prompt.contains("schema_ref: mdp.prompt-output.card-patches.v0"));
+        assert!(claims_prompt.contains("name: runtime_context"));
         assert!(claims_prompt.contains("Use existing_pack_context as the source of truth for pack-owned personas, operator roles, card ids, claims, avoid-rules, output rules, supported channels, and value domains."));
+        assert!(claims_prompt.contains("Use runtime_context.now_utc and runtime_context.date_utc only to state when this extraction ran or to compare against explicitly supplied timing metadata."));
         assert!(claims_prompt.contains("Do not infer a domain from company name."));
         assert!(!claims_prompt.contains("\n  schema:\n"));
 
@@ -496,6 +498,8 @@ mod tests {
         .expect("normalization prompt should be readable");
         assert!(normalization_prompt.contains("lead_input_requirements.value_contracts"));
         assert!(normalization_prompt.contains("lead_input_requirements.attribute_definitions"));
+        assert!(normalization_prompt.contains("name: runtime_context"));
+        assert!(normalization_prompt.contains("Do not hardcode fiscal year or infer customer-specific calendars from the current date."));
         assert!(normalization_prompt.contains("Invalid-value example:"));
 
         let _ = std::fs::remove_dir_all(root);
@@ -518,6 +522,7 @@ mod tests {
         assert!(claims_prompt.contains("schema_ref: mdp.prompt-output.card-patches.v0"));
         assert!(claims_prompt.contains("\n  schema:\n"));
         assert!(claims_prompt.contains("additionalProperties: false"));
+        assert!(claims_prompt.contains("runtime_context:"));
 
         let normalization_prompt = std::fs::read_to_string(
             root.join(".mdp")
@@ -531,6 +536,7 @@ mod tests {
         );
         assert!(normalization_prompt.contains("\n  schema:\n"));
         assert!(normalization_prompt.contains("normalized_prospect:"));
+        assert!(normalization_prompt.contains("runtime_context:"));
 
         let _ = std::fs::remove_dir_all(root);
     }
