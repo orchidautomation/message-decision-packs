@@ -17,6 +17,10 @@ Use this skill only when the surface is legacy/generic or this skill is listed i
 
 Test whether the pack routes the right cards for realistic GTM tasks.
 
+## Progressive References
+
+Read `references/installed-template-qa.md` when the goal is to QA the installed release artifact, default GTM template, default proposal template, or a clean scratch pack produced by `mdp init`.
+
 ## Workflow
 
 1. Validate structure:

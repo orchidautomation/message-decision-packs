@@ -1,0 +1,27 @@
+{
+  "skill": "mdp-lfg",
+  "evals": [
+    {
+      "id": "lfg-output-mental-model",
+      "prompt": "Explain to a new user how MDP prompt outputs are validated by the CLI before a message is drafted.",
+      "expected_output": "A clear step-by-step explanation with a deterministic flow from messy source to prompt contract to CLI validation to fit/route/brief to later drafting.",
+      "assertions": [
+        "States that prompt outputs are untrusted until validated by the CLI.",
+        "Names `mdp validate-prompt-output` as the validation gate.",
+        "Explains that allowed enum/value domains come from pack-owned contracts.",
+        "Distinguishes deterministic qualification from later LLM drafting."
+      ]
+    },
+    {
+      "id": "lfg-output-template-qa",
+      "prompt": "Give me a QA plan for testing the installed GTM and proposal templates after a release.",
+      "expected_output": "A concrete plan that tests the installed binary in isolated directories with explicit --dir commands and records pass/fail output.",
+      "assertions": [
+        "Requires testing the installed artifact, not only source-tree cargo commands.",
+        "Warns not to put two `.mdp` directories in one shared folder.",
+        "Includes strict validate and strict eval commands for both GTM and proposal templates.",
+        "Includes prompt-output validation or explains that strict evals cover prompt-output fixtures."
+      ]
+    }
+  ]
+}

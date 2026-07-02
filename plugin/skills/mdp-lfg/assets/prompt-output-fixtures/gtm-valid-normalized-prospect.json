@@ -1,0 +1,52 @@
+{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "inputs_used": ["raw_row", "existing_pack_context", "source_kind"],
+    "account_name": "ExampleCo",
+    "company_name": "ExampleCo",
+    "company_domain": "example.com",
+    "person_name": "Alex Rivera",
+    "person_title": "Revenue Operations Lead",
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "Alex Rivera",
+    "title": "Revenue Operations Lead",
+    "company": "ExampleCo",
+    "company_domain": "example.com",
+    "source_kind": "synthetic-example",
+    "synthetic": true,
+    "background": "Synthetic row says the team is standardizing prospect qualification and campaign routing data.",
+    "trigger": "Standardizing campaign qualification before a new outbound motion.",
+    "persona": "GTM Engineering",
+    "segment": "agent-assisted GTM",
+    "signals": [
+      {
+        "id": "qualification-standardization",
+        "title": "Qualification data standardization",
+        "source": "raw_row.operations_note",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
+      }
+    ],
+    "attributes": {}
+  },
+  "normalization_trace": {
+    "fit_readiness": {
+      "ready_for_mdp_fit": true,
+      "has_persona": true,
+      "has_segment": true,
+      "has_signals": true,
+      "has_signal_source": true,
+      "has_trigger": true,
+      "has_company_domain": true
+    },
+    "missing_required": [],
+    "preserved_raw_fields": ["raw_row.name", "raw_row.title", "raw_row.company", "raw_row.operations_note"]
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}

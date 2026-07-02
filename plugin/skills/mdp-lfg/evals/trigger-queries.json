@@ -1,0 +1,27 @@
+{
+  "skill": "mdp-lfg",
+  "description_under_test": "Use as the master orchestrator for fuzzy or multi-step Message Decision Pack work: create, use, review, route, brief, evaluate, or improve a pack.",
+  "threshold": 0.5,
+  "queries": [
+    {"id": "lfg-train-001", "split": "train", "query": "I'm confused about whether the GTM template account stuff landed. Walk me through what MDP does now.", "should_trigger": true},
+    {"id": "lfg-train-002", "split": "train", "query": "Create a new MDP from these messy product and ICP notes, then validate it.", "should_trigger": true},
+    {"id": "lfg-train-003", "split": "train", "query": "Run the released installer and QA the default gtm and proposal templates in clean folders.", "should_trigger": true},
+    {"id": "lfg-train-004", "split": "train", "query": "How do prompt outputs flow into the CLI validation gate for this pack?", "should_trigger": true},
+    {"id": "lfg-train-005", "split": "train", "query": "I have a proposal pack and a gtm pack and I'm not sure which skill should own the work.", "should_trigger": true},
+    {"id": "lfg-train-006", "split": "train", "query": "Can you evaluate this message decision pack and tell me what route and brief commands prove?", "should_trigger": true},
+    {"id": "lfg-train-007", "split": "train", "query": "Please update my CRM after you find new leads.", "should_trigger": false},
+    {"id": "lfg-train-008", "split": "train", "query": "Write a plain email with no MDP pack, no validation, and no repo work.", "should_trigger": false},
+    {"id": "lfg-train-009", "split": "train", "query": "Scrape LinkedIn profiles and enrich them with personal emails.", "should_trigger": false},
+    {"id": "lfg-train-010", "split": "train", "query": "Analyze this Rust lifetime error in the CLI parser.", "should_trigger": false},
+    {"id": "lfg-train-011", "split": "train", "query": "Make a dashboard of campaign revenue by segment.", "should_trigger": false},
+    {"id": "lfg-train-012", "split": "train", "query": "Schedule these outreach emails for tomorrow morning.", "should_trigger": false},
+    {"id": "lfg-validation-001", "split": "validation", "query": "This MDP architecture is all collapsed in my head. Explain gtm vs proposal and what the CLI enforces.", "should_trigger": true},
+    {"id": "lfg-validation-002", "split": "validation", "query": "Use the MDP pack to generate a prospect brief, but don't draft if account-only context is missing a person.", "should_trigger": true},
+    {"id": "lfg-validation-003", "split": "validation", "query": "I ran mdp init proposal and the output feels weird. QA the template and file follow-ups.", "should_trigger": true},
+    {"id": "lfg-validation-004", "split": "validation", "query": "Review these MDP cards and tell me if the prompt contract values are valid.", "should_trigger": true},
+    {"id": "lfg-validation-005", "split": "validation", "query": "Turn this blog post into a LinkedIn post in my voice.", "should_trigger": false},
+    {"id": "lfg-validation-006", "split": "validation", "query": "Find restaurants near the venue for dinner.", "should_trigger": false},
+    {"id": "lfg-validation-007", "split": "validation", "query": "Push the latest deployment to Vercel and check logs.", "should_trigger": false},
+    {"id": "lfg-validation-008", "split": "validation", "query": "Read this PDF and summarize the financial terms.", "should_trigger": false}
+  ]
+}
