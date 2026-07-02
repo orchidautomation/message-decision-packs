@@ -180,7 +180,61 @@ fn lead_input_requirements_schema() -> Value {
             "required_attributes": {
                 "type": "array",
                 "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"}
+            },
+            "value_contracts": {
+                "type": "object",
+                "description": "Optional pack-owned value domains for normalized prospect scalar fields. These contracts are enforced by validate-prompt-output and fit readiness.",
+                "propertyNames": {
+                    "enum": [
+                        "name",
+                        "title",
+                        "company",
+                        "company_domain",
+                        "source_kind",
+                        "synthetic",
+                        "linkedin_url",
+                        "company_url",
+                        "background",
+                        "trigger",
+                        "persona",
+                        "segment"
+                    ]
+                },
+                "additionalProperties": value_contract_schema()
+            },
+            "attribute_definitions": {
+                "type": "object",
+                "description": "Optional pack-owned contracts for prospect attributes. Undeclared attributes remain allowed unless allow_undeclared_attributes is false.",
+                "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"},
+                "additionalProperties": value_contract_schema()
+            },
+            "allow_undeclared_attributes": {
+                "type": "boolean",
+                "default": true,
+                "description": "When false, prospect attributes must be declared in attribute_definitions."
             }
+        }
+    })
+}
+
+fn value_contract_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "A deterministic value contract for a prompt or prospect field.",
+        "additionalProperties": false,
+        "properties": {
+            "type": {"enum": ["string", "number", "integer", "boolean"]},
+            "format": {
+                "enum": ["date", "date-time"],
+                "description": "Optional format for string values."
+            },
+            "enum": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Allowed string values. Values are exact and pack-owned."
+            },
+            "required": {"type": "boolean"},
+            "description": {"type": "string"}
         }
     })
 }
@@ -508,6 +562,11 @@ mod tests {
             result["properties"]["lead_input_requirements"]["properties"]["required_fields"]["items"]
                 ["enum"][3],
             "company_domain"
+        );
+        assert_eq!(
+            result["properties"]["lead_input_requirements"]["properties"]["value_contracts"]["additionalProperties"]
+                ["additionalProperties"],
+            false
         );
     }
 

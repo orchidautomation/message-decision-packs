@@ -230,7 +230,7 @@ pub(crate) fn routable_persona<'a>(
     }
 }
 
-fn resolve_pack_persona_label(
+pub(crate) fn resolve_pack_persona_label(
     manifest: &Manifest,
     input: &str,
     source: &str,

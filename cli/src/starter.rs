@@ -4,7 +4,7 @@ use crate::constants::{
 };
 use crate::models::{
     Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints, LeadInputRequirements,
-    Manifest, PersonaMapping, Policy, Provenance,
+    Manifest, PersonaMapping, Policy, Provenance, ValueContract,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -15,6 +15,51 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
         "PMM".to_string(),
         "PM".to_string(),
     ];
+    let value_contracts = BTreeMap::from([
+        (
+            "segment".to_string(),
+            ValueContract {
+                value_type: Some("string".to_string()),
+                enum_values: vec!["agent-assisted GTM".to_string()],
+                description: Some(
+                    "Pack-owned segment labels accepted from normalization prompts.".to_string(),
+                ),
+                ..ValueContract::default()
+            },
+        ),
+        (
+            "source_kind".to_string(),
+            ValueContract {
+                value_type: Some("string".to_string()),
+                enum_values: vec![
+                    "user-provided-row".to_string(),
+                    "csv-row".to_string(),
+                    "crm-export-row".to_string(),
+                    "clay-row".to_string(),
+                    "deepline-row".to_string(),
+                    "private-scratch-row".to_string(),
+                    "sanitized-example".to_string(),
+                    "synthetic-example".to_string(),
+                ],
+                description: Some(
+                    "Provider-neutral source markers accepted from normalization prompts."
+                        .to_string(),
+                ),
+                ..ValueContract::default()
+            },
+        ),
+    ]);
+    let attribute_definitions = BTreeMap::from([(
+        "fiscal_year".to_string(),
+        ValueContract {
+            value_type: Some("string".to_string()),
+            description: Some(
+                "Optional reviewed account metadata. Keep proof in signals, not attributes."
+                    .to_string(),
+            ),
+            ..ValueContract::default()
+        },
+    )]);
     Manifest {
         format: FORMAT_VERSION.to_string(),
         id: slug.to_string(),
@@ -34,6 +79,9 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
             required_fields: vec!["name".to_string(), "title".to_string(), "company_domain".to_string(), "trigger".to_string(), "persona".to_string(), "segment".to_string(), "signals".to_string()],
             required_signal_fields: vec!["source".to_string()],
             required_attributes: Vec::new(),
+            value_contracts,
+            attribute_definitions,
+            allow_undeclared_attributes: true,
         },
         cards: vec![
             card_ref("personas", "cards/personas.yaml", CardKind::Personas, "Who the decision pack serves and what each persona needs.", &["GTM Engineering", "PMM", "PM"], &["persona"]),
@@ -992,8 +1040,8 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
                     "company_url": "https://example.com",
                     "background": "Source row says the team is standardizing campaign qualification data across CRM exports, spreadsheets, and research notes.",
                     "trigger": "Standardizing prospect qualification data before routing new campaigns.",
-                    "persona": "Revenue Operations",
-                    "segment": "B2B GTM operations",
+                    "persona": "GTM Engineering",
+                    "segment": "agent-assisted GTM",
                     "attributes": {
                         "fiscal_year": "FY2027"
                     },

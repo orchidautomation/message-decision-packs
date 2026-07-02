@@ -114,9 +114,29 @@ lead_input_requirements:
     - source
   required_attributes:
     - fiscal_year
+  value_contracts:
+    segment:
+      type: string
+      enum:
+        - agent-assisted GTM
+    source_kind:
+      type: string
+      enum:
+        - user-provided-row
+        - csv-row
+        - crm-export-row
+        - clay-row
+        - deepline-row
+        - private-scratch-row
+        - sanitized-example
+        - synthetic-example
+  attribute_definitions:
+    fiscal_year:
+      type: string
+      description: Optional reviewed account metadata.
 ```
 
-A row can parse successfully and still return `insufficient-context` if it does not satisfy the pack's declared requirements.
+A row can parse successfully and still return `insufficient-context` if it does not satisfy the pack's declared requirements or emits a value outside the pack's declared enum/type/date contracts.
 
 If the input is account-only and does not include a person name and title, do not invent a contact just to satisfy the prospect schema. Ask for a person row or return an insufficient-context decision until MDP has a provider-neutral account input contract.
 

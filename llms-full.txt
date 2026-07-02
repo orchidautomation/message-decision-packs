@@ -201,7 +201,7 @@ Prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for 
 
 Prompt contracts do not browse, scrape, enrich, send, sequence, or update external systems.
 
-Prospect rows keep `name`, `title`, and `company` as compatibility admission fields, but new lead workflows should provide `company_domain` as the stronger account key. `mdp fit` canonicalizes supplied domain-like values, for example `https://www.apple.com/` -> `apple.com`, without browsing, DNS checks, enrichment, or inferring a domain from company name. Packs can declare `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`; fit output reports missing and invalid requirements deterministically.
+Prospect rows keep `name`, `title`, and `company` as compatibility admission fields, but new lead workflows should provide `company_domain` as the stronger account key. `mdp fit` canonicalizes supplied domain-like values, for example `https://www.apple.com/` -> `apple.com`, without browsing, DNS checks, enrichment, or inferring a domain from company name. Packs can declare `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`; `validate-prompt-output` and `fit` report missing or invalid enum, type, date/date-time, persona, segment, source_kind, and attribute requirements deterministically.
 
 ## Plugin
 

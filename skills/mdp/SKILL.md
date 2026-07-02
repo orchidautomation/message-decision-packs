@@ -132,9 +132,31 @@ lead_input_requirements:
     - source
   required_attributes:
     - fiscal_year
+  value_contracts:
+    segment:
+      type: string
+      enum:
+        - agent-assisted GTM
+    source_kind:
+      type: string
+      enum:
+        - user-provided-row
+        - csv-row
+        - crm-export-row
+        - clay-row
+        - deepline-row
+        - private-scratch-row
+        - sanitized-example
+        - synthetic-example
+  attribute_definitions:
+    fiscal_year:
+      type: string
+      description: Optional reviewed account metadata.
 ```
 
 Use provider-neutral `source_kind` values unless the source itself matters: `user-provided-row`, `csv-row`, `crm-export-row`, `clay-row`, `deepline-row`, `private-scratch-row`, `sanitized-example`, or `synthetic-example`. Clay is one possible source, not the default MDP mental model.
+
+When a pack declares `value_contracts` or `attribute_definitions`, prompt output must emit exactly those blessed values. `mdp validate-prompt-output` rejects non-pack personas, non-enum segments/source kinds, invalid date/date-time values, type mismatches, and undeclared attributes when `allow_undeclared_attributes: false`.
 
 Normalization prompts may map messy titles into pack-owned personas and signals, but they must preserve raw evidence, uncertainty, missing fields, and disqualifying execution asks. When using any `.mdp/prompts/*.yaml` prompt contract, treat `output_contract.schema_ref` as the response contract; if the prompt includes `output_contract.schema`, give that literal schema to the model or host. `output_contract.example` is only a reference. The CLI still owns final fit and route decisions.
 
