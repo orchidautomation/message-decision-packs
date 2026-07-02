@@ -2,31 +2,31 @@
 
 This file is a curated, agent-readable briefing for Message Decision Packs. It is longer than `llms.txt`, but still intentionally edited. It is not a raw repository dump.
 
-Last updated: 2026-06-29
+Last updated: 2026-07-02
 
 ## One-Screen Summary
 
-Message Decision Packs, or MDP, is a local/offline standard, Rust CLI, and Pluxx-packaged plugin for GTM messaging decision context.
+Message Decision Packs, or MDP, is a local/offline standard, Rust CLI, and Pluxx-packaged plugin for GTM messaging and profile-specific review decision context.
 
-MDP exists because agents are good at producing polished copy from thin context. That is useful when the source material is strong and dangerous when the source material is weak. A pack gives the agent a quality floor: source evidence, fit rules, approved claims, avoid-rules, output constraints, gaps, and evals are all explicit local files.
+MDP exists because agents are good at producing polished output from thin context. That is useful when the source material is strong and dangerous when the source material is weak. A pack gives the agent a quality floor: source evidence, fit or review rules, approved claims, proof, avoid-rules, output constraints, gaps, and evals are all explicit local files.
 
 The core idea:
 
 ```text
-Do not ask an agent to remember the GTM messaging system.
-Put the messaging judgment in local files, validate it, route only the needed entries, and check the output.
+Do not ask an agent to remember the GTM messaging or proposal review system.
+Put the judgment in local files, validate it, route only the needed entries, and check the output.
 ```
 
-MDP stops at decision context, validation, briefs, and checks. Sending, CRM updates, enrichment, scraping, sequencing, and external automation stay outside MDP.
+MDP stops at decision context, validation, briefs, gaps, and checks. Sending, CRM updates, enrichment, scraping, sequencing, proposal submission, approval workflow ownership, and external automation stay outside MDP.
 
 ## Product Boundaries
 
 MDP is:
 
-- a local file standard for GTM messaging context
-- a CLI for validation, routing, fit checks, briefs, claim checks, gaps, and evals
+- a local file standard for GTM messaging context and profile-specific review context
+- a CLI for validation, routing, fit/review checks, briefs, claim checks, gaps, and evals
 - a plugin that teaches supported hosts how to use the CLI and pack structure
-- a way to make no-draft decisions explicit when evidence is missing or fit is weak
+- a way to make no-draft or needs-review decisions explicit when evidence is missing or fit/review support is weak
 - a way to preserve source-backed claims and avoid-rule boundaries across agent threads
 
 MDP is not:
@@ -109,7 +109,7 @@ The manifest declares pack identity, personas, supported channels, mappings, and
 
 ## Decision Flow
 
-MDP routes messaging context as a decision tree:
+MDP routes messaging and review context as a decision tree. GTM packs commonly use this row-to-brief path:
 
 ```text
 messy supplied row
@@ -158,6 +158,17 @@ mdp --json --summary brief --context --dir . --prospect <prospect.json> --channe
 mdp --json check-claims --dir . --text "<draft copy>"
 mdp --json gaps --dir .
 mdp --json eval --dir .
+```
+
+Proposal reference profiles use the same validate, route, check, gaps, and eval primitives without a prospect row:
+
+```bash
+mdp --json init --template proposal --dir ./mdp-proposal-demo --force
+mdp --json validate --dir ./mdp-proposal-demo
+mdp --json eval --dir ./mdp-proposal-demo
+mdp --json route --entries --dir ./mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
+mdp --json route --entries --dir ./mdp-proposal-demo --persona "Executive Reviewer" --job "red team gap review"
+mdp --json gaps --dir ./mdp-proposal-demo
 ```
 
 The fit gate returns `fit`, `disqualified`, or `insufficient-context`. Agents should stop on `disqualified` or `insufficient-context` unless the user explicitly asks for a different kind of analysis. Do not invent missing prospect facts to unlock drafting.
@@ -241,6 +252,7 @@ When using MDP:
 - Run `mdp check-claims` before approving generated copy.
 - Use `mdp gaps` to expose missing evidence.
 - Use `mdp eval` when pack behavior changes.
+- For proposal review packs, route the supplied review job directly and use `gaps` plus `check-claims`; do not manufacture prospect rows or outbound fixtures.
 
 When no real or intentionally sanitized prospect row exists, use `mdp sample-leads` to create clearly fake fixtures:
 

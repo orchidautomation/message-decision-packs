@@ -1,6 +1,6 @@
 # Getting Started
 
-Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions, routing contracts, fit rules, approved claims, avoid-rules, output-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, or act as an AI SDR.
+Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions and profile-specific review decisions as routing contracts, fit or review rules, approved claims, avoid-rules, output-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, submit proposals, own approvals, or act as an AI SDR.
 
 If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a provider-neutral prospect/source row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, output-rules, and bounded context for drafting.
 
@@ -62,7 +62,11 @@ For the proposal reference profile:
 mdp --json init --template proposal --dir ./mdp-proposal-demo --force
 mdp --json validate --dir ./mdp-proposal-demo
 mdp --json eval --dir ./mdp-proposal-demo
+mdp --json route --entries --dir ./mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
+mdp --json gaps --dir ./mdp-proposal-demo
 ```
+
+The proposal starter does not create prospect rows or outbound fixtures. It is a synthetic proposal review profile for bid/no-bid, compliance, proof, red-team, and executive review workflows.
 
 The starter creates:
 
@@ -86,6 +90,12 @@ Ask which cards matter for a persona and job:
 mdp --json --summary route --entries --eval-fixture --dir ./mdp-demo --persona "PMM" --job "linkedin outbound copy"
 ```
 
+For the proposal reference profile:
+
+```bash
+mdp --json --summary route --entries --eval-fixture --dir ./mdp-proposal-demo --persona "Executive Reviewer" --job "red team gap review"
+```
+
 Agents should load only the returned cards instead of reading the entire pack by default.
 
 Use the returned `eval_fixture` as a scaffold for route tests. Review it before committing so evals encode intended behavior, not accidental routing noise.
@@ -98,7 +108,7 @@ mdp sample-leads --dir ./mdp-demo --persona "PMM" --job "initial email outbound 
 
 These rows are deterministic synthetic example fixtures with `source_kind: synthetic-example`, `synthetic: true`, and `do_not_contact: true`. Route, fit, and brief each fixture before drafting. Use only `safe_personalization` and `known_gaps` for personalization assumptions, then run `check-claims`. Never treat fixture leads as real prospects.
 
-## Use A Prospect Or Source Row
+## Use A Prospect Or Source Row For GTM
 
 Keep private prospect data in ignored scratch unless you intentionally commit a sanitized example. A row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it is normalized into MDP prospect JSON.
 

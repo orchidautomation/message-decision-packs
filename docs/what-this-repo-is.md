@@ -1,11 +1,11 @@
 # What This Repo Is
 
-Message Decision Packs, or MDP, is a local standard, CLI, and agent plugin system for keeping GTM messaging context structured, reviewable, and reusable.
+Message Decision Packs, or MDP, is a local standard, CLI, and agent plugin system for keeping GTM messaging context and profile-specific review context structured, reviewable, and reusable.
 
 The short version:
 
 ```text
-MDP turns "paste a bunch of context and ask an AI to write GTM copy" into a local, testable decision system.
+MDP turns "paste a bunch of context and ask an AI to write or review from it" into a local, testable decision system.
 ```
 
 It gives AI coding agents a shared source of truth for:
@@ -21,6 +21,8 @@ It gives AI coding agents a shared source of truth for:
 - what channel rules apply
 - what output style and structure rules apply
 - what gaps should be surfaced instead of invented
+
+For GTM packs, that often means prospect fit, channel policy, CTAs, and copy patterns. For proposal review packs, it means roles, requirements, proof, compliance boundaries, review gates, output contracts, and reviewer gaps.
 
 MDP is not the system that sends messages. It is the decision layer that tells an agent what context to load, what it is allowed to say, and when it should stop.
 
@@ -63,7 +65,7 @@ Keep gaps explicit.
 Run evals when behavior changes.
 ```
 
-The point is not just better copy. The point is making agent-assisted GTM work more inspectable, repeatable, and safer.
+The point is not just better copy. The point is making agent-assisted messaging and review work more inspectable, repeatable, and safer.
 
 ## Why It Matters
 
@@ -334,9 +336,9 @@ That boundary is important. It keeps the system inspectable and prevents a messa
 Use this version:
 
 ```text
-This repo is a local standard and CLI for turning GTM messaging strategy into structured files that AI agents can safely use.
+This repo is a local standard and CLI for turning messaging or review strategy into structured files that AI agents can safely use.
 
-Instead of pasting the same product, ICP, claim, and CTA context into every AI thread, you put that judgment into a Message Decision Pack. The CLI validates it, routes only the relevant cards for a task, checks whether a prospect has enough context, generates a brief, and checks draft copy for unsupported claims.
+Instead of pasting the same product, ICP, proposal requirement, claim, proof, and output-rule context into every AI thread, you put that judgment into a Message Decision Pack. The CLI validates it, routes only the relevant cards for a task, checks whether supplied context is strong enough, generates a brief when the workflow needs one, and checks draft or review text for unsupported claims.
 
 It is not a sender, CRM, sequencer, scraper, or AI SDR. It is the decision layer before those systems.
 
@@ -379,5 +381,5 @@ Keep the explanation practical and grounded in the files in this repo.
 ## The One-Line Product Story
 
 ```text
-MDP turns GTM prompting into a local, testable decision system that can travel across agent hosts.
+MDP turns GTM prompting and profile-specific review prompting into a local, testable decision system that can travel across agent hosts.
 ```

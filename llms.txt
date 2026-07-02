@@ -1,6 +1,6 @@
 # Message Decision Packs
 
-> Message Decision Packs, or MDP, is a local/offline standard, CLI, and plugin for making GTM messaging judgment explicit. It turns scattered product notes, ICP notes, source evidence, fit rules, claims, hooks, CTAs, avoid-rules, output rules, and eval fixtures into a versioned `.mdp/` folder that agents can inspect, route, validate, and use without rebuilding context from scratch.
+> Message Decision Packs, or MDP, is a local/offline standard, CLI, and plugin for making GTM messaging and profile-specific review judgment explicit. It turns scattered product notes, ICP notes, proposal requirements, source evidence, fit or review rules, claims, proof, hooks, CTAs, avoid-rules, output rules, and eval fixtures into a versioned `.mdp/` folder that agents can inspect, route, validate, and use without rebuilding context from scratch.
 
 > MDP is a decision/context layer. It is not an AI SDR, CRM, sequencer, enrichment provider, scraper, BI tool, or generic automation system. It does not send messages or update external systems.
 
@@ -36,7 +36,9 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
 
 ## Core Workflow
 
-Use MDP as a decision system before drafting:
+Use MDP as a decision system before drafting or review.
+
+GTM starter flow:
 
 ```text
 source material
@@ -55,6 +57,19 @@ When prospect context is missing, weak, disqualified, or unsupported, the agent 
 
 New lead workflows should prefer `company_domain` as the account key while preserving `company` as the human-readable company name and legacy admission field. `mdp fit` canonicalizes supplied domains/URLs such as `https://www.apple.com/` to `apple.com`, but it does not infer domains from company names. Packs can declare readiness with `lead_input_requirements.required_fields`, `required_signal_fields`, and `required_attributes`; fit output reports missing and invalid requirements.
 
+Proposal reference-profile flow:
+
+```text
+approved RFP/source/proof material
+  -> source ledger
+  -> proposal cards
+  -> mdp validate
+  -> mdp route --entries for bid/no-bid, compliance, proof, or red-team review
+  -> mdp check-claims for claim-bearing text
+  -> mdp gaps
+  -> mdp eval when behavior changes
+```
+
 ## Important CLI Commands
 
 ```bash
@@ -66,6 +81,16 @@ mdp --json --summary brief --context --dir . --prospect <prospect.json> --channe
 mdp --json check-claims --dir . --text "<draft copy>"
 mdp --json gaps --dir .
 mdp --json eval --dir .
+```
+
+Proposal starter commands:
+
+```bash
+mdp --json init --template proposal --dir ./mdp-proposal-demo --force
+mdp --json validate --dir ./mdp-proposal-demo
+mdp --json eval --dir ./mdp-proposal-demo
+mdp --json route --entries --dir ./mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
+mdp --json gaps --dir ./mdp-proposal-demo
 ```
 
 ## Plugin Skills
