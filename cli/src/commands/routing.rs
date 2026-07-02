@@ -197,7 +197,10 @@ fn fit_context(
         }));
     }
     collect_attribute_issues(prospect, &mut invalid_requirements);
-    for violation in prospect_contract_violations(manifest, prospect) {
+    let effective_persona = persona_resolution
+        .fit_usable
+        .then_some(persona_resolution.persona.as_str());
+    for violation in prospect_contract_violations(manifest, prospect, effective_persona) {
         invalid_requirements.push(json!({
             "scope": violation.scope,
             "field": violation.field,
@@ -1469,6 +1472,52 @@ mod tests {
                     && issue["reason"]
                         .as_str()
                         .is_some_and(|reason| reason.contains("agent-assisted GTM")))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_reports_invalid_mapped_persona_contract_value() {
+        let root = temp_pack("fit-invalid-mapped-persona-contract");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace(
+                "  value_contracts:\n    segment:",
+                "  value_contracts:\n    persona:\n      type: string\n      enum:\n      - GTM Engineering\n      description: Pack-owned persona labels accepted for fit.\n    segment:",
+            ),
+        )
+        .expect("manifest should be writable");
+        let prospect_path = root.join("examples").join("mapped-persona-contract.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Product Marketing Lead",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["persona_resolution"]["persona"], "PMM");
+        assert_eq!(result["status"], "insufficient-context");
+        assert!(
+            result["context"]["invalid_requirements"]
+                .as_array()
+                .expect("invalid requirements array")
+                .iter()
+                .any(|issue| issue["path"] == "persona"
+                    && issue["reason"].as_str().is_some_and(|reason| reason
+                        .contains("GTM Engineering")
+                        && reason.contains("PMM")))
         );
 
         let _ = std::fs::remove_dir_all(root);

@@ -30,6 +30,7 @@ pub(crate) const PROSPECT_CONTRACT_FIELDS: &[&str] = &[
 pub(crate) fn prospect_contract_violations(
     manifest: &Manifest,
     prospect: &Prospect,
+    effective_persona: Option<&str>,
 ) -> Vec<ContractViolation> {
     let mut violations = Vec::new();
 
@@ -51,6 +52,19 @@ pub(crate) fn prospect_contract_violations(
     for (field, contract) in &manifest.lead_input_requirements.value_contracts {
         if let Some(value) = prospect_field_value(prospect, field) {
             validate_value(field, &value, contract, field, "prospect", &mut violations);
+        } else if field == "persona" {
+            if let Some(persona) = effective_persona.and_then(present_str) {
+                validate_value(
+                    field,
+                    &Value::String(persona.to_string()),
+                    contract,
+                    field,
+                    "prospect",
+                    &mut violations,
+                );
+            } else if contract.required {
+                violations.push(required_violation("prospect", field, field));
+            }
         } else if contract.required {
             violations.push(required_violation("prospect", field, field));
         }
