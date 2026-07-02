@@ -46,6 +46,7 @@ Choose the narrow path and use that skill's workflow:
 - New or messy GTM pack: `$mdp-create-pack`
 - Proposal, RFP, capture, bid/no-bid, compliance, proof, red-team, or executive-review pack: `$mdp-proposal-pack-builder`
 - Bid/no-bid review for a supplied proposal pursuit: `$mdp-proposal-bid-no-bid-review`
+- Compliance review for supplied proposal requirements, matrices, or answer drafts: `$mdp-proposal-compliance-review`
 - ICP, segments, personas, fit/disqualifiers, signals, and no-message logic: `$mdp-icp-builder`
 - Website, docs, notes, sales calls into card entries: `$mdp-source-extract`
 - Hooks, objections, message angles, copy structures: `$mdp-message-angles`

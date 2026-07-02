@@ -7,7 +7,7 @@ description: Use when the user wants an agent to build or improve a proposal, RF
 
 Build a proposal reference-profile pack from approved source material. This skill coordinates source intake, extraction, pack edits, validation, and review. It does not submit proposals, manage approvals, certify compliance, replace legal/procurement/security review, or create approved proposal content.
 
-For bid/no-bid review against an existing proposal pack and supplied pursuit context, use `$mdp-proposal-bid-no-bid-review` instead.
+For bid/no-bid review against an existing proposal pack and supplied pursuit context, use `$mdp-proposal-bid-no-bid-review` instead. For compliance review against existing requirements, matrices, or answer drafts, use `$mdp-proposal-compliance-review` instead.
 
 ## Intake Gate
 
