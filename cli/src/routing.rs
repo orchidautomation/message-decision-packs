@@ -512,6 +512,7 @@ mod tests {
             name: "Test".to_string(),
             version: "0.1.0".to_string(),
             description: None,
+            profile: None,
             personas: vec!["PMM".to_string()],
             target_personas: vec![],
             operator_roles: vec![],

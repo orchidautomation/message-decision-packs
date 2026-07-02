@@ -9,6 +9,16 @@ Build a proposal reference-profile pack from approved source material. This skil
 
 For bid/no-bid review against an existing proposal pack and supplied pursuit context, use `$mdp-proposal-bid-no-bid-review` instead. For compliance review against existing requirements, matrices, or answer drafts, use `$mdp-proposal-compliance-review` instead. For win-theme or proof review against existing themes, differentiators, or claim-bearing draft text, use `$mdp-proposal-win-theme-proof-review` instead. For red-team or gap review against supplied proposal material, use `$mdp-proposal-red-team-gap-review` instead.
 
+## Profile Gate
+
+Before editing an existing pack, run:
+
+```bash
+mdp --json agent-surface --dir .
+```
+
+Use this skill only when the surface is legacy/generic during new-pack creation or `profile.id` is `proposal` and `mdp-proposal-pack-builder` is allowed. If the surface blocks `mdp-proposal-pack-builder`, stop and reroute to the allowed/recommended skill named in the surface. GTM packs should use GTM pack and ICP skills, not proposal review cards.
+
 ## Intake Gate
 
 Before writing pack files, identify the destination directory and classify the source material:

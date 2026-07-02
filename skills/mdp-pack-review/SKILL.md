@@ -5,6 +5,16 @@ description: Use when the user asks to review, audit, harden, QA, or improve a M
 
 # MDP Pack Review
 
+## Profile Gate
+
+Before using this skill against an existing pack, run:
+
+```bash
+mdp --json agent-surface --dir .
+```
+
+Use this skill only when the surface is legacy/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
+
 Review an MDP like a GTM control surface: structure first, then decision quality.
 
 ## Workflow

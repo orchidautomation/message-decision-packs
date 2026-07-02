@@ -8,6 +8,8 @@ pub(crate) struct Manifest {
     pub(crate) name: String,
     pub(crate) version: String,
     pub(crate) description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) profile: Option<Profile>,
     pub(crate) personas: Vec<String>,
     #[serde(default)]
     pub(crate) target_personas: Vec<String>,
@@ -22,6 +24,55 @@ pub(crate) struct Manifest {
     pub(crate) cards: Vec<CardRef>,
     pub(crate) policy: Policy,
     pub(crate) provenance: Provenance,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Profile {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) version: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentSurface::is_empty")]
+    pub(crate) agent_surface: AgentSurface,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct AgentSurface {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) recommended_skills: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) allowed_skills: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) blocked_skills: Vec<BlockedSkill>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) job_skills: Vec<JobSkillRoute>,
+}
+
+impl AgentSurface {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.recommended_skills.is_empty()
+            && self.allowed_skills.is_empty()
+            && self.blocked_skills.is_empty()
+            && self.job_skills.is_empty()
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct BlockedSkill {
+    #[serde(default)]
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct JobSkillRoute {
+    #[serde(default)]
+    pub(crate) job: String,
+    #[serde(default)]
+    pub(crate) skills: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

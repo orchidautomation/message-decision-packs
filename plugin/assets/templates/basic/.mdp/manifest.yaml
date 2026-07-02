@@ -3,6 +3,59 @@ id: basic-mdp-template
 name: Basic MDP Template
 version: 0.1.0
 description: A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, output rules, and copy guidance.
+profile:
+  id: gtm
+  label: GTM Messaging
+  version: mdp.profile.v0
+  agent_surface:
+    recommended_skills:
+    - mdp
+    - mdp-create-pack
+    - mdp-icp-builder
+    - mdp-prospect-brief
+    - mdp-pack-eval
+    allowed_skills:
+    - mdp
+    - mdp-lfg
+    - mdp-create-pack
+    - mdp-icp-builder
+    - mdp-source-extract
+    - mdp-message-angles
+    - mdp-cta-builder
+    - mdp-avoid-rules
+    - mdp-output-rules
+    - mdp-prospect-brief
+    - mdp-copy-brief
+    - mdp-copy-eval
+    - mdp-pack-review
+    - mdp-pack-eval
+    blocked_skills:
+    - name: mdp-proposal-pack-builder
+      reason: 'Proposal/RFP review pack builder; use only with profile.id: proposal.'
+    - name: mdp-proposal-bid-no-bid-review
+      reason: Proposal review job; not a GTM prospect or outbound-copy workflow.
+    - name: mdp-proposal-compliance-review
+      reason: Proposal compliance review job; not a GTM messaging workflow.
+    - name: mdp-proposal-win-theme-proof-review
+      reason: Proposal proof review job; use GTM claims/copy review skills instead.
+    - name: mdp-proposal-red-team-gap-review
+      reason: Proposal red-team review job; use mdp-pack-review or mdp-pack-eval for GTM packs.
+    job_skills:
+    - job: create or improve GTM messaging pack
+      skills:
+      - mdp-create-pack
+      - mdp-icp-builder
+    - job: prospect row to fit decision or brief
+      skills:
+      - mdp-prospect-brief
+    - job: copy brief or copy evaluation
+      skills:
+      - mdp-copy-brief
+      - mdp-copy-eval
+    - job: pack validation and eval coverage
+      skills:
+      - mdp-pack-review
+      - mdp-pack-eval
 personas:
 - GTM Engineering
 - PMM
