@@ -1,0 +1,48 @@
+id: bid-no-bid-rules
+kind: fit-rules
+title: Bid/no-bid rules
+description: Pursuit, pause, decline, and escalation criteria for the synthetic opportunity.
+personas:
+- Proposal Lead
+- Executive Reviewer
+tags:
+- bid
+- no-bid
+- review
+- gate
+entries:
+- id: bid-no-bid-review-gate
+  title: Bid/no-bid review gate
+  body: Proceed only when the opportunity is public-safe or privately approved, mandatory requirements are understood, proof gaps are visible, and the review owner accepts open risks.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - unreviewed pursuit
+  metadata:
+    primitive: decision-criteria
+- id: pause-for-source-gaps
+  title: Pause for source gaps
+  body: Pause when the RFP text, evaluation criteria, required proof, delivery constraints, or reviewer ownership is missing.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - confident recommendation with missing source
+  metadata:
+    primitive: gaps
+- id: no-bid-for-policy-bypass
+  title: No-bid for policy bypass
+  body: Decline or escalate if the proposed work requires bypassing legal, procurement, security, customer data-handling, or compliance review.
+  applies_to:
+  - Executive Reviewer
+  evidence:
+  - AGENTS.md
+  avoid:
+  - policy bypass
+  metadata:
+    primitive: boundaries

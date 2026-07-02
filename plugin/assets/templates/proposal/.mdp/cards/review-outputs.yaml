@@ -1,0 +1,48 @@
+id: review-outputs
+kind: copy-patterns
+title: Review outputs
+description: Output structures for briefs, matrices, risk reports, and executive summaries.
+personas:
+- Proposal Lead
+- Executive Reviewer
+tags:
+- review
+- output
+- brief
+- matrix
+entries:
+- id: bid-no-bid-brief
+  title: Bid/no-bid brief
+  body: Return decision, source-backed rationale, required assumptions, open gaps, risk level, and next decision needed.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - docs/plans/2026-07-01-006-docs-proposal-reference-profile-template-plan.md
+  avoid:
+  - hidden gap
+  metadata:
+    primitive: output-contracts
+- id: compliance-matrix
+  title: Compliance matrix
+  body: Return requirement, source, status, proof, gap, owner, and reviewer question. Use Supported, Assumed, Gap, Not supported, or Needs reviewer decision.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  evidence:
+  - requirements-matrix
+  avoid:
+  - unsupported supported label
+  metadata:
+    primitive: output-contracts
+- id: executive-summary
+  title: Executive summary
+  body: Return a short status, top risks, evidence posture, blockers, and one next decision. Do not include raw RFP text.
+  applies_to:
+  - Executive Reviewer
+  evidence:
+  - synthetic-rfp-summary
+  avoid:
+  - raw source dump
+  metadata:
+    primitive: output-contracts

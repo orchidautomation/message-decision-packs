@@ -1,0 +1,15 @@
+id: proof-review-route
+command: route
+persona: Solution Owner
+job: win theme proof review
+expect_load_order_contains:
+- .mdp/cards/proposal-roles.yaml
+- .mdp/cards/proposal-output-rules.yaml
+- .mdp/cards/evaluation-criteria.yaml
+- .mdp/cards/proof-library.yaml
+- .mdp/cards/review-gates.yaml
+- .mdp/cards/gaps.yaml
+expect_entry_titles_contains:
+- Win-theme proof review job
+- Approved synthetic proof
+- Missing proof

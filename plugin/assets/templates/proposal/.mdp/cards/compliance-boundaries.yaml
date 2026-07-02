@@ -1,0 +1,38 @@
+id: compliance-boundaries
+kind: avoid-rules
+title: Compliance boundaries
+description: Compliance-sensitive language, certification limits, and no-invention rules.
+personas:
+- Proposal Lead
+- Solution Owner
+- Executive Reviewer
+tags:
+- compliance
+- boundaries
+- avoid
+entries:
+- id: compliance-review-boundary
+  title: Compliance review boundary
+  body: The pack may surface compliance questions and requirement gaps. It cannot certify compliance or replace legal, procurement, security, or customer compliance review.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - docs/plans/2026-07-01-007-docs-proposal-privacy-public-repo-guardrails-plan.md
+  avoid:
+  - replaces compliance review
+  metadata:
+    primitive: boundaries
+- id: no-regulated-data
+  title: No regulated data
+  body: Do not put CUI, regulated content, access-controlled files, or customer-restricted material into this public sample or any public issue/PR text.
+  applies_to:
+  - Proposal Lead
+  - Solution Owner
+  evidence:
+  - AGENTS.md
+  avoid:
+  - CUI
+  - access-controlled source
+  metadata:
+    primitive: boundaries

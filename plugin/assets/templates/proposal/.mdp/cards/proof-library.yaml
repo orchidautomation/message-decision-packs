@@ -1,0 +1,51 @@
+id: proof-library
+kind: claims
+title: Proof library
+description: Approved synthetic proof patterns and unsupported proof boundaries.
+personas:
+- Solution Owner
+- Proposal Lead
+tags:
+- proof
+- claims
+- past-performance
+entries:
+- id: approved-synthetic-proof
+  title: Approved synthetic proof
+  body: The sample may reference generic proof patterns for phased rollout planning, requirements traceability, and training readiness, but only as fictional demo proof.
+  applies_to:
+  - Solution Owner
+  - Proposal Lead
+  evidence:
+  - synthetic-proof-inventory
+  avoid:
+  - real customer proof
+  metadata:
+    primitive: evidence-proof
+- id: unsupported-certifications
+  title: Unsupported certifications
+  body: No certification, compliance status, security approval, or regulated-data authorization is approved in this sample.
+  applies_to:
+  - Solution Owner
+  - Executive Reviewer
+  evidence:
+  - AGENTS.md
+  avoid:
+  - CMMC compliant
+  - NIST compliant
+  - approved for CUI
+  metadata:
+    primitive: boundaries
+- id: no-past-performance-claim
+  title: No past performance claim
+  body: The sample does not approve any named customer, similar project, outcome metric, or past performance claim. Mark those requests as proof gaps.
+  applies_to:
+  - Solution Owner
+  - Proposal Lead
+  evidence:
+  - synthetic-proof-inventory
+  avoid:
+  - named reference
+  - quantified outcome
+  metadata:
+    primitive: evidence-proof
