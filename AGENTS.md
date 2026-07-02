@@ -37,6 +37,19 @@ This is a public-facing source-available repo. Keep public GitHub references lim
 
 When adding, changing, or removing MDP behavior, update the matching agent-facing skill instructions in `plugin/skills/` in the same change. The CLI contract, starter/template pack, docs, and skills should not drift apart.
 
+## Proposal Public Artifact Guardrails
+
+Proposal AI Lab and future proposal-profile work must keep public artifacts generic, synthetic, or explicitly sanitized.
+
+Public-safe proposal artifacts include generic template structure, synthetic examples, generic skill instructions, validation commands, and local-first docs.
+
+Do not commit raw proposal documents, non-public RFPs, customer names without approval, screenshots, private transcripts, confidential win themes, customer-specific pricing strategy, source documents behind access controls, CUI/regulated content, or private customer packs.
+
+Use positioning such as local-first, customer-controlled, private workflow, review support, gap surfacing, and unsupported-claim detection.
+Do not claim CMMC/NIST compliance, guaranteed security, approved handling for CUI, legal/procurement bypass, replacement of compliance review, replacement of proposal management software, or fully automated proposal writing.
+
+Future proposal skills, templates, and evals must instruct agents not to invent proof, certifications, compliance status, or past performance. Emphasize claim-checking, gap reporting, refusal/escalation, and synthetic or sanitized fixtures.
+
 ## Release And Install Closeout
 
 The documented installer uses GitHub release assets, not the current `main` branch. A merged PR is not locally shipped until a release containing the merge commit has been published and the installer smoke test passes.
