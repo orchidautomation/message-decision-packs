@@ -10,5 +10,6 @@ expect_load_order_contains:
 - .mdp/cards/gaps.yaml
 expect_entry_titles_contains:
 - Red-team gap review job
+- Red-team gap report
 - Public safety gap
 - No raw customer proposal material

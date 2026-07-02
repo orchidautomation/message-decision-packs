@@ -35,6 +35,18 @@ entries:
   - unsupported supported label
   metadata:
     primitive: output-contracts
+- id: red-team-gap-report
+  title: Red-team gap report
+  body: Return severity, issue type, affected section, source evidence, pack reference, confidence, owner question, and suggested next action. Separate missing information from low-confidence inference.
+  applies_to:
+  - Proposal Lead
+  - Executive Reviewer
+  evidence:
+  - gaps
+  avoid:
+  - final authority claim
+  metadata:
+    primitive: output-contracts
 - id: executive-summary
   title: Executive summary
   body: Return a short status, top risks, evidence posture, blockers, and one next decision. Do not include raw RFP text.
