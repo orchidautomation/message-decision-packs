@@ -4,7 +4,7 @@ use crate::commands::routing::{check_claims, fit_prospect, route};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
@@ -14,6 +14,7 @@ struct EvalFixture {
     id: String,
     #[serde(default = "default_command")]
     command: String,
+    profile_eval: Option<EvalProfileMetadata>,
     persona: Option<String>,
     job: Option<String>,
     channel: Option<String>,
@@ -30,6 +31,15 @@ struct EvalFixture {
     expect_gap_titles_contains: Option<Vec<String>>,
     expect_guardrail_terms_contains: Option<Vec<String>>,
     expect_unsupported_claims_contains: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct EvalProfileMetadata {
+    category: String,
+    #[serde(default)]
+    primitives: Vec<String>,
+    #[serde(default)]
+    jobs: Vec<String>,
 }
 
 pub(crate) fn eval_pack(root: &Path) -> Result<Value> {
@@ -141,6 +151,16 @@ fn run_fixture(root: &Path, path: &Path, fixture: &EvalFixture) -> Result<Value>
 
 fn validate_fixture(path: &Path, fixture: &EvalFixture) -> Vec<Value> {
     let mut issues = Vec::new();
+    if let Some(profile_eval) = &fixture.profile_eval {
+        if profile_eval.category.trim().is_empty() {
+            issues.push(issue(
+                "eval_profile_category_empty",
+                "error",
+                format!("{}#/profile_eval/category", path.display()),
+                "profile_eval.category must not be empty when profile eval metadata is present",
+            ));
+        }
+    }
     match fixture.command.as_str() {
         "route" => {
             require(path, fixture.persona.as_ref(), "persona", &mut issues);
@@ -372,6 +392,7 @@ fn fixture_result(path: &Path, fixture: &EvalFixture, output: Value, issues: Vec
         "path": path.display().to_string(),
         "id": fixture.id,
         "command": fixture.command,
+        "profile_eval": &fixture.profile_eval,
         "valid": valid,
         "issues": issues,
         "output": output

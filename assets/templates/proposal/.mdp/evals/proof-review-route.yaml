@@ -1,4 +1,13 @@
 id: proof-review-route
+profile_eval:
+  category: proceed
+  primitives:
+  - actors
+  - needs-requirements
+  - evidence-proof
+  - routing-jobs
+  jobs:
+  - proof-review
 command: route
 persona: Solution Owner
 job: win theme proof review

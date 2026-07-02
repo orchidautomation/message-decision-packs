@@ -1,4 +1,13 @@
 id: red-team-route
+profile_eval:
+  category: job-routing
+  primitives:
+  - actors
+  - evidence-proof
+  - boundaries
+  - routing-jobs
+  jobs:
+  - red-team-review
 command: route
 persona: Executive Reviewer
 job: red team gap review

@@ -7,3 +7,11 @@ expect_load_order_contains:
 id: unsupported-persona-route
 job: linkedin outbound copy
 persona: Sales Development
+profile_eval:
+  category: job-routing
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - boundaries
+  - output-contracts

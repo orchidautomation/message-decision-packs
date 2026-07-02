@@ -1,4 +1,12 @@
 id: invented-proof-guardrail
+profile_eval:
+  category: unsafe-output
+  primitives:
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  jobs:
+  - proof-review
 command: check-claims
 persona: Solution Owner
 job: win theme proof review

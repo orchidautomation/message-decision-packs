@@ -1,4 +1,12 @@
 command: check-claims
 expect_valid: false
 id: claim-check-unsupported
+profile_eval:
+  category: unsafe-output
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - evidence-proof
+  - boundaries
+  - output-contracts
 text: MDP guarantees meetings, improves reply rates by 30%, integrates with Salesforce, and updates CRM records.

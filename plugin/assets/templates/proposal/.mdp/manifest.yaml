@@ -104,6 +104,143 @@ lead_input_requirements:
   required_signal_fields:
   - source
   required_attributes: []
+required_primitives:
+- actors
+- decision-criteria
+- source-signals
+- needs-requirements
+- evidence-proof
+- boundaries
+- output-contracts
+- routing-jobs
+- gaps
+- evals
+primitive_map:
+  actors:
+    cards:
+    - proposal-roles
+    input_contracts:
+    - opportunity
+  source-signals:
+    cards:
+    - opportunity-context
+    - requirement-signals
+    input_contracts:
+    - opportunity
+  needs-requirements:
+    cards:
+    - requirements-matrix
+  decision-criteria:
+    cards:
+    - bid-no-bid-rules
+    - evaluation-criteria
+  evidence-proof:
+    cards:
+    - proof-library
+  boundaries:
+    cards:
+    - proposal-boundaries
+    - compliance-boundaries
+  output-contracts:
+    cards:
+    - proposal-output-rules
+    - review-outputs
+  routing-jobs:
+    cards:
+    - review-gates
+    jobs:
+    - bid-no-bid-review
+    - compliance-review
+    - proof-review
+    - red-team-review
+  gaps:
+    cards:
+    - gaps
+    evals:
+    - proposal-gaps
+    - fit-insufficient-context
+  evals:
+    evals:
+    - bid-no-bid-route
+    - compliance-route
+    - compliance-unsupported-claim
+    - fit-insufficient-context
+    - fit-policy-bypass-disqualified
+    - invented-proof-guardrail
+    - proof-review-route
+    - proposal-gaps
+    - red-team-route
+input_contracts:
+- id: opportunity
+  description: Profile-owned opportunity context contract for supplied proposal, requirement, proof, and risk facts.
+  schema_ref: mdp.input.opportunity.v0
+  normalizes:
+  - opportunity
+  - requirements
+  - proof
+  - risk
+jobs:
+- id: bid-no-bid-review
+  label: Bid/no-bid review
+  description: Evaluate whether supplied opportunity context supports bid, no-bid, pause, or escalation.
+  required_primitives:
+  - actors
+  - source-signals
+  - decision-criteria
+  - boundaries
+  - output-contracts
+  - gaps
+  input_contracts:
+  - opportunity
+- id: compliance-review
+  label: Compliance review
+  description: Review requirements, compliance-sensitive boundaries, unsupported claims, and required escalation points.
+  required_primitives:
+  - actors
+  - source-signals
+  - needs-requirements
+  - boundaries
+  - output-contracts
+  - gaps
+  input_contracts:
+  - opportunity
+- id: proof-review
+  label: Proof or win theme review
+  description: Check proposed proof and win themes against approved synthetic proof patterns and gaps.
+  required_primitives:
+  - actors
+  - source-signals
+  - needs-requirements
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - gaps
+  input_contracts:
+  - opportunity
+- id: red-team-review
+  label: Red-team gap review
+  description: Surface unsupported proof, missing requirements, risky assumptions, and review gates.
+  required_primitives:
+  - actors
+  - source-signals
+  - needs-requirements
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - opportunity
+profile_eval:
+  required_categories:
+  - proceed
+  - insufficient-context
+  - refusal
+  - unsafe-output
+  - job-routing
+  activation:
+    status: ready
+    summary: Proposal profile includes primitive coverage and minimum local eval categories over synthetic fixtures.
 cards:
 - id: proposal-roles
   path: cards/proposal-roles.yaml

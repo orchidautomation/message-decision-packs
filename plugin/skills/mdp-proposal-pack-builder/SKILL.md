@@ -19,6 +19,8 @@ mdp --json agent-surface --dir .
 
 Use this skill only when the surface is legacy/generic during new-pack creation or `profile.id` is `proposal` and `mdp-proposal-pack-builder` is allowed. If the surface blocks `mdp-proposal-pack-builder`, stop and reroute to the allowed/recommended skill named in the surface. GTM packs should use GTM pack and ICP skills, not proposal review cards.
 
+`profile.id: proposal` and `profile.agent_surface` only route skills. Full proposal profile activation is reported by `mdp --json validate --dir .` in `data.profile.activation_ready` and depends on the proposal `primitive_map`, `opportunity` input contract, profile jobs, and categorized `profile_eval` fixtures. Keep opportunity context, requirements, proof, and review jobs as proposal profile vocabulary; do not add proposal-specific core card kinds.
+
 ## Intake Gate
 
 Before writing pack files, identify the destination directory and classify the source material:
@@ -64,6 +66,7 @@ mdp --json init --template proposal --dir .
 ```
 
 Use the shipped synthetic template at `plugin/assets/templates/proposal` as the reference shape. Preserve profile-owned card IDs and review jobs unless the user explicitly asks for a new proposal profile.
+Preserve the template's `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories` unless the source material justifies a reviewed change.
 
 3. Build or update `.mdp/sources.yaml` before writing cards. Record source kind, locator or note ID, approved use, freshness, confidence, direct source claims, interpretation, and gaps. Keep raw source text out of public paths unless it is synthetic or intentionally sanitized.
 

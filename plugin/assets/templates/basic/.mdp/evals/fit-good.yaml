@@ -1,6 +1,14 @@
 command: fit
 expect_status: fit
 id: fit-good
+profile_eval:
+  category: proceed
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - decision-criteria
+  - source-signals
 prospect:
   background: building repeatable agent-assisted GTM workflows across Clay, Codex, and Claude Code
   company: ExampleCo

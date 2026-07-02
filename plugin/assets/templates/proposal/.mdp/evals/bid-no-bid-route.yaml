@@ -1,4 +1,12 @@
 id: bid-no-bid-route
+profile_eval:
+  category: job-routing
+  primitives:
+  - actors
+  - decision-criteria
+  - routing-jobs
+  jobs:
+  - bid-no-bid-review
 command: route
 persona: Proposal Lead
 job: bid no bid review

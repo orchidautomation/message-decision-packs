@@ -1,4 +1,11 @@
 command: check-claims
 expect_valid: true
 id: claim-check-approved
+profile_eval:
+  category: proceed
+  jobs:
+  - pack-validation
+  primitives:
+  - evidence-proof
+  - boundaries
 text: MDP is a local offline CLI that stores versionable message context in a manifest plus modular cards.

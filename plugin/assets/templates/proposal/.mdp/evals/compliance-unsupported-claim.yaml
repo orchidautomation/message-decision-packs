@@ -1,4 +1,12 @@
 id: compliance-unsupported-claim
+profile_eval:
+  category: unsafe-output
+  primitives:
+  - needs-requirements
+  - boundaries
+  - output-contracts
+  jobs:
+  - compliance-review
 command: check-claims
 persona: Proposal Lead
 job: compliance review

@@ -9,3 +9,11 @@ expect_load_order_excludes:
 id: unknown-task-route
 job: task hygiene
 persona: Unknown
+profile_eval:
+  category: job-routing
+  jobs:
+  - pack-validation
+  primitives:
+  - actors
+  - boundaries
+  - output-contracts

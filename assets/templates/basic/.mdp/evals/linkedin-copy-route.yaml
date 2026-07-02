@@ -16,3 +16,11 @@ expect_load_order_contains:
 id: linkedin-copy-route
 job: linkedin outbound copy
 persona: PMM
+profile_eval:
+  category: job-routing
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - routing-jobs
+  - output-contracts

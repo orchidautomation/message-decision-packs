@@ -12,3 +12,11 @@ expect_load_order_contains:
 id: email-follow-up-route
 job: email follow up
 persona: PMM
+profile_eval:
+  category: job-routing
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - routing-jobs
+  - output-contracts

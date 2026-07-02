@@ -1,4 +1,11 @@
 id: fit-policy-bypass-disqualified
+profile_eval:
+  category: refusal
+  primitives:
+  - decision-criteria
+  - boundaries
+  jobs:
+  - bid-no-bid-review
 command: fit
 expect_status: disqualified
 prospect:

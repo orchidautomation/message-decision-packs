@@ -34,6 +34,9 @@ Use `mdp --json capabilities` when reviewing agent-facing CLI support, and use `
 2. Review the manifest:
 
 - format and version
+- profile routing metadata (`profile.id`, `profile.agent_surface`) separately from activation readiness
+- `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories` when profile metadata is present
+- `data.profile.activation_ready`, missing primitive coverage, and missing eval categories from `mdp validate`
 - personas, target personas, and operator roles
 - supported channels, including any custom channel names used by channel-policies
 - card index

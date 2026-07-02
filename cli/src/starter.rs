@@ -4,7 +4,8 @@ use crate::constants::{
 };
 use crate::models::{
     AgentSurface, BlockedSkill, Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints,
-    JobSkillRoute, LeadInputRequirements, Manifest, PersonaMapping, Policy, Profile, Provenance,
+    InputContract, JobSkillRoute, LeadInputRequirements, Manifest, PersonaMapping, Policy,
+    PrimitiveMapping, Profile, ProfileActivation, ProfileEval, ProfileJob, Provenance,
     ValueContract,
 };
 use crate::runtime_context::runtime_context_schema;
@@ -85,6 +86,35 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
             value_contracts,
             attribute_definitions,
             allow_undeclared_attributes: true,
+        },
+        required_primitives: gtm_required_primitives(),
+        primitive_map: gtm_primitive_map(),
+        input_contracts: vec![InputContract {
+            id: "prospect".to_string(),
+            description: Some(
+                "Reviewed prospect/source-row input contract for person, account, and relationship context."
+                    .to_string(),
+            ),
+            schema_ref: Some("mdp.input.prospect.v0".to_string()),
+            prompt: Some("prompts/normalize-prospect.yaml".to_string()),
+            normalizes: strings(&["account", "person", "relationship"]),
+        }],
+        jobs: gtm_profile_jobs(),
+        profile_eval: ProfileEval {
+            required_categories: strings(&[
+                "proceed",
+                "insufficient-context",
+                "refusal",
+                "unsafe-output",
+                "job-routing",
+            ]),
+            activation: ProfileActivation {
+                status: Some("ready".to_string()),
+                summary: Some(
+                    "Starter GTM profile includes primitive coverage and minimum local eval categories."
+                        .to_string(),
+                ),
+            },
         },
         cards: vec![
             card_ref("personas", "cards/personas.yaml", CardKind::Personas, "Who the decision pack serves and what each persona needs.", &["GTM Engineering", "PMM", "PM"], &["persona"]),
@@ -184,6 +214,215 @@ fn gtm_profile() -> Profile {
             ],
         },
     }
+}
+
+fn gtm_required_primitives() -> Vec<String> {
+    strings(&[
+        "actors",
+        "decision-criteria",
+        "source-signals",
+        "needs-requirements",
+        "evidence-proof",
+        "boundaries",
+        "output-contracts",
+        "routing-jobs",
+        "gaps",
+        "evals",
+    ])
+}
+
+fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
+    BTreeMap::from([
+        (
+            "actors".to_string(),
+            primitive_mapping(&["personas"], &[], &["prospect"], &[], &[]),
+        ),
+        (
+            "decision-criteria".to_string(),
+            primitive_mapping(&["fit-rules"], &[], &[], &[], &[]),
+        ),
+        (
+            "source-signals".to_string(),
+            primitive_mapping(
+                &["signals"],
+                &["normalize-prospect-row"],
+                &["prospect"],
+                &[],
+                &[],
+            ),
+        ),
+        (
+            "needs-requirements".to_string(),
+            primitive_mapping(&["pains"], &[], &[], &[], &[]),
+        ),
+        (
+            "evidence-proof".to_string(),
+            primitive_mapping(&["claims", "positioning"], &[], &[], &[], &[]),
+        ),
+        (
+            "boundaries".to_string(),
+            primitive_mapping(
+                &["avoid-rules", "objections", "positioning"],
+                &[],
+                &[],
+                &[],
+                &[],
+            ),
+        ),
+        (
+            "output-contracts".to_string(),
+            primitive_mapping(
+                &[
+                    "output-rules",
+                    "copy-patterns",
+                    "ctas",
+                    "hooks",
+                    "channel-policies",
+                ],
+                &[],
+                &[],
+                &[],
+                &[],
+            ),
+        ),
+        (
+            "routing-jobs".to_string(),
+            primitive_mapping(
+                &["channel-policies", "motions"],
+                &[],
+                &[],
+                &[
+                    "create-or-improve-gtm-pack",
+                    "prospect-fit-or-brief",
+                    "outbound-copy-brief",
+                    "pack-validation",
+                ],
+                &[],
+            ),
+        ),
+        (
+            "gaps".to_string(),
+            primitive_mapping(
+                &["gaps"],
+                &[],
+                &[],
+                &[],
+                &["fit-insufficient-context", "brief-insufficient-context"],
+            ),
+        ),
+        (
+            "evals".to_string(),
+            primitive_mapping(
+                &[],
+                &[],
+                &[],
+                &[],
+                &[
+                    "fit-good",
+                    "fit-insufficient-context",
+                    "fit-disqualified",
+                    "claim-check-unsupported",
+                    "claim-check-output-rule",
+                    "linkedin-copy-route",
+                    "email-initial-route",
+                    "call-prep-route",
+                ],
+            ),
+        ),
+    ])
+}
+
+fn gtm_profile_jobs() -> Vec<ProfileJob> {
+    vec![
+        ProfileJob {
+            id: "create-or-improve-gtm-pack".to_string(),
+            label: Some("Create or improve GTM messaging pack".to_string()),
+            description: Some(
+                "Author or revise reviewed GTM decision context, not execution infrastructure."
+                    .to_string(),
+            ),
+            required_primitives: strings(&[
+                "actors",
+                "decision-criteria",
+                "source-signals",
+                "needs-requirements",
+                "evidence-proof",
+                "boundaries",
+                "output-contracts",
+                "gaps",
+                "evals",
+            ]),
+            input_contracts: Vec::new(),
+        },
+        ProfileJob {
+            id: "prospect-fit-or-brief".to_string(),
+            label: Some("Prospect row to fit decision or brief".to_string()),
+            description: Some(
+                "Normalize supplied row context, check fit, and route a bounded local brief."
+                    .to_string(),
+            ),
+            required_primitives: strings(&[
+                "actors",
+                "decision-criteria",
+                "source-signals",
+                "evidence-proof",
+                "boundaries",
+                "output-contracts",
+                "routing-jobs",
+                "gaps",
+            ]),
+            input_contracts: strings(&["prospect"]),
+        },
+        ProfileJob {
+            id: "outbound-copy-brief".to_string(),
+            label: Some("Outbound copy brief".to_string()),
+            description: Some(
+                "Produce grounded copy guidance after fit, proof, guardrails, and output contracts are loaded."
+                    .to_string(),
+            ),
+            required_primitives: strings(&[
+                "actors",
+                "decision-criteria",
+                "source-signals",
+                "evidence-proof",
+                "boundaries",
+                "output-contracts",
+                "routing-jobs",
+                "gaps",
+            ]),
+            input_contracts: strings(&["prospect"]),
+        },
+        ProfileJob {
+            id: "pack-validation".to_string(),
+            label: Some("Pack validation and eval coverage".to_string()),
+            description: Some(
+                "Check structural validity, profile primitive coverage, and local eval categories."
+                    .to_string(),
+            ),
+            required_primitives: strings(&["boundaries", "gaps", "evals"]),
+            input_contracts: Vec::new(),
+        },
+    ]
+}
+
+fn primitive_mapping(
+    cards: &[&str],
+    prompts: &[&str],
+    input_contracts: &[&str],
+    jobs: &[&str],
+    evals: &[&str],
+) -> PrimitiveMapping {
+    PrimitiveMapping {
+        cards: strings(cards),
+        prompts: strings(prompts),
+        input_contracts: strings(input_contracts),
+        jobs: strings(jobs),
+        evals: strings(evals),
+    }
+}
+
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_string()).collect()
 }
 
 pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
@@ -317,6 +556,14 @@ pub(crate) fn starter_source_ledger(_template: &str) -> Value {
     })
 }
 
+fn eval_profile(category: &str, primitives: &[&str], jobs: &[&str]) -> Value {
+    json!({
+        "category": category,
+        "primitives": strings(primitives),
+        "jobs": strings(jobs)
+    })
+}
+
 pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
     vec![
         (
@@ -324,6 +571,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "linkedin-copy-route",
                 "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "routing-jobs", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
                 "persona": "PMM",
                 "job": "linkedin outbound copy",
                 "expect_load_order_contains": [
@@ -343,6 +595,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "linkedin-follow-up-route",
                 "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "routing-jobs", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
                 "persona": "PMM",
                 "job": "linkedin follow up message",
                 "expect_load_order_contains": [
@@ -358,6 +615,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "gtm-engineering-route",
                 "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "source-signals", "routing-jobs"],
+                    &["prospect-fit-or-brief"]
+                ),
                 "persona": "GTM Engineering",
                 "job": "agent brief for enriched row",
                 "expect_load_order_contains": [
@@ -376,6 +638,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "pm-route",
                 "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "boundaries", "output-contracts"],
+                    &["create-or-improve-gtm-pack"]
+                ),
                 "persona": "PM",
                 "job": "product boundary review",
                 "expect_load_order_contains": [
@@ -391,6 +658,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "email-initial-route",
                 "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "routing-jobs", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
                 "persona": "PMM",
                 "job": "initial email outbound message",
                 "expect_load_order_contains": [
@@ -406,6 +678,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "email-follow-up-route",
                 "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "routing-jobs", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
                 "persona": "PMM",
                 "job": "email follow up",
                 "expect_load_order_contains": [
@@ -421,6 +698,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "call-prep-route",
                 "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "decision-criteria", "routing-jobs"],
+                    &["prospect-fit-or-brief"]
+                ),
                 "persona": "GTM Engineering",
                 "job": "call prep",
                 "expect_load_order_contains": [
@@ -436,6 +718,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "unknown-task-route",
                 "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "boundaries", "output-contracts"],
+                    &["pack-validation"]
+                ),
                 "persona": "Unknown",
                 "job": "task hygiene",
                 "expect_load_order_contains": [
@@ -454,6 +741,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "unsupported-persona-route",
                 "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "boundaries", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
                 "persona": "Sales Development",
                 "job": "linkedin outbound copy",
                 "expect_load_order_contains": [
@@ -469,6 +761,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "claim-check-output-rule",
                 "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "unsafe-output",
+                    &["output-contracts", "boundaries"],
+                    &["outbound-copy-brief"]
+                ),
                 "text": "MDP is local — it stores message context in modular cards.",
                 "expect_valid": false
             }),
@@ -478,6 +775,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "fit-good",
                 "command": "fit",
+                "profile_eval": eval_profile(
+                    "proceed",
+                    &["actors", "decision-criteria", "source-signals"],
+                    &["prospect-fit-or-brief"]
+                ),
                 "expect_status": "fit",
                 "prospect": starter_prospect("gtm")
             }),
@@ -487,6 +789,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "fit-insufficient-context",
                 "command": "fit",
+                "profile_eval": eval_profile(
+                    "insufficient-context",
+                    &["decision-criteria", "source-signals", "gaps"],
+                    &["prospect-fit-or-brief"]
+                ),
                 "expect_status": "insufficient-context",
                 "prospect": {
                     "name": "Taylor Lee",
@@ -500,6 +807,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "fit-disqualified",
                 "command": "fit",
+                "profile_eval": eval_profile(
+                    "refusal",
+                    &["decision-criteria", "boundaries"],
+                    &["prospect-fit-or-brief"]
+                ),
                 "expect_status": "disqualified",
                 "prospect": {
                     "name": "Jordan Smith",
@@ -517,6 +829,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "brief-insufficient-context",
                 "command": "brief",
+                "profile_eval": eval_profile(
+                    "insufficient-context",
+                    &["actors", "source-signals", "output-contracts", "gaps"],
+                    &["outbound-copy-brief"]
+                ),
                 "channel": "linkedin",
                 "job": "linkedin outbound copy",
                 "expect_draft_status": "no-draft",
@@ -532,6 +849,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "claim-check-unsupported",
                 "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "unsafe-output",
+                    &["evidence-proof", "boundaries", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
                 "text": "MDP guarantees meetings, improves reply rates by 30%, integrates with Salesforce, and updates CRM records.",
                 "expect_valid": false
             }),
@@ -541,6 +863,11 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             json!({
                 "id": "claim-check-approved",
                 "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "proceed",
+                    &["evidence-proof", "boundaries"],
+                    &["pack-validation"]
+                ),
                 "text": "MDP is a local offline CLI that stores versionable message context in a manifest plus modular cards.",
                 "expect_valid": true
             }),

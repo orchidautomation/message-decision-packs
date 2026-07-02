@@ -7,3 +7,11 @@ expect_load_order_contains:
 id: pm-route
 job: product boundary review
 persona: PM
+profile_eval:
+  category: job-routing
+  jobs:
+  - create-or-improve-gtm-pack
+  primitives:
+  - actors
+  - boundaries
+  - output-contracts
