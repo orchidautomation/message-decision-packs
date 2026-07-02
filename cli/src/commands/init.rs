@@ -126,6 +126,24 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/evals/normalize-opportunity-insufficient-context.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-insufficient-context.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/normalize-opportunity-invalid-source-kind.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-invalid-source-kind.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/normalize-opportunity-output.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-output.yaml"
+        ),
+    ),
+    (
         ".mdp/evals/proof-review-route.yaml",
         include_str!(
             "../../../plugin/assets/templates/proposal/.mdp/evals/proof-review-route.yaml"
@@ -138,6 +156,12 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
     (
         ".mdp/evals/red-team-route.yaml",
         include_str!("../../../plugin/assets/templates/proposal/.mdp/evals/red-team-route.yaml"),
+    ),
+    (
+        ".mdp/prompts/normalize-opportunity.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/prompts/normalize-opportunity.yaml"
+        ),
     ),
 ];
 
@@ -335,6 +359,7 @@ fn proposal_template_dirs(root: &Path) -> Vec<PathBuf> {
         pack_dir.join("briefs"),
         pack_dir.join("cards"),
         pack_dir.join("evals"),
+        pack_dir.join("prompts"),
     ]
 }
 
@@ -425,6 +450,7 @@ fn proposal_init_payload(root: &Path, name: &str) -> Value {
     let source_ledger_path = pack_dir.join("sources.yaml");
     let cards_dir = pack_dir.join("cards");
     let evals_dir = pack_dir.join("evals");
+    let prompts_dir = pack_dir.join("prompts");
     json!({
         "format": FORMAT_VERSION,
         "template": "proposal",
@@ -436,7 +462,7 @@ fn proposal_init_payload(root: &Path, name: &str) -> Value {
         "source_ledger": source_ledger_path.display().to_string(),
         "cards_dir": cards_dir.display().to_string(),
         "evals_dir": evals_dir.display().to_string(),
-        "prompts_dir": Value::Null,
+        "prompts_dir": prompts_dir.display().to_string(),
         "example_prospect": Value::Null,
         "example_prospect_kind": Value::Null,
         "next_commands": [

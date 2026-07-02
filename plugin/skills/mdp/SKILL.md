@@ -67,6 +67,14 @@ mdp --json init --template proposal --dir . --dry-run
 mdp --json init --template proposal --dir .
 ```
 
+For proposal packs, treat `opportunity`, requirements, compliance gaps, proof, and win themes as profile-owned vocabulary, not core MDP objects. Prefer `.mdp/prompts/normalize-opportunity.yaml` when messy RFP, capture, requirement, compliance-matrix, proof, or bid/no-bid context needs to be normalized before proposal review. Pass `existing_pack_context` with proposal personas, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, proposal cards, source policy, and review jobs. Validate the model output before relying on it:
+
+```bash
+mdp --json validate-prompt-output --dir . --prompt-id normalize-opportunity --file <prompt-output.json>
+```
+
+`normalize-opportunity` emits the existing validated normalization artifact shape as a local compatibility bridge. It must keep `card_patches` empty, use only pack-owned enum values for fields such as `segment`, `source_kind`, `opportunity_stage`, `pursuit_decision`, and `source_safety`, preserve raw evidence in `signals` or `gaps`, and set `normalization_trace.fit_readiness.ready_for_mdp_fit` false when source context is too thin. Do not invent proposal contacts, RFP text, deadlines, proof, certifications, compliance status, past performance, pricing, evaluator criteria, customer approval, or approval status.
+
 When brainstorming the pack, help fill these files:
 
 - `.mdp/manifest.yaml`

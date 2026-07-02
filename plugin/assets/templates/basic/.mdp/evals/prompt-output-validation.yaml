@@ -1,0 +1,51 @@
+command: validate-prompt-output
+expect_valid: false
+id: prompt-output-validation
+profile_eval:
+  category: prompt-output-validation
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - source-signals
+  - gaps
+prompt_id: normalize-prospect-row
+prompt_output:
+  card_patches: []
+  contract: mdp.prompt-output.v0
+  gaps: []
+  normalization_trace:
+    fit_readiness:
+      ready_for_mdp_fit: true
+    missing_required: []
+    persona:
+      confidence: low
+      needs_review: true
+      source: invented
+    preserved_raw_fields:
+    - company_domain
+  normalized_prospect:
+    company: Northstar Cloud
+    company_domain: northstarcloud.com
+    name: Alex Rivera
+    persona: GTM Engineering
+    segment: agent-assisted GTM
+    signals:
+    - id: qualification-data-standardization
+      source: company_domain
+      title: Standardizing prospect qualification data
+    source_kind: synthetic-example
+    synthetic: true
+    title: Revenue Operations Lead
+    trigger: standardizing prospect qualification data
+  prompt_id: normalize-prospect-row
+  rejected_claims: []
+  source_summary:
+    account_name: Northstar Cloud
+    company_domain: northstarcloud.com
+    company_name: Northstar Cloud
+    confidence: medium
+    inputs_used:
+    - company_domain
+    person_name: N/A
+    person_title: N/A

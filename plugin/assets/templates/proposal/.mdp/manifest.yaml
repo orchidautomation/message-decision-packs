@@ -104,6 +104,50 @@ lead_input_requirements:
   required_signal_fields:
   - source
   required_attributes: []
+  value_contracts:
+    segment:
+      type: string
+      enum:
+      - municipal-modernization
+      - public-services-review
+      description: Proposal profile segment labels accepted from opportunity normalization prompts.
+    source_kind:
+      type: string
+      enum:
+      - user-provided-opportunity
+      - private-scratch-opportunity
+      - public-source
+      - sanitized-example
+      - synthetic-example
+      description: Public-safe or local-only source markers accepted from opportunity normalization prompts.
+  attribute_definitions:
+    opportunity_stage:
+      type: string
+      enum:
+      - early-review
+      - bid-no-bid
+      - compliance-review
+      - proof-review
+      - red-team-review
+      description: Reviewed proposal stage label emitted by normalize-opportunity.
+    pursuit_decision:
+      type: string
+      enum:
+      - proceed
+      - pause
+      - decline
+      - needs-more-info
+      description: Review-support decision label, not final approval.
+    source_safety:
+      type: string
+      enum:
+      - synthetic
+      - sanitized
+      - private-scratch
+      - public-source
+      - user-approved-local
+      description: Source handling classification for proposal context.
+  allow_undeclared_attributes: false
 required_primitives:
 - actors
 - decision-criteria
@@ -125,6 +169,8 @@ primitive_map:
     cards:
     - opportunity-context
     - requirement-signals
+    prompts:
+    - normalize-opportunity
     input_contracts:
     - opportunity
   needs-requirements:
@@ -167,6 +213,9 @@ primitive_map:
     - fit-insufficient-context
     - fit-policy-bypass-disqualified
     - invented-proof-guardrail
+    - normalize-opportunity-insufficient-context
+    - normalize-opportunity-invalid-source-kind
+    - normalize-opportunity-output
     - proof-review-route
     - proposal-gaps
     - red-team-route
@@ -174,6 +223,7 @@ input_contracts:
 - id: opportunity
   description: Profile-owned opportunity context contract for supplied proposal, requirement, proof, and risk facts.
   schema_ref: mdp.input.opportunity.v0
+  prompt: prompts/normalize-opportunity.yaml
   normalizes:
   - opportunity
   - requirements

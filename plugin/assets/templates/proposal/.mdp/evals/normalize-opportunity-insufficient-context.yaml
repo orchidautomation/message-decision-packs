@@ -1,0 +1,65 @@
+id: normalize-opportunity-insufficient-context
+profile_eval:
+  category: insufficient-context
+  primitives:
+  - source-signals
+  - needs-requirements
+  - gaps
+  jobs:
+  - bid-no-bid-review
+command: validate-prompt-output
+prompt_id: normalize-opportunity
+expect_valid: true
+expect_normalization_ready: false
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-opportunity
+  source_summary:
+    company_domain: N/A
+    company_name: N/A
+    person_name: N/A
+    person_title: N/A
+    account_name: N/A
+    inputs_used:
+    - raw_opportunity
+    - source_kind
+    confidence: low
+  normalized_prospect:
+    name: N/A
+    title: N/A
+    company: N/A
+    source_kind: synthetic-example
+    synthetic: true
+    background: Source only says a proposal review may be needed, with no customer, due date, requirement, or proof context.
+    attributes:
+      opportunity_stage: early-review
+      pursuit_decision: needs-more-info
+      source_safety: synthetic
+    signals: []
+  normalization_trace:
+    persona:
+      source: N/A
+      matched_keywords: []
+      confidence: unknown
+      needs_review: true
+    fit_readiness:
+      has_customer_or_agency: false
+      has_due_date: false
+      has_requirement_signal: false
+      has_review_mode: false
+      has_signal_source: false
+      ready_for_mdp_fit: false
+    preserved_raw_fields:
+    - raw_opportunity.note
+    - source_kind
+    missing_required:
+    - customer_or_agency
+    - due_date
+    - requirement_signal
+    - review_mode
+  card_patches: []
+  gaps:
+  - Missing customer or agency name.
+  - Missing due date or timeline.
+  - Missing requirement, proof, or evaluation source snippet.
+  rejected_claims: []

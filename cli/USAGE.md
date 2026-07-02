@@ -57,12 +57,13 @@ Proposal quick path:
 mdp --json init --template proposal --dir /tmp/mdp-proposal-demo --force
 mdp --json validate --dir /tmp/mdp-proposal-demo
 mdp --json eval --dir /tmp/mdp-proposal-demo
+mdp --json validate-prompt-output --dir /tmp/mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
 mdp --json route --entries --dir /tmp/mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
 mdp --json gaps --dir /tmp/mdp-proposal-demo
 mdp --json check-claims --dir /tmp/mdp-proposal-demo --persona "Proposal Lead" --job "compliance review" --text "The sample team is CMMC compliant."
 ```
 
-The proposal starter does not write a prospect row or fake lead fixtures. It is a synthetic proposal review pack for bid/no-bid, compliance, proof, red-team, and executive review jobs.
+The proposal starter does not write a prospect row or fake lead fixtures. It is a synthetic proposal review pack for bid/no-bid, compliance, proof, red-team, and executive review jobs. Its `normalize-opportunity` prompt maps messy proposal/RFP context into bounded profile vocabulary and validated prompt-output fields; it does not submit, scrape, enrich, certify, or manage proposal work.
 
 Use `brief` for production handoff. Add `--out <path>` when the brief should be saved; otherwise the artifact is stdout-only. Use `copy` only for local demos. Source inventory lives in `.mdp/sources.yaml`, reusable extraction prompts live in `.mdp/prompts/*.yaml`, CTA guidance lives in `cards/ctas.yaml`, channel rules live in `cards/channel-policies.yaml`, approved claims live in `cards/claims.yaml`, global style and structure rules live in `cards/output-rules.yaml`, and durable unknowns live in `cards/gaps.yaml`. Entries can use `avoid` for blocked literals, `exact_paragraphs` for fixed paragraph counts, and `constraints` for deterministic output limits such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking.
 
@@ -90,7 +91,7 @@ mdp --json eval --strict --dir .
 
 JSON errors use stable top-level codes where the CLI can classify the failure: `pack_not_found`, `invalid_manifest`, `missing_card`, `unsupported_claim`, `insufficient_context`, `write_conflict`, `invalid_argument`, and fallback `mdp_error`.
 
-`profile.id` and `profile.agent_surface` are skill-routing metadata. A profile is activation-ready only when `mdp --json validate --dir .` reports `data.profile.activation_ready: true`. Profile-aware manifests can declare `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories`; validation rejects unknown primitive IDs and missing mapped card, prompt, input contract, job, or eval references. Missing required primitive or eval-category coverage is warning-first by default and fails with `--strict`.
+`profile.id` and `profile.agent_surface` are skill-routing metadata. A profile is activation-ready only when `mdp --json validate --dir .` reports `data.profile.activation_ready: true`. Profile-aware manifests can declare `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories`; validation rejects unknown primitive IDs and missing mapped card, prompt, input contract, job, or eval references. Missing required primitive or eval-category coverage is warning-first by default and fails with `--strict`. Eval fixtures can run `command: validate-prompt-output` with `prompt_id` or `prompt` plus inline `prompt_output`, so profile activation can prove normalization contracts before rows reach `mdp fit` or `mdp brief`.
 
 Universal primitive IDs are `actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evidence-proof`, `boundaries`, `output-contracts`, `routing-jobs`, `gaps`, and `evals`. Keep domain terms such as account context or opportunity context in profile-owned card IDs, input contracts, prompts, jobs, and eval fixtures unless a future format explicitly adds a new core card kind.
 

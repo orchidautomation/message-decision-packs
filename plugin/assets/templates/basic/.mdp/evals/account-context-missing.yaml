@@ -1,0 +1,23 @@
+command: fit
+expect_status: insufficient-context
+id: account-context-missing
+profile_eval:
+  category: account-context-missing
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - decision-criteria
+  - source-signals
+  - gaps
+prospect:
+  company: UnknownCo
+  name: Taylor Lee
+  persona: GTM Engineering
+  segment: agent-assisted GTM
+  signals:
+  - id: qualification-data-standardization
+    title: Standardizing prospect qualification data
+  source_kind: synthetic-example
+  synthetic: true
+  title: Revenue Operations Lead
+  trigger: standardizing prospect qualification data
