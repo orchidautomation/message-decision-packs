@@ -35,7 +35,9 @@ mdp --json eval --strict --dir .
 
 `mdp fit`, `mdp check-claims`, and eval fixtures support profile-owned card IDs by falling back to card `kind` when canonical IDs such as `fit-rules`, `claims`, `avoid-rules`, or `output-rules` are absent.
 
-For profile-aware packs, inspect `mdp --json validate --dir .` before and after `mdp eval`. `data.profile.activation_ready` is the activation summary. Missing `required_primitives` coverage or missing `profile_eval.required_categories` is warning-first in normal validation and fails with `--strict`; missing mapped card, prompt, input contract, job, or eval references are errors. Eval fixtures should include `profile_eval.category` for proceed, insufficient-context, refusal, unsafe-output, and job-routing coverage when the profile declares those categories.
+For profile-aware packs, inspect `mdp --json validate --dir .` before and after `mdp eval`. `data.profile.activation_ready` is the activation summary. Missing `required_primitives` coverage or missing `profile_eval.required_categories` is warning-first in normal validation and fails with `--strict`; missing mapped card, prompt, input contract, job, or eval references are errors. Eval fixtures should include `profile_eval.category` for proceed, insufficient-context, refusal, unsafe-output, job-routing, and declared profile-specific categories such as account-context-present, account-context-missing, account-only-no-draft, and prompt-output-validation.
+
+`mdp eval` can run `command: validate-prompt-output` fixtures with `prompt_id` or `prompt` plus inline `prompt_output`. Use this to prove normalization contracts reject invented account/person output before a prospect row reaches `mdp fit` or `mdp brief`.
 
 2. Choose representative cases:
 
@@ -44,6 +46,9 @@ For profile-aware packs, inspect `mdp --json validate --dir .` before and after 
 - initial email and email follow-up
 - call prep
 - source extraction or pack review if relevant
+- account context present and missing cases when the profile declares account-context categories
+- account-only no-draft behavior when company context exists but person/persona readiness is missing
+- prompt-output validation for invented or out-of-contract normalized rows
 - one bad-fit or unsupported persona
 
 3. Run routes:
@@ -85,6 +90,7 @@ For each case, check:
 - route does not exceed policy limits
 - eval fixtures pass
 - profile eval categories cover the declared activation gates
+- prompt-output validation fixtures reject invented people, unsupported values, or out-of-contract account context before fit/brief
 - primitive map references point to existing cards, prompts, input contracts, jobs, and eval fixtures
 - decision trace is understandable
 - generated eval fixture scaffolds are reviewed before committing so tests encode intended behavior, not accidental routing noise

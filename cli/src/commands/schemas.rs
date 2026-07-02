@@ -75,7 +75,36 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
             value
         }
         SchemaTarget::Eval => {
-            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Eval Fixture v0", "type": "object", "required": ["id", "command"], "properties": {"id": {"type": "string"}, "command": {"enum": ["route", "fit", "brief", "gaps", "check-claims"]}, "profile_eval": profile_eval_fixture_schema(), "persona": {"type": "string"}, "job": {"type": "string"}, "channel": {"type": "string"}, "prospect": {"type": "object"}, "text": {"type": "string"}, "subject": {"type": "string"}, "expect_load_order_contains": string_array(), "expect_load_order_excludes": string_array(), "expect_entry_titles_contains": string_array(), "expect_entry_titles_excludes": string_array(), "expect_status": {"type": "string"}, "expect_draft_status": {"type": "string"}, "expect_valid": {"type": "boolean"}}})
+            json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "title": "MDP Eval Fixture v0",
+                "type": "object",
+                "required": ["id", "command"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "command": {"enum": ["route", "fit", "brief", "gaps", "check-claims", "validate-prompt-output"]},
+                    "profile_eval": profile_eval_fixture_schema(),
+                    "persona": {"type": "string"},
+                    "job": {"type": "string"},
+                    "channel": {"type": "string"},
+                    "prospect": {"type": "object"},
+                    "prompt": {"type": "string"},
+                    "prompt_id": {"type": "string"},
+                    "prompt_output": {"type": "object"},
+                    "text": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "expect_load_order_contains": string_array(),
+                    "expect_load_order_excludes": string_array(),
+                    "expect_entry_titles_contains": string_array(),
+                    "expect_entry_titles_excludes": string_array(),
+                    "expect_status": {"type": "string"},
+                    "expect_draft_status": {"type": "string"},
+                    "expect_valid": {"type": "boolean"},
+                    "expect_gap_titles_contains": string_array(),
+                    "expect_guardrail_terms_contains": string_array(),
+                    "expect_unsupported_claims_contains": string_array()
+                }
+            })
         }
         SchemaTarget::AgentSurface => agent_surface_schema(),
     }
