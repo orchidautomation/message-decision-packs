@@ -1,0 +1,10 @@
+id: invented-proof-guardrail
+command: check-claims
+persona: Solution Owner
+job: win theme proof review
+text: The proposal can use a named reference, invented case study, and invented certification as proof for the win theme.
+expect_valid: false
+expect_guardrail_terms_contains:
+- named reference
+- invented case study
+- invented certification

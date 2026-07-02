@@ -1,5 +1,5 @@
 use crate::constants::DEFAULT_DIR;
-use crate::models::{Card, Manifest, PromptFile, Prospect};
+use crate::models::{Card, CardKind, Manifest, PromptFile, Prospect};
 use anyhow::{Context, Result, anyhow};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -64,6 +64,29 @@ pub(crate) fn read_card_by_id(root: &Path, id: &str) -> Result<Card> {
         .find(|card_ref| card_ref.id == id)
         .ok_or_else(|| anyhow!("missing card id {id}"))?;
     read_card(&resolve_pack_path(root, &card_ref.path)?)
+}
+
+pub(crate) fn read_cards_by_id_or_kind(root: &Path, id: &str, kind: CardKind) -> Result<Vec<Card>> {
+    let manifest = read_manifest(root)?;
+    let mut card_refs = manifest
+        .cards
+        .iter()
+        .filter(|card_ref| card_ref.id == id)
+        .collect::<Vec<_>>();
+    if card_refs.is_empty() {
+        card_refs = manifest
+            .cards
+            .iter()
+            .filter(|card_ref| card_ref.kind == kind)
+            .collect::<Vec<_>>();
+    }
+    if card_refs.is_empty() {
+        return Err(anyhow!("missing card id {id} or kind {kind:?}"));
+    }
+    card_refs
+        .into_iter()
+        .map(|card_ref| read_card(&resolve_pack_path(root, &card_ref.path)?))
+        .collect()
 }
 
 pub(crate) fn read_prospect(path: &Path) -> Result<Prospect> {

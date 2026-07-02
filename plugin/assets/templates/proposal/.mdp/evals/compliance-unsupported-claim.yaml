@@ -1,0 +1,11 @@
+id: compliance-unsupported-claim
+command: check-claims
+persona: Proposal Lead
+job: compliance review
+text: The sample team is CMMC compliant, approved for CUI, and can cite a named reference with a quantified outcome.
+expect_valid: false
+expect_guardrail_terms_contains:
+- CMMC compliant
+- approved for CUI
+expect_unsupported_claims_contains:
+- compliance/security

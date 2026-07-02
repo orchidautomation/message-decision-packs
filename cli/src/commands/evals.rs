@@ -1,5 +1,5 @@
 use crate::commands::briefs::prospect_brief_from_value;
-use crate::commands::health::issue;
+use crate::commands::health::{gaps, issue};
 use crate::commands::routing::{check_claims, fit_prospect, route};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
@@ -27,6 +27,9 @@ struct EvalFixture {
     expect_status: Option<String>,
     expect_draft_status: Option<String>,
     expect_valid: Option<bool>,
+    expect_gap_titles_contains: Option<Vec<String>>,
+    expect_guardrail_terms_contains: Option<Vec<String>>,
+    expect_unsupported_claims_contains: Option<Vec<String>>,
 }
 
 pub(crate) fn eval_pack(root: &Path) -> Result<Value> {
@@ -112,6 +115,7 @@ fn run_fixture(root: &Path, path: &Path, fixture: &EvalFixture) -> Result<Value>
             fixture.channel.as_deref().unwrap_or("linkedin"),
             fixture.job.as_deref(),
         )?,
+        "gaps" => gaps(root)?,
         "check-claims" => check_claims(
             root,
             fixture.text.as_deref(),
@@ -148,6 +152,7 @@ fn validate_fixture(path: &Path, fixture: &EvalFixture) -> Vec<Value> {
         "brief" => {
             require(path, fixture.prospect.as_ref(), "prospect", &mut issues);
         }
+        "gaps" => {}
         "check-claims" => {
             require(path, fixture.text.as_ref(), "text", &mut issues);
         }
@@ -274,6 +279,45 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
             ));
         }
     }
+    if let Some(expected_titles) = &fixture.expect_gap_titles_contains {
+        let titles = gap_titles(output);
+        for expected_title in expected_titles {
+            if !titles.iter().any(|title| title == expected_title) {
+                issues.push(issue(
+                    "eval_expected_gap_missing",
+                    "error",
+                    path.display().to_string(),
+                    format!("missing expected gap title {expected_title}"),
+                ));
+            }
+        }
+    }
+    if let Some(expected_terms) = &fixture.expect_guardrail_terms_contains {
+        let terms = guardrail_terms(output);
+        for expected_term in expected_terms {
+            if !terms.iter().any(|term| term == expected_term) {
+                issues.push(issue(
+                    "eval_expected_guardrail_term_missing",
+                    "error",
+                    path.display().to_string(),
+                    format!("missing expected guardrail term {expected_term}"),
+                ));
+            }
+        }
+    }
+    if let Some(expected_claims) = &fixture.expect_unsupported_claims_contains {
+        let claims = unsupported_claim_labels(output);
+        for expected_claim in expected_claims {
+            if !claims.iter().any(|claim| claim == expected_claim) {
+                issues.push(issue(
+                    "eval_expected_unsupported_claim_missing",
+                    "error",
+                    path.display().to_string(),
+                    format!("missing expected unsupported claim {expected_claim}"),
+                ));
+            }
+        }
+    }
 }
 
 fn entry_titles(output: &Value) -> Vec<String> {
@@ -283,6 +327,42 @@ fn entry_titles(output: &Value) -> Vec<String> {
         .unwrap_or_default()
         .into_iter()
         .filter_map(|value| value["title"].as_str().map(str::to_string))
+        .collect()
+}
+
+fn gap_titles(output: &Value) -> Vec<String> {
+    output["durable_gaps"]
+        .as_array()
+        .into_iter()
+        .chain(output["evidence_gaps"].as_array())
+        .flatten()
+        .filter_map(|value| value["title"].as_str().map(str::to_string))
+        .collect()
+}
+
+fn guardrail_terms(output: &Value) -> Vec<String> {
+    output["guardrail_hits"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|value| value["term"].as_str().map(str::to_string))
+        .collect()
+}
+
+fn unsupported_claim_labels(output: &Value) -> Vec<String> {
+    output["unsupported_claims"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|value| {
+            [
+                value["category"].as_str().map(str::to_string),
+                value["trigger"].as_str().map(str::to_string),
+            ]
+        })
+        .flatten()
         .collect()
 }
 

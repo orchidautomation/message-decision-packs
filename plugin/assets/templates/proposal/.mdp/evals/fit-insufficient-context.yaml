@@ -1,0 +1,10 @@
+id: fit-insufficient-context
+command: fit
+expect_status: insufficient-context
+prospect:
+  name: Jordan Rivera
+  title: Proposal Lead
+  company: City of Exampleton
+  trigger: Synthetic permit modernization RFP
+  persona: Proposal Lead
+  synthetic: true
