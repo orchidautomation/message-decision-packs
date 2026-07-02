@@ -653,7 +653,7 @@ fn collect_context_constraint_hits(
         return;
     };
     for entry in entries {
-        if entry["card_id"].as_str() == Some("output-rules") {
+        if entry["card_kind"].as_str() == Some("output-rules") {
             continue;
         }
         let constraints = &entry["constraints"];
@@ -1138,6 +1138,29 @@ mod tests {
             manifest = manifest.replace(&format!("- id: {from}\n"), &format!("- id: {to}\n"));
         }
         std::fs::write(manifest_path, manifest).expect("manifest should be writable");
+    }
+
+    fn rename_card_id(root: &Path, card_path: &str, from: &str, to: &str) {
+        let path = root.join(".mdp").join("cards").join(card_path);
+        let raw = std::fs::read_to_string(&path).expect("card should be readable");
+        std::fs::write(
+            path,
+            raw.replacen(&format!("id: {from}\n"), &format!("id: {to}\n"), 1),
+        )
+        .expect("card should be writable");
+    }
+
+    fn add_initial_email_word_count_constraint(root: &Path) {
+        let path = root.join(".mdp").join("cards").join("output-rules.yaml");
+        let raw = std::fs::read_to_string(&path).expect("output rules should be readable");
+        std::fs::write(
+            path,
+            raw.replace(
+                "- id: no-fake-personalization",
+                "  constraints:\n    word_count:\n      min: 50\n      max: 125\n- id: no-fake-personalization",
+            ),
+        )
+        .expect("output rules should be writable");
     }
 
     #[test]
@@ -1647,6 +1670,14 @@ mod tests {
                 ("output-rules", "prose-contract"),
             ],
         );
+        rename_card_id(&root, "claims.yaml", "claims", "proof-library");
+        rename_card_id(
+            &root,
+            "avoid-rules.yaml",
+            "avoid-rules",
+            "category-boundaries",
+        );
+        rename_card_id(&root, "output-rules.yaml", "output-rules", "prose-contract");
 
         let result = check_claims(
             &root,
@@ -1675,6 +1706,39 @@ mod tests {
                 .iter()
                 .any(|claim| claim["trigger"] == "guarantee")
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn route_scoped_claim_check_does_not_duplicate_custom_output_rule_constraints() {
+        let root = temp_pack("claim-kind-fallback-route-scoped");
+        add_initial_email_word_count_constraint(&root);
+        rename_manifest_card_ids(&root, &[("output-rules", "prose-contract")]);
+        rename_card_id(&root, "output-rules.yaml", "output-rules", "prose-contract");
+
+        let result = check_claims(
+            &root,
+            Some("Too short."),
+            None,
+            Some("Proposal note"),
+            Some("PMM"),
+            Some("initial email outbound copy"),
+        )
+        .expect("claim check should succeed");
+
+        let output_word_count_hits = result["guardrail_hits"]
+            .as_array()
+            .expect("guardrail hits array")
+            .iter()
+            .filter(|hit| {
+                hit["card_id"] == "prose-contract"
+                    && hit["entry_id"] == "initial-email-shape"
+                    && hit["rule"] == "constraints.word_count"
+            })
+            .count();
+
+        assert_eq!(output_word_count_hits, 1);
 
         let _ = std::fs::remove_dir_all(root);
     }
