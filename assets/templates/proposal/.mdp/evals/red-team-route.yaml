@@ -6,6 +6,8 @@ expect_load_order_contains:
 - .mdp/cards/proposal-boundaries.yaml
 - .mdp/cards/bid-no-bid-rules.yaml
 - .mdp/cards/compliance-boundaries.yaml
+- .mdp/cards/requirement-signals.yaml
+- .mdp/cards/proof-library.yaml
 - .mdp/cards/review-gates.yaml
 - .mdp/cards/gaps.yaml
 expect_entry_titles_contains:

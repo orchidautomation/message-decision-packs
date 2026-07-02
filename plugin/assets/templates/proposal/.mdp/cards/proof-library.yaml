@@ -5,10 +5,13 @@ description: Approved synthetic proof patterns and unsupported proof boundaries.
 personas:
 - Solution Owner
 - Proposal Lead
+- Executive Reviewer
 tags:
 - proof
 - claims
 - past-performance
+- red-team
+- gap
 entries:
 - id: approved-synthetic-proof
   title: Approved synthetic proof
@@ -16,6 +19,7 @@ entries:
   applies_to:
   - Solution Owner
   - Proposal Lead
+  - Executive Reviewer
   evidence:
   - synthetic-proof-inventory
   avoid:
@@ -42,6 +46,7 @@ entries:
   applies_to:
   - Solution Owner
   - Proposal Lead
+  - Executive Reviewer
   evidence:
   - synthetic-proof-inventory
   avoid:
