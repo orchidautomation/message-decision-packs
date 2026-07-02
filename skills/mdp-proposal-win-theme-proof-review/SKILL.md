@@ -53,7 +53,15 @@ mdp --json doctor --dir .
 mdp --json validate --dir .
 ```
 
-2. Route the win-theme proof context using the supplied review role when known. Default to `Solution Owner` for proof review and `Proposal Lead` for theme shape:
+2. If the supplied opportunity, evaluator, requirement, or proof context is messy, use `.mdp/prompts/normalize-opportunity.yaml` as the normalization scaffold and validate the output before relying on it:
+
+```bash
+mdp --json validate-prompt-output --dir . --prompt-id normalize-opportunity --file <prompt-output.json>
+```
+
+Read `normalization_trace.fit_readiness`, `gaps`, `signals`, and bounded `attributes` before reviewing proof. If readiness is false or proof is missing, return `needs-more-proof` or `blocked` rather than inventing support.
+
+3. Route the win-theme proof context using the supplied review role when known. Default to `Solution Owner` for proof review and `Proposal Lead` for theme shape:
 
 ```bash
 mdp --json --summary route --entries --dir . --persona "Solution Owner" --job "win theme proof review"
@@ -62,7 +70,7 @@ mdp --json gaps --dir .
 
 Read the routed entries first. Open full card files only if the route output requires them or the review needs unresolved card detail.
 
-3. Use these proposal cards when present:
+4. Use these proposal cards when present:
 
 - `proof-library`
 - `evaluation-criteria`
@@ -77,7 +85,7 @@ Read the routed entries first. Open full card files only if the route output req
 - `proposal-roles`
 - `gaps`
 
-4. Build a proof-grounded theme matrix:
+5. Build a proof-grounded theme matrix:
 
 - evaluator need or requirement
 - proposed theme or differentiator
@@ -87,7 +95,7 @@ Read the routed entries first. Open full card files only if the route output req
 - risk if used as written
 - recommended action
 
-5. Use conservative theme statuses:
+6. Use conservative theme statuses:
 
 - `proof-backed`: the theme is supported by supplied proof and pack constraints.
 - `needs-more-proof`: the theme may be plausible but lacks enough evidence, source confidence, or owner acceptance.
@@ -97,7 +105,7 @@ Read the routed entries first. Open full card files only if the route output req
 
 Separate proposed themes from approved claims. A theme can be useful without being approved copy.
 
-6. Check risky claim-bearing text before treating it as usable:
+7. Check risky claim-bearing text before treating it as usable:
 
 ```bash
 mdp --json check-claims --dir . --persona "Solution Owner" --job "win theme proof review" --text "<claim-bearing text>"

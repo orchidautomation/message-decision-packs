@@ -51,14 +51,39 @@ pub(crate) fn validate_prompt_output_file(
         ));
     }
 
+    validate_prompt_output_parsed(root, &prompt, &output, &artifact_path, issues)
+}
+
+pub(crate) fn validate_prompt_output_value(
+    root: &Path,
+    output: &Value,
+    artifact_path: &str,
+    prompt_path: Option<&Path>,
+    prompt_id: Option<&str>,
+) -> Result<Value> {
+    if prompt_path.is_some() && prompt_id.is_some() {
+        return Err(anyhow!("pass at most one of prompt or prompt_id"));
+    }
+
+    let prompt = resolve_prompt(root, prompt_path, prompt_id)?;
+    validate_prompt_output_parsed(root, &prompt, output, artifact_path, Vec::new())
+}
+
+fn validate_prompt_output_parsed(
+    root: &Path,
+    prompt: &PromptFile,
+    output: &Value,
+    artifact_path: &str,
+    mut issues: Vec<Value>,
+) -> Result<Value> {
     let manifest = read_manifest(root)?;
-    validate_output_against_prompt(&manifest, &prompt, &output, &artifact_path, &mut issues);
-    validate_card_collisions(root, &prompt, &output, &artifact_path, &mut issues)?;
+    validate_output_against_prompt(&manifest, prompt, output, artifact_path, &mut issues);
+    validate_card_collisions(root, prompt, output, artifact_path, &mut issues)?;
 
     Ok(json!({
         "valid": issues.is_empty(),
         "file": artifact_path,
-        "prompt": prompt_summary(&prompt, root),
+        "prompt": prompt_summary(prompt, root),
         "issues": issues
     }))
 }
