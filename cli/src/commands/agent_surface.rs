@@ -19,6 +19,17 @@ pub(crate) fn agent_surface(root: &Path) -> Result<Value> {
         let profile_label = profile.label;
         let profile_version = profile.version;
         let surface = profile.agent_surface;
+        if surface.is_empty() {
+            return Ok(fallback_payload(
+                pack,
+                json!({
+                    "id": profile_id,
+                    "label": profile_label,
+                    "version": profile_version
+                }),
+                "This pack has profile metadata but no profile.agent_surface entries, so use generic MDP skills and CLI commands.",
+            ));
+        }
         return Ok(json!({
             "contract": CONTRACT,
             "pack": pack,
@@ -37,21 +48,29 @@ pub(crate) fn agent_surface(root: &Path) -> Result<Value> {
         }));
     }
 
-    Ok(json!({
-        "contract": CONTRACT,
-        "pack": pack,
-        "profile": {
+    Ok(fallback_payload(
+        pack,
+        json!({
             "id": "legacy",
             "label": "Legacy MDP pack",
             "version": Value::Null
-        },
+        }),
+        "This pack has no profile.agent_surface metadata, so use generic MDP skills and CLI commands.",
+    ))
+}
+
+fn fallback_payload(pack: Value, profile: Value, guidance: &str) -> Value {
+    json!({
+        "contract": CONTRACT,
+        "pack": pack,
+        "profile": profile,
         "agent_surface": agent_surface_payload(legacy_surface()),
         "legacy_profile": true,
         "guidance": [
-            "This pack has no profile.agent_surface metadata, so use generic MDP skills and CLI commands.",
+            guidance,
             "Add optional profile.agent_surface metadata to make domain-specific skill routing deterministic."
         ]
-    }))
+    })
 }
 
 fn legacy_surface() -> AgentSurface {
@@ -134,6 +153,44 @@ mod tests {
                 .expect("recommended skills")
                 .iter()
                 .any(|skill| skill == "mdp")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn agent_surface_falls_back_when_profile_surface_is_empty() {
+        let root = temp_root("agent-surface-empty-profile");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let without_agent_surface = raw
+            .split_once("  agent_surface:\n")
+            .and_then(|(head, tail)| {
+                tail.split_once("personas:\n")
+                    .map(|(_, rest)| format!("{head}personas:\n{rest}"))
+            })
+            .expect("starter manifest should contain profile.agent_surface");
+        std::fs::write(&manifest_path, without_agent_surface).expect("manifest should be writable");
+
+        let result = agent_surface(&root).expect("surface should load");
+
+        assert_eq!(result["profile"]["id"], "gtm");
+        assert_eq!(result["legacy_profile"], true);
+        assert!(
+            result["agent_surface"]["recommended_skills"]
+                .as_array()
+                .expect("recommended skills")
+                .iter()
+                .any(|skill| skill == "mdp")
+        );
+        assert!(
+            !result["agent_surface"]["recommended_skills"]
+                .as_array()
+                .expect("recommended skills")
+                .iter()
+                .any(|skill| skill == "mdp-icp-builder")
         );
 
         let _ = std::fs::remove_dir_all(root);
