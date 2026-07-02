@@ -221,6 +221,7 @@ fn value_contract_schema() -> Value {
     json!({
         "type": "object",
         "description": "A deterministic value contract for a prompt or prospect field.",
+        "additionalProperties": false,
         "properties": {
             "type": {"enum": ["string", "number", "integer", "boolean"]},
             "format": {
@@ -561,6 +562,11 @@ mod tests {
             result["properties"]["lead_input_requirements"]["properties"]["required_fields"]["items"]
                 ["enum"][3],
             "company_domain"
+        );
+        assert_eq!(
+            result["properties"]["lead_input_requirements"]["properties"]["value_contracts"]["additionalProperties"]
+                ["additionalProperties"],
+            false
         );
     }
 

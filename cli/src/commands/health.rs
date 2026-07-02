@@ -279,6 +279,22 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         "manifest_lead_input_requirements_unknown_field",
         issues,
     );
+    validate_value_contract_shapes(
+        yaml_get(
+            yaml_get(&value, "lead_input_requirements").unwrap_or(&YamlValue::Null),
+            "value_contracts",
+        ),
+        ".mdp/manifest.yaml#/lead_input_requirements/value_contracts",
+        issues,
+    );
+    validate_value_contract_shapes(
+        yaml_get(
+            yaml_get(&value, "lead_input_requirements").unwrap_or(&YamlValue::Null),
+            "attribute_definitions",
+        ),
+        ".mdp/manifest.yaml#/lead_input_requirements/attribute_definitions",
+        issues,
+    );
     validate_object_keys(
         yaml_get(&value, "policy").unwrap_or(&YamlValue::Null),
         &[
@@ -440,6 +456,15 @@ fn validate_value_contract(contract: &ValueContract, path: &str, issues: &mut Ve
         }
     }
 
+    if !contract.enum_values.is_empty() && contract.value_type.as_deref() != Some("string") {
+        issues.push(issue(
+            "lead_input_value_contract_enum_type",
+            "error",
+            format!("{path}/enum"),
+            "enum contracts require type: string because runtime enum validation is string-only",
+        ));
+    }
+
     let mut seen = BTreeSet::new();
     for (index, value) in contract.enum_values.iter().enumerate() {
         if value.trim().is_empty() {
@@ -456,6 +481,36 @@ fn validate_value_contract(contract: &ValueContract, path: &str, issues: &mut Ve
                 format!("{path}/enum/{index}"),
                 format!("duplicate enum value {value}"),
             ));
+        }
+    }
+}
+
+fn validate_value_contract_shapes(value: Option<&YamlValue>, path: &str, issues: &mut Vec<Value>) {
+    let Some(contracts) = value.and_then(YamlValue::as_mapping) else {
+        return;
+    };
+    let allowed = ["type", "format", "enum", "required", "description"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    for (contract_name, contract) in contracts {
+        let Some(contract_name) = contract_name.as_str() else {
+            continue;
+        };
+        let Some(contract) = contract.as_mapping() else {
+            continue;
+        };
+        for key in contract.keys() {
+            let Some(key) = key.as_str() else {
+                continue;
+            };
+            if !allowed.contains(key) {
+                issues.push(issue(
+                    "lead_input_value_contract_unknown_field",
+                    "error",
+                    format!("{path}/{contract_name}/{key}"),
+                    format!("unsupported value contract field {key}; expected type, format, enum, required, or description"),
+                ));
+            }
         }
     }
 }
@@ -1570,11 +1625,11 @@ mod tests {
         );
         raw = raw.replace(
             "value_contracts:\n    segment:",
-            "value_contracts:\n    unsupported_field:\n      type: object\n    segment:",
+            "value_contracts:\n    unsupported_field:\n      type: object\n      enumm:\n      - enterprise\n    segment:",
         );
         raw = raw.replace(
             "attribute_definitions:\n    fiscal_year:",
-            "attribute_definitions:\n    renewal date:\n      type: string\n      format: month\n    fiscal_year:",
+            "attribute_definitions:\n    renewal date:\n      type: string\n      format: month\n    fiscal_year:\n      type: integer\n      enum:\n      - \"2027\"\n    close_date:",
         );
         std::fs::write(&manifest_path, raw).expect("manifest should be writable");
 
@@ -1594,6 +1649,8 @@ mod tests {
         assert!(codes.contains(&"lead_input_value_contract_type_unknown"));
         assert!(codes.contains(&"lead_input_attribute_definition_key_invalid"));
         assert!(codes.contains(&"lead_input_value_contract_format_unknown"));
+        assert!(codes.contains(&"lead_input_value_contract_unknown_field"));
+        assert!(codes.contains(&"lead_input_value_contract_enum_type"));
 
         let _ = std::fs::remove_dir_all(root);
     }
