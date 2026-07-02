@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "mdp")]
-#[command(about = "Author and route modular message decision packs for GTM agents")]
+#[command(about = "Author and route modular message decision packs for agent workflows")]
 #[command(version)]
 pub(crate) struct Cli {
     #[arg(long, global = true, help = "Emit stable machine-readable JSON")]

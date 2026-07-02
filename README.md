@@ -1,6 +1,6 @@
 # Message Decision Packs
 
-Message Decision Packs (MDP) are modular, agent-readable GTM messaging packs. They give agents a small manifest, a source ledger, routed card files, and optional extraction prompt contracts for ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, output-rules, objections, gaps, and copy patterns.
+Message Decision Packs (MDP) are modular, agent-readable decision packs for GTM messaging and profile-specific review workflows. They give agents a small manifest, a source ledger, routed card files, and optional extraction prompt contracts. GTM packs can encode ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, output-rules, objections, gaps, and copy patterns. Proposal packs can encode roles, requirements, bid/no-bid criteria, proof, compliance boundaries, review gates, output contracts, and reviewer gaps without turning MDP into proposal execution software.
 
 This repo contains both the local CLI and the Pluxx source plugin for supported agent hosts:
 
@@ -119,7 +119,7 @@ make -C cli install-local
 mdp --json doctor --dir .
 ```
 
-Create a pack:
+Create a GTM starter pack:
 
 ```bash
 mdp --json capabilities
@@ -136,13 +136,17 @@ mdp --json gaps --dir /tmp/mdp-demo
 mdp --json eval --dir /tmp/mdp-demo
 ```
 
-Available starter templates are `gtm` for the generic GTM messaging pack and `proposal` for the synthetic proposal reference profile:
+Create a proposal reference-profile pack:
 
 ```bash
 mdp --json init --template proposal --dir /tmp/mdp-proposal-demo --force
 mdp --json validate --dir /tmp/mdp-proposal-demo
 mdp --json eval --dir /tmp/mdp-proposal-demo
+mdp --json route --entries --dir /tmp/mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
+mdp --json gaps --dir /tmp/mdp-proposal-demo
 ```
+
+Available starter templates are `gtm` for the generic GTM messaging pack and `proposal` for the synthetic proposal reference profile. The proposal path does not create a prospect row or outbound-copy fixtures.
 
 ## Pack Layout
 
