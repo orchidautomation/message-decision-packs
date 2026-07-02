@@ -32,11 +32,17 @@ inputs:
   missing_behavior: Do not assume previous pack decisions, personas, channels, claims, or value domains when this field is N/A.
   name: existing_pack_context
   required: false
+- default: N/A
+  description: Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing; fiscal year, renewal dates, event dates, and campaign windows remain pack-declared or supplied metadata.
+  missing_behavior: Do not infer fiscal years, renewal windows, event timing, or local business calendar facts from missing runtime context.
+  name: runtime_context
+  required: false
 instructions:
-- Use only supplied company_domain, person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.
+- Use only supplied company_domain, person_data, company_data, account_data, source_notes, existing_pack_context, and runtime_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.
 - Extract only claims directly supported by supplied source material. Put unsupported or quantified claims in rejected_claims, not card_patches.
 - Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
 - Use existing_pack_context as the source of truth for pack-owned personas, operator roles, card ids, claims, avoid-rules, output rules, supported channels, and value domains. Do not invent new pack labels when the source is weak; emit gaps or needs-review candidates instead.
+- Use runtime_context.now_utc and runtime_context.date_utc only to state when this extraction ran or to compare against explicitly supplied timing metadata. Do not hardcode fiscal year or infer customer-specific calendars from the current date.
 - For source_summary.company_domain, use the supplied company_domain or an explicit supplied URL/domain only. Do not infer a domain from company name.
 - 'Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid. Use constraints for deterministic output limits such as word counts, subject word counts, max questions, or forbidden links/html/tracking when the source explicitly calls for them. Use metadata only for advisory custom annotations that should be preserved for agents but not enforced by the CLI.'
 - Keep source evidence in evidence and provenance. Do not put prospect facts, proof, citations, or raw source excerpts only in metadata.

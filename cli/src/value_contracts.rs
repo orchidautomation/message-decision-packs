@@ -414,7 +414,7 @@ fn allowed_personas(manifest: &Manifest) -> String {
         .join(", ")
 }
 
-fn valid_date(value: &str) -> bool {
+pub(crate) fn valid_date(value: &str) -> bool {
     let parts = value.split('-').collect::<Vec<_>>();
     if parts.len() != 3 || parts[0].len() != 4 || parts[1].len() != 2 || parts[2].len() != 2 {
         return false;
@@ -441,7 +441,7 @@ fn valid_date(value: &str) -> bool {
     (1..=max_day).contains(&day)
 }
 
-fn valid_date_time(value: &str) -> bool {
+pub(crate) fn valid_date_time(value: &str) -> bool {
     let Some((date, rest)) = value.split_once('T') else {
         return false;
     };

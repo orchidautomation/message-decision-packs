@@ -1,6 +1,7 @@
 use crate::models::Prospect;
 use crate::pack_io::{read_manifest, read_prospect};
-use crate::routing::{entry_context, select_cards};
+use crate::routing::{entry_context_with_runtime, select_cards};
+use crate::runtime_context::current_runtime_context;
 use crate::utils::{resolve_persona, resolve_persona_label, routable_persona};
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -13,6 +14,7 @@ pub(crate) fn emit_brief(
     job: Option<&str>,
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
+    let runtime_context = current_runtime_context()?;
     let job_text = job.unwrap_or("unspecified GTM decision task");
     let persona_resolution = resolve_persona_label(&manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution);
@@ -24,6 +26,7 @@ pub(crate) fn emit_brief(
     Ok(json!({
         "contract": "mdp.brief.v0",
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
+        "runtime_context": runtime_context.clone(),
         "persona": resolved_persona,
         "requested_persona": persona,
         "persona_resolution": persona_resolution,
@@ -78,6 +81,7 @@ pub(crate) fn prospect_brief_from_value_with_context(
     include_context: bool,
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
+    let runtime_context = current_runtime_context()?;
     let persona_resolution = resolve_persona(&manifest, &prospect);
     let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
     let fit_status = fit_result["status"]
@@ -110,6 +114,7 @@ pub(crate) fn prospect_brief_from_value_with_context(
     let mut payload = json!({
         "contract": "mdp.message-brief.v0",
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
+        "runtime_context": runtime_context.clone(),
         "channel": channel,
         "prospect": prospect,
         "prospect_source": {
@@ -140,8 +145,14 @@ pub(crate) fn prospect_brief_from_value_with_context(
         } else { "Stop before drafting. Surface the fit status and missing context/disqualifiers, then ask for explicit user override before creating outbound copy." }
     });
     if include_context {
-        payload["context"] =
-            entry_context(root, &manifest, &persona, job_text, draft_status == "ready")?;
+        payload["context"] = entry_context_with_runtime(
+            root,
+            &manifest,
+            &persona,
+            job_text,
+            draft_status == "ready",
+            &runtime_context,
+        )?;
     }
     Ok(payload)
 }
@@ -288,6 +299,15 @@ mod tests {
 
         assert_eq!(result["context"]["contract"], "mdp.context.v0");
         assert_eq!(result["context"]["status"], "ready");
+        assert_eq!(
+            result["runtime_context"],
+            result["context"]["runtime_context"]
+        );
+        assert_eq!(
+            result["runtime_context"]["contract"],
+            "mdp.runtime-context.v0"
+        );
+        assert_eq!(result["runtime_context"]["timezone"], "UTC");
         assert!(titles.contains(&"Do not claim execution"));
         assert!(titles.contains(&"No message without context"));
         assert!(titles.contains(&"LinkedIn initial touch"));
@@ -325,6 +345,10 @@ mod tests {
 
         assert_eq!(result["draft_status"], "no-draft");
         assert_eq!(result["context"]["status"], "blocked");
+        assert_eq!(
+            result["runtime_context"],
+            result["context"]["runtime_context"]
+        );
         assert_eq!(
             result["context"]["entries"]
                 .as_array()

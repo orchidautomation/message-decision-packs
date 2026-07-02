@@ -208,6 +208,7 @@ pub(crate) enum SchemaTarget {
     Card,
     Prompt,
     Brief,
+    RuntimeContext,
     Prospect,
     Eval,
 }

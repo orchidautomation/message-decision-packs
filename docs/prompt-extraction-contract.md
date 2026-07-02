@@ -29,6 +29,8 @@ Prompt outputs use `contract: mdp.prompt-output.v0` and must include:
 - `gaps`: missing data that blocks stronger entries.
 - `rejected_claims`: unsupported claims the agent refused to promote.
 
+Prompt outputs may include optional `runtime_context` when the prompt declared that input. The CLI validates it as `mdp.runtime-context.v0` with `now_utc` as an ISO date-time, `date_utc` as an ISO date, `timezone: UTC`, and a local-time policy. Use this only to state when the prompt ran or to compare against explicitly supplied timing metadata.
+
 Runtime normalization prompts set `output_contract.output_kind: prospect-normalization` and also require:
 
 - `normalized_prospect`: the exact JSON shape accepted by `mdp --json schema prospect`.
@@ -104,7 +106,7 @@ It also includes extraction prompt contracts for:
 
 1. Run `mdp --json validate --dir <pack>` before using prompt files.
 2. Load `.mdp/prompts/normalize-prospect.yaml`.
-3. Supply the messy row as `raw_row`, plus relevant `existing_pack_context` from the manifest: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit-rules, signals, avoid-rules, output rules, and source policy.
+3. Supply the messy row as `raw_row`, relevant `existing_pack_context` from the manifest, and `runtime_context` when timing matters. Existing pack context should include personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit-rules, signals, avoid-rules, output rules, and source policy.
 4. Run the prompt with strict JSON output matching `output_contract.schema_ref`, or `output_contract.schema` when the prompt file was generated with inline schemas.
 5. Run `mdp --json validate-prompt-output --dir <pack> --prompt-id normalize-prospect-row --file <output.json>`.
 6. Save `normalized_prospect` to ignored scratch as `<prospect>.json` only after the full prompt artifact validates.
@@ -120,7 +122,7 @@ Do not let the normalization prompt silently decide final fit. It should preserv
 
 1. Run `mdp --json validate --dir <pack>` before using prompt files.
 2. Pick the prompt whose `target_card_kinds` match the card area you want to populate.
-3. Fill `company_domain`, `company_data`, `person_data`, `account_data`, `source_notes`, and `existing_pack_context` from user-provided or local pack context.
+3. Fill `company_domain`, `company_data`, `person_data`, `account_data`, `source_notes`, `existing_pack_context`, and optional `runtime_context` from user-provided or local pack context.
 4. Run the prompt with strict JSON output matching `output_contract.schema_ref`, or `output_contract.schema` when the prompt file was generated with inline schemas.
 5. Run `mdp --json validate-prompt-output --prompt-id <id> --file <output.json>`.
 6. Review `card_patches`, `gaps`, and `rejected_claims`.
@@ -142,6 +144,13 @@ Use `mdp --json schema prompt` to inspect the machine-readable prompt contract.
     "account_name": "ExampleCo",
     "inputs_used": ["raw_row", "existing_pack_context"],
     "confidence": "medium"
+  },
+  "runtime_context": {
+    "contract": "mdp.runtime-context.v0",
+    "now_utc": "2026-07-02T03:45:00Z",
+    "date_utc": "2026-07-02",
+    "timezone": "UTC",
+    "local_time_policy": "MDP emits UTC runtime metadata only. Fiscal years, renewal dates, event dates, and campaign windows must come from pack-declared or supplied metadata."
   },
   "normalized_prospect": {
     "name": "Alex Rivera",
@@ -198,6 +207,15 @@ Use `mdp --json schema prompt` to inspect the machine-readable prompt contract.
   "person_data": "Alex Rivera, Revenue Operations Lead. Owns CRM hygiene, campaign routing, and prospect qualification workflows.",
   "account_data": "Mid-market B2B SaaS. Trigger: consolidating qualification context across CRM exports, spreadsheets, and research notes.",
   "source_notes": ["User-provided account research note from 2026-06-25."],
-  "existing_pack_context": "Current MDP pack has personas, fit-rules, pains, hooks, claims, avoid-rules, output-rules, CTAs, channel policies, and gaps cards."
+  "existing_pack_context": "Current MDP pack has personas, fit-rules, pains, hooks, claims, avoid-rules, output-rules, CTAs, channel policies, and gaps cards.",
+  "runtime_context": {
+    "contract": "mdp.runtime-context.v0",
+    "now_utc": "2026-07-02T03:45:00Z",
+    "date_utc": "2026-07-02",
+    "timezone": "UTC",
+    "local_time_policy": "Use supplied source fields for fiscal/calendar logic."
+  }
 }
 ```
+
+Fiscal year is only an example of pack-declared metadata. Do not hardcode it into prompt logic: declare it under `lead_input_requirements.attribute_definitions` when the pack needs it, validate its type/format there, and use `runtime_context` only as run-time reference data.
