@@ -3,8 +3,9 @@ use crate::constants::{
     PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
-    Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints, LeadInputRequirements,
-    Manifest, PersonaMapping, Policy, Provenance, ValueContract,
+    AgentSurface, BlockedSkill, Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints,
+    JobSkillRoute, LeadInputRequirements, Manifest, PersonaMapping, Policy, Profile, Provenance,
+    ValueContract,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -67,6 +68,7 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
         name: name.to_string(),
         version: "0.1.0".to_string(),
         description: Some("A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, output rules, and copy guidance.".to_string()),
+        profile: Some(gtm_profile()),
         personas: personas.clone(),
         target_personas: personas,
         operator_roles: vec!["GTM Engineering".to_string(), "PMM".to_string()],
@@ -103,6 +105,84 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
         ],
         policy: Policy { progressive_disclosure: true, load_manifest_first: true, max_cards_per_route: 13, json_contract: "mdp.cli.v0".to_string(), no_auth_required: true },
         provenance: Provenance { owner: "local".to_string(), created_by: "mdp init".to_string(), notes: vec!["This pack is guidance and evidence context, not an execution system.".to_string(), "Agents should load only routed cards unless the user asks for a full audit.".to_string()] },
+    }
+}
+
+fn gtm_profile() -> Profile {
+    Profile {
+        id: "gtm".to_string(),
+        label: Some("GTM Messaging".to_string()),
+        version: Some("mdp.profile.v0".to_string()),
+        agent_surface: AgentSurface {
+            recommended_skills: vec![
+                "mdp".to_string(),
+                "mdp-create-pack".to_string(),
+                "mdp-icp-builder".to_string(),
+                "mdp-prospect-brief".to_string(),
+                "mdp-pack-eval".to_string(),
+            ],
+            allowed_skills: vec![
+                "mdp".to_string(),
+                "mdp-lfg".to_string(),
+                "mdp-create-pack".to_string(),
+                "mdp-icp-builder".to_string(),
+                "mdp-source-extract".to_string(),
+                "mdp-message-angles".to_string(),
+                "mdp-cta-builder".to_string(),
+                "mdp-avoid-rules".to_string(),
+                "mdp-output-rules".to_string(),
+                "mdp-prospect-brief".to_string(),
+                "mdp-copy-brief".to_string(),
+                "mdp-copy-eval".to_string(),
+                "mdp-pack-review".to_string(),
+                "mdp-pack-eval".to_string(),
+            ],
+            blocked_skills: vec![
+                BlockedSkill {
+                    name: "mdp-proposal-pack-builder".to_string(),
+                    reason: "Proposal/RFP review pack builder; use only with profile.id: proposal."
+                        .to_string(),
+                },
+                BlockedSkill {
+                    name: "mdp-proposal-bid-no-bid-review".to_string(),
+                    reason: "Proposal review job; not a GTM prospect or outbound-copy workflow."
+                        .to_string(),
+                },
+                BlockedSkill {
+                    name: "mdp-proposal-compliance-review".to_string(),
+                    reason: "Proposal compliance review job; not a GTM messaging workflow."
+                        .to_string(),
+                },
+                BlockedSkill {
+                    name: "mdp-proposal-win-theme-proof-review".to_string(),
+                    reason: "Proposal proof review job; use GTM claims/copy review skills instead."
+                        .to_string(),
+                },
+                BlockedSkill {
+                    name: "mdp-proposal-red-team-gap-review".to_string(),
+                    reason: "Proposal red-team review job; use mdp-pack-review or mdp-pack-eval for GTM packs."
+                        .to_string(),
+                },
+            ],
+            job_skills: vec![
+                JobSkillRoute {
+                    job: "create or improve GTM messaging pack".to_string(),
+                    skills: vec!["mdp-create-pack".to_string(), "mdp-icp-builder".to_string()],
+                },
+                JobSkillRoute {
+                    job: "prospect row to fit decision or brief".to_string(),
+                    skills: vec!["mdp-prospect-brief".to_string()],
+                },
+                JobSkillRoute {
+                    job: "copy brief or copy evaluation".to_string(),
+                    skills: vec!["mdp-copy-brief".to_string(), "mdp-copy-eval".to_string()],
+                },
+                JobSkillRoute {
+                    job: "pack validation and eval coverage".to_string(),
+                    skills: vec!["mdp-pack-review".to_string(), "mdp-pack-eval".to_string()],
+                },
+            ],
+        },
     }
 }
 

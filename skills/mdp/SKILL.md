@@ -16,6 +16,7 @@ From the workspace that contains or should contain a pack:
 ```bash
 command -v mdp
 mdp --json capabilities
+mdp --json agent-surface --dir .
 mdp --json doctor --dir .
 ```
 
@@ -33,7 +34,7 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 Do not fake validation by reading YAML manually.
 
-Use `mdp --json capabilities` before advanced agent orchestration to inspect command contracts, coarse side effects, `--out` support, dry-run support, strict-mode support, and stable JSON error codes. Keep `--json` on whenever another agent, script, or tool will parse output.
+Use `mdp --json capabilities` before advanced agent orchestration to inspect command contracts, coarse side effects, `--out` support, dry-run support, strict-mode support, and stable JSON error codes. Use `mdp --json agent-surface --dir .` before choosing domain-specific MDP skills. If the surface returns `blocked_skills` for the skill you were about to use, reroute to an allowed or recommended skill instead of relying on prose instructions alone. Keep `--json` on whenever another agent, script, or tool will parse output.
 
 ## Hook Activation
 
@@ -103,6 +104,8 @@ mdp --json validate --strict --dir .
 ```
 
 Pack extensions must use supported surfaces. Use prospect `attributes` for bounded reviewed row metadata that `mdp fit` may require through `.mdp/manifest.yaml` `lead_input_requirements.required_attributes`. Use entry `metadata` for advisory annotations about card content, such as owner, review status, source priority, or internal notes; `mdp route --entries` and `mdp brief --context` surface that metadata for agents, but the CLI does not enforce unknown metadata keys. Do not add arbitrary sibling fields to entries, cards, or manifests as if they were supported contract fields; `mdp validate` warns that unsupported fields are ignored. For custom channels, add the channel string to `.mdp/manifest.yaml` `supported_channels`, then write matching channel-policy entries.
+
+Profile metadata is optional but preferred for deterministic skill routing. When `.mdp/manifest.yaml` declares `profile.agent_surface`, treat `recommended_skills`, `allowed_skills`, `blocked_skills`, and `job_skills` as the pack-owned routing contract for MDP skills. Existing packs without this metadata remain valid; `mdp agent-surface` returns a legacy generic surface and tells agents to fall back to generic MDP CLI commands.
 
 ## Use A Prospect Or Source Row
 

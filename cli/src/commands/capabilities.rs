@@ -25,10 +25,16 @@ pub(crate) fn capabilities() -> Value {
             "card_patch_schema_ref": PROMPT_CARD_PATCH_SCHEMA_REF,
             "prospect_normalization_schema_ref": PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
         },
+        "profile_contracts": {
+            "manifest_profile": "mdp.profile.v0",
+            "agent_surface": "mdp.agent-surface.v0",
+            "profile_metadata_optional": true
+        },
         "commands": [
             command("capabilities", "mdp.capabilities.v0", "read-only", false, false, false, &[]),
             command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
+            command("agent-surface", "mdp.agent-surface.v0", "read-only", false, false, false, &["--dir"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--prompt", "--prompt-id", "--strict"]),
             command("explain", "mdp.explain.v0", "read-only", false, false, false, &["--dir", "--persona"]),
@@ -105,6 +111,17 @@ mod tests {
                 .expect("commands array")
                 .iter()
                 .any(|command| command["name"] == "init" && command["supports_dry_run"] == true)
+        );
+        assert_eq!(
+            result["profile_contracts"]["agent_surface"],
+            "mdp.agent-surface.v0"
+        );
+        assert!(
+            result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .any(|command| command["name"] == "agent-surface")
         );
         assert!(
             result["stable_error_codes"]

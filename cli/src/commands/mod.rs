@@ -1,3 +1,4 @@
+pub(crate) mod agent_surface;
 pub(crate) mod briefs;
 pub(crate) mod capabilities;
 pub(crate) mod evals;
@@ -9,6 +10,7 @@ pub(crate) mod routing;
 pub(crate) mod sample_leads;
 pub(crate) mod schemas;
 
+pub(crate) use agent_surface::agent_surface;
 pub(crate) use briefs::{demo_copy, emit_brief, prospect_brief_with_context};
 pub(crate) use capabilities::capabilities;
 pub(crate) use evals::eval_pack;

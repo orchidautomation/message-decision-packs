@@ -25,9 +25,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         "gaps",
     ];
     match target {
-        SchemaTarget::Manifest => {
-            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Manifest v0", "type": "object", "required": ["format", "id", "name", "version", "personas", "cards", "policy", "provenance"], "properties": {"format": {"const": FORMAT_VERSION}, "id": {"type": "string"}, "name": {"type": "string"}, "version": {"type": "string"}, "description": {"type": "string"}, "personas": {"type": "array", "items": {"type": "string"}}, "target_personas": {"type": "array", "items": {"type": "string"}}, "operator_roles": {"type": "array", "items": {"type": "string"}}, "supported_channels": {"type": "array", "items": {"type": "string"}}, "persona_mappings": {"type": "array", "items": {"type": "object", "required": ["persona"], "properties": {"persona": {"type": "string"}, "title_keywords": {"type": "array", "items": {"type": "string"}}}}}, "lead_input_requirements": lead_input_requirements_schema(), "cards": {"type": "array", "items": {"type": "object", "required": ["id", "path", "kind", "description"], "properties": {"id": {"type": "string"}, "path": {"type": "string", "pattern": "^cards/[^/].*\\.ya?ml$"}, "kind": {"enum": card_kinds}, "description": {"type": "string"}, "personas": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}}}}}, "policy": {"type": "object", "required": ["progressive_disclosure", "load_manifest_first", "max_cards_per_route", "json_contract", "no_auth_required"], "properties": {"progressive_disclosure": {"type": "boolean"}, "load_manifest_first": {"type": "boolean"}, "max_cards_per_route": {"type": "integer", "minimum": 1}, "json_contract": {"type": "string"}, "no_auth_required": {"type": "boolean"}}}, "provenance": {"type": "object", "required": ["owner", "created_by", "notes"], "properties": {"owner": {"type": "string"}, "created_by": {"type": "string"}, "notes": {"type": "array", "items": {"type": "string"}}}}}})
-        }
+        SchemaTarget::Manifest => manifest_schema(card_kinds),
         SchemaTarget::Card => {
             json!({
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -79,7 +77,147 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::Eval => {
             json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Eval Fixture v0", "type": "object", "required": ["id", "command"], "properties": {"id": {"type": "string"}, "command": {"enum": ["route", "fit", "brief", "check-claims"]}, "persona": {"type": "string"}, "job": {"type": "string"}, "channel": {"type": "string"}, "prospect": {"type": "object"}, "text": {"type": "string"}, "subject": {"type": "string"}, "expect_load_order_contains": string_array(), "expect_load_order_excludes": string_array(), "expect_entry_titles_contains": string_array(), "expect_entry_titles_excludes": string_array(), "expect_status": {"type": "string"}, "expect_draft_status": {"type": "string"}, "expect_valid": {"type": "boolean"}}})
         }
+        SchemaTarget::AgentSurface => agent_surface_schema(),
     }
+}
+
+fn manifest_schema(card_kinds: [&str; 15]) -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Manifest v0",
+        "type": "object",
+        "required": ["format", "id", "name", "version", "personas", "cards", "policy", "provenance"],
+        "properties": {
+            "format": {"const": FORMAT_VERSION},
+            "id": {"type": "string"},
+            "name": {"type": "string"},
+            "version": {"type": "string"},
+            "description": {"type": "string"},
+            "profile": profile_schema(),
+            "personas": {"type": "array", "items": {"type": "string"}},
+            "target_personas": {"type": "array", "items": {"type": "string"}},
+            "operator_roles": {"type": "array", "items": {"type": "string"}},
+            "supported_channels": {"type": "array", "items": {"type": "string"}},
+            "persona_mappings": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["persona"],
+                    "properties": {
+                        "persona": {"type": "string"},
+                        "title_keywords": {"type": "array", "items": {"type": "string"}}
+                    }
+                }
+            },
+            "lead_input_requirements": lead_input_requirements_schema(),
+            "cards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["id", "path", "kind", "description"],
+                    "properties": {
+                        "id": {"type": "string"},
+                        "path": {"type": "string", "pattern": "^cards/[^/].*\\.ya?ml$"},
+                        "kind": {"enum": card_kinds},
+                        "description": {"type": "string"},
+                        "personas": {"type": "array", "items": {"type": "string"}},
+                        "tags": {"type": "array", "items": {"type": "string"}}
+                    }
+                }
+            },
+            "policy": {
+                "type": "object",
+                "required": ["progressive_disclosure", "load_manifest_first", "max_cards_per_route", "json_contract", "no_auth_required"],
+                "properties": {
+                    "progressive_disclosure": {"type": "boolean"},
+                    "load_manifest_first": {"type": "boolean"},
+                    "max_cards_per_route": {"type": "integer", "minimum": 1},
+                    "json_contract": {"type": "string"},
+                    "no_auth_required": {"type": "boolean"}
+                }
+            },
+            "provenance": {
+                "type": "object",
+                "required": ["owner", "created_by", "notes"],
+                "properties": {
+                    "owner": {"type": "string"},
+                    "created_by": {"type": "string"},
+                    "notes": {"type": "array", "items": {"type": "string"}}
+                }
+            }
+        }
+    })
+}
+
+fn profile_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Optional pack profile metadata for domain-aware agent orchestration. Existing packs remain valid without this block.",
+        "required": ["id"],
+        "properties": {
+            "id": {"type": "string"},
+            "label": {"type": "string"},
+            "version": {"const": "mdp.profile.v0"},
+            "agent_surface": agent_surface_properties_schema()
+        }
+    })
+}
+
+fn agent_surface_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Agent Surface v0",
+        "type": "object",
+        "required": ["contract", "pack", "profile", "agent_surface", "legacy_profile", "guidance"],
+        "properties": {
+            "contract": {"const": "mdp.agent-surface.v0"},
+            "pack": pack_schema(),
+            "profile": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "label": {"type": ["string", "null"]},
+                    "version": {"type": ["string", "null"]}
+                }
+            },
+            "agent_surface": agent_surface_properties_schema(),
+            "legacy_profile": {"type": "boolean"},
+            "guidance": string_array()
+        }
+    })
+}
+
+fn agent_surface_properties_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "recommended_skills": string_array(),
+            "allowed_skills": string_array(),
+            "blocked_skills": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["name", "reason"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "reason": {"type": "string"}
+                    }
+                }
+            },
+            "job_skills": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["job", "skills"],
+                    "properties": {
+                        "job": {"type": "string"},
+                        "skills": string_array()
+                    }
+                }
+            }
+        }
+    })
 }
 
 fn brief_schema() -> Value {

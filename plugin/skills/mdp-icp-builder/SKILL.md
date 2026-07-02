@@ -7,6 +7,16 @@ description: "Use to codify MDP ICP and fit cards: segments, personas, disqualif
 
 Turn fuzzy ICP thinking into explicit pack content that agents can route against.
 
+## Profile Gate
+
+Before editing an existing pack, run:
+
+```bash
+mdp --json agent-surface --dir .
+```
+
+Use this skill only when the surface is legacy/generic or `profile.id` is `gtm` and `mdp-icp-builder` is allowed. If the surface blocks `mdp-icp-builder`, stop and reroute to the allowed/recommended skill named in the surface. Proposal packs should use proposal profile skills, not GTM ICP cards.
+
 ## Inputs To Seek
 
 Use whatever the user already provided. Do not block unless a missing detail would make the pack misleading.

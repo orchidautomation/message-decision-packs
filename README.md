@@ -126,6 +126,7 @@ mdp --json capabilities
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --dry-run
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
 mdp --json validate --dir /tmp/mdp-demo
+mdp --json agent-surface --dir /tmp/mdp-demo
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp sample-leads --dir /tmp/mdp-demo --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
@@ -141,6 +142,7 @@ Create a proposal reference-profile pack:
 ```bash
 mdp --json init --template proposal --dir /tmp/mdp-proposal-demo --force
 mdp --json validate --dir /tmp/mdp-proposal-demo
+mdp --json agent-surface --dir /tmp/mdp-proposal-demo
 mdp --json eval --dir /tmp/mdp-proposal-demo
 mdp --json route --entries --dir /tmp/mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
 mdp --json gaps --dir /tmp/mdp-proposal-demo
@@ -233,7 +235,7 @@ Keep outbound rules split by responsibility:
 
 Use human-readable `body` text for these policies. Use `avoid` terms when a literal should be caught by guardrail checks, `exact_paragraphs` when a fixed paragraph count is truly required, and `constraints` for deterministic output checks such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking.
 
-Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. Agents and wrappers can run `mdp --json capabilities` to inspect command contracts, coarse side effects, dry-run support, strict-mode support, and stable JSON error codes before driving the CLI. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Routed entries can include structured `constraints` for deterministic output checks such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy to catch unsupported claims, avoid-rule hits, output-rule hits, hard constraint violations in `guardrail_hits`, advisory target misses in `constraint_warnings`, and text-only limitations in `unchecked_constraints`; add `--strict` when advisory warnings should fail an agent or CI gate. Use `gaps` to expose missing evidence, and use `eval` to test route, fit, brief, and claim behavior.
+Agents should load the manifest first, use `.mdp/sources.yaml` to preserve source facts and interpretations, then load only routed context. Agents and wrappers can run `mdp --json capabilities` to inspect command contracts, coarse side effects, dry-run support, strict-mode support, and stable JSON error codes before driving the CLI. They can also run `mdp --json agent-surface --dir <pack>` to read optional `profile.agent_surface` metadata that lists recommended, allowed, and blocked MDP skills for the active pack profile. For prospect briefs, prefer `mdp brief --context` and draft from `data.context.entries`; open `data.context.full_card_required` paths only when present. For route-only work, use cards returned by `mdp route` or `mdp route --entries`. Routed entries can include structured `constraints` for deterministic output checks such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking. Use `fit` before drafting from a prospect row and stop on `disqualified` or `insufficient-context` unless explicitly overridden. Use `check-claims` before approving copy to catch unsupported claims, avoid-rule hits, output-rule hits, hard constraint violations in `guardrail_hits`, advisory target misses in `constraint_warnings`, and text-only limitations in `unchecked_constraints`; add `--strict` when advisory warnings should fail an agent or CI gate. Use `gaps` to expose missing evidence, and use `eval` to test route, fit, brief, and claim behavior.
 
 For outbound-copy testing when no real or intentionally sanitized prospect row exists, generate clearly fake fixtures first:
 

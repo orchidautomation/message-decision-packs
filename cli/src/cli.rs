@@ -49,6 +49,11 @@ pub(crate) enum Commands {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
     },
+    #[command(about = "Print pack-aware agent skill routing guidance")]
+    AgentSurface {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
     #[command(about = "Validate manifest and card references")]
     Validate {
         #[arg(long, default_value = ".")]
@@ -211,6 +216,7 @@ pub(crate) enum SchemaTarget {
     RuntimeContext,
     Prospect,
     Eval,
+    AgentSurface,
 }
 
 #[derive(Clone, ValueEnum, PartialEq, Eq)]

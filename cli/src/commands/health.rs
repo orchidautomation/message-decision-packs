@@ -2,7 +2,7 @@ use crate::constants::{
     DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
     PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
-use crate::models::{CardKind, PromptFile, ValueContract};
+use crate::models::{AgentSurface, CardKind, Profile, PromptFile, ValueContract};
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
@@ -155,6 +155,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         }
     }
     validate_lead_input_requirements(&manifest, &mut issues);
+    validate_profile(manifest.profile.as_ref(), &mut issues);
     for card_ref in &manifest.cards {
         if !card_ids.insert(card_ref.id.clone()) {
             issues.push(issue(
@@ -237,6 +238,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "name",
             "version",
             "description",
+            "profile",
             "personas",
             "target_personas",
             "operator_roles",
@@ -249,6 +251,41 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         ],
         ".mdp/manifest.yaml",
         "manifest_unknown_field",
+        issues,
+    );
+    let profile = yaml_get(&value, "profile").unwrap_or(&YamlValue::Null);
+    validate_object_keys(
+        profile,
+        &["id", "label", "version", "agent_surface"],
+        ".mdp/manifest.yaml#/profile",
+        "manifest_profile_unknown_field",
+        issues,
+    );
+    let agent_surface = yaml_get(profile, "agent_surface").unwrap_or(&YamlValue::Null);
+    validate_object_keys(
+        agent_surface,
+        &[
+            "recommended_skills",
+            "allowed_skills",
+            "blocked_skills",
+            "job_skills",
+        ],
+        ".mdp/manifest.yaml#/profile/agent_surface",
+        "manifest_agent_surface_unknown_field",
+        issues,
+    );
+    validate_sequence_object_keys(
+        yaml_get(agent_surface, "blocked_skills"),
+        &["name", "reason"],
+        ".mdp/manifest.yaml#/profile/agent_surface/blocked_skills",
+        "manifest_blocked_skill_unknown_field",
+        issues,
+    );
+    validate_sequence_object_keys(
+        yaml_get(agent_surface, "job_skills"),
+        &["job", "skills"],
+        ".mdp/manifest.yaml#/profile/agent_surface/job_skills",
+        "manifest_job_skill_unknown_field",
         issues,
     );
     validate_sequence_object_keys(
@@ -315,6 +352,171 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         "manifest_provenance_unknown_field",
         issues,
     );
+}
+
+fn validate_profile(profile: Option<&Profile>, issues: &mut Vec<Value>) {
+    let Some(profile) = profile else {
+        return;
+    };
+
+    if profile.id.trim().is_empty() {
+        issues.push(issue(
+            "profile_id_empty",
+            "error",
+            ".mdp/manifest.yaml#/profile/id",
+            "profile.id must not be empty when profile metadata is present",
+        ));
+    }
+    if profile
+        .version
+        .as_deref()
+        .is_some_and(|version| version != "mdp.profile.v0")
+    {
+        issues.push(issue(
+            "profile_version_unknown",
+            "warning",
+            ".mdp/manifest.yaml#/profile/version",
+            "profile.version should be mdp.profile.v0 for the current profile contract",
+        ));
+    }
+    validate_agent_surface(&profile.agent_surface, issues);
+}
+
+fn validate_agent_surface(surface: &AgentSurface, issues: &mut Vec<Value>) {
+    if surface.is_empty() {
+        issues.push(issue(
+            "profile_agent_surface_empty",
+            "warning",
+            ".mdp/manifest.yaml#/profile/agent_surface",
+            "profile.agent_surface is empty; agents will fall back to generic MDP skill selection",
+        ));
+        return;
+    }
+
+    let recommended = validate_skill_list(
+        &surface.recommended_skills,
+        ".mdp/manifest.yaml#/profile/agent_surface/recommended_skills",
+        "profile_recommended_skill",
+        issues,
+    );
+    let allowed = validate_skill_list(
+        &surface.allowed_skills,
+        ".mdp/manifest.yaml#/profile/agent_surface/allowed_skills",
+        "profile_allowed_skill",
+        issues,
+    );
+
+    for (index, skill) in surface.blocked_skills.iter().enumerate() {
+        let path = format!(".mdp/manifest.yaml#/profile/agent_surface/blocked_skills/{index}");
+        if skill.name.trim().is_empty() {
+            issues.push(issue(
+                "profile_blocked_skill_name_empty",
+                "error",
+                format!("{path}/name"),
+                "blocked_skills entries must name a skill",
+            ));
+            continue;
+        }
+        if skill.reason.trim().is_empty() {
+            issues.push(issue(
+                "profile_blocked_skill_reason_empty",
+                "error",
+                format!("{path}/reason"),
+                "blocked_skills entries must explain the reroute reason",
+            ));
+        }
+        let key = skill.name.to_lowercase();
+        if recommended.contains(&key) || allowed.contains(&key) {
+            issues.push(issue(
+                "profile_blocked_skill_overlap",
+                "warning",
+                format!("{path}/name"),
+                format!(
+                    "blocked skill {} also appears in recommended_skills or allowed_skills",
+                    skill.name
+                ),
+            ));
+        }
+    }
+
+    for skill in &surface.recommended_skills {
+        if !allowed.is_empty() && !allowed.contains(&skill.to_lowercase()) {
+            issues.push(issue(
+                "profile_recommended_skill_not_allowed",
+                "warning",
+                ".mdp/manifest.yaml#/profile/agent_surface/recommended_skills",
+                format!(
+                    "recommended skill {skill} is not listed in allowed_skills; add it or leave allowed_skills empty"
+                ),
+            ));
+        }
+    }
+
+    for (index, route) in surface.job_skills.iter().enumerate() {
+        let path = format!(".mdp/manifest.yaml#/profile/agent_surface/job_skills/{index}");
+        if route.job.trim().is_empty() {
+            issues.push(issue(
+                "profile_job_skill_job_empty",
+                "error",
+                format!("{path}/job"),
+                "job_skills entries must name a job",
+            ));
+        }
+        if route.skills.is_empty() {
+            issues.push(issue(
+                "profile_job_skill_skills_empty",
+                "warning",
+                format!("{path}/skills"),
+                "job_skills entries should include at least one skill",
+            ));
+        }
+        for (skill_index, skill) in route.skills.iter().enumerate() {
+            if skill.trim().is_empty() {
+                issues.push(issue(
+                    "profile_job_skill_skill_empty",
+                    "error",
+                    format!("{path}/skills/{skill_index}"),
+                    "job skill names must not be empty",
+                ));
+            } else if !allowed.is_empty() && !allowed.contains(&skill.to_lowercase()) {
+                issues.push(issue(
+                    "profile_job_skill_not_allowed",
+                    "warning",
+                    format!("{path}/skills/{skill_index}"),
+                    format!(
+                        "job skill {skill} is not listed in allowed_skills; add it or leave allowed_skills empty"
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn validate_skill_list(
+    values: &[String],
+    path: &str,
+    code_prefix: &str,
+    issues: &mut Vec<Value>,
+) -> BTreeSet<String> {
+    let mut seen = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        if value.trim().is_empty() {
+            issues.push(issue(
+                &format!("{code_prefix}_empty"),
+                "error",
+                format!("{path}/{index}"),
+                "skill names must not be empty",
+            ));
+        } else if !seen.insert(value.to_lowercase()) {
+            issues.push(issue(
+                &format!("{code_prefix}_duplicate"),
+                "warning",
+                format!("{path}/{index}"),
+                format!("duplicate skill {value}"),
+            ));
+        }
+    }
+    seen
 }
 
 fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: &mut Vec<Value>) {
@@ -1651,6 +1853,49 @@ mod tests {
         assert!(codes.contains(&"lead_input_value_contract_format_unknown"));
         assert!(codes.contains(&"lead_input_value_contract_unknown_field"));
         assert!(codes.contains(&"lead_input_value_contract_enum_type"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_reports_bad_profile_agent_surface() {
+        let root = temp_pack("profile-agent-surface");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let mut raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        raw = raw.replace(
+            "  id: gtm\n  label: GTM Messaging",
+            "  id: ''\n  unknown_profile_field: ignored\n  label: GTM Messaging",
+        );
+        raw = raw.replace(
+            "    recommended_skills:\n    - mdp",
+            "    recommended_skills:\n    - ''\n    - mdp",
+        );
+        raw = raw.replace(
+            "    blocked_skills:\n    - name: mdp-proposal-pack-builder",
+            "    blocked_skills:\n    - name: mdp\n      reason: ''\n    - name: mdp-proposal-pack-builder",
+        );
+        raw = raw.replace(
+            "    - job: create or improve GTM messaging pack",
+            "    - job: ''\n      skills:\n      - ''\n    - job: create or improve GTM messaging pack",
+        );
+        std::fs::write(&manifest_path, raw).expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let codes: Vec<&str> = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        assert!(codes.contains(&"manifest_profile_unknown_field"));
+        assert!(codes.contains(&"profile_id_empty"));
+        assert!(codes.contains(&"profile_recommended_skill_empty"));
+        assert!(codes.contains(&"profile_blocked_skill_reason_empty"));
+        assert!(codes.contains(&"profile_blocked_skill_overlap"));
+        assert!(codes.contains(&"profile_job_skill_job_empty"));
+        assert!(codes.contains(&"profile_job_skill_skill_empty"));
 
         let _ = std::fs::remove_dir_all(root);
     }
