@@ -18,10 +18,17 @@ mdp --json doctor --dir .
 
 2. Before initializing, state the exact destination directory. If the user did not specify one, prefer the current repo/workspace root or an ignored scratch path; do not silently create a pack in `$HOME` or an unrelated code folder.
 
-3. If `.mdp/manifest.yaml` is missing and the user wants a pack, initialize with the closest template:
+3. If `.mdp/manifest.yaml` is missing and the user wants a pack, initialize with exactly one closest template.
+
+For generic GTM packs:
 
 ```bash
 mdp --json init --template gtm --name "<pack name>" --dir .
+```
+
+For proposal, RFP, capture, or bid/no-bid review packs:
+
+```bash
 mdp --json init --template proposal --dir .
 ```
 
