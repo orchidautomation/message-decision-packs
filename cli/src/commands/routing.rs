@@ -1524,6 +1524,49 @@ mod tests {
     }
 
     #[test]
+    fn fit_accepts_pack_persona_alias_for_persona_contract() {
+        let root = temp_pack("fit-persona-alias-contract");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace(
+                "  value_contracts:\n    segment:",
+                "  value_contracts:\n    persona:\n      type: string\n      enum:\n      - GTM Engineering\n      description: Pack-owned persona labels accepted for fit.\n    segment:",
+            ),
+        )
+        .expect("manifest should be writable");
+        let prospect_path = root.join("examples").join("persona-alias-contract.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Revenue Operations Lead",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "persona": "revops",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["persona_resolution"]["persona"], "GTM Engineering");
+        assert_eq!(result["status"], "fit");
+        assert!(
+            result["context"]["invalid_requirements"]
+                .as_array()
+                .expect("invalid requirements array")
+                .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn fit_reports_invalid_supplied_company_domain() {
         let root = temp_pack("fit-invalid-domain");
         let prospect_path = root.join("examples").join("invalid-domain.json");

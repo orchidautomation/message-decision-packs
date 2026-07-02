@@ -33,8 +33,16 @@ pub(crate) fn prospect_contract_violations(
     effective_persona: Option<&str>,
 ) -> Vec<ContractViolation> {
     let mut violations = Vec::new();
+    let explicit_persona = prospect.persona.as_deref().and_then(present_str);
+    let persona_contract_value = explicit_persona
+        .and_then(|persona| {
+            resolve_pack_persona_label(manifest, persona, "prospect.persona")
+                .map(|resolution| resolution.persona)
+        })
+        .or_else(|| explicit_persona.map(str::to_string))
+        .or_else(|| effective_persona.and_then(present_str).map(str::to_string));
 
-    if let Some(persona) = prospect.persona.as_deref().and_then(present_str) {
+    if let Some(persona) = explicit_persona {
         if resolve_pack_persona_label(manifest, persona, "prospect.persona").is_none() {
             violations.push(ContractViolation {
                 code: "value_contract_persona_unrecognized",
@@ -50,10 +58,8 @@ pub(crate) fn prospect_contract_violations(
     }
 
     for (field, contract) in &manifest.lead_input_requirements.value_contracts {
-        if let Some(value) = prospect_field_value(prospect, field) {
-            validate_value(field, &value, contract, field, "prospect", &mut violations);
-        } else if field == "persona" {
-            if let Some(persona) = effective_persona.and_then(present_str) {
+        if field == "persona" {
+            if let Some(persona) = persona_contract_value.as_deref() {
                 validate_value(
                     field,
                     &Value::String(persona.to_string()),
@@ -65,6 +71,8 @@ pub(crate) fn prospect_contract_violations(
             } else if contract.required {
                 violations.push(required_violation("prospect", field, field));
             }
+        } else if let Some(value) = prospect_field_value(prospect, field) {
+            validate_value(field, &value, contract, field, "prospect", &mut violations);
         } else if contract.required {
             violations.push(required_violation("prospect", field, field));
         }
@@ -87,12 +95,16 @@ pub(crate) fn normalized_prospect_contract_violations(
     path: &str,
 ) -> Vec<ContractViolation> {
     let mut violations = Vec::new();
-
-    if let Some(persona) = prospect
+    let explicit_persona = prospect
         .get("persona")
         .and_then(Value::as_str)
-        .and_then(present_str)
-    {
+        .and_then(present_str);
+    let persona_contract_value = explicit_persona.and_then(|persona| {
+        resolve_pack_persona_label(manifest, persona, "normalized_prospect.persona")
+            .map(|resolution| resolution.persona)
+    });
+
+    if let Some(persona) = explicit_persona {
         if resolve_pack_persona_label(manifest, persona, "normalized_prospect.persona").is_none() {
             violations.push(ContractViolation {
                 code: "value_contract_persona_unrecognized",
@@ -108,7 +120,36 @@ pub(crate) fn normalized_prospect_contract_violations(
     }
 
     for (field, contract) in &manifest.lead_input_requirements.value_contracts {
-        if let Some(value) = prospect
+        if field == "persona" {
+            if let Some(persona) = persona_contract_value.as_deref() {
+                validate_value(
+                    field,
+                    &Value::String(persona.to_string()),
+                    contract,
+                    &format!("{path}/{field}"),
+                    "prospect",
+                    &mut violations,
+                );
+            } else if let Some(value) = prospect
+                .get(field)
+                .filter(|value| meaningful_json_value(value))
+            {
+                validate_value(
+                    field,
+                    value,
+                    contract,
+                    &format!("{path}/{field}"),
+                    "prospect",
+                    &mut violations,
+                );
+            } else if contract.required {
+                violations.push(required_violation(
+                    "prospect",
+                    field,
+                    &format!("{path}/{field}"),
+                ));
+            }
+        } else if let Some(value) = prospect
             .get(field)
             .filter(|value| meaningful_json_value(value))
         {
