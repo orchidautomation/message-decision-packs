@@ -1,0 +1,6 @@
+id: proposal-gaps
+command: gaps
+expect_gap_titles_contains:
+- Missing RFP text
+- Missing proof
+- Public safety gap

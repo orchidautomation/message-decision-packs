@@ -23,7 +23,16 @@ Use the route and eval commands to inspect the sample:
 cargo run --manifest-path cli/Cargo.toml -- --json validate --dir plugin/assets/templates/proposal
 cargo run --manifest-path cli/Cargo.toml -- --json eval --dir plugin/assets/templates/proposal
 cargo run --manifest-path cli/Cargo.toml -- --json route --entries --dir plugin/assets/templates/proposal --persona "Proposal Lead" --job "bid no bid review"
+cargo run --manifest-path cli/Cargo.toml -- --json gaps --dir plugin/assets/templates/proposal
+cargo run --manifest-path cli/Cargo.toml -- --json check-claims --dir plugin/assets/templates/proposal --persona "Proposal Lead" --job "compliance review" --text "The sample team is CMMC compliant."
 ```
+
+The eval fixtures cover:
+
+- route behavior for bid/no-bid, compliance, proof, and red-team review jobs
+- durable gap surfacing for missing RFP text, missing proof, and public-safety gaps
+- unsupported compliance/security claims and invented proof guardrails
+- insufficient-context and policy-bypass fit outcomes
 
 ## Safety Boundary
 

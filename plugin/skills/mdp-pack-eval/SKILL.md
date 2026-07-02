@@ -23,6 +23,8 @@ mdp --json validate --strict --dir .
 mdp --json eval --strict --dir .
 ```
 
+`mdp fit`, `mdp check-claims`, and eval fixtures support profile-owned card IDs by falling back to card `kind` when canonical IDs such as `fit-rules`, `claims`, `avoid-rules`, or `output-rules` are absent.
+
 2. Choose representative cases:
 
 - each primary persona
@@ -62,6 +64,7 @@ For each case, check:
 - claims included for copy jobs that use proof
 - avoid-rules included for copy jobs
 - output-rules included for copy jobs
+- profile-owned card IDs still evaluate through their card kinds when running fit and claim checks
 - ctas and channel-policies included for outbound/message/copy jobs
 - initial vs follow-up channel-policy entries route separately for email and LinkedIn
 - persona-specific cards included

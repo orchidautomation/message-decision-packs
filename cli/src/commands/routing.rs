@@ -1,4 +1,5 @@
-use crate::pack_io::{read_card_by_id, read_manifest, read_prospect};
+use crate::models::CardKind;
+use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
 use crate::routing::{entry_context, entry_route, select_cards};
 use crate::utils::slugify;
 use crate::utils::{
@@ -92,7 +93,7 @@ pub(crate) fn fit(root: &Path, prospect_path: &Path) -> Result<Value> {
 pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let company_domain_normalization = normalize_company_domain_for_fit(&mut prospect);
-    let fit_card = read_card_by_id(root, "fit-rules")?;
+    let fit_cards = read_cards_by_id_or_kind(root, "fit-rules", CardKind::FitRules)?;
     let mut matches = Vec::new();
     let mut disqualifiers = Vec::new();
     let persona_resolution = resolve_persona(&manifest, &prospect);
@@ -107,27 +108,29 @@ pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -
         company_domain_normalization,
     );
 
-    for entry in &fit_card.entries {
-        let entry_text = format!("{} {}", entry.title, entry.body).to_lowercase();
-        let applies = entry.applies_to.iter().any(|candidate| {
-            haystack.contains(&candidate.to_lowercase())
-                || prospect
-                    .segment
-                    .as_ref()
-                    .map(|s| s.eq_ignore_ascii_case(candidate))
-                    .unwrap_or(false)
-        });
-        let keyword_match = entry_text
-            .split(|c: char| !c.is_ascii_alphanumeric())
-            .filter(|token| token.len() >= 5)
-            .any(|token| haystack.contains(token));
-        if entry.avoid.is_empty() && (applies || keyword_match) {
-            matches.push(json!({"id": entry.id, "title": entry.title, "reason": if applies { "segment/persona match" } else { "keyword match" }}));
-        }
-        for avoid in &entry.avoid {
-            if haystack.contains(&avoid.to_lowercase()) {
-                disqualifiers
-                    .push(json!({"entry_id": entry.id, "term": avoid, "title": entry.title}));
+    for fit_card in &fit_cards {
+        for entry in &fit_card.entries {
+            let entry_text = format!("{} {}", entry.title, entry.body).to_lowercase();
+            let applies = entry.applies_to.iter().any(|candidate| {
+                haystack.contains(&candidate.to_lowercase())
+                    || prospect
+                        .segment
+                        .as_ref()
+                        .map(|s| s.eq_ignore_ascii_case(candidate))
+                        .unwrap_or(false)
+            });
+            let keyword_match = entry_text
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .filter(|token| token.len() >= 5)
+                .any(|token| haystack.contains(token));
+            if entry.avoid.is_empty() && (applies || keyword_match) {
+                matches.push(json!({"id": entry.id, "title": entry.title, "reason": if applies { "segment/persona match" } else { "keyword match" }}));
+            }
+            for avoid in &entry.avoid {
+                if haystack.contains(&avoid.to_lowercase()) {
+                    disqualifiers
+                        .push(json!({"entry_id": entry.id, "term": avoid, "title": entry.title}));
+                }
             }
         }
     }
@@ -478,12 +481,13 @@ pub(crate) fn check_claims(
     };
     let paragraph_count = count_paragraphs(&raw);
     let lower = raw.to_lowercase();
-    let claims_card = read_card_by_id(root, "claims")?;
-    let avoid_card = read_card_by_id(root, "avoid-rules")?;
-    let output_rules_card = read_card_by_id(root, "output-rules").ok();
-    let approved_claim_context = claims_card
-        .entries
+    let claims_cards = read_cards_by_id_or_kind(root, "claims", CardKind::Claims)?;
+    let avoid_cards = read_cards_by_id_or_kind(root, "avoid-rules", CardKind::AvoidRules)?;
+    let output_rules_cards =
+        read_cards_by_id_or_kind(root, "output-rules", CardKind::OutputRules).unwrap_or_default();
+    let approved_claim_context = claims_cards
         .iter()
+        .flat_map(|card| card.entries.iter())
         .map(|entry| {
             format!(
                 "{} {} {}",
@@ -504,25 +508,25 @@ pub(crate) fn check_claims(
     let mut route_persona_resolution = Value::Null;
     let mut resolved_persona_for_output: Option<String> = None;
 
-    for entry in &claims_card.entries {
-        let title = entry.title.to_lowercase();
-        let title_match = title.len() > 4 && lower.contains(&title);
-        let evidence_missing = entry.evidence.is_empty();
-        if title_match {
-            matched_claims.push(json!({"id": entry.id, "title": entry.title, "evidence": entry.evidence, "evidence_missing": evidence_missing}));
-            if evidence_missing {
-                claim_gaps.push(json!({"id": entry.id, "title": entry.title, "reason": "matched claim has no evidence"}));
+    for card in &claims_cards {
+        collect_guardrail_hits(&mut guardrail_hits, &lower, &card.id, &card.entries);
+        for entry in &card.entries {
+            let title = entry.title.to_lowercase();
+            let title_match = title.len() > 4 && lower.contains(&title);
+            let evidence_missing = entry.evidence.is_empty();
+            if title_match {
+                matched_claims.push(json!({"id": entry.id, "title": entry.title, "evidence": entry.evidence, "evidence_missing": evidence_missing}));
+                if evidence_missing {
+                    claim_gaps.push(json!({"id": entry.id, "title": entry.title, "reason": "matched claim has no evidence"}));
+                }
             }
         }
     }
-    collect_guardrail_hits(
-        &mut guardrail_hits,
-        &lower,
-        "avoid-rules",
-        &avoid_card.entries,
-    );
-    if let Some(card) = output_rules_card {
-        collect_guardrail_hits(&mut guardrail_hits, &lower, "output-rules", &card.entries);
+    for card in &avoid_cards {
+        collect_guardrail_hits(&mut guardrail_hits, &lower, &card.id, &card.entries);
+    }
+    for card in &output_rules_cards {
+        collect_guardrail_hits(&mut guardrail_hits, &lower, &card.id, &card.entries);
         collect_output_structure_hits(&mut guardrail_hits, paragraph_count, &card.entries);
         collect_output_constraint_hits(
             &mut guardrail_hits,
@@ -530,7 +534,7 @@ pub(crate) fn check_claims(
             &mut unchecked_constraints,
             &raw,
             subject,
-            "output-rules",
+            &card.id,
             &card.entries,
         );
     }
@@ -649,7 +653,7 @@ fn collect_context_constraint_hits(
         return;
     };
     for entry in entries {
-        if entry["card_id"].as_str() == Some("output-rules") {
+        if entry["card_kind"].as_str() == Some("output-rules") {
             continue;
         }
         let constraints = &entry["constraints"];
@@ -1111,6 +1115,7 @@ fn contains_any(text: &str, needles: &[&str]) -> bool {
 mod tests {
     use super::*;
     use crate::commands::init::init_pack;
+    use crate::pack_io::read_card_by_id;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1123,6 +1128,39 @@ mod tests {
         init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
         root
+    }
+
+    fn rename_manifest_card_ids(root: &Path, replacements: &[(&str, &str)]) {
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let mut manifest =
+            std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        for (from, to) in replacements {
+            manifest = manifest.replace(&format!("- id: {from}\n"), &format!("- id: {to}\n"));
+        }
+        std::fs::write(manifest_path, manifest).expect("manifest should be writable");
+    }
+
+    fn rename_card_id(root: &Path, card_path: &str, from: &str, to: &str) {
+        let path = root.join(".mdp").join("cards").join(card_path);
+        let raw = std::fs::read_to_string(&path).expect("card should be readable");
+        std::fs::write(
+            path,
+            raw.replacen(&format!("id: {from}\n"), &format!("id: {to}\n"), 1),
+        )
+        .expect("card should be writable");
+    }
+
+    fn add_initial_email_word_count_constraint(root: &Path) {
+        let path = root.join(".mdp").join("cards").join("output-rules.yaml");
+        let raw = std::fs::read_to_string(&path).expect("output rules should be readable");
+        std::fs::write(
+            path,
+            raw.replace(
+                "- id: no-fake-personalization",
+                "  constraints:\n    word_count:\n      min: 50\n      max: 125\n- id: no-fake-personalization",
+            ),
+        )
+        .expect("output rules should be writable");
     }
 
     #[test]
@@ -1317,6 +1355,19 @@ mod tests {
         assert_eq!(result["status"], "fit");
         assert_eq!(result["prospect"]["company_domain"], "example.com");
         assert!(result["matches"].as_array().expect("matches array").len() > 0);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_gate_uses_fit_rule_kind_when_canonical_id_is_absent() {
+        let root = temp_pack("fit-kind-fallback");
+        rename_manifest_card_ids(&root, &[("fit-rules", "qualification-rules")]);
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "fit");
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1604,6 +1655,90 @@ mod tests {
                 .iter()
                 .any(|hit| hit["card_id"] == "output-rules" && hit["entry_id"] == "no-em-dashes")
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_uses_card_kinds_when_canonical_ids_are_absent() {
+        let root = temp_pack("claim-kind-fallback");
+        rename_manifest_card_ids(
+            &root,
+            &[
+                ("claims", "proof-library"),
+                ("avoid-rules", "category-boundaries"),
+                ("output-rules", "prose-contract"),
+            ],
+        );
+        rename_card_id(&root, "claims.yaml", "claims", "proof-library");
+        rename_card_id(
+            &root,
+            "avoid-rules.yaml",
+            "avoid-rules",
+            "category-boundaries",
+        );
+        rename_card_id(&root, "output-rules.yaml", "output-rules", "prose-contract");
+
+        let result = check_claims(
+            &root,
+            Some("MDP is local — it becomes an AI SDR and guarantees meetings."),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("claim check should succeed");
+
+        let guardrail_entry_ids: Vec<&str> = result["guardrail_hits"]
+            .as_array()
+            .expect("guardrail hits array")
+            .iter()
+            .filter_map(|hit| hit["entry_id"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        assert!(guardrail_entry_ids.contains(&"not-execution"));
+        assert!(guardrail_entry_ids.contains(&"no-em-dashes"));
+        assert!(
+            result["unsupported_claims"]
+                .as_array()
+                .expect("unsupported claims array")
+                .iter()
+                .any(|claim| claim["trigger"] == "guarantee")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn route_scoped_claim_check_does_not_duplicate_custom_output_rule_constraints() {
+        let root = temp_pack("claim-kind-fallback-route-scoped");
+        add_initial_email_word_count_constraint(&root);
+        rename_manifest_card_ids(&root, &[("output-rules", "prose-contract")]);
+        rename_card_id(&root, "output-rules.yaml", "output-rules", "prose-contract");
+
+        let result = check_claims(
+            &root,
+            Some("Too short."),
+            None,
+            Some("Proposal note"),
+            Some("PMM"),
+            Some("initial email outbound copy"),
+        )
+        .expect("claim check should succeed");
+
+        let output_word_count_hits = result["guardrail_hits"]
+            .as_array()
+            .expect("guardrail hits array")
+            .iter()
+            .filter(|hit| {
+                hit["card_id"] == "prose-contract"
+                    && hit["entry_id"] == "initial-email-shape"
+                    && hit["rule"] == "constraints.word_count"
+            })
+            .count();
+
+        assert_eq!(output_word_count_hits, 1);
 
         let _ = std::fs::remove_dir_all(root);
     }

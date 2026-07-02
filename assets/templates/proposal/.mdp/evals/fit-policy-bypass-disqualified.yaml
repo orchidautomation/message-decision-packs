@@ -1,0 +1,16 @@
+id: fit-policy-bypass-disqualified
+command: fit
+expect_status: disqualified
+prospect:
+  name: Morgan Chen
+  title: Executive Reviewer
+  company: City of Exampleton
+  company_domain: exampleton.gov
+  trigger: Policy bypass requested for faster proposal approval
+  persona: Executive Reviewer
+  segment: Executive Reviewer
+  synthetic: true
+  signals:
+  - id: policy-bypass-request
+    title: Policy bypass requested
+    source: synthetic-rfp-summary
