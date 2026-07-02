@@ -5,6 +5,16 @@ description: Use to convert an existing provider-neutral prospect/source row int
 
 # MDP Prospect Brief
 
+## Profile Gate
+
+Before using this skill against an existing pack, run:
+
+```bash
+mdp --json agent-surface --dir .
+```
+
+Use this skill only when the surface is legacy/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
+
 Turn an existing prospect/source row into clean MDP prospect JSON and, when fit allows, an MDP brief. This skill prepares context; it does not enrich, update systems, or send messages.
 
 This is the row-evaluation path for MDP. Do not create a parallel evaluator in the skill layer: `mdp fit` owns the fit decision, and `mdp brief --context` owns the routed brief contract.

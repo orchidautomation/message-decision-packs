@@ -5,6 +5,16 @@ description: Use to turn user-provided or public source material into MDP card e
 
 # MDP Source Extract
 
+## Profile Gate
+
+Before using this skill against an existing pack, run:
+
+```bash
+mdp --json agent-surface --dir .
+```
+
+Use this skill only when the surface is legacy/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
+
 Extract pack-ready card entries from source material. Preserve evidence and do not smooth over gaps.
 
 ## Source Rules

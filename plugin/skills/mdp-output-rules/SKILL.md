@@ -5,6 +5,16 @@ description: Use to codify MDP output-rule cards for global style, punctuation, 
 
 # MDP Output Rules
 
+## Profile Gate
+
+Before using this skill against an existing pack, run:
+
+```bash
+mdp --json agent-surface --dir .
+```
+
+Use this skill only when the surface is legacy/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
+
 Create output rules that constrain generated text across routed copy and brief work. Use this for rules like no em dashes, word-count ranges, subject length, exact paragraph counts, max questions, forbidden links/html/tracking, format requirements, or no explanatory commentary.
 
 ## Workflow
