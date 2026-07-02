@@ -33,7 +33,7 @@ origin: MDP-43
 
 The original migration question was whether MDP needs something like `mdp --migrate` when moving from one pack version to another. The accepted direction is a subcommand, `mdp migrate`, scoped to pack contract migration rather than CLI/plugin self-update.
 
-The 2026-07-02 Trellis/GTM drift investigation makes the first real use case sharper: an existing customized pack can still be `format: mdp.v0` and preserve the right GTM/account-qualification logic, while falling behind newer CLI/template contracts such as:
+The recent GTM drift investigation makes the first real use case sharper: an existing customized pack can still be `format: mdp.v0` and preserve the right GTM/account-qualification logic, while falling behind newer CLI/template contracts such as:
 
 - missing `profile.agent_surface` metadata, causing `mdp --json agent-surface --dir .` to report legacy routing;
 - stale prompt-output examples that no longer satisfy current prompt-output validators;
@@ -195,7 +195,7 @@ Ship the framework now as a narrow CLI feature:
 5. Add `migrate` to `mdp capabilities` with `side_effects: writes-files`, `supports_dry_run: true`, `supports_json: true`, `supports_summary: true`, and no auth/network behavior.
 6. Add `mdp migrate` references to `cli/USAGE.md`, `README.md`, `docs/distribution.md`, and `plugin/skills/mdp/SKILL.md`.
 
-Do not wait for `mdp.v1`. A no-op-only command would be too weak after the Trellis drift case, but the first slice should still avoid broad pack rewriting.
+Do not wait for `mdp.v1`. A no-op-only command would be too weak after the recent same-format drift case, but the first slice should still avoid broad pack rewriting.
 
 ## Safety Rules
 
@@ -243,7 +243,7 @@ Implementation should add focused coverage around these fixtures:
 |---|---|---|
 | Current GTM starter | `plugin/assets/templates/basic` or generated temp pack | `up_to_date`, no writes. |
 | Missing agent surface | copied GTM pack with `profile.agent_surface` removed | `migration_available`, manifest operation planned. |
-| Trellis-like customized GTM drift | synthetic fixture preserving custom cards but missing newer metadata/examples | `migration_available`, only contract fields/examples touched. |
+| Customized GTM drift | synthetic fixture preserving custom cards but missing newer metadata/examples | `migration_available`, only contract fields/examples touched. |
 | Stale prompt example | prompt fixture with old `source_summary.inputs_used` shape | deterministic prompt example patch planned. |
 | Unknown future format | manifest with `format: mdp.v99` | `unsupported_format`, no writes. |
 | Dirty git pack | temp git repo with touched migration target file | `blocked` or `dirty_worktree` under `--apply`. |
