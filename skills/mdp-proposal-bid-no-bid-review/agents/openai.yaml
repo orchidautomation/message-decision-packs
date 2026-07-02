@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Proposal Bid/No-Bid Review"
+  short_description: "Assess proposal pursuit fit"
+  default_prompt: "Use $mdp-proposal-bid-no-bid-review to assess a supplied pursuit against proposal bid/no-bid rules."
