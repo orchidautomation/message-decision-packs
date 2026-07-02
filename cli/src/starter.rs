@@ -970,10 +970,10 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             },
             {
                 "name": "existing_pack_context",
-                "description": "Relevant manifest personas, persona_mappings, fit rules, signal definitions, avoid-rules, and source policy from this MDP.",
+                "description": "Relevant manifest personas, persona_mappings, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, fit rules, signal definitions, avoid-rules, output rules, and source policy from this MDP.",
                 "required": false,
                 "default": "N/A",
-                "missing_behavior": "Do not assume pack-owned persona mappings, fit rules, or signal names when this field is N/A."
+                "missing_behavior": "Do not assume pack-owned persona mappings, value domains, fit rules, attributes, or signal names when this field is N/A."
             },
             {
                 "name": "source_kind",
@@ -988,11 +988,15 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.",
             "Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional company_domain, source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, signals, and bounded attributes.",
             "When company_domain or company_url is supplied, normalize only that supplied domain-like value. Do not infer a domain from company name.",
+            "When existing_pack_context includes lead_input_requirements.value_contracts, emit only values allowed by those pack-owned enum/type/format contracts for persona, segment, source_kind, and other normalized scalar fields. If the source value is outside the contract, omit the optional field or add a gap instead of inventing a synonym.",
+            "Use explicit persona from the row only when it already matches a pack-owned persona. Otherwise use pack-owned persona_mappings from existing_pack_context and emit the canonical persona label; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.",
             "Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.",
-            "Use explicit persona from the row when present. Otherwise use pack-owned persona_mappings from existing_pack_context; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.",
+            "When existing_pack_context includes lead_input_requirements.attribute_definitions, emit only declared attributes when allow_undeclared_attributes is false, and match declared type, enum, date, or date-time formats. Invalid or unreviewed metadata belongs in gaps or normalization_trace, not attributes.",
             "Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.",
             "Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.",
             "If the input is account-only and lacks person name or title, do not invent a contact. Put missing fields in gaps and set normalization_trace.fit_readiness.ready_for_mdp_fit to false.",
+            "Missing-field example: if the row has company but no person title, do not fabricate a title; add title to normalization_trace.missing_required and set ready_for_mdp_fit false.",
+            "Invalid-value example: if the row says segment enterprise but value_contracts.segment only allows agent-assisted GTM, do not output segment enterprise; add a gap asking for a reviewed pack segment or manifest update.",
             "Keep card_patches empty. This prompt normalizes runtime prospect input; it does not propose edits to MDP cards."
         ],
         "output_contract": {
@@ -1144,17 +1148,20 @@ fn prompt_contract(
             },
             {
                 "name": "existing_pack_context",
-                "description": "Optional existing MDP card context to prevent duplicate or conflicting entries.",
+                "description": "Optional existing MDP manifest/card context to prevent duplicate or conflicting entries, including personas, operator roles, fit rules, claims, avoid-rules, output rules, supported channels, and declared value domains.",
                 "required": false,
                 "default": "N/A",
-                "missing_behavior": "Do not assume previous pack decisions when this field is N/A."
+                "missing_behavior": "Do not assume previous pack decisions, personas, channels, claims, or value domains when this field is N/A."
             }
         ],
         "instructions": [
-            "Use only supplied person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.",
+            "Use only supplied company_domain, person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.",
             task_instruction,
             "Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.",
+            "Use existing_pack_context as the source of truth for pack-owned personas, operator roles, card ids, claims, avoid-rules, output rules, supported channels, and value domains. Do not invent new pack labels when the source is weak; emit gaps or needs-review candidates instead.",
+            "For source_summary.company_domain, use the supplied company_domain or an explicit supplied URL/domain only. Do not infer a domain from company name.",
             "Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid. Use constraints for deterministic output limits such as word counts, subject word counts, max questions, or forbidden links/html/tracking when the source explicitly calls for them. Use metadata only for advisory custom annotations that should be preserved for agents but not enforced by the CLI.",
+            "Keep source evidence in evidence and provenance. Do not put prospect facts, proof, citations, or raw source excerpts only in metadata.",
             "Each candidate entry must also include confidence, provenance, and status so a reviewer can decide whether it may become a card entry.",
             "Use body N/A, empty arrays, confidence unknown, and status gap when data is missing or weak.",
             "Put unsupported, quantified, customer, integration, compliance, or execution claims in rejected_claims instead of card_patches.",

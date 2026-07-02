@@ -106,7 +106,7 @@ Pack extensions must use supported surfaces. Use prospect `attributes` for bound
 
 ## Use A Prospect Or Source Row
 
-Convert an existing prospect/source row, CSV row, CRM export row, research note, Clay/Deepline row, spreadsheet row, or user-provided source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Prefer the pack-owned `.mdp/prompts/normalize-prospect.yaml` contract for messy rows; save its `normalized_prospect` output as the file that feeds `mdp fit`. Do not commit private prospect data. Check the expected shape:
+Convert an existing prospect/source row, CSV row, CRM export row, research note, Clay/Deepline row, spreadsheet row, or user-provided source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Prefer the pack-owned `.mdp/prompts/normalize-prospect.yaml` contract for messy rows. When invoking it, pass relevant `existing_pack_context`: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit rules, signal definitions, avoid-rules, output rules, and source policy. Validate the full prompt artifact before saving its `normalized_prospect` output as the file that feeds `mdp fit`. Do not commit private prospect data. Check the expected shape:
 
 ```bash
 mdp --json schema prospect
@@ -156,7 +156,7 @@ lead_input_requirements:
 
 Use provider-neutral `source_kind` values unless the source itself matters: `user-provided-row`, `csv-row`, `crm-export-row`, `clay-row`, `deepline-row`, `private-scratch-row`, `sanitized-example`, or `synthetic-example`. Clay is one possible source, not the default MDP mental model.
 
-When a pack declares `value_contracts` or `attribute_definitions`, prompt output must emit exactly those blessed values. `mdp validate-prompt-output` rejects non-pack personas, non-enum segments/source kinds, invalid date/date-time values, type mismatches, and undeclared attributes when `allow_undeclared_attributes: false`.
+When a pack declares `value_contracts` or `attribute_definitions`, prompt output must emit exactly those blessed values. `mdp validate-prompt-output` rejects non-pack personas, non-enum segments/source kinds, invalid date/date-time values, type mismatches, and undeclared attributes when `allow_undeclared_attributes: false`. If source data contains an out-of-contract value, preserve it in `gaps` or `normalization_trace` and ask for reviewed input or a manifest update; do not silently rename it into a blessed value.
 
 Normalization prompts may map messy titles into pack-owned personas and signals, but they must preserve raw evidence, uncertainty, missing fields, and disqualifying execution asks. When using any `.mdp/prompts/*.yaml` prompt contract, treat `output_contract.schema_ref` as the response contract; if the prompt includes `output_contract.schema`, give that literal schema to the model or host. `output_contract.example` is only a reference. The CLI still owns final fit and route decisions.
 

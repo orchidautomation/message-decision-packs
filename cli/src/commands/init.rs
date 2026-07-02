@@ -484,7 +484,19 @@ mod tests {
             std::fs::read_to_string(root.join(".mdp").join("prompts").join("claims-proof.yaml"))
                 .expect("claims prompt should be readable");
         assert!(claims_prompt.contains("schema_ref: mdp.prompt-output.card-patches.v0"));
+        assert!(claims_prompt.contains("Use existing_pack_context as the source of truth for pack-owned personas, operator roles, card ids, claims, avoid-rules, output rules, supported channels, and value domains."));
+        assert!(claims_prompt.contains("Do not infer a domain from company name."));
         assert!(!claims_prompt.contains("\n  schema:\n"));
+
+        let normalization_prompt = std::fs::read_to_string(
+            root.join(".mdp")
+                .join("prompts")
+                .join("normalize-prospect.yaml"),
+        )
+        .expect("normalization prompt should be readable");
+        assert!(normalization_prompt.contains("lead_input_requirements.value_contracts"));
+        assert!(normalization_prompt.contains("lead_input_requirements.attribute_definitions"));
+        assert!(normalization_prompt.contains("Invalid-value example:"));
 
         let _ = std::fs::remove_dir_all(root);
     }
