@@ -99,10 +99,21 @@ pub(crate) fn normalized_prospect_contract_violations(
         .get("persona")
         .and_then(Value::as_str)
         .and_then(present_str);
-    let persona_contract_value = explicit_persona.and_then(|persona| {
-        resolve_pack_persona_label(manifest, persona, "normalized_prospect.persona")
-            .map(|resolution| resolution.persona)
-    });
+    let persona_contract_value = explicit_persona
+        .and_then(|persona| {
+            resolve_pack_persona_label(manifest, persona, "normalized_prospect.persona")
+                .map(|resolution| resolution.persona)
+        })
+        .or_else(|| {
+            prospect
+                .get("title")
+                .and_then(Value::as_str)
+                .and_then(present_str)
+                .and_then(|title| {
+                    resolve_pack_persona_label(manifest, title, "normalized_prospect.title")
+                        .map(|resolution| resolution.persona)
+                })
+        });
 
     if let Some(persona) = explicit_persona {
         if resolve_pack_persona_label(manifest, persona, "normalized_prospect.persona").is_none() {

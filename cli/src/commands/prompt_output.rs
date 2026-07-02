@@ -1561,6 +1561,71 @@ mod tests {
     }
 
     #[test]
+    fn validate_accepts_title_mapped_persona_contract_when_persona_omitted() {
+        let root = temp_pack("title-mapped-persona-contract");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace(
+                "  value_contracts:\n    segment:",
+                "  value_contracts:\n    persona:\n      type: string\n      enum:\n      - PMM\n      required: true\n      description: Pack-owned persona labels accepted from normalization prompts.\n    segment:",
+            ),
+        )
+        .expect("manifest should be writable");
+        let path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "company_domain": "example.com",
+    "company_name": "ExampleCo",
+    "person_name": "Taylor Lee",
+    "person_title": "Demand Generation Manager",
+    "account_name": "ExampleCo",
+    "inputs_used": ["raw_row"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "Taylor Lee",
+    "title": "Demand Generation Manager",
+    "company": "ExampleCo",
+    "company_domain": "example.com",
+    "source_kind": "user-provided-row",
+    "segment": "agent-assisted GTM",
+    "trigger": "testing a title-mapped persona value contract",
+    "signals": [
+      {
+        "id": "contract-test",
+        "title": "Contract test",
+        "source": "raw_row.note"
+      }
+    ]
+  },
+  "normalization_trace": {
+    "persona": {},
+    "fit_readiness": {},
+    "preserved_raw_fields": ["raw_row"],
+    "missing_required": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], true);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn validate_rejects_invalid_declared_attribute_date() {
         let root = temp_pack("attribute-date-contract");
         let manifest_path = root.join(".mdp").join("manifest.yaml");
