@@ -115,15 +115,18 @@ pub(crate) fn normalized_prospect_contract_violations(
         }
     }
 
-    if let Some(attributes) = prospect.get("attributes").and_then(Value::as_object) {
-        collect_attribute_contract_violations(
-            &manifest.lead_input_requirements.attribute_definitions,
-            manifest.lead_input_requirements.allow_undeclared_attributes,
-            &attributes.iter().collect::<Vec<_>>(),
-            &format!("{path}/attributes"),
-            &mut violations,
-        );
-    }
+    let attributes = prospect
+        .get("attributes")
+        .and_then(Value::as_object)
+        .map(|attributes| attributes.iter().collect::<Vec<_>>())
+        .unwrap_or_default();
+    collect_attribute_contract_violations(
+        &manifest.lead_input_requirements.attribute_definitions,
+        manifest.lead_input_requirements.allow_undeclared_attributes,
+        &attributes,
+        &format!("{path}/attributes"),
+        &mut violations,
+    );
 
     violations
 }

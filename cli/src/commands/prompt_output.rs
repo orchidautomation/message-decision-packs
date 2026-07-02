@@ -1572,6 +1572,82 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_missing_required_attribute_object() {
+        let root = temp_pack("missing-required-attribute-object");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace(
+                "    fiscal_year:\n      type: string\n      description: Optional reviewed account metadata. Keep proof in signals, not attributes.",
+                "    fiscal_year:\n      type: string\n      description: Optional reviewed account metadata. Keep proof in signals, not attributes.\n      required: true",
+            ),
+        )
+        .expect("manifest should be writable");
+        let path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "company_domain": "example.com",
+    "company_name": "ExampleCo",
+    "person_name": "Alex Rivera",
+    "person_title": "GTM Engineering Lead",
+    "account_name": "ExampleCo",
+    "inputs_used": ["raw_row"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "Alex Rivera",
+    "title": "GTM Engineering Lead",
+    "company": "ExampleCo",
+    "company_domain": "example.com",
+    "source_kind": "user-provided-row",
+    "persona": "GTM Engineering",
+    "segment": "agent-assisted GTM",
+    "trigger": "testing a value contract",
+    "signals": [
+      {
+        "id": "contract-test",
+        "title": "Contract test",
+        "source": "raw_row.note"
+      }
+    ]
+  },
+  "normalization_trace": {
+    "persona": {},
+    "fit_readiness": {},
+    "preserved_raw_fields": ["raw_row"],
+    "missing_required": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "value_contract_required_missing"
+                    && issue["path"].as_str().is_some_and(
+                        |path| path.ends_with("#/normalized_prospect/attributes/fiscal_year")
+                    ))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn validate_rejects_non_string_candidate_entry_arrays() {
         let root = temp_pack("non-string-arrays");
         let path = write_output(
