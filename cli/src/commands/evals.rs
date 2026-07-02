@@ -1,5 +1,6 @@
 use crate::commands::briefs::prospect_brief_from_value;
 use crate::commands::health::{KNOWN_PRIMITIVES, KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
+use crate::commands::prompt_output::validate_prompt_output_value;
 use crate::commands::routing::{check_claims, fit_prospect, route};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
@@ -21,6 +22,9 @@ struct EvalFixture {
     job: Option<String>,
     channel: Option<String>,
     prospect: Option<Value>,
+    prompt: Option<std::path::PathBuf>,
+    prompt_id: Option<String>,
+    prompt_output: Option<Value>,
     text: Option<String>,
     subject: Option<String>,
     expect_load_order_contains: Option<Vec<String>>,
@@ -154,6 +158,16 @@ fn run_fixture(
             fixture.job.as_deref(),
         )?,
         "gaps" => gaps(root)?,
+        "validate-prompt-output" => validate_prompt_output_value(
+            root,
+            fixture
+                .prompt_output
+                .as_ref()
+                .expect("validated prompt_output"),
+            &format!("{}#/prompt_output", path.display()),
+            fixture.prompt.as_deref(),
+            fixture.prompt_id.as_deref(),
+        )?,
         "check-claims" => check_claims(
             root,
             fixture.text.as_deref(),
@@ -220,6 +234,30 @@ fn validate_fixture(
             require(path, fixture.prospect.as_ref(), "prospect", &mut issues);
         }
         "gaps" => {}
+        "validate-prompt-output" => {
+            require(
+                path,
+                fixture.prompt_output.as_ref(),
+                "prompt_output",
+                &mut issues,
+            );
+            if fixture.prompt.is_some() && fixture.prompt_id.is_some() {
+                issues.push(issue(
+                    "eval_fixture_prompt_reference_conflict",
+                    "error",
+                    path.display().to_string(),
+                    "validate-prompt-output fixtures must define only one of prompt or prompt_id",
+                ));
+            }
+            if fixture.prompt.is_none() && fixture.prompt_id.is_none() {
+                issues.push(issue(
+                    "eval_fixture_missing_field",
+                    "error",
+                    format!("{}#/prompt_id", path.display()),
+                    "fixture must define prompt_id or prompt",
+                ));
+            }
+        }
         "check-claims" => {
             require(path, fixture.text.as_ref(), "text", &mut issues);
         }
@@ -614,6 +652,77 @@ expect_load_order_contains:
         assert_eq!(result["valid"], false);
         assert!(codes.contains(&"eval_profile_primitive_unknown"));
         assert!(codes.contains(&"eval_profile_job_missing"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn eval_supports_inline_prompt_output_validation() {
+        let root = temp_pack("eval-prompt-output");
+        let fixture_path = root.join(".mdp").join("evals").join("prompt-output.yaml");
+        std::fs::write(
+            &fixture_path,
+            r#"id: prompt-output
+command: validate-prompt-output
+prompt_id: normalize-prospect-row
+expect_valid: false
+profile_eval:
+  category: prompt-output-validation
+  primitives:
+    - actors
+    - source-signals
+    - gaps
+  jobs:
+    - prospect-fit-or-brief
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-prospect-row
+  source_summary:
+    account_name: ExampleCo
+    company_domain: example.com
+    company_name: ExampleCo
+    confidence: medium
+    inputs_used:
+      - company_domain
+    person_name: N/A
+    person_title: N/A
+  normalized_prospect:
+    company: ExampleCo
+    company_domain: example.com
+    name: Alex Rivera
+    title: Revenue Operations Lead
+  normalization_trace:
+    fit_readiness:
+      ready_for_mdp_fit: true
+    missing_required: []
+    persona: {}
+    preserved_raw_fields:
+      - company_domain
+  card_patches: []
+  gaps: []
+  rejected_claims: []
+"#,
+        )
+        .expect("fixture should be writable");
+
+        let result = eval_pack(&root).expect("eval should succeed");
+        let fixture = result["fixtures"]
+            .as_array()
+            .expect("fixtures array")
+            .iter()
+            .find(|fixture| fixture["id"] == "prompt-output")
+            .expect("prompt-output fixture should be present");
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(fixture["valid"], true);
+        assert_eq!(fixture["output"]["valid"], false);
+        assert!(
+            fixture["output"]["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "prompt_output_fake_person")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
