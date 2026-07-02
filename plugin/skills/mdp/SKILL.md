@@ -59,6 +59,13 @@ mdp --json init --template gtm --name "Example Message Pack" --dir . --dry-run
 mdp --json init --template gtm --name "Example Message Pack" --dir .
 ```
 
+For a proposal reference-profile demo:
+
+```bash
+mdp --json init --template proposal --dir . --dry-run
+mdp --json init --template proposal --dir .
+```
+
 When brainstorming the pack, help fill these files:
 
 - `.mdp/manifest.yaml`

@@ -25,10 +25,23 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             include_output_schemas,
             dry_run,
         } => {
+            let resolved_name = name.unwrap_or_else(|| default_init_name(&template).to_string());
             let data = if dry_run {
-                init_pack_dry_run(&dir, &name, &template, force, include_output_schemas)?
+                init_pack_dry_run(
+                    &dir,
+                    &resolved_name,
+                    &template,
+                    force,
+                    include_output_schemas,
+                )?
             } else {
-                init_pack(&dir, &name, &template, force, include_output_schemas)?
+                init_pack(
+                    &dir,
+                    &resolved_name,
+                    &template,
+                    force,
+                    include_output_schemas,
+                )?
             };
             print_output(json_mode, summary_mode, "init", data)
         }
@@ -186,6 +199,13 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Commands::Schema { target } => {
             print_output(json_mode, summary_mode, "schema", schema(target))
         }
+    }
+}
+
+fn default_init_name(template: &str) -> &'static str {
+    match template {
+        "proposal" => "Proposal Reference Profile Sample",
+        _ => "Example Message Pack",
     }
 }
 
