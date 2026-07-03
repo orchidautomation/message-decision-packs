@@ -36,7 +36,7 @@ Runtime normalization prompts set `output_contract.output_kind: prospect-normali
 - `normalized_prospect`: the exact JSON shape accepted by `mdp --json schema prospect`.
 - `normalization_trace`: persona mapping, fit-readiness, missing fields, and raw-field preservation notes.
 
-For normalization prompts, `card_patches` should stay empty. The prompt prepares runtime input; it does not edit cards. Proposal packs use this same validated normalization artifact shape for `.mdp/prompts/normalize-opportunity.yaml`; opportunity, requirements, compliance gaps, proof, and win themes stay profile-owned vocabulary in signals, attributes, trace, and gaps, not new core MDP objects.
+For normalization prompts, `card_patches` should stay empty. The prompt prepares runtime input; it does not edit cards, mutate the pack, decide final fit, or produce final copy. Proposal packs use this same validated normalization artifact shape for `.mdp/prompts/normalize-opportunity.yaml`; opportunity, requirements, compliance gaps, proof, and win themes stay profile-owned vocabulary in signals, attributes, trace, and gaps, not new core MDP objects.
 
 Candidate entries carry normal MDP entry fields:
 
@@ -121,6 +121,14 @@ mdp --json fit --dir <pack> --prospect <prospect>.json
 ```
 
 Do not let the normalization prompt silently decide final fit. It should preserve ambiguity and disqualifying source language, then the CLI applies the deterministic gate.
+
+Operator shorthand:
+
+```text
+messy source -> normalize -> validate prompt output -> fit/readiness -> route/brief -> draft/check-claims
+```
+
+`lead_input_requirements` is the manifest wire key for the user-facing input readiness policy. It says what fields, signals, bounded attributes, and value domains must be present before the fit/brief path should continue. It does not prove that a prospect or opportunity is commercially ready.
 
 For proposal packs, load `.mdp/prompts/normalize-opportunity.yaml`, pass messy proposal/RFP context as `raw_opportunity`, include proposal value contracts and attribute definitions in `existing_pack_context`, then run `mdp --json validate-prompt-output --dir <pack> --prompt-id normalize-opportunity --file <output.json>`. If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, stop at gaps or reviewer questions instead of creating confident proposal review output.
 
@@ -227,3 +235,5 @@ Use `mdp --json schema prompt` to inspect the machine-readable prompt contract.
 Fiscal year is only an example of pack-declared metadata. Do not hardcode it into prompt logic: declare it under `lead_input_requirements.attribute_definitions` when the pack needs it, validate its type/format there, and use `runtime_context` only as run-time reference data.
 
 For account-only or sparse source rows, preserve absence separately from invalid values. Keep compatibility `N/A` values only where the current prospect schema requires a string, then add structured `normalization_trace.missing_required` entries with `field`, `reason`, and `source_evidence`, for example `not_available_in_source` when the raw row contains no person name or title. `mdp brief --context` should remain `draft_status: no-draft` and surface the no-draft reason until reviewed person context exists.
+
+Use `signals` for source-backed evidence, prospect `attributes` for bounded reviewed row metadata declared by the pack, first-class row fields such as `source_kind` for source markers, and entry `metadata` only for annotations about card entries. Clay is one possible `source_kind`, not the default MDP model.

@@ -8,6 +8,20 @@ MDP does not send messages, enrich leads, update CRM, scrape the web, run sequen
 
 A provider-neutral prospect/source row supplies row-level inputs. The row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it has been normalized into MDP prospect JSON. The pack supplies both modular decision entries and prompt contracts. The prompt contracts help upstream agents normalize messy source data; the CLI applies the reviewed pack decisions without asking a model to make the final fit or route decision.
 
+If an operator is confused, answer in this order:
+
+```text
+messy row
+  -> normalize through the pack prompt
+  -> validate the prompt output
+  -> run fit/readiness
+  -> route or brief only after fit allows it
+  -> draft from the brief only when draft_status is ready
+  -> check claims and output guardrails before approval
+```
+
+Normalization translates supplied data into pack-owned JSON. It does not mutate the pack, decide final fit, or create final copy.
+
 ```text
 messy source row
   |
@@ -98,6 +112,15 @@ Good routing needs more than the admission fields:
 
 The row should preserve source and confidence when available. Weak signals should stay hypotheses. Use `attributes` only for bounded reviewed metadata such as fiscal year, segment tier, or another pack-specific routing value. Put evidence in `signals` with `source`, not in `attributes`.
 
+Use this decision rule:
+
+| Input kind | Where it belongs | Good example | Bad example |
+| --- | --- | --- | --- |
+| Source-backed evidence or behavior | `signals[]` with `source`, confidence, and freshness when known | A signal titled "Standardizing agent handoffs" with `source: raw_row.operations_note` | `attributes.workflow = "standardizing agent handoffs"` |
+| Bounded row/account metadata the pack may require | prospect `attributes` declared in `lead_input_requirements.attribute_definitions` | `attributes.fiscal_year = "FY2027"` when the manifest defines `fiscal_year` | `attributes.proof = "uses product X"` |
+| Provenance/source marker | first-class row fields such as `source_kind`, `synthetic`, and source notes in trace/signals | `source_kind: "csv-row"` or `source_kind: "clay-row"` when it really came from Clay | Treating Clay as the default model or putting every source label in custom attributes |
+| Pack-content annotation | entry `metadata` on card entries | `metadata.owner = "partnerships"` | Using entry metadata as a prospect fact or enforceable rule |
+
 Packs can declare readiness requirements in `manifest.yaml`:
 
 ```yaml
@@ -136,7 +159,7 @@ lead_input_requirements:
       description: Optional reviewed account metadata.
 ```
 
-A row can parse successfully and still return `insufficient-context` if it does not satisfy the pack's declared requirements or emits a value outside the pack's declared enum/type/date contracts.
+Treat `lead_input_requirements` as the wire key for the pack's user-facing input readiness policy. A row can parse successfully and still return `insufficient-context` if it does not satisfy that policy or emits a value outside the pack's declared enum/type/date contracts.
 
 If the input is account-only and does not include a person name and title, do not invent a contact just to satisfy the prospect schema. Preserve the account facts, explain the absent person fields in `normalization_trace.missing_required`, and return an insufficient-context/no-draft decision until MDP has reviewed person context or a provider-neutral account input contract.
 
@@ -185,6 +208,28 @@ entries:
 The CLI preserves entry `metadata` in route and brief context so agents can inspect it, but metadata keys are not enforceable constraints. Unknown arbitrary fields outside the schema are unsupported; `mdp validate` warns that those fields are ignored. Use prospect `attributes` for reviewed row metadata, entry `metadata` for advisory card annotations, and first-class fields or cards for rules the CLI should route or check.
 
 Custom channels are declared in `manifest.yaml` `supported_channels`. Channel-policy routing uses those strings as tokenized channel names, so a pack can add `partner-intro`, `webinar-followup`, or another local channel without changing the CLI enum set.
+
+## Layer Ownership
+
+When a question mixes templates, profiles, readiness, routing, and drafting, keep the layers separate:
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| Template/profile | The starter vocabulary and job surface, such as generic GTM or proposal review | A new core MDP engine for every domain |
+| Manifest | Pack index, supported channels, prompt/value contracts, `lead_input_requirements`, profile metadata, required primitives, and eval categories | Source evidence or draft copy |
+| Cards | Reviewed decisions, rules, claims, proof, gaps, output boundaries, and profile-owned domain vocabulary | Raw messy rows or unreviewed prompt guesses |
+| Prompts | Translating supplied messy context into strict prompt-output JSON | Final fit, route, card mutation, or final draft approval |
+| Prompt-output validation | Checking schema, prompt id, provenance references, value contracts, attributes, and enum/type/date validity | Deciding commercial readiness |
+| Input readiness policy | The user-facing meaning of `lead_input_requirements`: which fields, signals, attributes, and values must exist before fit/brief work proceeds | Whether the account is a good market opportunity |
+| Evals | Regression fixtures for routes, prompt outputs, profile categories, and safety cases | Manual proof that a real prospect is worth contacting |
+| Fit | Deterministic pass/insufficient/disqualified decision from normalized row plus pack rules | Writing copy |
+| Route | Selecting the relevant pack cards and entries for a persona/job | Deciding whether the row is fit-ready |
+| Brief | Model-ready context contract and `draft_status` | Sending, sequencing, or being final copy |
+| Check-claims | Post-draft approval gate for claims and deterministic output guardrails | Creating missing proof |
+
+`activation_ready` is structural readiness for the profile/template: mapped primitives, input contracts, jobs, and eval categories are present enough for deterministic validation. It is not market readiness, customer readiness, commercial readiness, compliance approval, or proof that a real account should be contacted.
+
+GTM and proposal are profiles/templates over the same primitives. Proposal terms such as opportunity, compliance gaps, proof, and win themes stay in profile-owned card IDs, prompts, attributes, signals, traces, gaps, jobs, and evals. They do not become new core objects unless the CLI contract explicitly changes.
 
 ```text
 .mdp/manifest.yaml
@@ -331,7 +376,7 @@ Channel rules should stay split by responsibility. `channel-policies.yaml` owns 
 
 ## Drafting Boundary
 
-A brief is not a sender. It is a contract for the next drafting step.
+A brief is not a sender, sequencer, or final copy. It is a contract for the next drafting step.
 
 ```text
 fit: fit
@@ -357,6 +402,8 @@ agent instruction:
 ```
 
 If `draft_status` is `no-draft`, the agent should stop. It can summarize the fit decision and missing context, but it should not produce polished outbound copy unless the user explicitly overrides the gate.
+
+Without `--out`, `mdp brief` writes the brief to stdout only. Use `--out` when the user expects a durable artifact. In either case, the brief is still a context contract: draft from `data.context.entries`, preserve `known_gaps`, then run `mdp check-claims` on any proposed copy before treating it as approved.
 
 ## Why This Matters
 

@@ -9,6 +9,30 @@ For fuzzy or multi-step MDP work, use `$mdp-lfg` first, then route to the narrow
 
 Use Message Decision Packs as the source of messaging decisions, not as the execution system. The pack stores ICP, fit rules, personas, pains, signals, positioning, claims, hooks, channel policies, avoid rules, output rules, CTA rules, objections, gaps, copy patterns, and prompt contracts. Prompt contracts normalize messy upstream rows or propose reviewed card entries; the `mdp` CLI validates, routes, checks fit, checks claims and output guardrails, lists gaps, and runs eval fixtures. Draft only after the CLI returns the relevant cards and fit is acceptable.
 
+## First Answer For Confused Operators
+
+Use this noob-readable flow before explaining details:
+
+```text
+messy row
+  -> normalize through the pack prompt
+  -> validate prompt output
+  -> run fit/readiness
+  -> route or brief only after fit allows it
+  -> draft from the brief only when draft_status is ready
+  -> run check-claims before approving copy
+```
+
+Normalization prepares runtime JSON. It does not mutate cards, decide final fit, or write copy. `lead_input_requirements` is the manifest wire key for the user-facing input readiness policy: required fields, required signal fields, required attributes, and allowed values. `activation_ready` is structural profile/template readiness, not market readiness, customer readiness, commercial readiness, compliance approval, or permission to contact an account.
+
+When explaining fields, keep these boundaries:
+
+- Use `signals[]` for source-backed evidence and include `source` when available.
+- Use prospect `attributes` only for bounded reviewed row/account metadata declared by the pack, such as fiscal year or segment tier.
+- Use first-class row fields such as `source_kind` and `synthetic` for provenance/source markers. Clay is one possible source marker, not the default model.
+- Use entry `metadata` only for advisory annotations about pack card entries.
+- A brief is a model-ready context contract. It is not final copy, a sender, or a sequencer. Without `--out`, it was printed to stdout only; with `--out`, it is saved as an artifact but still needs drafting and claim checks.
+
 ## First Check
 
 From the workspace that contains or should contain a pack:
@@ -115,7 +139,7 @@ Pack extensions must use supported surfaces. Use prospect `attributes` for bound
 
 Profile metadata is optional but preferred for deterministic skill routing. When `.mdp/manifest.yaml` declares `profile.agent_surface`, treat `recommended_skills`, `allowed_skills`, `blocked_skills`, and `job_skills` as the pack-owned routing contract for MDP skills. Existing packs without this metadata remain valid; `mdp agent-surface` returns a legacy generic surface and tells agents to fall back to generic MDP CLI commands.
 
-Do not confuse profile routing with profile activation. `profile.id` and `profile.agent_surface` tell an agent which skills are appropriate. Full activation is reported by `mdp --json validate --dir .` in `data.profile.activation_ready` and is based on `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and categorized `profile_eval` fixture coverage. Missing mapped card, prompt, input contract, job, or eval references are validation errors. Missing required primitive or eval category coverage is warning-first by default, fails with `--strict`, and blocks activation. Keep profile vocabulary such as account context or opportunity context in card IDs, input contracts, prompts, jobs, and evals; do not invent new core card kinds.
+Do not confuse profile routing with profile activation. `profile.id` and `profile.agent_surface` tell an agent which skills are appropriate. Full activation is reported by `mdp --json validate --dir .` in `data.profile.activation_ready` and is based on `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and categorized `profile_eval` fixture coverage. Missing mapped card, prompt, input contract, job, or eval references are validation errors. Missing required primitive or eval category coverage is warning-first by default, fails with `--strict`, and blocks activation. Activation is structural only: it does not prove commercial readiness, customer readiness, market fit, compliance approval, or that a real prospect should be contacted. Keep profile vocabulary such as account context or opportunity context in card IDs, input contracts, prompts, jobs, and evals; do not invent new core card kinds.
 
 ## Use A Prospect Or Source Row
 

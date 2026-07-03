@@ -24,6 +24,18 @@ Use this skill only when the surface is legacy/generic or this skill is listed i
 
 Create a usable `.mdp/` pack from the user's GTM context. The goal is a small manifest plus modular cards, not one giant prompt file.
 
+When an operator asks where something belongs, use this layer model:
+
+- Manifest owns the pack index, supported channels, input readiness policy (`lead_input_requirements`), prompt value contracts, profile metadata, required primitives, and eval categories.
+- Cards own reviewed decisions, claims, proof, gaps, output boundaries, and profile-owned domain vocabulary.
+- Prompts own translation from supplied messy context into strict prompt-output JSON.
+- Prompt-output validation owns schema/provenance/value-contract checks.
+- `mdp fit` owns the deterministic fit/insufficient/disqualified decision.
+- Route and brief own selected context for the next model step.
+- `mdp check-claims` owns post-draft claim and output-guardrail approval.
+
+Do not treat `activation_ready` as commercial readiness. It only means the profile/template has enough mapped primitives, input contracts, jobs, and eval categories to satisfy structural validation. GTM and proposal are profiles/templates over shared primitives; profile nouns belong in card IDs, prompts, jobs, attributes, signals, traces, gaps, and evals unless the core CLI contract changes.
+
 ## Workflow
 
 1. Check the CLI:
@@ -124,6 +136,7 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 - Do not invent customer names, pricing, integrations, or proof points.
 - Mark generated example prospects as synthetic fixtures and do not confuse them with real target accounts.
 - Use prospect `attributes` for bounded reviewed row metadata that `mdp fit` may require through `lead_input_requirements.required_attributes`; put evidence and provenance in `signals[].source`.
+- Treat `lead_input_requirements` as the manifest wire key for input readiness policy, not as a claim that the account is commercially ready.
 - Define pack-owned prompt value domains in `.mdp/manifest.yaml` `lead_input_requirements.value_contracts` and `attribute_definitions` when prompts should emit blessed personas, segments, source kinds, date/date-time values, enums, or typed attributes. Do not leave important routing labels as free-form prompt prose.
 - Put custom advisory annotations about card content under entry `metadata`; do not add arbitrary unsupported fields as if the CLI routes or enforces them.
 - Add custom channel names to `.mdp/manifest.yaml` `supported_channels` before relying on channel-policy routing for those channels.

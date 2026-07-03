@@ -29,6 +29,14 @@ Run the Message Decision Pack workflow end to end. Use this as the entry point f
 
 ## First Move
 
+If the operator is confused about normalization, fit, route, brief, attributes, or profiles, answer with the canonical flow first:
+
+```text
+messy row -> normalize -> validate prompt output -> fit/readiness -> route/brief -> draft/check-claims
+```
+
+Then apply the right narrow skill. Normalization does not mutate packs and runtime normalization keeps `card_patches` empty. A brief is not final copy; it is stdout-only unless `--out` is used, and it is draftable only when `draft_status` is `ready`.
+
 1. Check the installed CLI and local pack state:
 
 ```bash
@@ -136,6 +144,9 @@ Treat `ctas.yaml` as the policy for the ask or reply path. Treat `output-rules.y
 - Do not send messages, update Clay, update CRM, enroll sequences, enrich leads, or scrape private data. MDP can produce an explicit handoff; execution happens outside MDP.
 - Do not call MDP a sender, CRM, sequencer, enrichment provider, AI SDR, BI tool, or generic automation system.
 - Do not invent unsupported claims. Put gaps in the brief or card entries.
+- Use `signals` for evidence, prospect `attributes` for bounded reviewed row metadata, row fields such as `source_kind` for source markers, and entry `metadata` for card annotations. Do not put proof into attributes or prospect facts into entry metadata.
+- Treat `lead_input_requirements` as the manifest wire key for input readiness policy. Treat `activation_ready` as structural profile/template readiness only, not commercial readiness.
+- Treat GTM, proposal, and future domains as profiles/templates over shared primitives. Keep profile nouns in card IDs, prompts, jobs, attributes, signals, traces, gaps, and evals unless the CLI core contract changes.
 - Keep `--json` on for CLI output that another tool, script, or agent will parse.
 - Use `--summary` for status checks instead of piping JSON into ad hoc scripts.
 - Starter `examples/clay-row.json` rows are synthetic fixtures kept for compatibility unless the prospect says otherwise. Do not present them as real prospects, and do not treat Clay as the required or default source system.
