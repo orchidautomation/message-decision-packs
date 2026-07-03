@@ -184,7 +184,7 @@ examples/
 
 MDP routes messaging context as a decision tree. The prospect JSON is a provider-neutral normalized row: it can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow. Packs now include a runtime normalization prompt contract, `.mdp/prompts/normalize-prospect.yaml`, so upstream agents can turn messy source rows into the exact prospect JSON shape the CLI ingests. The CLI still owns the deterministic fit, route, brief, and claim-check decisions.
 
-The prospect JSON supplies the account/person context, including optional fields such as `company_domain`, `persona`, `segment`, `signals`, `attributes`, `background`, `source_kind`, and `trigger`. `company` remains the human-readable company name and legacy admission field; `company_domain` is the preferred account key for new lead workflows when a pack requires it. If `persona` is present, MDP uses it; otherwise the CLI infers a persona from pack-owned title mappings. The `trigger` is the situational reason to write now, not a card by itself.
+The prospect JSON supplies the account/person context, including optional fields such as `company_domain`, `persona`, `segment`, `signals`, `attributes`, `background`, `source_kind`, and `trigger`. `company` remains the human-readable company name and legacy admission field; `company_domain` is the preferred account key for new lead workflows when a pack requires it. If `persona` is present, MDP uses it; otherwise the CLI infers a persona from pack-owned title mappings. The `trigger` is the situational reason to write now, not a card by itself. Direct prospect rows are strict: unsupported top-level prospect fields and unsupported signal fields fail validation before fit or brief proceeds. Put bounded reviewed metadata in `attributes`; put evidence and provenance in `signals[].source`.
 
 ```text
 messy source row
@@ -318,7 +318,7 @@ Then supply those keys in the prospect JSON that feeds `mdp fit`:
 }
 ```
 
-If a required prospect attribute is missing, `mdp fit` reports it in `missing_requirements`. If a prompt output or prospect row emits a non-blessed enum, wrong type, invalid date/date-time, or undeclared attribute when the pack opts out of undeclared attributes, the CLI reports it in prompt-output issues or `context.invalid_requirements`. Attribute keys and values are validated as bounded reviewed metadata; put evidence and provenance in `signals[].source`, not in `attributes`.
+If a required prospect attribute is missing, `mdp fit` reports it in `missing_requirements`. If a prompt output or prospect row emits a non-blessed enum, wrong type, invalid date/date-time, or undeclared attribute when the pack opts out of undeclared attributes, the CLI reports it in prompt-output issues or `context.invalid_requirements`. Unsupported direct prospect fields fail with `invalid_prospect` instead of being ignored. Attribute keys and values are validated as bounded reviewed metadata; put evidence and provenance in `signals[].source`, not in `attributes`.
 
 For entry `metadata`, add advisory custom annotations to card entries:
 

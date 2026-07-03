@@ -5,6 +5,7 @@ mod constants;
 mod models;
 mod output;
 mod pack_io;
+mod prospect_validation;
 mod routing;
 mod runtime_context;
 mod starter;

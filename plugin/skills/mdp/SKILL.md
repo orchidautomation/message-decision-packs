@@ -143,7 +143,7 @@ Do not confuse profile routing with profile activation. `profile.id` and `profil
 
 ## Use A Prospect Or Source Row
 
-Convert an existing prospect/source row, CSV row, CRM export row, research note, Clay/Deepline row, spreadsheet row, or user-provided source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Prefer the pack-owned `.mdp/prompts/normalize-prospect.yaml` contract for messy rows. When invoking it, pass relevant `existing_pack_context`: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit rules, signal definitions, avoid-rules, output rules, and source policy. Also pass `runtime_context` when timing matters; use `mdp --json schema runtime-context` for the shape. Validate the full prompt artifact before saving its `normalized_prospect` output as the file that feeds `mdp fit`. Do not commit private prospect data. Check the expected shape:
+Convert an existing prospect/source row, CSV row, CRM export row, research note, Clay/Deepline row, spreadsheet row, or user-provided source row into a small JSON file under a repo-ignored agent artifacts directory or another ignored scratch path unless the user explicitly wants to commit a sanitized example. Prefer the pack-owned `.mdp/prompts/normalize-prospect.yaml` contract for messy rows. When invoking it, pass relevant `existing_pack_context`: personas, `persona_mappings`, `lead_input_requirements.value_contracts`, `attribute_definitions`, `allow_undeclared_attributes`, fit rules, signal definitions, avoid-rules, output rules, and source policy. Also pass `runtime_context` when timing matters; use `mdp --json schema runtime-context` for the shape. Validate the full prompt artifact before saving its `normalized_prospect` output as the file that feeds `mdp fit`. Do not commit private prospect data. Direct prospect rows are strict: unsupported top-level prospect fields or signal fields fail as invalid prospect input instead of being ignored. Check the expected shape:
 
 ```bash
 mdp --json schema prospect
@@ -151,7 +151,7 @@ mdp --json schema prospect
 
 Minimum admission fields remain `name`, `title`, and `company` for compatibility. New lead workflows should also supply `company_domain` as the stronger account key. The CLI canonicalizes supplied domain-like values such as `https://www.apple.com/` to `apple.com`; it does not browse, DNS-check, enrich, or infer a domain from the company name.
 
-Prefer adding `company_domain`, `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, structured `signals`, bounded `attributes`, `source_kind`, and `synthetic` when relevant. Use `attributes` only for reviewed metadata such as fiscal year or segment tier; put source evidence in `signals[].source`.
+Prefer adding `company_domain`, `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, structured `signals`, bounded `attributes`, `source_kind`, and `synthetic` when relevant. Use `attributes` only for reviewed metadata such as fiscal year or segment tier; put source evidence in `signals[].source`. Do not add custom sibling fields to prospect rows or signal objects.
 
 Packs may declare readiness requirements in `.mdp/manifest.yaml`:
 

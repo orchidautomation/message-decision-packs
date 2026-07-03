@@ -239,6 +239,11 @@ fn classify_error(message: &str, details: &[String]) -> &'static str {
         "invalid_manifest"
     } else if lower.contains(".mdp/manifest.yaml") && lower.contains("reading") {
         "pack_not_found"
+    } else if lower.contains("prospect_unknown_field")
+        || lower.contains("prospect_signal_unknown_field")
+        || lower.contains("invalid prospect input")
+    {
+        "invalid_prospect"
     } else if lower.contains("missing card id")
         || (lower.contains(".mdp/cards/") && lower.contains("reading"))
     {

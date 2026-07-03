@@ -76,6 +76,7 @@ output_contract:
         source_safety: synthetic
       background: Synthetic RFP context says the city wants a local-first review of permit modernization requirements, proof gaps, and bid/no-bid risks.
       company: City of Exampleton
+      company_domain: exampleton.gov
       name: N/A
       persona: Proposal Lead
       segment: municipal-modernization

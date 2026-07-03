@@ -53,6 +53,7 @@ pub(crate) fn capabilities() -> Value {
         "stable_error_codes": [
             {"code": "pack_not_found", "meaning": "A pack manifest or required .mdp path could not be read"},
             {"code": "invalid_manifest", "meaning": "A pack manifest could not be parsed or uses invalid structure"},
+            {"code": "invalid_prospect", "meaning": "A prospect input uses unsupported fields or invalid structure"},
             {"code": "missing_card", "meaning": "A referenced card could not be found or read"},
             {"code": "unsupported_claim", "meaning": "Draft text contains unsupported claims or claim-check failures"},
             {"code": "insufficient_context", "meaning": "A fit or drafting path lacks enough context to proceed"},

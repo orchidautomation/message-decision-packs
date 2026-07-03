@@ -103,7 +103,8 @@ lead_input_requirements:
   - synthetic
   required_signal_fields:
   - source
-  required_attributes: []
+  required_attributes:
+  - source_safety
   value_contracts:
     segment:
       type: string
@@ -214,7 +215,9 @@ primitive_map:
     - fit-policy-bypass-disqualified
     - invented-proof-guardrail
     - normalize-opportunity-insufficient-context
+    - normalize-opportunity-missing-required-attribute
     - normalize-opportunity-invalid-source-kind
+    - normalize-opportunity-missing-required-signal
     - normalize-opportunity-output
     - proof-review-route
     - proposal-gaps

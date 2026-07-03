@@ -1,5 +1,6 @@
 use crate::constants::DEFAULT_DIR;
 use crate::models::{Card, CardKind, Manifest, PromptFile, Prospect};
+use crate::prospect_validation::{prospect_validation_error, validate_prospect_value};
 use anyhow::{Context, Result, anyhow};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -91,7 +92,13 @@ pub(crate) fn read_cards_by_id_or_kind(root: &Path, id: &str, kind: CardKind) ->
 
 pub(crate) fn read_prospect(path: &Path) -> Result<Prospect> {
     let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
+    let value: Value =
+        serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
+    let issues = validate_prospect_value(&value, &path.display().to_string());
+    if !issues.is_empty() {
+        return Err(anyhow!(prospect_validation_error(&issues)));
+    }
+    serde_json::from_value(value).with_context(|| format!("parsing {}", path.display()))
 }
 
 pub(crate) fn write_yaml<T: Serialize>(path: &Path, value: &T, force: bool) -> Result<()> {

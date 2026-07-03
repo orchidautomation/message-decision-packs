@@ -1,16 +1,16 @@
-id: normalize-opportunity-output
+id: normalize-opportunity-missing-required-attribute
 profile_eval:
-  category: proceed
+  category: unsafe-output
   primitives:
   - source-signals
-  - needs-requirements
   - gaps
   jobs:
   - bid-no-bid-review
 command: validate-prompt-output
 prompt_id: normalize-opportunity
-expect_valid: true
-expect_normalization_ready: true
+expect_valid: false
+expect_issue_codes_contains:
+- prompt_output_fit_readiness_missing_required_attribute
 prompt_output:
   contract: mdp.prompt-output.v0
   prompt_id: normalize-opportunity
@@ -32,24 +32,17 @@ prompt_output:
     company_domain: exampleton.gov
     source_kind: synthetic-example
     synthetic: true
-    background: Synthetic opportunity notes say the city wants a permit workflow modernization proposal review.
-    trigger: Synthetic permit modernization RFP needs bid/no-bid and compliance review before drafting.
+    background: Synthetic opportunity notes say the city wants permit workflow modernization review.
+    trigger: Synthetic permit modernization RFP needs bid/no-bid review before drafting.
     persona: Proposal Lead
     segment: municipal-modernization
     attributes:
       opportunity_stage: bid-no-bid
       pursuit_decision: needs-more-info
-      source_safety: synthetic
     signals:
     - id: permit-modernization-rfp
       title: Permit modernization RFP context supplied
       source: raw_opportunity.rfp_summary
-      confidence: medium
-      freshness: synthetic
-      state_as: supplied
-    - id: due-date-supplied
-      title: Proposal due date supplied
-      source: raw_opportunity.due_date
       confidence: medium
       freshness: synthetic
       state_as: supplied
@@ -61,17 +54,9 @@ prompt_output:
       confidence: high
       needs_review: false
     fit_readiness:
-      has_customer_or_agency: true
-      has_due_date: true
-      has_requirement_signal: true
-      has_review_mode: true
-      has_signal_source: true
       ready_for_mdp_fit: true
     preserved_raw_fields:
-    - raw_opportunity.customer
     - raw_opportunity.rfp_summary
-    - raw_opportunity.due_date
-    - raw_opportunity.review_mode
     - source_kind
     missing_required: []
   card_patches: []

@@ -811,6 +811,7 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
 fn prospect_schema() -> Value {
     json!({
         "type": "object",
+        "additionalProperties": false,
         "required": ["name", "title", "company"],
         "properties": {
             "name": {"type": "string"},
@@ -832,6 +833,7 @@ fn prospect_schema() -> Value {
                 "type": "array",
                 "items": {
                     "type": "object",
+                    "additionalProperties": false,
                     "required": ["id", "title"],
                     "properties": {
                         "id": {"type": "string"},
@@ -875,8 +877,14 @@ mod tests {
         assert!(required.iter().any(|field| field == "title"));
         assert!(required.iter().any(|field| field == "company"));
         assert!(!required.iter().any(|field| field == "company_domain"));
+        assert_eq!(result["additionalProperties"], false);
+        assert_eq!(
+            result["properties"]["signals"]["items"]["additionalProperties"],
+            false
+        );
         assert_eq!(result["properties"]["company_domain"]["type"], "string");
         assert_eq!(result["properties"]["attributes"]["maxProperties"], 25);
+        assert!(result["properties"]["attributes"]["additionalProperties"].is_object());
     }
 
     #[test]
