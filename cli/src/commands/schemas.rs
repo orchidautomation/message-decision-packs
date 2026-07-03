@@ -385,7 +385,7 @@ fn agent_surface_properties_schema() -> Value {
 fn brief_schema() -> Value {
     json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Brief Contracts v0", "oneOf": [
         {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "required_load_order", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "required_load_order": string_array(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"]}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "job": {"type": "string"}, "required_load_order": string_array(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"]}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
     ]})
 }
 
@@ -395,6 +395,34 @@ fn context_schema() -> Value {
 
 fn string_array() -> Value {
     json!({"type": "array", "items": {"type": "string"}})
+}
+
+fn missing_required_trace_schema() -> Value {
+    json!({
+        "type": "array",
+        "items": {
+            "oneOf": [
+                {"type": "string"},
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["field", "reason"],
+                    "properties": {
+                        "field": {"type": "string"},
+                        "path": {"type": "string"},
+                        "reason": {
+                            "type": "string",
+                            "description": "Why the field is absent, such as not_available_in_source, not_extractable_from_source, not_extractable_without_person, or invalid_out_of_contract."
+                        },
+                        "source_evidence": {
+                            "type": "string",
+                            "description": "Short source-backed explanation of what was missing or why it could not be extracted."
+                        }
+                    }
+                }
+            ]
+        }
+    })
 }
 
 fn constraints_schema() -> Value {
@@ -579,7 +607,7 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                         "required": {"type": "boolean"},
                         "default": {
                             "type": "string",
-                            "description": "Use N/A or another explicit neutral default rather than omitting missing values."
+                            "description": "Explicit neutral fallback for missing input; use the trace/gaps to explain absent source data instead of inventing facts."
                         },
                         "missing_behavior": {
                             "type": "string",
@@ -760,7 +788,7 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                     "persona": {"type": "object"},
                     "fit_readiness": {"type": "object"},
                     "preserved_raw_fields": string_array(),
-                    "missing_required": string_array()
+                    "missing_required": missing_required_trace_schema()
                 }
             },
             "gaps": string_array(),

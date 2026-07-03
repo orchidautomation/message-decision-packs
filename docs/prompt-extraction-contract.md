@@ -225,3 +225,5 @@ Use `mdp --json schema prompt` to inspect the machine-readable prompt contract.
 ```
 
 Fiscal year is only an example of pack-declared metadata. Do not hardcode it into prompt logic: declare it under `lead_input_requirements.attribute_definitions` when the pack needs it, validate its type/format there, and use `runtime_context` only as run-time reference data.
+
+For account-only or sparse source rows, preserve absence separately from invalid values. Keep compatibility `N/A` values only where the current prospect schema requires a string, then add structured `normalization_trace.missing_required` entries with `field`, `reason`, and `source_evidence`, for example `not_available_in_source` when the raw row contains no person name or title. `mdp brief --context` should remain `draft_status: no-draft` and surface the no-draft reason until reviewed person context exists.

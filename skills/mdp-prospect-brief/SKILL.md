@@ -69,7 +69,7 @@ Use provider-neutral `source_kind` values unless a specific source matters:
 - `sanitized-example`
 - `synthetic-example`
 
-If the input is account-only and does not include a person name and title, do not invent a contact. Ask for the missing person fields or return an insufficient-context decision from the fit gate.
+If the input is account-only and does not include a person name and title, do not invent a contact. Preserve account facts, keep compatibility `N/A` fields only where the current prospect schema requires them, and put structured source-absence entries in `normalization_trace.missing_required` before returning an insufficient-context decision from the fit gate.
 
 ## Workflow
 

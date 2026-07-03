@@ -138,7 +138,7 @@ lead_input_requirements:
 
 A row can parse successfully and still return `insufficient-context` if it does not satisfy the pack's declared requirements or emits a value outside the pack's declared enum/type/date contracts.
 
-If the input is account-only and does not include a person name and title, do not invent a contact just to satisfy the prospect schema. Ask for a person row or return an insufficient-context decision until MDP has a provider-neutral account input contract.
+If the input is account-only and does not include a person name and title, do not invent a contact just to satisfy the prospect schema. Preserve the account facts, explain the absent person fields in `normalization_trace.missing_required`, and return an insufficient-context/no-draft decision until MDP has reviewed person context or a provider-neutral account input contract.
 
 ## Runtime Normalization Prompt
 

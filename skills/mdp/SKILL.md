@@ -175,7 +175,7 @@ When a pack declares `value_contracts` or `attribute_definitions`, prompt output
 
 Normalization prompts may map messy titles into pack-owned personas and signals, but they must preserve raw evidence, uncertainty, missing fields, and disqualifying execution asks. When using any `.mdp/prompts/*.yaml` prompt contract, treat `output_contract.schema_ref` as the response contract; if the prompt includes `output_contract.schema`, give that literal schema to the model or host. `output_contract.example` is only a reference. The CLI still owns final fit and route decisions.
 
-If the input is account-only and lacks a person name and title, do not invent a contact. Ask for the missing person fields or return the fit gate's insufficient-context decision.
+If the input is account-only and lacks a person name and title, do not invent a contact. Preserve the account facts, keep compatibility `N/A` fields only where the current prospect schema requires them, and put structured source-absence entries in `normalization_trace.missing_required` such as `{ "field": "name", "reason": "not_available_in_source", "source_evidence": "Raw row contained account context but no named person." }`. Then return the fit gate's insufficient-context decision or ask for the missing person fields.
 
 If `persona` is missing, the CLI can resolve it from pack-owned `.mdp/manifest.yaml` `persona_mappings.title_keywords`. Treat `persona_resolution.source: builtin.title_keywords` or `fallback` as review-needed; those weak fallbacks do not make a prospect fit-ready by themselves.
 
