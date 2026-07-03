@@ -131,7 +131,7 @@ For proposal packs, use `.mdp/prompts/normalize-opportunity.yaml` the same way f
 mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
 ```
 
-If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, keep the missing context in gaps and do not invent proof, certifications, compliance status, deadlines, RFP text, past performance, pricing, evaluator criteria, or approval status.
+If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, keep the missing context in gaps and structured `normalization_trace.missing_required` entries. Do not invent proof, certifications, compliance status, deadlines, RFP text, past performance, pricing, evaluator criteria, approval status, or person context.
 
 Minimum parser admission is still `name`, `title`, and `company`, but the starter pack's fit-ready requirements are stricter:
 
@@ -251,7 +251,7 @@ persona -> pains -> hooks -> claims/proof -> CTA/channel policy
 
 When adding channel rules, keep the starter taxonomy intact: `channel-policies` for channel/lifecycle rules, `output-rules` for generated-text and formatting constraints, `ctas` for ask boundaries and reply paths, and `copy-patterns` for reusable structures like trigger or hypothesis -> proof gap -> approved angle -> one soft CTA.
 
-Do not create a separate row evaluator for this step. The workflow is pack-owned prompt normalization, `mdp fit`, and then `mdp brief --context` only when fit allows it. If the input is account-only and lacks a person name and title, ask for a person row or treat the prospect brief as insufficient-context instead of inventing a contact.
+Do not create a separate row evaluator for this step. The workflow is pack-owned prompt normalization, `mdp fit`, and then `mdp brief --context` only when fit allows it. If the input is account-only and lacks a person name and title, ask for a person row or treat the prospect brief as insufficient-context instead of inventing a contact. Use structured `normalization_trace.missing_required` entries to explain which fields were not available in the source row.
 
 ## Source Ledger
 

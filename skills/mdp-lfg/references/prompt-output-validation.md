@@ -57,4 +57,4 @@ If the model emits `value 1`, `value 2`, and `value 3`, those values are safe on
 - The prompt ID does not match the selected prompt.
 - `inputs_used` lists file names instead of declared input names.
 - The output invents a persona, segment, source kind, attribute, certification, proof point, or opportunity stage.
-- The output fills account-only person fields with fake names or titles instead of gaps/no-draft readiness.
+- The output fills account-only person fields with fake names or titles instead of structured `normalization_trace.missing_required` source-absence entries, gaps, and no-draft readiness.

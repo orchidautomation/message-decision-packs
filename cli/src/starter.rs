@@ -894,6 +894,95 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
+            "account-only-normalization-output.yaml",
+            json!({
+                "id": "account-only-normalization-output",
+                "command": "validate-prompt-output",
+                "profile_eval": eval_profile(
+                    "prompt-output-validation",
+                    &["actors", "source-signals", "gaps"],
+                    &["prospect-fit-or-brief"]
+                ),
+                "prompt_id": "normalize-prospect-row",
+                "expect_valid": true,
+                "expect_normalization_ready": false,
+                "prompt_output": {
+                    "contract": "mdp.prompt-output.v0",
+                    "prompt_id": "normalize-prospect-row",
+                    "source_summary": {
+                        "account_name": "Northstar Cloud",
+                        "company_domain": "northstarcloud.com",
+                        "company_name": "Northstar Cloud",
+                        "confidence": "medium",
+                        "inputs_used": ["raw_row", "company_domain", "existing_pack_context", "source_kind"],
+                        "person_name": "N/A",
+                        "person_title": "N/A"
+                    },
+                    "normalized_prospect": {
+                        "name": "N/A",
+                        "title": "N/A",
+                        "company": "Northstar Cloud",
+                        "company_domain": "northstarcloud.com",
+                        "source_kind": "synthetic-example",
+                        "synthetic": true,
+                        "segment": "agent-assisted GTM",
+                        "trigger": "standardizing prospect qualification data before routing new campaigns",
+                        "signals": [
+                            {
+                                "id": "qualification-data-standardization",
+                                "title": "Standardizing prospect qualification data",
+                                "source": "raw_row.account_note"
+                            }
+                        ]
+                    },
+                    "normalization_trace": {
+                        "persona": {
+                            "source": "N/A",
+                            "matched_keywords": [],
+                            "confidence": "unknown",
+                            "needs_review": true
+                        },
+                        "fit_readiness": {
+                            "has_company_domain": true,
+                            "has_persona": false,
+                            "has_segment": true,
+                            "has_signal_source": true,
+                            "has_signals": true,
+                            "has_trigger": true,
+                            "ready_for_mdp_fit": false,
+                            "ready_for_brief": false,
+                            "no_draft_reason": "No person name or title was present in the source row; provide a reviewed contact before drafting."
+                        },
+                        "missing_required": [
+                            {
+                                "field": "name",
+                                "path": "normalized_prospect.name",
+                                "reason": "not_available_in_source",
+                                "source_evidence": "Raw row contained account context but no named person."
+                            },
+                            {
+                                "field": "title",
+                                "path": "normalized_prospect.title",
+                                "reason": "not_available_in_source",
+                                "source_evidence": "Raw row contained account context but no person title."
+                            },
+                            {
+                                "field": "persona",
+                                "reason": "not_extractable_without_person",
+                                "source_evidence": "No reviewed person or role was supplied."
+                            }
+                        ],
+                        "preserved_raw_fields": ["raw_row.company", "raw_row.account_note", "company_domain", "source_kind"]
+                    },
+                    "card_patches": [],
+                    "gaps": [
+                        "No person name or title was present in the source row; provide a reviewed contact before drafting."
+                    ],
+                    "rejected_claims": []
+                }
+            }),
+        ),
+        (
             "unknown-task-route.yaml",
             json!({
                 "id": "unknown-task-route",
@@ -1590,8 +1679,8 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "When existing_pack_context includes lead_input_requirements.attribute_definitions, emit only declared attributes when allow_undeclared_attributes is false, and match declared type, enum, date, or date-time formats. Invalid or unreviewed metadata belongs in gaps or normalization_trace, not attributes.",
             "Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.",
             "Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.",
-            "If the input is account-only and lacks person name or title, do not invent a contact. Put missing fields in gaps and set normalization_trace.fit_readiness.ready_for_mdp_fit to false.",
-            "Missing-field example: if the row has company but no person title, do not fabricate a title; add title to normalization_trace.missing_required and set ready_for_mdp_fit false.",
+            "If the input is account-only and lacks person name or title, do not invent a contact. Keep compatibility fields as N/A where the prospect schema requires them, add structured normalization_trace.missing_required entries with field, reason, and source_evidence, add a human-readable gap, and set normalization_trace.fit_readiness.ready_for_mdp_fit and ready_for_brief to false.",
+            "Missing-field example: if the row has company but no person title, do not fabricate a title; add {\"field\":\"title\",\"reason\":\"not_available_in_source\",\"source_evidence\":\"Raw row contained no person title.\"} to normalization_trace.missing_required and set ready_for_mdp_fit false.",
             "Invalid-value example: if the row says segment enterprise but value_contracts.segment only allows agent-assisted GTM, do not output segment enterprise; add a gap asking for a reviewed pack segment or manifest update.",
             "Keep card_patches empty. This prompt normalizes runtime prospect input; it does not propose edits to MDP cards."
         ],
@@ -2021,7 +2110,42 @@ fn normalization_trace_output_schema() -> Value {
                 "description": "Booleans that tell the caller whether mdp fit has enough context."
             },
             "preserved_raw_fields": string_array_output_schema("Raw row fields preserved in the normalized prospect or trace."),
-            "missing_required": string_array_output_schema("Required prospect fields missing from the supplied row.")
+            "missing_required": missing_required_output_schema()
+        }
+    })
+}
+
+fn missing_required_output_schema() -> Value {
+    json!({
+        "type": "array",
+        "description": "Required prospect fields missing from the supplied row. Prefer structured objects so missing source data is distinguishable from invalid values; legacy string field names remain accepted for compatibility.",
+        "items": {
+            "oneOf": [
+                {"type": "string"},
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["field", "reason"],
+                    "properties": {
+                        "field": {
+                            "type": "string",
+                            "description": "Missing or non-extractable prospect field, such as name, title, persona, segment, trigger, or signals."
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "Optional output path, such as normalized_prospect.title."
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Reason code such as not_available_in_source, not_extractable_from_source, not_extractable_without_person, or invalid_out_of_contract."
+                        },
+                        "source_evidence": {
+                            "type": "string",
+                            "description": "Short source-backed explanation, such as Raw row said no named person yet."
+                        }
+                    }
+                }
+            ]
         }
     })
 }

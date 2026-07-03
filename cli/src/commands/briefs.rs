@@ -5,6 +5,7 @@ use crate::runtime_context::current_runtime_context;
 use crate::utils::{resolve_persona, resolve_persona_label, routable_persona};
 use anyhow::Result;
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 pub(crate) fn emit_brief(
@@ -111,6 +112,11 @@ pub(crate) fn prospect_brief_from_value_with_context(
     } else {
         "no-draft"
     };
+    let no_draft_reason = if draft_status == "ready" {
+        Value::Null
+    } else {
+        json!(brief_no_draft_reason(&fit_result))
+    };
     let mut payload = json!({
         "contract": "mdp.message-brief.v0",
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
@@ -127,6 +133,7 @@ pub(crate) fn prospect_brief_from_value_with_context(
         "fit": fit_result,
         "draft_status": draft_status,
         "draft_decision": if draft_status == "ready" { "Proceed with routed brief using stated assumptions." } else { "Do not draft outbound copy unless the user explicitly overrides this fit gate." },
+        "no_draft_reason": no_draft_reason,
         "job": job_text,
         "required_load_order": load_order,
         "route": route,
@@ -155,6 +162,44 @@ pub(crate) fn prospect_brief_from_value_with_context(
         )?;
     }
     Ok(payload)
+}
+
+fn brief_no_draft_reason(fit_result: &Value) -> String {
+    let status = fit_result["status"]
+        .as_str()
+        .unwrap_or("insufficient-context");
+    if status == "disqualified" {
+        return "The fit gate found a disqualifier; do not draft outbound copy unless the user explicitly overrides it.".to_string();
+    }
+
+    let missing = fit_result["context"]["missing_requirements"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|requirement| requirement["field"].as_str())
+        .collect::<BTreeSet<_>>();
+    let invalid_count = fit_result["context"]["invalid_requirements"]
+        .as_array()
+        .map_or(0, Vec::len);
+
+    if missing.contains("name") && missing.contains("title") {
+        return "No person name or title was present in the prospect row; provide a reviewed contact before drafting.".to_string();
+    }
+    if missing.contains("name") {
+        return "No person name was present in the prospect row; provide a reviewed contact before drafting.".to_string();
+    }
+    if missing.contains("title") {
+        return "No person title was present in the prospect row; provide a reviewed title before drafting.".to_string();
+    }
+    if missing.contains("persona") {
+        return "No pack-owned persona was available from the prospect row; provide a reviewed persona or title before drafting.".to_string();
+    }
+    if invalid_count > 0 {
+        return "The prospect row contains invalid values for this pack; fix the invalid requirements before drafting.".to_string();
+    }
+
+    "The fit gate returned insufficient-context; review missing context before drafting."
+        .to_string()
 }
 
 pub(crate) fn demo_copy(root: &Path, prospect_path: &Path, channel: &str) -> Result<Value> {
@@ -258,6 +303,46 @@ mod tests {
 
         assert_eq!(result["fit"]["status"], "insufficient-context");
         assert_eq!(result["draft_status"], "no-draft");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn brief_account_only_includes_specific_no_draft_reason() {
+        let root = temp_pack("brief-account-only-no-draft");
+        let prospect_path = root.join("examples").join("account-only.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "N/A",
+  "title": "N/A",
+  "company": "Northstar Cloud",
+  "company_domain": "northstarcloud.com",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing prospect qualification data before routing new campaigns",
+  "source_kind": "synthetic-example",
+  "synthetic": true,
+  "signals": [
+    {
+      "id": "qualification-data-standardization",
+      "title": "Standardizing prospect qualification data",
+      "source": "synthetic account-only row"
+    }
+  ]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = prospect_brief_with_context(&root, &prospect_path, "linkedin", None, true)
+            .expect("brief should succeed");
+
+        assert_eq!(result["fit"]["status"], "insufficient-context");
+        assert_eq!(result["draft_status"], "no-draft");
+        assert_eq!(
+            result["no_draft_reason"],
+            "No person name or title was present in the prospect row; provide a reviewed contact before drafting."
+        );
+        assert_eq!(result["context"]["status"], "blocked");
 
         let _ = std::fs::remove_dir_all(root);
     }

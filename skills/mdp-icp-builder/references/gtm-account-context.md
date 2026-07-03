@@ -33,7 +33,7 @@ Use these pack surfaces:
 
 - Do not bury company ICP only in copy examples.
 - Do not invent a person to make account-only context draftable.
-- Do not treat `N/A` as a magic required value. It is a compatibility marker; missing person context should be represented as gaps/readiness false.
+- Do not treat `N/A` as a magic required value. It is a compatibility marker; missing person context should be represented as structured `normalization_trace.missing_required` entries, gaps, and readiness false.
 - Do not add a new core card kind just because a GTM user says "account context." Use profile vocabulary over universal primitives.
 
 ## Acceptance Shape
@@ -46,5 +46,6 @@ account signals: yes
 person name/title/persona: missing
 fit decision: insufficient-context
 brief draft_status: no-draft
+brief no_draft_reason: no person name/title was available in the supplied row
 next step: ask for reviewed person/persona context
 ```

@@ -885,14 +885,77 @@ fn validate_normalization_trace(value: Option<&Value>, path: &str, issues: &mut 
             ));
         }
     }
-    for field in ["preserved_raw_fields", "missing_required"] {
-        if trace.get(field).and_then(Value::as_array).is_none() {
+    validate_plain_string_array(
+        trace.get("preserved_raw_fields"),
+        &format!("{path}/preserved_raw_fields"),
+        "prompt_output_normalization_trace_field_type",
+        "normalization_trace.preserved_raw_fields must be an array of strings",
+        issues,
+    );
+    validate_missing_required_trace(
+        trace.get("missing_required"),
+        &format!("{path}/missing_required"),
+        issues,
+    );
+}
+
+fn validate_missing_required_trace(value: Option<&Value>, path: &str, issues: &mut Vec<Value>) {
+    let Some(items) = value.and_then(Value::as_array) else {
+        issues.push(issue(
+            "prompt_output_normalization_trace_field_type",
+            "error",
+            path,
+            "normalization_trace.missing_required must be an array",
+        ));
+        return;
+    };
+
+    for (index, item) in items.iter().enumerate() {
+        let item_path = format!("{path}/{index}");
+        if item.as_str().is_some() {
+            continue;
+        }
+        let Some(item) = item.as_object() else {
             issues.push(issue(
-                "prompt_output_normalization_trace_field_type",
+                "prompt_output_missing_required_item_type",
                 "error",
-                format!("{path}/{field}"),
-                format!("normalization_trace.{field} must be an array"),
+                &item_path,
+                "missing_required entries must be strings or objects with field and reason",
             ));
+            continue;
+        };
+        validate_json_object_keys(
+            item,
+            &["field", "path", "reason", "source_evidence"],
+            &item_path,
+            "prompt_output_missing_required_unknown_field",
+            issues,
+        );
+        for field in ["field", "reason"] {
+            if item
+                .get(field)
+                .and_then(Value::as_str)
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                issues.push(issue(
+                    "prompt_output_missing_required_field_missing",
+                    "error",
+                    format!("{item_path}/{field}"),
+                    format!("missing_required object entries must include non-empty {field}"),
+                ));
+            }
+        }
+        for field in ["path", "source_evidence"] {
+            if let Some(value) = item.get(field) {
+                if value.as_str().is_none_or(|value| value.trim().is_empty()) {
+                    issues.push(issue(
+                        "prompt_output_missing_required_field_type",
+                        "error",
+                        format!("{item_path}/{field}"),
+                        format!("missing_required.{field} must be a non-empty string when present"),
+                    ));
+                }
+            }
         }
     }
 }
@@ -1564,6 +1627,153 @@ mod tests {
                 .expect("issues array")
                 .iter()
                 .any(|issue| issue["code"] == "prompt_output_fake_person")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_accepts_structured_missing_required_trace() {
+        let root = temp_pack("structured-missing-required");
+        let path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "company_domain": "northstarcloud.com",
+    "company_name": "Northstar Cloud",
+    "person_name": "N/A",
+    "person_title": "N/A",
+    "account_name": "Northstar Cloud",
+    "inputs_used": ["raw_row", "company_domain", "existing_pack_context", "source_kind"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "N/A",
+    "title": "N/A",
+    "company": "Northstar Cloud",
+    "company_domain": "northstarcloud.com",
+    "source_kind": "synthetic-example",
+    "synthetic": true,
+    "segment": "agent-assisted GTM",
+    "trigger": "standardizing prospect qualification data",
+    "signals": [
+      {
+        "id": "qualification-data-standardization",
+        "title": "Standardizing prospect qualification data",
+        "source": "raw_row.account_note"
+      }
+    ]
+  },
+  "normalization_trace": {
+    "persona": {
+      "source": "N/A",
+      "matched_keywords": [],
+      "confidence": "unknown",
+      "needs_review": true
+    },
+    "fit_readiness": {
+      "has_company_domain": true,
+      "has_persona": false,
+      "has_segment": true,
+      "has_signal_source": true,
+      "has_signals": true,
+      "has_trigger": true,
+      "ready_for_mdp_fit": false,
+      "ready_for_brief": false,
+      "no_draft_reason": "No person name or title was present in the source row; provide a reviewed contact before drafting."
+    },
+    "preserved_raw_fields": ["raw_row.company", "raw_row.account_note", "company_domain"],
+    "missing_required": [
+      {
+        "field": "name",
+        "path": "normalized_prospect.name",
+        "reason": "not_available_in_source",
+        "source_evidence": "Raw row contained account context but no named person."
+      },
+      {
+        "field": "title",
+        "path": "normalized_prospect.title",
+        "reason": "not_available_in_source",
+        "source_evidence": "Raw row contained account context but no person title."
+      },
+      {
+        "field": "persona",
+        "reason": "not_extractable_without_person",
+        "source_evidence": "No reviewed person or role was supplied."
+      }
+    ]
+  },
+  "card_patches": [],
+  "gaps": [
+    "No person name or title was present in the source row; provide a reviewed contact before drafting."
+  ],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], true);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_malformed_structured_missing_required_trace() {
+        let root = temp_pack("bad-structured-missing-required");
+        let path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "company_domain": "northstarcloud.com",
+    "company_name": "Northstar Cloud",
+    "person_name": "N/A",
+    "person_title": "N/A",
+    "account_name": "Northstar Cloud",
+    "inputs_used": ["raw_row"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "N/A",
+    "title": "N/A",
+    "company": "Northstar Cloud"
+  },
+  "normalization_trace": {
+    "persona": {},
+    "fit_readiness": {},
+    "preserved_raw_fields": ["raw_row.company"],
+    "missing_required": [
+      {
+        "field": "name",
+        "source_evidence": "Raw row contained no named person."
+      }
+    ]
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "prompt_output_missing_required_field_missing")
         );
 
         let _ = std::fs::remove_dir_all(root);
