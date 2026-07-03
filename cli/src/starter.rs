@@ -174,7 +174,7 @@ fn gtm_profile() -> Profile {
             blocked_skills: vec![
                 BlockedSkill {
                     name: "mdp-proposal-pack-builder".to_string(),
-                    reason: "Proposal/RFP review pack builder; use only with profile.id: proposal."
+                    reason: "Proposal/RFP review pack builder; use only with profile.id: proposal. GTM packs may cover proposal-governance positioning or outbound fit, not proposal compliance, bid/no-bid, or customer proposal handling."
                         .to_string(),
                 },
                 BlockedSkill {
@@ -184,7 +184,7 @@ fn gtm_profile() -> Profile {
                 },
                 BlockedSkill {
                     name: "mdp-proposal-compliance-review".to_string(),
-                    reason: "Proposal compliance review job; not a GTM messaging workflow."
+                    reason: "Proposal compliance review job; not a GTM messaging workflow or proposal-governance positioning wedge."
                         .to_string(),
                 },
                 BlockedSkill {
@@ -336,6 +336,8 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
                     "fit-insufficient-context",
                     "fit-disqualified",
                     "claim-check-unsupported",
+                    "claim-check-customer-proof",
+                    "claim-check-commercial-traction",
                     "claim-check-output-rule",
                     "linkedin-copy-route",
                     "email-initial-route",
@@ -501,7 +503,7 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
         ])),
         ("avoid-rules.yaml", card("avoid-rules", CardKind::AvoidRules, "Avoid rules", "Category and claim boundaries agents must keep intact.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"], vec![
             Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
-            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance claims, or product capabilities unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "fully automated".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance claims, production adoption, design partner, paid pilot, market validation, commercial traction, or product capability claims unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "fully automated".to_string(), "customers already use".to_string(), "customer adoption".to_string(), "design partner".to_string(), "design partners".to_string(), "paid pilot".to_string(), "paid pilots".to_string(), "production adoption".to_string(), "production use".to_string(), "validated adoption".to_string(), "ARR conversion".to_string(), "workshop conversion".to_string(), "workshops converted".to_string(), "market validated".to_string(), "market validation".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
         ])),
         ("output-rules.yaml", card("output-rules", CardKind::OutputRules, "Output rules", "Global style, formatting, and output-structure rules generated text must follow.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"], vec![
             Entry { id: "no-em-dashes".to_string(), title: "No em dashes".to_string(), body: "Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec![], avoid: vec!["—".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
@@ -1128,6 +1130,48 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
+            "claim-check-customer-proof.yaml",
+            json!({
+                "id": "claim-check-customer-proof",
+                "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "unsafe-output",
+                    &["evidence-proof", "boundaries", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
+                "text": "The attributes prove MDP customers already use the pack in production use with a design partner and paid pilot.",
+                "expect_valid": false,
+                "expect_guardrail_terms_contains": [
+                    "customers already use",
+                    "design partner",
+                    "paid pilot",
+                    "production use"
+                ],
+                "expect_unsupported_claims_contains": ["customer proof"]
+            }),
+        ),
+        (
+            "claim-check-commercial-traction.yaml",
+            json!({
+                "id": "claim-check-commercial-traction",
+                "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "unsafe-output",
+                    &["evidence-proof", "boundaries", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
+                "text": "MDP has validated adoption, ARR conversion, workshops converted into customers, and is market validated.",
+                "expect_valid": false,
+                "expect_guardrail_terms_contains": [
+                    "validated adoption",
+                    "ARR conversion",
+                    "workshops converted",
+                    "market validated"
+                ],
+                "expect_unsupported_claims_contains": ["commercial traction"]
+            }),
+        ),
+        (
             "claim-check-approved.yaml",
             json!({
                 "id": "claim-check-approved",
@@ -1676,9 +1720,11 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "When existing_pack_context includes lead_input_requirements.value_contracts, emit only values allowed by those pack-owned enum/type/format contracts for persona, segment, source_kind, and other normalized scalar fields. If the source value is outside the contract, omit the optional field or add a gap instead of inventing a synonym.",
             "Use explicit persona from the row only when it already matches a pack-owned persona. Otherwise use pack-owned persona_mappings from existing_pack_context and emit the canonical persona label; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.",
             "Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.",
+            "Attributes are metadata, not proof. Do not use attributes to substantiate customer adoption, production use, design partners, paid pilots, ARR conversion, market validation, compliance, integrations, or product capability claims.",
             "When existing_pack_context includes lead_input_requirements.attribute_definitions, emit only declared attributes when allow_undeclared_attributes is false, and match declared type, enum, date, or date-time formats. Invalid or unreviewed metadata belongs in gaps or normalization_trace, not attributes.",
             "Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.",
             "Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.",
+            "For non-synthetic rows, use a meaningful source_kind, keep material signals source-backed, and set confidence/freshness from supplied evidence. If source_kind, signal source, confidence, or freshness is vague or inconsistent, mark the row not ready for a draft and emit gaps.",
             "If the input is account-only and lacks person name or title, do not invent a contact. Keep compatibility fields as N/A where the prospect schema requires them, add structured normalization_trace.missing_required entries with field, reason, and source_evidence, add a human-readable gap, and set normalization_trace.fit_readiness.ready_for_mdp_fit and ready_for_brief to false.",
             "Missing-field example: if the row has company but no person title, do not fabricate a title; add {\"field\":\"title\",\"reason\":\"not_available_in_source\",\"source_evidence\":\"Raw row contained no person title.\"} to normalization_trace.missing_required and set ready_for_mdp_fit false.",
             "Invalid-value example: if the row says segment enterprise but value_contracts.segment only allows agent-assisted GTM, do not output segment enterprise; add a gap asking for a reviewed pack segment or manifest update.",

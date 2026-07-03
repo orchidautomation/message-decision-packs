@@ -1082,6 +1082,15 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
         &[
             "trusted by",
             "used by",
+            "customers already use",
+            "customer adoption",
+            "production adoption",
+            "production use",
+            "validated adoption",
+            "design partner",
+            "design partners",
+            "paid pilot",
+            "paid pilots",
             "customers include",
             "customer like",
             "customers like",
@@ -1091,6 +1100,23 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "customer-name",
             "customer proof",
             "Customer-name and social-proof claims require explicit approved source context.",
+        );
+    }
+    if contains_any(
+        text,
+        &[
+            "arr conversion",
+            "workshop conversion",
+            "workshops converted",
+            "market validated",
+            "market validation",
+            "validated by the market",
+        ],
+    ) {
+        push_hit(
+            "commercial-traction",
+            "commercial traction",
+            "Commercial traction and market-validation claims require explicit approved source context.",
         );
     }
     if contains_any(

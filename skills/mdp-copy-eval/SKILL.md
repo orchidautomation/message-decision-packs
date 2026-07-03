@@ -37,6 +37,8 @@ mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound co
 mdp --json check-claims --dir . --text "<draft copy>"
 ```
 
+`check-claims` is not send approval. A passing result only says the supplied draft text did not hit known claim or output guardrails. It does not verify subject-line behavior, attachments, images, HTML rendering, tracking, sender setup, inbox behavior, CRM writes, enrichment, or any external execution boundary.
+
 When the draft has a subject line or route-specific channel constraints, include them:
 
 ```bash
@@ -58,6 +60,7 @@ mdp --json check-claims --dir . --text "<draft copy>" --subject "<subject>" --pe
 - output-rules
 - structured constraints such as word count, subject length, max questions, and forbidden links/html/tracking
 - evidence requirements
+- attributes used as metadata only, not proof
 - gaps the copy should surface rather than hide
 - channel length and ask style
 - global style, punctuation, and structure rules

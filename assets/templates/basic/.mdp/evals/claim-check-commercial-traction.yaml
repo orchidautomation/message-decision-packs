@@ -1,0 +1,19 @@
+command: check-claims
+expect_guardrail_terms_contains:
+- validated adoption
+- ARR conversion
+- workshops converted
+- market validated
+expect_unsupported_claims_contains:
+- commercial traction
+expect_valid: false
+id: claim-check-commercial-traction
+profile_eval:
+  category: unsafe-output
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - evidence-proof
+  - boundaries
+  - output-contracts
+text: MDP has validated adoption, ARR conversion, workshops converted into customers, and is market validated.
