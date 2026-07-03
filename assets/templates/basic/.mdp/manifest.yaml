@@ -31,11 +31,11 @@ profile:
     - mdp-pack-eval
     blocked_skills:
     - name: mdp-proposal-pack-builder
-      reason: 'Proposal/RFP review pack builder; use only with profile.id: proposal.'
+      reason: 'Proposal/RFP review pack builder; use only with profile.id: proposal. GTM packs may cover proposal-governance positioning or outbound fit, not proposal compliance, bid/no-bid, or customer proposal handling.'
     - name: mdp-proposal-bid-no-bid-review
       reason: Proposal review job; not a GTM prospect or outbound-copy workflow.
     - name: mdp-proposal-compliance-review
-      reason: Proposal compliance review job; not a GTM messaging workflow.
+      reason: Proposal compliance review job; not a GTM messaging workflow or proposal-governance positioning wedge.
     - name: mdp-proposal-win-theme-proof-review
       reason: Proposal proof review job; use GTM claims/copy review skills instead.
     - name: mdp-proposal-red-team-gap-review
@@ -164,6 +164,8 @@ primitive_map:
     - fit-insufficient-context
     - fit-disqualified
     - claim-check-unsupported
+    - claim-check-customer-proof
+    - claim-check-commercial-traction
     - claim-check-output-rule
     - linkedin-copy-route
     - email-initial-route

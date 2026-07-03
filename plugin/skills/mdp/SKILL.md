@@ -153,6 +153,8 @@ Minimum admission fields remain `name`, `title`, and `company` for compatibility
 
 Prefer adding `company_domain`, `linkedin_url`, `company_url`, `background`, `trigger`, `persona`, `segment`, structured `signals`, bounded `attributes`, `source_kind`, and `synthetic` when relevant. Use `attributes` only for reviewed metadata such as fiscal year or segment tier; put source evidence in `signals[].source`. Do not add custom sibling fields to prospect rows or signal objects.
 
+Attributes are metadata, not proof. Do not cite an attribute as evidence for customer use, adoption, commercial traction, compliance, integrations, or product capability. Put raw proof snippets or source locators in `signals[].source`, `.mdp/sources.yaml`, or reviewed claim/proof cards, and surface a gap when those sources are missing.
+
 Packs may declare readiness requirements in `.mdp/manifest.yaml`:
 
 ```yaml
@@ -204,6 +206,8 @@ If the input is account-only and lacks a person name and title, do not invent a 
 If `persona` is missing, the CLI can resolve it from pack-owned `.mdp/manifest.yaml` `persona_mappings.title_keywords`. Treat `persona_resolution.source: builtin.title_keywords` or `fallback` as review-needed; those weak fallbacks do not make a prospect fit-ready by themselves.
 
 Generated starter rows include `source_kind: synthetic-example` and `synthetic: true`. Treat those as demo fixtures, not real prospects. For production work, use a real row in ignored scratch or an intentionally sanitized example.
+
+For non-synthetic rows, require meaningful provenance before treating a brief as draft-ready: `source_kind` should match the supplied row type, each material signal should carry a specific `source`, and confidence/freshness should reflect what the row actually supports. If provenance is vague, missing, or inconsistent, stop at insufficient-context or gaps instead of smoothing it into confident copy.
 
 ## Outbound Testing Without A Prospect
 
@@ -269,6 +273,8 @@ Before approving generated copy, check claims and guardrails:
 ```bash
 mdp --json check-claims --dir . --text "<draft copy>"
 ```
+
+`check-claims` is a draft-text guardrail, not send approval. A passing result does not prove subject-line handling, attachments, images, HTML rendering, tracking, external sender configuration, inbox behavior, CRM mutation, enrichment, or any other execution surface. Treat `valid: true` as permission to keep reviewing the draft inside the MDP workflow, not as permission to send or automate.
 
 When route-specific constraints or subject rules matter, include the subject and route:
 

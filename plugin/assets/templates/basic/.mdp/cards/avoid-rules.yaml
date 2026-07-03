@@ -27,7 +27,7 @@ entries:
   - scraper
 - id: no-unsourced-claims
   title: No unsourced claims
-  body: Do not add quantified outcomes, integrations, customer names, compliance claims, or product capabilities unless they are present in the claims card or supplied source material.
+  body: Do not add quantified outcomes, integrations, customer names, compliance claims, production adoption, design partner, paid pilot, market validation, commercial traction, or product capability claims unless they are present in the claims card or supplied source material.
   applies_to:
   - PMM
   - GTM Engineering
@@ -36,3 +36,17 @@ entries:
   - guaranteed
   - proven ROI
   - fully automated
+  - customers already use
+  - customer adoption
+  - design partner
+  - design partners
+  - paid pilot
+  - paid pilots
+  - production adoption
+  - production use
+  - validated adoption
+  - ARR conversion
+  - workshop conversion
+  - workshops converted
+  - market validated
+  - market validation

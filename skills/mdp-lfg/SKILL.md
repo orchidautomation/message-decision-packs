@@ -84,6 +84,8 @@ Choose the narrow path and use that skill's workflow:
 - Forbidden claims, category boundaries, unsupported promises: `$mdp-avoid-rules`
 - Global style, punctuation, formatting, and structure constraints: `$mdp-output-rules`
 - Existing provider-neutral prospect/source row to local MDP prospect JSON, fit decision, and brief: `$mdp-prospect-brief`
+
+If a GTM pack mentions a proposal-governance wedge, treat it as GTM positioning or outbound-fit context unless the user supplies actual proposal/RFP/review material. Do not route GTM positioning work into proposal compliance, bid/no-bid, or customer proposal handling skills.
 - Model-ready writing contract: `$mdp-copy-brief`
 - Generated copy QA, claim checks, or revision: `$mdp-copy-eval`
 - Full pack audit, routing QA, completeness check: `$mdp-pack-review`
