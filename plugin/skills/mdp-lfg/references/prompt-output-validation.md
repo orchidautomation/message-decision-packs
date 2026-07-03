@@ -4,7 +4,7 @@ Use this when explaining or testing the deterministic prompt-output lifecycle.
 
 ## Plain-English Version
 
-The prompt is the translator. It receives messy input and returns strict JSON. The CLI is the gatekeeper. It checks that the JSON only uses values the pack declared ahead of time.
+The prompt is the translator. It receives messy input and returns strict JSON. The CLI is the gatekeeper. It checks that the JSON only uses values the pack declared ahead of time and that normalization readiness claims match the pack input policy.
 
 ```mermaid
 flowchart TD
@@ -32,6 +32,7 @@ flowchart TD
 - `source_summary.inputs_used` checks against declared prompt inputs.
 - Runtime-context validation when present.
 - Pack-owned enum, type, date, date-time, source-kind, persona, segment, and attribute checks.
+- Normalization readiness checks: `ready_for_mdp_fit` must be boolean and cannot be `true` when manifest-required prospect fields, signal fields, or attributes are missing.
 - Collision checks against existing card vocabulary.
 
 ## Canonical Command
@@ -49,7 +50,7 @@ mdp --json validate-prompt-output --dir ./proposal-pack --prompt-id normalize-op
 
 ## Mental Check
 
-If the model emits `value 1`, `value 2`, and `value 3`, those values are safe only when they match the prompt output contract and the pack's declared value contracts. If a later segment, fit rule, route, or brief depends on those values, use the CLI-validated values, not the raw prompt text.
+If the model emits `value 1`, `value 2`, and `value 3`, those values are safe only when they match the prompt output contract, the pack's declared value contracts, and the readiness policy. Passing `validate-prompt-output` means the artifact is contract-compliant and readiness-consistent; run `mdp fit` for the final fit/disqualified/insufficient-context decision.
 
 ## Common Failures
 
@@ -58,3 +59,4 @@ If the model emits `value 1`, `value 2`, and `value 3`, those values are safe on
 - `inputs_used` lists file names instead of declared input names.
 - The output invents a persona, segment, source kind, attribute, certification, proof point, or opportunity stage.
 - The output fills account-only person fields with fake names or titles instead of structured `normalization_trace.missing_required` source-absence entries, gaps, and no-draft readiness.
+- The output claims `ready_for_mdp_fit: true` while required fields, required signal source fields, or required attributes are absent.

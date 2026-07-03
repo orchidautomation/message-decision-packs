@@ -138,6 +138,18 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/evals/normalize-opportunity-missing-required-attribute.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-missing-required-attribute.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/normalize-opportunity-missing-required-signal.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-missing-required-signal.yaml"
+        ),
+    ),
+    (
         ".mdp/evals/normalize-opportunity-output.yaml",
         include_str!(
             "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-output.yaml"

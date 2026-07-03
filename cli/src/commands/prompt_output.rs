@@ -2,7 +2,7 @@ use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT};
 use crate::models::{CardKind, Manifest, PromptFile};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
 use crate::runtime_context::validate_runtime_context;
-use crate::utils::normalize_supplied_company_domain;
+use crate::utils::{normalize_supplied_company_domain, resolve_pack_persona_label};
 use crate::value_contracts::normalized_prospect_contract_violations;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
@@ -292,6 +292,12 @@ fn validate_output_against_prompt(
         validate_normalization_trace(
             output.get("normalization_trace"),
             &format!("{path}#/normalization_trace"),
+            issues,
+        );
+        validate_fit_readiness_against_manifest(
+            manifest,
+            output,
+            &format!("{path}#/normalization_trace/fit_readiness"),
             issues,
         );
         validate_normalization_invariants(
@@ -897,6 +903,170 @@ fn validate_normalization_trace(value: Option<&Value>, path: &str, issues: &mut 
         &format!("{path}/missing_required"),
         issues,
     );
+}
+
+fn validate_fit_readiness_against_manifest(
+    manifest: &Manifest,
+    output: &Value,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(prospect) = output.get("normalized_prospect").and_then(Value::as_object) else {
+        return;
+    };
+    let Some(fit_readiness) = output
+        .pointer("/normalization_trace/fit_readiness")
+        .and_then(Value::as_object)
+    else {
+        return;
+    };
+
+    let ready_value = fit_readiness.get("ready_for_mdp_fit");
+    let Some(ready_for_mdp_fit) = ready_value.and_then(Value::as_bool) else {
+        issues.push(issue(
+            "prompt_output_fit_readiness_ready_type",
+            "error",
+            format!("{path}/ready_for_mdp_fit"),
+            "normalization_trace.fit_readiness.ready_for_mdp_fit must be a boolean",
+        ));
+        return;
+    };
+
+    if !ready_for_mdp_fit {
+        return;
+    }
+
+    for field in &manifest.lead_input_requirements.required_fields {
+        if !normalized_prospect_field_present(manifest, prospect, field) {
+            issues.push(issue(
+                "prompt_output_fit_readiness_missing_required_field",
+                "error",
+                format!("{path}/ready_for_mdp_fit"),
+                format!(
+                    "ready_for_mdp_fit is true, but normalized_prospect is missing required field {field} from manifest lead_input_requirements.required_fields"
+                ),
+            ));
+        }
+    }
+
+    for field in &manifest.lead_input_requirements.required_signal_fields {
+        let Some(signals) = prospect.get("signals").and_then(Value::as_array) else {
+            issues.push(issue(
+                "prompt_output_fit_readiness_missing_required_signal_field",
+                "error",
+                format!("{path}/ready_for_mdp_fit"),
+                format!(
+                    "ready_for_mdp_fit is true, but normalized_prospect.signals is missing required signal field {field}"
+                ),
+            ));
+            continue;
+        };
+        if signals.is_empty() {
+            issues.push(issue(
+                "prompt_output_fit_readiness_missing_required_signal_field",
+                "error",
+                format!("{path}/ready_for_mdp_fit"),
+                format!(
+                    "ready_for_mdp_fit is true, but normalized_prospect.signals is empty and required signal field {field} cannot be checked"
+                ),
+            ));
+            continue;
+        }
+        for (index, signal) in signals.iter().enumerate() {
+            if !normalized_signal_field_present(signal, field) {
+                issues.push(issue(
+                    "prompt_output_fit_readiness_missing_required_signal_field",
+                    "error",
+                    format!("{path}/ready_for_mdp_fit"),
+                    format!(
+                        "ready_for_mdp_fit is true, but normalized_prospect.signals[{index}] is missing required field {field}"
+                    ),
+                ));
+            }
+        }
+    }
+
+    for attribute in &manifest.lead_input_requirements.required_attributes {
+        if !normalized_attribute_present(prospect, attribute) {
+            issues.push(issue(
+                "prompt_output_fit_readiness_missing_required_attribute",
+                "error",
+                format!("{path}/ready_for_mdp_fit"),
+                format!(
+                    "ready_for_mdp_fit is true, but normalized_prospect.attributes is missing required attribute {attribute} from manifest lead_input_requirements.required_attributes"
+                ),
+            ));
+        }
+    }
+}
+
+fn normalized_prospect_field_present(
+    manifest: &Manifest,
+    prospect: &serde_json::Map<String, Value>,
+    field: &str,
+) -> bool {
+    match field {
+        "persona" => normalized_persona_present(manifest, prospect),
+        "signals" => prospect
+            .get("signals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| !signals.is_empty()),
+        "synthetic" => true,
+        _ => prospect.get(field).is_some_and(meaningful_json_value),
+    }
+}
+
+fn normalized_persona_present(
+    manifest: &Manifest,
+    prospect: &serde_json::Map<String, Value>,
+) -> bool {
+    prospect
+        .get("persona")
+        .and_then(Value::as_str)
+        .is_some_and(|persona| {
+            present(persona)
+                && resolve_pack_persona_label(manifest, persona, "normalized_prospect.persona")
+                    .is_some()
+        })
+        || prospect
+            .get("title")
+            .and_then(Value::as_str)
+            .is_some_and(|title| {
+                present(title)
+                    && resolve_pack_persona_label(manifest, title, "normalized_prospect.title")
+                        .is_some()
+            })
+}
+
+fn normalized_signal_field_present(signal: &Value, field: &str) -> bool {
+    signal
+        .as_object()
+        .and_then(|signal| signal.get(field))
+        .is_some_and(meaningful_json_value)
+}
+
+fn normalized_attribute_present(
+    prospect: &serde_json::Map<String, Value>,
+    attribute: &str,
+) -> bool {
+    prospect
+        .get("attributes")
+        .and_then(Value::as_object)
+        .and_then(|attributes| attributes.get(attribute))
+        .is_some_and(meaningful_json_value)
+}
+
+fn meaningful_json_value(value: &Value) -> bool {
+    match value {
+        Value::String(value) => present(value),
+        Value::Number(_) | Value::Bool(_) => true,
+        _ => false,
+    }
+}
+
+fn present(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty() && !value.eq_ignore_ascii_case("n/a")
 }
 
 fn validate_missing_required_trace(value: Option<&Value>, path: &str, issues: &mut Vec<Value>) {
@@ -1724,6 +1894,145 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_missing_ready_for_mdp_fit_boolean() {
+        let root = temp_pack("missing-ready-bool");
+        let path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "company_domain": "example.com",
+    "company_name": "ExampleCo",
+    "person_name": "Alex Rivera",
+    "person_title": "GTM Engineering Lead",
+    "account_name": "ExampleCo",
+    "inputs_used": ["raw_row"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "Alex Rivera",
+    "title": "GTM Engineering Lead",
+    "company": "ExampleCo",
+    "company_domain": "example.com",
+    "source_kind": "user-provided-row",
+    "persona": "GTM Engineering",
+    "segment": "agent-assisted GTM",
+    "trigger": "testing readiness",
+    "signals": [
+      {
+        "id": "readiness-test",
+        "title": "Readiness test",
+        "source": "raw_row.note"
+      }
+    ]
+  },
+  "normalization_trace": {
+    "persona": {},
+    "fit_readiness": {},
+    "preserved_raw_fields": ["raw_row"],
+    "missing_required": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "prompt_output_fit_readiness_ready_type")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_true_fit_readiness_when_required_attribute_missing() {
+        let root = temp_pack("missing-required-readiness-attribute");
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace(
+                "  required_attributes: []",
+                "  required_attributes:\n  - fiscal_year",
+            ),
+        )
+        .expect("manifest should be writable");
+        let path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-prospect-row",
+  "source_summary": {
+    "company_domain": "example.com",
+    "company_name": "ExampleCo",
+    "person_name": "Alex Rivera",
+    "person_title": "GTM Engineering Lead",
+    "account_name": "ExampleCo",
+    "inputs_used": ["raw_row"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "Alex Rivera",
+    "title": "GTM Engineering Lead",
+    "company": "ExampleCo",
+    "company_domain": "example.com",
+    "source_kind": "user-provided-row",
+    "persona": "GTM Engineering",
+    "segment": "agent-assisted GTM",
+    "trigger": "testing readiness",
+    "signals": [
+      {
+        "id": "readiness-test",
+        "title": "Readiness test",
+        "source": "raw_row.note"
+      }
+    ]
+  },
+  "normalization_trace": {
+    "persona": {},
+    "fit_readiness": {
+      "ready_for_mdp_fit": true
+    },
+    "preserved_raw_fields": ["raw_row"],
+    "missing_required": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-prospect-row"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"]
+                    == "prompt_output_fit_readiness_missing_required_attribute")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn validate_rejects_malformed_structured_missing_required_trace() {
         let root = temp_pack("bad-structured-missing-required");
         let path = write_output(
@@ -1819,7 +2128,9 @@ mod tests {
   },
   "normalization_trace": {
     "persona": {},
-    "fit_readiness": {},
+    "fit_readiness": {
+      "ready_for_mdp_fit": true
+    },
     "preserved_raw_fields": ["raw_row"],
     "missing_required": []
   },
@@ -1893,7 +2204,9 @@ mod tests {
   },
   "normalization_trace": {
     "persona": {},
-    "fit_readiness": {},
+    "fit_readiness": {
+      "ready_for_mdp_fit": true
+    },
     "preserved_raw_fields": ["raw_row"],
     "missing_required": []
   },
@@ -1958,7 +2271,9 @@ mod tests {
   },
   "normalization_trace": {
     "persona": {},
-    "fit_readiness": {},
+    "fit_readiness": {
+      "ready_for_mdp_fit": true
+    },
     "preserved_raw_fields": ["raw_row"],
     "missing_required": []
   },

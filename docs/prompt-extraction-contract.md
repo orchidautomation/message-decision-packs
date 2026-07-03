@@ -82,7 +82,7 @@ Use safe defaults instead of inventing facts:
 
 Validation rejects prompt files that do not require strict JSON output, omit both `schema_ref` and an inline response schema, use the wrong schema reference for the prompt output kind, let an inline response root accept extra keys, omit provenance/confidence fields, or include non-gap example entries with a real body and no evidence or provenance.
 
-Treat prompt output as reviewable artifact data, not automatic pack truth. Run `mdp --json validate-prompt-output --prompt-id <id> --file <output.json>` before applying reviewed card entries or promoting normalization output into the runtime CLI flow.
+Treat prompt output as reviewable artifact data, not automatic pack truth. Run `mdp --json validate-prompt-output --prompt-id <id> --file <output.json>` before applying reviewed card entries or promoting normalization output into the runtime CLI flow. For normalization prompts, validation also checks that `normalization_trace.fit_readiness.ready_for_mdp_fit` is a boolean and does not claim readiness while manifest-required prospect fields, signal fields, or attributes are missing. This is a contract/readiness consistency check; `mdp fit` remains the final fit decision.
 
 ## Starter Prompt Contracts
 
