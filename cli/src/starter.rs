@@ -255,6 +255,8 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
                 &[
                     "account-context-present",
                     "account-context-missing",
+                    "prompt-output-missing-readiness-boolean",
+                    "prompt-output-missing-required-field",
                     "prompt-output-validation",
                 ],
             ),
@@ -320,6 +322,8 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
                     "brief-insufficient-context",
                     "account-context-missing",
                     "account-only-no-draft",
+                    "prompt-output-missing-readiness-boolean",
+                    "prompt-output-missing-required-field",
                     "prompt-output-validation",
                 ],
             ),
@@ -343,6 +347,8 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
                     "account-context-present",
                     "account-context-missing",
                     "account-only-no-draft",
+                    "prompt-output-missing-readiness-boolean",
+                    "prompt-output-missing-required-field",
                     "prompt-output-validation",
                 ],
             ),
@@ -830,6 +836,127 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                             "state_as": "supplied"
                         }
                     ]
+                }
+            }),
+        ),
+        (
+            "prompt-output-missing-readiness-boolean.yaml",
+            json!({
+                "id": "prompt-output-missing-readiness-boolean",
+                "command": "validate-prompt-output",
+                "profile_eval": eval_profile(
+                    "prompt-output-validation",
+                    &["source-signals", "gaps"],
+                    &["prospect-fit-or-brief"]
+                ),
+                "prompt_id": "normalize-prospect-row",
+                "expect_valid": false,
+                "expect_issue_codes_contains": ["prompt_output_fit_readiness_ready_type"],
+                "prompt_output": {
+                    "contract": "mdp.prompt-output.v0",
+                    "prompt_id": "normalize-prospect-row",
+                    "source_summary": {
+                        "account_name": "Northstar Cloud",
+                        "company_domain": "northstarcloud.com",
+                        "company_name": "Northstar Cloud",
+                        "confidence": "medium",
+                        "inputs_used": ["raw_row", "existing_pack_context"],
+                        "person_name": "Alex Rivera",
+                        "person_title": "Revenue Operations Lead"
+                    },
+                    "normalized_prospect": {
+                        "name": "Alex Rivera",
+                        "title": "Revenue Operations Lead",
+                        "company": "Northstar Cloud",
+                        "company_domain": "northstarcloud.com",
+                        "source_kind": "synthetic-example",
+                        "synthetic": true,
+                        "persona": "GTM Engineering",
+                        "segment": "agent-assisted GTM",
+                        "trigger": "standardizing prospect qualification data before routing new campaigns",
+                        "signals": [
+                            {
+                                "id": "qualification-data-standardization",
+                                "title": "Standardizing prospect qualification data",
+                                "source": "raw_row.account_note"
+                            }
+                        ]
+                    },
+                    "normalization_trace": {
+                        "persona": {
+                            "source": "existing_pack_context.persona_mappings",
+                            "matched_keywords": ["revenue operations"],
+                            "confidence": "medium",
+                            "needs_review": false
+                        },
+                        "fit_readiness": {},
+                        "missing_required": [],
+                        "preserved_raw_fields": ["raw_row"]
+                    },
+                    "card_patches": [],
+                    "gaps": [],
+                    "rejected_claims": []
+                }
+            }),
+        ),
+        (
+            "prompt-output-missing-required-field.yaml",
+            json!({
+                "id": "prompt-output-missing-required-field",
+                "command": "validate-prompt-output",
+                "profile_eval": eval_profile(
+                    "prompt-output-validation",
+                    &["actors", "source-signals", "gaps"],
+                    &["prospect-fit-or-brief"]
+                ),
+                "prompt_id": "normalize-prospect-row",
+                "expect_valid": false,
+                "expect_issue_codes_contains": ["prompt_output_fit_readiness_missing_required_field"],
+                "prompt_output": {
+                    "contract": "mdp.prompt-output.v0",
+                    "prompt_id": "normalize-prospect-row",
+                    "source_summary": {
+                        "account_name": "Northstar Cloud",
+                        "company_domain": "northstarcloud.com",
+                        "company_name": "Northstar Cloud",
+                        "confidence": "medium",
+                        "inputs_used": ["raw_row", "existing_pack_context"],
+                        "person_name": "Alex Rivera",
+                        "person_title": "Revenue Operations Lead"
+                    },
+                    "normalized_prospect": {
+                        "name": "Alex Rivera",
+                        "title": "Revenue Operations Lead",
+                        "company": "Northstar Cloud",
+                        "company_domain": "northstarcloud.com",
+                        "source_kind": "synthetic-example",
+                        "synthetic": true,
+                        "persona": "GTM Engineering",
+                        "segment": "agent-assisted GTM",
+                        "signals": [
+                            {
+                                "id": "qualification-data-standardization",
+                                "title": "Standardizing prospect qualification data",
+                                "source": "raw_row.account_note"
+                            }
+                        ]
+                    },
+                    "normalization_trace": {
+                        "persona": {
+                            "source": "existing_pack_context.persona_mappings",
+                            "matched_keywords": ["revenue operations"],
+                            "confidence": "medium",
+                            "needs_review": false
+                        },
+                        "fit_readiness": {
+                            "ready_for_mdp_fit": true
+                        },
+                        "missing_required": [],
+                        "preserved_raw_fields": ["raw_row"]
+                    },
+                    "card_patches": [],
+                    "gaps": [],
+                    "rejected_claims": []
                 }
             }),
         ),

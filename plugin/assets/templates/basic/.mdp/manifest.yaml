@@ -171,6 +171,8 @@ primitive_map:
     - account-context-present
     - account-context-missing
     - account-only-no-draft
+    - prompt-output-missing-readiness-boolean
+    - prompt-output-missing-required-field
     - prompt-output-validation
   evidence-proof:
     cards:
@@ -184,6 +186,8 @@ primitive_map:
     - brief-insufficient-context
     - account-context-missing
     - account-only-no-draft
+    - prompt-output-missing-readiness-boolean
+    - prompt-output-missing-required-field
     - prompt-output-validation
   needs-requirements:
     cards:
@@ -214,6 +218,8 @@ primitive_map:
     evals:
     - account-context-present
     - account-context-missing
+    - prompt-output-missing-readiness-boolean
+    - prompt-output-missing-required-field
     - prompt-output-validation
 input_contracts:
 - id: prospect
