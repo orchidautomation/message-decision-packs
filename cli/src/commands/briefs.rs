@@ -446,6 +446,31 @@ mod tests {
     }
 
     #[test]
+    fn brief_rejects_unknown_prospect_fields_before_drafting() {
+        let root = temp_pack("brief-unknown-prospect-field");
+        let prospect_path = root.join("examples").join("unknown-field.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "GTM Engineering Lead",
+  "company": "ExampleCo",
+  "territory": "enterprise"
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let err = prospect_brief(&root, &prospect_path, "linkedin", None)
+            .expect_err("unknown prospect field should fail");
+        let message = err.to_string();
+
+        assert!(message.contains("prospect_unknown_field"));
+        assert!(message.contains("attributes.territory"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn emit_brief_resolves_manifest_persona_aliases() {
         let root = temp_pack("emit-brief-persona-alias");
 

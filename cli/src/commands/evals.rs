@@ -5,6 +5,7 @@ use crate::commands::routing::{check_claims, fit_prospect, route};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
 use crate::pack_io::read_manifest;
+use crate::prospect_validation::validate_prospect_value;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -149,16 +150,19 @@ fn run_fixture(
             true,
             false,
         )?,
-        "fit" => {
-            let prospect = parse_prospect(path, fixture)?;
-            fit_prospect(root, prospect)?
-        }
-        "brief" => prospect_brief_from_value(
-            root,
-            parse_prospect(path, fixture)?,
-            fixture.channel.as_deref().unwrap_or("linkedin"),
-            fixture.job.as_deref(),
-        )?,
+        "fit" => match parse_prospect(path, fixture)? {
+            ParsedProspect::Valid(prospect) => fit_prospect(root, prospect)?,
+            ParsedProspect::Invalid(output) => output,
+        },
+        "brief" => match parse_prospect(path, fixture)? {
+            ParsedProspect::Valid(prospect) => prospect_brief_from_value(
+                root,
+                prospect,
+                fixture.channel.as_deref().unwrap_or("linkedin"),
+                fixture.job.as_deref(),
+            )?,
+            ParsedProspect::Invalid(output) => output,
+        },
         "gaps" => gaps(root)?,
         "validate-prompt-output" => validate_prompt_output_fixture(root, path, fixture)?,
         "check-claims" => check_claims(
@@ -365,14 +369,26 @@ fn require<T>(path: &Path, value: Option<&T>, field: &str, issues: &mut Vec<Valu
     }
 }
 
-fn parse_prospect(path: &Path, fixture: &EvalFixture) -> Result<Prospect> {
-    serde_json::from_value(
-        fixture
-            .prospect
-            .clone()
-            .with_context(|| format!("{} missing prospect", path.display()))?,
-    )
-    .with_context(|| format!("{} invalid prospect", path.display()))
+enum ParsedProspect {
+    Valid(Prospect),
+    Invalid(Value),
+}
+
+fn parse_prospect(path: &Path, fixture: &EvalFixture) -> Result<ParsedProspect> {
+    let value = fixture
+        .prospect
+        .clone()
+        .with_context(|| format!("{} missing prospect", path.display()))?;
+    let issues = validate_prospect_value(&value, &format!("{}#/prospect", path.display()));
+    if !issues.is_empty() {
+        return Ok(ParsedProspect::Invalid(json!({
+            "valid": false,
+            "issues": issues
+        })));
+    }
+    serde_json::from_value(value)
+        .map(ParsedProspect::Valid)
+        .with_context(|| format!("{} invalid prospect", path.display()))
 }
 
 fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &mut Vec<Value>) {
@@ -779,6 +795,84 @@ prompt_output:
                 .iter()
                 .any(|issue| issue["code"] == "prompt_output_fake_person")
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn eval_fit_fixture_reports_unknown_prospect_fields() {
+        let root = temp_pack("eval-unknown-prospect-field");
+        let fixture_path = root
+            .join(".mdp")
+            .join("evals")
+            .join("unknown-prospect.yaml");
+        std::fs::write(
+            &fixture_path,
+            r#"id: unknown-prospect
+command: fit
+expect_valid: false
+expect_issue_codes_contains:
+  - prospect_unknown_field
+prospect:
+  name: Taylor Lee
+  title: GTM Engineering Lead
+  company: ExampleCo
+  territory: enterprise
+"#,
+        )
+        .expect("fixture should be writable");
+
+        let result = eval_pack(&root).expect("eval should succeed");
+        let fixture = result["fixtures"]
+            .as_array()
+            .expect("fixtures array")
+            .iter()
+            .find(|fixture| fixture["id"] == "unknown-prospect")
+            .expect("unknown-prospect fixture should be present");
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(fixture["valid"], true);
+        assert_eq!(fixture["output"]["valid"], false);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn eval_brief_fixture_reports_unknown_signal_fields() {
+        let root = temp_pack("eval-unknown-signal-field");
+        let fixture_path = root.join(".mdp").join("evals").join("unknown-signal.yaml");
+        std::fs::write(
+            &fixture_path,
+            r#"id: unknown-signal
+command: brief
+channel: linkedin
+expect_valid: false
+expect_issue_codes_contains:
+  - prospect_signal_unknown_field
+prospect:
+  name: Taylor Lee
+  title: GTM Engineering Lead
+  company: ExampleCo
+  signals:
+    - id: agent-gtm-workflow
+      title: Building multi-agent GTM workflow
+      source: example row
+      url: https://example.com
+"#,
+        )
+        .expect("fixture should be writable");
+
+        let result = eval_pack(&root).expect("eval should succeed");
+        let fixture = result["fixtures"]
+            .as_array()
+            .expect("fixtures array")
+            .iter()
+            .find(|fixture| fixture["id"] == "unknown-signal")
+            .expect("unknown-signal fixture should be present");
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(fixture["valid"], true);
+        assert_eq!(fixture["output"]["valid"], false);
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -1629,6 +1629,59 @@ mod tests {
     }
 
     #[test]
+    fn fit_rejects_unknown_top_level_prospect_fields() {
+        let root = temp_pack("fit-unknown-prospect-field");
+        let prospect_path = root.join("examples").join("unknown-field.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "territory": "enterprise",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let err = fit(&root, &prospect_path).expect_err("unknown field should fail");
+        let message = err.to_string();
+
+        assert!(message.contains("prospect_unknown_field"));
+        assert!(message.contains("attributes.territory"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_rejects_unknown_signal_fields() {
+        let root = temp_pack("fit-unknown-signal-field");
+        let prospect_path = root.join("examples").join("unknown-signal-field.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing outbound context across agents",
+  "signals": [{"id": "agent-gtm-workflow", "title": "Building multi-agent GTM workflow", "source": "example row", "url": "https://example.com"}]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let err = fit(&root, &prospect_path).expect_err("unknown signal field should fail");
+        let message = err.to_string();
+
+        assert!(message.contains("prospect_signal_unknown_field"));
+        assert!(message.contains("signals[].source"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn fit_gate_uses_manifest_persona_mapping_for_titles() {
         let root = temp_pack("fit-persona-mapping");
         let prospect_path = root.join("examples").join("demand-gen.json");
