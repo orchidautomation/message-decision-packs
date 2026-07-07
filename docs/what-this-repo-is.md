@@ -134,6 +134,7 @@ mdp route
 mdp fit
 mdp brief
 mdp check-claims
+mdp verify-output
 mdp gaps
 mdp eval
 ```
@@ -338,7 +339,7 @@ Use this version:
 ```text
 This repo is a local standard and CLI for turning messaging or review strategy into structured files that AI agents can safely use.
 
-Instead of pasting the same product, ICP, proposal requirement, claim, proof, and output-rule context into every AI thread, you put that judgment into a Message Decision Pack. The CLI validates it, routes only the relevant cards for a task, checks whether supplied context is strong enough, generates a brief when the workflow needs one, and checks draft or review text for unsupported claims.
+Instead of pasting the same product, ICP, proposal requirement, claim, proof, and output-rule context into every AI thread, you put that judgment into a Message Decision Pack. The CLI validates it, routes only the relevant cards for a task, checks whether supplied context is strong enough, generates a brief when the workflow needs one, checks draft or review text for unsupported claims, and verifies proof-carrying generated output artifacts against real pack IDs before treating source IDs as proof.
 
 It is not a sender, CRM, sequencer, scraper, or AI SDR. It is the decision layer before those systems.
 

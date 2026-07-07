@@ -2,6 +2,7 @@ use crate::commands::briefs::prospect_brief_from_value;
 use crate::commands::health::{KNOWN_PRIMITIVES, KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
 use crate::commands::prompt_output::validate_prompt_output_value;
 use crate::commands::routing::{check_claims, fit_prospect, route};
+use crate::commands::{verify_output_file, verify_output_value};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
 use crate::pack_io::read_manifest;
@@ -26,6 +27,8 @@ struct EvalFixture {
     prompt: Option<std::path::PathBuf>,
     prompt_id: Option<String>,
     prompt_output: Option<Value>,
+    proof_output: Option<Value>,
+    proof_output_file: Option<std::path::PathBuf>,
     text: Option<String>,
     subject: Option<String>,
     expect_load_order_contains: Option<Vec<String>>,
@@ -33,6 +36,7 @@ struct EvalFixture {
     expect_entry_titles_contains: Option<Vec<String>>,
     expect_entry_titles_excludes: Option<Vec<String>>,
     expect_status: Option<String>,
+    expect_decision: Option<String>,
     expect_draft_status: Option<String>,
     expect_valid: Option<bool>,
     expect_normalization_ready: Option<bool>,
@@ -165,6 +169,7 @@ fn run_fixture(
         },
         "gaps" => gaps(root)?,
         "validate-prompt-output" => validate_prompt_output_fixture(root, path, fixture)?,
+        "verify-output" => validate_proof_output_fixture(root, path, fixture)?,
         "check-claims" => check_claims(
             root,
             fixture.text.as_deref(),
@@ -252,6 +257,24 @@ fn validate_fixture(
                     "error",
                     format!("{}#/prompt_id", path.display()),
                     "fixture must define prompt_id or prompt",
+                ));
+            }
+        }
+        "verify-output" => {
+            if fixture.proof_output.is_some() && fixture.proof_output_file.is_some() {
+                issues.push(issue(
+                    "eval_fixture_proof_output_reference_conflict",
+                    "error",
+                    path.display().to_string(),
+                    "verify-output fixtures must define only one of proof_output or proof_output_file",
+                ));
+            }
+            if fixture.proof_output.is_none() && fixture.proof_output_file.is_none() {
+                issues.push(issue(
+                    "eval_fixture_missing_field",
+                    "error",
+                    format!("{}#/proof_output_file", path.display()),
+                    "fixture must define proof_output or proof_output_file",
                 ));
             }
         }
@@ -358,6 +381,27 @@ fn validate_prompt_output_fixture(
     result
 }
 
+fn validate_proof_output_fixture(root: &Path, path: &Path, fixture: &EvalFixture) -> Result<Value> {
+    if let Some(proof_output) = fixture.proof_output.as_ref() {
+        return verify_output_value(
+            root,
+            proof_output,
+            &format!("{}#/proof_output", path.display()),
+        );
+    }
+
+    let proof_output_file = fixture
+        .proof_output_file
+        .as_ref()
+        .context("validated proof_output_file")?;
+    let artifact_path = if proof_output_file.is_absolute() {
+        proof_output_file.clone()
+    } else {
+        root.join(proof_output_file)
+    };
+    verify_output_file(root, &artifact_path)
+}
+
 fn require<T>(path: &Path, value: Option<&T>, field: &str, issues: &mut Vec<Value>) {
     if value.is_none() {
         issues.push(issue(
@@ -461,6 +505,19 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
                 format!(
                     "expected status {expected_status}, got {}",
                     output["status"]
+                ),
+            ));
+        }
+    }
+    if let Some(expected_decision) = &fixture.expect_decision {
+        if output["decision"] != expected_decision.as_str() {
+            issues.push(issue(
+                "eval_decision_mismatch",
+                "error",
+                path.display().to_string(),
+                format!(
+                    "expected decision {expected_decision}, got {}",
+                    output["decision"]
                 ),
             ));
         }

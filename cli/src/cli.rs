@@ -74,6 +74,13 @@ pub(crate) enum Commands {
         #[arg(long, help = "Fail validation-style flows on warnings where supported")]
         strict: bool,
     },
+    #[command(about = "Verify proof-carrying generated output against loaded pack IDs")]
+    VerifyOutput {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long)]
+        file: PathBuf,
+    },
     #[command(about = "Explain what an agent should load")]
     Explain {
         #[arg(long, default_value = ".")]
@@ -212,6 +219,7 @@ pub(crate) enum SchemaTarget {
     Manifest,
     Card,
     Prompt,
+    ProofOutput,
     Brief,
     RuntimeContext,
     Prospect,

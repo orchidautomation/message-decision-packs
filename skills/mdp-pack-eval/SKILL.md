@@ -45,6 +45,8 @@ Passing evals only proves the declared fixture assertions. After retargeting per
 
 `mdp eval` can run `command: validate-prompt-output` fixtures with `prompt_id` or `prompt` plus inline `prompt_output`. Use this to prove normalization contracts reject invented account/person output before a prospect row reaches `mdp fit` or `mdp brief`.
 
+`mdp eval` can also run `command: verify-output` fixtures with either inline `proof_output` or `proof_output_file`. Use this to prove generated claim-bearing text fails closed when a model invents card/source IDs, omits material bindings, smooths a gap, or includes unsupported full-text claims. Source IDs are not proof until `mdp verify-output` resolves them against the loaded pack.
+
 2. Choose representative cases:
 
 - each primary persona
@@ -55,6 +57,7 @@ Passing evals only proves the declared fixture assertions. After retargeting per
 - account context present and missing cases when the profile declares account-context categories
 - account-only no-draft behavior when company context exists but person/persona readiness is missing
 - prompt-output validation for invented or out-of-contract normalized rows
+- proof-output validation for valid bindings, fake IDs, missing bindings, malformed coverage, safe gaps, connective text, and unsupported generated claims when the pack uses proof-carrying output
 - one bad-fit or unsupported persona
 
 3. Run routes:
@@ -97,6 +100,7 @@ For each case, check:
 - eval fixtures pass
 - profile eval categories cover the declared activation gates
 - prompt-output validation fixtures reject invented people, unsupported values, or out-of-contract account context before fit/brief
+- proof-output fixtures reject fake source/card IDs and unbound material generated claims before output text is treated as usable
 - primitive map references point to existing cards, prompts, input contracts, jobs, and eval fixtures
 - decision trace is understandable
 - generated eval fixture scaffolds are reviewed before committing so tests encode intended behavior, not accidental routing noise

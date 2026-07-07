@@ -61,6 +61,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
             })
         }
         SchemaTarget::Prompt => prompt_schema(card_kinds),
+        SchemaTarget::ProofOutput => proof_output_schema(),
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
         SchemaTarget::Prospect => {
@@ -82,7 +83,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                 "required": ["id", "command"],
                 "properties": {
                     "id": {"type": "string"},
-                    "command": {"enum": ["route", "fit", "brief", "gaps", "check-claims", "validate-prompt-output"]},
+                    "command": {"enum": ["route", "fit", "brief", "gaps", "check-claims", "validate-prompt-output", "verify-output"]},
                     "profile_eval": profile_eval_fixture_schema(),
                     "persona": {"type": "string"},
                     "job": {"type": "string"},
@@ -91,6 +92,8 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                     "prompt": {"type": "string"},
                     "prompt_id": {"type": "string"},
                     "prompt_output": {"type": "object"},
+                    "proof_output": proof_output_schema(),
+                    "proof_output_file": {"type": "string"},
                     "text": {"type": "string"},
                     "subject": {"type": "string"},
                     "expect_load_order_contains": string_array(),
@@ -98,6 +101,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                     "expect_entry_titles_contains": string_array(),
                     "expect_entry_titles_excludes": string_array(),
                     "expect_status": {"type": "string"},
+                    "expect_decision": {"type": "string"},
                     "expect_draft_status": {"type": "string"},
                     "expect_valid": {"type": "boolean"},
                     "expect_normalization_ready": {"type": "boolean"},
@@ -110,6 +114,171 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         }
         SchemaTarget::AgentSurface => agent_surface_schema(),
     }
+}
+
+fn proof_output_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Proof Output v0",
+        "type": "object",
+        "required": ["contract", "pack", "output", "coverage", "segments"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": "mdp.proof-output.v0"},
+            "pack": {
+                "type": "object",
+                "required": ["id"],
+                "additionalProperties": false,
+                "properties": {
+                    "id": {"type": "string"},
+                    "profile_id": {"type": "string"},
+                    "pack_hash": {"type": "string"}
+                }
+            },
+            "route": {
+                "type": "object",
+                "required": ["persona", "job"],
+                "additionalProperties": false,
+                "properties": {
+                    "persona": non_blank_string_schema(),
+                    "job": non_blank_string_schema()
+                }
+            },
+            "output": {
+                "type": "object",
+                "required": ["kind", "format", "text"],
+                "additionalProperties": false,
+                "properties": {
+                    "kind": {"type": "string"},
+                    "format": {"type": "string"},
+                    "text": {"type": "string"}
+                }
+            },
+            "coverage": {
+                "type": "object",
+                "required": ["mode", "material_policy"],
+                "additionalProperties": false,
+                "properties": {
+                    "mode": {"const": "full-segmentation"},
+                    "material_policy": {"const": "bound-or-gap"}
+                }
+            },
+            "segments": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": ["id", "kind", "text"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": {"type": "string"},
+                        "kind": {"enum": ["claim", "requirement_status", "template_text", "gap", "connective", "formatting"]},
+                        "text": {"type": "string"},
+                        "material": {"type": "boolean", "description": "Set false for connective or formatting-only text that carries no proof binding."},
+                        "gap": {
+                            "type": "object",
+                            "required": ["code", "reason"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "code": {"type": "string"},
+                                "reason": {"type": "string"}
+                            }
+                        },
+                        "refs": {
+                            "type": "array",
+                            "items": {
+                                "oneOf": [
+                                    proof_card_entry_ref_schema(),
+                                    proof_source_ref_schema(),
+                                    proof_prompt_input_ref_schema(),
+                                    proof_input_contract_ref_schema(),
+                                    proof_route_ref_schema()
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn proof_card_entry_ref_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["type", "role", "card_id", "entry_id"],
+        "additionalProperties": false,
+        "properties": {
+            "type": {"const": "card_entry"},
+            "role": proof_ref_role_schema(),
+            "card_id": {"type": "string"},
+            "entry_id": {"type": "string"},
+            "kind": {"type": "string"},
+            "primitive": {"type": "string"}
+        }
+    })
+}
+
+fn proof_source_ref_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["type", "role", "source_id"],
+        "additionalProperties": false,
+        "properties": {
+            "type": {"const": "source"},
+            "role": proof_ref_role_schema(),
+            "source_id": {"type": "string"}
+        }
+    })
+}
+
+fn proof_prompt_input_ref_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["type", "role", "prompt_id", "input_name"],
+        "additionalProperties": false,
+        "properties": {
+            "type": {"const": "prompt_input"},
+            "role": proof_ref_role_schema(),
+            "prompt_id": {"type": "string"},
+            "input_name": {"type": "string"}
+        }
+    })
+}
+
+fn proof_input_contract_ref_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["type", "role", "input_contract_id"],
+        "additionalProperties": false,
+        "properties": {
+            "type": {"const": "input_contract"},
+            "role": proof_ref_role_schema(),
+            "input_contract_id": {"type": "string"}
+        }
+    })
+}
+
+fn proof_route_ref_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["type", "role", "persona", "job"],
+        "additionalProperties": false,
+        "properties": {
+            "type": {"const": "route"},
+            "role": proof_ref_role_schema(),
+            "persona": non_blank_string_schema(),
+            "job": non_blank_string_schema()
+        }
+    })
+}
+
+fn proof_ref_role_schema() -> Value {
+    json!({"enum": ["supports", "constrains", "renders", "requires", "supports-gap"]})
+}
+
+fn non_blank_string_schema() -> Value {
+    json!({"type": "string", "pattern": "\\S"})
 }
 
 fn manifest_schema(card_kinds: [&str; 15]) -> Value {

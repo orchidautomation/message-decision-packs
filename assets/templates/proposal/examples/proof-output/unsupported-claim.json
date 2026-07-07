@@ -1,0 +1,42 @@
+{
+  "contract": "mdp.proof-output.v0",
+  "pack": {
+    "id": "proposal-mdp-sample",
+    "profile_id": "proposal"
+  },
+  "route": {
+    "persona": "Proposal Lead",
+    "job": "compliance review"
+  },
+  "output": {
+    "kind": "proposal-review-section",
+    "format": "markdown",
+    "text": "The sample team is CMMC compliant."
+  },
+  "coverage": {
+    "mode": "full-segmentation",
+    "material_policy": "bound-or-gap"
+  },
+  "segments": [
+    {
+      "id": "seg-001",
+      "kind": "claim",
+      "text": "The sample team is CMMC compliant.",
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "supports",
+          "card_id": "proof-library",
+          "entry_id": "approved-synthetic-proof",
+          "kind": "claims",
+          "primitive": "evidence-proof"
+        },
+        {
+          "type": "source",
+          "role": "supports",
+          "source_id": "synthetic-proof-inventory"
+        }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 MDP has two different eval surfaces:
 
-- Pack evals under `.mdp/evals/` test the CLI, template, routing, prompt-output, fit, gaps, and claim-check behavior.
+- Pack evals under `.mdp/evals/` test the CLI, template, routing, prompt-output, proof-output, fit, gaps, and claim-check behavior.
 - Skill evals under `plugin/skills/<skill>/evals/` test whether agent-facing skills trigger on the right user requests and produce useful outputs.
 
 The skill eval files are intentionally simple JSON so they can be reused by Codex, Blocks, or another client-specific harness.

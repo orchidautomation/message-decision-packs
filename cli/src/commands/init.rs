@@ -156,6 +156,48 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/evals/proof-output-connective-text.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-connective-text.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-output-fake-id.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-fake-id.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-output-gap-only-safe.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-gap-only-safe.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-output-malformed-artifact.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-malformed-artifact.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-output-missing-binding.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-missing-binding.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-output-unsupported-claim.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-unsupported-claim.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-output-valid-binding.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-valid-binding.yaml"
+        ),
+    ),
+    (
         ".mdp/evals/proof-review-route.yaml",
         include_str!(
             "../../../plugin/assets/templates/proposal/.mdp/evals/proof-review-route.yaml"
@@ -173,6 +215,48 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ".mdp/prompts/normalize-opportunity.yaml",
         include_str!(
             "../../../plugin/assets/templates/proposal/.mdp/prompts/normalize-opportunity.yaml"
+        ),
+    ),
+    (
+        "examples/proof-output/connective-text.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/connective-text.json"
+        ),
+    ),
+    (
+        "examples/proof-output/fake-id.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/fake-id.json"
+        ),
+    ),
+    (
+        "examples/proof-output/gap-only-safe.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/gap-only-safe.json"
+        ),
+    ),
+    (
+        "examples/proof-output/malformed-artifact.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/malformed-artifact.json"
+        ),
+    ),
+    (
+        "examples/proof-output/missing-binding.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/missing-binding.json"
+        ),
+    ),
+    (
+        "examples/proof-output/unsupported-claim.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/unsupported-claim.json"
+        ),
+    ),
+    (
+        "examples/proof-output/valid-binding.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/valid-binding.json"
         ),
     ),
 ];
@@ -349,10 +433,13 @@ fn init_proposal_pack_dry_run(root: &Path, name: &str, force: bool) -> Result<Va
         .map(|path| planned_directory(&path))
         .collect::<Vec<_>>();
     for (relative_path, _) in PROPOSAL_TEMPLATE_FILES {
-        write_plan.push(planned_yaml_write_after_dirs(
-            &root.join(relative_path),
-            force,
-        ));
+        let target = root.join(relative_path);
+        let planned_write = if relative_path.ends_with(".json") {
+            planned_json_write_after_dirs(&target, force)
+        } else {
+            planned_yaml_write_after_dirs(&target, force)
+        };
+        write_plan.push(planned_write);
     }
     if let Some(object) = payload.as_object_mut() {
         object.insert("dry_run".to_string(), json!(true));
@@ -372,6 +459,7 @@ fn proposal_template_dirs(root: &Path) -> Vec<PathBuf> {
         pack_dir.join("cards"),
         pack_dir.join("evals"),
         pack_dir.join("prompts"),
+        root.join("examples").join("proof-output"),
     ]
 }
 
