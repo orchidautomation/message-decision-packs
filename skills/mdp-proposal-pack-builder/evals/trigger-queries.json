@@ -16,7 +16,7 @@
     {"id": "proposal-train-011", "split": "train", "query": "Fix this Rust test failure in route scoring.", "should_trigger": false},
     {"id": "proposal-train-012", "split": "train", "query": "Draft a casual LinkedIn post about enterprise pilots.", "should_trigger": false},
     {"id": "proposal-validation-001", "split": "validation", "query": "I have approved synthetic opportunity notes. Turn them into a proposal profile pack and validate it.", "should_trigger": true},
-    {"id": "proposal-validation-002", "split": "validation", "query": "The proposal pack has stale City of Exampleton examples. Refresh the opportunity context safely.", "should_trigger": true},
+    {"id": "proposal-validation-002", "split": "validation", "query": "The proposal pack has stale starter opportunity examples. Refresh the contract fixture safely.", "should_trigger": true},
     {"id": "proposal-validation-003", "split": "validation", "query": "Map requirements, proof, compliance boundaries, and review outputs into proposal cards.", "should_trigger": true},
     {"id": "proposal-validation-004", "split": "validation", "query": "Use normalize-opportunity and make sure unsupported proof goes to gaps.", "should_trigger": true},
     {"id": "proposal-validation-005", "split": "validation", "query": "Send the proposal to the procurement officer.", "should_trigger": false},

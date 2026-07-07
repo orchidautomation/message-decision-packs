@@ -16,10 +16,10 @@ prompt_output:
   prompt_id: normalize-opportunity
   source_summary:
     company_domain: N/A
-    company_name: City of Exampleton
+    company_name: Example Public Services Agency
     person_name: N/A
     person_title: N/A
-    account_name: Synthetic permit modernization RFP
+    account_name: Neutral proposal contract fixture
     inputs_used:
     - raw_opportunity
     - existing_pack_context
@@ -28,21 +28,21 @@ prompt_output:
   normalized_prospect:
     name: N/A
     title: N/A
-    company: City of Exampleton
-    company_domain: exampleton.gov
+    company: Example Public Services Agency
+    company_domain: public-services.example
     source_kind: synthetic-example
     synthetic: true
-    background: Synthetic opportunity notes say the city wants permit workflow modernization review.
-    trigger: Synthetic permit modernization RFP needs bid/no-bid review before drafting.
+    background: Neutral synthetic opportunity notes need public services review.
+    trigger: Synthetic public services opportunity needs bid/no-bid review before drafting.
     persona: Proposal Lead
-    segment: municipal-modernization
+    segment: public-services-review
     attributes:
       opportunity_stage: bid-no-bid
       pursuit_decision: needs-more-info
       source_safety: synthetic
     signals:
-    - id: permit-modernization-rfp
-      title: Permit modernization RFP context supplied
+    - id: public-services-review-context
+      title: Public services review context supplied
       confidence: medium
       freshness: synthetic
       state_as: supplied
@@ -56,7 +56,7 @@ prompt_output:
     fit_readiness:
       ready_for_mdp_fit: true
     preserved_raw_fields:
-    - raw_opportunity.rfp_summary
+    - raw_opportunity.summary
     - source_kind
     missing_required: []
   card_patches: []

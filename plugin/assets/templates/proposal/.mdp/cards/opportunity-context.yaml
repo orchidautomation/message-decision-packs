@@ -11,9 +11,9 @@ tags:
 - source
 - RFP
 entries:
-- id: exampleton-permit-modernization
-  title: City of Exampleton permit modernization
-  body: The synthetic customer wants a modernized permit intake workflow with online submission, status notifications, reporting, and staff training. This is fictional demo context only.
+- id: public-services-modernization
+  title: Example Public Services Agency modernization
+  body: The synthetic buyer wants a modernized public services workflow with online intake, status notifications, reporting, and staff training. This is fictional demo context only.
   applies_to:
   - Proposal Lead
   - Executive Reviewer

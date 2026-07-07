@@ -175,19 +175,19 @@ For a real lead row, prefer this shape:
 ```json
 {
   "name": "Alex Rivera",
-  "title": "GTM Engineering Lead",
+  "title": "Revenue Operations Lead",
   "company": "ExampleCo",
   "company_domain": "example.com",
   "persona": "GTM Engineering",
   "segment": "agent-assisted GTM",
-  "trigger": "standardizing outbound context across agents and systems",
+  "trigger": "standardizing outbound context before agents draft or route campaign briefs",
   "attributes": {
     "fiscal_year": "FY2027"
   },
   "signals": [
     {
-      "id": "agent-gtm-workflow",
-      "title": "Building multi-agent GTM workflow",
+      "id": "revops-owner-context-standardization",
+      "title": "RevOps owner standardizing campaign context",
       "source": "source row note",
       "confidence": "medium"
     }
