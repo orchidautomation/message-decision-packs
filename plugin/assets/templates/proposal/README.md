@@ -26,6 +26,7 @@ cargo run --manifest-path cli/Cargo.toml -- --json validate --dir plugin/assets/
 cargo run --manifest-path cli/Cargo.toml -- --json eval --dir plugin/assets/templates/proposal
 cargo run --manifest-path cli/Cargo.toml -- --json validate-prompt-output --dir plugin/assets/templates/proposal --prompt-id normalize-opportunity --file <prompt-output.json>
 cargo run --manifest-path cli/Cargo.toml -- --json verify-output --dir plugin/assets/templates/proposal --file plugin/assets/templates/proposal/examples/proof-output/valid-binding.json
+cargo run --manifest-path cli/Cargo.toml -- verify-output --readable --dir plugin/assets/templates/proposal --file plugin/assets/templates/proposal/examples/proof-output/valid-binding.json
 cargo run --manifest-path cli/Cargo.toml -- --json route --entries --dir plugin/assets/templates/proposal --persona "Proposal Lead" --job "bid no bid review"
 cargo run --manifest-path cli/Cargo.toml -- --json gaps --dir plugin/assets/templates/proposal
 cargo run --manifest-path cli/Cargo.toml -- --json check-claims --dir plugin/assets/templates/proposal --persona "Proposal Lead" --job "compliance review" --text "The sample team is CMMC compliant."
@@ -43,6 +44,8 @@ The eval fixtures cover:
 `prompts/normalize-opportunity.yaml` also includes a neutral `output_contract.example` fixture. Treat that as a JSON contract example, not as the active demo scenario; when retargeting the template, update eval IDs, titles, jobs, and scenario examples together or explicitly mark examples as contract-only fixtures.
 
 The files under `examples/proof-output/` are synthetic `mdp.proof-output.v0` artifacts. A source ID written by a model is not proof by itself; run `mdp --json verify-output --dir <pack> --file <proof-output.json>` and only treat the generated text as proof-bound when the verifier returns `valid: true`.
+
+For human review, run `mdp verify-output --readable --dir <pack> --file <proof-output.json>`. The readable artifact is Markdown with top-of-file YAML frontmatter and proposal review sections for requirement status, proof receipts, unsupported claims, gaps, verification status, and next actions. The Markdown is a review layer only; the proof-output JSON and verifier result remain the machine source of truth.
 
 ## Safety Boundary
 

@@ -288,9 +288,10 @@ For generated review/output text that carries material claims and source or card
 
 ```bash
 mdp --json verify-output --dir . --file <proof-output.json>
+mdp verify-output --readable --dir . --file <proof-output.json>
 ```
 
-`verify-output` accepts `contract: mdp.proof-output.v0` artifacts with complete ordered segments. Material `claim`, `requirement_status`, and `template_text` segments must bind to real pack IDs; `gap` segments must stay explicit about missing proof or source context; `connective` or `formatting` segments may be unbound only when `material: false`. A source ID in model-written prose is not proof until `verify-output` resolves it and the embedded full-text `check-claims` pass is clean.
+`verify-output` accepts `contract: mdp.proof-output.v0` artifacts with complete ordered segments. Material `claim`, `requirement_status`, and `template_text` segments must bind to real pack IDs; `gap` segments must stay explicit about missing proof or source context; `connective` or `formatting` segments may be unbound only when `material: false`. A source ID in model-written prose is not proof until `verify-output` resolves it and the embedded full-text `check-claims` pass is clean. For proposal packs, `--readable` emits a Markdown proposal review layer with YAML frontmatter, proof receipts, unsupported claims, gaps, and next actions; treat it as human review output, not the machine source of truth.
 
 For pack QA:
 

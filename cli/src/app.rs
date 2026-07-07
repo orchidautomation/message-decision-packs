@@ -3,7 +3,7 @@ use crate::commands::{
     agent_surface, capabilities, check_claims, demo_copy, doctor, emit_brief, eval_pack, explain,
     fit, gaps, init_pack, init_pack_dry_run, pack, prospect_brief_with_context,
     render_readable_prospect_brief, route, sample_leads, schema, validate_pack,
-    validate_prompt_output_file, verify_output_file,
+    validate_prompt_output_file, verify_output_file, verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -72,9 +72,23 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             );
             print_checked(json_mode, summary_mode, "validate-prompt-output", data)
         }
-        Commands::VerifyOutput { dir, file } => {
-            let data = verify_output_file(&dir, &file)?;
-            print_checked(json_mode, summary_mode, "verify-output", data)
+        Commands::VerifyOutput {
+            dir,
+            file,
+            readable,
+        } => {
+            if readable {
+                let (markdown, data) = verify_output_readable_file(&dir, &file)?;
+                println!("{markdown}");
+                if data["valid"].as_bool().unwrap_or(false) {
+                    Ok(())
+                } else {
+                    std::process::exit(1);
+                }
+            } else {
+                let data = verify_output_file(&dir, &file)?;
+                print_checked(json_mode, summary_mode, "verify-output", data)
+            }
         }
         Commands::Explain { dir, persona } => print_output(
             json_mode,

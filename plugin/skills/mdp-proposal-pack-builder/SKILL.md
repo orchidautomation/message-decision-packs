@@ -139,10 +139,11 @@ Use `--strict` when warnings should block acceptance.
 
 ```bash
 mdp --json verify-output --dir . --file <proof-output.json>
+mdp verify-output --readable --dir . --file <proof-output.json>
 mdp --json eval --dir .
 ```
 
-Treat source IDs as untrusted model output until `verify-output` resolves them. Fixtures should cover valid bindings, fake IDs, missing material bindings, malformed text coverage, safe gap segments, connective text, and unsupported full-text claims.
+Treat source IDs as untrusted model output until `verify-output` resolves them. Use `--readable` to produce the operator-facing proposal review Markdown with frontmatter, verification status, proof receipts, unsupported claims, gaps, and next review actions. The readable Markdown is not the machine source of truth and must not make blocked generated text look approved. Fixtures should cover valid bindings, fake IDs, missing material bindings, malformed text coverage, safe gap segments, connective text, and unsupported full-text claims.
 
 ## Human Review
 
@@ -177,4 +178,5 @@ End with:
 - representative route tested
 - claim-check result for any risky proof or compliance text
 - verify-output result for any generated proof-carrying output artifact
+- readable proposal review artifact status when proof-output was generated
 - human review items that must be accepted before the pack is usable

@@ -119,9 +119,10 @@ When a model or renderer produces claim-bearing compliance output with source, c
 
 ```bash
 mdp --json verify-output --dir . --file <proof-output.json>
+mdp verify-output --readable --dir . --file <proof-output.json>
 ```
 
-Do not treat cited source IDs, card IDs, or requirement IDs as proof until `verify-output` returns `valid: true`. Missing proof should remain a `gap` segment, not a supported compliance statement.
+Do not treat cited source IDs, card IDs, or requirement IDs as proof until `verify-output` returns `valid: true`. Use the readable output as the human review packet only; proof-output JSON remains the binding source of truth, and blocked readable output must not be reused as supported compliance language. Missing proof should remain a `gap` segment, not a supported compliance statement.
 
 ## Output Format
 
@@ -138,6 +139,7 @@ Return a concise compliance review packet:
 - `next_questions`
 - `claim_check_result` when claim-bearing text was reviewed
 - `verify_output_result` when generated claim-bearing output included source or pack ID bindings
+- `readable_review_result` when `mdp verify-output --readable` was produced
 
 For `ready-for-human-review`, include remaining risks and the human reviewers needed. For `needs-more-info`, include the smallest source or owner inputs needed to rerun the review. For `blocked`, identify the decisive unsupported requirement, boundary conflict, or unavailable source.
 
