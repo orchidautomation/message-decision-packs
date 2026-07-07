@@ -80,6 +80,8 @@ pub(crate) enum Commands {
         dir: PathBuf,
         #[arg(long)]
         file: PathBuf,
+        #[arg(long, help = "Emit a human-readable Markdown proposal review artifact")]
+        readable: bool,
     },
     #[command(about = "Explain what an agent should load")]
     Explain {

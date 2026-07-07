@@ -19,7 +19,9 @@ pub(crate) use health::{doctor, explain, gaps, validate_pack};
 pub(crate) use init::{init_pack, init_pack_dry_run};
 pub(crate) use pack::pack;
 pub(crate) use prompt_output::validate_prompt_output_file;
-pub(crate) use proof_output::{verify_output_file, verify_output_value};
+pub(crate) use proof_output::{
+    verify_output_file, verify_output_readable_file, verify_output_value,
+};
 pub(crate) use routing::{check_claims, fit, route};
 pub(crate) use sample_leads::sample_leads;
 pub(crate) use schemas::schema;

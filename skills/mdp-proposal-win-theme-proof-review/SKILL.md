@@ -117,9 +117,10 @@ When a model or renderer produces generated theme/proof text with source, card, 
 
 ```bash
 mdp --json verify-output --dir . --file <proof-output.json>
+mdp verify-output --readable --dir . --file <proof-output.json>
 ```
 
-Do not treat a model-selected source ID or proof ID as proof until `verify-output` resolves it against the pack and the embedded full-text claim check is clean. Missing proof should remain a `gap` segment or `needs-more-proof`, not approved claim language.
+Do not treat a model-selected source ID or proof ID as proof until `verify-output` resolves it against the pack and the embedded full-text claim check is clean. Use the readable output as the human review packet only; proof-output JSON remains the binding source of truth, and blocked readable output must not be reused as approved proposal prose. Missing proof should remain a `gap` segment or `needs-more-proof`, not approved claim language.
 
 ## Output Format
 
@@ -135,6 +136,7 @@ Return a concise proof review packet:
 - `sme_questions`
 - `claim_check_result` when claim-bearing text was reviewed
 - `verify_output_result` when generated claim-bearing output included source or pack ID bindings
+- `readable_review_result` when `mdp verify-output --readable` was produced
 
 For `ready-for-draft`, include the exact claim language that is supported and any limits. For `needs-more-proof`, include the smallest proof or SME input needed. For `blocked`, identify the unsupported claim, boundary conflict, or missing source that blocks use.
 
