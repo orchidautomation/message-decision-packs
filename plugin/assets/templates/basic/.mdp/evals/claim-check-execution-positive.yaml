@@ -1,0 +1,14 @@
+command: check-claims
+expect_unsupported_claims_contains:
+- execution
+expect_valid: false
+id: claim-check-execution-positive
+profile_eval:
+  category: unsafe-output
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - evidence-proof
+  - boundaries
+  - output-contracts
+text: MDP can auto-send the campaign and send emails after the brief is approved.
