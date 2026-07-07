@@ -121,6 +121,8 @@ For human review, add a readable Markdown artifact from the same prospect/contex
 mdp brief --context --readable --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.md
 ```
 
+This readable command is the GTM prospect review artifact. Do not reuse prospect/outreach labels for proposal packs. For proposal profile work, preserve the same human-review-layer principle but use opportunity/review frontmatter and proposal-owned sections such as bid/no-bid read, compliance gaps, requirement status, proof or win-theme receipts, unsupported claims, red-team gaps, and `verify-output` status. If that artifact is not implemented in the current CLI slice, file or use a proposal-profile follow-up instead of expanding GTM prospect brief work into proposal generation or proposal management.
+
 ## Required Card Coverage
 
 A usable GTM messaging pack should usually have:
