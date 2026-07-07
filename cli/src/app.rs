@@ -143,8 +143,14 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             out,
             dry_run,
         } => {
-            let mut data =
-                prospect_brief_with_context(&dir, &prospect, &channel, job.as_deref(), context)?;
+            let include_context = context || (readable && !json_mode && !summary_mode);
+            let mut data = prospect_brief_with_context(
+                &dir,
+                &prospect,
+                &channel,
+                job.as_deref(),
+                include_context,
+            )?;
             data = attach_input_artifact(data, "prospect", &prospect);
             if readable && !json_mode && !summary_mode {
                 let markdown = render_readable_prospect_brief(&data);
@@ -464,6 +470,44 @@ mod tests {
         assert_eq!(saved["artifact"]["status"], "saved");
         assert_eq!(saved["input_artifact"]["kind"], "prospect");
         assert_eq!(saved["context"]["contract"], "mdp.context.v0");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn readable_brief_includes_context_even_without_context_flag() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-readable-brief-out-{nonce}"));
+        init_pack(&root, "Readable Brief Out Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let prospect = root.join("examples").join("clay-row.json");
+        let out = root.join(".mdp").join("briefs").join("brief.md");
+
+        run(Cli {
+            json: false,
+            summary: false,
+            command: Commands::Brief {
+                dir: root.clone(),
+                prospect,
+                channel: "linkedin".to_string(),
+                job: None,
+                context: false,
+                readable: true,
+                out: Some(out.clone()),
+                dry_run: false,
+            },
+        })
+        .expect("readable brief command should run");
+
+        let saved = std::fs::read_to_string(&out).expect("saved brief should be readable");
+        assert!(saved.contains("- draft_status: ready"));
+        assert!(saved.contains("- context_contract: mdp.context.v0"));
+        assert!(saved.contains("- context_status: ready"));
+        assert!(saved.contains("**Routed evidence entries**"));
+        assert!(saved.contains("**Routed guardrails**"));
 
         let _ = std::fs::remove_dir_all(root);
     }
