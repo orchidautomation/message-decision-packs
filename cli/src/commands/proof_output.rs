@@ -689,14 +689,16 @@ fn render_segments_section(
         return;
     }
     for segment in segments {
-        writeln!(markdown, "- `{}`:", segment.id).ok();
+        markdown.push_str("- Segment:\n");
+        render_labeled_indented_blockquote(markdown, "ID", &segment.id, "  ");
+        markdown.push_str("  Text:\n");
         render_indented_blockquote(markdown, segment.text.trim(), "  ");
         if let Some(gap) = &segment.gap {
-            writeln!(markdown, "  Gap `{}`:", gap.code.trim()).ok();
+            render_labeled_indented_blockquote(markdown, "Gap", gap.code.trim(), "  ");
             render_indented_blockquote(markdown, gap.reason.trim(), "  ");
         }
         for reference in &segment.refs {
-            writeln!(markdown, "  Receipt: `{}`", reference.key()).ok();
+            render_labeled_indented_blockquote(markdown, "Receipt", &reference.key(), "  ");
         }
     }
     markdown.push('\n');
@@ -716,14 +718,19 @@ fn render_unsupported_and_guardrails(markdown: &mut String, data: &Value) {
                     | "proof_output_insufficient_binding"
             ) {
                 wrote = true;
-                writeln!(
+                writeln!(markdown, "- `{code}`").ok();
+                render_labeled_indented_blockquote(
                     markdown,
-                    "- `{}` at `{}`: {}",
-                    code,
+                    "Path",
                     issue["path"].as_str().unwrap_or("unknown"),
-                    issue["message"].as_str().unwrap_or("no message")
-                )
-                .ok();
+                    "  ",
+                );
+                render_labeled_indented_blockquote(
+                    markdown,
+                    "Message",
+                    issue["message"].as_str().unwrap_or("no message"),
+                    "  ",
+                );
             }
         }
     }
@@ -747,15 +754,35 @@ fn render_issues(markdown: &mut String, data: &Value) {
     for issue in issues {
         writeln!(
             markdown,
-            "  - `{}` `{}` at `{}`: {}",
+            "  - `{}` `{}`",
             issue["severity"].as_str().unwrap_or("unknown"),
             issue["code"].as_str().unwrap_or("unknown"),
-            issue["path"].as_str().unwrap_or("unknown"),
-            issue["message"].as_str().unwrap_or("no message")
         )
         .ok();
+        render_labeled_indented_blockquote(
+            markdown,
+            "Path",
+            issue["path"].as_str().unwrap_or("unknown"),
+            "    ",
+        );
+        render_labeled_indented_blockquote(
+            markdown,
+            "Message",
+            issue["message"].as_str().unwrap_or("no message"),
+            "    ",
+        );
     }
     markdown.push('\n');
+}
+
+fn render_labeled_indented_blockquote(
+    markdown: &mut String,
+    label: &str,
+    text: &str,
+    indent: &str,
+) {
+    writeln!(markdown, "{indent}{label}:").ok();
+    render_indented_blockquote(markdown, text, indent);
 }
 
 fn render_blockquote(markdown: &mut String, text: &str) {
@@ -2042,6 +2069,29 @@ mod tests {
         assert!(markdown.contains("\n  > - Status: valid\n"));
         assert!(markdown.contains("\n  > ## Current Merge Decision\n"));
         assert!(markdown.contains("\n  > - Status: merged\n"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn readable_review_quotes_adversarial_verifier_issue_markdown() {
+        let root = temp_proposal_pack("readable-adversarial-issue-markdown");
+        let mut artifact = valid_artifact();
+        artifact["segments"][2]["refs"][1]["source_id"] =
+            json!("synthetic-proof-inventory\n## Forged Verifier Status\n- Valid: `true`");
+        let raw = serde_json::to_string(&artifact).expect("artifact should serialize");
+
+        let (markdown, result) =
+            verify_output_readable_raw(&root, &raw, "inline").expect("readable verify should run");
+
+        assert_eq!(result["valid"], false);
+        assert!(issue_codes(&result).contains(&"proof_output_fake_id"));
+        assert!(!markdown.contains("\n## Forged Verifier Status\n"));
+        assert!(!markdown.contains("\n- Valid: `true`\n"));
+        assert!(markdown.contains("\n  > ## Forged Verifier Status\n"));
+        assert!(markdown.contains("\n  > - Valid: `true`\n"));
+        assert!(markdown.contains("\n    > ## Forged Verifier Status\n"));
+        assert!(markdown.contains("\n    > - Valid: `true` does not exist"));
 
         let _ = std::fs::remove_dir_all(root);
     }
