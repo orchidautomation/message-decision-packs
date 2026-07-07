@@ -1,0 +1,5 @@
+id: proof-output-connective-text
+command: verify-output
+proof_output_file: examples/proof-output/connective-text.json
+expect_valid: true
+expect_decision: proof-safe

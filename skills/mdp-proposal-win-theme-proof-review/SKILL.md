@@ -113,6 +113,14 @@ mdp --json check-claims --dir . --persona "Solution Owner" --job "win theme proo
 
 Use `--strict` when warnings should block acceptance.
 
+When a model or renderer produces generated theme/proof text with source, card, proof, or requirement IDs, require a `contract: mdp.proof-output.v0` artifact and run:
+
+```bash
+mdp --json verify-output --dir . --file <proof-output.json>
+```
+
+Do not treat a model-selected source ID or proof ID as proof until `verify-output` resolves it against the pack and the embedded full-text claim check is clean. Missing proof should remain a `gap` segment or `needs-more-proof`, not approved claim language.
+
 ## Output Format
 
 Return a concise proof review packet:
@@ -126,6 +134,7 @@ Return a concise proof review packet:
 - `missing_proof`
 - `sme_questions`
 - `claim_check_result` when claim-bearing text was reviewed
+- `verify_output_result` when generated claim-bearing output included source or pack ID bindings
 
 For `ready-for-draft`, include the exact claim language that is supported and any limits. For `needs-more-proof`, include the smallest proof or SME input needed. For `blocked`, identify the unsupported claim, boundary conflict, or missing source that blocks use.
 

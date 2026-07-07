@@ -1,0 +1,7 @@
+id: proof-output-unsupported-claim
+command: verify-output
+proof_output_file: examples/proof-output/unsupported-claim.json
+expect_valid: false
+expect_decision: needs-revision
+expect_issue_codes_contains:
+- claim_check_unsupported_claim

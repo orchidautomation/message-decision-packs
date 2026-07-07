@@ -135,6 +135,15 @@ mdp --json check-claims --dir . --persona "Proposal Lead" --job "compliance revi
 
 Use `--strict` when warnings should block acceptance.
 
+10. For generated claim-bearing review output that cites source, card, proof, requirement, or template IDs, add or retarget `mdp.proof-output.v0` fixtures and run:
+
+```bash
+mdp --json verify-output --dir . --file <proof-output.json>
+mdp --json eval --dir .
+```
+
+Treat source IDs as untrusted model output until `verify-output` resolves them. Fixtures should cover valid bindings, fake IDs, missing material bindings, malformed text coverage, safe gap segments, connective text, and unsupported full-text claims.
+
 ## Human Review
 
 Before treating the pack as usable, present a review packet:
@@ -145,7 +154,7 @@ Before treating the pack as usable, present a review packet:
 - unsupported claims moved to gaps or avoid-rules
 - compliance, privacy, or proof risks
 - eval fixtures added or still missing
-- validation, gaps, eval, route, and claim-check results
+- validation, gaps, eval, route, claim-check, and verify-output results
 
 If required source material is missing or cannot be used safely, output an explicit missing-information list instead of filling the pack with guesses.
 
@@ -167,4 +176,5 @@ End with:
 - validation and eval result
 - representative route tested
 - claim-check result for any risky proof or compliance text
+- verify-output result for any generated proof-carrying output artifact
 - human review items that must be accepted before the pack is usable

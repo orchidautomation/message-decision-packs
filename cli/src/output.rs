@@ -59,6 +59,15 @@ fn summarize(command: &str, data: &Value) -> Value {
             "issue_count": array_len(&data["issues"]),
             "issues": data["issues"]
         }),
+        "verify-output" => json!({
+            "valid": data["valid"],
+            "decision": data["decision"],
+            "error_count": data["error_count"],
+            "warning_count": data["warning_count"],
+            "checked": data["checked"],
+            "issue_count": array_len(&data["issues"]),
+            "issues": data["issues"]
+        }),
         "route" => json!({
             "persona": data["persona"],
             "requested_persona": data["requested_persona"],

@@ -114,6 +114,14 @@ mdp --json check-claims --dir . --persona "Executive Reviewer" --job "red team g
 
 Use `--strict` when warnings should block acceptance.
 
+When supplied or generated review output carries source, card, proof, or requirement IDs as bindings, require a `contract: mdp.proof-output.v0` artifact and run:
+
+```bash
+mdp --json verify-output --dir . --file <proof-output.json>
+```
+
+Treat fake IDs, missing material bindings, and smoothed gaps as blockers. A source ID written by a model is not proof until `verify-output` resolves it against the loaded pack and the full output text passes the embedded claim check.
+
 ## Output Format
 
 Return a concise red-team gap review packet:
@@ -129,6 +137,7 @@ Return a concise red-team gap review packet:
 - `missing_sources_or_requirements`
 - `human_review_required`
 - `claim_check_result` when claim-bearing text was reviewed
+- `verify_output_result` when generated claim-bearing output included source or pack ID bindings
 
 For `ready-for-human-review`, include remaining known risks and reviewer questions. For `needs-more-info`, include the smallest source or owner inputs needed to rerun the review. For `blocked`, identify the decisive unsupported claim, missing source, contradiction, or boundary conflict.
 

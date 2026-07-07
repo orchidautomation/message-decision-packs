@@ -1,0 +1,24 @@
+{
+  "contract": "mdp.proof-output.v0",
+  "pack": {
+    "id": "proposal-mdp-sample",
+    "profile_id": "proposal"
+  },
+  "output": {
+    "kind": "proposal-review-section",
+    "format": "markdown",
+    "text": "Requirement status: Gap."
+  },
+  "coverage": {
+    "mode": "full-segmentation",
+    "material_policy": "bound-or-gap"
+  },
+  "segments": [
+    {
+      "id": "seg-001",
+      "kind": "connective",
+      "material": false,
+      "text": "Requirement status: "
+    }
+  ]
+}

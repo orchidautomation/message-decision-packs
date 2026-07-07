@@ -110,6 +110,14 @@ mdp --json check-claims --dir . --persona "Proposal Lead" --job "bid no bid revi
 
 Use `--strict` when warnings should block acceptance.
 
+When generated decision-support text carries source, card, proof, requirement, or template IDs, require a `contract: mdp.proof-output.v0` artifact and run:
+
+```bash
+mdp --json verify-output --dir . --file <proof-output.json>
+```
+
+A model-selected source ID is not proof until `verify-output` resolves it against the loaded pack and the embedded full-text claim check is clean. If proof or source context is missing, keep it as a gap or `needs-more-info`, not a confident `bid` rationale.
+
 ## Output Format
 
 Return a concise decision brief:
@@ -126,6 +134,7 @@ Return a concise decision brief:
 - `required_human_review`
 - `source_notes`
 - `claim_check_result` when claim-bearing text was reviewed
+- `verify_output_result` when generated claim-bearing output included source or pack ID bindings
 
 For `bid`, include the remaining risks and human sign-off needed. For `no-bid`, include the decisive blocker and whether it is reversible. For `needs-more-info`, include the smallest set of inputs needed to rerun the review.
 

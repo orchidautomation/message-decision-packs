@@ -115,6 +115,14 @@ mdp --json check-claims --dir . --persona "Proposal Lead" --job "compliance revi
 
 Use `--strict` when warnings should block acceptance.
 
+When a model or renderer produces claim-bearing compliance output with source, card, proof, or requirement IDs, require a `contract: mdp.proof-output.v0` artifact and run:
+
+```bash
+mdp --json verify-output --dir . --file <proof-output.json>
+```
+
+Do not treat cited source IDs, card IDs, or requirement IDs as proof until `verify-output` returns `valid: true`. Missing proof should remain a `gap` segment, not a supported compliance statement.
+
 ## Output Format
 
 Return a concise compliance review packet:
@@ -129,6 +137,7 @@ Return a concise compliance review packet:
 - `human_review_required`
 - `next_questions`
 - `claim_check_result` when claim-bearing text was reviewed
+- `verify_output_result` when generated claim-bearing output included source or pack ID bindings
 
 For `ready-for-human-review`, include remaining risks and the human reviewers needed. For `needs-more-info`, include the smallest source or owner inputs needed to rerun the review. For `blocked`, identify the decisive unsupported requirement, boundary conflict, or unavailable source.
 

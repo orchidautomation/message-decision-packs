@@ -1,0 +1,7 @@
+id: proof-output-malformed-artifact
+command: verify-output
+proof_output_file: examples/proof-output/malformed-artifact.json
+expect_valid: false
+expect_decision: blocked
+expect_issue_codes_contains:
+- proof_output_text_mismatch

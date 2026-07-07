@@ -2,7 +2,7 @@ use crate::cli::{Cli, Commands, SampleLeadsFormat};
 use crate::commands::{
     agent_surface, capabilities, check_claims, demo_copy, doctor, emit_brief, eval_pack, explain,
     fit, gaps, init_pack, init_pack_dry_run, pack, prospect_brief_with_context, route,
-    sample_leads, schema, validate_pack, validate_prompt_output_file,
+    sample_leads, schema, validate_pack, validate_prompt_output_file, verify_output_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -69,6 +69,10 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 StrictWarningSource::Issues,
             );
             print_checked(json_mode, summary_mode, "validate-prompt-output", data)
+        }
+        Commands::VerifyOutput { dir, file } => {
+            let data = verify_output_file(&dir, &file)?;
+            print_checked(json_mode, summary_mode, "verify-output", data)
         }
         Commands::Explain { dir, persona } => print_output(
             json_mode,

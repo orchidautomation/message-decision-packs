@@ -1,0 +1,96 @@
+{
+  "contract": "mdp.proof-output.v0",
+  "pack": {
+    "id": "proposal-mdp-sample",
+    "profile_id": "proposal"
+  },
+  "route": {
+    "persona": "Proposal Lead",
+    "job": "compliance review"
+  },
+  "output": {
+    "kind": "proposal-review-section",
+    "format": "markdown",
+    "text": "Requirement status: Source-backed. The synthetic sample may discuss phased rollout planning and training readiness. Gap: the sample pack has no approved certification proof."
+  },
+  "coverage": {
+    "mode": "full-segmentation",
+    "material_policy": "bound-or-gap"
+  },
+  "segments": [
+    {
+      "id": "seg-001",
+      "kind": "template_text",
+      "text": "Requirement status: ",
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "renders",
+          "card_id": "review-outputs",
+          "entry_id": "compliance-matrix",
+          "kind": "copy-patterns",
+          "primitive": "output-contracts"
+        }
+      ]
+    },
+    {
+      "id": "seg-002",
+      "kind": "requirement_status",
+      "text": "Source-backed. ",
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "requires",
+          "card_id": "requirements-matrix",
+          "entry_id": "must-answer-sections",
+          "kind": "pains",
+          "primitive": "needs-requirements"
+        }
+      ]
+    },
+    {
+      "id": "seg-003",
+      "kind": "claim",
+      "text": "The synthetic sample may discuss phased rollout planning and training readiness.",
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "supports",
+          "card_id": "proof-library",
+          "entry_id": "approved-synthetic-proof",
+          "kind": "claims",
+          "primitive": "evidence-proof"
+        },
+        {
+          "type": "source",
+          "role": "supports",
+          "source_id": "synthetic-proof-inventory"
+        }
+      ]
+    },
+    {
+      "id": "seg-004",
+      "kind": "gap",
+      "text": " Gap: the sample pack has no approved certification proof.",
+      "gap": {
+        "code": "missing-approved-proof",
+        "reason": "Certification proof is not present in the synthetic proof library."
+      },
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "constrains",
+          "card_id": "proof-library",
+          "entry_id": "unsupported-certifications",
+          "kind": "claims",
+          "primitive": "boundaries"
+        },
+        {
+          "type": "source",
+          "role": "supports-gap",
+          "source_id": "synthetic-proof-inventory"
+        }
+      ]
+    }
+  ]
+}
