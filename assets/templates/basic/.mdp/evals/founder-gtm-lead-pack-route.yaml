@@ -4,8 +4,8 @@ expect_load_order_contains:
 - .mdp/cards/avoid-rules.yaml
 - .mdp/cards/output-rules.yaml
 - .mdp/cards/positioning.yaml
-id: pm-route
-job: product boundary review
+id: founder-gtm-lead-pack-route
+job: create or improve GTM pack for founder GTM lead
 persona: PM
 profile_eval:
   category: job-routing

@@ -1,5 +1,5 @@
 {
-  "background": "building repeatable agent-assisted GTM workflows across Clay, Codex, and Claude Code",
+  "background": "synthetic RevOps owner evaluating repeatable agent-assisted GTM workflows across source rows, Codex, and review notes",
   "company": "ExampleCo",
   "company_domain": "example.com",
   "company_url": "https://example.com",
@@ -11,14 +11,14 @@
     {
       "confidence": "medium",
       "freshness": "recent",
-      "id": "agent-gtm-workflow",
-      "source": "example enrichment row",
+      "id": "revops-owner-context-standardization",
+      "source": "synthetic example row",
       "state_as": "hypothesis",
-      "title": "Building multi-agent GTM workflow"
+      "title": "RevOps owner standardizing campaign context"
     }
   ],
   "source_kind": "synthetic-example",
   "synthetic": true,
-  "title": "GTM Engineering Lead",
-  "trigger": "standardizing outbound context across agents and systems"
+  "title": "Revenue Operations Lead",
+  "trigger": "standardizing outbound context before agents draft or route campaign briefs"
 }

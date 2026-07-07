@@ -8,8 +8,8 @@ expect_load_order_contains:
 - .mdp/cards/fit-rules.yaml
 - .mdp/cards/signals.yaml
 - .mdp/cards/channel-policies.yaml
-id: gtm-engineering-route
-job: agent brief for enriched row
+id: revops-owner-agent-brief-route
+job: agent brief for RevOps owner source row
 persona: GTM Engineering
 profile_eval:
   category: job-routing

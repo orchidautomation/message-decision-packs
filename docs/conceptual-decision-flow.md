@@ -85,13 +85,13 @@ Good routing needs more than the admission fields:
 ```json
 {
   "name": "Alex Rivera",
-  "title": "GTM Engineering Lead",
+  "title": "Revenue Operations Lead",
   "company": "ExampleCo",
   "company_domain": "example.com",
   "persona": "GTM Engineering",
   "segment": "agent-assisted GTM",
-  "trigger": "standardizing outbound context across agents and systems",
-  "background": "building repeatable agent-assisted GTM workflows across Clay, Codex, and Claude Code",
+  "trigger": "standardizing outbound context before agents draft or route campaign briefs",
+  "background": "synthetic RevOps owner evaluating repeatable agent-assisted GTM workflows across source rows, Codex, and review notes",
   "source_kind": "synthetic-example",
   "synthetic": true,
   "attributes": {
@@ -99,9 +99,9 @@ Good routing needs more than the admission fields:
   },
   "signals": [
     {
-      "id": "agent-gtm-workflow",
-      "title": "Building multi-agent GTM workflow",
-      "source": "example enrichment row",
+      "id": "revops-owner-context-standardization",
+      "title": "RevOps owner standardizing campaign context",
+      "source": "synthetic example row",
       "confidence": "medium",
       "freshness": "recent",
       "state_as": "hypothesis"
@@ -281,7 +281,7 @@ If the row is thin, fit should block drafting:
 ```json
 {
   "name": "Taylor Lee",
-  "title": "GTM Engineering Lead",
+  "title": "Revenue Operations Lead",
   "company": "ExampleCo"
 }
 ```

@@ -15,11 +15,11 @@ prompt_output:
   contract: mdp.prompt-output.v0
   prompt_id: normalize-opportunity
   source_summary:
-    company_domain: N/A
-    company_name: City of Exampleton
+    company_domain: public-services.example
+    company_name: Example Public Services Agency
     person_name: N/A
     person_title: N/A
-    account_name: Synthetic permit modernization RFP
+    account_name: Neutral proposal contract fixture
     inputs_used:
     - raw_opportunity
     - existing_pack_context
@@ -28,22 +28,22 @@ prompt_output:
   normalized_prospect:
     name: N/A
     title: N/A
-    company: City of Exampleton
-    company_domain: exampleton.gov
+    company: Example Public Services Agency
+    company_domain: public-services.example
     source_kind: synthetic-example
     synthetic: true
-    background: Synthetic opportunity notes say the city wants a permit workflow modernization proposal review.
-    trigger: Synthetic permit modernization RFP needs bid/no-bid and compliance review before drafting.
+    background: Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.
+    trigger: Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.
     persona: Proposal Lead
-    segment: municipal-modernization
+    segment: public-services-review
     attributes:
       opportunity_stage: bid-no-bid
       pursuit_decision: needs-more-info
       source_safety: synthetic
     signals:
-    - id: permit-modernization-rfp
-      title: Permit modernization RFP context supplied
-      source: raw_opportunity.rfp_summary
+    - id: public-services-review-context
+      title: Public services review context supplied
+      source: raw_opportunity.summary
       confidence: medium
       freshness: synthetic
       state_as: supplied
@@ -69,7 +69,7 @@ prompt_output:
       ready_for_mdp_fit: true
     preserved_raw_fields:
     - raw_opportunity.customer
-    - raw_opportunity.rfp_summary
+    - raw_opportunity.summary
     - raw_opportunity.due_date
     - raw_opportunity.review_mode
     - source_kind

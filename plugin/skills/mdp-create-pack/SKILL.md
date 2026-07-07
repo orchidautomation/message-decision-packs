@@ -141,6 +141,7 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 - Put custom advisory annotations about card content under entry `metadata`; do not add arbitrary unsupported fields as if the CLI routes or enforces them.
 - Add custom channel names to `.mdp/manifest.yaml` `supported_channels` before relying on channel-policy routing for those channels.
 - For profile-aware packs, keep `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories` in sync with the cards, prompts, jobs, and eval fixtures you add. `profile.id` and `profile.agent_surface` only route skills; `mdp validate` owns activation readiness.
+- When retargeting a starter/profile pack, update eval filenames, IDs, personas, jobs, expected titles, example rows, and prompt `output_contract.example` fixtures together. Passing evals can still be semantically stale if names and examples still describe old personas or scenarios.
 - Use the fixed universal primitives (`actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evidence-proof`, `boundaries`, `output-contracts`, `routing-jobs`, `gaps`, `evals`) and keep domain vocabulary in profile-owned IDs. Do not add custom core card kinds for account context, opportunity context, or other profile nouns.
 
 ## Response

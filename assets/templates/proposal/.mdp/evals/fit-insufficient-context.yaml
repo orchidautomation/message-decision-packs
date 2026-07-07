@@ -12,7 +12,7 @@ expect_status: insufficient-context
 prospect:
   name: Jordan Rivera
   title: Proposal Lead
-  company: City of Exampleton
-  trigger: Synthetic permit modernization RFP
+  company: Example Public Services Agency
+  trigger: Synthetic public services modernization RFP
   persona: Proposal Lead
   synthetic: true

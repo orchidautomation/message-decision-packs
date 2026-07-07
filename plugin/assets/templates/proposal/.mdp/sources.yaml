@@ -11,7 +11,7 @@ sources:
   freshness: generated
   confidence: demo-only
   direct_claims:
-  - City of Exampleton issued a fictional permit modernization RFP.
+  - Example Public Services Agency issued a fictional public services modernization RFP.
   - The fictional RFP asks for online permit intake, status notifications, reporting, and training.
   - The response is due in six weeks in the synthetic scenario.
   interpretations:

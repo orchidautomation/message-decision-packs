@@ -637,9 +637,9 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "gtm-engineering-route.yaml",
+            "revops-owner-agent-brief-route.yaml",
             json!({
-                "id": "gtm-engineering-route",
+                "id": "revops-owner-agent-brief-route",
                 "command": "route",
                 "profile_eval": eval_profile(
                     "job-routing",
@@ -647,7 +647,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     &["prospect-fit-or-brief"]
                 ),
                 "persona": "GTM Engineering",
-                "job": "agent brief for enriched row",
+                "job": "agent brief for RevOps owner source row",
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
                     ".mdp/cards/avoid-rules.yaml",
@@ -660,9 +660,9 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "pm-route.yaml",
+            "founder-gtm-lead-pack-route.yaml",
             json!({
-                "id": "pm-route",
+                "id": "founder-gtm-lead-pack-route",
                 "command": "route",
                 "profile_eval": eval_profile(
                     "job-routing",
@@ -670,7 +670,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     &["create-or-improve-gtm-pack"]
                 ),
                 "persona": "PM",
-                "job": "product boundary review",
+                "job": "create or improve GTM pack for founder GTM lead",
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
                     ".mdp/cards/avoid-rules.yaml",
@@ -1195,7 +1195,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "expect_status": "insufficient-context",
                 "prospect": {
                     "name": "Taylor Lee",
-                    "title": "GTM Engineering Lead",
+                    "title": "Revenue Operations Lead",
                     "company": "ExampleCo"
                 }
             }),
@@ -1237,7 +1237,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "expect_draft_status": "no-draft",
                 "prospect": {
                     "name": "Taylor Lee",
-                    "title": "GTM Engineering Lead",
+                    "title": "Revenue Operations Lead",
                     "company": "ExampleCo"
                 }
             }),
@@ -1658,22 +1658,22 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
 pub(crate) fn starter_prospect(_template: &str) -> Value {
     json!({
         "name": "Alex Rivera",
-        "title": "GTM Engineering Lead",
+        "title": "Revenue Operations Lead",
         "company": "ExampleCo",
         "company_domain": "example.com",
         "source_kind": "synthetic-example",
         "synthetic": true,
         "linkedin_url": "https://www.linkedin.com/in/example-mdp-demo",
         "company_url": "https://example.com",
-        "background": "building repeatable agent-assisted GTM workflows across Clay, Codex, and Claude Code",
-        "trigger": "standardizing outbound context across agents and systems",
+        "background": "synthetic RevOps owner evaluating repeatable agent-assisted GTM workflows across source rows, Codex, and review notes",
+        "trigger": "standardizing outbound context before agents draft or route campaign briefs",
         "persona": "GTM Engineering",
         "segment": "agent-assisted GTM",
         "signals": [
             {
-                "id": "agent-gtm-workflow",
-                "title": "Building multi-agent GTM workflow",
-                "source": "example enrichment row",
+                "id": "revops-owner-context-standardization",
+                "title": "RevOps owner standardizing campaign context",
+                "source": "synthetic example row",
                 "confidence": "medium",
                 "freshness": "recent",
                 "state_as": "hypothesis"

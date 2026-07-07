@@ -41,6 +41,8 @@ mdp --json eval --strict --dir .
 
 For profile-aware packs, inspect `mdp --json validate --dir .` before and after `mdp eval`. `data.profile.activation_ready` is the activation summary. Missing `required_primitives` coverage or missing `profile_eval.required_categories` is warning-first in normal validation and fails with `--strict`; missing mapped card, prompt, input contract, job, or eval references are errors. Eval fixtures should include `profile_eval.category` for proceed, insufficient-context, refusal, unsafe-output, job-routing, and declared profile-specific categories such as account-context-present, account-context-missing, account-only-no-draft, and prompt-output-validation.
 
+Passing evals only proves the declared fixture assertions. After retargeting personas, routes, profile jobs, or scenario vocabulary, also audit eval filenames, `id`, `persona`, `job`, expected titles, example prospect rows, and prompt `output_contract.example` blocks so stale starter labels do not keep passing with misleading names.
+
 `mdp eval` can run `command: validate-prompt-output` fixtures with `prompt_id` or `prompt` plus inline `prompt_output`. Use this to prove normalization contracts reject invented account/person output before a prospect row reaches `mdp fit` or `mdp brief`.
 
 2. Choose representative cases:

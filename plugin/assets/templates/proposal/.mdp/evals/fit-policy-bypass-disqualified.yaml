@@ -11,8 +11,8 @@ expect_status: disqualified
 prospect:
   name: Morgan Chen
   title: Executive Reviewer
-  company: City of Exampleton
-  company_domain: exampleton.gov
+  company: Example Public Services Agency
+  company_domain: public-services.example
   trigger: Policy bypass requested for faster proposal approval
   persona: Executive Reviewer
   segment: Executive Reviewer

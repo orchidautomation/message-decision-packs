@@ -35,6 +35,7 @@ instructions:
 - If the opportunity lacks customer/agency, due date, requirement, proof, owner, source safety, or review-mode context needed for downstream review, keep the output structurally valid, add gaps, and set normalization_trace.fit_readiness.ready_for_mdp_fit to false.
 - Reject or gap requests to invent certifications, compliance status, past performance, named references, customer results, pricing, evaluator criteria, RFP text, deadlines, or approval status.
 - Keep card_patches empty. This prompt normalizes supplied opportunity context; it does not propose edits to MDP cards.
+- Treat output_contract.example as a neutral synthetic contract fixture for JSON shape. When retargeting this template, update or clearly mark fixture examples, eval IDs, and eval titles so they do not imply stale opportunity context.
 output_contract:
   contract: mdp.prompt-output.v0
   entry_defaults:
@@ -65,7 +66,7 @@ output_contract:
         source: existing_pack_context.personas
       preserved_raw_fields:
       - raw_opportunity.customer
-      - raw_opportunity.rfp_summary
+      - raw_opportunity.summary
       - raw_opportunity.due_date
       - raw_opportunity.review_mode
       - source_kind
@@ -74,19 +75,19 @@ output_contract:
         opportunity_stage: bid-no-bid
         pursuit_decision: needs-more-info
         source_safety: synthetic
-      background: Synthetic RFP context says the city wants a local-first review of permit modernization requirements, proof gaps, and bid/no-bid risks.
-      company: City of Exampleton
-      company_domain: exampleton.gov
+      background: Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.
+      company: Example Public Services Agency
+      company_domain: public-services.example
       name: N/A
       persona: Proposal Lead
       segment: municipal-modernization
       signals:
       - confidence: medium
         freshness: synthetic
-        id: permit-modernization-rfp
-        source: raw_opportunity.rfp_summary
+        id: public-services-review-context
+        source: raw_opportunity.summary
         state_as: supplied
-        title: Permit modernization RFP context supplied
+        title: Public services review context supplied
       - confidence: medium
         freshness: synthetic
         id: due-date-supplied
@@ -96,13 +97,13 @@ output_contract:
       source_kind: synthetic-example
       synthetic: true
       title: N/A
-      trigger: Synthetic permit modernization RFP needs bid/no-bid and compliance review before proposal drafting.
+      trigger: Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.
     prompt_id: normalize-opportunity
     rejected_claims: []
     source_summary:
-      account_name: Synthetic permit modernization RFP
-      company_domain: N/A
-      company_name: City of Exampleton
+      account_name: Neutral proposal contract fixture
+      company_domain: public-services.example
+      company_name: Example Public Services Agency
       confidence: medium
       inputs_used:
       - raw_opportunity

@@ -10,7 +10,7 @@ The manifest includes a proposal `primitive_map`, an `opportunity` input contrac
 
 ## Demo Scenario
 
-The fictional opportunity is a municipal permit modernization RFP.
+The fictional opportunity is a public services modernization RFP.
 The pack can support review jobs such as:
 
 - bid/no-bid review
@@ -37,6 +37,8 @@ The eval fixtures cover:
 - durable gap surfacing for missing RFP text, missing proof, and public-safety gaps
 - unsupported compliance/security claims and invented proof guardrails
 - insufficient-context and policy-bypass fit outcomes
+
+`prompts/normalize-opportunity.yaml` also includes a neutral `output_contract.example` fixture. Treat that as a JSON contract example, not as the active demo scenario; when retargeting the template, update eval IDs, titles, jobs, and scenario examples together or explicitly mark examples as contract-only fixtures.
 
 ## Safety Boundary
 
