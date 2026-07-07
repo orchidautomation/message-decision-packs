@@ -1439,8 +1439,7 @@ fn is_coordinated_negation_match(text: &str, start: usize) -> bool {
     ]
     .iter()
     .filter_map(|marker| sentence_prefix.rfind(marker).map(|start| (*marker, start)))
-    .max_by_key(|(_, start)| *start)
-    else {
+    .max_by_key(|(_, start)| *start) else {
         return false;
     };
 
