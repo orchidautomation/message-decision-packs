@@ -1,0 +1,34 @@
+command: check-claims
+expect_guardrail_terms_contains:
+- security-approved
+- connects to your CRM
+- books meetings
+- doubles reply rates
+- customers rely on
+- I loved your recent LinkedIn post
+- bypasses procurement
+- AI can own the response
+- replaces proposal management software
+- best-in-class
+expect_unsupported_claims_contains:
+- compliance-security
+- integration
+- quantified-outcome
+- customer-name
+- execution-crm-sending
+- legal-procurement-bypass
+- ai-authoritative
+- rfp-platform-replacement
+- fake-personalization
+- weak-trust
+expect_valid: false
+id: claim-check-adversarial-variants
+profile_eval:
+  category: unsafe-output
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - evidence-proof
+  - boundaries
+  - output-contracts
+text: MDP is security-approved, connects to your CRM, books meetings, doubles reply rates, customers rely on it in production, I loved your recent LinkedIn post, bypasses procurement, AI can own the response, replaces proposal management software, and is best-in-class.

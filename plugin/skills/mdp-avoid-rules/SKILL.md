@@ -24,7 +24,8 @@ Create guardrails that prevent agents from overclaiming or drifting into the wro
 3. Identify the ways an agent might overreach.
 4. Add explicit entries to `.mdp/cards/avoid-rules.yaml`, and use `.mdp/cards/fit-rules.yaml` for no-message or disqualification rules.
 5. If needed, add supporting constraints to positioning, claims, personas, pains, hooks, channel-policies, ctas, output-rules, or copy patterns.
-6. Validate the pack again.
+6. Add or update synthetic eval fixtures for both must-block unsafe variants and safe-nearby must-pass wording when a phrase is false-positive prone.
+7. Validate the pack again.
 
 ## Avoid Rule Categories
 
@@ -38,6 +39,7 @@ Cover the categories that apply:
 - wording guardrails tied to unsafe or unsupported claims
 - disallowed channels or no-send criteria
 - bad-fit segments and personas
+- safe boundary statements that should pass, such as explicit "does not send/update/connect" disclaimers
 
 Use `.mdp/cards/output-rules.yaml` instead for global style and structure rules such as no em dashes, fixed paragraph counts, formatting constraints, or no meta commentary.
 
@@ -51,7 +53,7 @@ Each avoid rule should include:
 - affected personas in `applies_to`
 - evidence when the boundary comes from source material
 
-Author `avoid` terms as active unsafe phrases, not as negated safe boundaries. The CLI matches terms with deterministic phrase boundaries and ignores obvious immediate negations such as `not auto-send`, `do not auto-send`, or `not an AI SDR`, so safe boundary statements should not be punished solely because they name the forbidden phrase. Add explicit active variants when plural, tense, or synonym coverage matters.
+Author `avoid` terms as active unsafe phrases, not as negated safe boundaries. The CLI matches terms with deterministic phrase boundaries and ignores obvious immediate negations such as `not auto-send`, `do not auto-send`, or `not an AI SDR`, so safe boundary statements should not be punished solely because they name the forbidden phrase. Add explicit active variants when plural, tense, or synonym coverage matters. When a literal could appear in a safe negated boundary, such as "does not update CRM" or "does not connect to your CRM", add a must-pass `check-claims` eval alongside the must-block case.
 
 ## Validate
 
