@@ -1,0 +1,11 @@
+command: check-claims
+expect_valid: true
+id: claim-check-coordinated-safe-boundary
+profile_eval:
+  category: proceed
+  jobs:
+  - pack-validation
+  primitives:
+  - evidence-proof
+  - boundaries
+text: MDP is local-first decision context. It does not update CRM records, send emails, or bypass legal review.

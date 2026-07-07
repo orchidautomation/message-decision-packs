@@ -1,0 +1,11 @@
+command: check-claims
+expect_valid: true
+id: claim-check-safe-adjacent
+profile_eval:
+  category: proceed
+  jobs:
+  - pack-validation
+  primitives:
+  - evidence-proof
+  - boundaries
+text: MDP is local-first AI-assisted decision context before drafting with approved claims, evidence, and review rules. It does not send emails, does not connect to your CRM, does not update CRM records, does not bypass legal, does not replace proposal management software, and does not claim compliance approval.

@@ -508,8 +508,8 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("reply-path", "Reply path", "When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.", &["PMM", "GTM Engineering"], &["README.md"]),
         ])),
         ("avoid-rules.yaml", card("avoid-rules", CardKind::AvoidRules, "Avoid rules", "Category and claim boundaries agents must keep intact.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"], vec![
-            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
-            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance claims, production adoption, design partner, paid pilot, market validation, commercial traction, or product capability claims unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "fully automated".to_string(), "customers already use".to_string(), "customer adoption".to_string(), "design partner".to_string(), "design partners".to_string(), "paid pilot".to_string(), "paid pilots".to_string(), "production adoption".to_string(), "production use".to_string(), "validated adoption".to_string(), "ARR conversion".to_string(), "workshop conversion".to_string(), "workshops converted".to_string(), "market validated".to_string(), "market validation".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, meeting booker, sender, AI-owned response system, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string(), "update CRM".to_string(), "updates CRM".to_string(), "sends for you".to_string(), "auto-sends".to_string(), "books meetings".to_string(), "launches campaigns".to_string(), "AI can own the response".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance/security approval, production adoption, design partner, paid pilot, market validation, commercial traction, weak trust claims, fake personalization, RFP/proposal-platform replacement, or product capability claims unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "doubles reply rates".to_string(), "fully automated".to_string(), "connect to your CRM".to_string(), "connects to your CRM".to_string(), "native CRM integration".to_string(), "security-approved".to_string(), "handles compliance".to_string(), "compliance approval".to_string(), "customers already use".to_string(), "customers rely on".to_string(), "customer adoption".to_string(), "design partner".to_string(), "design partners".to_string(), "paid pilot".to_string(), "paid pilots".to_string(), "production adoption".to_string(), "production use".to_string(), "validated adoption".to_string(), "ARR conversion".to_string(), "workshop conversion".to_string(), "workshops converted".to_string(), "market validated".to_string(), "market validation".to_string(), "I loved your recent LinkedIn post".to_string(), "bypasses procurement".to_string(), "bypass legal".to_string(), "replace proposal management software".to_string(), "replaces proposal management software".to_string(), "best-in-class".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
         ])),
         ("output-rules.yaml", card("output-rules", CardKind::OutputRules, "Output rules", "Global style, formatting, and output-structure rules generated text must follow.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"], vec![
             Entry { id: "no-em-dashes".to_string(), title: "No em dashes".to_string(), body: "Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec![], avoid: vec!["—".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
@@ -1358,6 +1358,72 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     "market validated"
                 ],
                 "expect_unsupported_claims_contains": ["commercial traction"]
+            }),
+        ),
+        (
+            "claim-check-adversarial-variants.yaml",
+            json!({
+                "id": "claim-check-adversarial-variants",
+                "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "unsafe-output",
+                    &["evidence-proof", "boundaries", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
+                "text": "MDP is security-approved, connects to your CRM, books meetings, doubles reply rates, customers rely on it in production, I loved your recent LinkedIn post, bypasses procurement, AI can own the response, replaces proposal management software, and is best-in-class.",
+                "expect_valid": false,
+                "expect_guardrail_terms_contains": [
+                    "security-approved",
+                    "connects to your CRM",
+                    "books meetings",
+                    "doubles reply rates",
+                    "customers rely on",
+                    "I loved your recent LinkedIn post",
+                    "bypasses procurement",
+                    "AI can own the response",
+                    "replaces proposal management software",
+                    "best-in-class"
+                ],
+                "expect_unsupported_claims_contains": [
+                    "compliance-security",
+                    "integration",
+                    "quantified-outcome",
+                    "customer-name",
+                    "execution-crm-sending",
+                    "legal-procurement-bypass",
+                    "ai-authoritative",
+                    "rfp-platform-replacement",
+                    "fake-personalization",
+                    "weak-trust"
+                ]
+            }),
+        ),
+        (
+            "claim-check-safe-adjacent.yaml",
+            json!({
+                "id": "claim-check-safe-adjacent",
+                "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "proceed",
+                    &["evidence-proof", "boundaries"],
+                    &["pack-validation"]
+                ),
+                "text": "MDP is local-first AI-assisted decision context before drafting with approved claims, evidence, and review rules. It does not send emails, does not connect to your CRM, does not update CRM records, does not bypass legal, does not replace proposal management software, and does not claim compliance approval.",
+                "expect_valid": true
+            }),
+        ),
+        (
+            "claim-check-coordinated-safe-boundary.yaml",
+            json!({
+                "id": "claim-check-coordinated-safe-boundary",
+                "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "proceed",
+                    &["evidence-proof", "boundaries"],
+                    &["pack-validation"]
+                ),
+                "text": "MDP is local-first decision context. It does not update CRM records, send emails, or bypass legal review.",
+                "expect_valid": true
             }),
         ),
         (

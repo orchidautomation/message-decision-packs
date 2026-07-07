@@ -1013,17 +1013,32 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
     };
 
     let has_number = text.chars().any(|c| c.is_ascii_digit());
-    if (text.contains('%') || text.contains(" percent") || has_number)
+    if ((text.contains('%') || text.contains(" percent") || has_number)
         && contains_actionable_any(
             text,
             &[
-                "reply rate",
-                "reply rates",
-                "meetings",
+                "improves reply rates",
+                "improve reply rates",
+                "increases reply rates",
+                "increase reply rates",
+                "books meetings",
+                "book meetings",
                 "pipeline",
                 "revenue",
                 "conversion",
                 "roi",
+            ],
+        ))
+        || contains_actionable_any(
+            text,
+            &[
+                "doubles reply rates",
+                "double reply rates",
+                "2x reply rates",
+                "2x pipeline",
+                "cuts research time in half",
+                "cut research time in half",
+                "saves hours",
             ],
         )
     {
@@ -1046,12 +1061,24 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
         text,
         &[
             "integrates with",
+            "integrate with",
             "integration with",
             "connects to",
+            "connect to",
             "syncs with",
+            "sync with",
+            "pushes to",
+            "push to",
+            "writes to",
+            "write to",
+            "works inside",
+            "native integration",
+            "crm integration",
         ],
-    ) && contains_actionable_any(text, &["salesforce", "hubspot", "outreach", "salesloft"])
-    {
+    ) && contains_actionable_any(
+        text,
+        &["salesforce", "hubspot", "outreach", "salesloft", "crm"],
+    ) {
         push_hit(
             "integration",
             "integration",
@@ -1065,10 +1092,26 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "soc2",
             "hipaa",
             "gdpr",
+            "cmmc",
+            "fedramp",
             "compliant",
-            "compliance",
             "secure",
             "security certified",
+            "security-approved",
+            "security approved",
+            "security-ready",
+            "security ready",
+            "compliance certified",
+            "compliance-approved",
+            "compliance approved",
+            "compliance approval",
+            "compliance-ready",
+            "compliance ready",
+            "handles compliance",
+            "handle compliance",
+            "manages compliance",
+            "manage compliance",
+            "approved for procurement",
         ],
     ) {
         push_hit(
@@ -1083,9 +1126,16 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "trusted by",
             "used by",
             "customers already use",
+            "customers rely on",
+            "teams already use",
             "customer adoption",
             "production adoption",
             "production use",
+            "production rollout",
+            "customer deployment",
+            "live customer",
+            "deployed in production",
+            "in production with customers",
             "validated adoption",
             "design partner",
             "design partners",
@@ -1125,20 +1175,138 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "updates crm",
             "update crm",
             "writes to crm",
+            "write to crm",
             "send emails",
             "sends emails",
             "send linkedin",
             "sends linkedin",
             "auto-send",
+            "auto-sends",
+            "auto sends",
             "autosend",
             "sequence prospects",
             "sequencer",
+            "books meetings",
+            "book meetings",
+            "launches campaigns",
+            "launch campaigns",
+            "sends for you",
+            "send for you",
+            "owns follow-up",
+            "own follow-up",
+            "owns the follow-up",
+            "own the follow-up",
+            "autonomously sends",
         ],
     ) {
         push_hit(
             "execution-crm-sending",
             "execution",
             "MDP stops at pack, route, and brief; execution claims require a separate exact-action tool.",
+        );
+    }
+    if contains_actionable_any(
+        text,
+        &[
+            "bypass legal",
+            "bypasses legal",
+            "bypass procurement",
+            "bypasses procurement",
+            "skip legal",
+            "skips legal",
+            "skip procurement",
+            "skips procurement",
+            "no legal review",
+            "no procurement review",
+            "approval not needed",
+            "legal approved",
+            "procurement approved",
+        ],
+    ) {
+        push_hit(
+            "legal-procurement-bypass",
+            "legal/procurement bypass",
+            "Legal, procurement, and approval-bypass claims require explicit reviewed context.",
+        );
+    }
+    if contains_actionable_any(
+        text,
+        &[
+            "ai can own the response",
+            "ai owns the response",
+            "ai decides",
+            "ai-approved",
+            "ai approved",
+            "autonomously writes",
+            "fully automated writing",
+            "fully automated proposal",
+            "hands-free drafting",
+            "hands free drafting",
+        ],
+    ) {
+        push_hit(
+            "ai-authoritative",
+            "AI authoritative",
+            "AI-authoritative language must not replace human review or approved source context.",
+        );
+    }
+    if contains_actionable_any(
+        text,
+        &[
+            "replaces proposal management",
+            "replace proposal management",
+            "replaces compliance review",
+            "replace compliance review",
+            "rfp automation platform",
+            "automates rfp responses",
+            "automate rfp responses",
+            "responds to rfps",
+            "respond to rfps",
+            "submits proposals",
+            "submit proposals",
+            "proposal platform replacement",
+            "fully automated proposal writing",
+        ],
+    ) {
+        push_hit(
+            "rfp-platform-replacement",
+            "RFP platform replacement",
+            "RFP/proposal platform replacement claims are outside MDP's local decision-context boundary.",
+        );
+    }
+    if contains_actionable_any(
+        text,
+        &[
+            "i loved your recent linkedin post",
+            "i loved your post",
+            "your recent linkedin post",
+            "noticed your podcast",
+            "saw your webinar",
+            "i watched your webinar",
+            "checked out your profile",
+        ],
+    ) {
+        push_hit(
+            "fake-personalization",
+            "fake personalization",
+            "Personalization claims need supplied source context and should not be invented from a thin row.",
+        );
+    }
+    if contains_actionable_any(
+        text,
+        &[
+            "best-in-class",
+            "battle-tested",
+            "field-tested",
+            "enterprise-ready",
+            "operator-approved",
+            "expert-approved",
+        ],
+    ) {
+        push_hit(
+            "weak-trust",
+            "weak trust",
+            "Weak trust and approval claims require explicit approved evidence.",
         );
     }
 
@@ -1155,6 +1323,8 @@ fn contains_guardrail_term(text: &str, term: &str) -> bool {
         let end = start + needle.len();
         has_phrase_boundaries(text, start, end, &needle)
             && !is_obviously_negated_match(text, start, &needle)
+            && !is_coordinated_negation_match(text, start)
+            && !is_disclaimed_match(text, start)
     })
 }
 
@@ -1245,6 +1415,82 @@ fn contains_actionable_any(text: &str, needles: &[&str]) -> bool {
     needles
         .iter()
         .any(|needle| contains_guardrail_term(text, needle))
+}
+
+fn is_coordinated_negation_match(text: &str, start: usize) -> bool {
+    let prefix = &text[..start];
+    let sentence_prefix =
+        match prefix.rfind(|character| matches!(character, '.' | '!' | '?' | '\n' | ';')) {
+            Some(index) => &prefix[index + 1..],
+            None => prefix,
+        };
+
+    let Some((marker, marker_start)) = [
+        "does not ",
+        "do not ",
+        "did not ",
+        "doesn't ",
+        "don't ",
+        "cannot ",
+        "can't ",
+        "not ",
+        "no ",
+        "without ",
+    ]
+    .iter()
+    .filter_map(|marker| sentence_prefix.rfind(marker).map(|start| (*marker, start)))
+    .max_by_key(|(_, start)| *start)
+    else {
+        return false;
+    };
+
+    let after_marker = &sentence_prefix[marker_start + marker.len()..];
+    if contains_any(after_marker, &[" but ", " however ", " although "]) {
+        return false;
+    }
+    let bridge_words = after_marker
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '\''))
+        .filter(|word| !word.is_empty())
+        .count();
+
+    bridge_words <= 10
+        && (after_marker.contains(',')
+            || after_marker.contains(" and ")
+            || after_marker.contains(" or "))
+}
+
+fn is_disclaimed_match(text: &str, start: usize) -> bool {
+    let prefix = &text[..start];
+    let sentence_prefix =
+        match prefix.rfind(|character| matches!(character, '.' | '!' | '?' | '\n' | ';')) {
+            Some(index) => &prefix[index + 1..],
+            None => prefix,
+        };
+
+    let disclaimer_phrases = [
+        "does not claim",
+        "do not claim",
+        "doesn't claim",
+        "not claim",
+        "without claiming",
+        "cannot verify",
+        "can't verify",
+        "does not verify",
+        "do not verify",
+        "requires approved evidence for",
+        "requires evidence for",
+        "requires review for",
+        "requires human review for",
+        "not approved for",
+        "not intended to",
+        "not a replacement for",
+    ];
+    disclaimer_phrases.iter().any(|phrase| {
+        sentence_prefix.rfind(phrase).is_some_and(|phrase_start| {
+            let after_phrase = &sentence_prefix[phrase_start + phrase.len()..];
+            !contains_any(after_phrase, &[" but ", " however ", " although "])
+        })
+    })
 }
 
 fn is_word_char(value: char) -> bool {
@@ -2305,6 +2551,115 @@ mod tests {
                 "text should produce unsupported claim: {text}"
             );
         }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_flags_adversarial_unsupported_claim_variants() {
+        let root = temp_pack("claim-adversarial-variants");
+
+        let result = check_claims(
+            &root,
+            Some("MDP is security-approved, connects to your CRM, books meetings, doubles reply rates, customers rely on it in production, I loved your recent LinkedIn post, bypasses procurement, AI can own the response, replaces proposal management software, and is best-in-class."),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("claim check should succeed");
+
+        let categories: Vec<&str> = result["unsupported_claims"]
+            .as_array()
+            .expect("unsupported claims array")
+            .iter()
+            .filter_map(|claim| claim["category"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        for expected in [
+            "compliance-security",
+            "integration",
+            "quantified-outcome",
+            "customer-name",
+            "execution-crm-sending",
+            "legal-procurement-bypass",
+            "ai-authoritative",
+            "rfp-platform-replacement",
+            "fake-personalization",
+            "weak-trust",
+        ] {
+            assert!(
+                categories.contains(&expected),
+                "missing unsupported category {expected}"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_allows_safe_negated_execution_and_boundary_phrases() {
+        let root = temp_pack("claim-safe-negated-boundaries");
+
+        let result = check_claims(
+            &root,
+            Some("MDP is local-first AI-assisted decision context before drafting with approved claims, evidence, and review rules. It does not send emails, does not connect to Salesforce, does not update CRM records, does not bypass legal, does not replace proposal management software, and does not claim compliance approval."),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("claim check should succeed");
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(
+            result["guardrail_hits"]
+                .as_array()
+                .expect("guardrail hits array")
+                .len(),
+            0
+        );
+        assert_eq!(
+            result["unsupported_claims"]
+                .as_array()
+                .expect("unsupported claims array")
+                .len(),
+            0
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_allows_coordinated_safe_negated_boundaries() {
+        let root = temp_pack("claim-safe-coordinated-boundaries");
+
+        let result = check_claims(
+            &root,
+            Some("MDP is local-first decision context. It does not update CRM records, send emails, or bypass legal review."),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("claim check should succeed");
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(
+            result["guardrail_hits"]
+                .as_array()
+                .expect("guardrail hits array")
+                .len(),
+            0
+        );
+        assert_eq!(
+            result["unsupported_claims"]
+                .as_array()
+                .expect("unsupported claims array")
+                .len(),
+            0
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

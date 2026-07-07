@@ -12,7 +12,7 @@ tags:
 entries:
 - id: not-execution
   title: Do not claim execution
-  body: Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, or generic RevOps automation system.
+  body: Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, meeting booker, sender, AI-owned response system, or generic RevOps automation system.
   applies_to:
   - GTM Engineering
   - PMM
@@ -25,9 +25,16 @@ entries:
   - CRM replacement
   - generic automation
   - scraper
+  - update CRM
+  - updates CRM
+  - sends for you
+  - auto-sends
+  - books meetings
+  - launches campaigns
+  - AI can own the response
 - id: no-unsourced-claims
   title: No unsourced claims
-  body: Do not add quantified outcomes, integrations, customer names, compliance claims, production adoption, design partner, paid pilot, market validation, commercial traction, or product capability claims unless they are present in the claims card or supplied source material.
+  body: Do not add quantified outcomes, integrations, customer names, compliance/security approval, production adoption, design partner, paid pilot, market validation, commercial traction, weak trust claims, fake personalization, RFP/proposal-platform replacement, or product capability claims unless they are present in the claims card or supplied source material.
   applies_to:
   - PMM
   - GTM Engineering
@@ -35,8 +42,16 @@ entries:
   avoid:
   - guaranteed
   - proven ROI
+  - doubles reply rates
   - fully automated
+  - connect to your CRM
+  - connects to your CRM
+  - native CRM integration
+  - security-approved
+  - handles compliance
+  - compliance approval
   - customers already use
+  - customers rely on
   - customer adoption
   - design partner
   - design partners
@@ -50,3 +65,9 @@ entries:
   - workshops converted
   - market validated
   - market validation
+  - I loved your recent LinkedIn post
+  - bypasses procurement
+  - bypass legal
+  - replace proposal management software
+  - replaces proposal management software
+  - best-in-class
