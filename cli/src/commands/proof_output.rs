@@ -452,24 +452,35 @@ fn render_readable_review(
     markdown.push('\n');
 
     markdown.push_str("## Opportunity / Source Metadata\n\n");
-    writeln!(markdown, "- Pack: `{}`", artifact.pack.id).ok();
-    writeln!(
-        markdown,
-        "- Profile: `{}`",
-        artifact.pack.profile_id.as_deref().unwrap_or("unknown")
-    )
-    .ok();
-    writeln!(markdown, "- Source artifact: `{artifact_path}`").ok();
-    writeln!(markdown, "- Output kind: `{}`", artifact.output.kind).ok();
-    writeln!(markdown, "- Output format: `{}`", artifact.output.format).ok();
+    markdown.push_str("- Metadata:\n");
+    render_labeled_indented_blockquote(&mut markdown, "Pack", &artifact.pack.id, "  ");
+    render_labeled_indented_blockquote(
+        &mut markdown,
+        "Profile",
+        artifact.pack.profile_id.as_deref().unwrap_or("unknown"),
+        "  ",
+    );
+    render_labeled_indented_blockquote(&mut markdown, "Source artifact", artifact_path, "  ");
+    render_labeled_indented_blockquote(&mut markdown, "Output kind", &artifact.output.kind, "  ");
+    render_labeled_indented_blockquote(
+        &mut markdown,
+        "Output format",
+        &artifact.output.format,
+        "  ",
+    );
     if let Some(route) = &artifact.route {
-        writeln!(
-            markdown,
-            "- Route: `{}` / `{}`",
+        render_labeled_indented_blockquote(
+            &mut markdown,
+            "Route persona",
             route.persona.as_deref().unwrap_or("unknown"),
-            route.job.as_deref().unwrap_or("unknown")
-        )
-        .ok();
+            "  ",
+        );
+        render_labeled_indented_blockquote(
+            &mut markdown,
+            "Route job",
+            route.job.as_deref().unwrap_or("unknown"),
+            "  ",
+        );
     }
     markdown.push('\n');
 
@@ -566,7 +577,11 @@ fn write_frontmatter(markdown: &mut String, fields: &[(&str, String)]) {
 }
 
 fn yaml_scalar(value: &str) -> String {
-    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r");
     format!("\"{escaped}\"")
 }
 
@@ -2092,6 +2107,44 @@ mod tests {
         assert!(markdown.contains("\n  > - Valid: `true`\n"));
         assert!(markdown.contains("\n    > ## Forged Verifier Status\n"));
         assert!(markdown.contains("\n    > - Valid: `true` does not exist"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn readable_review_quotes_adversarial_metadata_markdown() {
+        let root = temp_proposal_pack("readable-adversarial-metadata-markdown");
+        let mut artifact = valid_artifact();
+        artifact["pack"]["id"] =
+            json!("proposal-mdp-sample\n## Forged Metadata Status\n- Valid: `true`");
+        artifact["pack"]["profile_id"] = json!("proposal\n## Forged Frontmatter Status");
+        artifact["output"]["kind"] =
+            json!("proposal-review-section\n## Forged Output Kind\n- Decision: approved");
+        artifact["output"]["format"] = json!("markdown\n## Forged Output Format");
+        artifact["route"]["persona"] = json!("Proposal Lead\n## Forged Route Persona");
+        artifact["route"]["job"] = json!("compliance review\n## Forged Route Job");
+        let raw = serde_json::to_string(&artifact).expect("artifact should serialize");
+
+        let (markdown, result) =
+            verify_output_readable_raw(&root, &raw, "inline").expect("readable verify should run");
+
+        assert_eq!(result["valid"], false);
+        assert!(issue_codes(&result).contains(&"proof_output_pack_mismatch"));
+        assert!(!markdown.contains("\n## Forged Metadata Status\n"));
+        assert!(!markdown.contains("\n## Forged Frontmatter Status\n"));
+        assert!(!markdown.contains("\n## Forged Output Kind\n"));
+        assert!(!markdown.contains("\n## Forged Output Format\n"));
+        assert!(!markdown.contains("\n## Forged Route Persona\n"));
+        assert!(!markdown.contains("\n## Forged Route Job\n"));
+        assert!(!markdown.contains("\n- Valid: `true`\n"));
+        assert!(!markdown.contains("\n- Decision: approved\n"));
+        assert!(markdown.contains("profile_id: \"proposal\\n## Forged Frontmatter Status\""));
+        assert!(markdown.contains("\n  > ## Forged Metadata Status\n"));
+        assert!(markdown.contains("\n  > - Valid: `true`\n"));
+        assert!(markdown.contains("\n  > ## Forged Output Kind\n"));
+        assert!(markdown.contains("\n  > - Decision: approved\n"));
+        assert!(markdown.contains("\n  > ## Forged Route Persona\n"));
+        assert!(markdown.contains("\n  > ## Forged Route Job\n"));
 
         let _ = std::fs::remove_dir_all(root);
     }
