@@ -169,6 +169,11 @@ pub(crate) enum Commands {
         job: Option<String>,
         #[arg(long, help = "Include bounded entry-level context for drafting")]
         context: bool,
+        #[arg(
+            long,
+            help = "Emit a human-readable Markdown prospect brief instead of the JSON contract"
+        )]
+        readable: bool,
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, help = "Show the output artifact write without writing it")]

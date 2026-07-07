@@ -689,15 +689,11 @@ fn render_segments_section(
         return;
     }
     for segment in segments {
-        writeln!(markdown, "- `{}`: {}", segment.id, segment.text.trim()).ok();
+        writeln!(markdown, "- `{}`:", segment.id).ok();
+        render_indented_blockquote(markdown, segment.text.trim(), "  ");
         if let Some(gap) = &segment.gap {
-            writeln!(
-                markdown,
-                "  Gap `{}`: {}",
-                gap.code.trim(),
-                gap.reason.trim()
-            )
-            .ok();
+            writeln!(markdown, "  Gap `{}`:", gap.code.trim()).ok();
+            render_indented_blockquote(markdown, gap.reason.trim(), "  ");
         }
         for reference in &segment.refs {
             writeln!(markdown, "  Receipt: `{}`", reference.key()).ok();
@@ -767,6 +763,21 @@ fn render_blockquote(markdown: &mut String, text: &str) {
         writeln!(markdown, "> {line}").ok();
     }
     markdown.push('\n');
+}
+
+fn render_indented_blockquote(markdown: &mut String, text: &str, indent: &str) {
+    if text.is_empty() {
+        writeln!(markdown, "{indent}>").ok();
+        return;
+    }
+    for line in text.lines() {
+        let line = line.trim_end_matches('\r');
+        if line.is_empty() {
+            writeln!(markdown, "{indent}>").ok();
+        } else {
+            writeln!(markdown, "{indent}> {line}").ok();
+        }
+    }
 }
 
 fn validate_pack_identity(
@@ -1994,6 +2005,43 @@ mod tests {
         assert!(markdown.contains("verification_status: \"blocked\""));
         assert!(markdown.contains("Generated text is not approved for reuse"));
         assert!(markdown.contains("proof_output_insufficient_binding"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn readable_review_quotes_adversarial_segment_markdown() {
+        let root = temp_proposal_pack("readable-adversarial-markdown");
+        let mut artifact = valid_artifact();
+        artifact["segments"][0]["text"] = json!(
+            "Requirement status:\n## Verifier Status\n- Status: valid\n- Binding refs resolved: `999/999`"
+        );
+        artifact["segments"][3]["gap"]["reason"] = json!(
+            "Certification proof is not present.\n## Current Merge Decision\n- Status: merged"
+        );
+        let output_text = artifact["segments"]
+            .as_array()
+            .expect("segments should be an array")
+            .iter()
+            .map(|segment| {
+                segment["text"]
+                    .as_str()
+                    .expect("segment text should be a string")
+            })
+            .collect::<String>();
+        artifact["output"]["text"] = json!(output_text);
+        let raw = serde_json::to_string(&artifact).expect("artifact should serialize");
+
+        let (markdown, _result) =
+            verify_output_readable_raw(&root, &raw, "inline").expect("readable verify should run");
+
+        assert!(!markdown.contains("\n## Verifier Status\n"));
+        assert!(!markdown.contains("\n## Current Merge Decision\n"));
+        assert!(!markdown.contains("\n- Status: merged\n"));
+        assert!(markdown.contains("\n  > ## Verifier Status\n"));
+        assert!(markdown.contains("\n  > - Status: valid\n"));
+        assert!(markdown.contains("\n  > ## Current Merge Decision\n"));
+        assert!(markdown.contains("\n  > - Status: merged\n"));
 
         let _ = std::fs::remove_dir_all(root);
     }
