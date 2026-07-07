@@ -224,7 +224,7 @@ When a human needs to review the prospect without reading the JSON contract, ren
 mdp brief --context --readable --dir ./mdp-demo --prospect ./mdp-demo/examples/clay-row.json --channel linkedin --out ./mdp-demo/.mdp/briefs/example-linkedin.md
 ```
 
-Readable briefs are review artifacts. The machine source of truth remains `mdp --json brief --context`. The Markdown starts with `## Prospect Metadata` as a fenced YAML block with stable snake_case keys, then separates fit/readiness, evidence receipts, gaps and caveats, safe angle, guardrails, copy, follow-up research, and validation/source outputs. If draft copy is present in a future brief payload, it is rendered as Markdown blockquotes.
+Readable briefs are review artifacts. The machine source of truth remains `mdp --json brief --context`. The Markdown begins with top-of-file YAML frontmatter for prospect metadata, including `tags` derived from tag-like values such as persona, segment, and source kind, then starts the body with `# Prospect Brief: ...`. The body separates fit/readiness, evidence receipts, gaps and caveats, safe angle, guardrails, copy, follow-up research, and validation/source outputs. If draft copy is present in a future brief payload, it is rendered as Markdown blockquotes.
 
 Briefs include `runtime_context` at the top level, and `brief --context` also includes the same object under `context.runtime_context`. It contains `now_utc`, `date_utc`, `timezone: UTC`, and a local-time policy. Use it as run metadata only; fiscal year, renewal date, event date, and campaign-window fields should still come from pack-declared attributes or supplied source context.
 

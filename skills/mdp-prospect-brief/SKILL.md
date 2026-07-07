@@ -121,7 +121,7 @@ Use `--out .mdp/briefs/<brief-name>.json` when the user expects a durable create
 mdp brief --context --readable --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.md
 ```
 
-Treat the readable Markdown as the human review layer, not the machine contract. The JSON `mdp.message-brief.v0` output remains the source of truth for fit, routed context, and validation state. The readable artifact begins with `## Prospect Metadata` as a fenced YAML block with stable snake_case keys, preserves no-draft reasons and current-role caveats, and formats any draft outreach/referral/email/LinkedIn copy as Markdown blockquotes when copy is present.
+Treat the readable Markdown as the human review layer, not the machine contract. The JSON `mdp.message-brief.v0` output remains the source of truth for fit, routed context, and validation state. The readable artifact begins with YAML frontmatter for prospect metadata and `tags`, then starts the body with `# Prospect Brief: ...`, preserves no-draft reasons and current-role caveats, and formats any draft outreach/referral/email/LinkedIn copy as Markdown blockquotes when copy is present.
 
 12. Read `data.runtime_context` and `data.context.runtime_context` as the brief run timestamp/policy. Then read `data.context.entries` first if drafting is requested and `data.draft_status` is `ready`. Open `data.context.full_card_required` paths only when present.
 13. If copy is drafted from the brief, run `mdp --json check-claims --dir . --text "<draft copy>"` before treating the draft as approved.

@@ -207,16 +207,10 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
     let prospect = &brief["prospect"];
     let fit = &brief["fit"];
 
-    out.push_str("# Prospect Brief\n\n");
-    out.push_str("## Prospect Metadata\n\n");
-    out.push_str("```yaml\n");
-    for (key, value) in readable_metadata(brief) {
-        out.push_str(key);
-        out.push_str(": ");
-        out.push_str(&yaml_scalar(&value));
-        out.push('\n');
-    }
-    out.push_str("```\n\n");
+    render_metadata_frontmatter(&mut out, brief);
+    out.push_str("\n# Prospect Brief: ");
+    out.push_str(&prospect_brief_title(brief));
+    out.push_str("\n\n");
 
     out.push_str("## Fit / Draft Readiness\n\n");
     bullet(&mut out, "fit_status", display_value(&fit["status"]));
@@ -440,6 +434,46 @@ fn readable_metadata(brief: &Value) -> Vec<(&'static str, String)> {
             current_role_caveat(brief).unwrap_or_else(|| "unknown".to_string()),
         ),
     ]
+}
+
+fn render_metadata_frontmatter(out: &mut String, brief: &Value) {
+    out.push_str("---\n");
+    for (key, value) in readable_metadata(brief) {
+        out.push_str(key);
+        out.push_str(": ");
+        out.push_str(&yaml_scalar(&value));
+        out.push('\n');
+    }
+    out.push_str("tags: [");
+    out.push_str(&metadata_tags(brief).join(", "));
+    out.push_str("]\n");
+    out.push_str("---\n");
+}
+
+fn metadata_tags(brief: &Value) -> Vec<String> {
+    ["persona", "segment", "source_kind"]
+        .iter()
+        .filter_map(|key| {
+            readable_metadata(brief)
+                .into_iter()
+                .find(|(metadata_key, _)| metadata_key == key)
+                .map(|(_, value)| value)
+        })
+        .filter(|value| !is_unknownish(value))
+        .map(|value| yaml_scalar(&value))
+        .collect()
+}
+
+fn prospect_brief_title(brief: &Value) -> String {
+    let prospect = &brief["prospect"];
+    let name = display_value(&prospect["name"]);
+    let company = display_value(&prospect["company"]);
+    match (is_unknownish(&name), is_unknownish(&company)) {
+        (false, false) => format!("{name} at {company}"),
+        (false, true) => name,
+        (true, false) => company,
+        (true, true) => "Unknown prospect".to_string(),
+    }
 }
 
 fn split_name(full_name: &str) -> (String, String) {
@@ -855,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    fn readable_brief_renders_ready_markdown_with_metadata_box() {
+    fn readable_brief_renders_ready_markdown_with_frontmatter() {
         let root = temp_pack("readable-brief-ready");
         let prospect_path = root.join("examples").join("clay-row.json");
 
@@ -863,11 +897,17 @@ mod tests {
             .expect("brief should succeed");
         let markdown = render_readable_prospect_brief(&result);
 
-        assert!(markdown.contains("## Prospect Metadata\n\n```yaml\n"));
+        assert!(markdown.starts_with("---\n"));
         assert!(markdown.contains("first_name: \"Alex\""));
         assert!(markdown.contains("last_name: \"Rivera\""));
         assert!(markdown.contains("company_domain: \"example.com\""));
-        assert!(markdown.contains("current_role_caveat: \"Current role is based on supplied prospect data and has not been independently verified by MDP.\""));
+        assert!(markdown.contains("persona: \"GTM Engineering\""));
+        assert!(markdown.contains(
+            "tags: [\"GTM Engineering\", \"agent-assisted GTM\", \"synthetic-example\"]"
+        ));
+        assert!(markdown.contains("---\n\n# Prospect Brief: Alex Rivera at ExampleCo"));
+        assert!(!markdown.contains("```yaml"));
+        assert!(!markdown.contains("<section"));
         assert!(markdown.contains("## Fit / Draft Readiness"));
         assert!(markdown.contains("- draft_status: ready"));
         assert!(markdown.contains("## Evidence Receipts and Accepted Signals"));
@@ -908,9 +948,15 @@ mod tests {
             .expect("brief should succeed");
         let markdown = render_readable_prospect_brief(&result);
 
+        assert!(markdown.starts_with("---\n"));
         assert!(markdown.contains("first_name: unknown"));
         assert!(markdown.contains("last_name: unknown"));
         assert!(markdown.contains("title: unknown"));
+        assert!(markdown.contains("tags: ["));
+        assert!(markdown.contains("\"agent-assisted GTM\""));
+        assert!(markdown.contains("\"synthetic-example\""));
+        assert!(!markdown.contains("```yaml"));
+        assert!(!markdown.contains("<section"));
         assert!(markdown.contains("- draft_status: no-draft"));
         assert!(markdown.contains("No reviewed current role/title was supplied."));
         assert!(markdown.contains("state_as: hypothesis"));
