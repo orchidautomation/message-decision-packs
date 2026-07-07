@@ -115,6 +115,12 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json
 ```
 
+For human review, add a readable Markdown artifact from the same prospect/context path while keeping JSON as the machine source of truth:
+
+```bash
+mdp brief --context --readable --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.md
+```
+
 ## Required Card Coverage
 
 A usable GTM messaging pack should usually have:

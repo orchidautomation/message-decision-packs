@@ -12,7 +12,9 @@ pub(crate) mod sample_leads;
 pub(crate) mod schemas;
 
 pub(crate) use agent_surface::agent_surface;
-pub(crate) use briefs::{demo_copy, emit_brief, prospect_brief_with_context};
+pub(crate) use briefs::{
+    demo_copy, emit_brief, prospect_brief_with_context, render_readable_prospect_brief,
+};
 pub(crate) use capabilities::capabilities;
 pub(crate) use evals::eval_pack;
 pub(crate) use health::{doctor, explain, gaps, validate_pack};

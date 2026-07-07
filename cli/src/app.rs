@@ -1,13 +1,15 @@
 use crate::cli::{Cli, Commands, SampleLeadsFormat};
 use crate::commands::{
     agent_surface, capabilities, check_claims, demo_copy, doctor, emit_brief, eval_pack, explain,
-    fit, gaps, init_pack, init_pack_dry_run, pack, prospect_brief_with_context, route,
-    sample_leads, schema, validate_pack, validate_prompt_output_file, verify_output_file,
+    fit, gaps, init_pack, init_pack_dry_run, pack, prospect_brief_with_context,
+    render_readable_prospect_brief, route, sample_leads, schema, validate_pack,
+    validate_prompt_output_file, verify_output_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
 use anyhow::Result;
 use serde_json::{Value, json};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
@@ -137,12 +139,29 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             channel,
             job,
             context,
+            readable,
             out,
             dry_run,
         } => {
             let mut data =
                 prospect_brief_with_context(&dir, &prospect, &channel, job.as_deref(), context)?;
             data = attach_input_artifact(data, "prospect", &prospect);
+            if readable && !json_mode && !summary_mode {
+                let markdown = render_readable_prospect_brief(&data);
+                if let Some(path) = out {
+                    if dry_run {
+                        let mut plan_data = attach_readable_dry_run_artifact(data, &path);
+                        plan_data["readable_format"] = json!("markdown");
+                        print_output(false, true, "brief", plan_data)?;
+                    } else {
+                        fs::write(&path, &markdown)?;
+                        println!("{markdown}");
+                    }
+                } else {
+                    println!("{markdown}");
+                }
+                return Ok(());
+            }
             if let Some(path) = out {
                 if dry_run {
                     data = attach_dry_run_artifact(data, &path);
@@ -322,6 +341,42 @@ fn attach_dry_run_artifact(mut data: Value, path: &Path) -> Value {
     data
 }
 
+fn attach_readable_dry_run_artifact(mut data: Value, path: &Path) -> Value {
+    let write_plan = planned_markdown_write(path);
+    if let Some(object) = data.as_object_mut() {
+        object.insert(
+            "artifact".to_string(),
+            json!({
+                "status": "dry-run",
+                "kind": "markdown-file",
+                "path": path.display().to_string(),
+                "stdout": "also-emitted"
+            }),
+        );
+        object.insert("dry_run".to_string(), json!(true));
+        object.insert("write_plan".to_string(), Value::Array(vec![write_plan]));
+    }
+    data
+}
+
+fn planned_markdown_write(path: &Path) -> Value {
+    let parent_exists = path.parent().map(Path::exists).unwrap_or(true);
+    let action = if !parent_exists {
+        "parent-missing"
+    } else if path.exists() {
+        "overwrite"
+    } else {
+        "create"
+    };
+    json!({
+        "kind": "markdown-file",
+        "path": path.display().to_string(),
+        "action": action,
+        "will_write": parent_exists,
+        "parent_exists": parent_exists
+    })
+}
+
 fn attach_stdout_artifact(mut data: Value) -> Value {
     if let Some(object) = data.as_object_mut() {
         object.insert(
@@ -395,6 +450,7 @@ mod tests {
                 channel: "linkedin".to_string(),
                 job: None,
                 context: true,
+                readable: false,
                 out: Some(out.clone()),
                 dry_run: false,
             },

@@ -202,6 +202,415 @@ fn brief_no_draft_reason(fit_result: &Value) -> String {
         .to_string()
 }
 
+pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
+    let mut out = String::new();
+    let prospect = &brief["prospect"];
+    let fit = &brief["fit"];
+
+    out.push_str("# Prospect Brief\n\n");
+    out.push_str("## Prospect Metadata\n\n");
+    out.push_str("```yaml\n");
+    for (key, value) in readable_metadata(brief) {
+        out.push_str(key);
+        out.push_str(": ");
+        out.push_str(&yaml_scalar(&value));
+        out.push('\n');
+    }
+    out.push_str("```\n\n");
+
+    out.push_str("## Fit / Draft Readiness\n\n");
+    bullet(&mut out, "fit_status", display_value(&fit["status"]));
+    bullet(&mut out, "fit_decision", display_value(&fit["decision"]));
+    bullet(
+        &mut out,
+        "draft_status",
+        display_value(&brief["draft_status"]),
+    );
+    bullet(
+        &mut out,
+        "draft_decision",
+        display_value(&brief["draft_decision"]),
+    );
+    if !brief["no_draft_reason"].is_null() {
+        bullet(
+            &mut out,
+            "no_draft_reason",
+            display_value(&brief["no_draft_reason"]),
+        );
+    }
+    out.push('\n');
+
+    out.push_str("## Evidence Receipts and Accepted Signals\n\n");
+    let mut wrote_evidence = false;
+    wrote_evidence |= list_named_items(&mut out, "Accepted fit signals", &fit["matches"], |item| {
+        titled_body(item, "title", "reason")
+    });
+    wrote_evidence |= list_named_items(
+        &mut out,
+        "Supplied prospect signals",
+        &prospect["signals"],
+        |item| {
+            let mut parts = vec![display_value(&item["title"])];
+            if let Some(source) = optional_text(&item["source"]) {
+                parts.push(format!("source: {source}"));
+            }
+            if let Some(confidence) = optional_text(&item["confidence"]) {
+                parts.push(format!("confidence: {confidence}"));
+            }
+            if let Some(state_as) = optional_text(&item["state_as"]) {
+                parts.push(format!("state_as: {state_as}"));
+            }
+            parts.join("; ")
+        },
+    );
+    wrote_evidence |= list_context_entries(
+        &mut out,
+        "Routed evidence entries",
+        brief,
+        &["claims", "signals", "positioning", "fit-rules"],
+    );
+    if !wrote_evidence {
+        out.push_str("- No accepted evidence or supplied signals were present in the brief.\n");
+    }
+    out.push('\n');
+
+    out.push_str("## Gaps, Hypotheses, and Current-Role Caveats\n\n");
+    let mut wrote_gap = false;
+    wrote_gap |= list_named_items(
+        &mut out,
+        "Missing requirements",
+        &fit["context"]["missing_requirements"],
+        |item| titled_body(item, "field", "reason"),
+    );
+    wrote_gap |= list_named_items(
+        &mut out,
+        "Invalid requirements",
+        &fit["context"]["invalid_requirements"],
+        |item| titled_body(item, "field", "reason"),
+    );
+    wrote_gap |= list_context_entries(&mut out, "Routed gap entries", brief, &["gaps"]);
+    if let Some(caveat) = current_role_caveat(brief) {
+        out.push_str("- Current-role caveat: ");
+        out.push_str(&caveat);
+        out.push('\n');
+        wrote_gap = true;
+    }
+    if let Some(trigger) = optional_text(&prospect["trigger"]) {
+        out.push_str("- Trigger should be treated as supplied context: ");
+        out.push_str(&trigger);
+        out.push('\n');
+        wrote_gap = true;
+    }
+    if !wrote_gap {
+        out.push_str("- No explicit gaps or caveats were present in the brief.\n");
+    }
+    out.push('\n');
+
+    out.push_str("## Safe Angle\n\n");
+    if let Some(trigger) = optional_text(&prospect["trigger"]) {
+        out.push_str("- Anchor on supplied trigger: ");
+        out.push_str(&trigger);
+        out.push('\n');
+    }
+    if let Some(background) = optional_text(&prospect["background"]) {
+        out.push_str("- Background context: ");
+        out.push_str(&background);
+        out.push('\n');
+    }
+    if !list_context_entries(
+        &mut out,
+        "Routed angle entries",
+        brief,
+        &[
+            "hooks",
+            "pains",
+            "ctas",
+            "copy-patterns",
+            "channel-policies",
+        ],
+    ) && optional_text(&prospect["trigger"]).is_none()
+        && optional_text(&prospect["background"]).is_none()
+    {
+        out.push_str("- No safe angle was available from routed context.\n");
+    }
+    out.push('\n');
+
+    out.push_str("## Avoid-Claims / Guardrails\n\n");
+    let wrote_guardrail = list_context_entries(
+        &mut out,
+        "Routed guardrails",
+        brief,
+        &["avoid-rules", "output-rules", "fit-rules", "positioning"],
+    );
+    if !wrote_guardrail {
+        out.push_str("- No routed guardrails were present in the brief context.\n");
+    }
+    out.push('\n');
+
+    out.push_str("## Proposed Outreach Copy\n\n");
+    if !render_copy_blockquotes(&mut out, brief) {
+        out.push_str("- No proposed outreach copy is included. Draft only after `draft_status: ready` and route/check constraints are reviewed.\n");
+    }
+    out.push('\n');
+
+    out.push_str("## Discovery Questions / Follow-Up Research\n\n");
+    if !list_context_entries(
+        &mut out,
+        "Routed follow-up entries",
+        brief,
+        &["gaps", "objections"],
+    ) {
+        out.push_str(
+            "- Confirm the prospect's current role and account context before using draft copy.\n",
+        );
+        out.push_str(
+            "- Add source-backed evidence for any claim not already present in the brief.\n",
+        );
+    }
+    out.push('\n');
+
+    out.push_str("## Validation Status and Source Outputs\n\n");
+    bullet(
+        &mut out,
+        "brief_contract",
+        display_value(&brief["contract"]),
+    );
+    bullet(
+        &mut out,
+        "context_contract",
+        display_value(&brief["context"]["contract"]),
+    );
+    bullet(
+        &mut out,
+        "context_status",
+        display_value(&brief["context"]["status"]),
+    );
+    bullet(
+        &mut out,
+        "source_kind",
+        display_value(&brief["prospect_source"]["kind"]),
+    );
+    bullet(
+        &mut out,
+        "source_guidance",
+        display_value(&brief["prospect_source"]["guidance"]),
+    );
+    bullet(
+        &mut out,
+        "input_artifact",
+        display_value(&brief["input_artifact"]["path"]),
+    );
+    bullet(
+        &mut out,
+        "json_source",
+        "Use `mdp --json brief --context` as the machine source of truth.",
+    );
+
+    out
+}
+
+fn readable_metadata(brief: &Value) -> Vec<(&'static str, String)> {
+    let prospect = &brief["prospect"];
+    let full_name = display_value(&prospect["name"]);
+    let (first_name, last_name) = split_name(&full_name);
+    vec![
+        ("first_name", first_name),
+        ("last_name", last_name),
+        ("full_name", full_name),
+        ("linkedin_url", display_value(&prospect["linkedin_url"])),
+        ("title", display_value(&prospect["title"])),
+        ("company_name", display_value(&prospect["company"])),
+        ("company_domain", display_value(&prospect["company_domain"])),
+        ("company_url", display_value(&prospect["company_url"])),
+        ("persona", display_value(&brief["persona"])),
+        ("segment", display_value(&prospect["segment"])),
+        (
+            "source_kind",
+            display_value(&brief["prospect_source"]["kind"]),
+        ),
+        (
+            "research_provider",
+            prospect["attributes"]["research_provider"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string(),
+        ),
+        (
+            "current_role_caveat",
+            current_role_caveat(brief).unwrap_or_else(|| "unknown".to_string()),
+        ),
+    ]
+}
+
+fn split_name(full_name: &str) -> (String, String) {
+    if is_unknownish(full_name) {
+        return ("unknown".to_string(), "unknown".to_string());
+    }
+    let mut parts = full_name.split_whitespace().collect::<Vec<_>>();
+    let first_name = parts.first().copied().unwrap_or("unknown").to_string();
+    if !parts.is_empty() {
+        parts.remove(0);
+    }
+    let last_name = if parts.is_empty() {
+        "unknown".to_string()
+    } else {
+        parts.join(" ")
+    };
+    (first_name, last_name)
+}
+
+fn current_role_caveat(brief: &Value) -> Option<String> {
+    let prospect = &brief["prospect"];
+    if let Some(value) = optional_text(&prospect["attributes"]["current_role_caveat"]) {
+        return Some(value);
+    }
+    let title = display_value(&prospect["title"]);
+    if is_unknownish(&title) {
+        return Some("No reviewed current role/title was supplied.".to_string());
+    }
+    Some("Current role is based on supplied prospect data and has not been independently verified by MDP.".to_string())
+}
+
+fn list_named_items<F>(out: &mut String, heading: &str, value: &Value, render: F) -> bool
+where
+    F: Fn(&Value) -> String,
+{
+    let Some(items) = value.as_array() else {
+        return false;
+    };
+    if items.is_empty() {
+        return false;
+    }
+    out.push_str("**");
+    out.push_str(heading);
+    out.push_str("**\n\n");
+    for item in items {
+        out.push_str("- ");
+        out.push_str(&render(item));
+        out.push('\n');
+    }
+    true
+}
+
+fn list_context_entries(out: &mut String, heading: &str, brief: &Value, kinds: &[&str]) -> bool {
+    let entries = brief["context"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let selected = entries
+        .iter()
+        .filter(|entry| {
+            entry["card_kind"]
+                .as_str()
+                .is_some_and(|kind| kinds.contains(&kind))
+        })
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        return false;
+    }
+    out.push_str("**");
+    out.push_str(heading);
+    out.push_str("**\n\n");
+    for entry in selected {
+        out.push_str("- ");
+        out.push_str(&display_value(&entry["title"]));
+        out.push_str(" (");
+        out.push_str(&display_value(&entry["card_kind"]));
+        out.push_str("): ");
+        out.push_str(&display_value(&entry["body"]));
+        if let Some(avoid) = entry["avoid"].as_array().filter(|items| !items.is_empty()) {
+            let terms = avoid
+                .iter()
+                .map(display_value)
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(" Avoid: ");
+            out.push_str(&terms);
+            out.push('.');
+        }
+        out.push('\n');
+    }
+    true
+}
+
+fn render_copy_blockquotes(out: &mut String, brief: &Value) -> bool {
+    let mut wrote = false;
+    for key in [
+        "recommended",
+        "message",
+        "copy",
+        "email",
+        "linkedin_message",
+    ] {
+        if let Some(text) = optional_text(&brief[key]) {
+            out.push_str("**");
+            out.push_str(key);
+            out.push_str("**\n\n");
+            for line in text.lines() {
+                out.push_str("> ");
+                out.push_str(line);
+                out.push('\n');
+            }
+            wrote = true;
+        }
+    }
+    wrote
+}
+
+fn titled_body(item: &Value, title_key: &str, body_key: &str) -> String {
+    let title = display_value(&item[title_key]);
+    let body = display_value(&item[body_key]);
+    if is_unknownish(&body) {
+        title
+    } else {
+        format!("{title}: {body}")
+    }
+}
+
+fn bullet(out: &mut String, label: &str, value: impl AsRef<str>) {
+    out.push_str("- ");
+    out.push_str(label);
+    out.push_str(": ");
+    out.push_str(value.as_ref());
+    out.push('\n');
+}
+
+fn display_value(value: &Value) -> String {
+    match value {
+        Value::String(text) if !is_unknownish(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Array(items) if !items.is_empty() => items
+            .iter()
+            .map(display_value)
+            .collect::<Vec<_>>()
+            .join(", "),
+        _ => "unknown".to_string(),
+    }
+}
+
+fn optional_text(value: &Value) -> Option<String> {
+    let text = display_value(value);
+    (!is_unknownish(&text)).then_some(text)
+}
+
+fn is_unknownish(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.is_empty()
+        || matches!(
+            trimmed.to_ascii_lowercase().as_str(),
+            "unknown" | "n/a" | "na" | "none" | "null"
+        )
+}
+
+fn yaml_scalar(value: &str) -> String {
+    if is_unknownish(value) {
+        return "unknown".to_string();
+    }
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
 pub(crate) fn demo_copy(root: &Path, prospect_path: &Path, channel: &str) -> Result<Value> {
     let brief = prospect_brief(
         root,
@@ -441,6 +850,70 @@ mod tests {
                 .len(),
             0
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn readable_brief_renders_ready_markdown_with_metadata_box() {
+        let root = temp_pack("readable-brief-ready");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result = prospect_brief_with_context(&root, &prospect_path, "linkedin", None, true)
+            .expect("brief should succeed");
+        let markdown = render_readable_prospect_brief(&result);
+
+        assert!(markdown.contains("## Prospect Metadata\n\n```yaml\n"));
+        assert!(markdown.contains("first_name: \"Alex\""));
+        assert!(markdown.contains("last_name: \"Rivera\""));
+        assert!(markdown.contains("company_domain: \"example.com\""));
+        assert!(markdown.contains("current_role_caveat: \"Current role is based on supplied prospect data and has not been independently verified by MDP.\""));
+        assert!(markdown.contains("## Fit / Draft Readiness"));
+        assert!(markdown.contains("- draft_status: ready"));
+        assert!(markdown.contains("## Evidence Receipts and Accepted Signals"));
+        assert!(markdown.contains("## Proposed Outreach Copy"));
+        assert!(markdown.contains("No proposed outreach copy is included"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn readable_brief_renders_no_draft_reason_without_inventing_contact() {
+        let root = temp_pack("readable-brief-no-draft");
+        let prospect_path = root.join("examples").join("account-only.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "N/A",
+  "title": "N/A",
+  "company": "Northstar Cloud",
+  "company_domain": "northstarcloud.com",
+  "segment": "agent-assisted GTM",
+  "trigger": "standardizing prospect qualification data before routing new campaigns",
+  "source_kind": "synthetic-example",
+  "synthetic": true,
+  "signals": [
+    {
+      "id": "qualification-data-standardization",
+      "title": "Standardizing prospect qualification data",
+      "source": "synthetic account-only row",
+      "state_as": "hypothesis"
+    }
+  ]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = prospect_brief_with_context(&root, &prospect_path, "linkedin", None, true)
+            .expect("brief should succeed");
+        let markdown = render_readable_prospect_brief(&result);
+
+        assert!(markdown.contains("first_name: unknown"));
+        assert!(markdown.contains("last_name: unknown"));
+        assert!(markdown.contains("title: unknown"));
+        assert!(markdown.contains("- draft_status: no-draft"));
+        assert!(markdown.contains("No reviewed current role/title was supplied."));
+        assert!(markdown.contains("state_as: hypothesis"));
 
         let _ = std::fs::remove_dir_all(root);
     }
