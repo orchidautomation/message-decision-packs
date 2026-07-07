@@ -47,6 +47,7 @@ mdp --json check-claims --dir . --text "<draft copy>" --subject "<subject>" --pe
 
 3. Use `check-claims` for `valid`, `matched_claims`, `claim_gaps`, `guardrail_hits`, `constraint_warnings`, `unchecked_constraints`, and `unsupported_claims`. `guardrail_hits` can come from avoid-rules, output-rules, or routed entry `constraints`.
    For profile-owned packs, `check-claims` can use cards by `kind` when canonical IDs such as `claims`, `avoid-rules`, or `output-rules` are absent.
+   Avoid/claim matching is deterministic and phrase-boundary aware. Obvious immediate negations such as `not auto-send`, `do not auto-send`, or `not an AI SDR` should pass unless another active unsafe claim is present; positive execution or unsupported-claim phrases should still fail.
 4. Read `context.entries` first for prospect briefs. Open card files only from `context.full_card_required`, a brief `required_load_order`, or route `load_order` when the bounded context is missing or insufficient.
 5. Compare the copy to:
 

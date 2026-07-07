@@ -1223,6 +1223,39 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
+            "fit-negated-execution-boundary.yaml",
+            json!({
+                "id": "fit-negated-execution-boundary",
+                "command": "fit",
+                "profile_eval": eval_profile(
+                    "proceed",
+                    &["decision-criteria", "boundaries", "source-signals"],
+                    &["prospect-fit-or-brief"]
+                ),
+                "expect_status": "fit",
+                "prospect": {
+                    "name": "Jordan Smith",
+                    "title": "GTM Engineering Lead",
+                    "company": "ExampleCo",
+                    "company_domain": "example.com",
+                    "company_url": "https://example.com",
+                    "persona": "GTM Engineering",
+                    "segment": "agent-assisted GTM",
+                    "source_kind": "synthetic-example",
+                    "synthetic": true,
+                    "background": "building repeatable agent-assisted GTM workflows across supplied rows and review steps",
+                    "trigger": "Needs message context and explicitly says do not auto-send the campaign",
+                    "signals": [
+                        {
+                            "id": "review-boundary",
+                            "title": "Review workflow, not auto-send",
+                            "source": "synthetic example row"
+                        }
+                    ]
+                }
+            }),
+        ),
+        (
             "brief-insufficient-context.yaml",
             json!({
                 "id": "brief-insufficient-context",
@@ -1254,6 +1287,35 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "text": "MDP guarantees meetings, improves reply rates by 30%, integrates with Salesforce, and updates CRM records.",
                 "expect_valid": false
+            }),
+        ),
+        (
+            "claim-check-execution-positive.yaml",
+            json!({
+                "id": "claim-check-execution-positive",
+                "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "unsafe-output",
+                    &["evidence-proof", "boundaries", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
+                "text": "MDP can auto-send the campaign and send emails after the brief is approved.",
+                "expect_valid": false,
+                "expect_unsupported_claims_contains": ["execution"]
+            }),
+        ),
+        (
+            "claim-check-negated-execution-boundary.yaml",
+            json!({
+                "id": "claim-check-negated-execution-boundary",
+                "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "proceed",
+                    &["evidence-proof", "boundaries", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
+                "text": "MDP is not an AI SDR. It does not auto-send. It does not send emails.",
+                "expect_valid": true
             }),
         ),
         (

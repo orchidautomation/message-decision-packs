@@ -128,7 +128,7 @@ pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -
                 matches.push(json!({"id": entry.id, "title": entry.title, "reason": if applies { "segment/persona match" } else { "keyword match" }}));
             }
             for avoid in &entry.avoid {
-                if haystack.contains(&avoid.to_lowercase()) {
+                if contains_guardrail_term(&haystack, avoid) {
                     disqualifiers
                         .push(json!({"entry_id": entry.id, "term": avoid, "title": entry.title}));
                 }
@@ -596,7 +596,7 @@ fn collect_guardrail_hits(
 ) {
     for entry in entries {
         for term in &entry.avoid {
-            if lower.contains(&term.to_lowercase()) {
+            if contains_guardrail_term(lower, term) {
                 guardrail_hits.push(
                     json!({"card_id": card_id, "entry_id": entry.id, "term": term, "title": entry.title}),
                 );
@@ -1014,7 +1014,7 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
 
     let has_number = text.chars().any(|c| c.is_ascii_digit());
     if (text.contains('%') || text.contains(" percent") || has_number)
-        && contains_any(
+        && contains_actionable_any(
             text,
             &[
                 "reply rate",
@@ -1033,8 +1033,8 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "Quantified performance or ROI claims require explicit approved evidence.",
         );
     }
-    if contains_any(text, &["guarantee", "guarantees", "guaranteed"])
-        && contains_any(text, &["meeting", "meetings", "reply", "replies"])
+    if contains_actionable_any(text, &["guarantee", "guarantees", "guaranteed"])
+        && contains_actionable_any(text, &["meeting", "meetings", "reply", "replies"])
     {
         push_hit(
             "quantified-outcome",
@@ -1042,7 +1042,7 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "Guaranteed meetings, replies, or outcomes are unsupported unless explicitly approved.",
         );
     }
-    if contains_any(
+    if contains_actionable_any(
         text,
         &[
             "integrates with",
@@ -1050,7 +1050,7 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "connects to",
             "syncs with",
         ],
-    ) && contains_any(text, &["salesforce", "hubspot", "outreach", "salesloft"])
+    ) && contains_actionable_any(text, &["salesforce", "hubspot", "outreach", "salesloft"])
     {
         push_hit(
             "integration",
@@ -1058,7 +1058,7 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "Integration claims require an approved product capability claim.",
         );
     }
-    if contains_any(
+    if contains_actionable_any(
         text,
         &[
             "soc 2",
@@ -1077,7 +1077,7 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "Compliance and security claims require explicit approved evidence.",
         );
     }
-    if contains_any(
+    if contains_actionable_any(
         text,
         &[
             "trusted by",
@@ -1102,7 +1102,7 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "Customer-name and social-proof claims require explicit approved source context.",
         );
     }
-    if contains_any(
+    if contains_actionable_any(
         text,
         &[
             "arr conversion",
@@ -1119,7 +1119,7 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
             "Commercial traction and market-validation claims require explicit approved source context.",
         );
     }
-    if contains_any(
+    if contains_actionable_any(
         text,
         &[
             "updates crm",
@@ -1143,6 +1143,112 @@ fn unsupported_claims(text: &str, approved_context: &str) -> Vec<Value> {
     }
 
     hits
+}
+
+fn contains_guardrail_term(text: &str, term: &str) -> bool {
+    let needle = term.trim().to_lowercase();
+    if needle.is_empty() {
+        return false;
+    }
+
+    text.match_indices(&needle).any(|(start, _)| {
+        let end = start + needle.len();
+        has_phrase_boundaries(text, start, end, &needle)
+            && !is_obviously_negated_match(text, start, &needle)
+    })
+}
+
+fn has_phrase_boundaries(text: &str, start: usize, end: usize, needle: &str) -> bool {
+    let starts_with_word = needle.chars().next().is_some_and(is_word_char);
+    let ends_with_word = needle.chars().next_back().is_some_and(is_word_char);
+    let previous_ok = !starts_with_word
+        || text[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|value| !is_word_char(value));
+    let next_ok = !ends_with_word
+        || text[end..]
+            .chars()
+            .next()
+            .is_none_or(|value| !is_word_char(value));
+
+    previous_ok && next_ok
+}
+
+fn is_obviously_negated_match(text: &str, start: usize, needle: &str) -> bool {
+    if !negation_eligible(needle) {
+        return false;
+    }
+    let words: Vec<&str> = text[..start]
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '\''))
+        .filter(|word| !word.is_empty())
+        .collect();
+    let window_start = words.len().saturating_sub(7);
+    let window = &words[window_start..];
+
+    for index in (0..window.len()).rev() {
+        if !is_negator(window[index]) {
+            continue;
+        }
+        let bridge = &window[index + 1..];
+        return bridge.is_empty()
+            || bridge.iter().all(|word| is_negation_bridge(word))
+            || is_negated_coordination_bridge(bridge);
+    }
+
+    false
+}
+
+fn negation_eligible(needle: &str) -> bool {
+    needle.chars().any(|c| c.is_ascii_alphabetic())
+        && !needle.contains("://")
+        && !needle.contains("www.")
+        && !needle.contains("utm_")
+        && !needle.contains('<')
+}
+
+fn is_negator(word: &str) -> bool {
+    matches!(
+        word,
+        "not"
+            | "no"
+            | "never"
+            | "cannot"
+            | "cant"
+            | "can't"
+            | "dont"
+            | "don't"
+            | "doesnt"
+            | "doesn't"
+            | "didnt"
+            | "didn't"
+            | "wont"
+            | "won't"
+    )
+}
+
+fn is_negation_bridge(word: &str) -> bool {
+    matches!(word, "a" | "an" | "the" | "any" | "to" | "be" | "as")
+}
+
+fn is_negated_coordination_bridge(bridge: &[&str]) -> bool {
+    bridge.len() <= 4
+        && bridge
+            .last()
+            .is_some_and(|word| matches!(*word, "and" | "or" | "nor"))
+        && !bridge
+            .iter()
+            .any(|word| matches!(*word, "only" | "just" | "merely"))
+}
+
+fn contains_actionable_any(text: &str, needles: &[&str]) -> bool {
+    needles
+        .iter()
+        .any(|needle| contains_guardrail_term(text, needle))
+}
+
+fn is_word_char(value: char) -> bool {
+    value.is_ascii_alphanumeric()
 }
 
 fn contains_any(text: &str, needles: &[&str]) -> bool {
@@ -1822,6 +1928,48 @@ mod tests {
     }
 
     #[test]
+    fn fit_gate_allows_negated_execution_boundaries() {
+        let root = temp_pack("fit-negated-execution");
+        let prospect_path = root.join("examples").join("negated-execution.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+                "name": "Jordan Smith",
+                "title": "GTM Engineering Lead",
+                "company": "ExampleCo",
+                "company_domain": "example.com",
+                "company_url": "https://example.com",
+                "persona": "GTM Engineering",
+                "segment": "agent-assisted GTM",
+                "source_kind": "synthetic-example",
+                "synthetic": true,
+                "background": "building repeatable agent-assisted GTM workflows across supplied rows and review steps",
+                "trigger": "Needs message context and explicitly says do not auto-send the campaign",
+                "signals": [
+                    {
+                        "id": "review-boundary",
+                        "title": "Review workflow, not auto-send",
+                        "source": "synthetic example row"
+                    }
+                ]
+            }"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "fit");
+        assert!(
+            result["disqualifiers"]
+                .as_array()
+                .expect("disqualifiers array")
+                .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn claim_check_flags_execution_category_drift() {
         let root = temp_pack("claim-contract");
 
@@ -1843,6 +1991,37 @@ mod tests {
                 .expect("guardrail_hits array")
                 .iter()
                 .any(|hit| hit["term"] == "AI SDR")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_allows_negated_execution_boundaries() {
+        let root = temp_pack("claim-negated-execution");
+
+        let result = check_claims(
+            &root,
+            Some("MDP is a local offline CLI. It does not auto-send or send emails."),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("claim check should succeed");
+
+        assert_eq!(result["valid"], true);
+        assert!(
+            result["unsupported_claims"]
+                .as_array()
+                .expect("unsupported claims array")
+                .is_empty()
+        );
+        assert!(
+            result["guardrail_hits"]
+                .as_array()
+                .expect("guardrail hits array")
+                .is_empty()
         );
 
         let _ = std::fs::remove_dir_all(root);
@@ -2111,6 +2290,7 @@ mod tests {
             "MDP improves reply rates by 30%.",
             "MDP integrates with Salesforce and HubSpot.",
             "MDP updates CRM fields after every send.",
+            "MDP can auto-send the campaign after the brief is approved.",
             "MDP is SOC 2 compliant and trusted by Acme.",
         ] {
             let result = check_claims(&root, Some(text), None, None, None, None)

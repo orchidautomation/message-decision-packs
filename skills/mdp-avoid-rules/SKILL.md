@@ -51,6 +51,8 @@ Each avoid rule should include:
 - affected personas in `applies_to`
 - evidence when the boundary comes from source material
 
+Author `avoid` terms as active unsafe phrases, not as negated safe boundaries. The CLI matches terms with deterministic phrase boundaries and ignores obvious immediate negations such as `not auto-send`, `do not auto-send`, or `not an AI SDR`, so safe boundary statements should not be punished solely because they name the forbidden phrase. Add explicit active variants when plural, tense, or synonym coverage matters.
+
 ## Validate
 
 ```bash
