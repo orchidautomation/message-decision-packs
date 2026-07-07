@@ -80,7 +80,7 @@ output_contract:
       company_domain: public-services.example
       name: N/A
       persona: Proposal Lead
-      segment: municipal-modernization
+      segment: public-services-review
       signals:
       - confidence: medium
         freshness: synthetic
