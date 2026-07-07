@@ -2,7 +2,7 @@ import { definePlugin } from 'pluxx'
 
 export default definePlugin({
   name: 'message-decision-packs',
-  version: '0.1.30',
+  version: '0.1.31',
   description: 'Author, validate, and use Message Decision Packs with the local mdp CLI.',
   homepage: 'https://orchidautomation.com',
   author: {
