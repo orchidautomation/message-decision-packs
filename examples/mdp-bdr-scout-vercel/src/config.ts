@@ -15,3 +15,9 @@ export function loadScoutConfig(overrides: Partial<ScoutConfig> = {}): ScoutConf
     crmSyncEnabled: overrides.crmSyncEnabled ?? process.env.CRM_SYNC_ENABLED === "true"
   };
 }
+
+export function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}

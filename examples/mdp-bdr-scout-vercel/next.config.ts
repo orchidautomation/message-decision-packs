@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    typedRoutes: false
-  }
+  typedRoutes: false
 };
 
-export default nextConfig;
+export default withWorkflow(nextConfig);

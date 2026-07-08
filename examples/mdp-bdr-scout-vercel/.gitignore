@@ -4,3 +4,6 @@
 /node_modules/
 .env*
 !.env.example
+/.swc
+
+/app/.well-known/

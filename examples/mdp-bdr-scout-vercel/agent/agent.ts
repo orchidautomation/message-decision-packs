@@ -1,15 +1,11 @@
-import { discoverCandidates } from "./tools/search.ts";
-import { extractEvidence } from "./tools/extract.ts";
-import { runMdp } from "./tools/mdp.ts";
-import { writeLedgerRows } from "./tools/ledger.ts";
+import { defineAgent } from "eve";
 
-export const bdrScoutAgent = {
+export default defineAgent({
+  model: process.env.MDP_SCOUT_MODEL ?? "openai/gpt-5.4-mini"
+});
+
+export const bdrScoutAgentMetadata = {
   name: "mdp-bdr-scout",
   description: "Scheduled Vercel-first BDR Scout powered by Message Decision Packs.",
-  tools: {
-    discoverCandidates,
-    extractEvidence,
-    runMdp,
-    writeLedgerRows
-  }
+  tools: ["search", "extract", "mdp", "ledger"]
 };

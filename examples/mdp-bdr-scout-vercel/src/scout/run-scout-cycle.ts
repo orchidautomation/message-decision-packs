@@ -1,16 +1,12 @@
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { loadScoutConfig } from "../config.ts";
-import { readFixture } from "../providers/fixtures.ts";
+import { getDefaultFixture, readFixture } from "../providers/fixtures.ts";
 import { discoverWithExa } from "../providers/exa.ts";
 import { createMdpRunner } from "../mdp/runner.ts";
 import { scoreCandidate } from "../scoring/score-candidate.ts";
 import { appendLedgerRows } from "../storage/ledger.ts";
 import type { LedgerRow } from "../schemas/ledger.ts";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const defaultFixture = join(here, "../../samples/public-source-fixture.json");
 
 export type ScoutCycleResult = {
   runId: string;
@@ -23,15 +19,16 @@ export async function runScoutCycle(options: {
   scheduleId?: string;
   fixturePath?: string | URL;
   outputDir?: string;
+  query?: string;
   dryRun?: boolean;
   persist?: boolean;
 } = {}): Promise<ScoutCycleResult> {
   const config = loadScoutConfig({ packId: options.packId, scheduleId: options.scheduleId });
   const runId = createRunId(config.scheduleId);
-  const fixture = await readFixture(options.fixturePath ?? defaultFixture);
+  const fixture = options.fixturePath ? await readFixture(options.fixturePath) : getDefaultFixture();
 
   const discovered = await discoverWithExa({
-    query: "GTM engineering teams adopting AI agents",
+    query: options.query ?? "GTM engineering teams adopting AI agents",
     limit: config.maxCandidates,
     dryRun: options.dryRun ?? true,
     fixture

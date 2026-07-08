@@ -6,21 +6,26 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "node scripts/check-example.mjs",
+    "check:scaffold": "node scripts/check-example.mjs",
+    "typecheck": "next typegen && tsc --noEmit",
     "scout:sample": "node scripts/run-sample.mjs",
-    "check": "npm run typecheck && npm run scout:sample"
+    "scout:sample:native": "node scripts/run-sample.mjs --native",
+    "check": "npm run check:scaffold && npm run typecheck && npm run scout:sample"
   },
   "dependencies": {
     "@vercel/blob": "latest",
     "@vercel/sandbox": "latest",
     "ai": "latest",
+    "eve": "latest",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "workflow": "latest"
+    "workflow": "latest",
+    "zod": "latest"
   },
   "devDependencies": {
     "@types/node": "latest",
-    "typescript": "latest"
+    "@types/react": "^19.2.17",
+    "typescript": "^5.9.3"
   }
 }
