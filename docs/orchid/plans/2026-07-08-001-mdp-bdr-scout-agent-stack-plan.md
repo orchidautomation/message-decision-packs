@@ -24,7 +24,7 @@ Use a **Vercel-first template stack** for v1:
 7. **Neon Postgres via Vercel Marketplace** for the canonical relational ledger; **Vercel Blob** for brief/artifact/JSONL exports.
 8. **Exa as primary discovery** using `@exalabs/ai-sdk`, Exa MCP, and/or Exa API. Exa is the best default for AI-native company/person/news search.
 9. **Firecrawl as extraction fallback** using its Vercel Native marketplace integration when a URL needs clean markdown, structured JSON, screenshots, or JS-rendered scrape/interact behavior.
-10. **Apify as optional hard-site actor layer**, not the default. Use it when you need an existing Store actor, marketplace scraper, long-running crawl, proxy-heavy job, or dataset-oriented output.
+10. **Apify as optional hard-site actor layer**, not the default. Use it when you need an existing Store actor, marketplace scraper, long-running crawl, proxy-heavy job, dataset-oriented output, or Apify MCP tools inside a Vercel AI SDK agent.
 11. **Vercel Connect** for delegated third-party credentials, especially Salesforce, Slack, GitHub, Snowflake, custom OAuth, and API-key providers when the scout becomes multi-tenant or user-authorized.
 12. **JustBash** only for lightweight model-visible file/shell workspace behavior. It should not be the production isolation boundary for MDP or scraping.
 
@@ -78,7 +78,9 @@ Firecrawl is Vercel-native in the Marketplace. Installing the integration expose
 
 ### Apify
 
-Apify is powerful for marketplace scrapers, long-running crawls, proxy-heavy extraction, and dataset outputs. The right interface is the Apify API/JS client: run an Actor/task, wait or receive a webhook, then retrieve dataset items. Apify should be optional because it adds another token, another platform, and often a heavier compliance/usage story than Exa + Firecrawl.
+Apify is powerful for marketplace scrapers, long-running crawls, proxy-heavy extraction, and dataset outputs. Its Vercel AI SDK integration guide shows an agent using the Apify MCP server at `https://mcp.apify.com` with `APIFY_TOKEN`, `experimental_createMCPClient`, and Vercel AI SDK `generateText()` tools. That means Apify can be surfaced as AI SDK tools in the same agent stack when a Store actor is the easiest way to get a dataset.
+
+The lower-level interface is still the Apify API/JS client: run an Actor/task, wait or receive a webhook, then retrieve dataset items. Apify should be optional because it adds another token, another platform, and often a heavier compliance/usage story than Exa + Firecrawl. Keep Vercel AI Gateway as the default model path; Apify OpenRouter is useful if a user wants one Apify token to cover tool + model costs, but it should not replace the template's default Vercel-native model routing.
 
 ## Vercel-first architecture
 
@@ -298,7 +300,7 @@ Recommended / optional:
 
 ```bash
 FIRECRAWL_API_KEY=...      # Vercel Native marketplace integration
-APIFY_TOKEN=...            # optional hard-site actor fallback
+APIFY_TOKEN=...            # optional Apify MCP / Vercel AI SDK / Actor API fallback
 MDP_RUNNER_MODE=native     # native | sandbox
 SCOUT_MIN_SCORE=70
 SCOUT_MAX_CANDIDATES=25
@@ -326,7 +328,7 @@ For production Vercel, use AI Gateway as the default. Keep Ollama as a local/dev
 3. **Implement discovery providers**
    - Exa first: AI SDK tool and direct API wrapper.
    - Firecrawl second: Vercel Marketplace env var + search/scrape/interact wrapper.
-   - Apify optional: Actor run + dataset retrieval wrapper.
+   - Apify optional: Vercel AI SDK/MCP tools for agent use plus Actor run + dataset retrieval wrapper.
 
 4. **Implement workflow + ledger**
    - Cron route starts workflow.
@@ -406,6 +408,7 @@ cargo test --manifest-path cli/Cargo.toml
 - Exa AI SDK by Vercel: https://exa.ai/docs/reference/vercel
 - Exa MCP: https://exa.ai/docs/reference/exa-mcp
 - Firecrawl docs: https://docs.firecrawl.dev/introduction
+- Apify Vercel AI SDK integration: https://docs.apify.com/integrations/vercel-ai-sdk
 - Apify API integration: https://docs.apify.com/academy/api/run-actor-and-retrieve-data-via-api
 - JustBash: https://justbash.dev/
 - Ollama OpenAI compatibility: https://docs.ollama.com/api/openai-compatibility
