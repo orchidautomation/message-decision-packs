@@ -63,6 +63,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::Prompt => prompt_schema(card_kinds),
         SchemaTarget::ProofOutput => proof_output_schema(),
         SchemaTarget::Brief => brief_schema(),
+        SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
         SchemaTarget::Prospect => {
             let mut value = prospect_schema();
@@ -556,6 +557,50 @@ fn brief_schema() -> Value {
         {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "required_load_order", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "required_load_order": string_array(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
         {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"]}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
     ]})
+}
+
+fn human_brief_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Human Brief v0",
+        "type": "object",
+        "required": ["artifact_type", "pack_id", "pack_version", "source_artifact_type", "template_id", "decision", "sections", "audit"],
+        "additionalProperties": false,
+        "properties": {
+            "artifact_type": {"const": "mdp.human-brief.v0"},
+            "pack_id": {"type": "string"},
+            "pack_version": {"type": "string"},
+            "source_artifact_type": {"type": "string"},
+            "template_id": {"type": "string"},
+            "decision": {"enum": ["ready", "needs-review", "no-draft", "proof-gap", "blocked"]},
+            "title": {"type": "string"},
+            "sections": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["id", "title", "body", "refs"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "body": {"type": "string"},
+                        "refs": string_array()
+                    }
+                }
+            },
+            "audit": {
+                "type": "object",
+                "required": ["source_artifact", "mdp_commands", "warnings"],
+                "additionalProperties": false,
+                "properties": {
+                    "source_artifact": {"type": "string"},
+                    "mdp_commands": string_array(),
+                    "warnings": string_array()
+                }
+            },
+            "artifact": {"type": "object"}
+        }
+    })
 }
 
 fn context_schema() -> Value {
@@ -1145,6 +1190,22 @@ mod tests {
             result["oneOf"][1]["properties"]["context"]["properties"]["runtime_context"]["properties"]
                 ["date_utc"]["format"],
             "date"
+        );
+    }
+
+    #[test]
+    fn human_brief_schema_exposes_renderer_contract() {
+        let result = schema(SchemaTarget::HumanBrief);
+
+        assert_eq!(result["title"], "MDP Human Brief v0");
+        assert_eq!(
+            result["properties"]["artifact_type"]["const"],
+            "mdp.human-brief.v0"
+        );
+        assert_eq!(result["properties"]["decision"]["enum"][3], "proof-gap");
+        assert_eq!(
+            result["properties"]["sections"]["items"]["properties"]["refs"]["items"]["type"],
+            "string"
         );
     }
 

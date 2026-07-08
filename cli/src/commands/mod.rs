@@ -3,6 +3,7 @@ pub(crate) mod briefs;
 pub(crate) mod capabilities;
 pub(crate) mod evals;
 pub(crate) mod health;
+pub(crate) mod human_brief;
 pub(crate) mod init;
 pub(crate) mod pack;
 pub(crate) mod prompt_output;
@@ -18,6 +19,7 @@ pub(crate) use briefs::{
 pub(crate) use capabilities::capabilities;
 pub(crate) use evals::eval_pack;
 pub(crate) use health::{doctor, explain, gaps, validate_pack};
+pub(crate) use human_brief::{render_human_brief_file, render_human_brief_markdown};
 pub(crate) use init::{init_pack, init_pack_dry_run};
 pub(crate) use pack::pack;
 pub(crate) use prompt_output::validate_prompt_output_file;

@@ -83,6 +83,21 @@ pub(crate) enum Commands {
         #[arg(long, help = "Emit a human-readable Markdown proposal review artifact")]
         readable: bool,
     },
+    #[command(about = "Render a compact human brief from an existing MDP artifact")]
+    RenderBrief {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long, help = "Artifact JSON to render; omit to read JSON from stdin")]
+        file: Option<PathBuf>,
+        #[arg(long, help = "Named human brief template to apply")]
+        template: String,
+        #[arg(long, value_enum, default_value_t = HumanBriefFormat::Markdown)]
+        format: HumanBriefFormat,
+        #[arg(long, help = "Write rendered output to a file instead of stdout only")]
+        out: Option<PathBuf>,
+        #[arg(long, help = "Fail when required gate or proof fields are missing")]
+        strict: bool,
+    },
     #[command(about = "Explain what an agent should load")]
     Explain {
         #[arg(long, default_value = ".")]
@@ -228,6 +243,7 @@ pub(crate) enum SchemaTarget {
     Prompt,
     ProofOutput,
     Brief,
+    HumanBrief,
     RuntimeContext,
     Prospect,
     Eval,
@@ -238,4 +254,10 @@ pub(crate) enum SchemaTarget {
 pub(crate) enum SampleLeadsFormat {
     Json,
     Yaml,
+}
+
+#[derive(Clone, ValueEnum, PartialEq, Eq)]
+pub(crate) enum HumanBriefFormat {
+    Markdown,
+    Json,
 }

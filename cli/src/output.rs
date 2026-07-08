@@ -68,6 +68,16 @@ fn summarize(command: &str, data: &Value) -> Value {
             "issue_count": array_len(&data["issues"]),
             "issues": data["issues"]
         }),
+        "render-brief" => json!({
+            "artifact_type": data["artifact_type"],
+            "template_id": data["template_id"],
+            "decision": data["decision"],
+            "pack_id": data["pack_id"],
+            "source_artifact_type": data["source_artifact_type"],
+            "section_count": array_len(&data["sections"]),
+            "warning_count": array_len(&data["audit"]["warnings"]),
+            "artifact": data["artifact"]
+        }),
         "route" => json!({
             "persona": data["persona"],
             "requested_persona": data["requested_persona"],
