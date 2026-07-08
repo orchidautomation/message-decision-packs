@@ -32,6 +32,7 @@ When explaining fields, keep these boundaries:
 - Use first-class row fields such as `source_kind` and `synthetic` for provenance/source markers. Clay is one possible source marker, not the default model.
 - Use entry `metadata` only for advisory annotations about pack card entries.
 - A brief is a model-ready context contract. It is not final copy, a sender, or a sequencer. Without `--out`, it was printed to stdout only; with `--out`, it is saved as an artifact but still needs drafting and claim checks.
+- For human handoff, prefer `mdp render-brief` over dumping raw audit JSON. Keep the machine artifact as the source of truth and render a compact `mdp.human-brief.v0` Markdown/JSON layer from it.
 
 ## First Check
 
@@ -59,6 +60,16 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 Do not fake validation by reading YAML manually.
 
 Use `mdp --json capabilities` before advanced agent orchestration to inspect command contracts, coarse side effects, `--out` support, dry-run support, strict-mode support, and stable JSON error codes. Use `mdp --json agent-surface --dir .` before choosing domain-specific MDP skills. If the surface returns `blocked_skills` for the skill you were about to use, reroute to an allowed or recommended skill instead of relying on prose instructions alone. Keep `--json` on whenever another agent, script, or tool will parse output.
+
+For human handoff artifacts, render existing machine outputs instead of rewriting them:
+
+```bash
+mdp render-brief --dir . --file .mdp/briefs/example.json --template gtm-prospect --out .mdp/briefs/example.md
+mdp render-brief --dir . --file examples/proof-output/valid-binding.json --template proposal-review
+mdp render-brief --dir . --file examples/proof-output/missing-binding.json --template proof-report --format json
+```
+
+`render-brief` supports `gtm-prospect`, `proposal-review`, and `proof-report`. It preserves `no-draft`, `proof-gap`, and blocked states; do not treat rendered Markdown as permission to send outreach or reuse proposal language when the underlying gate failed.
 
 ## Hook Activation
 

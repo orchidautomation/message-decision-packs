@@ -1,9 +1,10 @@
-use crate::cli::{Cli, Commands, SampleLeadsFormat};
+use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat};
 use crate::commands::{
     agent_surface, capabilities, check_claims, demo_copy, doctor, emit_brief, eval_pack, explain,
     fit, gaps, init_pack, init_pack_dry_run, pack, prospect_brief_with_context,
-    render_readable_prospect_brief, route, sample_leads, schema, validate_pack,
-    validate_prompt_output_file, verify_output_file, verify_output_readable_file,
+    render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief, route,
+    sample_leads, schema, validate_pack, validate_prompt_output_file, verify_output_file,
+    verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -88,6 +89,43 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             } else {
                 let data = verify_output_file(&dir, &file)?;
                 print_checked(json_mode, summary_mode, "verify-output", data)
+            }
+        }
+        Commands::RenderBrief {
+            dir,
+            file,
+            template,
+            format,
+            out,
+            strict,
+        } => {
+            let mut data = render_human_brief_file(&dir, file.as_deref(), &template, strict)?;
+            if let Some(path) = out {
+                if format == HumanBriefFormat::Json {
+                    data = attach_artifact(data, &path);
+                    write_json_file(&path, &data)?;
+                } else {
+                    let markdown = render_human_brief_markdown(&data);
+                    fs::write(&path, &markdown)?;
+                    data = attach_markdown_artifact(data, &path);
+                    if !json_mode && !summary_mode {
+                        println!("{markdown}");
+                        return Ok(());
+                    }
+                }
+            } else {
+                data = attach_stdout_artifact(data);
+            }
+            if format == HumanBriefFormat::Markdown && !json_mode && !summary_mode {
+                println!("{}", render_human_brief_markdown(&data));
+                Ok(())
+            } else {
+                print_output(
+                    json_mode || format == HumanBriefFormat::Json,
+                    summary_mode,
+                    "render-brief",
+                    data,
+                )
             }
         }
         Commands::Explain { dir, persona } => print_output(
@@ -375,6 +413,21 @@ fn attach_readable_dry_run_artifact(mut data: Value, path: &Path) -> Value {
         );
         object.insert("dry_run".to_string(), json!(true));
         object.insert("write_plan".to_string(), Value::Array(vec![write_plan]));
+    }
+    data
+}
+
+fn attach_markdown_artifact(mut data: Value, path: &Path) -> Value {
+    if let Some(object) = data.as_object_mut() {
+        object.insert(
+            "artifact".to_string(),
+            json!({
+                "status": "saved",
+                "kind": "markdown-file",
+                "path": path.display().to_string(),
+                "stdout": "also-emitted"
+            }),
+        );
     }
     data
 }
