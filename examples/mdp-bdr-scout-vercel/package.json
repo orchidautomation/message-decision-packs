@@ -1,0 +1,26 @@
+{
+  "name": "mdp-bdr-scout-vercel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "node scripts/check-example.mjs",
+    "scout:sample": "node scripts/run-sample.mjs",
+    "check": "npm run typecheck && npm run scout:sample"
+  },
+  "dependencies": {
+    "@vercel/blob": "latest",
+    "@vercel/sandbox": "latest",
+    "ai": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "workflow": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "latest"
+  }
+}
