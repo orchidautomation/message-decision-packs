@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import bundledSourceStrategy from "../../.mdp/source-strategy.json";
 import { join } from "node:path";
 import { packDir } from "./paths.ts";
 import { providerCapabilities } from "./provider-tools.ts";
@@ -69,7 +70,13 @@ export type SelectedScoutQuery = {
 
 export async function loadSourceStrategy(): Promise<SourceStrategy> {
   const path = join(packDir(), "source-strategy.json");
-  const raw = JSON.parse(await readFile(path, "utf8")) as unknown;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(path, "utf8")) as unknown;
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+    raw = bundledSourceStrategy as unknown;
+  }
   assertSourceStrategy(raw);
   return raw;
 }
@@ -176,4 +183,8 @@ function requireString(value: Record<string, unknown>, field: string, label: str
   if (typeof value[field] !== "string" || String(value[field]).trim().length === 0) {
     throw new Error(`source strategy ${label}.${field} is required`);
   }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
 }

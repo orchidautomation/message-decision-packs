@@ -33,6 +33,21 @@ Eve schedule -> load MDP scout instructions -> load source strategy -> discover 
 
 The agent should call typed tools such as `load_source_strategy`, `discover_candidates`, `extract_evidence`, `mdp_validate`, `mdp_fit`, `mdp_create_brief`, `mdp_check_claims`, and `append_ledger`. Generic sandbox `bash` remains available through Eve, but the production MDP path should prefer bounded tools.
 
+## Deterministic scout endpoint
+
+For smoke tests, Vercel Cron, or operator-triggered runs that should not require a model turn, the example exposes a custom Eve channel endpoint:
+
+```bash
+# Public-safe fixture smoke test; this does not call live providers.
+curl -X POST "$DEPLOYMENT_URL/scout/run" \
+  -H 'content-type: application/json' \
+  -d '{"dryRun":true,"includeRows":true,"limit":1}'
+```
+
+`dryRun: true` forces the public-safe fixture path. Omit `dryRun` to use live Exa when `EXA_API_KEY` is configured, otherwise the provider layer falls back honestly. The response is `mdp.scout-run-response.v0` and includes the run id, selected query, provider, fallback reason, qualified count, and ledger path. The endpoint never sends outreach or writes CRM records.
+
+Hosted production runs fail closed unless `CRON_SECRET` is configured and the request includes the matching bearer header. Vercel Cron targets `/scout/run` on the weekday schedule in `vercel.json` and automatically sends `Authorization: Bearer $CRON_SECRET`. For manual live runs, callers may also send the same secret in `x-mdp-scout-secret`.
+
 ## Local fixture run
 
 ```bash
@@ -83,7 +98,7 @@ Provider behavior:
 
 The upstream `@exalabs/ai-sdk` and `firecrawl-aisdk` packages currently declare `ai@^6` peer dependencies while Eve `0.22.1` uses `ai@7`, so this example keeps clean installs by using small local `ai@7` `tool()` wrappers. Swap to first-party packages when they publish `ai@7`-compatible releases.
 
-Model routing should use Vercel AI Gateway by default via `MDP_SCOUT_MODEL`. Add `AI_GATEWAY_API_KEY` only when running outside Vercel.
+Model routing uses Vercel AI Gateway by default via `MDP_SCOUT_MODEL`; the example default is `xai/grok-4.5`. Add `AI_GATEWAY_API_KEY` only when running outside Vercel.
 
 ## Current limitations
 

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import bundledFixture from "../../samples/profound-public-source-fixture.json";
 import { fixturePath } from "./paths.ts";
 import { capabilityFor, providerCapabilities, runExaSearch, type ExaSearchResult, type ProviderCapability } from "./provider-tools.ts";
 import { candidateWithEvidenceSchema, type CandidateWithEvidence } from "./schemas.ts";
@@ -41,7 +42,13 @@ export async function discoverCandidates(input: { query: string; limit: number; 
 }
 
 export async function readFixture(): Promise<CandidateWithEvidence> {
-  const parsed = JSON.parse(await readFile(fixturePath(), "utf8"));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(fixturePath(), "utf8"));
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+    parsed = bundledFixture as unknown;
+  }
   return candidateWithEvidenceSchema.parse(parsed);
 }
 
@@ -89,4 +96,8 @@ function safeHost(url: string): string {
 
 function firstText(...values: Array<string | undefined>): string {
   return values.find((value) => value && value.trim().length > 0)?.trim().slice(0, 1000) ?? "Public source matched the scout query.";
+}
+
+function isMissingFile(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
 }

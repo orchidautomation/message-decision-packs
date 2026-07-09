@@ -5,10 +5,34 @@ import { scoreCandidate } from "./scoring.ts";
 import { loadSourceStrategy, selectScoutQuery } from "./source-strategy.ts";
 import type { LedgerRow, SourceStrategyTrace } from "./schemas.ts";
 
-export async function runFixtureScoutCycle(): Promise<{ runId: string; query: string; qualified: number; ledgerPath: string | null; rows: LedgerRow[]; provider: string; fallbackReason: string | null }> {
+export type ScoutCycleInput = {
+  dryRun?: boolean;
+  limit?: number;
+  query?: string | null;
+};
+
+export type ScoutCycleResult = {
+  runId: string;
+  query: string;
+  qualified: number;
+  ledgerPath: string | null;
+  rows: LedgerRow[];
+  provider: string;
+  fallbackReason: string | null;
+};
+
+export async function runFixtureScoutCycle(): Promise<ScoutCycleResult> {
+  return runScoutCycle({ dryRun: true });
+}
+
+export async function runScoutCycle(input: ScoutCycleInput = {}): Promise<ScoutCycleResult> {
   const strategy = await loadSourceStrategy();
-  const selected = selectScoutQuery(strategy);
-  const discovery = await discoverCandidates({ query: selected.query, limit: Number(process.env.SCOUT_MAX_CANDIDATES ?? 5), dryRun: true });
+  const selected = selectScoutQuery(strategy, input.query);
+  const discovery = await discoverCandidates({
+    query: selected.query,
+    limit: input.limit ?? Number(process.env.SCOUT_MAX_CANDIDATES ?? 5),
+    dryRun: input.dryRun
+  });
   const runId = createRunId();
   const minScore = Number(process.env.SCOUT_MIN_SCORE ?? 65);
   const rows: LedgerRow[] = [];

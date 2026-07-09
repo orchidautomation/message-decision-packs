@@ -4,6 +4,7 @@ const required = [
   ".mdp/manifest.yaml",
   ".mdp/source-strategy.json",
   "agent/agent.ts",
+  "agent/channels/scout.ts",
   "agent/instructions.md",
   "agent/schedules/weekday-scout.md",
   "agent/sandbox/workspace/.mdp/manifest.yaml",
@@ -38,9 +39,37 @@ assertSourceStrategy(sourceStrategy, ".mdp/source-strategy.json");
 const sandboxStrategy = JSON.parse(readFileSync("agent/sandbox/workspace/.mdp/source-strategy.json", "utf8"));
 assertSourceStrategy(sandboxStrategy, "agent/sandbox/workspace/.mdp/source-strategy.json");
 
+const sourceStrategyLib = readFileSync("agent/lib/source-strategy.ts", "utf8");
+if (!sourceStrategyLib.includes("bundledSourceStrategy")) {
+  console.error("source strategy loader must include a bundled fallback for Vercel serverless deployments");
+  process.exit(1);
+}
+
+const discoveryLib = readFileSync("agent/lib/discovery.ts", "utf8");
+if (!discoveryLib.includes("bundledFixture")) {
+  console.error("discovery fixture loader must include a bundled fallback for Vercel serverless deployments");
+  process.exit(1);
+}
+
 const providerTools = readFileSync("agent/lib/provider-tools.ts", "utf8");
 if (!providerTools.includes("x-exa-integration") || !providerTools.includes("tool({")) {
   console.error("provider tools must expose local AI SDK tool wrappers and Exa integration metadata");
+  process.exit(1);
+}
+
+const scoutChannel = readFileSync("agent/channels/scout.ts", "utf8");
+if (!scoutChannel.includes('POST("/scout/run"') || !scoutChannel.includes("runScoutCycle")) {
+  console.error("scout channel must expose deterministic POST /scout/run endpoint");
+  process.exit(1);
+}
+if (!scoutChannel.includes("x-mdp-scout-secret") || !scoutChannel.includes("input.dryRun === true")) {
+  console.error("scout channel must support protected live runs and public-safe fixture dry-runs");
+  process.exit(1);
+}
+
+const vercelConfig = JSON.parse(readFileSync("vercel.json", "utf8"));
+if (!Array.isArray(vercelConfig.crons) || !vercelConfig.crons.some((cron) => cron.path === "/scout/run")) {
+  console.error("vercel.json must schedule the deterministic /scout/run endpoint");
   process.exit(1);
 }
 

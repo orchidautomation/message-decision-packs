@@ -13,7 +13,7 @@ export function packDir(): string {
 }
 
 export function outputDir(): string {
-  return resolve(process.env.SCOUT_OUTPUT_DIR ?? join(appRoot(), "artifacts"));
+  return resolve(process.env.SCOUT_OUTPUT_DIR ?? (process.env.VERCEL ? "/tmp/mdp-scout-artifacts" : join(appRoot(), "artifacts")));
 }
 
 export function fixturePath(): string {
