@@ -9,7 +9,7 @@ Reviewed release window: `v0.1.27` through `v0.1.36`
 
 The main README, getting-started docs, conceptual docs, public-safe guardrails, CLI usage notes, starter template docs, and plugin skills are broadly aligned with the shipped CLI and skill surface from `v0.1.27` through `v0.1.36`.
 
-The highest-value follow-up is not a broad rewrite. It is a small docs pass for the new Vercel BDR scout surface from `v0.1.36`, plus a refresh of stale distribution evidence that still describes a pre-release installer failure.
+The highest-value follow-up is not a broad rewrite. It is a small docs pass for the domain-agnostic primitive model, the new Vercel BDR scout surface from `v0.1.36`, and stale distribution evidence that still describes a pre-release installer failure.
 
 ## Source Evidence
 
@@ -53,6 +53,9 @@ Skipped:
 - `plugin/skills/`
 - `plugin/assets/templates/basic`
 - `plugin/assets/templates/proposal/README.md`
+- `plugin/assets/templates/proposal`
+- `plugin/skills/mdp-create-pack/references/profile-primitives-map.md`
+- `plugin/skills/mdp-lfg/references/mdp-mental-model.md`
 - `examples/mdp-bdr-scout-vercel/README.md`
 - `examples/profound-gtm-vetting/flue-webhook-agent/README.md`
 
@@ -187,9 +190,78 @@ Acceptance:
 - `cli/USAGE.md` no longer carries a stale partial error-code list, or it matches `mdp --json capabilities`.
 - README and getting-started docs keep workflow examples, while `capabilities` remains the canonical machine-readable command inventory.
 
+### F5: Domain-agnostic primitive model exists, but the public docs do not teach it clearly enough
+
+Severity: Medium
+
+Type: missing/confusing docs
+
+Related releases: `v0.1.27` through `v0.1.35`
+
+Evidence:
+
+- `README.md` and `cli/USAGE.md` list the universal primitive IDs and explain `required_primitives` / `primitive_map`, but only as terse paragraphs.
+- `plugin/assets/templates/basic/.mdp/manifest.yaml` and `plugin/assets/templates/proposal/.mdp/manifest.yaml` both declare all current universal primitives: `actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evidence-proof`, `boundaries`, `output-contracts`, `routing-jobs`, `gaps`, and `evals`.
+- The core domain abstraction is explained well in `plugin/skills/mdp-create-pack/references/profile-primitives-map.md` and `plugin/skills/mdp-lfg/references/mdp-mental-model.md`.
+- The broader domain-profile foundation plan includes the clearest GTM/proposal mapping tables, but it lives under `docs/plans/` as a planning artifact rather than a current user-facing concept doc.
+
+Impact:
+
+An operator looking for the "core 8 primitives" will not get a clean current answer from the main docs. The implementation has ten current universal primitives: the likely core eight domain primitives plus `gaps` and `evals` as first-class visibility/validation primitives. Because this explanation is scattered, readers can miss that GTM personas/pains/claims and proposal roles/requirements/proof are profile vocabulary over the same domain-agnostic model.
+
+Recommended next action:
+
+Small concept-doc addition, not a rewrite. Add a public-facing "Domain Primitives" section or short doc that names the current ten universal primitives, distinguishes the core domain primitives from `gaps` and `evals` if desired, and shows a compact GTM/proposal mapping table.
+
+Recommended follow-up ticket:
+
+Title: `Document universal primitives and GTM/proposal mappings`
+
+Acceptance:
+
+- Public docs explain whether the product vocabulary is "core 8" plus `gaps`/`evals`, or simply the current ten universal primitives.
+- The doc includes GTM mapping examples: personas -> `actors`, fit rules -> `decision-criteria`, signals -> `source-signals`, pains -> `needs-requirements`, claims/positioning -> `evidence-proof`, avoid rules/objections -> `boundaries`, output rules/copy patterns/CTAs/hooks -> `output-contracts`, channel policies/motions -> `routing-jobs`.
+- The doc includes proposal mapping examples: proposal roles -> `actors`, bid/no-bid/evaluation criteria -> `decision-criteria`, opportunity context/requirement signals -> `source-signals`, requirements matrix -> `needs-requirements`, proof library -> `evidence-proof`, proposal/compliance boundaries -> `boundaries`, proposal output rules/review outputs -> `output-contracts`, review gates -> `routing-jobs`.
+- The doc states that account context and opportunity context are profile-owned vocabulary/input contracts, not new core MDP objects unless the CLI contract changes.
+- README, `cli/USAGE.md`, and agent context files link to the canonical primitive explanation instead of duplicating divergent lists.
+
+### F6: Template manifests are aligned, but template language is not surfaced as a current reference
+
+Severity: Low
+
+Type: missing docs / discoverability
+
+Related releases: `v0.1.27` through `v0.1.35`
+
+Evidence:
+
+- The GTM starter manifest carries profile metadata, `required_primitives`, a populated `primitive_map`, account/person readiness contracts, and account-only/no-draft eval categories.
+- The proposal template manifest carries proposal-native card IDs, `required_primitives`, a populated `primitive_map`, an `opportunity` input contract, profile jobs, and safety/eval coverage.
+- `plugin/assets/templates/proposal/README.md` explains proposal activation and safety boundaries.
+- `plugin/assets/templates/basic` has no matching README that explains the GTM template as the reference expression of the primitive model.
+
+Impact:
+
+The template files are correct, but users must inspect YAML or skill references to understand the GTM/proposal language choices. This can make the GTM vocabulary look like the core ontology and proposal vocabulary look like a separate system, even though both are profile expressions over the same primitives.
+
+Recommended next action:
+
+Quick docs addition. Add a short GTM/basic template README or public docs subsection that mirrors the proposal README's activation explanation and points to the primitive mapping.
+
+Recommended follow-up ticket:
+
+Title: `Add GTM template language reference`
+
+Acceptance:
+
+- `plugin/assets/templates/basic` has a README or public docs section explaining the GTM starter's profile metadata, input contract, `required_primitives`, `primitive_map`, and account-only/no-draft behavior.
+- The GTM reference explicitly says personas, pains, CTAs, hooks, motions, and channel policies are GTM profile vocabulary, not universal core object names.
+- The proposal README links back to the same primitive explanation so GTM and proposal read as two profiles over one model.
+
 ## Confirmed Aligned Areas
 
 - Public artifact guardrails are strong. README, AGENTS, proposal skills, proposal template README, and BDR scout README all avoid claiming MDP is a sender, CRM, scraper, enrichment provider, AI SDR, BI tool, proposal management system, legal/procurement approval system, or compliance certifier.
+- The implementation and templates carry the current domain-agnostic primitive set. Both GTM and proposal templates declare `required_primitives` and map profile-owned vocabulary through `primitive_map`.
 - Proposal docs and skills correctly preserve the `mdp.proof-output.v0` proof boundary. They require `verify-output` before treating model-written IDs as proof and keep missing proof as gaps.
 - Readable GTM and proposal artifacts are documented as review layers, not machine sources of truth or permission to send/reuse output.
 - Account-only/no-draft behavior is covered across README, getting-started, conceptual flow, prompt extraction contract, starter evals, and relevant skills.
