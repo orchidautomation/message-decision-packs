@@ -2,6 +2,26 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "redirects": [
     {
+      "source": "/eve/scout/run",
+      "destination": "https://ai-sdr-eve-vercel.vercel.app/scout/run",
+      "statusCode": 307
+    },
+    {
+      "source": "/eve/scout/health",
+      "destination": "https://ai-sdr-eve-vercel.vercel.app/scout/health",
+      "statusCode": 307
+    },
+    {
+      "source": "/eve/docs",
+      "destination": "https://vercel.com/docs/eve",
+      "statusCode": 307
+    },
+    {
+      "source": "/eve",
+      "destination": "https://ai-sdr-eve-vercel.vercel.app",
+      "statusCode": 307
+    },
+    {
       "source": "/install.sh",
       "destination": "https://github.com/orchidautomation/message-decision-packs/releases/latest/download/install.sh",
       "statusCode": 307

@@ -33,6 +33,21 @@ Eve schedule -> load MDP scout instructions -> load source strategy -> discover 
 
 The agent should call typed tools such as `load_source_strategy`, `discover_candidates`, `extract_evidence`, `mdp_validate`, `mdp_fit`, `mdp_create_brief`, `mdp_check_claims`, and `append_ledger`. Generic sandbox `bash` remains available through Eve, but the production MDP path should prefer bounded tools.
 
+
+## Public demo and installer continuity
+
+Use the Orchid Labs vanity domain for MDP-facing install and demo commands:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+
+curl -L -X POST https://mdp.orchidlabs.dev/eve/scout/run \
+  -H 'content-type: application/json' \
+  -d '{"dryRun":true,"includeRows":true,"limit":1}'
+```
+
+`https://mdp.orchidlabs.dev/eve` redirects to the deployed Eve scout. `https://mdp.orchidlabs.dev/eve/docs` redirects to the canonical Vercel Eve docs. Prefer the Vercel docs URL for references because `eve.dev` is an upstream vanity domain and may be unstable during rollout.
+
 ## Deterministic scout endpoint
 
 For smoke tests, Vercel Cron, or operator-triggered runs that should not require a model turn, the example exposes a custom Eve channel endpoint:
