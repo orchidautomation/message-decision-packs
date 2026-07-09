@@ -50,6 +50,16 @@ if (!discoveryLib.includes("bundledFixture")) {
   console.error("discovery fixture loader must include a bundled fallback for Vercel serverless deployments");
   process.exit(1);
 }
+if (!discoveryLib.includes("resolvePersonForAccount") || !discoveryLib.includes("SCOUT_REQUIRE_PERSON")) {
+  console.error("discovery must resolve public person-level owners and require people by default");
+  process.exit(1);
+}
+
+const mdpRunnerLib = readFileSync("agent/lib/mdp-runner.ts", "utf8");
+if (!mdpRunnerLib.includes("Need public person-level name and role evidence")) {
+  console.error("MDP runner must preserve a gap when person-level evidence is missing");
+  process.exit(1);
+}
 
 const providerTools = readFileSync("agent/lib/provider-tools.ts", "utf8");
 if (!providerTools.includes("x-exa-integration") || !providerTools.includes("tool({")) {
@@ -90,5 +100,11 @@ function assertSourceStrategy(strategy, label) {
     if (!Array.isArray(query.required_receipts) || query.required_receipts.length === 0) {
       throw new Error(`${label} query ${query.id} must include required receipts`);
     }
+  }
+  if (!strategy.queries_prompts?.some((query) => query.id === "exa-person-role-resolution")) {
+    throw new Error(`${label} must include an Exa person-role resolution query`);
+  }
+  if (strategy.evidence_requirements?.person_resolution_required !== true) {
+    throw new Error(`${label} must require person-level resolution before qualification`);
   }
 }

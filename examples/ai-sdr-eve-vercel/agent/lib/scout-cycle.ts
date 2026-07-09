@@ -47,11 +47,16 @@ export async function runScoutCycle(input: ScoutCycleInput = {}): Promise<ScoutC
     const mdp = await runMdpBrief(item, "linkedin");
     const score = scoreCandidate({ mdp, evidence: item.evidence });
     if (score.overall < minScore) continue;
+    const personEvidenceIds = item.evidence.filter((evidence) => evidence.id.startsWith("exa_person_")).map((evidence) => evidence.id);
     rows.push({
       contract_version: "mdp_scout_candidate/v0",
       run_id: runId,
       pack_id: process.env.MDP_PACK_ID ?? "profound-gtm-vetting-example",
-      source_strategy: trace,
+      source_strategy: {
+        ...trace,
+        person_resolution_status: item.candidate.name && item.candidate.title ? "resolved" : "not_found",
+        person_resolution_evidence_ids: personEvidenceIds
+      },
       candidate: item.candidate,
       evidence: item.evidence,
       mdp,

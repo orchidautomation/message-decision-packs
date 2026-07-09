@@ -84,14 +84,20 @@ async function runNativeFit(input: CandidateWithEvidence): Promise<MdpDecision> 
 }
 
 function runSimulatedFit(input: CandidateWithEvidence): MdpDecision {
-  const fit = input.evidence.length > 0 && input.candidate.trigger.trim().length > 0;
+  const hasTrigger = input.evidence.length > 0 && input.candidate.trigger.trim().length > 0;
+  const hasPerson = Boolean(input.candidate.name?.trim() && input.candidate.title?.trim());
+  const fit = hasTrigger && hasPerson;
+  const gaps = [
+    ...(!hasTrigger ? ["Need source-backed trigger and enough context before qualification."] : []),
+    ...(!hasPerson ? ["Need public person-level name and role evidence before qualification."] : [])
+  ];
   return {
     fit_status: fit ? "fit" : "insufficient_context",
     persona: input.candidate.persona ?? input.candidate.title,
     route: fit ? "operator_review" : null,
     brief_json_url: null,
     brief_md_url: null,
-    gaps: fit ? [] : ["Need source-backed trigger and enough context before qualification."]
+    gaps
   };
 }
 

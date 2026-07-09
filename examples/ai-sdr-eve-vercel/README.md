@@ -28,7 +28,7 @@ examples/ai-sdr-eve-vercel/
 ## Runtime loop
 
 ```text
-Eve schedule -> load MDP scout instructions -> load source strategy -> discover evidence -> run MDP fit/brief gates -> score -> append ledger row
+Eve schedule -> load MDP scout instructions -> load source strategy -> discover account evidence -> resolve public person/role owner -> run MDP fit/brief gates -> score -> append ledger row
 ```
 
 The agent should call typed tools such as `load_source_strategy`, `discover_candidates`, `extract_evidence`, `mdp_validate`, `mdp_fit`, `mdp_create_brief`, `mdp_check_claims`, and `append_ledger`. Generic sandbox `bash` remains available through Eve, but the production MDP path should prefer bounded tools.
@@ -44,7 +44,7 @@ curl -X POST "$DEPLOYMENT_URL/scout/run" \
   -d '{"dryRun":true,"includeRows":true,"limit":1}'
 ```
 
-`dryRun: true` forces the public-safe fixture path. Omit `dryRun` to use live Exa when `EXA_API_KEY` is configured, otherwise the provider layer falls back honestly. The response is `mdp.scout-run-response.v0` and includes the run id, selected query, provider, fallback reason, qualified count, and ledger path. The endpoint never sends outreach or writes CRM records.
+`dryRun: true` forces the public-safe fixture path. Omit `dryRun` to use live Exa when `EXA_API_KEY` is configured, otherwise the provider layer falls back honestly. Live Exa runs now do two passes: account trigger discovery, then public person/role resolution. Rows are qualified only when a public name, role/title, company match, and person source URL are available; account-only rows are preserved as gaps unless `SCOUT_REQUIRE_PERSON=false` is set. The response is `mdp.scout-run-response.v0` and includes the run id, selected query, provider, fallback reason, qualified count, and ledger path. The endpoint never sends outreach or writes CRM records.
 
 Hosted production runs fail closed unless `CRON_SECRET` is configured and the request includes the matching bearer header. Vercel Cron targets `/scout/run` on the weekday schedule in `vercel.json` and automatically sends `Authorization: Bearer $CRON_SECRET`. For manual live runs, callers may also send the same secret in `x-mdp-scout-secret`.
 
