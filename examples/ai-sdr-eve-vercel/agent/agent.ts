@@ -1,7 +1,7 @@
 import { defineAgent } from "eve";
 
 export default defineAgent({
-  model: process.env.MDP_SCOUT_MODEL ?? "openai/gpt-5.4-mini",
+  model: process.env.MDP_SCOUT_MODEL ?? "xai/grok-4.5",
   reasoning: "low",
   limits: {
     maxInputTokensPerSession: 400_000,

@@ -4,6 +4,7 @@ const required = [
   ".mdp/manifest.yaml",
   ".mdp/source-strategy.json",
   "agent/agent.ts",
+  "agent/channels/scout.ts",
   "agent/instructions.md",
   "agent/schedules/weekday-scout.md",
   "agent/sandbox/workspace/.mdp/manifest.yaml",
@@ -12,6 +13,7 @@ const required = [
   "agent/skills/mdp-source-strategy/SKILL.md",
   "agent/skills/mdp-prospect-brief/SKILL.md",
   "agent/lib/provider-tools.ts",
+  "agent/lib/qualification.ts",
   "agent/tools/mdp_validate.ts",
   "agent/tools/discover_candidates.ts",
   "agent/tools/extract_evidence.ts",
@@ -38,9 +40,73 @@ assertSourceStrategy(sourceStrategy, ".mdp/source-strategy.json");
 const sandboxStrategy = JSON.parse(readFileSync("agent/sandbox/workspace/.mdp/source-strategy.json", "utf8"));
 assertSourceStrategy(sandboxStrategy, "agent/sandbox/workspace/.mdp/source-strategy.json");
 
+const sourceStrategyLib = readFileSync("agent/lib/source-strategy.ts", "utf8");
+if (!sourceStrategyLib.includes("bundledSourceStrategy")) {
+  console.error("source strategy loader must include a bundled fallback for Vercel serverless deployments");
+  process.exit(1);
+}
+
+const discoveryLib = readFileSync("agent/lib/discovery.ts", "utf8");
+if (!discoveryLib.includes("bundledFixture")) {
+  console.error("discovery fixture loader must include a bundled fallback for Vercel serverless deployments");
+  process.exit(1);
+}
+if (!discoveryLib.includes("resolvePersonForAccount") || !discoveryLib.includes("SCOUT_REQUIRE_PERSON")) {
+  console.error("discovery must resolve public person-level owners and require people by default");
+  process.exit(1);
+}
+if (!discoveryLib.includes("input.dryRun === true") || !discoveryLib.includes('mode: "unavailable"')) {
+  console.error("discovery must only use fixtures for explicit dry-runs and fail closed when Exa is unavailable");
+  process.exit(1);
+}
+if (!discoveryLib.includes("extractPersonTitleEvidence") || !discoveryLib.includes("boundedWindow")) {
+  console.error("person parsing must require bounded name/title co-location");
+  process.exit(1);
+}
+
+const qualificationLib = readFileSync("agent/lib/qualification.ts", "utf8");
+if (!qualificationLib.includes("validateQualifiedCandidate") || !qualificationLib.includes("findPersonResolutionEvidence")) {
+  console.error("qualification must share person-evidence validation across scout and Eve tools");
+  process.exit(1);
+}
+
+const mdpRunnerLib = readFileSync("agent/lib/mdp-runner.ts", "utf8");
+if (!mdpRunnerLib.includes("Need public person-level name, role, and person-scoped source evidence")) {
+  console.error("MDP runner must preserve a gap when person-level evidence is missing");
+  process.exit(1);
+}
+
 const providerTools = readFileSync("agent/lib/provider-tools.ts", "utf8");
 if (!providerTools.includes("x-exa-integration") || !providerTools.includes("tool({")) {
   console.error("provider tools must expose local AI SDK tool wrappers and Exa integration metadata");
+  process.exit(1);
+}
+
+const scoutCycleLib = readFileSync("agent/lib/scout-cycle.ts", "utf8");
+if (!scoutCycleLib.includes("validateQualifiedCandidate") || !scoutCycleLib.includes("normalizeScoreThreshold")) {
+  console.error("scout cycle must validate qualification before ledger append and clamp score thresholds");
+  process.exit(1);
+}
+
+const appendLedgerTool = readFileSync("agent/tools/append_ledger.ts", "utf8");
+if (!appendLedgerTool.includes("assertQualifiedCandidate") || !appendLedgerTool.includes("person_resolution_evidence_ids")) {
+  console.error("append_ledger tool must enforce the shared qualification contract");
+  process.exit(1);
+}
+
+const scoutChannel = readFileSync("agent/channels/scout.ts", "utf8");
+if (!scoutChannel.includes('POST("/scout/run"') || !scoutChannel.includes("runScoutCycle")) {
+  console.error("scout channel must expose deterministic POST /scout/run endpoint");
+  process.exit(1);
+}
+if (!scoutChannel.includes("x-mdp-scout-secret") || !scoutChannel.includes("input.dryRun === true")) {
+  console.error("scout channel must support protected live runs and public-safe fixture dry-runs");
+  process.exit(1);
+}
+
+const vercelConfig = JSON.parse(readFileSync("vercel.json", "utf8"));
+if (!Array.isArray(vercelConfig.crons) || !vercelConfig.crons.some((cron) => cron.path === "/scout/run")) {
+  console.error("vercel.json must schedule the deterministic /scout/run endpoint");
   process.exit(1);
 }
 
@@ -61,5 +127,11 @@ function assertSourceStrategy(strategy, label) {
     if (!Array.isArray(query.required_receipts) || query.required_receipts.length === 0) {
       throw new Error(`${label} query ${query.id} must include required receipts`);
     }
+  }
+  if (!strategy.queries_prompts?.some((query) => query.id === "exa-person-role-resolution")) {
+    throw new Error(`${label} must include an Exa person-role resolution query`);
+  }
+  if (strategy.evidence_requirements?.person_resolution_required !== true) {
+    throw new Error(`${label} must require person-level resolution before qualification`);
   }
 }

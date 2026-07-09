@@ -1,6 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { appendLedgerRows, createRunId } from "../lib/ledger.ts";
+import { assertQualifiedCandidate, normalizeScoreThreshold } from "../lib/qualification.ts";
 import { scoreCandidate } from "../lib/scoring.ts";
 import { loadSourceStrategy, selectScoutQuery } from "../lib/source-strategy.ts";
 import { candidateSchema, evidenceSchema, mdpDecisionSchema } from "../lib/schemas.ts";
@@ -18,12 +19,16 @@ export default defineTool({
     const strategy = await loadSourceStrategy();
     const selected = selectScoutQuery(strategy);
     const score = scoreCandidate({ mdp: input.mdp, evidence: input.evidence });
+    const minScore = normalizeScoreThreshold(Number(process.env.SCOUT_MIN_SCORE ?? 65));
+    const qualification = assertQualifiedCandidate({ candidate: input.candidate, evidence: input.evidence, mdp: input.mdp, score, minScore });
     const provider = input.evidence.some((item) => item.provider === "exa") ? "live" : input.evidence.some((item) => item.provider === "fixture") ? "fixture" : "optional";
     const sourceStrategy = {
       ...selected.trace,
       provider_mode: provider,
       provider_available: provider === "live",
-      provider_fallback: provider === "fixture" ? "Ledger append received fixture evidence rather than live provider output." : null
+      provider_fallback: provider === "fixture" ? "Ledger append received fixture evidence rather than live provider output." : null,
+      person_resolution_status: qualification.personResolutionStatus,
+      person_resolution_evidence_ids: qualification.personEvidenceIds
     };
     const row = {
       contract_version: "mdp_scout_candidate/v0" as const,

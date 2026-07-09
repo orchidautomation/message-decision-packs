@@ -12,7 +12,7 @@ On each scheduled run, find source-backed account/persona evidence, run MDP-owne
 2. Call `mdp_validate` before relying on the pack.
 3. Call `load_source_strategy` before choosing queries, sources, providers, or extraction tools.
 4. Follow `agent_operating_plan.operating_instructions`, `agent_operating_plan.stop_conditions`, and `queries_prompts[].agent_instruction` before invoking any provider.
-5. Call `discover_candidates`. Use live Exa only when `EXA_API_KEY` is configured; otherwise use the fixture fallback and report the gap.
+5. Call `discover_candidates`. Use live Exa only when `EXA_API_KEY` is configured. Use fixture data only for explicit `dryRun: true`; live/Cron runs without Exa must report the provider gap and append no rows.
 6. Optionally call `extract_evidence` for already accepted public URLs when `FIRECRAWL_API_KEY` is configured. Do not use Firecrawl for broad discovery unless the source strategy explicitly allows it.
 7. Treat Apify as an optional follow-up lane until an approved MCP/Actor adapter is enabled. Do not run Apify merely because `APIFY_TOKEN` exists.
 8. For each evidence-backed candidate, call `mdp_fit`.
@@ -41,7 +41,7 @@ Prefer public, unauthenticated, sourceable material and operator-approved corpor
 - Exa: first-pass public discovery through the Eve `discover_candidates` tool and local AI SDK `tool()` wrapper.
 - Firecrawl: accepted-URL cleanup only through `extract_evidence`; skip when unavailable.
 - Apify: optional advanced MCP/Actor lane, not required for this template and not enabled in v1.
-- Fixture: honest fallback for local checks and template demos; never describe fixture output as live research.
+- Fixture: explicit `dryRun: true` path for local checks and template demos; never use or describe fixture output as live research.
 
 ## Tool policy
 

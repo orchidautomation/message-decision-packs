@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { packRoot } from "./paths.ts";
+import { findPersonResolutionEvidence } from "./qualification.ts";
 import type { Candidate, CandidateWithEvidence, MdpDecision } from "./schemas.ts";
 
 const execFileAsync = promisify(execFile);
@@ -84,14 +85,21 @@ async function runNativeFit(input: CandidateWithEvidence): Promise<MdpDecision> 
 }
 
 function runSimulatedFit(input: CandidateWithEvidence): MdpDecision {
-  const fit = input.evidence.length > 0 && input.candidate.trigger.trim().length > 0;
+  const hasTrigger = input.evidence.length > 0 && input.candidate.trigger.trim().length > 0;
+  const hasPersonEvidence = findPersonResolutionEvidence(input.evidence, input.candidate).length > 0;
+  const hasPerson = Boolean(input.candidate.name?.trim() && input.candidate.title?.trim() && hasPersonEvidence);
+  const fit = hasTrigger && hasPerson;
+  const gaps = [
+    ...(!hasTrigger ? ["Need source-backed trigger and enough context before qualification."] : []),
+    ...(!hasPerson ? ["Need public person-level name, role, and person-scoped source evidence before qualification."] : [])
+  ];
   return {
     fit_status: fit ? "fit" : "insufficient_context",
     persona: input.candidate.persona ?? input.candidate.title,
     route: fit ? "operator_review" : null,
     brief_json_url: null,
     brief_md_url: null,
-    gaps: fit ? [] : ["Need source-backed trigger and enough context before qualification."]
+    gaps
   };
 }
 

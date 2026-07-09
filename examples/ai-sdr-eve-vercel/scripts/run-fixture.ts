@@ -11,6 +11,8 @@ console.log(JSON.stringify({
   provider: result.provider,
   fallbackReason: result.fallbackReason,
   firstCandidate: first?.candidate.company ?? null,
+  firstPerson: first?.candidate.name ?? null,
+  firstTitle: first?.candidate.title ?? null,
   firstScore: first?.score.overall ?? null,
   firstMdpStatus: first?.mdp.fit_status ?? null,
   firstMdpRoute: first?.mdp.route ?? null

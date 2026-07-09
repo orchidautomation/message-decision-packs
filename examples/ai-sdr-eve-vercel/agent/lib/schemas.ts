@@ -55,6 +55,8 @@ export type SourceStrategyTrace = {
   provider_mode?: "live" | "fixture" | "optional" | "unavailable" | string;
   provider_available?: boolean;
   provider_fallback?: string | null;
+  person_resolution_status?: "resolved" | "not_found" | "not_required" | string;
+  person_resolution_evidence_ids?: string[];
 };
 
 export type ScoreBreakdown = {
