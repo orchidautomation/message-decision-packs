@@ -5,7 +5,7 @@ description: Reusable angles for explaining why a target account belongs in Prof
 personas:
 - AEO Lead
 - Content Lead
-- "PR & Brand Lead"
+- PR & Brand Lead
 - Agency Partner
 tags:
 - hook
@@ -14,7 +14,7 @@ tags:
 entries:
 - id: answer-engine-visibility-hook
   title: Answer-engine visibility hook
-  body: "If the target owns search or organic growth, frame the hook around knowing where the brand appears, which prompts matter, and where competitors are winning in AI answers."
+  body: If the target owns search or organic growth, frame the hook around knowing where the brand appears, which prompts matter, and where competitors are winning in AI answers.
   applies_to:
   - AEO Lead
   evidence:
@@ -23,7 +23,7 @@ entries:
   avoid: []
 - id: content-gap-to-brief-hook
   title: Content gap to brief hook
-  body: "If the target owns content, frame the hook around turning prompt volume, citations, and top-cited pages into briefs, refreshes, and new content workflows."
+  body: If the target owns content, frame the hook around turning prompt volume, citations, and top-cited pages into briefs, refreshes, and new content workflows.
   applies_to:
   - Content Lead
   evidence:
@@ -32,16 +32,16 @@ entries:
   avoid: []
 - id: brand-narrative-hook
   title: Brand narrative hook
-  body: "If the target owns PR or brand, frame the hook around how AI systems describe the brand, which domains shape that answer, and where earned media can influence the narrative."
+  body: If the target owns PR or brand, frame the hook around how AI systems describe the brand, which domains shape that answer, and where earned media can influence the narrative.
   applies_to:
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   evidence:
   - profound-pr-teams
   - profound-answer-engine-insights
   avoid: []
 - id: ai-crawler-attribution-hook
   title: AI crawler attribution hook
-  body: "If the target has analytics or infrastructure signals, frame the hook around seeing which AI crawlers access the site and which pages connect to AI-driven traffic."
+  body: If the target has analytics or infrastructure signals, frame the hook around seeing which AI crawlers access the site and which pages connect to AI-driven traffic.
   applies_to:
   - AEO Lead
   - Content Lead
@@ -50,9 +50,38 @@ entries:
   avoid: []
 - id: agency-scale-hook
   title: Agency scale hook
-  body: "If the target is an agency or multi-brand team, frame the hook around repeatable prompt, visibility, citation, and reporting workflows across clients or brands."
+  body: If the target is an agency or multi-brand team, frame the hook around repeatable prompt, visibility, citation, and reporting workflows across clients or brands.
   applies_to:
   - Agency Partner
   evidence:
   - profound-pricing
+  avoid: []
+- id: prompt-volume-hook
+  title: Prompt volume hook
+  body: If the target owns AEO, content, or agency reporting, frame the hook around knowing which AI prompts and topics are worth tracking before investing in content or visibility work.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - Agency Partner
+  evidence:
+  - profound-prompt-volumes
+  avoid: []
+- id: aim-project-hook
+  title: Aim project hook
+  body: If the target already has AI visibility signals, frame the hook around turning those signals into ranked projects, execution briefs, agent handoffs, and measurable follow-through.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - PR & Brand Lead
+  - Agency Partner
+  evidence:
+  - profound-aim
+  avoid: []
+- id: agency-client-presence-hook
+  title: Agency client AI presence hook
+  body: If the target is an agency, frame the hook around giving every client a repeatable view of AI search visibility, prompts, citations, crawler activity, and action planning.
+  applies_to:
+  - Agency Partner
+  evidence:
+  - profound-agencies
   avoid: []

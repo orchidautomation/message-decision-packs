@@ -19,3 +19,11 @@ expect_load_order_excludes:
 id: linkedin-aeo-copy-route
 job: linkedin outbound copy
 persona: AEO Lead
+profile_eval:
+  category: job-routing
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - routing-jobs
+  - output-contracts

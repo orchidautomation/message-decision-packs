@@ -2,3 +2,11 @@ command: check-claims
 expect_valid: false
 id: claim-check-unsupported
 text: This will guarantee rankings, prove the brand has low visibility, scrape contacts, and drive proven ROI.
+profile_eval:
+  category: unsafe-output
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - evidence-proof
+  - boundaries
+  - output-contracts

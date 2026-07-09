@@ -77,7 +77,9 @@ output_contract:
       company_domain: N/A
       company_name: N/A
       confidence: unknown
-      inputs_used: []
+      inputs_used:
+      - company_domain
+      - company_data
       person_name: N/A
       person_title: N/A
   required_top_level:
@@ -88,6 +90,7 @@ output_contract:
   - gaps
   - rejected_claims
   strict_json_only: true
+  schema_ref: mdp.prompt-output.card-patches.v0
 tags:
 - prompt
 - hook

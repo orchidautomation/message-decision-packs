@@ -45,6 +45,20 @@ MDP pack ICP/signals/evals -> source strategy -> provider search/extraction -> M
 
 Set `SCOUT_SOURCE_STRATEGY_PATH` to use an operator-reviewed strategy file. If it is unset, the demo uses `samples/source-strategy.json`.
 
+
+### Profound demo pack
+
+For the Profound LFG demo, point the scout at the committed Profound pack and source strategy:
+
+```bash
+export MDP_PACK_DIR=../profound-gtm-vetting
+export SCOUT_SOURCE_STRATEGY_PATH=../profound-gtm-vetting/.mdp/source-strategy.json
+export SCOUT_FIXTURE_PATH=../profound-gtm-vetting/examples/profound-public-source-fixture.json
+npm run scout:sample:native
+```
+
+The Profound strategy includes Exa-first public discovery, Firecrawl accepted-URL extraction, optional reviewed Apify actors, negative filters, evidence requirements, eval checks, and a create-brief handoff.
+
 ## Run the offline sample
 
 This sample path uses only Node.js built-ins and the committed fixture.

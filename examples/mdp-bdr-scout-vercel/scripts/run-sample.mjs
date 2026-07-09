@@ -13,7 +13,7 @@ if (native) {
 }
 
 const result = await runScoutCycle({
-  fixturePath: join(root, 'samples/public-source-fixture.json'),
+  fixturePath: process.env.SCOUT_FIXTURE_PATH ? resolve(root, process.env.SCOUT_FIXTURE_PATH) : join(root, 'samples/public-source-fixture.json'),
   outputDir: join(root, 'artifacts'),
   dryRun: !native,
   persist: true

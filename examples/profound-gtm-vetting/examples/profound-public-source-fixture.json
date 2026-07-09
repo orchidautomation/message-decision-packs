@@ -1,0 +1,40 @@
+{
+  "candidate": {
+    "name": "Jordan Lee",
+    "title": "Director of Organic Growth",
+    "company": "ExampleMarket Co",
+    "company_domain": "example.com",
+    "linkedin_url": "https://www.linkedin.com/in/example-organic-growth",
+    "source_kind": "public_web",
+    "trigger": "ExampleMarket is researching AI search visibility, prompt demand, and content opportunities for category discovery.",
+    "persona": "AEO Lead",
+    "segment": "AEO and organic growth team",
+    "signals": [
+      "SEO or AEO ownership signal",
+      "Prompt volume opportunity signal",
+      "Content production signal"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "prof_ev_001",
+      "url": "https://example.com/resources/ai-search-category-discovery",
+      "title": "ExampleMarket studies AI search prompts for category discovery",
+      "observed_at": "2026-07-09T00:00:00Z",
+      "snippet": "ExampleMarket published a public resource about AI search visibility, prompt demand, content gaps, and how buyers discover the category through ChatGPT and Perplexity.",
+      "content_hash": "sha256:2a47a3a9bcd78f2dbf7bb8e0b7f0198b7f6019f2d66aafbd7256f4e6e9c00123",
+      "confidence": 0.86,
+      "provider": "fixture"
+    },
+    {
+      "id": "prof_ev_002",
+      "url": "https://example.com/careers/organic-growth-director",
+      "title": "Organic Growth role owns AI search and content strategy",
+      "observed_at": "2026-07-09T00:05:00Z",
+      "snippet": "The public role description mentions SEO, AI search visibility, content strategy, prompt tracking, and measuring how answer engines cite the brand.",
+      "content_hash": "sha256:6b73f3587ed8a68be6f540ceadf8f7d9c90e6b7005627e3d3f13686f877f0abc",
+      "confidence": 0.82,
+      "provider": "fixture"
+    }
+  ]
+}

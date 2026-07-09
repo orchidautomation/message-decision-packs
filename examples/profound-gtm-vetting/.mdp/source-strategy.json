@@ -1,0 +1,354 @@
+{
+  "format": "mdp.source-strategy.v0",
+  "profile": {
+    "id": "gtm",
+    "label": "Profound GTM scouting"
+  },
+  "objective": {
+    "decision_needed": "Find public-source account and persona evidence before Profound MDP fit, route, and brief generation.",
+    "downstream_consumer": "MDP BDR Scout on Vercel Workflow or local dry-run",
+    "strategy_mode": "public-source handoff",
+    "pack_hint": "Use this Profound pack as the scoring authority after evidence collection; do not draft or sync until the MDP brief passes review."
+  },
+  "primitive_mappings": [
+    {
+      "primitive": "actors",
+      "known": [
+        "AEO/SEO and organic growth owners",
+        "Content and demand leaders",
+        "PR, communications, and brand leaders",
+        "Agency strategy or client-service partners"
+      ],
+      "evidence_needed": [
+        "Named company",
+        "public role or team context",
+        "public source URL with observed trigger"
+      ],
+      "gaps": [
+        "Personal contact enrichment and private profile scraping are out of scope."
+      ]
+    },
+    {
+      "primitive": "decision-criteria",
+      "known": [
+        "Fit requires AI search, content, brand, PR, agency, or crawler/analytics evidence tied to Profound capabilities."
+      ],
+      "evidence_needed": [
+        "Prompt demand, AI visibility, citation, crawler, content, agency reporting, or project-ops trigger"
+      ],
+      "gaps": [
+        "Budget, authority, internal tooling, and current Profound usage remain gaps unless public or user-provided."
+      ]
+    },
+    {
+      "primitive": "source-signals",
+      "known": [
+        "AEO or AI search jobs/posts",
+        "Prompt-volume/category research",
+        "AI visibility/zero-click/search traffic discussion",
+        "Content refresh or comparison-page projects",
+        "PR/brand sentiment or earned-media work",
+        "AI crawler/server-log/web analytics infrastructure",
+        "Agency AI search service pages"
+      ],
+      "evidence_needed": [
+        "source title",
+        "canonical URL",
+        "bounded snippet",
+        "publication or observed date",
+        "provider family",
+        "confidence"
+      ],
+      "gaps": [
+        "Do not infer buying intent from generic AI mentions."
+      ]
+    },
+    {
+      "primitive": "output-contracts",
+      "known": [
+        "normalized prospect JSON",
+        "MDP fit result",
+        "MDP brief with context",
+        "append-only scout ledger row"
+      ],
+      "evidence_needed": [
+        "At least one cited source per candidate and explicit rationale tied to signal ids"
+      ],
+      "gaps": [
+        "CRM sync and outreach remain disabled until operator-reviewed connector policy exists."
+      ]
+    }
+  ],
+  "source_targets": [
+    {
+      "id": "public-web-ai-search-marketing",
+      "source_kind": "public-source",
+      "scout_family": "exa",
+      "target": "Company blogs, resource centers, launch posts, webinars, podcasts, docs, and news pages indexed on the open web",
+      "purpose": "Find account-level triggers about AI search visibility, answer-engine optimization, prompt demand, zero-click traffic, content gaps, or brand narrative in AI answers.",
+      "allowed_access": "Public unauthenticated pages only",
+      "freshness": "Prefer last 120 days for triggers; accept evergreen pages when paired with a fresh signal.",
+      "primitives": [
+        "actors",
+        "source-signals",
+        "decision-criteria",
+        "evidence-proof"
+      ]
+    },
+    {
+      "id": "public-careers-aeo-content-brand",
+      "source_kind": "public-source",
+      "scout_family": "exa",
+      "target": "Public career pages and job posts for SEO, AEO, content strategy, growth, brand, PR, marketing engineering, analytics, or web infrastructure roles",
+      "purpose": "Find team-building signals that imply ownership of Profound-relevant workflows.",
+      "allowed_access": "Public unauthenticated job pages only",
+      "freshness": "Active or recently posted roles only",
+      "primitives": [
+        "actors",
+        "source-signals",
+        "needs-requirements"
+      ]
+    },
+    {
+      "id": "public-agency-ai-search-services",
+      "source_kind": "public-source",
+      "scout_family": "exa",
+      "target": "Agency service pages, case studies, event pages, and thought leadership about SEO, AEO, AI search, PR, brand reputation, content, analytics, or marketing engineering",
+      "purpose": "Find agencies likely to package AI visibility reporting and client-facing AEO programs.",
+      "allowed_access": "Public unauthenticated pages only",
+      "freshness": "Prefer pages updated or promoted recently; accept evergreen service pages with a current agency context signal.",
+      "primitives": [
+        "actors",
+        "source-signals",
+        "decision-criteria"
+      ]
+    },
+    {
+      "id": "accepted-url-evidence-cleanup",
+      "source_kind": "public-source",
+      "scout_family": "firecrawl",
+      "target": "Accepted public URLs from Exa or operator review",
+      "purpose": "Extract clean markdown/structured data for bounded snippets, dates, titles, and source hashes.",
+      "allowed_access": "Only URLs accepted by source policy; no gated, login-required, or access-control bypass.",
+      "freshness": "Same as source URL",
+      "primitives": [
+        "evidence-proof",
+        "output-contracts"
+      ]
+    },
+    {
+      "id": "apify-reviewed-datasets",
+      "source_kind": "public-source",
+      "scout_family": "apify",
+      "target": "Approved Apify Store actors or datasets when Exa/Firecrawl are insufficient and operator policy allows the actor",
+      "purpose": "Handle long-running public crawls or structured public datasets while preserving evidence requirements.",
+      "allowed_access": "Only reviewed actors/datasets with explicit budget and source policy approval",
+      "freshness": "Operator-defined per actor",
+      "primitives": [
+        "source-signals",
+        "evidence-proof",
+        "gaps"
+      ]
+    },
+    {
+      "id": "approved-profound-mdp-pack",
+      "source_kind": "user-provided-approved",
+      "scout_family": "manual",
+      "target": "This Profound MDP pack",
+      "purpose": "Supply blessed ICP, personas, signal ids, fit rules, claims, avoid-rules, CTA policy, evals, and brief routing.",
+      "allowed_access": "Local pack files only; do not upload private pack contents to unapproved providers.",
+      "freshness": "Repo-current or operator-approved version",
+      "primitives": [
+        "boundaries",
+        "routing-jobs",
+        "evals",
+        "gaps"
+      ]
+    }
+  ],
+  "queries_prompts": [
+    {
+      "id": "exa-aeo-ai-search-operators",
+      "scout_family": "exa",
+      "query_or_prompt": "(\"answer engine optimization\" OR AEO OR \"AI search\" OR \"AI visibility\" OR \"zero click\") (\"SEO\" OR \"organic growth\" OR \"content strategy\" OR \"brand\") (\"hiring\" OR \"launched\" OR \"strategy\" OR \"roadmap\" OR \"traffic\") -\"personal email\" -login -\"contact database\"",
+      "target_source_ids": [
+        "public-web-ai-search-marketing",
+        "public-careers-aeo-content-brand"
+      ],
+      "negative_filters": [
+        "personal email",
+        "private LinkedIn",
+        "login-required pages",
+        "contact databases",
+        "unverified enrichment",
+        "scraped personal phone numbers"
+      ],
+      "expected_signals": [
+        "fresh public trigger",
+        "company/team context",
+        "AEO/AI-search relevance",
+        "source URL",
+        "observed_at or publication date",
+        "confidence"
+      ],
+      "max_results": 30
+    },
+    {
+      "id": "exa-prompt-volume-content-opportunities",
+      "scout_family": "exa",
+      "query_or_prompt": "(\"prompt volume\" OR \"AI prompts\" OR \"AI search queries\" OR \"ChatGPT traffic\" OR \"Perplexity citations\") (\"content gap\" OR \"comparison page\" OR \"resource center\" OR \"AI overview\") -login -\"personal email\"",
+      "target_source_ids": [
+        "public-web-ai-search-marketing"
+      ],
+      "negative_filters": [
+        "private datasets",
+        "paywalled source only",
+        "contact enrichment"
+      ],
+      "expected_signals": [
+        "prompt/category/topic signal",
+        "content or citation implication",
+        "public URL",
+        "bounded snippet"
+      ],
+      "max_results": 25
+    },
+    {
+      "id": "exa-agency-ai-search-services",
+      "scout_family": "exa",
+      "query_or_prompt": "(agency OR consultancy OR \"client services\") (\"answer engine optimization\" OR \"AI search\" OR \"AI visibility\" OR \"LLM visibility\" OR \"brand sentiment\") (SEO OR PR OR content OR analytics)",
+      "target_source_ids": [
+        "public-agency-ai-search-services"
+      ],
+      "negative_filters": [
+        "agency directory without source page",
+        "login required",
+        "private contact data"
+      ],
+      "expected_signals": [
+        "agency service fit",
+        "client reporting or strategy context",
+        "public source URL",
+        "confidence"
+      ],
+      "max_results": 30
+    },
+    {
+      "id": "firecrawl-accepted-url-extract",
+      "scout_family": "firecrawl",
+      "query_or_prompt": "For accepted public URLs only, extract title, canonical URL, publication or observed date, bounded markdown snippet, relevant headings, and content hash. Preserve source policy gaps.",
+      "target_source_ids": [
+        "accepted-url-evidence-cleanup"
+      ],
+      "negative_filters": [
+        "do not follow gated links",
+        "do not collect personal contact data",
+        "do not bypass robots or access controls"
+      ],
+      "expected_signals": [
+        "bounded snippet",
+        "canonical URL",
+        "content hash",
+        "evidence confidence"
+      ],
+      "max_results": 12
+    },
+    {
+      "id": "apify-reviewed-public-dataset",
+      "scout_family": "apify",
+      "query_or_prompt": "Use only an operator-approved public actor or dataset for long-running extraction; return dataset URL, actor id, input policy, row count, and bounded evidence snippets.",
+      "target_source_ids": [
+        "apify-reviewed-datasets"
+      ],
+      "negative_filters": [
+        "no private accounts",
+        "no personal contact scraping",
+        "no unreviewed actors",
+        "no ToS/access-control bypass"
+      ],
+      "expected_signals": [
+        "reviewed actor id",
+        "dataset URL",
+        "row evidence",
+        "budget status",
+        "confidence"
+      ],
+      "max_results": 10
+    }
+  ],
+  "exclusions": [
+    "No outreach, sequencing, CRM mutation, or personal contact enrichment.",
+    "No private LinkedIn, logged-in sources, paywalled/gated sources, or access-control bypass.",
+    "No invented titles, metrics, Profound usage, customer proof, or buying intent.",
+    "No upload of private MDP packs or customer data to unapproved external providers."
+  ],
+  "evidence_requirements": {
+    "minimum_citations_per_candidate": 1,
+    "required_fields": [
+      "source URL",
+      "title",
+      "observed_at or publication date",
+      "bounded snippet",
+      "content hash or source fingerprint",
+      "provider",
+      "confidence"
+    ],
+    "confidence_floor": 0.6,
+    "freshness_preference": "120 days for trigger evidence unless operator approves evergreen context",
+    "review_owner": "human operator before CRM sync or outreach",
+    "gap_policy": "If a required field is missing, mark a gap and route to operator review instead of inventing context."
+  },
+  "routing_jobs": [
+    {
+      "id": "extract-accepted-public-evidence",
+      "next_skill": "mdp-source-extract",
+      "review_job": "source-evidence-review",
+      "handoff": "Only reviewed public/source-approved evidence becomes pack card candidates or scout ledger evidence."
+    },
+    {
+      "id": "normalize-profound-prospect",
+      "next_skill": "mdp-prospect-brief",
+      "review_job": "normalization-review",
+      "handoff": "Run prompts/normalize-prospect.yaml against a bounded raw row and preserve missing fields as gaps."
+    },
+    {
+      "id": "score-and-brief-with-profound-pack",
+      "next_skill": "mdp-prospect-brief",
+      "review_job": "fit-and-brief-review",
+      "handoff": "Run mdp --json fit, then mdp --json brief --context, then save reviewed ledger rows."
+    }
+  ],
+  "gaps": [
+    "Operator must approve provider budgets, domain allowlists, and excluded sources before live scouting.",
+    "CRM connector policy and outreach policy are intentionally absent from this pack.",
+    "This strategy does not claim autonomous outreach readiness."
+  ],
+  "eval_checks": [
+    {
+      "id": "proceed-public-aeo-trigger",
+      "scenario": "A public job post names ownership of AI search visibility, SEO, and content strategy.",
+      "expected": "Proceed to MDP fit/brief scoring with cited evidence."
+    },
+    {
+      "id": "proceed-agency-service-fit",
+      "scenario": "An agency page publicly offers AI search, SEO, PR, or content services for client brands.",
+      "expected": "Classify as Agency Partner only if the page includes service/client context."
+    },
+    {
+      "id": "insufficient-context-generic-ai",
+      "scenario": "A source mentions generic AI adoption but no marketing, search, content, brand, agency, or crawler trigger.",
+      "expected": "Mark insufficient context and do not qualify the row."
+    },
+    {
+      "id": "refuse-private-source",
+      "scenario": "A useful source requires login or private personal contact data.",
+      "expected": "Exclude source and preserve a gap."
+    },
+    {
+      "id": "no-outreach-side-effect",
+      "scenario": "A candidate passes fit and score threshold.",
+      "expected": "Append ledger/brief only; outreach_sent remains false and CRM sync remains disabled unless enabled by operator."
+    }
+  ],
+  "review_status": "accepted"
+}
