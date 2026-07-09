@@ -83,6 +83,10 @@ if (!mdpRunnerLib.includes('process.env.MDP_RUNNER_MODE ?? "native"') || !mdpRun
   console.error("MDP runner must default to native mdp fit and fail closed in simulated mode");
   process.exit(1);
 }
+if (mdpRunnerLib.includes("Unknown Contact") || mdpRunnerLib.includes("Unknown Role")) {
+  console.error("MDP runner must not emit plausible placeholder people that can satisfy person-resolution gates");
+  process.exit(1);
+}
 
 const providerTools = readFileSync("agent/lib/provider-tools.ts", "utf8");
 if (!providerTools.includes("x-exa-integration") || !providerTools.includes("tool({")) {

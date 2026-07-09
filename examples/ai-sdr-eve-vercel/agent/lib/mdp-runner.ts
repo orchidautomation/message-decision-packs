@@ -105,8 +105,8 @@ function mdpBin(): string {
 
 function toMdpProspect(candidate: Candidate): Record<string, unknown> {
   const prospect: Record<string, unknown> = {
-    name: candidate.name ?? "Unknown Contact",
-    title: candidate.title ?? "Unknown Role",
+    name: stringOrNull(candidate.name) ?? "N/A",
+    title: stringOrNull(candidate.title) ?? "N/A",
     company: candidate.company,
     trigger: candidate.trigger,
     source_kind: candidate.source_kind,
@@ -139,7 +139,9 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function stringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function formatMdpError(command: string, payload: MdpJson): string {

@@ -441,12 +441,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "signals",
         )
         .unwrap_or(&YamlValue::Null),
-        &[
-            "min",
-            "max",
-            "require_fit_signal",
-            "require_why_now_signal",
-        ],
+        &["min", "max", "require_fit_signal", "require_why_now_signal"],
         ".mdp/manifest.yaml#/qualification_gates/signals",
         "manifest_qualification_signal_gates_unknown_field",
         issues,

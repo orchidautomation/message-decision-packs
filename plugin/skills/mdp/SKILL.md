@@ -182,14 +182,6 @@ lead_input_requirements:
     - source
   required_attributes:
     - fiscal_year
-qualification_gates:
-  require_person_resolution: true
-  signals:
-    min: 1
-    max: 3
-    require_fit_signal: true
-    require_why_now_signal: true
-  fail_policy: insufficient_context
   value_contracts:
     segment:
       type: string
@@ -210,6 +202,14 @@ qualification_gates:
     fiscal_year:
       type: string
       description: Optional reviewed account metadata.
+qualification_gates:
+  require_person_resolution: true
+  signals:
+    min: 1
+    max: 3
+    require_fit_signal: true
+    require_why_now_signal: true
+  fail_policy: insufficient_context
 ```
 
 Use provider-neutral `source_kind` values unless the source itself matters: `user-provided-row`, `csv-row`, `crm-export-row`, `clay-row`, `deepline-row`, `private-scratch-row`, `sanitized-example`, or `synthetic-example`. Clay is one possible source, not the default MDP mental model.

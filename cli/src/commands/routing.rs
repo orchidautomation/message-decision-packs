@@ -703,7 +703,11 @@ fn valid_attribute_key(key: &str) -> bool {
 
 fn present(value: &str) -> bool {
     let value = value.trim();
-    !value.is_empty() && !value.eq_ignore_ascii_case("n/a")
+    !value.is_empty()
+        && !matches!(
+            value.to_ascii_lowercase().as_str(),
+            "n/a" | "na" | "unknown" | "unknown contact" | "unknown role"
+        )
 }
 
 pub(crate) fn check_claims(
@@ -2053,6 +2057,47 @@ mod tests {
   "title": "Director of Demand Gen",
   "company": "ExampleCo",
   "company_domain": "example.com",
+  "persona": "PMM",
+  "segment": "agent-assisted GTM",
+  "trigger": "Recent launch creates urgency for message context",
+  "signals": [
+    {"id": "fit-signal", "title": "Strong fit signal for account category", "source": "public account page"},
+    {"id": "why-now-signal", "title": "Recent launch trigger creates a why-now opportunity", "source": "public launch post"}
+  ]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert!(
+            result["context"]["missing_requirements"]
+                .as_array()
+                .expect("missing requirements")
+                .iter()
+                .any(|issue| issue["scope"] == "qualification_gate"
+                    && issue["field"] == "person_resolution")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_qualification_gate_rejects_placeholder_person_resolution() {
+        let root = temp_pack("fit-qualification-placeholder-person");
+        add_qualification_gate(&root, 1, 3);
+        let prospect_path = root
+            .join("examples")
+            .join("placeholder-person-resolution.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Unknown Contact",
+  "title": "Unknown Role",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "linkedin_url": "https://www.linkedin.com/in/unknown-contact",
   "persona": "PMM",
   "segment": "agent-assisted GTM",
   "trigger": "Recent launch creates urgency for message context",
