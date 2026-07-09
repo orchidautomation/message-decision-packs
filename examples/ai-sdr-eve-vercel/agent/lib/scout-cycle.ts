@@ -137,14 +137,23 @@ function parseIntegerSetting(value: string | undefined, fallback: number, min: n
 }
 
 function candidateDedupeKey(item: CandidateWithEvidence): string {
-  return [
-    item.candidate.company_domain ?? item.candidate.company,
-    item.candidate.name ?? "",
-    item.candidate.title ?? "",
-    item.evidence[0]?.url ?? ""
-  ].join("|").toLowerCase();
+  const company = normalizeIdentityPart(item.candidate.company_domain ?? item.candidate.company);
+  const name = normalizeIdentityPart(item.candidate.name);
+  const title = normalizeIdentityPart(item.candidate.title);
+  if (name && title) return ["person", company, name, title].join("|");
+  return ["account", company].join("|");
 }
 
 function pushUnique(items: string[], value: string): void {
   if (!items.includes(value)) items.push(value);
+}
+
+function normalizeIdentityPart(value: string | null | undefined): string {
+  return (value ?? "")
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
 }

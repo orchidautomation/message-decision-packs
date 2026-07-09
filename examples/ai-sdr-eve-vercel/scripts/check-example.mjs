@@ -85,6 +85,10 @@ if (!qualificationLib.includes("findQualificationSignals") || !qualificationLib.
   console.error("qualification must require source-backed fit and why-now signals before ledger append");
   process.exit(1);
 }
+if (qualificationLib.includes("isRecentEvidence") || qualificationLib.includes("SIGNAL_RECENCY_MS") || qualificationLib.includes("|| isRecentEvidence")) {
+  console.error("qualification must not let observed_at/crawl recency satisfy the source-backed why-now gate");
+  process.exit(1);
+}
 
 const mdpRunnerLib = readFileSync("agent/lib/mdp-runner.ts", "utf8");
 if (!mdpRunnerLib.includes('process.env.MDP_RUNNER_MODE ?? "native"') || !mdpRunnerLib.includes("Native MDP fit was not run")) {
@@ -113,6 +117,10 @@ if (!scoutCycleLib.includes("validateQualifiedCandidate") || !scoutCycleLib.incl
 }
 if (!scoutCycleLib.includes("targetQualified") || !scoutCycleLib.includes("buildDiscoveryQueue") || !scoutCycleLib.includes("continueUntilMinimumQualified")) {
   console.error("scout cycle must enforce the MDP run policy until the target qualified count or bounded exhaustion");
+  process.exit(1);
+}
+if (scoutCycleLib.includes("item.evidence[0]?.url") || !scoutCycleLib.includes('["person", company, name, title]')) {
+  console.error("scout cycle must dedupe qualified people by normalized person/company/title, not source URL");
   process.exit(1);
 }
 
