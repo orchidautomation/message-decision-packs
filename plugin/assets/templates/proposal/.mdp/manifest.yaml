@@ -11,6 +11,7 @@ profile:
     recommended_skills:
     - mdp
     - mdp-proposal-pack-builder
+    - mdp-source-strategy
     - mdp-proposal-bid-no-bid-review
     - mdp-proposal-compliance-review
     - mdp-proposal-red-team-gap-review
@@ -23,6 +24,7 @@ profile:
     - mdp-proposal-win-theme-proof-review
     - mdp-proposal-red-team-gap-review
     - mdp-source-extract
+    - mdp-source-strategy
     - mdp-avoid-rules
     - mdp-output-rules
     - mdp-pack-review
@@ -44,6 +46,9 @@ profile:
     - job: create or improve proposal review pack
       skills:
       - mdp-proposal-pack-builder
+    - job: source strategy before proposal source intake
+      skills:
+      - mdp-source-strategy
     - job: bid no bid review
       skills:
       - mdp-proposal-bid-no-bid-review

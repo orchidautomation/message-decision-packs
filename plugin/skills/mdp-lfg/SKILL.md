@@ -79,6 +79,7 @@ Choose the narrow path and use that skill's workflow:
 - Red-team or gap review for supplied proposal sections, matrices, or answer drafts: `$mdp-proposal-red-team-gap-review`
 - ICP, segments, personas, fit/disqualifiers, signals, and no-message logic: `$mdp-icp-builder`
 - Website, docs, notes, sales calls into card entries: `$mdp-source-extract`
+- Source/search/intake strategy before extraction, GTM scouting, or proposal corpus review: `$mdp-source-strategy`
 - Hooks, objections, message angles, copy structures: `$mdp-message-angles`
 - CTA, ask style, reply path, meeting boundary: `$mdp-cta-builder`
 - Forbidden claims, category boundaries, unsupported promises: `$mdp-avoid-rules`
