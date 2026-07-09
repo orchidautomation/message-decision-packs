@@ -17,6 +17,7 @@
     "check": "npm run check:scaffold && npm run typecheck && npm run mdp:validate && npm run scout:fixture"
   },
   "dependencies": {
+    "ai": "^7.0.18",
     "eve": "0.22.1",
     "zod": "4.4.3"
   },

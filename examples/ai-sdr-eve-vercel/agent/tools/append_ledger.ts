@@ -18,11 +18,18 @@ export default defineTool({
     const strategy = await loadSourceStrategy();
     const selected = selectScoutQuery(strategy);
     const score = scoreCandidate({ mdp: input.mdp, evidence: input.evidence });
+    const provider = input.evidence.some((item) => item.provider === "exa") ? "live" : input.evidence.some((item) => item.provider === "fixture") ? "fixture" : "optional";
+    const sourceStrategy = {
+      ...selected.trace,
+      provider_mode: provider,
+      provider_available: provider === "live",
+      provider_fallback: provider === "fixture" ? "Ledger append received fixture evidence rather than live provider output." : null
+    };
     const row = {
       contract_version: "mdp_scout_candidate/v0" as const,
       run_id: input.runId ?? createRunId(),
       pack_id: input.packId ?? process.env.MDP_PACK_ID ?? "profound-gtm-vetting-example",
-      source_strategy: selected.trace,
+      source_strategy: sourceStrategy,
       candidate: input.candidate,
       evidence: input.evidence,
       mdp: input.mdp,

@@ -10,13 +10,16 @@ On each scheduled run, find source-backed account/persona evidence, run MDP-owne
 
 1. Load the `mdp-lfg`, `mdp-source-strategy`, or `mdp-prospect-brief` skill when you need the detailed MDP procedure.
 2. Call `mdp_validate` before relying on the pack.
-3. Call `load_source_strategy` before choosing queries or sources.
-4. Call `discover_candidates`. Use the fixture fallback when live keys are unavailable.
-5. For each evidence-backed candidate, call `mdp_fit`.
-6. Only when fit is acceptable, call `mdp_create_brief`.
-7. Call `mdp_check_claims` before treating any generated claim-bearing text as safe.
-8. Call `append_ledger` for reviewed candidate rows.
-9. End with a concise run report: run id, candidates reviewed, qualified rows, ledger path, gaps, and next action.
+3. Call `load_source_strategy` before choosing queries, sources, providers, or extraction tools.
+4. Follow `agent_operating_plan.operating_instructions`, `agent_operating_plan.stop_conditions`, and `queries_prompts[].agent_instruction` before invoking any provider.
+5. Call `discover_candidates`. Use live Exa only when `EXA_API_KEY` is configured; otherwise use the fixture fallback and report the gap.
+6. Optionally call `extract_evidence` for already accepted public URLs when `FIRECRAWL_API_KEY` is configured. Do not use Firecrawl for broad discovery unless the source strategy explicitly allows it.
+7. Treat Apify as an optional follow-up lane until an approved MCP/Actor adapter is enabled. Do not run Apify merely because `APIFY_TOKEN` exists.
+8. For each evidence-backed candidate, call `mdp_fit`.
+9. Only when fit is acceptable, call `mdp_create_brief`.
+10. Call `mdp_check_claims` on any draft copy before treating claim-bearing text as safe.
+11. Call `append_ledger` for reviewed candidate rows.
+12. End with a concise run report: run id, candidates reviewed, qualified rows, provider mode, ledger path, gaps, and next action.
 
 ## Boundaries
 
@@ -32,6 +35,13 @@ On each scheduled run, find source-backed account/persona evidence, run MDP-owne
 ## Source policy
 
 Prefer public, unauthenticated, sourceable material and operator-approved corpora. If evidence is insufficient, preserve the gap and stop before drafting or ledger append.
+
+## Provider policy
+
+- Exa: first-pass public discovery through the Eve `discover_candidates` tool and local AI SDK `tool()` wrapper.
+- Firecrawl: accepted-URL cleanup only through `extract_evidence`; skip when unavailable.
+- Apify: optional advanced MCP/Actor lane, not required for this template and not enabled in v1.
+- Fixture: honest fallback for local checks and template demos; never describe fixture output as live research.
 
 ## Tool policy
 

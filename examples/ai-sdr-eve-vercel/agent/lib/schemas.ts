@@ -50,6 +50,11 @@ export type SourceStrategyTrace = {
   query_id: string;
   scout_family: string;
   source_target_ids: string[];
+  agent_instruction?: string;
+  required_receipts?: string[];
+  provider_mode?: "live" | "fixture" | "optional" | "unavailable" | string;
+  provider_available?: boolean;
+  provider_fallback?: string | null;
 };
 
 export type ScoreBreakdown = {
