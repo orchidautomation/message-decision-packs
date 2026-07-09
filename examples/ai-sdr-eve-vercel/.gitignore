@@ -1,0 +1,7 @@
+node_modules/
+.eve/
+.vercel/
+.output/
+artifacts/
+.env
+.env.*.local

@@ -1,0 +1,48 @@
+id: personas
+kind: personas
+title: Target buyer personas
+description: Buyer personas Profound wants to reach and what each needs from an AI search visibility platform.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+tags:
+- persona
+entries:
+- id: aeo-lead
+  title: AEO Lead
+  body: "Owns AI search visibility, answer-engine share of voice, citations, prompt tracking, and the transition from classic SEO reporting to AI-generated answers."
+  applies_to:
+  - AEO Lead
+  evidence:
+  - profound-aeo-teams
+  - profound-answer-engine-insights
+  avoid: []
+- id: content-lead
+  title: Content Lead
+  body: "Owns briefs, content refresh, net-new content, editorial throughput, and the need to convert prompt and citation data into useful content work."
+  applies_to:
+  - Content Lead
+  evidence:
+  - profound-content-teams
+  - profound-agents
+  avoid: []
+- id: pr-brand-lead
+  title: "PR & Brand Lead"
+  body: "Owns brand narrative, earned media, reputation, sentiment, and whether AI answer engines represent the company accurately."
+  applies_to:
+  - "PR & Brand Lead"
+  evidence:
+  - profound-pr-teams
+  - profound-answer-engine-insights
+  avoid: []
+- id: agency-partner
+  title: Agency Partner
+  body: "Owns client strategy across multiple brands or workspaces, needs repeatable reporting, and wants a defensible way to connect AI visibility signals to client action."
+  applies_to:
+  - Agency Partner
+  evidence:
+  - profound-pricing
+  - profound-homepage
+  avoid: []

@@ -1,0 +1,62 @@
+id: positioning
+kind: positioning
+title: Positioning and boundaries
+description: Profound positioning, market-slice boundaries, and what this MDP example is designed to prove.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+tags:
+- positioning
+- category
+- boundary
+entries:
+- id: profound-category
+  title: AI answer engine optimization platform
+  body: "Profound helps brands understand and improve visibility in AI-generated answers across answer engines, with platform surfaces for insights, prompt volumes, agents, shopping, and agent analytics."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - profound-homepage
+  avoid: []
+- id: seller-side-mdp
+  title: Seller-side decision pack
+  body: "This pack represents Profound's GTM decision layer: target slices, buyer personas, fit gates, evidence-backed claims, hooks, CTAs, avoid-rules, and gaps before any downstream copy or outreach tool acts."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  - user-mdp-hypothesis
+  avoid: []
+- id: target-slice
+  title: Target slice, not total market
+  body: "The first slice is marketing teams and agencies that already have SEO, content, PR, brand, agency, or infrastructure signals showing they care about discovery, citations, sentiment, and traffic attribution."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - profound-aeo-teams
+  - profound-content-teams
+  - profound-pr-teams
+  - profound-pricing
+  avoid: []
+- id: mdp-not-execution
+  title: MDP is not execution
+  body: "MDP stores the context contract and routes cards for agents. It does not send messages, enrich leads, update systems, or run campaigns."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid: []

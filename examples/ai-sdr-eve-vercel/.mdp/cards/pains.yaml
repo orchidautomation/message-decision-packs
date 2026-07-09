@@ -1,0 +1,79 @@
+id: pains
+kind: pains
+title: Buyer pains and triggers
+description: Reusable pains that make a Profound target account worth vetting.
+personas:
+- AEO Lead
+- Content Lead
+- PR & Brand Lead
+- Agency Partner
+tags:
+- pain
+- trigger
+entries:
+- id: ai-search-blind-spot
+  title: AI search blind spot
+  body: The buyer cannot see how often the brand appears in AI answers, how it ranks against competitors, or which prompts and topics matter.
+  applies_to:
+  - AEO Lead
+  evidence:
+  - profound-answer-engine-insights
+  - profound-aeo-teams
+  avoid: []
+- id: citation-share-gap
+  title: Citation and share-of-voice gap
+  body: The team needs to understand which pages and domains AI engines cite, where competitors are winning, and which content or earned-media opportunities matter.
+  applies_to:
+  - AEO Lead
+  - PR & Brand Lead
+  evidence:
+  - profound-answer-engine-insights
+  - profound-pr-teams
+  avoid: []
+- id: content-throughput-gap
+  title: Content throughput gap
+  body: The content team needs to turn prompt, citation, and competitor insight into briefs, refreshes, and net-new content without manually rebuilding the research loop each time.
+  applies_to:
+  - Content Lead
+  evidence:
+  - profound-content-teams
+  - profound-agents
+  avoid: []
+- id: ai-crawler-attribution-gap
+  title: AI crawler attribution gap
+  body: The team does not know which AI systems are crawling the site, how content is interpreted, which pages matter, or whether AI-driven activity connects to traffic.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  evidence:
+  - profound-agent-analytics
+  avoid: []
+- id: client-reporting-gap
+  title: Client reporting gap
+  body: Agency or enterprise teams need repeatable reporting across brands, prompts, engines, and markets without turning every client into a one-off analysis.
+  applies_to:
+  - Agency Partner
+  evidence:
+  - profound-pricing
+  avoid: []
+- id: prompt-demand-blindspot
+  title: Prompt demand blind spot
+  body: The buyer does not know which AI conversation topics, prompts, prompt volumes, or intent patterns should drive tracking, content, or earned-media prioritization.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - Agency Partner
+  evidence:
+  - profound-prompt-volumes
+  avoid: []
+- id: signal-to-project-gap
+  title: Signal to project gap
+  body: The team can see many AI-search signals but lacks a repeatable way to rank opportunities, create execution briefs, hand work to agents, and measure impact.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - PR & Brand Lead
+  - Agency Partner
+  evidence:
+  - profound-aim
+  avoid: []

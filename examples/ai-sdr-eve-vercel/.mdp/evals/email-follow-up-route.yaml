@@ -1,0 +1,17 @@
+command: route
+expect_entry_titles_contains:
+- Email follow-up
+- Content gap to brief hook
+- Signal -> hypothesis -> question
+expect_entry_titles_excludes:
+- Initial email
+- LinkedIn initial touch
+- LinkedIn follow-up
+expect_load_order_contains:
+- .mdp/cards/personas.yaml
+- .mdp/cards/avoid-rules.yaml
+- .mdp/cards/channel-policies.yaml
+- .mdp/cards/copy-patterns.yaml
+id: email-content-follow-up-route
+job: email follow-up copy
+persona: Content Lead

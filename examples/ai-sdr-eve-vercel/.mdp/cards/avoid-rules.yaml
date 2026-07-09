@@ -1,0 +1,86 @@
+id: avoid-rules
+kind: avoid-rules
+title: Avoid rules
+description: Category and claim boundaries agents must keep intact.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+tags:
+- guardrail
+- avoid
+entries:
+- id: not-execution
+  title: Do not claim execution
+  body: "Do not describe the decision pack as a sender, CRM, sequencer, enrichment provider, scraper, BI tool, AI SDR, or generic automation system."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid:
+  - AI SDR
+  - sequencer
+  - CRM replacement
+  - generic automation
+  - scraper
+- id: no-unsourced-prospect-visibility
+  title: No unsourced prospect visibility claims
+  body: "Do not claim the target brand has low AI visibility, negative sentiment, missing citations, or active buyer intent unless the source row includes that evidence."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  evidence:
+  - profound-answer-engine-insights
+  avoid:
+  - low visibility
+  - invisible in AI
+  - negative sentiment
+  - actively looking
+- id: no-unsupported-outcomes
+  title: No unsupported outcomes
+  body: "Do not add quantified lift, guaranteed rankings, guaranteed traffic, guaranteed citations, or revenue claims unless the exact proof is in the approved claim context."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid:
+  - guaranteed
+  - guaranteed rankings
+  - guaranteed traffic
+  - proven ROI
+- id: no-contact-harvest
+  title: No contact harvest
+  body: "Do not collect, infer, buy, expose, or invent personal contact data. Public role/persona fields are routing context only."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid:
+  - find email
+  - phone number
+  - scrape contacts
+- id: no-fearmongering
+  title: No fearmongering
+  body: "Avoid panic language about being erased by AI or falling behind. Use source-backed hypotheses and questions instead."
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - "PR & Brand Lead"
+  - Agency Partner
+  evidence:
+  - profound-homepage
+  avoid:
+  - erased by AI
+  - doomed
+  - last chance

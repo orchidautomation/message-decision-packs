@@ -1,0 +1,7 @@
+command: route
+expect_load_order_contains:
+- .mdp/cards/personas.yaml
+- .mdp/cards/avoid-rules.yaml
+id: unsupported-persona-route
+job: target account vetting
+persona: Procurement
