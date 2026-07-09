@@ -17,6 +17,12 @@ export default defineChannel({
         "content-type": "text/html; charset=utf-8"
       }
     })),
+    GET("/mdp", async () => new Response(homeHtml(), {
+      headers: {
+        "cache-control": "no-store",
+        "content-type": "text/html; charset=utf-8"
+      }
+    })),
     GET("/scout/health", async () => Response.json({
       ok: true,
       service: "mdp-eve-scout",

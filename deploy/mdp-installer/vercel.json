@@ -18,7 +18,7 @@
     },
     {
       "source": "/eve",
-      "destination": "https://ai-sdr-eve-vercel.vercel.app",
+      "destination": "https://ai-sdr-eve-vercel.vercel.app/mdp",
       "statusCode": 307
     },
     {

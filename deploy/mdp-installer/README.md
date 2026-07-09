@@ -32,7 +32,7 @@ curl -I https://mdp.orchidlabs.dev/eve/docs
 
 These routes keep the deployable Eve demo close to the MDP installer domain:
 
-- `https://mdp.orchidlabs.dev/eve` -> deployed Eve scout landing page
+- `https://mdp.orchidlabs.dev/eve` -> deployed Eve scout MDP landing page
 - `https://mdp.orchidlabs.dev/eve/scout/run` -> protected scout endpoint; use `dryRun: true` for public fixture checks
 - `https://mdp.orchidlabs.dev/eve/scout/health` -> health/capability endpoint
 - `https://mdp.orchidlabs.dev/eve/docs` -> canonical Vercel Eve docs
