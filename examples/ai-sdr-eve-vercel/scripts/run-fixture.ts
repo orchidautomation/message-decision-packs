@@ -8,6 +8,8 @@ console.log(JSON.stringify({
   qualified: result.qualified,
   ledgerPath: result.ledgerPath,
   query: result.query,
+  provider: result.provider,
+  fallbackReason: result.fallbackReason,
   firstCandidate: first?.candidate.company ?? null,
   firstScore: first?.score.overall ?? null,
   firstMdpStatus: first?.mdp.fit_status ?? null,

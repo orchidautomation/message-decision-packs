@@ -1,44 +1,49 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fixturePath } from "./paths.ts";
+import { capabilityFor, providerCapabilities, runExaSearch, type ExaSearchResult, type ProviderCapability } from "./provider-tools.ts";
 import { candidateWithEvidenceSchema, type CandidateWithEvidence } from "./schemas.ts";
 
-export async function discoverCandidates(input: { query: string; limit: number; dryRun?: boolean }): Promise<CandidateWithEvidence[]> {
-  const dryRun = input.dryRun ?? !process.env.EXA_API_KEY;
-  if (dryRun) return [await readFixture()];
+export type DiscoveryResult = {
+  provider: "exa" | "fixture";
+  mode: "live" | "fixture";
+  providerCapabilities: ProviderCapability[];
+  fallbackReason: string | null;
+  candidates: CandidateWithEvidence[];
+};
 
-  const response = await fetch("https://api.exa.ai/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.EXA_API_KEY ?? ""
-    },
-    body: JSON.stringify({
-      query: input.query,
-      type: "auto",
-      numResults: input.limit,
-      contents: { highlights: true, text: { maxCharacters: 1200 }, summary: true }
-    })
-  });
+export async function discoverCandidates(input: { query: string; limit: number; dryRun?: boolean }): Promise<DiscoveryResult> {
+  const capabilities = providerCapabilities();
+  const exa = capabilityFor("exa");
+  const dryRun = input.dryRun ?? !exa.enabled;
 
-  if (!response.ok) throw new Error(`Exa search failed: ${response.status} ${await response.text()}`);
-  const payload = await response.json() as { results?: ExaSearchResult[] };
-  return (payload.results ?? []).slice(0, input.limit).map(resultToCandidateWithEvidence);
+  if (dryRun) {
+    const reason = input.dryRun
+      ? "Dry-run requested; using public-safe fixture candidate."
+      : exa.reason;
+    return {
+      provider: "fixture",
+      mode: "fixture",
+      providerCapabilities: capabilities,
+      fallbackReason: reason,
+      candidates: [await readFixture()]
+    };
+  }
+
+  const payload = await runExaSearch({ query: input.query, limit: input.limit });
+  return {
+    provider: "exa",
+    mode: "live",
+    providerCapabilities: capabilities,
+    fallbackReason: null,
+    candidates: (payload.results ?? []).slice(0, input.limit).map(resultToCandidateWithEvidence)
+  };
 }
 
 export async function readFixture(): Promise<CandidateWithEvidence> {
   const parsed = JSON.parse(await readFile(fixturePath(), "utf8"));
   return candidateWithEvidenceSchema.parse(parsed);
 }
-
-type ExaSearchResult = {
-  title?: string;
-  url?: string;
-  publishedDate?: string;
-  highlights?: string[];
-  text?: string;
-  summary?: string;
-};
 
 function resultToCandidateWithEvidence(result: ExaSearchResult): CandidateWithEvidence {
   const url = result.url ?? "https://unknown.example";
@@ -59,7 +64,7 @@ function resultToCandidateWithEvidence(result: ExaSearchResult): CandidateWithEv
       trigger: snippet,
       persona: "AEO Lead",
       segment: null,
-      signals: ["Exa public discovery", title]
+      signals: ["Exa AI SDK public discovery", title]
     },
     evidence: [{
       id,

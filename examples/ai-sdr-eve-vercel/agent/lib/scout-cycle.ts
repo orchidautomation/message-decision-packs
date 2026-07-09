@@ -3,17 +3,23 @@ import { appendLedgerRows, createRunId } from "./ledger.ts";
 import { runMdpBrief } from "./mdp-runner.ts";
 import { scoreCandidate } from "./scoring.ts";
 import { loadSourceStrategy, selectScoutQuery } from "./source-strategy.ts";
-import type { LedgerRow } from "./schemas.ts";
+import type { LedgerRow, SourceStrategyTrace } from "./schemas.ts";
 
-export async function runFixtureScoutCycle(): Promise<{ runId: string; query: string; qualified: number; ledgerPath: string | null; rows: LedgerRow[] }> {
+export async function runFixtureScoutCycle(): Promise<{ runId: string; query: string; qualified: number; ledgerPath: string | null; rows: LedgerRow[]; provider: string; fallbackReason: string | null }> {
   const strategy = await loadSourceStrategy();
   const selected = selectScoutQuery(strategy);
-  const discovered = await discoverCandidates({ query: selected.query, limit: Number(process.env.SCOUT_MAX_CANDIDATES ?? 5), dryRun: true });
+  const discovery = await discoverCandidates({ query: selected.query, limit: Number(process.env.SCOUT_MAX_CANDIDATES ?? 5), dryRun: true });
   const runId = createRunId();
   const minScore = Number(process.env.SCOUT_MIN_SCORE ?? 65);
   const rows: LedgerRow[] = [];
+  const trace: SourceStrategyTrace = {
+    ...selected.trace,
+    provider_mode: discovery.mode,
+    provider_available: discovery.provider === "exa",
+    provider_fallback: discovery.fallbackReason
+  };
 
-  for (const item of discovered) {
+  for (const item of discovery.candidates) {
     const mdp = await runMdpBrief(item, "linkedin");
     const score = scoreCandidate({ mdp, evidence: item.evidence });
     if (score.overall < minScore) continue;
@@ -21,7 +27,7 @@ export async function runFixtureScoutCycle(): Promise<{ runId: string; query: st
       contract_version: "mdp_scout_candidate/v0",
       run_id: runId,
       pack_id: process.env.MDP_PACK_ID ?? "profound-gtm-vetting-example",
-      source_strategy: selected.trace,
+      source_strategy: trace,
       candidate: item.candidate,
       evidence: item.evidence,
       mdp,
@@ -31,5 +37,5 @@ export async function runFixtureScoutCycle(): Promise<{ runId: string; query: st
   }
 
   const written = rows.length ? await appendLedgerRows(rows) : null;
-  return { runId, query: selected.query, qualified: rows.length, ledgerPath: written?.ledgerPath ?? null, rows };
+  return { runId, query: selected.query, qualified: rows.length, ledgerPath: written?.ledgerPath ?? null, rows, provider: discovery.provider, fallbackReason: discovery.fallbackReason };
 }
