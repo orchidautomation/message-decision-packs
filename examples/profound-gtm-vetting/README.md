@@ -18,6 +18,7 @@ This example uses public Profound pages plus the user-provided MDP hypothesis fr
 `examples/profound-gtm-vetting/.mdp/source-strategy.json` is the LFG source-strategy artifact. It tells the scout where to look and where not to look:
 
 - Exa-first public discovery across company pages, blogs, resource centers, jobs, agency service pages, news, docs, podcasts, and events.
+- A live run policy that targets at least 3 qualified people per scheduled scout run, continuing across approved account-discovery prompts until the target or bounded exhaustion.
 - A second Exa person-resolution pass driven by `exa-person-role-resolution.query_template`, requiring a public name, title/role, company match, and person source URL before qualification.
 - Firecrawl only for accepted public URLs that need clean markdown/structured extraction.
 - Apify only for reviewed public actors/datasets with explicit source policy and budget approval.

@@ -49,6 +49,10 @@ if (!sourceStrategyLib.includes("bundledSourceStrategy")) {
   console.error("source strategy loader must include a bundled fallback for Vercel serverless deployments");
   process.exit(1);
 }
+if (!sourceStrategyLib.includes("selectScoutQueries") || !sourceStrategyLib.includes("normalizeRunPolicy")) {
+  console.error("source strategy loader must expose multi-query scout selection and run-policy normalization");
+  process.exit(1);
+}
 
 const discoveryLib = readFileSync("agent/lib/discovery.ts", "utf8");
 if (!discoveryLib.includes("bundledFixture")) {
@@ -103,6 +107,10 @@ if (!scoutCycleLib.includes("validateQualifiedCandidate") || !scoutCycleLib.incl
   console.error("scout cycle must validate qualification before ledger append and clamp score thresholds");
   process.exit(1);
 }
+if (!scoutCycleLib.includes("targetQualified") || !scoutCycleLib.includes("buildDiscoveryQueue") || !scoutCycleLib.includes("continueUntilMinimumQualified")) {
+  console.error("scout cycle must enforce the MDP run policy until the target qualified count or bounded exhaustion");
+  process.exit(1);
+}
 
 const discoverCandidatesTool = readFileSync("agent/tools/discover_candidates.ts", "utf8");
 if (!discoverCandidatesTool.includes("selectPersonResolutionQuery") || !discoverCandidatesTool.includes("personResolutionQueryTemplate")) {
@@ -129,6 +137,10 @@ if (!scoutChannel.includes("x-mdp-scout-secret") || !scoutChannel.includes("inpu
   console.error("scout channel must support protected live runs and public-safe fixture dry-runs");
   process.exit(1);
 }
+if (!scoutChannel.includes("target_qualified") || !scoutChannel.includes("discovery_passes") || !scoutChannel.includes("exhausted")) {
+  console.error("scout channel must report the run-policy target and bounded exhaustion state");
+  process.exit(1);
+}
 
 const vercelConfig = JSON.parse(readFileSync("vercel.json", "utf8"));
 if (!Array.isArray(vercelConfig.crons) || !vercelConfig.crons.some((cron) => cron.path === "/scout/run")) {
@@ -140,6 +152,9 @@ console.log("ok ai-sdr-eve-vercel scaffold check passed");
 
 function assertSourceStrategy(strategy, label) {
   if (strategy.format !== "mdp.source-strategy.v0") throw new Error(`${label} has unexpected source strategy format`);
+  if (strategy.run_policy?.minimum_qualified_people_per_run !== 3) throw new Error(`${label} must target 3 qualified people per live run`);
+  if (strategy.run_policy?.continue_until_minimum_qualified !== true) throw new Error(`${label} must continue until the run target is met or bounded discovery is exhausted`);
+  if (!Number.isInteger(strategy.run_policy?.max_discovery_passes_per_run) || strategy.run_policy.max_discovery_passes_per_run < 1) throw new Error(`${label} must bound discovery passes`);
   if (!strategy.agent_operating_plan?.downstream_handoff_prompt?.includes("mdp --json fit")) {
     throw new Error(`${label} must include supported MDP CLI fit handoff language`);
   }

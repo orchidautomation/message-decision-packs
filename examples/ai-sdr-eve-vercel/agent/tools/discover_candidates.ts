@@ -1,7 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { discoverCandidates } from "../lib/discovery.ts";
-import { loadSourceStrategy, selectPersonResolutionQuery, selectScoutQuery } from "../lib/source-strategy.ts";
+import { loadSourceStrategy, normalizeRunPolicy, selectPersonResolutionQuery, selectScoutQuery } from "../lib/source-strategy.ts";
 
 export default defineTool({
   description: "Discover public-source candidates from the active MDP source strategy. Uses live Exa via an AI SDK-compatible tool when EXA_API_KEY is present; only dryRun=true returns the public-safe fixture.",
@@ -10,7 +10,8 @@ export default defineTool({
     const strategy = await loadSourceStrategy();
     const selected = selectScoutQuery(strategy, input.query);
     const personResolutionQuery = selectPersonResolutionQuery(strategy);
-    const limit = input.limit ?? parseIntegerSetting(process.env.SCOUT_MAX_CANDIDATES, 5, 1, 20);
+    const policy = normalizeRunPolicy(strategy);
+    const limit = input.limit ?? parseIntegerSetting(process.env.SCOUT_MAX_CANDIDATES, policy.discoveryBatchSize, 1, 20);
     const discovery = await discoverCandidates({
       query: selected.query,
       limit,
