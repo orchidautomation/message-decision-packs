@@ -11,4 +11,12 @@ expect_load_order_contains:
 - .mdp/cards/pains.yaml
 id: call-prep-pr-brand-route
 job: call prep
-persona: "PR & Brand Lead"
+persona: PR & Brand Lead
+profile_eval:
+  category: job-routing
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - decision-criteria
+  - routing-jobs

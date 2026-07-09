@@ -13,12 +13,14 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   const url = new URL(request.url);
-  const dryRun = url.searchParams.get("dryRun") !== "false" && process.env.EXA_API_KEY == null;
+  const dryRunParam = url.searchParams.get("dryRun");
+  const dryRun = dryRunParam === "true" || (dryRunParam !== "false" && process.env.EXA_API_KEY == null);
   const run = await start(scoutCycleWorkflow, [{
     packId: process.env.MDP_PACK_ID ?? "mdp-for-mdp",
     scheduleId: process.env.SCOUT_SCHEDULE_ID ?? "weekday-default",
     query: process.env.SCOUT_QUERY,
     sourceStrategyPath: process.env.SCOUT_SOURCE_STRATEGY_PATH,
+    fixturePath: process.env.SCOUT_FIXTURE_PATH,
     outputDir: process.env.SCOUT_OUTPUT_DIR ?? "/tmp/mdp-bdr-scout",
     dryRun,
     persist: true

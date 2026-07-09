@@ -5,7 +5,7 @@ description: Global style, formatting, and output-structure rules generated Prof
 personas:
 - AEO Lead
 - Content Lead
-- "PR & Brand Lead"
+- PR & Brand Lead
 - Agency Partner
 tags:
 - guardrail
@@ -14,32 +14,46 @@ tags:
 entries:
 - id: no-em-dashes
   title: No em dashes
-  body: "Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead."
+  body: Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.
   applies_to:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   evidence: []
   avoid:
-  - "—"
+  - —
 - id: honor-paragraph-count
   title: Honor paragraph count
-  body: "If the user or pack states a paragraph count, match it exactly. Do not add setup, recap, or explanation paragraphs outside the requested structure."
+  body: If the user or pack states a paragraph count, match it exactly. Do not add setup, recap, or explanation paragraphs outside the requested structure.
   applies_to:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   evidence: []
   avoid: []
 - id: no-meta-commentary
   title: No meta commentary
-  body: "Do not explain why the copy works, describe the structure, or include drafting notes unless the user asks for critique or rationale."
+  body: Do not explain why the copy works, describe the structure, or include drafting notes unless the user asks for critique or rationale.
   applies_to:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   evidence: []
   avoid: []
+- id: vercel-plain-output
+  title: Plain Vercel-style output
+  body: Use crisp, monochrome, product-led language for operator artifacts. Prefer concise headings, tables, bullets, and exact command blocks over decorative prose, purple-brand language, or card-copy flourish.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - PR & Brand Lead
+  - Agency Partner
+  evidence:
+  - mdp-readme
+  avoid:
+  - purple
+  - hype
+  - decorative cards

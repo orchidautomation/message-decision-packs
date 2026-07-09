@@ -62,11 +62,11 @@ output_contract:
         body: Do not use em dashes in generated copy; use commas, periods, colons, or shorter sentences instead.
         confidence: medium
         evidence:
-        - style_guidance
+        - source_notes
         id: avoid-em-dashes
         notes: []
         provenance:
-        - 'style_guidance: supplied style preference'
+        - 'source_notes: supplied style guidance'
         status: needs-review
         title: Avoid em dashes
       kind: output-rules
@@ -79,7 +79,8 @@ output_contract:
       company_domain: N/A
       company_name: N/A
       confidence: unknown
-      inputs_used: []
+      inputs_used:
+      - company_domain
       person_name: N/A
       person_title: N/A
   required_top_level:
@@ -90,6 +91,7 @@ output_contract:
   - gaps
   - rejected_claims
   strict_json_only: true
+  schema_ref: mdp.prompt-output.card-patches.v0
 tags:
 - prompt
 - style

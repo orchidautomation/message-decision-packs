@@ -32,22 +32,23 @@ sources:
   locator: current Codex thread, 2026-06-25
 - confidence: high
   direct_claims:
-  - Profound helps brands gain visibility in AI-generated answers and optimize their presence in LLM-based answer engines.
-  - Profound describes its platform surfaces as Answer Engine Insights, Prompt Volumes, Shopping, Agent Analytics, and Agents.
-  - Profound's homepage names answer engines including ChatGPT, Claude, Gemini, Perplexity, Grok, Microsoft Copilot, Meta AI, DeepSeek, and Google AI Overviews.
-  freshness: retrieved-2026-06-25
+  - Profound describes itself as a full stack marketing platform for marketers to understand, analyze, build, and measure.
+  - Profound names platform surfaces including Answer Engine Insights, Prompt Volumes, Shopping, Agent Analytics, Agents, and Aim.
+  - Profound names answer engines including Perplexity, ChatGPT, Claude, Gemini, Grok, Microsoft Copilot, Meta AI, DeepSeek, and Google AI Overviews.
+  freshness: retrieved-2026-07-09
   gaps: []
   id: profound-homepage
   interpretations:
-  - Use this source for Profound's category and high-level product positioning.
-  - Do not infer a target account's current AI visibility, budget, or intent from this source.
+  - Use this source for Profound's high-level category and current platform taxonomy.
+  - Do not infer a prospect has poor AI visibility, budget, or intent from this source.
   kind: public-web
   locator: https://www.tryprofound.com/
 - confidence: high
   direct_claims:
-  - Answer Engine Insights tracks AI visibility, brand mentions, citations, sentiment, competitive benchmarking, and differences across major AI engines.
-  - The page says Profound runs tracked prompts daily and captures responses directly from the consumer experience rather than API outputs.
-  freshness: retrieved-2026-06-25
+  - Answer Engine Insights tracks AI visibility, mentions, citations, sentiment, competitive benchmarking, platform comparisons, and trends over time.
+  - The page says Profound runs tracked prompts daily and captures from the consumer front-end experience rather than API outputs.
+  - The page says customers can design or upload prompts and export raw data as CSV.
+  freshness: retrieved-2026-07-09
   gaps: []
   id: profound-answer-engine-insights
   interpretations:
@@ -93,28 +94,28 @@ sources:
   locator: https://www.tryprofound.com/solutions/pr-teams
 - confidence: high
   direct_claims:
-  - Profound Agents are described as custom agents that extend a brand's reach.
+  - Profound Agents are described as custom marketing agents that extend brand reach.
   - The Agents page describes templates for content refresh, AEO FAQ generation, competitive research, and net-new content creation.
-  - The page states Agents use a drag-and-drop builder, brand kit and knowledge base context, human-in-the-loop approvals, and CMS integration.
-  freshness: retrieved-2026-06-25
+  - The page states Agents use a no-code workflow builder, brand kit or knowledge base context, human-in-the-loop approvals, and CMS integration.
+  freshness: retrieved-2026-07-09
   gaps: []
   id: profound-agents
   interpretations:
-  - Use this source for content workflow and marketing-engineering hooks.
-  - Do not claim Profound sends outbound messages or replaces a customer's GTM execution stack.
+  - Use this source for content workflow, marketing engineering, and handoff-to-agent hooks.
+  - Do not claim Profound sends outbound messages or replaces a customer GTM execution stack.
   kind: public-web
   locator: https://www.tryprofound.com/features/agents
 - confidence: high
   direct_claims:
-  - Agent Analytics tracks which AI systems crawl a site, how they interpret content, and whether that activity converts to real traffic.
-  - The page says Agent Analytics uses server logs instead of JavaScript trackers, verifies AI crawlers, and integrates with cloud, edge, and web platforms.
-  - The page states enterprise security capabilities including SOC 2 Type II, SSO, RBAC, encryption, and GDPR compliance.
-  freshness: retrieved-2026-06-25
+  - Agent Analytics tracks AI systems crawling a site, how they interpret content, and whether activity converts to traffic.
+  - The page describes AI crawler visibility, attribution and traffic insights, content performance tracking, benchmarking, and real-time AI crawler monitoring.
+  - The page lists integrations including AWS, Akamai, Cloudflare, Fastly, Google Cloud Platform, Netlify, Vercel, WordPress, Shopify, and Adobe.
+  freshness: retrieved-2026-07-09
   gaps: []
   id: profound-agent-analytics
   interpretations:
   - Use this source for technical and analytics buyer hooks around AI crawler visibility, attribution, and infrastructure fit.
-  - Use compliance/security claims only when source-backed and routed.
+  - Use compliance or integration claims only when source-backed and routed.
   kind: public-web
   locator: https://www.tryprofound.com/features/agent-analytics
 - confidence: high
@@ -131,3 +132,55 @@ sources:
   - Do not quote exact prices from this extracted page.
   kind: public-web
   locator: https://www.tryprofound.com/pricing
+- id: profound-prompt-volumes
+  kind: public-web
+  locator: https://www.tryprofound.com/features/prompt-volumes
+  confidence: high
+  freshness: retrieved-2026-07-09
+  direct_claims:
+  - Prompt Volumes is positioned as uncovering the keywords and topics driving AI conversations.
+  - The page describes exact keyword volumes, topic trends, intent signals, and relationships across prompts.
+  - The page says keyword data is pulled from millions of AI conversations and can help identify which prompts to track.
+  interpretations:
+  - Use this source for search/source strategy, AEO/content pains, and hooks about choosing prompts before tracking or content work.
+  - Do not quote proprietary volume numbers for a prospect unless a reviewed source row contains them.
+  gaps: []
+- id: profound-aim
+  kind: public-web
+  locator: https://www.tryprofound.com/features/aim
+  confidence: high
+  freshness: retrieved-2026-07-09
+  direct_claims:
+  - Aim is described as the background agent built for marketers that keeps a brand growing from first signal to tracked result.
+  - The page says Aim identifies opportunities, turns accepted opportunities into projects, creates data-backed execution briefs, hands plans to Profound Agents, measures impact, and supports co-working with documents, sheets, agents, and skills.
+  - The FAQ says Aim scans Profound answer-engine insights, prompt volumes, agent analytics, fact check, benchmarking, knowledge bases, sitemaps, competitive landscape, and integrated app data.
+  interpretations:
+  - Use this source for hooks about moving from AI visibility signals to ranked projects, briefs, agent handoffs, and measurement.
+  - Do not claim a prospect has access to Aim data or a specific opportunity unless the source row provides it.
+  gaps: []
+- id: profound-agencies
+  kind: public-web
+  locator: https://www.tryprofound.com/solutions/agencies
+  confidence: high
+  freshness: retrieved-2026-07-09
+  direct_claims:
+  - Profound for Agencies frames the agency job as empowering clients to own their AI presence.
+  - The page describes complete AEO visibility, data for action, centralized client management, dedicated agency support, and go-to-market support.
+  - The page lists Answer Engine Insights, Prompt Volumes, Agent Analytics, and Agents as part of the agency platform.
+  interpretations:
+  - Use this source for agency partner persona, multi-client reporting fit, and public-source search targets for agencies with AI visibility services.
+  - Do not use agency customer quotes as proof about a new prospect unless framed as Profound public proof.
+  gaps: []
+- id: profound-source-strategy
+  kind: local-artifact
+  locator: .mdp/source-strategy.json
+  confidence: high
+  freshness: generated-2026-07-09
+  direct_claims:
+  - The source strategy translates Profound ICP, personas, fit rules, signals, avoid-rules, and source policy into public-source discovery targets.
+  - The source strategy uses Exa-first public discovery, Firecrawl for accepted URL extraction, and optional Apify for reviewed long-running or marketplace actor extraction.
+  - The source strategy excludes private LinkedIn, gated sources, personal contact enrichment, CRM mutation, and autonomous outreach.
+  interpretations:
+  - Use this source for where-to-find-people guidance before live scout execution.
+  - Treat it as an operator-reviewed plan, not evidence that any prospect is qualified.
+  gaps: []

@@ -20,3 +20,11 @@ prospect:
   synthetic: true
   title: Director of Organic Growth
   trigger: Account appears to have SEO, content, and organic growth ownership that could make AI answer visibility worth exploring
+profile_eval:
+  category: proceed
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - decision-criteria
+  - source-signals

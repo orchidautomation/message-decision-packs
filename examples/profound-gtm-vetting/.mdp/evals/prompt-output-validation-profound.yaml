@@ -1,0 +1,81 @@
+command: validate-prompt-output
+expect_valid: true
+expect_normalization_ready: true
+id: prompt-output-validation-profound
+profile_eval:
+  category: prompt-output-validation
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - source-signals
+  - gaps
+prompt_id: normalize-prospect-row
+prompt_output:
+  card_patches: []
+  contract: mdp.prompt-output.v0
+  gaps: []
+  normalization_trace:
+    fit_readiness:
+      has_company_domain: true
+      has_persona: true
+      has_segment: true
+      has_signal_source: true
+      has_signals: true
+      has_trigger: true
+      ready_for_mdp_fit: true
+    missing_required: []
+    persona:
+      confidence: medium
+      matched_keywords:
+      - organic growth
+      - search
+      needs_review: false
+      source: existing_pack_context.persona_mappings
+    preserved_raw_fields:
+    - raw_row.name
+    - raw_row.title
+    - raw_row.company
+    - company_domain
+    - raw_row.public_source_url
+  normalized_prospect:
+    attributes:
+      source_strategy_id: profound-ai-search-public-scouting
+      provider_family: exa
+    background: Source row says the team owns organic growth and is researching AI answer visibility, prompt demand, and content opportunities.
+    company: ExampleMarket Co
+    company_domain: example.com
+    company_url: https://example.com
+    name: Jordan Lee
+    persona: AEO Lead
+    segment: AEO and organic growth team
+    signals:
+    - confidence: medium
+      freshness: recent
+      id: seo-aeo-title-signal
+      source: raw_row.title
+      state_as: supplied
+      title: Prospect title indicates organic growth and search ownership
+    - confidence: medium
+      freshness: recent
+      id: prompt-volume-opportunity-signal
+      source: raw_row.public_source_summary
+      state_as: hypothesis
+      title: Account context mentions AI search prompts and content opportunity research
+    source_kind: public-web-row
+    synthetic: false
+    title: Director of Organic Growth
+    trigger: Researching how AI answer engines mention and cite the brand across important category prompts.
+  prompt_id: normalize-prospect-row
+  rejected_claims: []
+  source_summary:
+    account_name: ExampleMarket Co
+    company_domain: example.com
+    company_name: ExampleMarket Co
+    confidence: medium
+    inputs_used:
+    - raw_row
+    - company_domain
+    - existing_pack_context
+    person_name: Jordan Lee
+    person_title: Director of Organic Growth

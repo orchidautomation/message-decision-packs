@@ -2,16 +2,16 @@ format: mdp.v0
 id: profound-gtm-vetting-example
 name: Profound GTM Vetting Example
 version: 0.1.0
-description: A canonical seller-side example pack that models how Profound can codify the market slice, target buyer personas, fit rules, hooks, CTA policy, evidence, gaps, and brief routing for AI search visibility GTM work.
+description: 'A canonical seller-side MDP pack for Profound GTM scouting: it codifies target personas, source strategy, public evidence requirements, fit rules, hooks, CTA policy, approved claims, gaps, evals, and brief routing for AI search visibility work.'
 personas:
 - AEO Lead
 - Content Lead
-- "PR & Brand Lead"
+- PR & Brand Lead
 - Agency Partner
 target_personas:
 - AEO Lead
 - Content Lead
-- "PR & Brand Lead"
+- PR & Brand Lead
 - Agency Partner
 operator_roles:
 - Profound GTM
@@ -27,10 +27,14 @@ persona_mappings:
   title_keywords:
   - seo
   - aeo
+  - answer engine optimization
+  - ai search
   - organic growth
   - search
   - growth
   - demand generation
+  - marketing engineer
+  - growth engineer
 - persona: Content Lead
   title_keywords:
   - content
@@ -38,13 +42,19 @@ persona_mappings:
   - lifecycle
   - demand
   - organic
-- persona: "PR & Brand Lead"
+  - content strategy
+  - web strategy
+  - cms
+- persona: PR & Brand Lead
   title_keywords:
   - pr
   - communications
   - comms
   - brand
   - reputation
+  - earned media
+  - analyst relations
+  - social
 - persona: Agency Partner
   title_keywords:
   - agency
@@ -52,6 +62,8 @@ persona_mappings:
   - client strategy
   - account director
   - consultant
+  - client services
+  - strategy director
 cards:
 - id: personas
   path: cards/personas.yaml
@@ -60,7 +72,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - persona
@@ -71,7 +83,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - positioning
@@ -84,7 +96,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - fit
@@ -98,7 +110,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - signal
@@ -112,7 +124,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - pain
@@ -124,7 +136,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - claim
@@ -164,7 +176,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - hook
@@ -192,7 +204,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - guardrail
@@ -204,7 +216,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - guardrail
@@ -242,7 +254,7 @@ cards:
   personas:
   - AEO Lead
   - Content Lead
-  - "PR & Brand Lead"
+  - PR & Brand Lead
   - Agency Partner
   tags:
   - gap
@@ -258,4 +270,276 @@ provenance:
   owner: local-example
   created_by: codex
   notes:
-  - Public-source canonical example for Profound seller-side GTM vetting.
+  - This pack is guidance and evidence context, not an execution system.
+  - Agents should load only routed cards unless the user asks for a full audit.
+  - 2026-07-09 LFG pass refreshed public Profound source coverage, source strategy, brief command artifacts, and prompt contracts.
+profile:
+  id: gtm
+  label: Profound GTM scouting
+  version: mdp.profile.v0
+  agent_surface:
+    recommended_skills:
+    - mdp
+    - mdp-lfg
+    - mdp-source-strategy
+    - mdp-prospect-brief
+    - mdp-pack-eval
+    allowed_skills:
+    - mdp
+    - mdp-lfg
+    - mdp-create-pack
+    - mdp-icp-builder
+    - mdp-source-extract
+    - mdp-source-strategy
+    - mdp-message-angles
+    - mdp-cta-builder
+    - mdp-avoid-rules
+    - mdp-output-rules
+    - mdp-prospect-brief
+    - mdp-copy-brief
+    - mdp-copy-eval
+    - mdp-pack-review
+    - mdp-pack-eval
+    blocked_skills:
+    - name: mdp-proposal-pack-builder
+      reason: Proposal/RFP review pack builder; this Profound pack is for GTM scouting and outbound-fit briefs.
+    - name: mdp-proposal-bid-no-bid-review
+      reason: Proposal review job; use only for proposal packs, not prospect qualification.
+    - name: mdp-proposal-compliance-review
+      reason: Proposal compliance review job; use MDP claim/guardrail review for GTM copy instead.
+    job_skills:
+    - job: create or improve Profound GTM pack
+      skills:
+      - mdp-create-pack
+      - mdp-icp-builder
+    - job: source strategy before Profound scouting
+      skills:
+      - mdp-source-strategy
+    - job: prospect row to fit decision or brief
+      skills:
+      - mdp-prospect-brief
+    - job: copy brief or copy evaluation
+      skills:
+      - mdp-copy-brief
+      - mdp-copy-eval
+    - job: pack validation and eval coverage
+      skills:
+      - mdp-pack-review
+      - mdp-pack-eval
+lead_input_requirements:
+  required_fields:
+  - name
+  - title
+  - company_domain
+  - trigger
+  - persona
+  - segment
+  - signals
+  required_signal_fields:
+  - source
+  required_attributes: []
+  value_contracts:
+    segment:
+      type: string
+      enum:
+      - AEO and organic growth team
+      - content and demand team
+      - PR and brand team
+      - agency or multi-brand team
+      - AI search marketing team
+      description: Pack-owned Profound GTM segment labels accepted from normalization prompts.
+    source_kind:
+      type: string
+      enum:
+      - user-provided-row
+      - csv-row
+      - crm-export-row
+      - clay-row
+      - deepline-row
+      - public_web
+      - public-web-row
+      - public-careers-row
+      - scout-ledger-row
+      - sanitized-example
+      - synthetic-example
+      description: Provider-neutral source markers accepted from normalization prompts.
+  attribute_definitions:
+    source_strategy_id:
+      type: string
+      description: Optional reviewed MDP source-strategy id used to discover this row.
+    provider_family:
+      type: string
+      description: Optional reviewed provider family such as exa, firecrawl, apify, or manual.
+required_primitives:
+- actors
+- decision-criteria
+- source-signals
+- needs-requirements
+- evidence-proof
+- boundaries
+- output-contracts
+- routing-jobs
+- gaps
+- evals
+primitive_map:
+  actors:
+    cards:
+    - personas
+    input_contracts:
+    - prospect
+  decision-criteria:
+    cards:
+    - fit-rules
+    evals:
+    - fit-good-profound-aeo-target
+    - fit-insufficient-context
+    - fit-disqualified-execution-ask
+  source-signals:
+    cards:
+    - signals
+    prompts:
+    - normalize-prospect-row
+    input_contracts:
+    - prospect
+    evals:
+    - fit-good-profound-aeo-target
+    - prompt-output-validation-profound
+  needs-requirements:
+    cards:
+    - pains
+  evidence-proof:
+    cards:
+    - claims
+    - positioning
+    evals:
+    - claim-check-approved
+    - claim-check-unsupported
+  boundaries:
+    cards:
+    - avoid-rules
+    - objections
+    - positioning
+    evals:
+    - fit-disqualified-execution-ask
+    - claim-check-unsupported
+  output-contracts:
+    cards:
+    - output-rules
+    - copy-patterns
+    - ctas
+    - hooks
+    - channel-policies
+    evals:
+    - linkedin-aeo-copy-route
+    - email-initial-route
+    - call-prep-pr-brand-route
+    - brief-insufficient-context
+  routing-jobs:
+    cards:
+    - channel-policies
+    - motions
+    jobs:
+    - create-or-improve-profound-gtm-pack
+    - source-strategy-for-profound-scouting
+    - prospect-fit-or-brief
+    - outbound-copy-brief
+    - pack-validation
+  gaps:
+    cards:
+    - gaps
+    evals:
+    - fit-insufficient-context
+    - brief-insufficient-context
+  evals:
+    evals:
+    - fit-good-profound-aeo-target
+    - fit-insufficient-context
+    - fit-disqualified-execution-ask
+    - claim-check-approved
+    - claim-check-unsupported
+    - linkedin-aeo-copy-route
+    - email-initial-route
+    - call-prep-pr-brand-route
+    - prompt-output-validation-profound
+input_contracts:
+- id: prospect
+  description: Reviewed public/source-row input contract for Profound target accounts and people.
+  schema_ref: mdp.input.prospect.v0
+  prompt: prompts/normalize-prospect.yaml
+  normalizes:
+  - account
+  - person
+  - relationship
+jobs:
+- id: create-or-improve-profound-gtm-pack
+  label: Create or improve Profound GTM pack
+  description: Author or revise reviewed Profound GTM decision context, not execution infrastructure.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - needs-requirements
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - gaps
+  - evals
+- id: source-strategy-for-profound-scouting
+  label: Source strategy for Profound scouting
+  description: Turn Profound ICP, personas, signals, and avoid-rules into public-source discovery targets before extraction.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  - evals
+- id: prospect-fit-or-brief
+  label: Prospect row to fit decision or brief
+  description: Normalize supplied row context, check fit, and route a bounded local brief.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+- id: outbound-copy-brief
+  label: Outbound copy brief
+  description: Produce grounded copy guidance after fit, proof, guardrails, CTA policy, and output rules are loaded.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+- id: pack-validation
+  label: Pack validation and eval coverage
+  description: Check structural validity, profile primitive coverage, source strategy, and eval fixtures.
+  required_primitives:
+  - boundaries
+  - gaps
+  - evals
+profile_eval:
+  required_categories:
+  - proceed
+  - insufficient-context
+  - refusal
+  - unsafe-output
+  - job-routing
+  - prompt-output-validation
+  activation:
+    status: ready
+    summary: Profound GTM profile includes primitive coverage, local fit/refusal/claim/route fixtures, prompt-output validation, source strategy, and create-brief artifacts. Live provider and CRM actions still require operator approvals.

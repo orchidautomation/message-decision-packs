@@ -8,9 +8,17 @@ prospect:
   linkedin_url: https://www.linkedin.com/company/thinco
   name: Unknown
   persona: AEO Lead
-  segment: ""
+  segment: ''
   signals: []
   source_kind: synthetic-negative-fixture
   synthetic: true
   title: Unknown
-  trigger: ""
+  trigger: ''
+profile_eval:
+  category: insufficient-context
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - decision-criteria
+  - source-signals
+  - gaps

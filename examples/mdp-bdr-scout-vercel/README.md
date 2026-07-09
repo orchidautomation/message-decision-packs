@@ -45,6 +45,20 @@ MDP pack ICP/signals/evals -> source strategy -> provider search/extraction -> M
 
 Set `SCOUT_SOURCE_STRATEGY_PATH` to use an operator-reviewed strategy file. If it is unset, the demo uses `samples/source-strategy.json`.
 
+
+### Profound demo pack
+
+For the Profound LFG demo, point the scout at the committed Profound pack and source strategy:
+
+```bash
+export MDP_PACK_DIR=../profound-gtm-vetting
+export SCOUT_SOURCE_STRATEGY_PATH=../profound-gtm-vetting/.mdp/source-strategy.json
+export SCOUT_FIXTURE_PATH=../profound-gtm-vetting/examples/profound-public-source-fixture.json
+npm run scout:sample:native
+```
+
+The Profound strategy includes Exa-first public discovery, Firecrawl accepted-URL extraction, optional reviewed Apify actors, negative filters, evidence requirements, eval checks, and a create-brief handoff.
+
 ## Run the offline sample
 
 This sample path uses only Node.js built-ins and the committed fixture.
@@ -74,6 +88,36 @@ npm run typecheck
 ```
 
 `check:scaffold` validates the fixture, required file layout, and dry-run contract without live credentials. `typecheck` generates Next route types with `next typegen` and then runs `tsc --noEmit`.
+
+
+## Vercel deployment defaults
+
+This example is prepared as a Profound-first Vercel template. The production cron is defined in `vercel.json`:
+
+```json
+{ "path": "/api/cron/scout", "schedule": "0 14 * * 1-5" }
+```
+
+The cron route requires `CRON_SECRET`. With no `EXA_API_KEY`, it runs a dry-run against `samples/profound-public-source-fixture.json`; after you add `EXA_API_KEY`, it switches to live Exa discovery. `APIFY_TOKEN` is the only additional live extraction key needed for reviewed Apify actor workflows. Firecrawl and model keys remain optional.
+
+Production env defaults for this deployment:
+
+```bash
+MDP_PACK_ID=profound-gtm-vetting-example
+SCOUT_SOURCE_STRATEGY_PATH=samples/profound-source-strategy.json
+SCOUT_FIXTURE_PATH=samples/profound-public-source-fixture.json
+SCOUT_OUTPUT_DIR=/tmp/mdp-bdr-scout
+SCOUT_SCHEDULE_ID=weekday-profound-scout
+MDP_RUNNER_MODE=simulated
+CRM_SYNC_ENABLED=false
+```
+
+Manual cron smoke test after deploy:
+
+```bash
+curl -i "$DEPLOYMENT_URL/api/cron/scout?dryRun=true" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
 
 ## Install for Vercel development
 
