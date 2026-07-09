@@ -63,6 +63,10 @@ if (!discoveryLib.includes("personResolutionQueryTemplate") || !discoveryLib.inc
   console.error("discovery must render person-resolution queries from the MDP source strategy template");
   process.exit(1);
 }
+if (discoveryLib.includes("DEFAULT_PERSON_RESOLUTION_QUERY_TEMPLATE") || discoveryLib.includes("PERSON_ROLE_TERMS")) {
+  console.error("discovery must not carry hardcoded Profound person-resolution query fallbacks; use .mdp/source-strategy.json");
+  process.exit(1);
+}
 if (!discoveryLib.includes("resolvePersonForAccount") || !discoveryLib.includes("SCOUT_REQUIRE_PERSON")) {
   console.error("discovery must resolve public person-level owners and require people by default");
   process.exit(1);
@@ -81,8 +85,13 @@ if (!qualificationLib.includes("validateQualifiedCandidate") || !qualificationLi
   console.error("qualification must share person-evidence validation across scout and Eve tools");
   process.exit(1);
 }
-if (!qualificationLib.includes("findQualificationSignals") || !qualificationLib.includes("signalEvidenceIds") || !qualificationLib.includes("hasNowSignal")) {
-  console.error("qualification must require source-backed fit and why-now signals before ledger append");
+if (qualificationLib.includes("findQualificationSignals") || qualificationLib.includes("FIT_SIGNAL_RE") || qualificationLib.includes("hasNowSignal")) {
+  console.error("Eve runtime must not duplicate MDP qualification signal gates");
+  process.exit(1);
+}
+const manifestYaml = readFileSync(".mdp/manifest.yaml", "utf8");
+if (!manifestYaml.includes("qualification_gates:") || !manifestYaml.includes("require_person_resolution: true") || !manifestYaml.includes("require_fit_signal: true") || !manifestYaml.includes("require_why_now_signal: true")) {
+  console.error("MDP manifest must own person-resolution and fit/why-now qualification gates");
   process.exit(1);
 }
 if (qualificationLib.includes("isRecentEvidence") || qualificationLib.includes("SIGNAL_RECENCY_MS") || qualificationLib.includes("|| isRecentEvidence")) {
@@ -159,8 +168,8 @@ if (!scoutChannel.includes("target_qualified") || !scoutChannel.includes("discov
   console.error("scout channel must report the run-policy target and bounded exhaustion state");
   process.exit(1);
 }
-if (!scoutChannel.includes("signal_reasons") || !scoutChannel.includes("collectSignalReasons")) {
-  console.error("scout channel must expose qualified fit/why-now signal reasons in run responses");
+if (scoutChannel.includes("signal_reasons") || scoutChannel.includes("collectSignalReasons")) {
+  console.error("scout channel must not expose Eve-derived signal reasons; MDP fit owns qualification details");
   process.exit(1);
 }
 
@@ -204,10 +213,9 @@ function assertSourceStrategy(strategy, label) {
   if (strategy.evidence_requirements?.person_resolution_required !== true) {
     throw new Error(`${label} must require person-level resolution before qualification`);
   }
-  if (strategy.evidence_requirements?.minimum_qualified_signals_per_candidate !== 1 || strategy.evidence_requirements?.maximum_qualified_signals_per_candidate !== 3) {
-    throw new Error(`${label} must require 1-3 source-backed fit/why-now signals before qualification`);
-  }
-  if (!String(strategy.evidence_requirements?.signal_gate ?? "").includes("why now")) {
-    throw new Error(`${label} must describe the fit and why-now signal gate`);
+  for (const field of ["minimum_qualified_signals_per_candidate", "maximum_qualified_signals_per_candidate", "signal_gate", "signal_gap_policy"]) {
+    if (field in (strategy.evidence_requirements ?? {})) {
+      throw new Error(`${label} must keep qualification signal gates in .mdp/manifest.yaml, not source-strategy evidence_requirements`);
+    }
   }
 }

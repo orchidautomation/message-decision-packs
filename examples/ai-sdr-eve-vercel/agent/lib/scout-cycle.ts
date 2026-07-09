@@ -89,9 +89,7 @@ export async function runScoutCycle(input: ScoutCycleInput = {}): Promise<ScoutC
         source_strategy: {
           ...trace,
           person_resolution_status: qualification.personResolutionStatus,
-          person_resolution_evidence_ids: qualification.personEvidenceIds,
-          qualified_signal_reasons: qualification.signalReasons,
-          qualified_signal_evidence_ids: qualification.signalEvidenceIds
+          person_resolution_evidence_ids: qualification.personEvidenceIds
         },
         candidate: item.candidate,
         evidence: item.evidence,

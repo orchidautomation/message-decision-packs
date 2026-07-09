@@ -19,27 +19,9 @@ type PersonResolution = {
   title: string;
   url: string;
   evidence: EvidenceSource;
-  persona: string;
-  segment: string;
+  persona: string | null;
+  segment: string | null;
 };
-
-const PERSON_ROLE_TERMS = [
-  "AEO",
-  "answer engine optimization",
-  "AI search",
-  "AI visibility",
-  "SEO",
-  "organic growth",
-  "content strategy",
-  "content marketing",
-  "brand",
-  "communications",
-  "PR",
-  "public relations",
-  "growth marketing",
-  "demand generation",
-  "marketing"
-];
 
 const TITLE_RE = /\b(?:Chief|CMO|CRO|VP|V\.P\.|Vice President|SVP|EVP|Head|Director|Senior Director|Manager|Lead|Principal|Strategist|Specialist|Owner|Founder|Partner|Consultant)\b[^\n|•]{0,120}/i;
 const NAME_RE = /\b([A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+){1,3})\b/;
@@ -113,13 +95,14 @@ async function resolvePersonForAccount(account: CandidateWithEvidence, limit: nu
         title: account.candidate.title,
         url: account.candidate.linkedin_url ?? evidence.url,
         evidence,
-        persona: account.candidate.persona ?? inferPersona(account.candidate.title),
-        segment: account.candidate.segment ?? inferSegment(account.candidate.title)
+        persona: account.candidate.persona ?? null,
+        segment: account.candidate.segment ?? null
       };
     }
   }
 
   const query = buildPersonResolutionQuery(account.candidate, queryTemplate);
+  if (!query) return null;
   const payload = await runExaSearch({ query, limit });
   for (const result of payload.results ?? []) {
     const parsed = parsePersonResult(result, account.candidate);
@@ -134,11 +117,11 @@ function applyPersonResolution(account: CandidateWithEvidence, person: PersonRes
     name: person.name,
     title: person.title,
     linkedin_url: person.url.includes("linkedin.com/in/") ? person.url : account.candidate.linkedin_url,
-    persona: person.persona,
-    segment: person.segment,
+    persona: account.candidate.persona ?? person.persona,
+    segment: account.candidate.segment ?? person.segment,
     signals: [
       ...(account.candidate.signals ?? []),
-      `Public person-role resolution signal: ${person.name} is ${person.title}`
+      "Public person-level role evidence"
     ]
   };
   return candidateWithEvidenceSchema.parse({
@@ -166,7 +149,7 @@ function resultToCandidateWithEvidence(result: ExaSearchResult): CandidateWithEv
       trigger: snippet,
       persona: null,
       segment: null,
-      signals: inferSourceSignals({ title, snippet, observedAt: result.publishedDate })
+      signals: [`Fit signal: ${title}`, `Why-now trigger evidence: ${snippet}`]
     },
     evidence: [{
       id,
@@ -181,30 +164,9 @@ function resultToCandidateWithEvidence(result: ExaSearchResult): CandidateWithEv
   };
 }
 
-function inferSourceSignals(input: { title: string; snippet: string; observedAt?: string | null }): string[] {
-  const text = `${input.title}
-${input.snippet}`;
-  const signals: string[] = [];
-  if (/\b(AEO|answer engine|AI search|AI visibility|LLM visibility|zero[- ]click|ChatGPT|Perplexity|prompt|citation|crawler)\b/i.test(text)) {
-    signals.push(`AI-search/answer-engine fit signal: ${input.title}`);
-  }
-  if (/\b(SEO|organic growth|content strategy|content marketing|content gap|comparison page|resource center|category discovery)\b/i.test(text)) {
-    signals.push(`SEO/content workflow fit signal: ${input.title}`);
-  }
-  if (/\b(PR|public relations|brand|communications|agency|client services|analytics|reporting)\b/i.test(text)) {
-    signals.push(`Brand/agency reporting fit signal: ${input.title}`);
-  }
-  if (/\b(hiring|launched?|published|posted|active|current|recent|roadmap|strategy|studying|researching|building|expanding|new|webinar|event|case study|service|offering|rollout|migration|refresh)\b/i.test(text) || input.observedAt) {
-    const observed = input.observedAt ? ` observed ${input.observedAt.slice(0, 10)}` : "";
-    signals.push(`Why-now public source signal${observed}: ${input.title}`);
-  }
-  return signals.slice(0, 3);
-}
-
-const DEFAULT_PERSON_RESOLUTION_QUERY_TEMPLATE = `("<company>" OR "<domain>") (${PERSON_ROLE_TERMS.map((term) => `"${term}"`).join(" OR ")}) ("Director" OR "Head" OR "VP" OR "Vice President" OR "Manager" OR "Lead" OR "Principal" OR "Strategist" OR "Founder" OR "Partner") (site:linkedin.com/in OR site:<company-domain>) -jobs -hiring -careers -email -phone -"contact database" -apollo -rocketreach -zoominfo -lusha`;
-
-function buildPersonResolutionQuery(candidate: Candidate, queryTemplate?: string | null): string {
-  return renderPersonQueryTemplate(queryTemplate?.trim() || DEFAULT_PERSON_RESOLUTION_QUERY_TEMPLATE, candidate);
+function buildPersonResolutionQuery(candidate: Candidate, queryTemplate?: string | null): string | null {
+  const template = queryTemplate?.trim();
+  return template ? renderPersonQueryTemplate(template, candidate) : null;
 }
 
 function renderPersonQueryTemplate(template: string, candidate: Candidate): string {
@@ -224,12 +186,12 @@ function parsePersonResult(result: ExaSearchResult, account: Candidate): PersonR
   const url = result.url ?? "";
   if (!url || !isAllowedPersonUrl(url, account)) return null;
   const haystack = compact([result.title, result.author, result.summary, ...(result.highlights ?? []), result.text]).join("\n");
-  if (!mentionsCompany(haystack, account) || !mentionsRelevantRole(haystack) || BLOCKED_PERSON_WORDS.test(haystack)) return null;
+  if (!mentionsCompany(haystack, account) || BLOCKED_PERSON_WORDS.test(haystack)) return null;
 
   const name = extractPersonName(result, account);
   if (!name) return null;
   const titleEvidence = extractPersonTitleEvidence(result, name);
-  if (!titleEvidence || !mentionsRelevantRole(titleEvidence.title)) return null;
+  if (!titleEvidence) return null;
   const title = cleanTitle(titleEvidence.title);
   const snippet = firstText(titleEvidence.snippet, result.highlights?.[0], result.summary, result.text, result.title, `${name} — ${title}`);
   const evidence: EvidenceSource = {
@@ -248,8 +210,8 @@ function parsePersonResult(result: ExaSearchResult, account: Candidate): PersonR
     title,
     url,
     evidence,
-    persona: inferPersona(title),
-    segment: inferSegment(title)
+    persona: null,
+    segment: null
   };
 }
 
@@ -277,7 +239,7 @@ function extractPersonTitleEvidence(result: ExaSearchResult, name: string): { ti
   const titleNameIndex = indexOfName(title, name);
   if (titleNameIndex >= 0) {
     const parts = title.split(/\s[-–—|]\s/).map((part) => part.trim()).filter(Boolean);
-    const titlePart = parts.find((part) => normalize(part) !== normalize(name) && mentionsRelevantRole(part));
+    const titlePart = parts.find((part) => normalize(part) !== normalize(name) && TITLE_RE.test(part));
     if (titlePart) return { title: titlePart, snippet: title };
 
     const titleWindow = boundedWindow(title, titleNameIndex, 280);
@@ -325,9 +287,6 @@ function mentionsCompany(text: string, account: Candidate): boolean {
   return Boolean(company && normalized.includes(company)) || Boolean(domain && normalized.includes(domain.replace(/\./g, "")));
 }
 
-function mentionsRelevantRole(text: string): boolean {
-  return /\b(AEO|answer engine|AI search|AI visibility|LLM visibility|SEO|organic growth|content strategy|content marketing|brand|communications|public relations|\bPR\b|growth marketing|demand generation|marketing|search)\b/i.test(text);
-}
 
 function isLikelyPersonName(name: string | null, account: Candidate): name is string {
   if (!name) return false;
@@ -346,19 +305,6 @@ function inferCompanyName(result: ExaSearchResult, host: string): string {
   return prettifyHost(host);
 }
 
-function inferPersona(title: string): string {
-  if (/agency|partner|consultant|client service/i.test(title)) return "Agency Partner";
-  if (/\bPR\b|public relations|communications|brand|product marketing|analyst relations/i.test(title)) return "PR & Brand Lead";
-  if (/content/i.test(title)) return "Content Lead";
-  return "AEO Lead";
-}
-
-function inferSegment(title: string): string {
-  if (/agency|partner|consultant|client service/i.test(title)) return "Agency partner or services team";
-  if (/\bPR\b|public relations|communications|brand|product marketing|analyst relations/i.test(title)) return "Brand, PR, or communications team";
-  if (/content/i.test(title)) return "Content or demand team";
-  return "AEO, SEO, or organic growth team";
-}
 
 function isLikelyCompanyLabel(value: string): boolean {
   return value.length >= 2 && value.length <= 60 && !/answer engine|SEO|AEO|guide|playbook|blog|article|linkedin/i.test(value);
