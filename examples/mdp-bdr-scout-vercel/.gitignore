@@ -7,3 +7,7 @@
 /.swc
 
 /app/.well-known/
+
+# Local Vercel project link metadata.
+/.vercel/
+.vercel

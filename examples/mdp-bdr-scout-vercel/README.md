@@ -89,6 +89,36 @@ npm run typecheck
 
 `check:scaffold` validates the fixture, required file layout, and dry-run contract without live credentials. `typecheck` generates Next route types with `next typegen` and then runs `tsc --noEmit`.
 
+
+## Vercel deployment defaults
+
+This example is prepared as a Profound-first Vercel template. The production cron is defined in `vercel.json`:
+
+```json
+{ "path": "/api/cron/scout", "schedule": "0 14 * * 1-5" }
+```
+
+The cron route requires `CRON_SECRET`. With no `EXA_API_KEY`, it runs a dry-run against `samples/profound-public-source-fixture.json`; after you add `EXA_API_KEY`, it switches to live Exa discovery. `APIFY_TOKEN` is the only additional live extraction key needed for reviewed Apify actor workflows. Firecrawl and model keys remain optional.
+
+Production env defaults for this deployment:
+
+```bash
+MDP_PACK_ID=profound-gtm-vetting-example
+SCOUT_SOURCE_STRATEGY_PATH=samples/profound-source-strategy.json
+SCOUT_FIXTURE_PATH=samples/profound-public-source-fixture.json
+SCOUT_OUTPUT_DIR=/tmp/mdp-bdr-scout
+SCOUT_SCHEDULE_ID=weekday-profound-scout
+MDP_RUNNER_MODE=simulated
+CRM_SYNC_ENABLED=false
+```
+
+Manual cron smoke test after deploy:
+
+```bash
+curl -i "$DEPLOYMENT_URL/api/cron/scout?dryRun=true" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
 ## Install for Vercel development
 
 Use Node.js 24 or newer; the Eve dependency used by this scaffold declares `node >=24`.
