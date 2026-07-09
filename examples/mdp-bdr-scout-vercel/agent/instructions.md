@@ -17,7 +17,8 @@ Find public, evidence-backed candidate leads or conversations that appear to mat
 ## Source strategy
 
 - Start from the active `mdp.source-strategy.v0` artifact before choosing queries, sources, or extraction tools.
-- Treat the source strategy as a reviewed handoff: it defines allowed targets, negative filters, evidence requirements, routing jobs, and eval checks.
+- Treat the source strategy as a reviewed handoff: it defines the agent operating plan, allowed targets, provider prompt blocks, query construction rules, negative filters, evidence requirements, routing jobs, and eval checks.
+- Follow `agent_operating_plan.stop_conditions` and `queries_prompts[].agent_instruction` before invoking any provider.
 - Preserve gaps when the strategy does not authorize a source class or when evidence is insufficient.
 
 ## Provider routing

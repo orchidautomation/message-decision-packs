@@ -10,6 +10,22 @@
     "strategy_mode": "public-source handoff",
     "pack_hint": "Use the active MDP pack ICP, personas, fit rules, signals, hooks, CTAs, and evals as the scoring authority after evidence collection."
   },
+  "agent_operating_plan": {
+    "role": "Public-source BDR scout operating plan for an autonomous agent runtime",
+    "operating_instructions": [
+      "Start with the approved MDP pack boundaries. Do not broaden ICP, persona, trigger, or avoid-rule semantics from search results alone.",
+      "Use Exa for broad public discovery, Firecrawl only to normalize already accepted public URLs, and Apify only for public listing pages explicitly allowed by the operator.",
+      "For every candidate, preserve the exact source URL, title, observed date or publication date, bounded snippet, provider, and confidence before invoking MDP fit or brief steps.",
+      "Reject sources that require login, expose personal contact enrichment, bypass access controls, or only imply buying intent without an explicit GTM/research workflow signal."
+    ],
+    "stop_conditions": [
+      "Stop when the candidate lacks the required receipts after one discovery pass and one cleanup pass.",
+      "Stop when all available evidence is gated, personal, stale without operator approval, or unrelated to the active pack primitives.",
+      "Stop before outreach, CRM mutation, or private data enrichment; this strategy only prepares reviewed evidence for MDP gates."
+    ],
+    "insufficient_evidence_action": "Do not qualify the candidate. Write a gap explaining which trigger, source receipt, or pack primitive could not be supported.",
+    "downstream_handoff_prompt": "When evidence passes review, normalize it to MDP prospect JSON, then run `mdp --json fit --dir <pack> --prospect <prospect.json>`. If fit passes, run `mdp --json brief --context --dir <pack> --prospect <prospect.json> --out <brief.json>`. Run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy before ledger append."
+  },
   "primitive_mappings": [
     {
       "primitive": "actors",
@@ -121,6 +137,12 @@
       "id": "exa-ai-gtm-agent-triggers",
       "scout_family": "exa",
       "query_or_prompt": "(\"AI SDR\" OR \"AI BDR\" OR \"GTM engineering\" OR \"RevOps automation\" OR \"AI agents\") (\"launch\" OR \"hiring\" OR \"workflow\" OR \"account research\" OR \"outbound\") -\"personal email\" -login -\"contact database\"",
+      "agent_instruction": "Search the public web for fresh account-level GTM or research workflow trigger evidence. Return only candidates with a URL, title, date or observed_at, bounded snippet, and explicit mapping to one active MDP source signal.",
+      "construction_rules": [
+        "Combine one ICP/persona term with one trigger family per query so evidence can be traced to a specific pack primitive.",
+        "Prefer primary company, careers, launch, docs, funding, and public founder/operator sources before generic listicles.",
+        "Add negative filters for personal contact data, login-required pages, private social pages, scraped directories, and enrichment databases."
+      ],
       "target_source_ids": [
         "public-web-agent-gtm-triggers",
         "public-careers-gtm-ops"
@@ -141,12 +163,27 @@
         "date or observed_at",
         "confidence"
       ],
-      "max_results": 25
+      "max_results": 25,
+      "required_receipts": [
+        "source_url",
+        "title",
+        "observed_at_or_publication_date",
+        "bounded_snippet",
+        "provider",
+        "confidence"
+      ],
+      "review_required": true
     },
     {
       "id": "firecrawl-public-evidence-cleanup",
       "scout_family": "firecrawl",
       "query_or_prompt": "For accepted public URLs only, extract markdown or structured JSON needed to preserve the cited snippet, title, date, and content hash.",
+      "agent_instruction": "Fetch only the accepted public URLs from the discovery pass. Extract the smallest text span that supports the trigger, compute or preserve a content hash, and do not follow gated, private, or unrelated links.",
+      "construction_rules": [
+        "Use the canonical URL from Exa or the public page itself; do not discover new domains from Firecrawl.",
+        "Extract evidence into normalized fields before any scoring step.",
+        "If a page blocks access or omits the trigger text, mark the candidate insufficient instead of substituting another claim."
+      ],
       "target_source_ids": [
         "public-web-agent-gtm-triggers",
         "public-careers-gtm-ops"
@@ -162,7 +199,51 @@
         "content hash",
         "evidence confidence"
       ],
-      "max_results": 10
+      "max_results": 10,
+      "required_receipts": [
+        "canonical_url",
+        "quote_or_snippet",
+        "content_hash",
+        "observed_at",
+        "confidence"
+      ],
+      "review_required": true
+    },
+    {
+      "id": "apify-public-listing-safety-check",
+      "scout_family": "apify",
+      "query_or_prompt": "Use only operator-approved public listing pages to confirm company-level context such as active hiring or public product category. Do not collect personal profiles, emails, phone numbers, or authenticated social data.",
+      "agent_instruction": "Run this lane only when the operator explicitly approves the listing source class. Normalize company-level context and stop before personal contact enrichment.",
+      "construction_rules": [
+        "Limit collection to public company or role metadata needed for MDP fit context.",
+        "Do not scrape private LinkedIn, personal profiles, emails, phone numbers, or contact databases.",
+        "Treat listing output as untrusted until a human or MDP source-extract review accepts the evidence."
+      ],
+      "target_source_ids": [
+        "public-careers-gtm-ops"
+      ],
+      "negative_filters": [
+        "personal profiles",
+        "personal email",
+        "phone numbers",
+        "login-required sources",
+        "private social data"
+      ],
+      "expected_signals": [
+        "company-level role context",
+        "public listing URL",
+        "observed_at",
+        "source class approval"
+      ],
+      "max_results": 10,
+      "required_receipts": [
+        "public_listing_url",
+        "company_or_team",
+        "role_or_category_context",
+        "observed_at",
+        "approval_note"
+      ],
+      "review_required": true
     }
   ],
   "exclusions": [
@@ -173,6 +254,9 @@
   ],
   "evidence_requirements": {
     "minimum_citations_per_candidate": 1,
+    "minimum_trigger_gate": "A candidate may proceed only when at least one current public primary source or two independent public secondary sources support the trigger.",
+    "pass_condition": "Proceed to MDP fit only when the evidence is public or user-approved, maps to an active pack signal, includes required receipts, and avoids excluded data classes.",
+    "fail_condition": "Preserve a gap when evidence is stale, gated, contact-enrichment-only, missing a snippet/date/source URL, or requires inferring buying intent.",
     "required_fields": [
       "source URL",
       "title",
@@ -185,20 +269,23 @@
     "confidence_floor": 0.6,
     "freshness_preference": "90 days for trigger evidence unless operator approves evergreen context",
     "review_owner": "human operator before CRM sync or outreach",
-    "gap_policy": "If a required field is missing, mark a gap and route to operator review instead of inventing context."
+    "gap_policy": "If a required field is missing, mark a gap and route to operator review instead of inventing context.",
+    "claim_check_policy": "Before ledger append, run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy, preserving the brief citations and unresolved gaps used to create that copy."
   },
   "routing_jobs": [
     {
       "id": "extract-accepted-public-evidence",
       "next_skill": "mdp-source-extract",
       "review_job": "source-evidence-review",
-      "handoff": "Only reviewed public/source-approved evidence becomes pack card candidates or scout ledger evidence."
+      "handoff": "Only reviewed public/source-approved evidence becomes pack card candidates or scout ledger evidence.",
+      "cli_handoff": "Normalize accepted receipts into `candidate-with-evidence.json`, then pass that file to `mdp-source-extract` if pack card updates are needed."
     },
     {
       "id": "score-with-active-mdp-pack",
       "next_skill": "mdp-icp-builder",
       "review_job": "fit-and-brief-review",
-      "handoff": "Run active pack fit/brief gates, preserve gaps, and emit normalized ledger rows for operator review."
+      "handoff": "Run active pack fit/brief gates, preserve gaps, and emit normalized ledger rows for operator review.",
+      "cli_handoff": "Normalize accepted receipts into `prospect.json`, run `mdp --json fit --dir <pack> --prospect <prospect.json>`, then run `mdp --json brief --context --dir <pack> --prospect <prospect.json> --out <brief.json>` when fit passes. Run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy before appending `mdp_scout_candidate/v0` ledger rows."
     }
   ],
   "gaps": [
