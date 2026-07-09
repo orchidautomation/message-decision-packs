@@ -1,0 +1,9 @@
+# Local scout outputs can contain prospect data or source receipts.
+/artifacts/
+/.next/
+/node_modules/
+.env*
+!.env.example
+/.swc
+
+/app/.well-known/

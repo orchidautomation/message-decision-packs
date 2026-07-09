@@ -1,0 +1,14 @@
+{
+  "functions": {
+    "app/api/cron/scout/route.ts": {
+      "maxDuration": 300
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/scout",
+      "schedule": "0 14 * * 1-5"
+    }
+  ],
+  "fluid": true
+}

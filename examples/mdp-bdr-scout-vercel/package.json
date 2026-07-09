@@ -1,0 +1,36 @@
+{
+  "name": "mdp-bdr-scout-vercel",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "check:scaffold": "tsx scripts/check-example.mjs",
+    "typecheck": "next typegen && tsc --noEmit",
+    "scout:sample": "tsx scripts/run-sample.mjs",
+    "scout:sample:native": "tsx scripts/run-sample.mjs --native",
+    "check": "npm run check:scaffold && npm run typecheck && npm run scout:sample"
+  },
+  "dependencies": {
+    "@vercel/blob": "2.6.1",
+    "@vercel/sandbox": "2.5.0",
+    "ai": "7.0.18",
+    "eve": "0.22.1",
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "workflow": "4.6.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "tsx": "4.23.0",
+    "typescript": "5.9.3"
+  }
+}

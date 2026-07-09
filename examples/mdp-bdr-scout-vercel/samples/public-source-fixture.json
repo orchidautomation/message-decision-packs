@@ -1,0 +1,36 @@
+{
+  "candidate": {
+    "name": "Jordan Lee",
+    "title": "Head of GTM Systems",
+    "company": "Northstar Workflow Co",
+    "company_domain": "northstarworkflow.example",
+    "linkedin_url": null,
+    "source_kind": "public_web",
+    "trigger": "Northstar announced an AI workflow initiative and is hiring GTM operations engineers to automate account research.",
+    "persona": "GTM Engineering Leader",
+    "segment": "B2B SaaS",
+    "signals": ["AI workflow initiative", "GTM operations hiring", "account research automation"]
+  },
+  "evidence": [
+    {
+      "id": "ev_001",
+      "url": "https://northstarworkflow.example/blog/ai-gtm-workflows",
+      "title": "Northstar Workflow Co launches AI-assisted GTM workflows",
+      "observed_at": "2026-07-08T18:00:00Z",
+      "snippet": "Northstar Workflow Co announced AI-assisted GTM workflows for account research and is expanding its GTM systems team.",
+      "content_hash": "sha256:4f8f0b5b0d7d6f4c02c8cdb0b93c1c2c2f8adbd099a9c0d39e25f4a3e26e70f8",
+      "confidence": 0.86,
+      "provider": "fixture"
+    },
+    {
+      "id": "ev_002",
+      "url": "https://northstarworkflow.example/careers/gtm-automation-engineer",
+      "title": "GTM Automation Engineer",
+      "observed_at": "2026-07-08T18:05:00Z",
+      "snippet": "The GTM Automation Engineer role mentions AI agents, lead research workflows, CRM hygiene, and scoring experiments.",
+      "content_hash": "sha256:bb1d2618b8b32c2f44568d2fca2afcfd271d67483a3b29e321473cf426271f61",
+      "confidence": 0.82,
+      "provider": "fixture"
+    }
+  ]
+}

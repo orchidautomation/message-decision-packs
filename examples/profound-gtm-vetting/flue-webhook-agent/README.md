@@ -1,5 +1,7 @@
 # Profound MDP Flue Webhook Agent
 
+> Legacy note: this Flue webhook draft remains useful historical adapter context, but the current Vercel-first BDR Scout demo path lives at `examples/mdp-bdr-scout-vercel/`.
+
 This is a runnable Flue example for operationalizing the Profound MDP pack without turning MDP into hosted execution infrastructure.
 
 It accepts a webhook-style prospect row, writes the raw payload and normalized prospect JSON to local ignored scratch, runs the `mdp` CLI for fit and `brief --context`, stages `brief.json` inside the Flue workflow filesystem, and optionally asks a model to draft a response. It does not send, schedule, enrich, scrape, update a CRM, or write to a sequencer.
