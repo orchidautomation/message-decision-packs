@@ -290,6 +290,7 @@ Add a short note that the webhook draft example is historical webhook-adapter co
 Required for template users:
 
 ```bash
+CRON_SECRET=...        # required; /api/cron/scout rejects missing/wrong Authorization before provider/model work
 EXA_API_KEY=...
 AI_GATEWAY_API_KEY=... # optional if Vercel OIDC is used in deployed project
 DATABASE_URL=...       # Neon marketplace integration
@@ -302,6 +303,7 @@ Recommended / optional:
 FIRECRAWL_API_KEY=...      # Vercel Native marketplace integration
 APIFY_TOKEN=...            # optional Apify MCP / Vercel AI SDK / Actor API fallback
 MDP_RUNNER_MODE=native     # native | sandbox
+SCOUT_SOURCE_STRATEGY_PATH=... # optional mdp.source-strategy.v0 artifact; demo has a default
 SCOUT_MIN_SCORE=70
 SCOUT_MAX_CANDIDATES=25
 CRM_SYNC_ENABLED=false
@@ -358,23 +360,27 @@ For production Vercel, use AI Gateway as the default. Keep Ollama as a local/dev
 Minimum gates for the implementation PR:
 
 ```bash
-npm install
-npm run typecheck
-npm run scout:sample
+npm ci
+npm run check
+npm run build
+npm run scout:sample:native
 mdp --json doctor --dir .
 mdp --json validate --dir <chosen-demo-pack>
 mdp --json fit --dir <chosen-demo-pack> --prospect <chosen-demo-pack>/examples/<sample-prospect>.json
 ```
 
-Known constraint on 2026-07-08: the current committed example packs fail the installed `mdp 0.1.34` prompt-output validation checks because several extraction prompt examples need declared `inputs_used` values and/or explicit output schemas. The implementation PR should either repair the selected pack's prompt contracts first or use a new demo pack that passes validation before making it the scout default.
+Known constraint on 2026-07-08: the legacy committed example packs may fail older installed MDP prompt-output validation checks because several extraction prompt examples need declared `inputs_used` values and/or explicit output schemas. The implementation PR should either repair the selected pack's prompt contracts first or use a new demo pack that passes validation before making it the scout default.
 
 Vercel-specific validation:
 
 ```bash
 vercel build
 # Cron jobs are API routes; test locally or against a preview/prod URL.
-curl http://localhost:3000/api/cron/scout
-# If CRON_SECRET is enabled, include: -H "Authorization: Bearer $CRON_SECRET"
+# Missing/wrong Authorization must return 401 and must not start provider/model work.
+curl -i http://localhost:3000/api/cron/scout
+# Authorized request starts the workflow.
+curl -i http://localhost:3000/api/cron/scout \
+  -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 If Rust tooling is available in the environment, also run:
