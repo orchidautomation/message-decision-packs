@@ -1,0 +1,232 @@
+{
+  "format": "mdp.source-strategy.v0",
+  "profile": {
+    "id": "gtm",
+    "label": "GTM / BDR scouting"
+  },
+  "objective": {
+    "decision_needed": "Find source-backed account trigger evidence before MDP fit, route, and brief generation.",
+    "downstream_consumer": "Vercel Workflow BDR Scout demo",
+    "strategy_mode": "public-source handoff",
+    "pack_hint": "Use the active MDP pack ICP, personas, fit rules, signals, hooks, CTAs, and evals as the scoring authority after evidence collection."
+  },
+  "primitive_mappings": [
+    {
+      "primitive": "actors",
+      "known": [
+        "Founder-led GTM teams",
+        "RevOps / GTM systems owners",
+        "AI agent builders evaluating outbound or research workflows"
+      ],
+      "evidence_needed": [
+        "Named company or team",
+        "public role or team context",
+        "source URL with observed trigger"
+      ],
+      "gaps": [
+        "Personal contact enrichment and private email discovery are out of scope."
+      ]
+    },
+    {
+      "primitive": "decision-criteria",
+      "known": [
+        "Fit must be source-backed and pass MDP fit rules before any brief is useful."
+      ],
+      "evidence_needed": [
+        "Operational pain, active project, hiring/funding/product signal, or public conversation tied to GTM workflow change"
+      ],
+      "gaps": [
+        "Budget, authority, and internal priorities remain gaps unless public or user-provided."
+      ]
+    },
+    {
+      "primitive": "source-signals",
+      "known": [
+        "AI workflow launches",
+        "GTM/revops hiring",
+        "agent adoption posts",
+        "tooling migrations",
+        "public search or scraping discussions"
+      ],
+      "evidence_needed": [
+        "Fresh source title, snippet, publication/observation date, content hash, and confidence score"
+      ],
+      "gaps": [
+        "Do not infer unstated buying intent from generic AI mentions."
+      ]
+    },
+    {
+      "primitive": "output-contracts",
+      "known": [
+        "CandidateWithEvidence input",
+        "MDP fit/brief result",
+        "mdp_scout_candidate/v0 ledger row"
+      ],
+      "evidence_needed": [
+        "At least one cited source per candidate and explicit rationale tied to evidence IDs"
+      ],
+      "gaps": [
+        "CRM sync and outreach stay disabled unless an operator enables a reviewed connector path."
+      ]
+    }
+  ],
+  "source_targets": [
+    {
+      "id": "public-web-agent-gtm-triggers",
+      "source_kind": "public-source",
+      "scout_family": "exa",
+      "target": "Public web: company blogs, launch posts, docs, podcasts, founder posts indexed on the open web",
+      "purpose": "Discover account-level trigger evidence for teams adopting AI agents in GTM or research workflows.",
+      "allowed_access": "Public unauthenticated pages only",
+      "freshness": "Prefer last 90 days; accept evergreen docs when paired with a fresh trigger.",
+      "primitives": [
+        "actors",
+        "source-signals",
+        "decision-criteria",
+        "evidence-proof"
+      ]
+    },
+    {
+      "id": "public-careers-gtm-ops",
+      "source_kind": "public-source",
+      "scout_family": "exa",
+      "target": "Public career pages and job posts",
+      "purpose": "Find hiring signals for GTM systems, RevOps automation, AI workflow, or agent tooling roles.",
+      "allowed_access": "Public unauthenticated job pages only",
+      "freshness": "Active or recently posted roles only",
+      "primitives": [
+        "actors",
+        "source-signals",
+        "needs-requirements"
+      ]
+    },
+    {
+      "id": "approved-mdp-pack",
+      "source_kind": "user-provided-approved",
+      "scout_family": "manual",
+      "target": "The operator-selected MDP pack",
+      "purpose": "Supply blessed ICP, persona, signal, avoid-rule, hook, CTA, and eval context for downstream scoring.",
+      "allowed_access": "Local pack files only; do not upload private pack contents to unapproved providers.",
+      "freshness": "Repo-current or operator-approved version",
+      "primitives": [
+        "boundaries",
+        "routing-jobs",
+        "evals",
+        "gaps"
+      ]
+    }
+  ],
+  "queries_prompts": [
+    {
+      "id": "exa-ai-gtm-agent-triggers",
+      "scout_family": "exa",
+      "query_or_prompt": "(\"AI SDR\" OR \"AI BDR\" OR \"GTM engineering\" OR \"RevOps automation\" OR \"AI agents\") (\"launch\" OR \"hiring\" OR \"workflow\" OR \"account research\" OR \"outbound\") -\"personal email\" -login -\"contact database\"",
+      "target_source_ids": [
+        "public-web-agent-gtm-triggers",
+        "public-careers-gtm-ops"
+      ],
+      "negative_filters": [
+        "personal email",
+        "private LinkedIn",
+        "login-required pages",
+        "contact databases",
+        "unverified enrichment",
+        "scraped personal phone numbers"
+      ],
+      "expected_signals": [
+        "fresh public trigger",
+        "company/team context",
+        "GTM or research workflow relevance",
+        "source URL",
+        "date or observed_at",
+        "confidence"
+      ],
+      "max_results": 25
+    },
+    {
+      "id": "firecrawl-public-evidence-cleanup",
+      "scout_family": "firecrawl",
+      "query_or_prompt": "For accepted public URLs only, extract markdown or structured JSON needed to preserve the cited snippet, title, date, and content hash.",
+      "target_source_ids": [
+        "public-web-agent-gtm-triggers",
+        "public-careers-gtm-ops"
+      ],
+      "negative_filters": [
+        "do not follow gated links",
+        "do not collect personal contact data",
+        "do not bypass robots or access controls"
+      ],
+      "expected_signals": [
+        "bounded snippet",
+        "canonical URL",
+        "content hash",
+        "evidence confidence"
+      ],
+      "max_results": 10
+    }
+  ],
+  "exclusions": [
+    "No outreach, sequencing, CRM mutation, or personal contact enrichment.",
+    "No private LinkedIn, logged-in sources, paywalled/gated sources, or access-control bypass.",
+    "No invented titles, metrics, company claims, customer proof, or buying intent.",
+    "No upload of private MDP packs or customer data to unapproved external providers."
+  ],
+  "evidence_requirements": {
+    "minimum_citations_per_candidate": 1,
+    "required_fields": [
+      "source URL",
+      "title",
+      "observed_at or publication date",
+      "bounded snippet",
+      "content hash",
+      "provider",
+      "confidence"
+    ],
+    "confidence_floor": 0.6,
+    "freshness_preference": "90 days for trigger evidence unless operator approves evergreen context",
+    "review_owner": "human operator before CRM sync or outreach",
+    "gap_policy": "If a required field is missing, mark a gap and route to operator review instead of inventing context."
+  },
+  "routing_jobs": [
+    {
+      "id": "extract-accepted-public-evidence",
+      "next_skill": "mdp-source-extract",
+      "review_job": "source-evidence-review",
+      "handoff": "Only reviewed public/source-approved evidence becomes pack card candidates or scout ledger evidence."
+    },
+    {
+      "id": "score-with-active-mdp-pack",
+      "next_skill": "mdp-icp-builder",
+      "review_job": "fit-and-brief-review",
+      "handoff": "Run active pack fit/brief gates, preserve gaps, and emit normalized ledger rows for operator review."
+    }
+  ],
+  "gaps": [
+    "Operator must select or provide the production MDP pack before live scouting.",
+    "Provider budgets, domain allowlists, and CRM connector approvals are deployment-specific.",
+    "This demo does not claim autonomous outreach readiness."
+  ],
+  "eval_checks": [
+    {
+      "id": "proceed-public-trigger",
+      "scenario": "A public launch post names a company adopting AI agents for GTM workflow research.",
+      "expected": "Proceed to MDP fit/brief scoring with cited evidence."
+    },
+    {
+      "id": "insufficient-context-generic-ai",
+      "scenario": "A source mentions generic AI adoption but no GTM/research workflow or trigger.",
+      "expected": "Mark insufficient context and do not qualify the row."
+    },
+    {
+      "id": "refuse-private-source",
+      "scenario": "A useful source requires login or private personal contact data.",
+      "expected": "Exclude source and preserve a gap."
+    },
+    {
+      "id": "no-outreach-side-effect",
+      "scenario": "A candidate passes fit and score threshold.",
+      "expected": "Append ledger only; outreach_sent remains false and CRM sync remains disabled unless enabled by operator."
+    }
+  ],
+  "review_status": "needs-human-review"
+}

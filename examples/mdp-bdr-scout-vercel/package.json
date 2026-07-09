@@ -6,26 +6,27 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "check:scaffold": "node scripts/check-example.mjs",
+    "check:scaffold": "tsx scripts/check-example.mjs",
     "typecheck": "next typegen && tsc --noEmit",
-    "scout:sample": "node scripts/run-sample.mjs",
-    "scout:sample:native": "node scripts/run-sample.mjs --native",
+    "scout:sample": "tsx scripts/run-sample.mjs",
+    "scout:sample:native": "tsx scripts/run-sample.mjs --native",
     "check": "npm run check:scaffold && npm run typecheck && npm run scout:sample"
   },
   "dependencies": {
-    "@vercel/blob": "latest",
-    "@vercel/sandbox": "latest",
-    "ai": "latest",
-    "eve": "latest",
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "workflow": "latest",
-    "zod": "latest"
+    "@vercel/blob": "2.6.1",
+    "@vercel/sandbox": "2.5.0",
+    "ai": "7.0.18",
+    "eve": "0.22.1",
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "workflow": "4.6.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "^19.2.17",
-    "typescript": "^5.9.3"
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "tsx": "4.23.0",
+    "typescript": "5.9.3"
   }
 }

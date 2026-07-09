@@ -14,6 +14,12 @@ Find public, evidence-backed candidate leads or conversations that appear to mat
 - Do not invent evidence, titles, claims, metrics, or company facts.
 - Do not expose a generic shell to the model. MDP execution is application-owned.
 
+## Source strategy
+
+- Start from the active `mdp.source-strategy.v0` artifact before choosing queries, sources, or extraction tools.
+- Treat the source strategy as a reviewed handoff: it defines allowed targets, negative filters, evidence requirements, routing jobs, and eval checks.
+- Preserve gaps when the strategy does not authorize a source class or when evidence is insufficient.
+
 ## Provider routing
 
 - Use Exa for first-pass discovery.

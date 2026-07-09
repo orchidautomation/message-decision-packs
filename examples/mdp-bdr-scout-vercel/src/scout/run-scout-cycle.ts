@@ -5,13 +5,15 @@ import { discoverWithExa } from "../providers/exa.ts";
 import { createMdpRunner } from "../mdp/runner.ts";
 import { scoreCandidate } from "../scoring/score-candidate.ts";
 import { appendLedgerRows } from "../storage/ledger.ts";
-import type { LedgerRow } from "../schemas/ledger.ts";
-
+import type { LedgerRow, SourceStrategyTrace } from "../schemas/ledger.ts";
+import { loadSourceStrategy, selectScoutQuery, toSourceStrategyTrace } from "./source-strategy.ts";
 
 export type ScoutCycleResult = {
   runId: string;
   qualified: LedgerRow[];
   ledgerPath: string | null;
+  query: string;
+  sourceStrategy: SourceStrategyTrace;
 };
 
 export async function runScoutCycle(options: {
@@ -20,15 +22,19 @@ export async function runScoutCycle(options: {
   fixturePath?: string | URL;
   outputDir?: string;
   query?: string;
+  sourceStrategyPath?: string | URL;
   dryRun?: boolean;
   persist?: boolean;
 } = {}): Promise<ScoutCycleResult> {
   const config = loadScoutConfig({ packId: options.packId, scheduleId: options.scheduleId });
   const runId = createRunId(config.scheduleId);
+  const sourceStrategy = await loadSourceStrategy(options.sourceStrategyPath ?? process.env.SCOUT_SOURCE_STRATEGY_PATH);
+  const selectedQuery = selectScoutQuery(sourceStrategy, options.query);
+  const sourceStrategyTrace = toSourceStrategyTrace(selectedQuery);
   const fixture = options.fixturePath ? await readFixture(options.fixturePath) : getDefaultFixture();
 
   const discovered = await discoverWithExa({
-    query: options.query ?? "GTM engineering teams adopting AI agents",
+    query: selectedQuery.query,
     limit: config.maxCandidates,
     dryRun: options.dryRun ?? true,
     fixture
@@ -46,6 +52,7 @@ export async function runScoutCycle(options: {
       contract_version: "mdp_scout_candidate/v0",
       run_id: runId,
       pack_id: config.packId,
+      source_strategy: sourceStrategyTrace,
       candidate: item.candidate,
       evidence: item.evidence,
       mdp,
@@ -63,7 +70,7 @@ export async function runScoutCycle(options: {
     ledgerPath = written.ledgerPath;
   }
 
-  return { runId, qualified: rows, ledgerPath };
+  return { runId, qualified: rows, ledgerPath, query: selectedQuery.query, sourceStrategy: sourceStrategyTrace };
 }
 
 function createRunId(scheduleId: string): string {

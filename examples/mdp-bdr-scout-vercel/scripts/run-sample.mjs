@@ -25,6 +25,8 @@ console.log(JSON.stringify({
   runId: result.runId,
   qualified: result.qualified.length,
   ledgerPath: result.ledgerPath,
+  sourceStrategy: result.sourceStrategy,
+  query: result.query,
   firstCandidate: result.qualified[0]?.candidate.company ?? null,
   firstScore: result.qualified[0]?.score.overall ?? null,
   firstMdpStatus: result.qualified[0]?.mdp.fit_status ?? null,

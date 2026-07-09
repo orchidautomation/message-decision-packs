@@ -1,4 +1,5 @@
 const cards = [
+  ["Strategize", "An mdp.source-strategy.v0 artifact turns ICP and pack primitives into safe search targets."],
   ["Discover", "Exa-first search over companies, people, news, and public triggers."],
   ["Extract", "Firecrawl for clean pages; Apify for Store actors and hard-site datasets."],
   ["Decide", "MDP fit, routing, brief context, and claim checks stay application-owned."],

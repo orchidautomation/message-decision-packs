@@ -23,10 +23,20 @@ export type ScoreBreakdown = {
   evidence_ids: string[];
 };
 
+export type SourceStrategyTrace = {
+  strategy_id: string;
+  profile_id: string;
+  review_status: "draft" | "needs-human-review" | "accepted" | "blocked" | string;
+  query_id: string;
+  scout_family: string;
+  source_target_ids: string[];
+};
+
 export type LedgerRow = {
   contract_version: "mdp_scout_candidate/v0";
   run_id: string;
   pack_id: string;
+  source_strategy: SourceStrategyTrace;
   candidate: Candidate;
   evidence: EvidenceSource[];
   mdp: MdpDecision;
@@ -41,6 +51,7 @@ export function assertLedgerRow(row: LedgerRow): void {
   if (row.contract_version !== "mdp_scout_candidate/v0") throw new Error("unexpected ledger contract version");
   if (!row.run_id) throw new Error("run_id is required");
   if (!row.pack_id) throw new Error("pack_id is required");
+  if (!row.source_strategy?.query_id) throw new Error("source_strategy.query_id is required");
   if (row.score.overall < 0 || row.score.overall > 100) throw new Error("score.overall must be 0-100");
   if (row.actions.outreach_sent !== false) throw new Error("outreach must stay disabled in the scout ledger");
 }

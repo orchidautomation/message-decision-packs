@@ -2,6 +2,17 @@
   "contract_version": "mdp_scout_candidate/v0",
   "run_id": "sample_run",
   "pack_id": "mdp-for-mdp",
+  "source_strategy": {
+    "strategy_id": "mdp.source-strategy.v0",
+    "profile_id": "gtm",
+    "review_status": "needs-human-review",
+    "query_id": "exa-ai-gtm-agent-triggers",
+    "scout_family": "exa",
+    "source_target_ids": [
+      "public-web-agent-gtm-triggers",
+      "public-careers-gtm-ops"
+    ]
+  },
   "candidate": {
     "name": "Jordan Lee",
     "title": "Head of GTM Systems",
@@ -12,7 +23,11 @@
     "trigger": "Northstar announced an AI workflow initiative and is hiring GTM operations engineers to automate account research.",
     "persona": "GTM Engineering Leader",
     "segment": "B2B SaaS",
-    "signals": ["AI workflow initiative", "GTM operations hiring", "account research automation"]
+    "signals": [
+      "AI workflow initiative",
+      "GTM operations hiring",
+      "account research automation"
+    ]
   },
   "evidence": [
     {
@@ -44,8 +59,12 @@
       "recency": 7,
       "operational_confidence": 5
     },
-    "rationale": ["Sample fixture row for dashboard and API scaffolding."],
-    "evidence_ids": ["ev_001"]
+    "rationale": [
+      "Sample fixture row for dashboard and API scaffolding."
+    ],
+    "evidence_ids": [
+      "ev_001"
+    ]
   },
   "actions": {
     "outreach_sent": false,

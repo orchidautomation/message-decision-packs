@@ -6,10 +6,12 @@ The scout is a wrapper around MDP. MDP remains the local/offline decision and co
 
 ## What this slice proves
 
-- A scheduled Vercel-style scout cycle can discover candidates from provider adapters.
+- A scheduled Vercel-style scout cycle can load an `mdp.source-strategy.v0` handoff before provider discovery.
+- The source strategy turns pack ICP/persona/signal boundaries into safe search targets, negative filters, and evidence requirements.
 - Candidate and evidence data can be normalized into an explicit ledger row contract.
 - MDP fit/brief outputs are represented through a trusted runner interface rather than model-directed arbitrary shell.
 - Exa, Firecrawl, and Apify roles are separated and swappable.
+- The cron entrypoint requires `CRON_SECRET` and rejects unauthenticated requests before starting provider/model work.
 - A local dry run works without provider credentials.
 
 ## Recommended production stack
@@ -30,6 +32,18 @@ The scout is a wrapper around MDP. MDP remains the local/offline decision and co
 | Exa | AI-native company/person/news discovery through API, AI SDK, or MCP | Yes |
 | Firecrawl | URL extraction to markdown/structured JSON/screenshots/JS-rendered content | Yes, as fallback |
 | Apify | Store actors, hard-site scraping, long-running crawls, datasets, and Vercel AI SDK/MCP tools | Optional advanced |
+
+## MDP source strategy
+
+This example includes `samples/source-strategy.json`, a normalized `mdp.source-strategy.v0` artifact produced by the MDP source-strategy primitive. It is intentionally domain-agnostic: a GTM operator supplies or reviews the MDP pack, then the strategy defines public source targets, Exa/Firecrawl handoff prompts, exclusions, evidence requirements, routing jobs, gaps, and eval checks.
+
+Runtime flow:
+
+```text
+MDP pack ICP/signals/evals -> source strategy -> provider search/extraction -> MDP fit/brief -> ledger row
+```
+
+Set `SCOUT_SOURCE_STRATEGY_PATH` to use an operator-reviewed strategy file. If it is unset, the demo uses `samples/source-strategy.json`.
 
 ## Run the offline sample
 
@@ -66,25 +80,27 @@ npm run typecheck
 ```bash
 npm install
 cp env.example .env.local
+# Edit .env.local and keep CRON_SECRET non-empty.
 npm run dev
 ```
 
-Then test the cron route locally. The route starts a Vercel Workflow run and returns status/stream URLs:
+Then test the cron route locally. The route starts a Vercel Workflow run and returns status/stream URLs only when authorized. Unauthenticated requests are rejected before model/provider calls or ledger writes:
 
 ```bash
-curl http://localhost:3000/api/cron/scout
+curl -i http://localhost:3000/api/cron/scout
+# HTTP/1.1 401 Unauthorized
 ```
 
-If `CRON_SECRET` is set, include:
+Authorized local request:
 
 ```bash
-curl http://localhost:3000/api/cron/scout \
+curl -i http://localhost:3000/api/cron/scout \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 ## MDP runner modes
 
-`MDP_RUNNER_MODE=simulated` is the safe default for this first template slice. It proves the ledger and scoring contract without shelling out.
+`MDP_RUNNER_MODE=simulated` is the safe default for this first template slice. It proves the source strategy, ledger, and scoring contract without shelling out.
 
 Planned modes:
 
@@ -98,7 +114,7 @@ The model never receives a generic shell tool for MDP execution.
 The canonical row shape lives in `src/schemas/ledger.ts` and sample output lives in `samples/candidate-ledger-row.json`.
 
 ```text
-candidate + evidence -> MDP fit/brief context -> normalized score -> append-only ledger row
+source strategy + candidate + evidence -> MDP fit/brief context -> normalized score -> append-only ledger row
 ```
 
 ## Current limitations
@@ -106,4 +122,4 @@ candidate + evidence -> MDP fit/brief context -> normalized score -> append-only
 - This is a scaffolded first slice, not a deployed Vercel template yet.
 - Live Exa/Firecrawl/Apify adapters are implemented with credential gates, but production usage still needs provider allowlists, budget limits, and source policy review.
 - CRM sync is explicitly disabled by default.
-- Current legacy example packs have known prompt-contract validation issues under `mdp 0.1.34`; use a passing pack before making live MDP validation a release gate.
+- Current legacy example packs have known prompt-contract validation issues under `mdp 0.1.35`; use a passing pack before making live MDP validation a release gate.
