@@ -1,0 +1,54 @@
+id: objections
+kind: objections
+title: Objections and response logic
+description: Expected objections, alternatives, and approved response logic.
+personas:
+- AEO Lead
+- Content Lead
+- "PR & Brand Lead"
+- Agency Partner
+tags:
+- objection
+- alternative
+- response
+- reply
+- call
+- prep
+entries:
+- id: isnt-this-seo
+  title: "Isn't this just SEO?"
+  body: "Response logic: acknowledge the overlap, then distinguish answer-engine visibility, citations, prompt tracking, sentiment, and AI crawler behavior from traditional search reporting."
+  applies_to:
+  - AEO Lead
+  evidence:
+  - profound-answer-engine-insights
+  - profound-agent-analytics
+  avoid: []
+- id: we-have-ai-writing-tools
+  title: We already have AI writing tools
+  body: "Response logic: avoid tool-bashing; explain that Profound's content workflow starts from prompt, citation, and visibility signals before briefs and drafts."
+  applies_to:
+  - Content Lead
+  evidence:
+  - profound-agents
+  - profound-content-teams
+  avoid: []
+- id: automation-risk
+  title: Automation risk
+  body: "Response logic: point to brand-kit context and human-in-the-loop approvals for Profound Agents, and keep any generated content framed as reviewable."
+  applies_to:
+  - Content Lead
+  - "PR & Brand Lead"
+  evidence:
+  - profound-agents
+  avoid: []
+- id: need-proof-first
+  title: Need proof first
+  body: "Response logic: offer a demo or AEO report path when relevant, and avoid claiming a custom analysis has already been performed."
+  applies_to:
+  - AEO Lead
+  - Agency Partner
+  evidence:
+  - profound-homepage
+  - profound-pricing
+  avoid: []

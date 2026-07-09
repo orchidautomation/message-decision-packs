@@ -1,0 +1,101 @@
+description: Turns supplied person, company, and account context into reviewable pain and trigger entries.
+format: mdp.prompt.v0
+id: extract-pains
+inputs:
+- default: N/A
+  description: Company domain when available.
+  missing_behavior: Use N/A and do not infer company identity from absent data.
+  name: company_domain
+  required: false
+- default: N/A
+  description: Arbitrary user-provided company, website, firmographic, product, hiring, funding, or research context.
+  missing_behavior: Use N/A, emit gaps, and avoid creating candidate entries from missing context.
+  name: company_data
+  required: false
+- default: N/A
+  description: Optional user-provided person-level context such as title, role, profile notes, responsibilities, posts, or background.
+  missing_behavior: Use N/A and do not infer role, seniority, priorities, or persona from absent person data.
+  name: person_data
+  required: false
+- default: N/A
+  description: Optional account-level context such as segment, lifecycle stage, trigger, current workflow, tech stack, or qualification notes.
+  missing_behavior: Use N/A and emit fit or gap entries instead of forcing ICP classification.
+  name: account_data
+  required: false
+- default: N/A
+  description: Optional source excerpts, URLs, file references, or user notes.
+  missing_behavior: Use empty evidence arrays unless a supplied source supports the entry.
+  name: source_notes
+  required: false
+- default: N/A
+  description: Optional existing MDP card context to prevent duplicate or conflicting entries.
+  missing_behavior: Do not assume previous pack decisions when this field is N/A.
+  name: existing_pack_context
+  required: false
+instructions:
+- Use only supplied person_data, company_data, account_data, source_notes, and existing_pack_context. Do not browse, scrape, enrich, or call external systems from this extraction prompt contract.
+- Extract pains only when the source material supports the problem. Phrase weak inferences as hypotheses and preserve missing evidence as gaps.
+- Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
+- 'Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid.'
+- Each candidate entry must also include confidence, provenance, and status so a reviewer can decide whether it may become a card entry.
+- Use body N/A, empty arrays, confidence unknown, and status gap when data is missing or weak.
+- Put unsupported, quantified, customer, integration, compliance, or execution claims in rejected_claims instead of card_patches.
+- MDP is a local/offline decision and context layer, not a sender, CRM, sequencer, enrichment provider, scraper, BI tool, AI SDR, or generic automation system.
+output_contract:
+  contract: mdp.prompt-output.v0
+  entry_defaults:
+    applies_to: []
+    avoid: []
+    body: N/A
+    confidence: unknown
+    evidence: []
+    provenance: []
+  example:
+    card_patches:
+    - card_id: pains
+      entries:
+      - applies_to:
+        - Content Lead
+        - AEO Lead
+        avoid: []
+        body: The supplied material suggests messaging decisions may be scattered across tools or agents, creating context drift risk.
+        confidence: low
+        evidence:
+        - company_data
+        id: pain-context-drift
+        notes: []
+        provenance:
+        - 'company_data: supplied company data'
+        status: needs-review
+        title: 'Possible pain: context drift'
+      kind: pains
+    contract: mdp.prompt-output.v0
+    gaps: []
+    prompt_id: extract-pains
+    rejected_claims: []
+    source_summary:
+      account_name: N/A
+      company_domain: N/A
+      company_name: N/A
+      confidence: unknown
+      inputs_used:
+      - company_domain
+      - company_data
+      person_name: N/A
+      person_title: N/A
+  required_top_level:
+  - contract
+  - prompt_id
+  - source_summary
+  - card_patches
+  - gaps
+  - rejected_claims
+  strict_json_only: true
+  schema_ref: mdp.prompt-output.card-patches.v0
+tags:
+- prompt
+- pain
+- trigger
+target_card_kinds:
+- pains
+title: Extract pain candidates

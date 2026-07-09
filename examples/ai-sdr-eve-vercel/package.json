@@ -1,0 +1,28 @@
+{
+  "name": "mdp-ai-sdr-eve-vercel",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "eve dev",
+    "build": "eve build",
+    "start": "eve start",
+    "typecheck": "tsc --noEmit",
+    "check:scaffold": "node scripts/check-example.mjs",
+    "mdp:validate": "mdp --summary validate --dir .",
+    "scout:fixture": "tsx scripts/run-fixture.ts",
+    "check": "npm run check:scaffold && npm run typecheck && npm run mdp:validate && npm run scout:fixture"
+  },
+  "dependencies": {
+    "eve": "0.22.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "tsx": "4.23.0",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP LFG"
+  short_description: "Orchestrate MDP creation and use"
+  default_prompt: "Use $mdp-lfg to orchestrate this Message Decision Pack workflow."

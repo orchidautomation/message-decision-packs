@@ -1,0 +1,149 @@
+description: Turns a supplied messy public/source row, CRM/CSV row, Clay row, research note, or scout ledger candidate into provider-neutral Profound MDP prospect JSON before mdp fit or brief runs.
+format: mdp.prompt.v0
+id: normalize-prospect-row
+inputs:
+- default: N/A
+  description: The full messy source row, note, webhook payload, CSV row, CRM export row, Clay/Deepline row, spreadsheet row, or pasted research record.
+  missing_behavior: Return gaps and do not create normalized_prospect fields from absent source material.
+  name: raw_row
+  required: true
+- default: N/A
+  description: Company domain when available.
+  missing_behavior: Use N/A and do not infer company identity from absent data.
+  name: company_domain
+  required: false
+- default: N/A
+  description: Relevant manifest personas, persona_mappings, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, fit rules, signal definitions, avoid-rules, output rules, and source policy from this MDP.
+  missing_behavior: Do not assume pack-owned persona mappings, value domains, fit rules, attributes, or signal names when this field is N/A.
+  name: existing_pack_context
+  required: false
+- default: N/A
+  description: Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing; fiscal year, renewal dates, event dates, and campaign windows remain pack-declared or supplied metadata.
+  missing_behavior: Do not infer fiscal years, renewal windows, event timing, or local business calendar facts from missing runtime context.
+  name: runtime_context
+  required: false
+- default: user-provided-row
+  description: Provider-neutral source marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example.
+  missing_behavior: Use user-provided-row unless the caller supplies a more specific source kind.
+  name: source_kind
+  required: false
+instructions:
+- Use only raw_row, company_domain, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.
+- Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
+- 'Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional company_domain, source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, signals, and bounded attributes.'
+- When company_domain or company_url is supplied, normalize only that supplied domain-like value. Do not infer a domain from company name.
+- Use runtime_context.now_utc and runtime_context.date_utc only to state when this normalization ran or to compare against explicitly supplied timing metadata. Do not hardcode fiscal year or infer customer-specific calendars from the current date.
+- When existing_pack_context includes lead_input_requirements.value_contracts, emit only values allowed by those pack-owned enum/type/format contracts for persona, segment, source_kind, and other normalized scalar fields. If the source value is outside the contract, omit the optional field or add a gap instead of inventing a synonym.
+- Use explicit persona from the row only when it already matches a pack-owned persona. Otherwise use pack-owned persona_mappings from existing_pack_context and emit the canonical persona label; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.
+- 'For Profound, map titles and source context only to pack-owned personas: AEO Lead, Content Lead, PR & Brand Lead, or Agency Partner. If no mapping applies, omit persona and add a gap.'
+- Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.
+- Attributes are metadata, not proof. Do not use attributes to substantiate customer adoption, production use, design partners, paid pilots, ARR conversion, market validation, compliance, integrations, or product capability claims.
+- When existing_pack_context includes lead_input_requirements.attribute_definitions, emit only declared attributes when allow_undeclared_attributes is false, and match declared type, enum, date, or date-time formats. Invalid or unreviewed metadata belongs in gaps or normalization_trace, not attributes.
+- 'Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.'
+- Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.
+- For non-synthetic rows, use a meaningful source_kind, keep material signals source-backed, and set confidence/freshness from supplied evidence. If source_kind, signal source, confidence, or freshness is vague or inconsistent, mark the row not ready for a draft and emit gaps.
+- If the input is account-only and lacks person name or title, do not invent a contact. Keep compatibility fields as N/A where the prospect schema requires them, add structured normalization_trace.missing_required entries with field, reason, and source_evidence, add a human-readable gap, and set normalization_trace.fit_readiness.ready_for_mdp_fit and ready_for_brief to false.
+- 'Missing-field example: if the row has company but no person title, do not fabricate a title; add {"field":"title","reason":"not_available_in_source","source_evidence":"Raw row contained no person title."} to normalization_trace.missing_required and set ready_for_mdp_fit false.'
+- 'Invalid-value example: if the row says segment enterprise but value_contracts.segment only allows agent-assisted GTM, do not output segment enterprise; add a gap asking for a reviewed pack segment or manifest update.'
+- Keep card_patches empty. This prompt normalizes runtime prospect input; it does not propose edits to MDP cards.
+output_contract:
+  contract: mdp.prompt-output.v0
+  entry_defaults:
+    applies_to: []
+    avoid: []
+    body: N/A
+    confidence: unknown
+    evidence: []
+    provenance: []
+  example:
+    card_patches: []
+    contract: mdp.prompt-output.v0
+    gaps: []
+    normalization_trace:
+      fit_readiness:
+        has_company_domain: true
+        has_persona: true
+        has_segment: true
+        has_signal_source: true
+        has_signals: true
+        has_trigger: true
+        ready_for_mdp_fit: true
+      missing_required: []
+      persona:
+        confidence: medium
+        matched_keywords:
+        - organic growth
+        - search
+        needs_review: false
+        source: existing_pack_context.persona_mappings
+      preserved_raw_fields:
+      - raw_row.name
+      - raw_row.title
+      - raw_row.company
+      - company_domain
+      - raw_row.public_source_url
+      - raw_row.trigger
+    normalized_prospect:
+      attributes:
+        source_strategy_id: profound-ai-search-public-scouting
+        provider_family: exa
+      background: Source row says the team owns organic growth and is researching AI answer visibility, prompt demand, and content opportunities.
+      company: ExampleMarket Co
+      company_domain: example.com
+      company_url: https://example.com
+      name: Jordan Lee
+      persona: AEO Lead
+      segment: AEO and organic growth team
+      signals:
+      - confidence: medium
+        freshness: recent
+        id: seo-aeo-title-signal
+        source: raw_row.title
+        state_as: supplied
+        title: Prospect title indicates organic growth and search ownership
+      - confidence: medium
+        freshness: recent
+        id: prompt-volume-opportunity-signal
+        source: raw_row.public_source_summary
+        state_as: hypothesis
+        title: Account context mentions AI search prompts and content opportunity research
+      source_kind: public-web-row
+      synthetic: false
+      title: Director of Organic Growth
+      trigger: Researching how AI answer engines mention and cite the brand across important category prompts.
+    prompt_id: normalize-prospect-row
+    rejected_claims: []
+    source_summary:
+      account_name: ExampleMarket Co
+      company_domain: example.com
+      company_name: ExampleMarket Co
+      confidence: medium
+      inputs_used:
+      - raw_row
+      - company_domain
+      - existing_pack_context
+      person_name: Jordan Lee
+      person_title: Director of Organic Growth
+  output_kind: prospect-normalization
+  required_top_level:
+  - contract
+  - prompt_id
+  - source_summary
+  - normalized_prospect
+  - normalization_trace
+  - card_patches
+  - gaps
+  - rejected_claims
+  schema_ref: mdp.prompt-output.prospect-normalization.v0
+  strict_json_only: true
+tags:
+- prompt
+- normalization
+- prospect
+- fit
+- routing
+target_card_kinds:
+- personas
+- fit-rules
+- signals
+title: Normalize prospect row

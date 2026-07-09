@@ -1,0 +1,100 @@
+id: signals
+kind: signals
+title: Account vetting signals
+description: Observable account and persona signals that make Profound relevant.
+personas:
+- AEO Lead
+- Content Lead
+- PR & Brand Lead
+- Agency Partner
+tags:
+- signal
+- trigger
+- source
+- linkedin
+entries:
+- id: seo-aeo-title-signal
+  title: SEO or AEO ownership signal
+  body: Strong persona signal when the title or source row includes SEO, AEO, organic growth, search, demand generation, or visibility ownership.
+  applies_to:
+  - AEO Lead
+  evidence:
+  - profound-aeo-teams
+  avoid: []
+- id: content-production-signal
+  title: Content production signal
+  body: Strong account signal when public or supplied context shows blogs, resource centers, comparison pages, guides, or a team responsible for content optimization.
+  applies_to:
+  - Content Lead
+  evidence:
+  - profound-content-teams
+  - profound-agents
+  avoid: []
+- id: brand-narrative-signal
+  title: Brand narrative signal
+  body: Strong persona signal when the role or account context mentions PR, communications, brand, reputation, sentiment, earned media, or citation visibility.
+  applies_to:
+  - PR & Brand Lead
+  evidence:
+  - profound-pr-teams
+  avoid: []
+- id: multi-brand-agency-signal
+  title: Multi-brand or agency signal
+  body: Strong fit signal when the source row indicates an agency, consultant, client strategy owner, multiple tracked companies, multiple markets, or repeatable client reporting.
+  applies_to:
+  - Agency Partner
+  evidence:
+  - profound-pricing
+  avoid: []
+- id: ai-crawler-infra-signal
+  title: AI crawler and infrastructure signal
+  body: Technical fit signal when the source row mentions server logs, AI crawler traffic, attribution, cloud/edge platforms, CMS workflows, or analytics ownership.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  evidence:
+  - profound-agent-analytics
+  avoid: []
+- id: prompt-volume-opportunity-signal
+  title: Prompt volume opportunity signal
+  body: Strong account signal when public or supplied context mentions rising AI-search prompt demand, high-value prompt sets, category comparison queries, topic trends, or intent research for AI conversations.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - Agency Partner
+  evidence:
+  - profound-prompt-volumes
+  avoid: []
+- id: aim-project-ops-signal
+  title: Aim project operations signal
+  body: Strong signal when the source row shows the team needs to convert many AI visibility gaps into prioritized projects, execution briefs, agent handoffs, and measured outcomes.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - PR & Brand Lead
+  - Agency Partner
+  evidence:
+  - profound-aim
+  avoid: []
+- id: agency-aeo-client-signal
+  title: Agency AEO client signal
+  body: Strong fit signal when an agency publicly offers SEO, AEO, content, PR, brand strategy, analytics, or AI search services and needs repeatable reporting across client brands.
+  applies_to:
+  - Agency Partner
+  evidence:
+  - profound-agencies
+  avoid: []
+- id: public-source-ready-signal
+  title: Public-source ready signal
+  body: Source-quality signal when the candidate row includes a public unauthenticated URL, title, observed date or freshness marker, bounded snippet, provider family, and confidence score.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - PR & Brand Lead
+  - Agency Partner
+  evidence:
+  - profound-source-strategy
+  avoid:
+  - login-required
+  - private profile
+  - personal email
