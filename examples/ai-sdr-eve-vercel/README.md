@@ -9,6 +9,10 @@ The important split:
 
 MDP is not a CRM, sender, sequencer, enrichment provider, scraper, or hosted SDR product. This example only prepares reviewed scout evidence and CRM-ready ledger rows.
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Forchidautomation%2Fmessage-decision-packs&root-directory=examples%2Fai-sdr-eve-vercel&project-name=mdp-eve-scout&repository-name=mdp-eve-scout&env=EXA_API_KEY%2CCRON_SECRET&envDescription=EXA_API_KEY+enables+live+public+discovery.+CRON_SECRET+protects+the+scheduled+scout+endpoint.+FIRECRAWL_API_KEY+and+APIFY_TOKEN+are+optional+follow-up+lanes+you+can+add+after+deploy.&envLink=https%3A%2F%2Fgithub.com%2Forchidautomation%2Fmessage-decision-packs%2Ftree%2Fmain%2Fexamples%2Fai-sdr-eve-vercel%23environment-variables)
+
+Use the button to clone and deploy only `examples/ai-sdr-eve-vercel` as a Vercel project. The template prompts for `EXA_API_KEY` and `CRON_SECRET`; optional Firecrawl and Apify keys can be added after deploy.
+
 ## Shape
 
 ```text
@@ -24,6 +28,17 @@ examples/ai-sdr-eve-vercel/
 ├── samples/                       # public-safe fixture discovery input
 └── scripts/run-fixture.ts          # local smoke test without live keys
 ```
+
+## Environment variables
+
+| Variable | Required? | Purpose |
+| --- | --- | --- |
+| `EXA_API_KEY` | Required for live runs | Enables public Exa discovery and person-resolution searches. `dryRun: true` works without it. |
+| `CRON_SECRET` | Required for protected production runs | Protects `/scout/run`; Vercel Cron sends `Authorization: Bearer $CRON_SECRET`. |
+| `MDP_SCOUT_MODEL` | Optional | Model id for Eve/Vercel AI Gateway. Defaults to `xai/grok-4.5`. |
+| `FIRECRAWL_API_KEY` | Optional | Accepted-URL cleanup only; not used for broad discovery. |
+| `APIFY_TOKEN` | Optional follow-up | Reserved for reviewed Apify MCP/Actor lanes; not enabled by default. |
+| `SCOUT_MAX_CANDIDATES` / `SCOUT_MIN_SCORE` | Optional | Runtime limits and qualification threshold. |
 
 ## Runtime loop
 

@@ -1,6 +1,8 @@
+> Archived example: retained for historical context only. The active deployable template is `examples/ai-sdr-eve-vercel/`.
+
 # Profound MDP Flue Webhook Agent
 
-> Legacy note: this Flue webhook draft remains useful historical adapter context, but the current Vercel-first BDR Scout demo path lives at `examples/mdp-bdr-scout-vercel/`.
+> Legacy note: this Flue webhook draft remains useful historical adapter context, but the current turnkey deployable path is `examples/ai-sdr-eve-vercel/`.
 
 This is a runnable Flue example for operationalizing the Profound MDP pack without turning MDP into hosted execution infrastructure.
 
@@ -8,7 +10,7 @@ It accepts a webhook-style prospect row, writes the raw payload and normalized p
 
 ## Why Flue Here
 
-Flue is the better immediate fit for this repo because the core operation is local and file-oriented: accept JSON, write a prospect file, run the local `mdp` CLI, stage brief artifacts, and return a draft or draft contract. Eve is a reasonable Vercel-first option once the desired production host is Vercel Workflows, Vercel Sandbox, and AI Gateway, but this example should stay portable while the MDP CLI and pack contract are still the center of gravity.
+Flue is the better immediate fit for this repo because the core operation is local and file-oriented: accept JSON, write a prospect file, run the local `mdp` CLI, stage brief artifacts, and return a draft or draft contract. The active Eve template has since become the Vercel-first option. Keep this archive only for webhook-adapter design context.
 
 ## Run Locally
 

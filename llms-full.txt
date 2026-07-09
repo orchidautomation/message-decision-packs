@@ -235,7 +235,7 @@ Important skills:
 
 [Profound GTM Vetting](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/profound-gtm-vetting) is a complete public-source pack for a company-like GTM evaluation workflow. It codifies ICP, target personas, fit rules, hooks, CTAs, guardrails, output rules, source-backed claims, prospect brief generation, gaps, and evals.
 
-The Profound example also includes a runnable Flue webhook scaffold. It accepts a webhook-style prospect row, writes ignored local scratch, runs `mdp fit` and `mdp brief --context`, and returns a draft contract or model draft without sending or updating external systems.
+The active Profound deployable path is the Eve-native Vercel scout in `examples/ai-sdr-eve-vercel`, which embeds the Profound pack, source strategy, Exa person-resolution flow, MDP fit/brief gates, and append-only ledger output. Older non-Eve deployable experiments are archived under `docs/orchid/history/archived-examples/`.
 
 ## Agent Operating Rules
 

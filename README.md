@@ -50,10 +50,11 @@ For the first-use walkthrough, see [Getting Started](docs/getting-started.md).
 
 Canonical examples:
 
+- [Eve-native Vercel Scout](examples/ai-sdr-eve-vercel/README.md) is the turnkey deployable template for a schedule-backed MDP scout on Vercel. It includes a Deploy to Vercel button, Cron endpoint, Profound pack, source strategy, Exa person-resolution flow, MDP fit/brief gates, and append-only ledger output.
 - [MDP for MDP](examples/mdp-for-mdp/README.md) is the fastest public demo for explaining what a pack stores, how messy source rows become normalized context, why no-draft states matter, and how route, fit, brief, claim-check, gaps, and eval commands work together.
 - [Profound GTM Vetting](examples/profound-gtm-vetting/README.md) shows a complete public-source pack for how a company like Profound can codify ICP, target personas, fit rules, hooks, CTAs, guardrails, output rules, source-backed claims, prospect brief generation, gaps, and evals before any downstream agent drafts or executes outreach.
 
-The Profound example also includes a runnable [Flue webhook agent scaffold](examples/profound-gtm-vetting/flue-webhook-agent/README.md) that accepts a webhook-style prospect row, writes ignored local scratch, runs `mdp fit` and `mdp brief --context`, and returns a draft contract or model draft without sending or updating external systems.
+Legacy non-Eve deployable experiments were archived under `docs/orchid/history/archived-examples/` so the active template path stays clear.
 
 Portable shell fallback:
 

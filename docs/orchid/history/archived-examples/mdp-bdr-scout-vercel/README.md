@@ -1,6 +1,8 @@
+> Archived example: retained for historical context only. The active deployable template is `examples/ai-sdr-eve-vercel/`.
+
 # MDP BDR Scout for Vercel
 
-This is the Vercel-first demo path for a light AI BDR/SDR scout powered by Message Decision Packs (MDP).
+This was the earlier Vercel-first demo path for a light AI BDR/SDR scout powered by Message Decision Packs (MDP). It has been superseded by `examples/ai-sdr-eve-vercel/`.
 
 The scout is a wrapper around MDP. MDP remains the local/offline decision and context standard; this example does **not** make MDP a CRM, sender, sequencer, scraper, enrichment provider, or hosted SDR product.
 
@@ -14,7 +16,7 @@ The scout is a wrapper around MDP. MDP remains the local/offline decision and co
 - The cron entrypoint requires `CRON_SECRET` and rejects unauthenticated requests before starting provider/model work.
 - A local dry run works without provider credentials.
 
-## Recommended production stack
+## Historical production-stack thinking
 
 - Vercel eve for the agent-facing template shell.
 - Vercel Workflow DevKit for durable, retryable scout cycles.

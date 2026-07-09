@@ -59,7 +59,7 @@ mdp --json check-claims --dir examples/profound-gtm-vetting --text "Profound hel
 
 ## Deployable Scout Tie-In
 
-The Eve-native Vercel demo in `examples/ai-sdr-eve-vercel` embeds this same pack under its app `.mdp` directory and the Eve sandbox workspace. The older `examples/mdp-bdr-scout-vercel` remains useful as a comparison harness, but the active deployable demo is Eve:
+The Eve-native Vercel demo in `examples/ai-sdr-eve-vercel` embeds this same pack under its app `.mdp` directory and the Eve sandbox workspace. It is the active deployable demo and includes a Deploy to Vercel button:
 
 ```bash
 cd examples/ai-sdr-eve-vercel
@@ -71,9 +71,9 @@ curl -X POST "$DEPLOYMENT_URL/scout/run" \
 
 The scout should still append reviewed ledger rows only. Outreach, CRM sync, and connector writes remain disabled until an operator explicitly enables those paths.
 
-## Legacy Flue Webhook Agent Example
+## Legacy deployable experiments
 
-`flue-webhook-agent/` remains as a legacy webhook-style comparison. The active turnkey path for this brainstorm is the Vercel demo plus the Profound MDP source strategy, not Flue execution.
+The older Next.js/Workflow BDR scout and Flue webhook experiments have moved to `docs/orchid/history/archived-examples/`. The active turnkey path is the Eve-native Vercel demo plus this Profound MDP source strategy.
 
 ## How The Story Routes
 
