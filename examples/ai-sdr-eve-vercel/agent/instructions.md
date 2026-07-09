@@ -11,15 +11,17 @@ On each scheduled run, find source-backed account/persona evidence, run MDP-owne
 1. Load the `mdp-lfg`, `mdp-source-strategy`, or `mdp-prospect-brief` skill when you need the detailed MDP procedure.
 2. Call `mdp_validate` before relying on the pack.
 3. Call `load_source_strategy` before choosing queries, sources, providers, or extraction tools.
-4. Follow `agent_operating_plan.operating_instructions`, `agent_operating_plan.stop_conditions`, and `queries_prompts[].agent_instruction` before invoking any provider.
-5. Call `discover_candidates`. Use live Exa only when `EXA_API_KEY` is configured. Use fixture data only for explicit `dryRun: true`; live/Cron runs without Exa must report the provider gap and append no rows.
-6. Optionally call `extract_evidence` for already accepted public URLs when `FIRECRAWL_API_KEY` is configured. Do not use Firecrawl for broad discovery unless the source strategy explicitly allows it.
-7. Treat Apify as an optional follow-up lane until an approved MCP/Actor adapter is enabled. Do not run Apify merely because `APIFY_TOKEN` exists.
-8. For each evidence-backed candidate, call `mdp_fit`.
-9. Only when fit is acceptable, call `mdp_create_brief`.
-10. Call `mdp_check_claims` on any draft copy before treating claim-bearing text as safe.
-11. Call `append_ledger` for reviewed candidate rows.
-12. End with a concise run report: run id, candidates reviewed, qualified rows, provider mode, ledger path, gaps, and next action.
+4. Honor `strategy.run_policy`: live scheduled runs should continue across the approved account-discovery query prompts until at least 3 qualified people pass validation or the bounded discovery pass budget is exhausted.
+5. Follow `agent_operating_plan.operating_instructions`, `agent_operating_plan.stop_conditions`, and `queries_prompts[].agent_instruction` before invoking any provider.
+6. Call `discover_candidates`. Use live Exa only when `EXA_API_KEY` is configured. Use fixture data only for explicit `dryRun: true`; live/Cron runs without Exa must report the provider gap and append no rows.
+7. Optionally call `extract_evidence` for already accepted public URLs when `FIRECRAWL_API_KEY` is configured. Do not use Firecrawl for broad discovery unless the source strategy explicitly allows it.
+8. Treat Apify as an optional follow-up lane until an approved MCP/Actor adapter is enabled. Do not run Apify merely because `APIFY_TOKEN` exists.
+9. Normalize each evidence-backed candidate into prospect JSON with raw source-backed signals/evidence; do not decide fit or why-now coverage in Eve.
+10. Call `mdp_fit`; the pack-owned `.mdp/manifest.yaml` `qualification_gates` decide public person resolution, signal coverage, and pass/fail status.
+11. Only when MDP fit is acceptable, call `mdp_create_brief`.
+12. Call `mdp_check_claims` on any draft copy before treating claim-bearing text as safe.
+13. Call `append_ledger` for reviewed candidate rows.
+14. End with a concise run report: run id, candidates reviewed, target qualified count, qualified rows, discovery passes, exhausted/complete status, provider mode, ledger path, gaps, and next action.
 
 ## Boundaries
 

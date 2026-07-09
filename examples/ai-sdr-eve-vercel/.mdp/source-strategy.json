@@ -11,6 +11,13 @@
     "pack_hint": "Use this Profound pack as the scoring authority after evidence collection; do not draft or sync until the MDP brief passes review.",
     "person_resolution_required": true
   },
+  "run_policy": {
+    "minimum_qualified_people_per_run": 3,
+    "continue_until_minimum_qualified": true,
+    "max_discovery_passes_per_run": 4,
+    "discovery_batch_size": 5,
+    "stop_when_strategy_queries_exhausted": true
+  },
   "primitive_mappings": [
     {
       "primitive": "actors",
@@ -62,7 +69,9 @@
         "bounded snippet",
         "publication or observed date",
         "provider family",
-        "confidence"
+        "confidence",
+        "raw source-backed signal text",
+        "MDP qualification gate inputs passed through prospect JSON"
       ],
       "gaps": [
         "Do not infer buying intent from generic AI mentions."
@@ -461,7 +470,9 @@
       "confidence"
     ],
     "person_resolution_gap_policy": "If the account trigger is strong but no public person/role owner is found, do not invent a contact. Preserve the account trigger as a person-resolution gap or operator-review account candidate only when explicitly allowed.",
-    "ledger_append_gate": "A qualified ledger row must include account trigger evidence plus public person-resolution evidence ids; account-only rows are not qualified leads."
+    "ledger_append_gate": "A qualified ledger row must include account trigger evidence plus public person-resolution evidence ids; account-only rows are not qualified leads.",
+    "minimum_qualified_people_per_run": 3,
+    "run_completion_gate": "A live run is complete when 3 qualified people pass account trigger evidence, public person-resolution evidence, MDP fit/brief gates, and score threshold; otherwise report the shortfall as an exhausted run gap."
   },
   "routing_jobs": [
     {
@@ -544,6 +555,16 @@
       "id": "reject-contact-database-person-source",
       "scenario": "Exa returns a contact database page with a name, title, email, or phone number.",
       "expected": "Exclude the source, do not extract personal contact data, and continue only with public profile, author, speaker, or company-owned pages."
+    },
+    {
+      "id": "target-three-qualified-people-per-run",
+      "scenario": "A live scheduled run finds fewer than three qualified people after the first account-discovery query.",
+      "expected": "Continue through the remaining approved account-discovery query prompts until three qualified people are appended or the bounded discovery pass budget is exhausted; report the shortfall as a gap."
+    },
+    {
+      "id": "mdp-owned-qualification-gates",
+      "scenario": "A discovery run finds a plausible person and source evidence, but the normalized prospect does not satisfy `.mdp/manifest.yaml` qualification_gates when passed to `mdp fit`.",
+      "expected": "Do not append the row; preserve the MDP fit gaps and continue searching until three people qualify or the bounded run policy is exhausted."
     }
   ],
   "review_status": "accepted",
@@ -554,11 +575,15 @@
       "Use Exa for broad public discovery, Firecrawl only to normalize already accepted public URLs, and Apify only for reviewed public actors or datasets explicitly allowed by the operator.",
       "After account trigger discovery, run public person-role resolution. Require a named person, public title/role, company match, and person source URL before autonomous qualification.",
       "For every candidate, preserve the exact source URL, title, observed date or publication date, bounded snippet, provider, confidence, and content hash before invoking MDP fit or brief steps.",
+      "Each live scout run targets at least 3 qualified people. Continue across approved account-discovery query prompts until the run hits the minimum or the bounded discovery pass budget is exhausted; never pad the count with account-only or insufficient-evidence rows.",
+      "Normalize candidate evidence and raw signals into MDP prospect JSON, then let `mdp fit` enforce the pack-owned `qualification_gates`; do not recreate fit/why-now pass/fail logic in the scout runtime.",
       "Reject sources that require login, expose personal contact enrichment, bypass access controls, or only imply buying intent without an explicit AI-search/content/brand/agency workflow signal."
     ],
     "stop_conditions": [
+      "At the run level, stop successfully after 3 qualified people are appended; otherwise stop only when all approved source-strategy discovery prompts or the max discovery pass budget are exhausted.",
       "Stop when the candidate lacks required receipts after one discovery pass and one accepted-URL cleanup pass.",
       "Stop before qualification when account trigger evidence exists but no public person-level owner can be resolved, unless operator explicitly enables account-only review.",
+      "Stop before ledger append when `mdp fit` returns `no_fit` or `insufficient_context`; preserve the MDP gate gaps and continue discovery until the run policy is satisfied or exhausted.",
       "Stop when all available evidence is gated, personal, stale without operator approval, or unrelated to the active Profound pack primitives.",
       "Stop before outreach, CRM mutation, private data enrichment, or any provider path not allowed by the reviewed source strategy."
     ],

@@ -44,6 +44,7 @@ export type SourceStrategy = {
   format: "mdp.source-strategy.v0";
   profile: { id: string; label: string };
   objective: Record<string, unknown> & { decision_needed: string };
+  run_policy?: SourceRunPolicy;
   agent_operating_plan: AgentOperatingPlan;
   primitive_mappings: Array<{ primitive: string; known: string[]; evidence_needed: string[]; gaps: string[] }>;
   source_targets: SourceTarget[];
@@ -54,6 +55,22 @@ export type SourceStrategy = {
   gaps: string[];
   eval_checks: Array<{ id: string; scenario: string; expected: string }>;
   review_status: "draft" | "needs-human-review" | "accepted" | "blocked";
+};
+
+export type SourceRunPolicy = {
+  minimum_qualified_people_per_run?: number;
+  continue_until_minimum_qualified?: boolean;
+  max_discovery_passes_per_run?: number;
+  discovery_batch_size?: number;
+  stop_when_strategy_queries_exhausted?: boolean;
+};
+
+export type NormalizedRunPolicy = {
+  minimumQualifiedPeoplePerRun: number;
+  continueUntilMinimumQualified: boolean;
+  maxDiscoveryPassesPerRun: number;
+  discoveryBatchSize: number;
+  stopWhenStrategyQueriesExhausted: boolean;
 };
 
 export type SelectedScoutQuery = {
@@ -90,8 +107,45 @@ export function selectPersonResolutionQuery(strategy: SourceStrategy): SourceQue
 }
 
 export function selectScoutQuery(strategy: SourceStrategy, override?: string | null): SelectedScoutQuery {
-  const query = strategy.queries_prompts.find((item) => item.scout_family === "exa") ?? strategy.queries_prompts[0];
+  const query = accountScoutQueries(strategy)[0] ?? strategy.queries_prompts.find((item) => item.scout_family === "exa") ?? strategy.queries_prompts[0];
   if (!query) throw new Error("source strategy has no query prompts");
+  return renderSelectedScoutQuery(strategy, query, override);
+}
+
+export function selectScoutQueries(strategy: SourceStrategy, override?: string | null): SelectedScoutQuery[] {
+  const queries = accountScoutQueries(strategy);
+  if (!queries.length) return [selectScoutQuery(strategy, override)];
+
+  const selected = queries.map((query, index) => renderSelectedScoutQuery(strategy, query, index === 0 ? override : null));
+  const seen = new Set<string>();
+  return selected.filter((item) => {
+    const key = item.query.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function normalizeRunPolicy(strategy: SourceStrategy): NormalizedRunPolicy {
+  const policy = strategy.run_policy ?? {};
+  return {
+    minimumQualifiedPeoplePerRun: normalizeInteger(policy.minimum_qualified_people_per_run, 3, 1, 20),
+    continueUntilMinimumQualified: policy.continue_until_minimum_qualified !== false,
+    maxDiscoveryPassesPerRun: normalizeInteger(policy.max_discovery_passes_per_run, 4, 1, 10),
+    discoveryBatchSize: normalizeInteger(policy.discovery_batch_size, 5, 1, 20),
+    stopWhenStrategyQueriesExhausted: policy.stop_when_strategy_queries_exhausted !== false
+  };
+}
+
+function accountScoutQueries(strategy: SourceStrategy): SourceQueryPrompt[] {
+  return strategy.queries_prompts.filter((item) => (
+    item.scout_family === "exa"
+    && item.id !== "exa-person-role-resolution"
+    && !item.target_source_ids?.includes("public-person-role-resolution")
+  ));
+}
+
+function renderSelectedScoutQuery(strategy: SourceStrategy, query: SourceQueryPrompt, override?: string | null): SelectedScoutQuery {
   return {
     queryId: query.id,
     scoutFamily: query.scout_family,
@@ -116,12 +170,19 @@ export function selectScoutQuery(strategy: SourceStrategy, override?: string | n
   };
 }
 
+function normalizeInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === "number" ? value : Number(value ?? fallback);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
 export function summarizeSourceStrategy(strategy: SourceStrategy) {
   return {
     format: strategy.format,
     profile: strategy.profile,
     review_status: strategy.review_status,
     objective: strategy.objective.decision_needed,
+    run_policy: normalizeRunPolicy(strategy),
     agent_operating_plan: strategy.agent_operating_plan,
     provider_capabilities: providerCapabilities(),
     queries: strategy.queries_prompts.map((item) => ({
@@ -159,6 +220,7 @@ function assertSourceStrategy(value: unknown): asserts value is SourceStrategy {
   assertArray(value.gaps, "gaps");
   assertArray(value.eval_checks, "eval_checks");
   if (!["draft", "needs-human-review", "accepted", "blocked"].includes(String(value.review_status))) throw new Error("source strategy review_status is invalid");
+  if (value.run_policy !== undefined && !isRecord(value.run_policy)) throw new Error("source strategy run_policy must be an object");
 
   for (const target of value.source_targets) {
     if (!isRecord(target)) throw new Error("source target must be an object");
