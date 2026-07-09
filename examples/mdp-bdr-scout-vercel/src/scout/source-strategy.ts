@@ -58,13 +58,18 @@ export async function loadSourceStrategy(pathOrUrl?: string | URL | null): Promi
 
 async function loadStrategyByPath(pathOrUrl: string | URL): Promise<unknown> {
   const filePath = toFilePath(pathOrUrl);
-  if (filePath === "profound" || filePath.endsWith("/profound-source-strategy.json") || filePath === "samples/profound-source-strategy.json") {
+  if (filePath === "profound" || matchesBundledSample(filePath, "samples/profound-source-strategy.json")) {
     return profoundStrategyJson;
   }
-  if (filePath === "default" || filePath.endsWith("/source-strategy.json") || filePath === "samples/source-strategy.json") {
+  if (filePath === "default" || matchesBundledSample(filePath, "samples/source-strategy.json")) {
     return defaultStrategyJson;
   }
   return JSON.parse(await readFile(filePath, "utf8"));
+}
+
+function matchesBundledSample(filePath: string, samplePath: string): boolean {
+  const normalized = filePath.replaceAll("\\", "/");
+  return normalized === samplePath || normalized.endsWith(`/${samplePath}`);
 }
 
 export function selectScoutQuery(strategy: SourceStrategy, overrideQuery?: string | null): SelectedScoutQuery {
