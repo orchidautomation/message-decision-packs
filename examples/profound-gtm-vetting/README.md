@@ -18,6 +18,7 @@ This example uses public Profound pages plus the user-provided MDP hypothesis fr
 `examples/profound-gtm-vetting/.mdp/source-strategy.json` is the LFG source-strategy artifact. It tells the scout where to look and where not to look:
 
 - Exa-first public discovery across company pages, blogs, resource centers, jobs, agency service pages, news, docs, podcasts, and events.
+- A second Exa person-resolution pass driven by `exa-person-role-resolution.query_template`, requiring a public name, title/role, company match, and person source URL before qualification.
 - Firecrawl only for accepted public URLs that need clean markdown/structured extraction.
 - Apify only for reviewed public actors/datasets with explicit source policy and budget approval.
 - No private LinkedIn, gated pages, contact databases, personal contact enrichment, CRM mutation, or autonomous outreach.
@@ -50,7 +51,7 @@ mdp --json check-claims --dir examples/profound-gtm-vetting --text "Profound hel
 
 ## Generated Artifacts
 
-- `.mdp/source-strategy.json`: where to find public candidates and evidence, including Exa/Firecrawl/Apify handoffs.
+- `.mdp/source-strategy.json`: where to find public candidates and evidence, including Exa account discovery, Exa person-resolution query templates, Firecrawl cleanup, and Apify handoff policy.
 - `.mdp/prompts/normalize-prospect.yaml`: turns raw scout rows into pack-owned prospect JSON before fit/brief.
 - `.mdp/briefs/profound-aeo-scout-linkedin.json`: machine-readable brief created by `mdp --json brief --context`.
 - `.mdp/briefs/profound-aeo-scout-linkedin.md`: readable operator brief.
@@ -58,13 +59,14 @@ mdp --json check-claims --dir examples/profound-gtm-vetting --text "Profound hel
 
 ## Deployable Scout Tie-In
 
-The Vercel demo in `examples/mdp-bdr-scout-vercel` should point at this pack and source strategy when demoing Profound:
+The Eve-native Vercel demo in `examples/ai-sdr-eve-vercel` embeds this same pack under its app `.mdp` directory and the Eve sandbox workspace. The older `examples/mdp-bdr-scout-vercel` remains useful as a comparison harness, but the active deployable demo is Eve:
 
 ```bash
-export MDP_PACK_DIR=../profound-gtm-vetting
-export SCOUT_SOURCE_STRATEGY_PATH=../profound-gtm-vetting/.mdp/source-strategy.json
-export SCOUT_FIXTURE_PATH=../profound-gtm-vetting/examples/profound-public-source-fixture.json
-npm run scout:sample:native
+cd examples/ai-sdr-eve-vercel
+npm run check
+curl -X POST "$DEPLOYMENT_URL/scout/run" \
+  -H 'content-type: application/json' \
+  -d '{"dryRun":true,"includeRows":true,"limit":1}'
 ```
 
 The scout should still append reviewed ledger rows only. Outreach, CRM sync, and connector writes remain disabled until an operator explicitly enables those paths.
@@ -103,7 +105,7 @@ flowchart TD
 Without MDP, an agent sees "find customers for Profound" and can drift into vague lists, generic AI SEO copy, unsupported visibility claims, or execution tasks. This pack makes the work explicit:
 
 - `sources.yaml` separates public facts, interpretation, and gaps.
-- `source-strategy.json` defines public source targets, queries, exclusions, evidence requirements, and provider handoffs.
+- `source-strategy.json` defines public source targets, queries, person-resolution templates, exclusions, evidence requirements, and provider handoffs.
 - `personas.yaml` defines target buyer personas.
 - `fit-rules.yaml` gates whether the account is worth drafting for.
 - `signals.yaml` tells the agent what observable fields matter.
@@ -111,7 +113,7 @@ Without MDP, an agent sees "find customers for Profound" and can drift into vagu
 - `hooks.yaml`, `ctas.yaml`, and `copy-patterns.yaml` give reusable messaging decisions.
 - `avoid-rules.yaml` blocks overclaiming, scraping, fake urgency, and unsupported outcome claims.
 - `output-rules.yaml` keeps generated text inside global style and structure constraints.
-- `gaps.yaml` preserves unknowns like current visibility, owner, tech stack, provider approval, and timing.
+- `gaps.yaml` preserves unknowns like current visibility, missing person-resolution receipts, tech stack, provider approval, and timing.
 - `prompts/normalize-prospect.yaml` standardizes raw rows before fit and brief.
 - `evals/` proves that fit, routing, brief, claim checks, and prompt-output validation keep working.
 

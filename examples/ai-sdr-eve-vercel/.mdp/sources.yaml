@@ -180,6 +180,7 @@ sources:
   - The source strategy translates Profound ICP, personas, fit rules, signals, avoid-rules, and source policy into public-source discovery targets.
   - The source strategy uses Exa-first public discovery, Firecrawl for accepted URL extraction, and optional Apify for reviewed long-running or marketplace actor extraction.
   - The source strategy excludes private LinkedIn, gated sources, personal contact enrichment, CRM mutation, and autonomous outreach.
+  - The source strategy requires public person-level name, title or role, company match, and person source URL before a row can become a qualified ledger lead.
   interpretations:
   - Use this source for where-to-find-people guidance before live scout execution.
   - Treat it as an operator-reviewed plan, not evidence that any prospect is qualified.

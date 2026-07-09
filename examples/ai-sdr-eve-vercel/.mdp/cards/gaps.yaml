@@ -73,3 +73,17 @@ entries:
   evidence:
   - profound-source-strategy
   avoid: []
+- id: missing-person-resolution-receipt
+  title: Missing person resolution receipt
+  body: When a source shows account-level AI-search fit but no public named owner, role/title, company match, and source URL, preserve the account trigger as a person-resolution gap and do not invent a contact.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - PR & Brand Lead
+  - Agency Partner
+  evidence:
+  - profound-source-strategy
+  avoid:
+  - fabricated contact
+  - generic marketing owner
+  - private enrichment

@@ -46,7 +46,7 @@ const NAME_RE = /\b([A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+){1,3})\b/;
 const BLOCKED_PERSON_HOSTS = /(apollo|rocketreach|signalhire|lusha|hunter\.io|zoominfo|contactout|email-format|leadIQ|seamless)\./i;
 const BLOCKED_PERSON_WORDS = /\b(email|phone|mobile|contact database|directory|salary|jobs?|hiring|careers|login|required|private)\b/i;
 
-export async function discoverCandidates(input: { query: string; limit: number; dryRun?: boolean }): Promise<DiscoveryResult> {
+export async function discoverCandidates(input: { query: string; limit: number; dryRun?: boolean; personResolutionQueryTemplate?: string | null }): Promise<DiscoveryResult> {
   const capabilities = providerCapabilities();
   const exa = capabilityFor("exa");
   if (input.dryRun === true) {
@@ -76,7 +76,7 @@ export async function discoverCandidates(input: { query: string; limit: number; 
   const resolved: CandidateWithEvidence[] = [];
 
   for (const accountCandidate of accountCandidates) {
-    const person = await resolvePersonForAccount(accountCandidate, personSearchLimit);
+    const person = await resolvePersonForAccount(accountCandidate, personSearchLimit, input.personResolutionQueryTemplate);
     if (person) {
       resolved.push(applyPersonResolution(accountCandidate, person));
     } else if (!requirePeople) {
@@ -104,7 +104,7 @@ export async function readFixture(): Promise<CandidateWithEvidence> {
   return candidateWithEvidenceSchema.parse(parsed);
 }
 
-async function resolvePersonForAccount(account: CandidateWithEvidence, limit: number): Promise<PersonResolution | null> {
+async function resolvePersonForAccount(account: CandidateWithEvidence, limit: number, queryTemplate?: string | null): Promise<PersonResolution | null> {
   if (account.candidate.name && account.candidate.title) {
     const evidence = findPersonResolutionEvidence(account.evidence, account.candidate)[0];
     if (evidence) {
@@ -119,7 +119,7 @@ async function resolvePersonForAccount(account: CandidateWithEvidence, limit: nu
     }
   }
 
-  const query = buildPersonResolutionQuery(account.candidate);
+  const query = buildPersonResolutionQuery(account.candidate, queryTemplate);
   const payload = await runExaSearch({ query, limit });
   for (const result of payload.results ?? []) {
     const parsed = parsePersonResult(result, account.candidate);
@@ -182,11 +182,23 @@ function resultToCandidateWithEvidence(result: ExaSearchResult): CandidateWithEv
   };
 }
 
-function buildPersonResolutionQuery(candidate: Candidate): string {
-  const company = quote(candidate.company);
-  const domain = candidate.company_domain ? quote(candidate.company_domain) : "";
-  const site = candidate.company_domain ? `OR site:${candidate.company_domain}` : "";
-  return `(${company}${domain ? ` OR ${domain}` : ""}) (${PERSON_ROLE_TERMS.map(quote).join(" OR ")}) ("Director" OR "Head" OR "VP" OR "Vice President" OR "Manager" OR "Lead" OR "Principal" OR "Strategist" OR "Founder" OR "Partner") (site:linkedin.com/in ${site}) -jobs -hiring -careers -email -phone -"contact database" -apollo -rocketreach -zoominfo -lusha`;
+const DEFAULT_PERSON_RESOLUTION_QUERY_TEMPLATE = `("<company>" OR "<domain>") (${PERSON_ROLE_TERMS.map((term) => `"${term}"`).join(" OR ")}) ("Director" OR "Head" OR "VP" OR "Vice President" OR "Manager" OR "Lead" OR "Principal" OR "Strategist" OR "Founder" OR "Partner") (site:linkedin.com/in OR site:<company-domain>) -jobs -hiring -careers -email -phone -"contact database" -apollo -rocketreach -zoominfo -lusha`;
+
+function buildPersonResolutionQuery(candidate: Candidate, queryTemplate?: string | null): string {
+  return renderPersonQueryTemplate(queryTemplate?.trim() || DEFAULT_PERSON_RESOLUTION_QUERY_TEMPLATE, candidate);
+}
+
+function renderPersonQueryTemplate(template: string, candidate: Candidate): string {
+  const domain = queryDomain(candidate.company_domain);
+  let rendered = template;
+  if (!domain) {
+    rendered = rendered.replace(/\s*OR\s+site:<company-domain>/g, "").replace(/site:<company-domain>/g, "");
+  }
+  rendered = rendered
+    .replaceAll("<company>", queryToken(candidate.company))
+    .replaceAll("<domain>", domain || queryToken(candidate.company))
+    .replaceAll("<company-domain>", domain);
+  return rendered.replace(/\s+/g, " ").trim();
 }
 
 function parsePersonResult(result: ExaSearchResult, account: Candidate): PersonResolution | null {
@@ -372,8 +384,12 @@ function compact(values: Array<string | undefined>): string[] {
   return values.filter((value): value is string => Boolean(value && value.trim()));
 }
 
-function quote(value: string): string {
-  return `"${value.replace(/"/g, "")}"`;
+function queryToken(value: string): string {
+  return value.replace(/["()]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function queryDomain(value: string | null | undefined): string {
+  return (value ?? "").replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").replace(/[^a-zA-Z0-9.-]/g, "").toLowerCase();
 }
 
 function normalize(value: string): string {

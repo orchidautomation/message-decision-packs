@@ -41,6 +41,10 @@ const sandboxStrategy = JSON.parse(readFileSync("agent/sandbox/workspace/.mdp/so
 assertSourceStrategy(sandboxStrategy, "agent/sandbox/workspace/.mdp/source-strategy.json");
 
 const sourceStrategyLib = readFileSync("agent/lib/source-strategy.ts", "utf8");
+if (!sourceStrategyLib.includes("selectPersonResolutionQuery") || !sourceStrategyLib.includes("query_template")) {
+  console.error("source strategy loader must expose the person-resolution query template for Eve runtime use");
+  process.exit(1);
+}
 if (!sourceStrategyLib.includes("bundledSourceStrategy")) {
   console.error("source strategy loader must include a bundled fallback for Vercel serverless deployments");
   process.exit(1);
@@ -49,6 +53,10 @@ if (!sourceStrategyLib.includes("bundledSourceStrategy")) {
 const discoveryLib = readFileSync("agent/lib/discovery.ts", "utf8");
 if (!discoveryLib.includes("bundledFixture")) {
   console.error("discovery fixture loader must include a bundled fallback for Vercel serverless deployments");
+  process.exit(1);
+}
+if (!discoveryLib.includes("personResolutionQueryTemplate") || !discoveryLib.includes("renderPersonQueryTemplate")) {
+  console.error("discovery must render person-resolution queries from the MDP source strategy template");
   process.exit(1);
 }
 if (!discoveryLib.includes("resolvePersonForAccount") || !discoveryLib.includes("SCOUT_REQUIRE_PERSON")) {
@@ -83,6 +91,10 @@ if (!providerTools.includes("x-exa-integration") || !providerTools.includes("too
 }
 
 const scoutCycleLib = readFileSync("agent/lib/scout-cycle.ts", "utf8");
+if (!scoutCycleLib.includes("selectPersonResolutionQuery") || !scoutCycleLib.includes("personResolutionQueryTemplate")) {
+  console.error("scout cycle must pass the MDP person-resolution query template into discovery");
+  process.exit(1);
+}
 if (!scoutCycleLib.includes("validateQualifiedCandidate") || !scoutCycleLib.includes("normalizeScoreThreshold")) {
   console.error("scout cycle must validate qualification before ledger append and clamp score thresholds");
   process.exit(1);
@@ -128,8 +140,15 @@ function assertSourceStrategy(strategy, label) {
       throw new Error(`${label} query ${query.id} must include required receipts`);
     }
   }
-  if (!strategy.queries_prompts?.some((query) => query.id === "exa-person-role-resolution")) {
+  const personQuery = strategy.queries_prompts?.find((query) => query.id === "exa-person-role-resolution");
+  if (!personQuery) {
     throw new Error(`${label} must include an Exa person-role resolution query`);
+  }
+  if (!personQuery.query_template?.includes("<company>") || !personQuery.query_template?.includes("<company-domain>")) {
+    throw new Error(`${label} person-role resolution query must include a programmatic query_template with company/domain tokens`);
+  }
+  for (const receipt of ["person_name", "person_title", "person_source_url", "company_match"]) {
+    if (!personQuery.required_receipts?.includes(receipt)) throw new Error(`${label} person-role resolution query must require ${receipt}`);
   }
   if (strategy.evidence_requirements?.person_resolution_required !== true) {
     throw new Error(`${label} must require person-level resolution before qualification`);

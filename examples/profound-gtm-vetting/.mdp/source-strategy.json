@@ -5,10 +5,11 @@
     "label": "Profound GTM scouting"
   },
   "objective": {
-    "decision_needed": "Find public-source account and persona evidence before Profound MDP fit, route, and brief generation.",
-    "downstream_consumer": "MDP BDR Scout on Vercel Workflow or local dry-run",
+    "decision_needed": "Find public-source account trigger evidence and then resolve a named public person/role owner before Profound MDP fit, route, and brief generation.",
+    "downstream_consumer": "Eve-native MDP SDR Scout on Vercel or local dry-run",
     "strategy_mode": "public-source handoff",
-    "pack_hint": "Use this Profound pack as the scoring authority after evidence collection; do not draft or sync until the MDP brief passes review."
+    "pack_hint": "Use this Profound pack as the scoring authority after evidence collection; do not draft or sync until the MDP brief passes review.",
+    "person_resolution_required": true
   },
   "primitive_mappings": [
     {
@@ -22,10 +23,14 @@
       "evidence_needed": [
         "Named company",
         "public role or team context",
-        "public source URL with observed trigger"
+        "public source URL with observed trigger",
+        "Named public person",
+        "public title or role evidence",
+        "public profile, author, team, bio, or company page URL that ties the person to the account/workflow"
       ],
       "gaps": [
-        "Personal contact enrichment and private profile scraping are out of scope."
+        "Personal contact enrichment and private profile scraping are out of scope.",
+        "Account-only rows are gaps until a public person/role owner is resolved or an operator explicitly allows account-only review."
       ]
     },
     {
@@ -110,6 +115,21 @@
       ]
     },
     {
+      "id": "public-person-role-resolution",
+      "source_kind": "public-source",
+      "scout_family": "exa",
+      "target": "Public person-role surfaces: LinkedIn public profile metadata, company team pages, author pages, conference bios, podcast/webinar speaker pages, and public bylines that connect a named person to the target account and Profound-relevant workflow.",
+      "purpose": "Resolve account-level trigger evidence into a named buyer/persona owner before qualification, without collecting personal contact data.",
+      "allowed_access": "Public unauthenticated pages only; names, titles, profile URLs, and role snippets are allowed, but emails, phones, private profiles, and enrichment databases are excluded.",
+      "freshness": "Prefer current public profiles or recent bylines/events; use stale profile pages only as role evidence paired with fresh account trigger evidence.",
+      "primitives": [
+        "actors",
+        "source-signals",
+        "evidence-proof",
+        "output-contracts"
+      ]
+    },
+    {
       "id": "public-agency-ai-search-services",
       "source_kind": "public-source",
       "scout_family": "exa",
@@ -191,7 +211,76 @@
         "observed_at or publication date",
         "confidence"
       ],
-      "max_results": 30
+      "max_results": 30,
+      "agent_instruction": "Search the public web for fresh account-level AEO, AI search visibility, content, brand, PR, or agency workflow trigger evidence. Treat this as the account trigger pass only; before qualification, run the person-role resolution query_template and require a named public person, role/title, profile/author/team URL, bounded snippet, and explicit mapping to one active Profound MDP persona.",
+      "construction_rules": [
+        "Combine one AEO/AI-search term with one role/workflow trigger family per query so evidence can be traced to a specific pack primitive.",
+        "Prefer company blogs, careers pages, launch posts, docs, funding/news, public founder/operator sources, and agency service pages before generic listicles.",
+        "Add negative filters for personal contact data, login-required pages, private social pages, scraped directories, and enrichment databases.",
+        "Do not qualify account-only rows unless the person-resolution lane finds a public named owner or the operator explicitly enables account-only review.",
+        "Eve must pass accepted account candidates into exa-person-role-resolution.query_template before any fit, brief, score, or ledger append step."
+      ],
+      "required_receipts": [
+        "source_url",
+        "title",
+        "observed_at_or_publication_date",
+        "bounded_snippet",
+        "provider",
+        "confidence",
+        "person_name",
+        "person_title",
+        "person_source_url"
+      ],
+      "review_required": true
+    },
+    {
+      "id": "exa-person-role-resolution",
+      "scout_family": "exa",
+      "query_or_prompt": "For each accepted account trigger, search public person-role surfaces for a named owner at the same company. Use query_template for programmatic execution, then extract only public name/title/company/source receipts.",
+      "target_source_ids": [
+        "public-person-role-resolution"
+      ],
+      "negative_filters": [
+        "personal email",
+        "personal phone",
+        "private LinkedIn",
+        "login-required pages",
+        "contact databases",
+        "unverified enrichment",
+        "scraped directories",
+        "jobs-only pages"
+      ],
+      "expected_signals": [
+        "public person name",
+        "public title or role",
+        "company match",
+        "persona/workflow ownership signal",
+        "profile, author, speaker, or team URL",
+        "bounded snippet",
+        "provider",
+        "confidence"
+      ],
+      "max_results": 8,
+      "agent_instruction": "After an account trigger passes source policy, resolve a named person who plausibly owns the relevant AEO, SEO, content, PR, brand, growth, or agency workflow. Accept public profile metadata, company team pages, bylines, speaker pages, and author pages. Reject jobs-only pages and contact databases. If no public person is found, mark the candidate as a person-resolution gap instead of inventing a contact.",
+      "construction_rules": [
+        "Bind the person query to the accepted account company/domain so the named person is tied to the account trigger.",
+        "Use query_template as the programmatic template for Eve/Exa runs; replace <company>, <domain>, and <company-domain> from the accepted account candidate only.",
+        "Prefer public LinkedIn profile metadata, company-owned author/team pages, webinar/event speaker pages, and public bylines over generic people directories.",
+        "Require both a person name and a role/title snippet that maps to a Profound pack persona before qualification.",
+        "Reject pages whose only value is email, phone, scraped enrichment, login-required profile data, unrelated job listings, or jobs-only owner inference."
+      ],
+      "required_receipts": [
+        "person_name",
+        "person_title",
+        "person_source_url",
+        "company_match",
+        "bounded_snippet",
+        "provider",
+        "confidence"
+      ],
+      "review_required": true,
+      "query_template": "(\"<company>\" OR \"<domain>\") (\"SEO\" OR \"AEO\" OR \"answer engine optimization\" OR \"AI search\" OR \"AI visibility\" OR \"LLM visibility\" OR \"organic growth\" OR \"content strategy\" OR \"brand\" OR \"communications\" OR \"PR\" OR \"growth marketing\") (\"Director\" OR \"Head\" OR \"VP\" OR \"Vice President\" OR \"Manager\" OR \"Lead\" OR \"Strategist\" OR \"Founder\" OR \"Partner\") (site:linkedin.com/in OR site:<company-domain>) -jobs -hiring -careers -email -phone -contact -directory -apollo -rocketreach -zoominfo -lusha",
+      "query_usage": "programmatic-person-resolution"
     },
     {
       "id": "exa-prompt-volume-content-opportunities",
@@ -211,7 +300,22 @@
         "public URL",
         "bounded snippet"
       ],
-      "max_results": 25
+      "max_results": 25,
+      "agent_instruction": "Search for public evidence that a company or agency is studying prompt demand, AI-search queries, ChatGPT/Perplexity traffic, content gaps, or citation opportunities relevant to Profound.",
+      "construction_rules": [
+        "Pair prompt-volume or AI-search-query language with content, citation, comparison-page, or resource-center language.",
+        "Prefer primary source pages with publication dates and sourceable snippets over SEO roundups or thin syndicated summaries.",
+        "Reject results where the only evidence is a private dataset, paywalled source, or unsupported inference about buying intent."
+      ],
+      "required_receipts": [
+        "source_url",
+        "title",
+        "observed_at_or_publication_date",
+        "bounded_snippet",
+        "provider",
+        "confidence"
+      ],
+      "review_required": true
     },
     {
       "id": "exa-agency-ai-search-services",
@@ -231,7 +335,21 @@
         "public source URL",
         "confidence"
       ],
-      "max_results": 30
+      "max_results": 30,
+      "agent_instruction": "Search for public agency service, case-study, event, or thought-leadership pages that show AI search, AEO, LLM visibility, PR, brand sentiment, SEO, content, or analytics services.",
+      "construction_rules": [
+        "Favor agency-owned pages and public event/case-study pages over agency directories.",
+        "Treat an agency as relevant only when the page names a client-facing AI-search/visibility/reporting workflow.",
+        "Preserve account-only candidates when no named person route exists; do not invent contacts."
+      ],
+      "required_receipts": [
+        "source_url",
+        "title",
+        "bounded_snippet",
+        "provider",
+        "confidence"
+      ],
+      "review_required": true
     },
     {
       "id": "firecrawl-accepted-url-extract",
@@ -251,7 +369,21 @@
         "content hash",
         "evidence confidence"
       ],
-      "max_results": 12
+      "max_results": 12,
+      "agent_instruction": "Fetch only accepted public URLs from the discovery pass. Extract the smallest text span that supports the trigger, preserve canonical URL/title/date/content hash, and do not follow gated, private, or unrelated links.",
+      "construction_rules": [
+        "Use the canonical URL from Exa or the public page itself; do not discover new domains from Firecrawl in this lane.",
+        "Extract evidence into normalized fields before any scoring step.",
+        "If a page blocks access or omits the trigger text, mark the candidate insufficient instead of substituting another claim."
+      ],
+      "required_receipts": [
+        "canonical_url",
+        "quote_or_snippet",
+        "content_hash",
+        "observed_at",
+        "confidence"
+      ],
+      "review_required": true
     },
     {
       "id": "apify-reviewed-public-dataset",
@@ -273,7 +405,21 @@
         "budget status",
         "confidence"
       ],
-      "max_results": 10
+      "max_results": 10,
+      "agent_instruction": "Run this lane only when an operator-approved Apify actor or dataset is available with explicit source policy, result caps, and budget limits. Normalize dataset-backed evidence and stop before personal contact enrichment.",
+      "construction_rules": [
+        "Use reviewed public actors or datasets only; do not use actors that require cookies, private sessions, account-only data, or contact enrichment.",
+        "Record actor id, dataset URL or run id, input policy, row count, budget status, and source URLs for each accepted row.",
+        "Treat Apify output as untrusted until reviewed and passed through MDP source extraction or fit gates."
+      ],
+      "required_receipts": [
+        "reviewed_actor_id",
+        "dataset_url_or_run_id",
+        "row_evidence",
+        "budget_status",
+        "confidence"
+      ],
+      "review_required": true
     }
   ],
   "exclusions": [
@@ -291,43 +437,83 @@
       "bounded snippet",
       "content hash or source fingerprint",
       "provider",
-      "confidence"
+      "confidence",
+      "person name",
+      "person title or role",
+      "person source URL"
     ],
     "confidence_floor": 0.6,
     "freshness_preference": "120 days for trigger evidence unless operator approves evergreen context",
     "review_owner": "human operator before CRM sync or outreach",
-    "gap_policy": "If a required field is missing, mark a gap and route to operator review instead of inventing context."
+    "gap_policy": "If a required field is missing, mark a gap and route to operator review instead of inventing context.",
+    "minimum_trigger_gate": "A candidate may proceed only when at least one current public primary source or two independent public secondary sources support the trigger.",
+    "pass_condition": "Proceed to MDP fit only when account trigger evidence and public person-role evidence are public or user-approved, map to an active Profound pack signal/persona, include required receipts, and avoid excluded data classes.",
+    "fail_condition": "Preserve a gap when evidence is stale, gated, contact-enrichment-only, missing a snippet/date/source URL, or requires inferring buying intent.",
+    "claim_check_policy": "Before ledger append, run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy, preserving the brief citations and unresolved gaps used to create that copy.",
+    "person_resolution_required": true,
+    "person_resolution_required_fields": [
+      "person name",
+      "person title or role",
+      "public profile/author/team URL",
+      "company match",
+      "bounded role snippet",
+      "provider",
+      "confidence"
+    ],
+    "person_resolution_gap_policy": "If the account trigger is strong but no public person/role owner is found, do not invent a contact. Preserve the account trigger as a person-resolution gap or operator-review account candidate only when explicitly allowed.",
+    "ledger_append_gate": "A qualified ledger row must include account trigger evidence plus public person-resolution evidence ids; account-only rows are not qualified leads."
   },
   "routing_jobs": [
     {
       "id": "extract-accepted-public-evidence",
       "next_skill": "mdp-source-extract",
       "review_job": "source-evidence-review",
-      "handoff": "Only reviewed public/source-approved evidence becomes pack card candidates or scout ledger evidence."
+      "handoff": "Only reviewed public/source-approved evidence becomes pack card candidates or scout ledger evidence.",
+      "cli_handoff": "Only after source review, pass accepted public receipts to `mdp-source-extract` if pack card updates are needed; do not mutate the pack from raw provider output."
+    },
+    {
+      "id": "resolve-public-person-owner",
+      "next_skill": "mdp-source-strategy",
+      "review_job": "person-resolution-review",
+      "handoff": "After account trigger discovery, search only approved public person-role surfaces and require name/title/source receipts before qualification.",
+      "cli_handoff": "For each account trigger row, run the reviewed person-resolution query. If no name/title/source receipts are available, keep the row as a gap and do not pass it to `mdp --json fit` unless account-only review is explicitly enabled."
     },
     {
       "id": "normalize-profound-prospect",
       "next_skill": "mdp-prospect-brief",
       "review_job": "normalization-review",
-      "handoff": "Run prompts/normalize-prospect.yaml against a bounded raw row and preserve missing fields as gaps."
+      "handoff": "Run prompts/normalize-prospect.yaml against a bounded raw row and preserve missing fields as gaps.",
+      "cli_handoff": "Normalize accepted receipts into a prospect JSON file that matches `mdp --json schema prospect`; preserve missing fields as gaps."
     },
     {
       "id": "score-and-brief-with-profound-pack",
       "next_skill": "mdp-prospect-brief",
       "review_job": "fit-and-brief-review",
-      "handoff": "Run mdp --json fit, then mdp --json brief --context, then save reviewed ledger rows."
+      "handoff": "Run mdp --json fit, then mdp --json brief --context, then save reviewed ledger rows.",
+      "cli_handoff": "Run `mdp --json fit --dir <pack> --prospect <prospect.json>`, then `mdp --json brief --context --dir <pack> --prospect <prospect.json> --channel <channel> --out <brief.json>` when fit passes. Run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy before appending `mdp_scout_candidate/v0` ledger rows."
     }
   ],
   "gaps": [
     "Operator must approve provider budgets, domain allowlists, and excluded sources before live scouting.",
     "CRM connector policy and outreach policy are intentionally absent from this pack.",
-    "This strategy does not claim autonomous outreach readiness."
+    "This strategy does not claim autonomous outreach readiness.",
+    "Person-level resolution is required for autonomous qualification; account-only rows must be gaps or operator-review rows unless explicitly allowed."
   ],
   "eval_checks": [
     {
       "id": "proceed-public-aeo-trigger",
       "scenario": "A public job post names ownership of AI search visibility, SEO, and content strategy.",
       "expected": "Proceed to MDP fit/brief scoring with cited evidence."
+    },
+    {
+      "id": "require-public-person-resolution",
+      "scenario": "A public account trigger page is relevant but no named person/title source can be found.",
+      "expected": "Do not qualify the row; preserve a person-resolution gap instead of inventing a contact."
+    },
+    {
+      "id": "proceed-named-aeo-owner",
+      "scenario": "A public account trigger is paired with a public LinkedIn/profile/author page naming a Director, Head, VP, Manager, or Lead for SEO, AEO, AI search, content, PR, brand, growth, or agency strategy at the same company.",
+      "expected": "Proceed to MDP fit/brief scoring with both account evidence and person-role evidence cited."
     },
     {
       "id": "proceed-agency-service-fit",
@@ -348,7 +534,35 @@
       "id": "no-outreach-side-effect",
       "scenario": "A candidate passes fit and score threshold.",
       "expected": "Append ledger/brief only; outreach_sent remains false and CRM sync remains disabled unless enabled by operator."
+    },
+    {
+      "id": "reject-jobs-only-person-source",
+      "scenario": "A public job post is relevant to AI search but no named public owner or author profile is available.",
+      "expected": "Do not treat the job post as person evidence; preserve a person-resolution gap and do not append a qualified ledger row."
+    },
+    {
+      "id": "reject-contact-database-person-source",
+      "scenario": "Exa returns a contact database page with a name, title, email, or phone number.",
+      "expected": "Exclude the source, do not extract personal contact data, and continue only with public profile, author, speaker, or company-owned pages."
     }
   ],
-  "review_status": "accepted"
+  "review_status": "accepted",
+  "agent_operating_plan": {
+    "role": "Public-source AEO/AI-search BDR scout operating plan for an autonomous Eve runtime",
+    "operating_instructions": [
+      "Start with the approved Profound MDP pack boundaries. Do not broaden ICP, persona, trigger, or avoid-rule semantics from search results alone.",
+      "Use Exa for broad public discovery, Firecrawl only to normalize already accepted public URLs, and Apify only for reviewed public actors or datasets explicitly allowed by the operator.",
+      "After account trigger discovery, run public person-role resolution. Require a named person, public title/role, company match, and person source URL before autonomous qualification.",
+      "For every candidate, preserve the exact source URL, title, observed date or publication date, bounded snippet, provider, confidence, and content hash before invoking MDP fit or brief steps.",
+      "Reject sources that require login, expose personal contact enrichment, bypass access controls, or only imply buying intent without an explicit AI-search/content/brand/agency workflow signal."
+    ],
+    "stop_conditions": [
+      "Stop when the candidate lacks required receipts after one discovery pass and one accepted-URL cleanup pass.",
+      "Stop before qualification when account trigger evidence exists but no public person-level owner can be resolved, unless operator explicitly enables account-only review.",
+      "Stop when all available evidence is gated, personal, stale without operator approval, or unrelated to the active Profound pack primitives.",
+      "Stop before outreach, CRM mutation, private data enrichment, or any provider path not allowed by the reviewed source strategy."
+    ],
+    "insufficient_evidence_action": "Do not qualify the candidate. Write a gap explaining which trigger, person-resolution receipt, source receipt, or Profound pack primitive could not be supported.",
+    "downstream_handoff_prompt": "When account and person evidence pass review, normalize them to MDP prospect JSON with person name, title, company, trigger, persona, and cited source receipts, then run `mdp --json fit --dir <pack> --prospect <prospect.json>`. If fit passes, run `mdp --json brief --context --dir <pack> --prospect <prospect.json> --channel <channel> --out <brief.json>`. Run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy before ledger append. If person name/title/source is missing, preserve a gap and do not invent a contact."
+  }
 }

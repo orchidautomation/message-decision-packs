@@ -3,7 +3,7 @@ import { appendLedgerRows, createRunId } from "./ledger.ts";
 import { runMdpBrief } from "./mdp-runner.ts";
 import { normalizeScoreThreshold, validateQualifiedCandidate } from "./qualification.ts";
 import { scoreCandidate } from "./scoring.ts";
-import { loadSourceStrategy, selectScoutQuery } from "./source-strategy.ts";
+import { loadSourceStrategy, selectPersonResolutionQuery, selectScoutQuery } from "./source-strategy.ts";
 import type { LedgerRow, SourceStrategyTrace } from "./schemas.ts";
 
 export type ScoutCycleInput = {
@@ -29,10 +29,12 @@ export async function runFixtureScoutCycle(): Promise<ScoutCycleResult> {
 export async function runScoutCycle(input: ScoutCycleInput = {}): Promise<ScoutCycleResult> {
   const strategy = await loadSourceStrategy();
   const selected = selectScoutQuery(strategy, input.query);
+  const personResolutionQuery = selectPersonResolutionQuery(strategy);
   const discovery = await discoverCandidates({
     query: selected.query,
     limit: input.limit ?? parseIntegerSetting(process.env.SCOUT_MAX_CANDIDATES, 5, 1, 20),
-    dryRun: input.dryRun
+    dryRun: input.dryRun,
+    personResolutionQueryTemplate: personResolutionQuery?.query_template ?? null
   });
   const runId = createRunId();
   const minScore = normalizeScoreThreshold(Number(process.env.SCOUT_MIN_SCORE ?? 65));
