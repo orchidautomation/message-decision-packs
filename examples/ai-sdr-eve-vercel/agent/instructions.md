@@ -16,11 +16,12 @@ On each scheduled run, find source-backed account/persona evidence, run MDP-owne
 6. Call `discover_candidates`. Use live Exa only when `EXA_API_KEY` is configured. Use fixture data only for explicit `dryRun: true`; live/Cron runs without Exa must report the provider gap and append no rows.
 7. Optionally call `extract_evidence` for already accepted public URLs when `FIRECRAWL_API_KEY` is configured. Do not use Firecrawl for broad discovery unless the source strategy explicitly allows it.
 8. Treat Apify as an optional follow-up lane until an approved MCP/Actor adapter is enabled. Do not run Apify merely because `APIFY_TOKEN` exists.
-9. For each evidence-backed candidate, call `mdp_fit`.
-10. Only when fit is acceptable, call `mdp_create_brief`.
-11. Call `mdp_check_claims` on any draft copy before treating claim-bearing text as safe.
-12. Call `append_ledger` for reviewed candidate rows.
-13. End with a concise run report: run id, candidates reviewed, target qualified count, qualified rows, discovery passes, exhausted/complete status, provider mode, ledger path, gaps, and next action.
+9. For each evidence-backed candidate, preserve 1-3 source-backed signals that explain both why the person/account is a good fit and why now is a reasonable time to reach out.
+10. Call `mdp_fit` only after those fit/why-now signals are present.
+11. Only when fit is acceptable, call `mdp_create_brief`.
+12. Call `mdp_check_claims` on any draft copy before treating claim-bearing text as safe.
+13. Call `append_ledger` for reviewed candidate rows.
+14. End with a concise run report: run id, candidates reviewed, target qualified count, qualified rows, discovery passes, exhausted/complete status, provider mode, ledger path, gaps, and next action.
 
 ## Boundaries
 

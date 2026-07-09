@@ -60,11 +60,22 @@ async function runScout(request: Request, input: ScoutRunRequest): Promise<Respo
     exhausted: result.exhausted,
     qualified: result.qualified,
     queries: result.queries,
+    signal_reasons: collectSignalReasons(result.rows),
     ledger_path: result.ledgerPath,
     rows: input.includeRows ? result.rows : undefined
   }, {
     headers: { "cache-control": "no-store" }
   });
+}
+
+function collectSignalReasons(rows: Awaited<ReturnType<typeof runScoutCycle>>["rows"]): string[] {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    for (const reason of row.source_strategy.qualified_signal_reasons ?? []) {
+      if (reason.trim()) seen.add(reason.trim());
+    }
+  }
+  return [...seen].slice(0, 9);
 }
 
 function readUrlInput(request: Request): ScoutRunRequest {

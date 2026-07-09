@@ -18,6 +18,7 @@ console.log(JSON.stringify({
   firstPerson: first?.candidate.name ?? null,
   firstTitle: first?.candidate.title ?? null,
   firstScore: first?.score.overall ?? null,
+  firstSignalReasons: first?.source_strategy.qualified_signal_reasons ?? [],
   firstMdpStatus: first?.mdp.fit_status ?? null,
   firstMdpRoute: first?.mdp.route ?? null
 }, null, 2));

@@ -28,7 +28,9 @@ export default defineTool({
       provider_available: provider === "live",
       provider_fallback: provider === "fixture" ? "Ledger append received fixture evidence rather than live provider output." : null,
       person_resolution_status: qualification.personResolutionStatus,
-      person_resolution_evidence_ids: qualification.personEvidenceIds
+      person_resolution_evidence_ids: qualification.personEvidenceIds,
+      qualified_signal_reasons: qualification.signalReasons,
+      qualified_signal_evidence_ids: qualification.signalEvidenceIds
     };
     const row = {
       contract_version: "mdp_scout_candidate/v0" as const,

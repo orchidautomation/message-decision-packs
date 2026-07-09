@@ -138,7 +138,7 @@ function applyPersonResolution(account: CandidateWithEvidence, person: PersonRes
     segment: person.segment,
     signals: [
       ...(account.candidate.signals ?? []),
-      "Public person-level role evidence"
+      `Public person-role resolution signal: ${person.name} is ${person.title}`
     ]
   };
   return candidateWithEvidenceSchema.parse({
@@ -166,7 +166,7 @@ function resultToCandidateWithEvidence(result: ExaSearchResult): CandidateWithEv
       trigger: snippet,
       persona: null,
       segment: null,
-      signals: [`Fit signal: ${title}`, `Why-now trigger evidence: ${snippet}`]
+      signals: inferSourceSignals({ title, snippet, observedAt: result.publishedDate })
     },
     evidence: [{
       id,
@@ -179,6 +179,26 @@ function resultToCandidateWithEvidence(result: ExaSearchResult): CandidateWithEv
       provider: "exa"
     }]
   };
+}
+
+function inferSourceSignals(input: { title: string; snippet: string; observedAt?: string | null }): string[] {
+  const text = `${input.title}
+${input.snippet}`;
+  const signals: string[] = [];
+  if (/\b(AEO|answer engine|AI search|AI visibility|LLM visibility|zero[- ]click|ChatGPT|Perplexity|prompt|citation|crawler)\b/i.test(text)) {
+    signals.push(`AI-search/answer-engine fit signal: ${input.title}`);
+  }
+  if (/\b(SEO|organic growth|content strategy|content marketing|content gap|comparison page|resource center|category discovery)\b/i.test(text)) {
+    signals.push(`SEO/content workflow fit signal: ${input.title}`);
+  }
+  if (/\b(PR|public relations|brand|communications|agency|client services|analytics|reporting)\b/i.test(text)) {
+    signals.push(`Brand/agency reporting fit signal: ${input.title}`);
+  }
+  if (/\b(hiring|launched?|published|posted|active|current|recent|roadmap|strategy|studying|researching|building|expanding|new|webinar|event|case study|service|offering|rollout|migration|refresh)\b/i.test(text) || input.observedAt) {
+    const observed = input.observedAt ? ` observed ${input.observedAt.slice(0, 10)}` : "";
+    signals.push(`Why-now public source signal${observed}: ${input.title}`);
+  }
+  return signals.slice(0, 3);
 }
 
 const DEFAULT_PERSON_RESOLUTION_QUERY_TEMPLATE = `("<company>" OR "<domain>") (${PERSON_ROLE_TERMS.map((term) => `"${term}"`).join(" OR ")}) ("Director" OR "Head" OR "VP" OR "Vice President" OR "Manager" OR "Lead" OR "Principal" OR "Strategist" OR "Founder" OR "Partner") (site:linkedin.com/in OR site:<company-domain>) -jobs -hiring -careers -email -phone -"contact database" -apollo -rocketreach -zoominfo -lusha`;

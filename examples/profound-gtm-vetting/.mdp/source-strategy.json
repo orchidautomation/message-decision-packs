@@ -69,7 +69,9 @@
         "bounded snippet",
         "publication or observed date",
         "provider family",
-        "confidence"
+        "confidence",
+        "1-3 source-backed fit/why-now signals",
+        "explicit reason this person/account is a good fit now"
       ],
       "gaps": [
         "Do not infer buying intent from generic AI mentions."
@@ -216,7 +218,8 @@
         "AEO/AI-search relevance",
         "source URL",
         "observed_at or publication date",
-        "confidence"
+        "confidence",
+        "fit/why-now signal"
       ],
       "max_results": 30,
       "agent_instruction": "Search the public web for fresh account-level AEO, AI search visibility, content, brand, PR, or agency workflow trigger evidence. Treat this as the account trigger pass only; before qualification, run the person-role resolution query_template and require a named public person, role/title, profile/author/team URL, bounded snippet, and explicit mapping to one active Profound MDP persona.",
@@ -236,7 +239,8 @@
         "confidence",
         "person_name",
         "person_title",
-        "person_source_url"
+        "person_source_url",
+        "fit_now_signals"
       ],
       "review_required": true
     },
@@ -305,7 +309,8 @@
         "prompt/category/topic signal",
         "content or citation implication",
         "public URL",
-        "bounded snippet"
+        "bounded snippet",
+        "fit/why-now signal"
       ],
       "max_results": 25,
       "agent_instruction": "Search for public evidence that a company or agency is studying prompt demand, AI-search queries, ChatGPT/Perplexity traffic, content gaps, or citation opportunities relevant to Profound.",
@@ -320,7 +325,8 @@
         "observed_at_or_publication_date",
         "bounded_snippet",
         "provider",
-        "confidence"
+        "confidence",
+        "fit_now_signals"
       ],
       "review_required": true
     },
@@ -340,7 +346,8 @@
         "agency service fit",
         "client reporting or strategy context",
         "public source URL",
-        "confidence"
+        "confidence",
+        "fit/why-now signal"
       ],
       "max_results": 30,
       "agent_instruction": "Search for public agency service, case-study, event, or thought-leadership pages that show AI search, AEO, LLM visibility, PR, brand sentiment, SEO, content, or analytics services.",
@@ -354,7 +361,8 @@
         "title",
         "bounded_snippet",
         "provider",
-        "confidence"
+        "confidence",
+        "fit_now_signals"
       ],
       "review_required": true
     },
@@ -447,7 +455,8 @@
       "confidence",
       "person name",
       "person title or role",
-      "person source URL"
+      "person source URL",
+      "1-3 source-backed fit/why-now signals"
     ],
     "confidence_floor": 0.6,
     "freshness_preference": "120 days for trigger evidence unless operator approves evergreen context",
@@ -470,7 +479,11 @@
     "person_resolution_gap_policy": "If the account trigger is strong but no public person/role owner is found, do not invent a contact. Preserve the account trigger as a person-resolution gap or operator-review account candidate only when explicitly allowed.",
     "ledger_append_gate": "A qualified ledger row must include account trigger evidence plus public person-resolution evidence ids; account-only rows are not qualified leads.",
     "minimum_qualified_people_per_run": 3,
-    "run_completion_gate": "A live run is complete when 3 qualified people pass account trigger evidence, public person-resolution evidence, MDP fit/brief gates, and score threshold; otherwise report the shortfall as an exhausted run gap."
+    "run_completion_gate": "A live run is complete when 3 qualified people pass account trigger evidence, public person-resolution evidence, MDP fit/brief gates, and score threshold; otherwise report the shortfall as an exhausted run gap.",
+    "minimum_qualified_signals_per_candidate": 1,
+    "maximum_qualified_signals_per_candidate": 3,
+    "signal_gate": "Qualification requires 1-3 source-backed signals that explain why the person/account is a good Profound fit and why now is a reasonable time to reach out. A named person without a current fit/why-now signal is a gap, not a lead.",
+    "signal_gap_policy": "If the scout finds an interesting company or person but cannot cite at least one fit/why-now signal, do not run brief or append a qualified ledger row; preserve the missing signal as a gap and continue discovery."
   },
   "routing_jobs": [
     {
@@ -558,6 +571,11 @@
       "id": "target-three-qualified-people-per-run",
       "scenario": "A live scheduled run finds fewer than three qualified people after the first account-discovery query.",
       "expected": "Continue through the remaining approved account-discovery query prompts until three qualified people are appended or the bounded discovery pass budget is exhausted; report the shortfall as a gap."
+    },
+    {
+      "id": "reject-interesting-without-fit-now-signal",
+      "scenario": "A public profile names a plausible SEO or marketing leader, but the run has no source-backed trigger, timing, content, AI-search, brand, agency, or workflow signal explaining why now.",
+      "expected": "Do not qualify or append the person; preserve an insufficient-signal gap and continue searching for candidates with source-backed fit/why-now evidence."
     }
   ],
   "review_status": "accepted",
@@ -569,10 +587,12 @@
       "After account trigger discovery, run public person-role resolution. Require a named person, public title/role, company match, and person source URL before autonomous qualification.",
       "For every candidate, preserve the exact source URL, title, observed date or publication date, bounded snippet, provider, confidence, and content hash before invoking MDP fit or brief steps.",
       "Each live scout run targets at least 3 qualified people. Continue across approved account-discovery query prompts until the run hits the minimum or the bounded discovery pass budget is exhausted; never pad the count with account-only or insufficient-evidence rows.",
+      "Before qualification, extract 1-3 source-backed fit/why-now signals. Each signal must explain why this person/account fits Profound and why now is a reasonable time for operator-reviewed outreach; do not qualify interesting-but-unsourced people.",
       "Reject sources that require login, expose personal contact enrichment, bypass access controls, or only imply buying intent without an explicit AI-search/content/brand/agency workflow signal."
     ],
     "stop_conditions": [
       "At the run level, stop successfully after 3 qualified people are appended; otherwise stop only when all approved source-strategy discovery prompts or the max discovery pass budget are exhausted.",
+      "Stop before qualification when a person or account is merely interesting but lacks at least one source-backed fit/why-now signal tied to the active Profound MDP primitives.",
       "Stop when the candidate lacks required receipts after one discovery pass and one accepted-URL cleanup pass.",
       "Stop before qualification when account trigger evidence exists but no public person-level owner can be resolved, unless operator explicitly enables account-only review.",
       "Stop when all available evidence is gated, personal, stale without operator approval, or unrelated to the active Profound pack primitives.",
