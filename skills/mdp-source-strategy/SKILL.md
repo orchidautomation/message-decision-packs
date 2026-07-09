@@ -91,7 +91,7 @@ agent_operating_plan:
     - "Use Exa for broad discovery, Firecrawl only for accepted public URLs, and Apify only for approved public listing pages."
     - "Stop and record a gap when a trigger cannot be supported by a public URL, observed date, and bounded snippet."
   insufficient_evidence_action: "Do not qualify the candidate; preserve the missing signal as a gap for human review."
-  downstream_handoff_prompt: "After review, pass accepted evidence to `mdp fit --context <candidate.json>` and then `mdp brief --context <fit-result.json>`; run `mdp check-claims` before any ledger append."
+  downstream_handoff_prompt: "After review, normalize accepted evidence to MDP prospect JSON, run `mdp --json fit --dir <pack> --prospect <prospect.json>`, then run `mdp --json brief --context --dir <pack> --prospect <prospect.json>` when fit passes; run `mdp --json check-claims --dir <pack> --text <draft-copy>` before any ledger append."
 queries_prompts:
   - id: public-trigger-scout
     scout_family: exa
@@ -112,7 +112,7 @@ routing_jobs:
   - id: extract-accepted-signals
     next_skill: mdp-source-extract
     handoff: "Only reviewed public/source-approved evidence becomes card candidates."
-    cli_handoff: "Run `mdp fit --context <candidate.json>`, then `mdp brief --context <fit-result.json>`, then `mdp check-claims --context <brief.json>` before appending a reviewed ledger row."
+    cli_handoff: "Normalize accepted evidence to `prospect.json`, run `mdp --json fit --dir <pack> --prospect <prospect.json>`, then run `mdp --json brief --context --dir <pack> --prospect <prospect.json>` when fit passes; run `mdp --json check-claims --dir <pack> --text <draft-copy>` before appending a reviewed ledger row."
 ```
 
 ## Proposal Example

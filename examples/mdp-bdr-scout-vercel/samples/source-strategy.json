@@ -24,7 +24,7 @@
       "Stop before outreach, CRM mutation, or private data enrichment; this strategy only prepares reviewed evidence for MDP gates."
     ],
     "insufficient_evidence_action": "Do not qualify the candidate. Write a gap explaining which trigger, source receipt, or pack primitive could not be supported.",
-    "downstream_handoff_prompt": "When evidence passes review, run `mdp fit --context <candidate-with-evidence.json>`, then `mdp brief --context <fit-result.json>`, then `mdp check-claims --context <brief.json>`. Append to the ledger only after those checks preserve citations and unresolved gaps."
+    "downstream_handoff_prompt": "When evidence passes review, normalize it to MDP prospect JSON, then run `mdp --json fit --dir <pack> --prospect <prospect.json>`. If fit passes, run `mdp --json brief --context --dir <pack> --prospect <prospect.json> --out <brief.json>`. Run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy before ledger append."
   },
   "primitive_mappings": [
     {
@@ -270,7 +270,7 @@
     "freshness_preference": "90 days for trigger evidence unless operator approves evergreen context",
     "review_owner": "human operator before CRM sync or outreach",
     "gap_policy": "If a required field is missing, mark a gap and route to operator review instead of inventing context.",
-    "claim_check_policy": "Before ledger append, run `mdp check-claims --context <brief.json>` or an equivalent claim check that verifies every brief claim retains a cited source."
+    "claim_check_policy": "Before ledger append, run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy, preserving the brief citations and unresolved gaps used to create that copy."
   },
   "routing_jobs": [
     {
@@ -285,7 +285,7 @@
       "next_skill": "mdp-icp-builder",
       "review_job": "fit-and-brief-review",
       "handoff": "Run active pack fit/brief gates, preserve gaps, and emit normalized ledger rows for operator review.",
-      "cli_handoff": "Run `mdp fit --context <candidate-with-evidence.json>`, `mdp brief --context <fit-result.json>`, and `mdp check-claims --context <brief.json>` before appending `mdp_scout_candidate/v0` ledger rows."
+      "cli_handoff": "Normalize accepted receipts into `prospect.json`, run `mdp --json fit --dir <pack> --prospect <prospect.json>`, then run `mdp --json brief --context --dir <pack> --prospect <prospect.json> --out <brief.json>` when fit passes. Run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy before appending `mdp_scout_candidate/v0` ledger rows."
     }
   ],
   "gaps": [
