@@ -76,12 +76,12 @@ export async function runScoutCycle(input: ScoutCycleInput = {}): Promise<ScoutC
 
       const key = candidateDedupeKey(item);
       if (seen.has(key)) continue;
-      seen.add(key);
 
       const mdp = await runMdpBrief(item, "linkedin");
       const score = scoreCandidate({ mdp, evidence: item.evidence });
       const qualification = validateQualifiedCandidate({ candidate: item.candidate, evidence: item.evidence, mdp, score, minScore });
       if (!qualification.ok) continue;
+      seen.add(key);
       rows.push({
         contract_version: "mdp_scout_candidate/v0",
         run_id: runId,

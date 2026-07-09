@@ -123,6 +123,12 @@ if (scoutCycleLib.includes("item.evidence[0]?.url") || !scoutCycleLib.includes('
   console.error("scout cycle must dedupe qualified people by normalized person/company/title, not source URL");
   process.exit(1);
 }
+const qualificationGateIndex = scoutCycleLib.indexOf("if (!qualification.ok) continue;");
+const seenAddIndex = scoutCycleLib.indexOf("seen.add(key);");
+if (qualificationGateIndex === -1 || seenAddIndex === -1 || seenAddIndex < qualificationGateIndex) {
+  console.error("scout cycle must only mark a candidate as seen after it passes qualification");
+  process.exit(1);
+}
 
 const discoverCandidatesTool = readFileSync("agent/tools/discover_candidates.ts", "utf8");
 if (!discoverCandidatesTool.includes("selectPersonResolutionQuery") || !discoverCandidatesTool.includes("personResolutionQueryTemplate")) {
