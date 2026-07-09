@@ -218,6 +218,7 @@ Important skills:
 - `mdp-proposal-red-team-gap-review`: prioritizes proposal gaps, risks, and reviewer questions against pack constraints
 - `mdp-icp-builder`: sharpens ICP, personas, and fit logic
 - `mdp-source-extract`: turns source material into card entries
+- `mdp-source-strategy`: plans source targets, scout queries, evidence rules, exclusions, and review gates before extraction
 - `mdp-message-angles`: codifies hooks and angles
 - `mdp-cta-builder`: codifies CTA and reply-path policy
 - `mdp-avoid-rules`: enforces category and claim boundaries

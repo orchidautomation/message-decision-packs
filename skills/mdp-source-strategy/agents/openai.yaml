@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Source Strategy"
+  short_description: "Plan source targets and evidence strategy"
+  default_prompt: "Use $mdp-source-strategy to create a reviewed source strategy artifact before MDP extraction, GTM scouting, or proposal source intake."

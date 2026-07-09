@@ -12,6 +12,7 @@ profile:
     - mdp
     - mdp-create-pack
     - mdp-icp-builder
+    - mdp-source-strategy
     - mdp-prospect-brief
     - mdp-pack-eval
     allowed_skills:
@@ -20,6 +21,7 @@ profile:
     - mdp-create-pack
     - mdp-icp-builder
     - mdp-source-extract
+    - mdp-source-strategy
     - mdp-message-angles
     - mdp-cta-builder
     - mdp-avoid-rules
@@ -45,6 +47,9 @@ profile:
       skills:
       - mdp-create-pack
       - mdp-icp-builder
+    - job: source strategy before GTM scout or extraction
+      skills:
+      - mdp-source-strategy
     - job: prospect row to fit decision or brief
       skills:
       - mdp-prospect-brief

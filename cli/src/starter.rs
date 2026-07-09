@@ -152,6 +152,7 @@ fn gtm_profile() -> Profile {
                 "mdp".to_string(),
                 "mdp-create-pack".to_string(),
                 "mdp-icp-builder".to_string(),
+                "mdp-source-strategy".to_string(),
                 "mdp-prospect-brief".to_string(),
                 "mdp-pack-eval".to_string(),
             ],
@@ -161,6 +162,7 @@ fn gtm_profile() -> Profile {
                 "mdp-create-pack".to_string(),
                 "mdp-icp-builder".to_string(),
                 "mdp-source-extract".to_string(),
+                "mdp-source-strategy".to_string(),
                 "mdp-message-angles".to_string(),
                 "mdp-cta-builder".to_string(),
                 "mdp-avoid-rules".to_string(),
@@ -202,6 +204,10 @@ fn gtm_profile() -> Profile {
                 JobSkillRoute {
                     job: "create or improve GTM messaging pack".to_string(),
                     skills: vec!["mdp-create-pack".to_string(), "mdp-icp-builder".to_string()],
+                },
+                JobSkillRoute {
+                    job: "source strategy before GTM scout or extraction".to_string(),
+                    skills: vec!["mdp-source-strategy".to_string()],
                 },
                 JobSkillRoute {
                     job: "prospect row to fit decision or brief".to_string(),
