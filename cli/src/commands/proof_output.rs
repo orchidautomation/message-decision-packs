@@ -368,6 +368,11 @@ fn collect_proof_output_constraints(
             if entry.constraints.proof_output.is_empty() {
                 continue;
             }
+            if !is_output_rules
+                && !route.is_some_and(|route| proof_constraint_entry_matches_route(entry, route))
+            {
+                continue;
+            }
             let key = format!("{card_id}:{entry_id}:constraints.proof_output");
             if !seen.insert(key) {
                 continue;
@@ -382,6 +387,26 @@ fn collect_proof_output_constraints(
         }
     }
     rules
+}
+
+fn proof_constraint_entry_matches_route(entry: &Entry, route: &RouteContext) -> bool {
+    token_overlap(
+        &tokens(&route.job),
+        &tokens(&format!("{} {} {}", entry.id, entry.title, entry.body)),
+    )
+}
+
+fn tokens(value: &str) -> BTreeSet<String> {
+    value
+        .to_lowercase()
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|part| part.len() > 1)
+        .map(str::to_string)
+        .collect()
+}
+
+fn token_overlap(left: &BTreeSet<String>, right: &BTreeSet<String>) -> bool {
+    left.iter().any(|token| right.contains(token))
 }
 
 fn validate_artifact_constraint_rules(
@@ -2299,6 +2324,29 @@ mod tests {
 
         assert_eq!(result["valid"], false);
         assert!(issue_codes(&result).contains(&"proof_output_connective_too_long"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn verify_output_does_not_apply_compliance_constraints_to_bid_no_bid_route() {
+        let root = temp_proposal_pack("proof-bid-no-bid-route");
+        let artifact = json!({
+            "contract": "mdp.proof-output.v0",
+            "pack": {"id": "proposal-mdp-sample", "profile_id": "proposal"},
+            "route": {"persona": "Proposal Lead", "job": "bid no bid review"},
+            "output": {"kind": "proposal-review-section", "format": "markdown", "text": "Summary: "},
+            "coverage": {"mode": "full-segmentation", "material_policy": "bound-or-gap"},
+            "segments": [
+                {"id": "seg-001", "kind": "connective", "material": false, "text": "Summary: "}
+            ]
+        });
+
+        let result = verify_output_value(&root, &artifact, "inline").expect("verify should run");
+
+        assert_eq!(result["valid"], true, "{result}");
+        assert!(!issue_codes(&result).contains(&"proof_output_required_segment_missing"));
+        assert!(!issue_codes(&result).contains(&"proof_output_segment_count_violation"));
 
         let _ = std::fs::remove_dir_all(root);
     }

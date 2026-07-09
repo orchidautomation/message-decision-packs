@@ -4,6 +4,7 @@ title: Review outputs
 description: Output structures for briefs, matrices, risk reports, and executive summaries.
 personas:
 - Proposal Lead
+- Solution Owner
 - Executive Reviewer
 tags:
 - review
@@ -26,9 +27,6 @@ entries:
 - id: compliance-matrix
   title: Compliance matrix
   body: Return requirement, source, status, proof, gap, owner, and reviewer question. Use Supported, Assumed, Gap, Not supported, or Needs reviewer decision.
-  applies_to:
-  - Proposal Lead
-  - Solution Owner
   evidence:
   - requirements-matrix
   avoid:
