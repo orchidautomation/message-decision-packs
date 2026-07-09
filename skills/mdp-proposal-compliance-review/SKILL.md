@@ -122,7 +122,7 @@ mdp --json verify-output --dir . --file <proof-output.json>
 mdp verify-output --readable --dir . --file <proof-output.json>
 ```
 
-Do not treat cited source IDs, card IDs, or requirement IDs as proof until `verify-output` returns `valid: true`. Use the readable output as the human review packet only; proof-output JSON remains the binding source of truth, and blocked readable output must not be reused as supported compliance language. Missing proof should remain a `gap` segment, not a supported compliance statement.
+Do not treat cited source IDs, card IDs, or requirement IDs as proof until `verify-output` returns `valid: true`. `verify-output` also applies pack-owned `constraints.proof_output`, including required segment kinds, minimum segment counts, claim source refs, and connective word limits. Use the readable output as the human review packet only; proof-output JSON remains the binding source of truth, and blocked readable output must not be reused as supported compliance language. Missing proof should remain a `gap` segment, not a supported compliance statement.
 
 ## Output Format
 

@@ -120,7 +120,7 @@ mdp --json verify-output --dir . --file <proof-output.json>
 mdp verify-output --readable --dir . --file <proof-output.json>
 ```
 
-Do not treat a model-selected source ID or proof ID as proof until `verify-output` resolves it against the pack and the embedded full-text claim check is clean. Use the readable output as the human review packet only; proof-output JSON remains the binding source of truth, and blocked readable output must not be reused as approved proposal prose. Missing proof should remain a `gap` segment or `needs-more-proof`, not approved claim language.
+Do not treat a model-selected source ID or proof ID as proof until `verify-output` resolves it against the pack, applies pack-owned `constraints.proof_output`, and the embedded full-text claim check is clean. Use the readable output as the human review packet only; proof-output JSON remains the binding source of truth, and blocked readable output must not be reused as approved proposal prose. Missing proof should remain a `gap` segment or `needs-more-proof`, not approved claim language.
 
 ## Output Format
 

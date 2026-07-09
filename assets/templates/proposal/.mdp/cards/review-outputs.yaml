@@ -33,6 +33,16 @@ entries:
   - requirements-matrix
   avoid:
   - unsupported supported label
+  constraints:
+    proof_output:
+      required_segment_kinds:
+      - requirement_status
+      - gap
+      min_segments:
+        requirement_status: 1
+        template_text: 1
+      require_source_refs_for_claims: true
+      max_connective_words: 18
   metadata:
     primitive: output-contracts
 - id: red-team-gap-report

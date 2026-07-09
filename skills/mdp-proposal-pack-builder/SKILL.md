@@ -143,7 +143,7 @@ mdp verify-output --readable --dir . --file <proof-output.json>
 mdp --json eval --dir .
 ```
 
-Treat source IDs as untrusted model output until `verify-output` resolves them. Use `--readable` to produce the operator-facing proposal review Markdown with frontmatter, verification status, proof receipts, unsupported claims, gaps, and next review actions. The readable Markdown is not the machine source of truth and must not make blocked generated text look approved. Fixtures should cover valid bindings, fake IDs, missing material bindings, malformed text coverage, safe gap segments, connective text, and unsupported full-text claims.
+Treat source IDs as untrusted model output until `verify-output` resolves them. Use `--readable` to produce the operator-facing proposal review Markdown with frontmatter, verification status, proof receipts, unsupported claims, gaps, and next review actions. The readable Markdown is not the machine source of truth and must not make blocked generated text look approved. Fixtures should cover valid bindings, fake IDs, missing material bindings, malformed text coverage, safe gap segments, connective text, unsupported full-text claims, and configured `constraints.proof_output` failures.
 
 ## Human Review
 

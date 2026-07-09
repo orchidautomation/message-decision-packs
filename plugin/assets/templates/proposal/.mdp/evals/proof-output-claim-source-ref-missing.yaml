@@ -1,0 +1,7 @@
+id: proof-output-claim-source-ref-missing
+command: verify-output
+proof_output_file: examples/proof-output/claim-source-ref-missing.json
+expect_valid: false
+expect_decision: blocked
+expect_issue_codes_contains:
+- proof_output_claim_source_ref_missing

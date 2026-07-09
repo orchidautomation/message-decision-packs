@@ -1571,6 +1571,45 @@ fn validate_card_shape(path: &Path, display_path: &str, issues: &mut Vec<Value>)
                 ));
             }
         }
+        validate_entry_constraints_shape(entry, &entry_path, issues);
+    }
+}
+
+fn validate_entry_constraints_shape(entry: &YamlValue, entry_path: &str, issues: &mut Vec<Value>) {
+    let Some(constraints) = yaml_get(entry, "constraints") else {
+        return;
+    };
+    validate_object_keys(
+        constraints,
+        &[
+            "word_count",
+            "subject_words",
+            "subject_avoid",
+            "max_questions",
+            "forbid_links",
+            "forbid_attachments",
+            "forbid_images",
+            "forbid_html",
+            "forbid_tracking",
+            "proof_output",
+        ],
+        &format!("{entry_path}/constraints"),
+        "unsupported_constraint_field",
+        issues,
+    );
+    if let Some(proof_output) = yaml_get(constraints, "proof_output") {
+        validate_object_keys(
+            proof_output,
+            &[
+                "required_segment_kinds",
+                "min_segments",
+                "require_source_refs_for_claims",
+                "max_connective_words",
+            ],
+            &format!("{entry_path}/constraints/proof_output"),
+            "unsupported_constraint_field",
+            issues,
+        );
     }
 }
 
@@ -3303,6 +3342,102 @@ output_contract:
                     && issue["path"]
                         .as_str()
                         .is_some_and(|path| path.ends_with("/owner")))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_warns_on_unsupported_constraint_fields() {
+        let root = temp_pack("constraint-unknown-field");
+        let card_path = root
+            .join(".mdp")
+            .join("cards")
+            .join("channel-policies.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        std::fs::write(
+            &card_path,
+            raw.replace(
+                "    word_count:",
+                "    sentence_count:\n      max: 3\n    word_count:",
+            ),
+        )
+        .expect("card should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "unsupported_constraint_field"
+                    && issue["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with("/constraints/sentence_count")))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_warns_on_unsupported_proof_output_constraint_fields() {
+        let root = temp_pack("proof-constraint-unknown-field");
+        let card_path = root
+            .join(".mdp")
+            .join("cards")
+            .join("channel-policies.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        std::fs::write(
+            &card_path,
+            raw.replace(
+                "    word_count:",
+                "    proof_output:\n      required_sections:\n      - Summary\n      max_connective_words: 18\n    word_count:",
+            ),
+        )
+        .expect("card should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "unsupported_constraint_field"
+                    && issue["path"].as_str().is_some_and(
+                        |path| path.ends_with("/constraints/proof_output/required_sections")
+                    ))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_accepts_known_proof_output_constraint_fields() {
+        let root = temp_pack("proof-constraint-known-fields");
+        let card_path = root
+            .join(".mdp")
+            .join("cards")
+            .join("channel-policies.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        std::fs::write(
+            &card_path,
+            raw.replace(
+                "    word_count:",
+                "    proof_output:\n      required_segment_kinds:\n      - claim\n      min_segments:\n        gap: 1\n      require_source_refs_for_claims: true\n      max_connective_words: 18\n    word_count:",
+            ),
+        )
+        .expect("card should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert!(
+            !result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "unsupported_constraint_field")
         );
 
         let _ = std::fs::remove_dir_all(root);

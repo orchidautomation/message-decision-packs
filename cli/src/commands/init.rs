@@ -156,9 +156,21 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/evals/proof-output-claim-source-ref-missing.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-claim-source-ref-missing.yaml"
+        ),
+    ),
+    (
         ".mdp/evals/proof-output-connective-text.yaml",
         include_str!(
             "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-connective-text.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-output-connective-too-long.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-connective-too-long.yaml"
         ),
     ),
     (
@@ -180,9 +192,21 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/evals/proof-output-min-segments-violation.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-min-segments-violation.yaml"
+        ),
+    ),
+    (
         ".mdp/evals/proof-output-missing-binding.yaml",
         include_str!(
             "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-missing-binding.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-output-missing-required-segment.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-missing-required-segment.yaml"
         ),
     ),
     (
@@ -218,9 +242,21 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        "examples/proof-output/claim-source-ref-missing.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/claim-source-ref-missing.json"
+        ),
+    ),
+    (
         "examples/proof-output/connective-text.json",
         include_str!(
             "../../../plugin/assets/templates/proposal/examples/proof-output/connective-text.json"
+        ),
+    ),
+    (
+        "examples/proof-output/connective-too-long.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/connective-too-long.json"
         ),
     ),
     (
@@ -242,9 +278,21 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        "examples/proof-output/min-segments-violation.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/min-segments-violation.json"
+        ),
+    ),
+    (
         "examples/proof-output/missing-binding.json",
         include_str!(
             "../../../plugin/assets/templates/proposal/examples/proof-output/missing-binding.json"
+        ),
+    ),
+    (
+        "examples/proof-output/missing-required-segment.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/missing-required-segment.json"
         ),
     ),
     (

@@ -22,6 +22,9 @@ entries:
   - synthetic-rfp-summary
   avoid:
   - hidden assumption
+  constraints:
+    proof_output:
+      max_connective_words: 18
   metadata:
     primitive: output-contracts
 - id: keep-review-shape

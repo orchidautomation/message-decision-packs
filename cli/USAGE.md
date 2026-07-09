@@ -68,7 +68,22 @@ mdp --json check-claims --dir /tmp/mdp-proposal-demo --persona "Proposal Lead" -
 
 The proposal starter does not write a prospect row or fake lead fixtures. It is a synthetic proposal review pack for bid/no-bid, compliance, proof, red-team, and executive review jobs. Its `normalize-opportunity` prompt maps messy proposal/RFP context into bounded profile vocabulary and validated prompt-output fields; it does not submit, scrape, enrich, certify, or manage proposal work. Proposal packs need the same human-readable review-layer principle as prospect briefs, but should use opportunity/review metadata and proposal profile sections such as bid/no-bid read, compliance gaps, proof receipts, unsupported claims, red-team gaps, and `verify-output` status rather than prospect/outreach labels.
 
-Use `brief` for production GTM prospect handoff. Add `--out <path>` when the machine brief should be saved; otherwise the artifact is stdout-only. Use `render-brief` when an existing artifact needs a compact human layer. `gtm-prospect` renders `mdp.message-brief.v0`; `proposal-review` and `proof-report` render `mdp.proof-output.v0` through the proof verifier. `--format json` emits the structured `mdp.human-brief.v0` object; Markdown is generated from that object by default. Failed gates remain failed: no-draft prospect briefs and proof gaps do not become send-ready or reusable draft text. Use `copy` only for local demos. Source inventory lives in `.mdp/sources.yaml`, reusable extraction prompts live in `.mdp/prompts/*.yaml`, CTA guidance lives in `cards/ctas.yaml`, channel rules live in `cards/channel-policies.yaml`, approved claims live in `cards/claims.yaml`, global style and structure rules live in `cards/output-rules.yaml`, and durable unknowns live in `cards/gaps.yaml`. Entries can use `avoid` for blocked literals, `exact_paragraphs` for fixed paragraph counts, and `constraints` for deterministic output limits such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking.
+Use `brief` for production GTM prospect handoff. Add `--out <path>` when the machine brief should be saved; otherwise the artifact is stdout-only. Use `render-brief` when an existing artifact needs a compact human layer. `gtm-prospect` renders `mdp.message-brief.v0`; `proposal-review` and `proof-report` render `mdp.proof-output.v0` through the proof verifier. `--format json` emits the structured `mdp.human-brief.v0` object; Markdown is generated from that object by default. Failed gates remain failed: no-draft prospect briefs and proof gaps do not become send-ready or reusable draft text. Use `copy` only for local demos. Source inventory lives in `.mdp/sources.yaml`, reusable extraction prompts live in `.mdp/prompts/*.yaml`, CTA guidance lives in `cards/ctas.yaml`, channel rules live in `cards/channel-policies.yaml`, approved claims live in `cards/claims.yaml`, global style and structure rules live in `cards/output-rules.yaml`, and durable unknowns live in `cards/gaps.yaml`. Entries can use `avoid` for blocked literals, `exact_paragraphs` for fixed paragraph counts, and `constraints` for deterministic output limits. Draft-text constraints such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking are enforced by `check-claims`; proof-output constraints under `constraints.proof_output` are enforced by `verify-output`.
+
+Layer 1 rules are card body guidance an agent must read and follow. Layer 2 rules are structured constraints the CLI can enforce. For proposal `mdp.proof-output.v0` artifacts, packs can declare:
+
+```yaml
+constraints:
+  proof_output:
+    required_segment_kinds: [requirement_status, gap]
+    min_segments:
+      requirement_status: 1
+      template_text: 1
+    require_source_refs_for_claims: true
+    max_connective_words: 18
+```
+
+These proof-output constraints are pack-owned card entry fields, not fields the model may put inside the generated proof-output artifact.
 
 ## JSON contract
 
@@ -170,7 +185,7 @@ mdp sample-leads --dir . --persona "PMM" --job "initial email outbound copy" --c
 5. Run `mdp --json --summary brief --context --prospect <row.json> --channel linkedin --out .mdp/briefs/<brief-name>.json` when a durable brief file is needed.
 6. Stop if `data.draft_status` is `no-draft`.
 7. Draft from `data.context.entries` first; for generated fixtures, draft against `safe_personalization` and `known_gaps` and never imply the fixture is a real prospect. Open `data.context.full_card_required` paths only when present.
-8. Run `mdp --json check-claims` before approval; add `--strict` when advisory target-range misses should fail the gate. It reports unsupported claims plus avoid-rule, output-rule, and hard structured-constraint guardrail hits. Include `--subject`, `--persona`, and `--job` when checking routed subject or channel constraints. Target-range misses appear in `constraint_warnings`; actual attachments, embedded images, and send-surface tracking may appear in `unchecked_constraints` because they cannot be proven from a single draft body.
+8. Run `mdp --json check-claims` before approval; add `--strict` when advisory target-range misses should fail the gate. It reports unsupported claims plus avoid-rule, output-rule, and hard structured-constraint guardrail hits. Include `--subject`, `--persona`, and `--job` when checking routed subject or channel constraints. Target-range misses appear in `constraint_warnings`; actual attachments, embedded images, and send-surface tracking may appear in `unchecked_constraints` because they cannot be proven from a single draft body. For `mdp.proof-output.v0` proposal review artifacts, run `mdp --json verify-output`; it also applies pack-owned `constraints.proof_output`.
 
 Generated starter rows and `sample-leads` rows are synthetic examples. They include `source_kind: synthetic-example`, `synthetic: true`, and must not be presented as real prospects. Production rows can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after they are normalized into MDP prospect JSON.
 

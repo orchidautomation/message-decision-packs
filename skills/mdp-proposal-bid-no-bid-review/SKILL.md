@@ -116,7 +116,7 @@ When generated decision-support text carries source, card, proof, requirement, o
 mdp --json verify-output --dir . --file <proof-output.json>
 ```
 
-A model-selected source ID is not proof until `verify-output` resolves it against the loaded pack and the embedded full-text claim check is clean. If proof or source context is missing, keep it as a gap or `needs-more-info`, not a confident `bid` rationale.
+A model-selected source ID is not proof until `verify-output` resolves it against the loaded pack, applies pack-owned `constraints.proof_output`, and the embedded full-text claim check is clean. If proof or source context is missing, keep it as a gap or `needs-more-info`, not a confident `bid` rationale.
 
 ## Output Format
 
