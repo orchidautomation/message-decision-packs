@@ -48,10 +48,10 @@ export function providerCapabilities(): ProviderCapability[] {
       configured: exaConfigured,
       enabled: exaConfigured,
       requiredEnv: "EXA_API_KEY",
-      mode: exaConfigured ? "live" : "fixture",
+      mode: exaConfigured ? "live" : "unavailable",
       reason: exaConfigured
         ? "Exa live discovery is enabled through a local AI SDK tool wrapper."
-        : "EXA_API_KEY is absent; live discovery must use the public-safe fixture fallback."
+        : "EXA_API_KEY is absent; protected live scout runs fail closed. Use dryRun=true for the public-safe fixture demo."
     },
     {
       provider: "firecrawl",
@@ -79,7 +79,7 @@ export function providerCapabilities(): ProviderCapability[] {
       enabled: true,
       requiredEnv: null,
       mode: "fixture",
-      reason: "Public-safe fixture fallback is always available for local checks and template demos."
+      reason: "Public-safe fixture data is available only for explicit dry-run local checks and template demos."
     }
   ];
 }
@@ -97,7 +97,7 @@ export function capabilityFor(provider: ProviderName): ProviderCapability {
 
 async function executeExaSearch(input: ExaSearchInput): Promise<ExaSearchPayload> {
   if (!process.env.EXA_API_KEY) {
-    throw new Error("EXA_API_KEY is required for live Exa discovery; use fixture fallback when it is absent.");
+    throw new Error("EXA_API_KEY is required for live Exa discovery; call dryRun=true for the fixture demo when it is absent.");
   }
 
   const response = await fetch("https://api.exa.ai/search", {
@@ -129,7 +129,7 @@ async function executeExaSearch(input: ExaSearchInput): Promise<ExaSearchPayload
 }
 
 export const exaSearchTool = tool({
-  description: "Search public web sources with Exa for source-backed MDP scout candidates. Requires EXA_API_KEY; fixture fallback is handled by the caller.",
+  description: "Search public web sources with Exa for source-backed MDP scout candidates. Requires EXA_API_KEY; explicit dry-run fixture handling is owned by the caller.",
   inputSchema: z.object({
     query: z.string().min(3).max(500),
     limit: z.number().int().min(1).max(25).default(5)

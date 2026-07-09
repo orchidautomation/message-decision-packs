@@ -3,11 +3,12 @@ import { readFile } from "node:fs/promises";
 import bundledFixture from "../../samples/profound-public-source-fixture.json";
 import { fixturePath } from "./paths.ts";
 import { capabilityFor, providerCapabilities, runExaSearch, type ExaSearchResult, type ProviderCapability } from "./provider-tools.ts";
+import { findPersonResolutionEvidence } from "./qualification.ts";
 import { candidateWithEvidenceSchema, type Candidate, type CandidateWithEvidence, type EvidenceSource } from "./schemas.ts";
 
 export type DiscoveryResult = {
   provider: "exa" | "fixture";
-  mode: "live" | "fixture";
+  mode: "live" | "fixture" | "unavailable";
   providerCapabilities: ProviderCapability[];
   fallbackReason: string | null;
   candidates: CandidateWithEvidence[];
@@ -48,18 +49,23 @@ const BLOCKED_PERSON_WORDS = /\b(email|phone|mobile|contact database|directory|s
 export async function discoverCandidates(input: { query: string; limit: number; dryRun?: boolean }): Promise<DiscoveryResult> {
   const capabilities = providerCapabilities();
   const exa = capabilityFor("exa");
-  const dryRun = input.dryRun ?? !exa.enabled;
-
-  if (dryRun) {
-    const reason = input.dryRun
-      ? "Dry-run requested; using public-safe fixture candidate."
-      : exa.reason;
+  if (input.dryRun === true) {
     return {
       provider: "fixture",
       mode: "fixture",
       providerCapabilities: capabilities,
-      fallbackReason: reason,
+      fallbackReason: "Dry-run requested; using public-safe fixture candidate.",
       candidates: [await readFixture()]
+    };
+  }
+
+  if (!exa.enabled) {
+    return {
+      provider: "exa",
+      mode: "unavailable",
+      providerCapabilities: capabilities,
+      fallbackReason: exa.reason ?? "Exa is not configured; protected live runs do not use fixture data.",
+      candidates: []
     };
   }
 
@@ -100,15 +106,17 @@ export async function readFixture(): Promise<CandidateWithEvidence> {
 
 async function resolvePersonForAccount(account: CandidateWithEvidence, limit: number): Promise<PersonResolution | null> {
   if (account.candidate.name && account.candidate.title) {
-    const evidence = account.evidence[0];
-    return {
-      name: account.candidate.name,
-      title: account.candidate.title,
-      url: account.candidate.linkedin_url ?? evidence.url,
-      evidence,
-      persona: account.candidate.persona ?? inferPersona(account.candidate.title),
-      segment: account.candidate.segment ?? inferSegment(account.candidate.title)
-    };
+    const evidence = findPersonResolutionEvidence(account.evidence, account.candidate)[0];
+    if (evidence) {
+      return {
+        name: account.candidate.name,
+        title: account.candidate.title,
+        url: account.candidate.linkedin_url ?? evidence.url,
+        evidence,
+        persona: account.candidate.persona ?? inferPersona(account.candidate.title),
+        segment: account.candidate.segment ?? inferSegment(account.candidate.title)
+      };
+    }
   }
 
   const query = buildPersonResolutionQuery(account.candidate);
@@ -189,9 +197,10 @@ function parsePersonResult(result: ExaSearchResult, account: Candidate): PersonR
 
   const name = extractPersonName(result, account);
   if (!name) return null;
-  const title = extractPersonTitle(result, name);
-  if (!title || !mentionsRelevantRole(title)) return null;
-  const snippet = firstText(result.highlights?.[0], result.summary, result.text, result.title, `${name} — ${title}`);
+  const titleEvidence = extractPersonTitleEvidence(result, name);
+  if (!titleEvidence || !mentionsRelevantRole(titleEvidence.title)) return null;
+  const title = cleanTitle(titleEvidence.title);
+  const snippet = firstText(titleEvidence.snippet, result.highlights?.[0], result.summary, result.text, result.title, `${name} — ${title}`);
   const evidence: EvidenceSource = {
     id: `exa_person_${createHash("sha256").update(url + name + title).digest("hex").slice(0, 10)}`,
     url,
@@ -205,7 +214,7 @@ function parsePersonResult(result: ExaSearchResult, account: Candidate): PersonR
 
   return {
     name,
-    title: cleanTitle(title),
+    title,
     url,
     evidence,
     persona: inferPersona(title),
@@ -232,16 +241,33 @@ function extractPersonName(result: ExaSearchResult, account: Candidate): string 
   return null;
 }
 
-function extractPersonTitle(result: ExaSearchResult, name: string): string | null {
+function extractPersonTitleEvidence(result: ExaSearchResult, name: string): { title: string; snippet: string } | null {
   const title = result.title ?? "";
-  const parts = title.split(/\s[-–—|]\s/).map((part) => part.trim()).filter(Boolean);
-  const titlePart = parts.find((part) => part !== name && mentionsRelevantRole(part));
-  if (titlePart) return titlePart;
+  const titleNameIndex = indexOfName(title, name);
+  if (titleNameIndex >= 0) {
+    const parts = title.split(/\s[-–—|]\s/).map((part) => part.trim()).filter(Boolean);
+    const titlePart = parts.find((part) => normalize(part) !== normalize(name) && mentionsRelevantRole(part));
+    if (titlePart) return { title: titlePart, snippet: title };
 
-  const text = compact([result.summary, ...(result.highlights ?? []), result.text, title]).join("\n");
-  const afterName = text.slice(Math.max(0, text.indexOf(name)));
-  const matched = (afterName.match(TITLE_RE) ?? text.match(TITLE_RE))?.[0];
-  return matched ? cleanTitle(matched) : null;
+    const titleWindow = boundedWindow(title, titleNameIndex, 280);
+    const titleMatch = titleWindow.match(TITLE_RE)?.[0];
+    if (titleMatch) return { title: cleanTitle(titleMatch), snippet: titleWindow };
+  }
+
+  const text = compact([result.summary, ...(result.highlights ?? []), result.text]).join("\n");
+  const textNameIndex = indexOfName(text, name);
+  if (textNameIndex < 0) return null;
+  const window = boundedWindow(text, textNameIndex, 360);
+  const matched = window.match(TITLE_RE)?.[0];
+  return matched ? { title: cleanTitle(matched), snippet: window } : null;
+}
+
+function indexOfName(text: string, name: string): number {
+  return text.toLowerCase().indexOf(name.toLowerCase());
+}
+
+function boundedWindow(text: string, index: number, radius: number): string {
+  return text.slice(Math.max(0, index - radius), Math.min(text.length, index + radius)).replace(/\s+/g, " ").trim();
 }
 
 function isAllowedPersonUrl(url: string, account: Candidate): boolean {

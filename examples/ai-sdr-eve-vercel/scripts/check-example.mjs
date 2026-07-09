@@ -13,6 +13,7 @@ const required = [
   "agent/skills/mdp-source-strategy/SKILL.md",
   "agent/skills/mdp-prospect-brief/SKILL.md",
   "agent/lib/provider-tools.ts",
+  "agent/lib/qualification.ts",
   "agent/tools/mdp_validate.ts",
   "agent/tools/discover_candidates.ts",
   "agent/tools/extract_evidence.ts",
@@ -54,9 +55,23 @@ if (!discoveryLib.includes("resolvePersonForAccount") || !discoveryLib.includes(
   console.error("discovery must resolve public person-level owners and require people by default");
   process.exit(1);
 }
+if (!discoveryLib.includes("input.dryRun === true") || !discoveryLib.includes('mode: "unavailable"')) {
+  console.error("discovery must only use fixtures for explicit dry-runs and fail closed when Exa is unavailable");
+  process.exit(1);
+}
+if (!discoveryLib.includes("extractPersonTitleEvidence") || !discoveryLib.includes("boundedWindow")) {
+  console.error("person parsing must require bounded name/title co-location");
+  process.exit(1);
+}
+
+const qualificationLib = readFileSync("agent/lib/qualification.ts", "utf8");
+if (!qualificationLib.includes("validateQualifiedCandidate") || !qualificationLib.includes("findPersonResolutionEvidence")) {
+  console.error("qualification must share person-evidence validation across scout and Eve tools");
+  process.exit(1);
+}
 
 const mdpRunnerLib = readFileSync("agent/lib/mdp-runner.ts", "utf8");
-if (!mdpRunnerLib.includes("Need public person-level name and role evidence")) {
+if (!mdpRunnerLib.includes("Need public person-level name, role, and person-scoped source evidence")) {
   console.error("MDP runner must preserve a gap when person-level evidence is missing");
   process.exit(1);
 }
@@ -64,6 +79,18 @@ if (!mdpRunnerLib.includes("Need public person-level name and role evidence")) {
 const providerTools = readFileSync("agent/lib/provider-tools.ts", "utf8");
 if (!providerTools.includes("x-exa-integration") || !providerTools.includes("tool({")) {
   console.error("provider tools must expose local AI SDK tool wrappers and Exa integration metadata");
+  process.exit(1);
+}
+
+const scoutCycleLib = readFileSync("agent/lib/scout-cycle.ts", "utf8");
+if (!scoutCycleLib.includes("validateQualifiedCandidate") || !scoutCycleLib.includes("normalizeScoreThreshold")) {
+  console.error("scout cycle must validate qualification before ledger append and clamp score thresholds");
+  process.exit(1);
+}
+
+const appendLedgerTool = readFileSync("agent/tools/append_ledger.ts", "utf8");
+if (!appendLedgerTool.includes("assertQualifiedCandidate") || !appendLedgerTool.includes("person_resolution_evidence_ids")) {
+  console.error("append_ledger tool must enforce the shared qualification contract");
   process.exit(1);
 }
 

@@ -44,7 +44,7 @@ curl -X POST "$DEPLOYMENT_URL/scout/run" \
   -d '{"dryRun":true,"includeRows":true,"limit":1}'
 ```
 
-`dryRun: true` forces the public-safe fixture path. Omit `dryRun` to use live Exa when `EXA_API_KEY` is configured, otherwise the provider layer falls back honestly. Live Exa runs now do two passes: account trigger discovery, then public person/role resolution. Rows are qualified only when a public name, role/title, company match, and person source URL are available; account-only rows are preserved as gaps unless `SCOUT_REQUIRE_PERSON=false` is set. The response is `mdp.scout-run-response.v0` and includes the run id, selected query, provider, fallback reason, qualified count, and ledger path. The endpoint never sends outreach or writes CRM records.
+`dryRun: true` is the only path that uses the public-safe fixture. Omit `dryRun` to use live Exa when `EXA_API_KEY` is configured; protected live/Cron runs without Exa fail closed with `qualified: 0` and do not append fixture rows. Live Exa runs now do two passes: account trigger discovery, then public person/role resolution. Rows are qualified only when the shared validator sees a public name, role/title, company match, person source URL, person-scoped evidence id, fit decision, no MDP gaps, and score above threshold. `SCOUT_REQUIRE_PERSON=false` can let account-only discoveries continue into diagnostic fit/brief evaluation, but the ledger validator still requires person-scoped evidence before qualification. The response is `mdp.scout-run-response.v0` and includes the run id, selected query, provider, fallback reason, qualified count, and ledger path. The endpoint never sends outreach or writes CRM records.
 
 Hosted production runs fail closed unless `CRON_SECRET` is configured and the request includes the matching bearer header. Vercel Cron targets `/scout/run` on the weekday schedule in `vercel.json` and automatically sends `Authorization: Bearer $CRON_SECRET`. For manual live runs, callers may also send the same secret in `x-mdp-scout-secret`.
 
@@ -56,7 +56,7 @@ npm install
 npm run check
 ```
 
-With no provider keys, the fixture run uses `samples/profound-public-source-fixture.json`, reports the provider fallback reason, and writes `artifacts/scout-ledger.jsonl`.
+The fixture run uses `samples/profound-public-source-fixture.json`, reports the dry-run fallback reason, and writes `artifacts/scout-ledger.jsonl`. Non-dry-run executions require `EXA_API_KEY`; without it they return zero qualified rows rather than writing demo data.
 
 ## Native MDP CLI mode
 
@@ -77,7 +77,7 @@ The Eve sandbox also receives `.mdp` under `/workspace/.mdp`, so a future Vercel
 For live discovery/extraction, set these in Vercel env vars; do not commit or paste secrets into chat:
 
 ```bash
-# Required for live public discovery. Without this, the scout uses the fixture fallback.
+# Required for live public discovery. Without this, non-dry-run scout executions fail closed.
 EXA_API_KEY=...
 
 # Optional accepted-URL cleanup. The agent skips this lane when absent.
@@ -91,7 +91,7 @@ Provider behavior:
 
 | Provider | Current Eve path | Required for local checks? |
 | --- | --- | --- |
-| Exa | Local Vercel AI SDK `tool()` wrapper around Exa search with `x-exa-integration: vercel-ai-sdk` | No; fixture fallback is automatic |
+| Exa | Local Vercel AI SDK `tool()` wrapper around Exa search with `x-exa-integration: vercel-ai-sdk` | No for dry-run checks; yes for live/Cron discovery |
 | Firecrawl | Optional accepted-URL `tool()` wrapper for cleanup after Exa/operator acceptance | No |
 | Apify | Optional future MCP/Actor lane; the source strategy may describe it but the v1 Eve adapter does not execute it | No |
 | Fixture | Public-safe local candidate/evidence bundle | Yes, always available |

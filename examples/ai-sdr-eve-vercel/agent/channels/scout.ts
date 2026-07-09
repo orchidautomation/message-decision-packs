@@ -117,7 +117,9 @@ function gateRequest(request: Request, input: ScoutRunRequest): Response | null 
 
 function hasBody(request: Request): boolean {
   const length = request.headers.get("content-length");
-  return length !== null && length !== "0";
+  if (length === "0") return false;
+  if (length !== null) return true;
+  return request.body !== null;
 }
 
 function parseBoolean(value: string | null): boolean | undefined {
