@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import defaultStrategyJson from "../../samples/source-strategy.json" with { type: "json" };
+import profoundStrategyJson from "../../samples/profound-source-strategy.json" with { type: "json" };
 import type { SourceStrategyTrace } from "../schemas/ledger.ts";
 
 export type SourceStrategy = {
@@ -50,9 +51,20 @@ export type SelectedScoutQuery = {
 };
 
 export async function loadSourceStrategy(pathOrUrl?: string | URL | null): Promise<SourceStrategy> {
-  const raw = pathOrUrl ? JSON.parse(await readFile(toFilePath(pathOrUrl), "utf8")) : defaultStrategyJson;
+  const raw = pathOrUrl ? await loadStrategyByPath(pathOrUrl) : defaultStrategyJson;
   assertSourceStrategy(raw);
   return raw;
+}
+
+async function loadStrategyByPath(pathOrUrl: string | URL): Promise<unknown> {
+  const filePath = toFilePath(pathOrUrl);
+  if (filePath === "profound" || filePath.endsWith("/profound-source-strategy.json") || filePath === "samples/profound-source-strategy.json") {
+    return profoundStrategyJson;
+  }
+  if (filePath === "default" || filePath.endsWith("/source-strategy.json") || filePath === "samples/source-strategy.json") {
+    return defaultStrategyJson;
+  }
+  return JSON.parse(await readFile(filePath, "utf8"));
 }
 
 export function selectScoutQuery(strategy: SourceStrategy, overrideQuery?: string | null): SelectedScoutQuery {
