@@ -98,3 +98,19 @@ entries:
   - login-required
   - private profile
   - personal email
+- id: public-person-role-resolution-signal
+  title: Public person-role resolution signal
+  body: Strong source-quality signal when the candidate includes a named person, current role/title, company match, public profile, author, or team URL, bounded role snippet, provider family, and confidence score tied to the same account trigger.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - PR & Brand Lead
+  - Agency Partner
+  evidence:
+  - profound-source-strategy
+  avoid:
+  - private profile
+  - jobs-only page
+  - contact database
+  - personal email
+  - inferred owner

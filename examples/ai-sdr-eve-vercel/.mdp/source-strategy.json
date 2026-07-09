@@ -6,7 +6,7 @@
   },
   "objective": {
     "decision_needed": "Find public-source account trigger evidence and then resolve a named public person/role owner before Profound MDP fit, route, and brief generation.",
-    "downstream_consumer": "MDP BDR Scout on Vercel Workflow or local dry-run",
+    "downstream_consumer": "Eve-native MDP SDR Scout on Vercel or local dry-run",
     "strategy_mode": "public-source handoff",
     "pack_hint": "Use this Profound pack as the scoring authority after evidence collection; do not draft or sync until the MDP brief passes review.",
     "person_resolution_required": true
@@ -212,12 +212,13 @@
         "confidence"
       ],
       "max_results": 30,
-      "agent_instruction": "Search the public web for fresh account-level AEO, AI search visibility, content, brand, PR, or agency workflow trigger evidence. Treat this as the account trigger pass only; before qualification, run the person-role resolution query and require a named public person, role/title, profile or author URL, bounded snippet, and explicit mapping to one active Profound MDP persona.",
+      "agent_instruction": "Search the public web for fresh account-level AEO, AI search visibility, content, brand, PR, or agency workflow trigger evidence. Treat this as the account trigger pass only; before qualification, run the person-role resolution query_template and require a named public person, role/title, profile/author/team URL, bounded snippet, and explicit mapping to one active Profound MDP persona.",
       "construction_rules": [
         "Combine one AEO/AI-search term with one role/workflow trigger family per query so evidence can be traced to a specific pack primitive.",
         "Prefer company blogs, careers pages, launch posts, docs, funding/news, public founder/operator sources, and agency service pages before generic listicles.",
         "Add negative filters for personal contact data, login-required pages, private social pages, scraped directories, and enrichment databases.",
-        "Do not qualify account-only rows unless the person-resolution lane finds a public named owner or the operator explicitly enables account-only review."
+        "Do not qualify account-only rows unless the person-resolution lane finds a public named owner or the operator explicitly enables account-only review.",
+        "Eve must pass accepted account candidates into exa-person-role-resolution.query_template before any fit, brief, score, or ledger append step."
       ],
       "required_receipts": [
         "source_url",
@@ -235,7 +236,7 @@
     {
       "id": "exa-person-role-resolution",
       "scout_family": "exa",
-      "query_or_prompt": "For each accepted account trigger, search public person-role surfaces for a named owner at the same company. Query pattern: (\"<company>\" OR \"<domain>\") (\"SEO\" OR \"AEO\" OR \"answer engine optimization\" OR \"AI search\" OR \"organic growth\" OR \"content strategy\" OR \"brand\" OR \"communications\" OR \"PR\" OR \"growth marketing\") (\"Director\" OR \"Head\" OR \"VP\" OR \"Manager\" OR \"Lead\" OR \"Strategist\") (site:linkedin.com/in OR site:<company-domain>) -jobs -email -phone -contact -directory.",
+      "query_or_prompt": "For each accepted account trigger, search public person-role surfaces for a named owner at the same company. Use query_template for programmatic execution, then extract only public name/title/company/source receipts.",
       "target_source_ids": [
         "public-person-role-resolution"
       ],
@@ -254,18 +255,19 @@
         "public title or role",
         "company match",
         "persona/workflow ownership signal",
-        "profile or author URL",
+        "profile, author, speaker, or team URL",
         "bounded snippet",
         "provider",
         "confidence"
       ],
       "max_results": 8,
-      "agent_instruction": "After an account trigger passes source policy, resolve a named person who plausibly owns the relevant AEO, SEO, content, PR, brand, growth, or agency workflow. Accept public profile metadata, company team pages, bylines, speaker pages, and author pages. Do not collect emails, phones, private social data, or enrichment-database rows. If no public person is found, mark the candidate as a person-resolution gap instead of inventing a contact.",
+      "agent_instruction": "After an account trigger passes source policy, resolve a named person who plausibly owns the relevant AEO, SEO, content, PR, brand, growth, or agency workflow. Accept public profile metadata, company team pages, bylines, speaker pages, and author pages. Reject jobs-only pages and contact databases. If no public person is found, mark the candidate as a person-resolution gap instead of inventing a contact.",
       "construction_rules": [
         "Bind the person query to the accepted account company/domain so the named person is tied to the account trigger.",
+        "Use query_template as the programmatic template for Eve/Exa runs; replace <company>, <domain>, and <company-domain> from the accepted account candidate only.",
         "Prefer public LinkedIn profile metadata, company-owned author/team pages, webinar/event speaker pages, and public bylines over generic people directories.",
         "Require both a person name and a role/title snippet that maps to a Profound pack persona before qualification.",
-        "Reject pages whose only value is email, phone, scraped enrichment, login-required profile data, or unrelated job listings."
+        "Reject pages whose only value is email, phone, scraped enrichment, login-required profile data, unrelated job listings, or jobs-only owner inference."
       ],
       "required_receipts": [
         "person_name",
@@ -276,7 +278,9 @@
         "provider",
         "confidence"
       ],
-      "review_required": true
+      "review_required": true,
+      "query_template": "(\"<company>\" OR \"<domain>\") (\"SEO\" OR \"AEO\" OR \"answer engine optimization\" OR \"AI search\" OR \"AI visibility\" OR \"LLM visibility\" OR \"organic growth\" OR \"content strategy\" OR \"brand\" OR \"communications\" OR \"PR\" OR \"growth marketing\") (\"Director\" OR \"Head\" OR \"VP\" OR \"Vice President\" OR \"Manager\" OR \"Lead\" OR \"Strategist\" OR \"Founder\" OR \"Partner\") (site:linkedin.com/in OR site:<company-domain>) -jobs -hiring -careers -email -phone -contact -directory -apollo -rocketreach -zoominfo -lusha",
+      "query_usage": "programmatic-person-resolution"
     },
     {
       "id": "exa-prompt-volume-content-opportunities",
@@ -456,7 +460,8 @@
       "provider",
       "confidence"
     ],
-    "person_resolution_gap_policy": "If the account trigger is strong but no public person/role owner is found, do not invent a contact. Preserve the account trigger as a gap or operator-review account candidate only when explicitly allowed."
+    "person_resolution_gap_policy": "If the account trigger is strong but no public person/role owner is found, do not invent a contact. Preserve the account trigger as a person-resolution gap or operator-review account candidate only when explicitly allowed.",
+    "ledger_append_gate": "A qualified ledger row must include account trigger evidence plus public person-resolution evidence ids; account-only rows are not qualified leads."
   },
   "routing_jobs": [
     {
@@ -529,6 +534,16 @@
       "id": "no-outreach-side-effect",
       "scenario": "A candidate passes fit and score threshold.",
       "expected": "Append ledger/brief only; outreach_sent remains false and CRM sync remains disabled unless enabled by operator."
+    },
+    {
+      "id": "reject-jobs-only-person-source",
+      "scenario": "A public job post is relevant to AI search but no named public owner or author profile is available.",
+      "expected": "Do not treat the job post as person evidence; preserve a person-resolution gap and do not append a qualified ledger row."
+    },
+    {
+      "id": "reject-contact-database-person-source",
+      "scenario": "Exa returns a contact database page with a name, title, email, or phone number.",
+      "expected": "Exclude the source, do not extract personal contact data, and continue only with public profile, author, speaker, or company-owned pages."
     }
   ],
   "review_status": "accepted",

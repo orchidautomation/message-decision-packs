@@ -132,3 +132,20 @@ entries:
   - contact database
   - personal phone
   - private email
+- id: require-public-person-role-before-qualification
+  title: Require public person-role evidence before qualification
+  body: Do not qualify or append a ledger row unless the account trigger is paired with a named public person/role owner at the same company. Account-only evidence may become a gap or manual-review candidate, but not a qualified lead.
+  applies_to:
+  - AEO Lead
+  - Content Lead
+  - PR & Brand Lead
+  - Agency Partner
+  evidence:
+  - profound-source-strategy
+  - mdp-readme
+  avoid:
+  - no named owner
+  - account-only lead
+  - inferred contact
+  - private LinkedIn
+  - jobs-only owner proof

@@ -322,6 +322,37 @@
       },
       {
         "applies_to": [
+          "AEO Lead",
+          "Content Lead",
+          "PR & Brand Lead",
+          "Agency Partner"
+        ],
+        "avoid": [
+          "no named owner",
+          "account-only lead",
+          "inferred contact",
+          "private LinkedIn",
+          "jobs-only owner proof"
+        ],
+        "body": "Do not qualify or append a ledger row unless the account trigger is paired with a named public person/role owner at the same company. Account-only evidence may become a gap or manual-review candidate, but not a qualified lead.",
+        "card_id": "fit-rules",
+        "card_kind": "fit-rules",
+        "card_path": ".mdp/cards/fit-rules.yaml",
+        "constraints": {},
+        "entry_id": "require-public-person-role-before-qualification",
+        "evidence": [
+          "profound-source-strategy",
+          "mdp-readme"
+        ],
+        "exact_paragraphs": null,
+        "metadata": {},
+        "reason": "persona applies",
+        "selection": "guardrail",
+        "status": "required",
+        "title": "Require public person-role evidence before qualification"
+      },
+      {
+        "applies_to": [
           "AEO Lead"
         ],
         "avoid": [],
@@ -437,6 +468,36 @@
         "selection": "matched",
         "status": "supporting",
         "title": "Public-source ready signal"
+      },
+      {
+        "applies_to": [
+          "AEO Lead",
+          "Content Lead",
+          "PR & Brand Lead",
+          "Agency Partner"
+        ],
+        "avoid": [
+          "private profile",
+          "jobs-only page",
+          "contact database",
+          "personal email",
+          "inferred owner"
+        ],
+        "body": "Strong source-quality signal when the candidate includes a named person, current role/title, company match, public profile, author, or team URL, bounded role snippet, provider family, and confidence score tied to the same account trigger.",
+        "card_id": "signals",
+        "card_kind": "signals",
+        "card_path": ".mdp/cards/signals.yaml",
+        "constraints": {},
+        "entry_id": "public-person-role-resolution-signal",
+        "evidence": [
+          "profound-source-strategy"
+        ],
+        "exact_paragraphs": null,
+        "metadata": {},
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Public person-role resolution signal"
       },
       {
         "applies_to": [
@@ -982,7 +1043,7 @@
           "draft before brief",
           "send without review"
         ],
-        "body": "For scout handoffs, ask the operator to run or review an MDP brief before drafting outreach. Recommended local command: mdp --json brief --dir examples/profound-gtm-vetting --prospect examples/profound-gtm-vetting/examples/sample-aeo-target.json --channel linkedin --job \"linkedin outbound copy\" --context.",
+        "body": "For scout handoffs, ask the operator to run or review an MDP brief before drafting outreach. Recommended local command: mdp --json brief --dir examples/profound-gtm-vetting --prospect examples/profound-gtm-vetting/examples/profound-aeo-scout-row.json --channel linkedin --job \"linkedin outbound copy\" --context.",
         "card_id": "ctas",
         "card_kind": "ctas",
         "card_path": ".mdp/cards/ctas.yaml",
@@ -1478,6 +1539,34 @@
         "selection": "matched",
         "status": "supporting",
         "title": "Provider allowlist gap"
+      },
+      {
+        "applies_to": [
+          "AEO Lead",
+          "Content Lead",
+          "PR & Brand Lead",
+          "Agency Partner"
+        ],
+        "avoid": [
+          "fabricated contact",
+          "generic marketing owner",
+          "private enrichment"
+        ],
+        "body": "When a source shows account-level AI-search fit but no public named owner, role/title, company match, and source URL, preserve the account trigger as a person-resolution gap and do not invent a contact.",
+        "card_id": "gaps",
+        "card_kind": "gaps",
+        "card_path": ".mdp/cards/gaps.yaml",
+        "constraints": {},
+        "entry_id": "missing-person-resolution-receipt",
+        "evidence": [
+          "profound-source-strategy"
+        ],
+        "exact_paragraphs": null,
+        "metadata": {},
+        "reason": "persona applies",
+        "selection": "matched",
+        "status": "supporting",
+        "title": "Missing person resolution receipt"
       }
     ],
     "full_card_required": [],
@@ -1488,7 +1577,7 @@
       "contract": "mdp.runtime-context.v0",
       "date_utc": "2026-07-09",
       "local_time_policy": "MDP emits UTC runtime metadata only. If a workflow needs fiscal year, renewal date, event date, campaign window, or local business calendar logic, pass that as reviewed pack-declared metadata or supplied source context.",
-      "now_utc": "2026-07-09T03:13:14Z",
+      "now_utc": "2026-07-09T17:42:28Z",
       "timezone": "UTC"
     },
     "source_load_order": [
@@ -1509,10 +1598,10 @@
     "status": "ready",
     "summary": {
       "card_count": 13,
-      "entry_count": 60,
-      "guardrail_entry_count": 13,
-      "required_entry_count": 30,
-      "supporting_entry_count": 30
+      "entry_count": 63,
+      "guardrail_entry_count": 14,
+      "required_entry_count": 31,
+      "supporting_entry_count": 32
     }
   },
   "contract": "mdp.message-brief.v0",
@@ -1589,6 +1678,7 @@
               "crm-export-row",
               "clay-row",
               "deepline-row",
+              "public_web",
               "public-web-row",
               "public-careers-row",
               "scout-ledger-row",
@@ -1692,6 +1782,14 @@
           "source": "synthetic-public-row.company_site",
           "state_as": "supplied",
           "title": "Account has a public content and resource-center motion"
+        },
+        {
+          "confidence": "medium",
+          "freshness": "synthetic-current",
+          "id": "public-person-role-resolution-signal",
+          "source": "synthetic-public-row.person_profile",
+          "state_as": "supplied",
+          "title": "Public person-role page names Jordan Lee as Director of Organic Growth at ExampleMarket Co"
         }
       ],
       "source_kind": "synthetic-example",
@@ -1758,6 +1856,14 @@
         "source": "synthetic-public-row.company_site",
         "state_as": "supplied",
         "title": "Account has a public content and resource-center motion"
+      },
+      {
+        "confidence": "medium",
+        "freshness": "synthetic-current",
+        "id": "public-person-role-resolution-signal",
+        "source": "synthetic-public-row.person_profile",
+        "state_as": "supplied",
+        "title": "Public person-role page names Jordan Lee as Director of Organic Growth at ExampleMarket Co"
       }
     ],
     "source_kind": "synthetic-example",
@@ -1882,7 +1988,7 @@
     "contract": "mdp.runtime-context.v0",
     "date_utc": "2026-07-09",
     "local_time_policy": "MDP emits UTC runtime metadata only. If a workflow needs fiscal year, renewal date, event date, campaign window, or local business calendar logic, pass that as reviewed pack-declared metadata or supplied source context.",
-    "now_utc": "2026-07-09T03:13:14Z",
+    "now_utc": "2026-07-09T17:42:28Z",
     "timezone": "UTC"
   }
 }

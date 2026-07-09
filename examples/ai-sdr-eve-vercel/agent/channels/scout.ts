@@ -11,6 +11,18 @@ type ScoutRunRequest = {
 
 export default defineChannel({
   routes: [
+    GET("/", async () => new Response(homeHtml(), {
+      headers: {
+        "cache-control": "no-store",
+        "content-type": "text/html; charset=utf-8"
+      }
+    })),
+    GET("/mdp", async () => new Response(homeHtml(), {
+      headers: {
+        "cache-control": "no-store",
+        "content-type": "text/html; charset=utf-8"
+      }
+    })),
     GET("/scout/health", async () => Response.json({
       ok: true,
       service: "mdp-eve-scout",
@@ -140,4 +152,80 @@ function validLimit(value: number): boolean {
 function nonEmpty(value: string | null): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function homeHtml(): string {
+  const installCommand = "bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y";
+  const dryRunCommand = `curl -L -X POST https://mdp.orchidlabs.dev/eve/scout/run \
+  -H 'content-type: application/json' \
+  -d '{"dryRun":true,"includeRows":true,"limit":1}'`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MDP Eve Scout</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #fff; color: #111; }
+    main { max-width: 880px; margin: 0 auto; padding: 72px 24px; }
+    header { border-bottom: 1px solid #eaeaea; padding-bottom: 32px; margin-bottom: 32px; }
+    .eyebrow { color: #666; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 16px; }
+    h1 { font-size: clamp(40px, 8vw, 76px); line-height: .95; letter-spacing: -.06em; margin: 0 0 20px; }
+    p { color: #444; font-size: 18px; line-height: 1.65; margin: 0 0 16px; }
+    section { border-top: 1px solid #eaeaea; padding: 28px 0; }
+    h2 { font-size: 18px; margin: 0 0 12px; letter-spacing: -.02em; }
+    pre { overflow-x: auto; background: #111; color: #fff; padding: 16px; border-radius: 0; font-size: 14px; line-height: 1.5; }
+    code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    a { color: inherit; text-underline-offset: 3px; }
+    ul { padding-left: 20px; color: #444; line-height: 1.7; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #000; color: #f5f5f5; }
+      header, section { border-color: #222; }
+      p, ul, .eyebrow { color: #aaa; }
+      pre { background: #111; border: 1px solid #222; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Message Decision Packs × Eve</div>
+      <h1>Autonomous GTM scouting, bounded by MDP.</h1>
+      <p>This Vercel Eve agent loads a Profound Message Decision Pack, runs public-source discovery, resolves people-level evidence, scores fit, and appends reviewed ledger rows. It does not send outreach or sync CRM records.</p>
+    </header>
+
+    <section>
+      <h2>Install MDP</h2>
+      <p>Use the same Orchid Labs vanity domain as the CLI and plugin installer.</p>
+      <pre><code>${escapeHtml(installCommand)}</code></pre>
+    </section>
+
+    <section>
+      <h2>Run the public-safe scout fixture</h2>
+      <p>The vanity route keeps the demo, docs, and installer on <code>mdp.orchidlabs.dev</code>. Live runs still require the protected scout secret.</p>
+      <pre><code>${escapeHtml(dryRunCommand)}</code></pre>
+    </section>
+
+    <section>
+      <h2>Links</h2>
+      <ul>
+        <li><a href="/scout/health">Scout health</a></li>
+        <li><a href="/scout/run?dryRun=true&amp;includeRows=true&amp;limit=1">Dry-run JSON</a></li>
+        <li><a href="https://mdp.orchidlabs.dev/eve/docs">Eve docs via Orchid Labs route</a></li>
+        <li><a href="https://vercel.com/docs/eve">Canonical Vercel Eve docs</a></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }

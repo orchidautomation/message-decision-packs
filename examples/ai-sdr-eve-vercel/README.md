@@ -28,10 +28,25 @@ examples/ai-sdr-eve-vercel/
 ## Runtime loop
 
 ```text
-Eve schedule -> load MDP scout instructions -> load source strategy -> discover account evidence -> resolve public person/role owner -> run MDP fit/brief gates -> score -> append ledger row
+Eve schedule -> load MDP scout instructions -> load source strategy -> discover account evidence -> render the MDP person-resolution query_template -> resolve public person/role owner -> run MDP fit/brief gates -> score -> append ledger row
 ```
 
 The agent should call typed tools such as `load_source_strategy`, `discover_candidates`, `extract_evidence`, `mdp_validate`, `mdp_fit`, `mdp_create_brief`, `mdp_check_claims`, and `append_ledger`. Generic sandbox `bash` remains available through Eve, but the production MDP path should prefer bounded tools.
+
+
+## Public demo and installer continuity
+
+Use the Orchid Labs vanity domain for MDP-facing install and demo commands:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+
+curl -L -X POST https://mdp.orchidlabs.dev/eve/scout/run \
+  -H 'content-type: application/json' \
+  -d '{"dryRun":true,"includeRows":true,"limit":1}'
+```
+
+`https://mdp.orchidlabs.dev/eve` redirects to the deployed Eve scout. `https://mdp.orchidlabs.dev/eve/docs` redirects to the canonical Vercel Eve docs. Prefer the Vercel docs URL for references because `eve.dev` is an upstream vanity domain and may be unstable during rollout.
 
 ## Deterministic scout endpoint
 
@@ -44,7 +59,7 @@ curl -X POST "$DEPLOYMENT_URL/scout/run" \
   -d '{"dryRun":true,"includeRows":true,"limit":1}'
 ```
 
-`dryRun: true` is the only path that uses the public-safe fixture. Omit `dryRun` to use live Exa when `EXA_API_KEY` is configured; protected live/Cron runs without Exa fail closed with `qualified: 0` and do not append fixture rows. Live Exa runs now do two passes: account trigger discovery, then public person/role resolution. Rows are qualified only when the shared validator sees a public name, role/title, company match, person source URL, person-scoped evidence id, fit decision, no MDP gaps, and score above threshold. `SCOUT_REQUIRE_PERSON=false` can let account-only discoveries continue into diagnostic fit/brief evaluation, but the ledger validator still requires person-scoped evidence before qualification. The response is `mdp.scout-run-response.v0` and includes the run id, selected query, provider, fallback reason, qualified count, and ledger path. The endpoint never sends outreach or writes CRM records.
+`dryRun: true` is the only path that uses the public-safe fixture. Omit `dryRun` to use live Exa when `EXA_API_KEY` is configured; protected live/Cron runs without Exa fail closed with `qualified: 0` and do not append fixture rows. Live Exa runs now do two passes: account trigger discovery, then public person/role resolution. Rows are qualified only when the shared validator sees a public name, role/title, company match, person source URL, person-scoped evidence id, fit decision, no MDP gaps, and score above threshold. The person lookup is now driven by `.mdp/source-strategy.json` via `exa-person-role-resolution.query_template`, so the operator-authored MDP pack controls where Eve looks for people-level resolution instead of leaving that query hardcoded in the runtime. `SCOUT_REQUIRE_PERSON=false` can let account-only discoveries continue into diagnostic fit/brief evaluation, but the ledger validator still requires person-scoped evidence before qualification. The response is `mdp.scout-run-response.v0` and includes the run id, selected query, provider, fallback reason, qualified count, and ledger path. The endpoint never sends outreach or writes CRM records.
 
 Hosted production runs fail closed unless `CRON_SECRET` is configured and the request includes the matching bearer header. Vercel Cron targets `/scout/run` on the weekday schedule in `vercel.json` and automatically sends `Authorization: Bearer $CRON_SECRET`. For manual live runs, callers may also send the same secret in `x-mdp-scout-secret`.
 
@@ -66,7 +81,7 @@ If the `mdp` CLI is installed in the app runtime, test the bounded native path:
 MDP_RUNNER_MODE=native npm run scout:fixture
 ```
 
-The Eve sandbox also receives `.mdp` under `/workspace/.mdp`, so a future Vercel Sandbox bootstrap can install the CLI there and let the agent run CLI commands through sandbox `bash`. This first slice keeps `simulated` as the deployment-safe default.
+The Eve sandbox also receives the same `.mdp` under `/workspace/.mdp`, including Profound person-resolution fit cards, gaps, sources, and source-strategy query templates, so a future Vercel Sandbox bootstrap can install the CLI there and let the agent run CLI commands through sandbox `bash`. This first slice keeps `simulated` as the deployment-safe default.
 
 ## Eve schedule
 

@@ -28,6 +28,8 @@ export type SourceQueryPrompt = {
   id: string;
   scout_family: string;
   query_or_prompt: string;
+  query_template?: string;
+  query_usage?: string;
   agent_instruction: string;
   construction_rules: string[];
   target_source_ids?: string[];
@@ -81,6 +83,12 @@ export async function loadSourceStrategy(): Promise<SourceStrategy> {
   return raw;
 }
 
+export function selectPersonResolutionQuery(strategy: SourceStrategy): SourceQueryPrompt | null {
+  return strategy.queries_prompts.find((item) => item.id === "exa-person-role-resolution")
+    ?? strategy.queries_prompts.find((item) => item.target_source_ids?.includes("public-person-role-resolution"))
+    ?? null;
+}
+
 export function selectScoutQuery(strategy: SourceStrategy, override?: string | null): SelectedScoutQuery {
   const query = strategy.queries_prompts.find((item) => item.scout_family === "exa") ?? strategy.queries_prompts[0];
   if (!query) throw new Error("source strategy has no query prompts");
@@ -121,6 +129,8 @@ export function summarizeSourceStrategy(strategy: SourceStrategy) {
       scout_family: item.scout_family,
       max_results: item.max_results ?? null,
       agent_instruction: item.agent_instruction,
+      query_template: item.query_template ?? null,
+      query_usage: item.query_usage ?? null,
       construction_rules: item.construction_rules,
       required_receipts: item.required_receipts ?? [],
       review_required: item.review_required ?? true

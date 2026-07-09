@@ -24,4 +24,15 @@ After deploy, verify:
 curl -fsSL https://mdp.orchidlabs.dev/install.sh | head
 curl -fsSL https://mdp.orchidlabs.dev/llms.txt | head
 curl -fsSL https://mdp.orchidlabs.dev/llms-full.txt | head
+curl -I https://mdp.orchidlabs.dev/eve
+curl -I https://mdp.orchidlabs.dev/eve/docs
 ```
+
+## Eve scout vanity routes
+
+These routes keep the deployable Eve demo close to the MDP installer domain:
+
+- `https://mdp.orchidlabs.dev/eve` -> deployed Eve scout MDP landing page
+- `https://mdp.orchidlabs.dev/eve/scout/run` -> protected scout endpoint; use `dryRun: true` for public fixture checks
+- `https://mdp.orchidlabs.dev/eve/scout/health` -> health/capability endpoint
+- `https://mdp.orchidlabs.dev/eve/docs` -> canonical Vercel Eve docs

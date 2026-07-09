@@ -12,7 +12,8 @@
     "signals": [
       "SEO or AEO ownership signal",
       "Prompt volume opportunity signal",
-      "Content production signal"
+      "Content production signal",
+      "Public person-role resolution signal"
     ]
   },
   "evidence": [
@@ -27,12 +28,12 @@
       "provider": "fixture"
     },
     {
-      "id": "prof_ev_002",
-      "url": "https://example.com/careers/organic-growth-director",
-      "title": "Organic Growth role owns AI search and content strategy",
+      "id": "fixture_person_001",
+      "url": "https://example.com/team/jordan-lee",
+      "title": "Jordan Lee - Director of Organic Growth | ExampleMarket Co",
       "observed_at": "2026-07-09T00:05:00Z",
-      "snippet": "The public role description mentions SEO, AI search visibility, content strategy, prompt tracking, and measuring how answer engines cite the brand.",
-      "content_hash": "sha256:6b73f3587ed8a68be6f540ceadf8f7d9c90e6b7005627e3d3f13686f877f0abc",
+      "snippet": "Jordan Lee is the Director of Organic Growth at ExampleMarket Co and owns SEO, AI search visibility, content strategy, prompt tracking, and answer-engine citation measurement.",
+      "content_hash": "sha256:8b40ee82f7a1ec9f7a9dcfe11711f4a6b0553e1f3088d60cbbaaf9af7d29d24f",
       "confidence": 0.82,
       "provider": "fixture"
     }
