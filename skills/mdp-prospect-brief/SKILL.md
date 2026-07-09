@@ -69,7 +69,7 @@ Decision rule:
 - Source markers belong in first-class row fields such as `source_kind` and `synthetic`; Clay is one possible value, not the default MDP model.
 - Annotations about pack entries belong in entry `metadata`, not on prospect rows.
 
-Packs may declare readiness requirements in `.mdp/manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`. Treat `lead_input_requirements` as the wire key for the user-facing input readiness policy. Treat `mdp validate-prompt-output` and `mdp fit` as the source of truth for missing or invalid readiness details. If a prompt emits a persona, segment, source kind, date/date-time, enum, or declared attribute outside the pack-owned contract, do not repair it silently; preserve the source value in `gaps` or `normalization_trace`, return the validation issue, and ask for reviewed input or a manifest update.
+Packs may declare readiness requirements in `.mdp/manifest.yaml` with `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`. GTM packs may also declare `qualification_gates` for public person resolution, source-backed signal count, fit signal, and why-now signal. Treat `lead_input_requirements` as the wire key for input readiness and `qualification_gates` as the wire key for pack-owned qualification. Treat `mdp validate-prompt-output` and `mdp fit` as the source of truth for missing or invalid readiness and qualification details. If a prompt emits a persona, segment, source kind, date/date-time, enum, or declared attribute outside the pack-owned contract, do not repair it silently; preserve the source value in `gaps` or `normalization_trace`, return the validation issue, and ask for reviewed input or a manifest update.
 
 Runtime context is run metadata, not prospect data. Prompt outputs may echo `runtime_context` only when the prompt declares it as an input; validation checks `now_utc`, `date_utc`, `timezone: UTC`, and `local_time_policy`. Fiscal year, renewal date, event date, or campaign window should remain pack-declared or source-supplied metadata, not built-in MDP fields inferred from the current date.
 
@@ -105,7 +105,7 @@ mdp --json validate-prompt-output --dir . --prompt-id normalize-prospect-row --f
 mdp --json fit --dir . --prospect <prospect.json>
 ```
 
-8. If the user only asked whether the row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, `context.missing_requirements`, `context.invalid_requirements`, and gaps. Do not draft.
+8. If the user only asked whether the row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, `context.qualification_gate`, `context.missing_requirements`, `context.invalid_requirements`, and gaps. Do not draft, and do not create a parallel runtime qualification decision.
 9. If status is `disqualified` or `insufficient-context`, stop before drafting unless the user explicitly overrides.
 10. Run the brief:
 
