@@ -642,7 +642,7 @@ fn missing_required_trace_schema() -> Value {
 fn constraints_schema() -> Value {
     json!({
         "type": "object",
-        "description": "Optional deterministic output constraints for generated drafts. Hard min/max and forbid fields can be checked from supplied draft text when the relevant draft part is present; target ranges are advisory.",
+        "description": "Optional deterministic output constraints for generated drafts and structured proof-output artifacts. Draft-text fields are checked by check-claims; proof_output fields are checked by verify-output.",
         "properties": {
             "word_count": count_constraint_schema("Body word count limits."),
             "subject_words": count_constraint_schema("Subject line word count limits."),
@@ -660,7 +660,37 @@ fn constraints_schema() -> Value {
             "forbid_attachments": {"type": "boolean"},
             "forbid_images": {"type": "boolean"},
             "forbid_html": {"type": "boolean"},
-            "forbid_tracking": {"type": "boolean"}
+            "forbid_tracking": {"type": "boolean"},
+            "proof_output": proof_output_constraints_schema()
+        }
+    })
+}
+
+fn proof_output_constraints_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Pack-owned Layer 2 constraints enforced by mdp verify-output for mdp.proof-output.v0 artifacts.",
+        "properties": {
+            "required_segment_kinds": {
+                "type": "array",
+                "items": {"enum": ["claim", "requirement_status", "template_text", "gap", "connective", "formatting"]},
+                "description": "Segment kinds that must be present at least once."
+            },
+            "min_segments": {
+                "type": "object",
+                "description": "Minimum segment counts by proof-output segment kind.",
+                "propertyNames": {"enum": ["claim", "requirement_status", "template_text", "gap", "connective", "formatting"]},
+                "additionalProperties": {"type": "integer", "minimum": 0}
+            },
+            "require_source_refs_for_claims": {
+                "type": "boolean",
+                "description": "When true, every claim segment must include at least one resolved source ref."
+            },
+            "max_connective_words": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Maximum words allowed in connective or formatting segments."
+            }
         }
     })
 }
@@ -1164,6 +1194,22 @@ mod tests {
         assert_eq!(constraints["max_questions"]["type"], "integer");
         assert_eq!(constraints["forbid_links"]["type"], "boolean");
         assert_eq!(constraints["forbid_tracking"]["type"], "boolean");
+        assert_eq!(
+            constraints["proof_output"]["properties"]["required_segment_kinds"]["items"]["enum"][0],
+            "claim"
+        );
+        assert_eq!(
+            constraints["proof_output"]["properties"]["min_segments"]["additionalProperties"]["type"],
+            "integer"
+        );
+        assert_eq!(
+            constraints["proof_output"]["properties"]["require_source_refs_for_claims"]["type"],
+            "boolean"
+        );
+        assert_eq!(
+            constraints["proof_output"]["properties"]["max_connective_words"]["type"],
+            "integer"
+        );
     }
 
     #[test]

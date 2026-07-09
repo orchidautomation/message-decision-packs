@@ -1924,6 +1924,7 @@ fn initial_email_constraints() -> EntryConstraints {
         forbid_images: true,
         forbid_html: true,
         forbid_tracking: true,
+        proof_output: Default::default(),
     }
 }
 

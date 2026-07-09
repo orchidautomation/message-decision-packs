@@ -380,6 +380,8 @@ pub(crate) struct EntryConstraints {
     pub(crate) forbid_html: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub(crate) forbid_tracking: bool,
+    #[serde(default, skip_serializing_if = "ProofOutputConstraints::is_empty")]
+    pub(crate) proof_output: ProofOutputConstraints,
 }
 
 impl EntryConstraints {
@@ -393,6 +395,7 @@ impl EntryConstraints {
             && !self.forbid_images
             && !self.forbid_html
             && !self.forbid_tracking
+            && self.proof_output.is_empty()
     }
 }
 
@@ -406,6 +409,27 @@ pub(crate) struct CountConstraint {
     pub(crate) target_min: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) target_max: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProofOutputConstraints {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) required_segment_kinds: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) min_segments: BTreeMap<String, usize>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) require_source_refs_for_claims: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) max_connective_words: Option<usize>,
+}
+
+impl ProofOutputConstraints {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.required_segment_kinds.is_empty()
+            && self.min_segments.is_empty()
+            && !self.require_source_refs_for_claims
+            && self.max_connective_words.is_none()
+    }
 }
 
 fn is_false(value: &bool) -> bool {

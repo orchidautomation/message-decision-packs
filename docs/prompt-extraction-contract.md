@@ -53,7 +53,13 @@ Candidate entries carry normal MDP entry fields:
     "subject_words": {"min": 3, "max": 6},
     "subject_avoid": ["Re:", "Fwd:"],
     "max_questions": 1,
-    "forbid_links": true
+    "forbid_links": true,
+    "proof_output": {
+      "required_segment_kinds": ["requirement_status", "gap"],
+      "min_segments": {"template_text": 1},
+      "require_source_refs_for_claims": true,
+      "max_connective_words": 18
+    }
   }
 }
 ```
@@ -69,7 +75,7 @@ They also carry review metadata:
 }
 ```
 
-Only the normal MDP entry fields should be copied into `.mdp/cards/*.yaml` after review. `constraints` is a normal optional MDP entry field when the source explicitly calls for deterministic output limits. Keep confidence, provenance, status, gaps, and rejected claims in the review artifact or source ledger.
+Only the normal MDP entry fields should be copied into `.mdp/cards/*.yaml` after review. `constraints` is a normal optional MDP entry field when the source explicitly calls for deterministic output limits. Draft-text constraints are checked by `mdp check-claims`; `constraints.proof_output` is checked by `mdp verify-output` for structured proof-output artifacts. Keep confidence, provenance, status, gaps, and rejected claims in the review artifact or source ledger.
 
 ## Safe Defaults
 

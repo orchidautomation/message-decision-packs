@@ -11,7 +11,7 @@
   "output": {
     "kind": "proposal-review-section",
     "format": "markdown",
-    "text": "Requirement status: Source-backed. The sample team is CMMC compliant. Gap: the sample pack has no approved certification proof."
+    "text": "Source-backed. The synthetic sample may discuss phased rollout planning and training readiness. Gap: the sample pack has no approved certification proof."
   },
   "coverage": {
     "mode": "full-segmentation",
@@ -20,21 +20,6 @@
   "segments": [
     {
       "id": "seg-001",
-      "kind": "template_text",
-      "text": "Requirement status: ",
-      "refs": [
-        {
-          "type": "card_entry",
-          "role": "renders",
-          "card_id": "review-outputs",
-          "entry_id": "compliance-matrix",
-          "kind": "copy-patterns",
-          "primitive": "output-contracts"
-        }
-      ]
-    },
-    {
-      "id": "seg-002",
       "kind": "requirement_status",
       "text": "Source-backed. ",
       "refs": [
@@ -49,9 +34,9 @@
       ]
     },
     {
-      "id": "seg-003",
+      "id": "seg-002",
       "kind": "claim",
-      "text": "The sample team is CMMC compliant.",
+      "text": "The synthetic sample may discuss phased rollout planning and training readiness.",
       "refs": [
         {
           "type": "card_entry",
@@ -69,7 +54,7 @@
       ]
     },
     {
-      "id": "seg-004",
+      "id": "seg-003",
       "kind": "gap",
       "text": " Gap: the sample pack has no approved certification proof.",
       "gap": {

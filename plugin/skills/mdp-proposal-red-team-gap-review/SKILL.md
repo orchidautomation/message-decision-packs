@@ -120,7 +120,7 @@ When supplied or generated review output carries source, card, proof, or require
 mdp --json verify-output --dir . --file <proof-output.json>
 ```
 
-Treat fake IDs, missing material bindings, and smoothed gaps as blockers. A source ID written by a model is not proof until `verify-output` resolves it against the loaded pack and the full output text passes the embedded claim check.
+Treat fake IDs, missing material bindings, smoothed gaps, and violated pack-owned `constraints.proof_output` as blockers. A source ID written by a model is not proof until `verify-output` resolves it against the loaded pack and the full output text passes the embedded claim check.
 
 ## Output Format
 

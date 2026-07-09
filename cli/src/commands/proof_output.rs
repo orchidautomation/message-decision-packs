@@ -1,6 +1,6 @@
 use crate::commands::health::issue;
 use crate::commands::routing::check_claims;
-use crate::models::{Card, CardKind, Entry, Manifest, PromptFile};
+use crate::models::{Card, CardKind, Entry, Manifest, PromptFile, ProofOutputConstraints};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
 use crate::routing::select_cards;
 use crate::utils::{resolve_persona_label, routable_persona};
@@ -76,7 +76,7 @@ struct ProofSegment {
     gap: Option<ProofGap>,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 enum SegmentKind {
     Claim,
@@ -179,6 +179,15 @@ struct Counts {
     resolved_refs: usize,
 }
 
+#[derive(Debug, Clone)]
+struct ProofOutputConstraintRule {
+    card_id: String,
+    entry_id: String,
+    title: String,
+    route_scoped: bool,
+    constraints: ProofOutputConstraints,
+}
+
 pub(crate) fn verify_output_file(root: &Path, file: &Path) -> Result<Value> {
     let raw = fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
     verify_output_raw(root, &raw, &file.display().to_string())
@@ -267,11 +276,13 @@ fn validate_artifact(
     validate_pack_identity(artifact_path, artifact, inventory, issues);
     let route = validate_route(artifact_path, artifact.route.as_ref(), inventory, issues);
     validate_output_shape(artifact_path, artifact, issues);
+    let constraint_rules = collect_proof_output_constraints(inventory, route.as_ref());
 
     let mut counts = Counts {
         segments: artifact.segments.len(),
         ..Counts::default()
     };
+    let mut segment_counts: BTreeMap<SegmentKind, usize> = BTreeMap::new();
     let mut referenced_bindings = Vec::new();
     let mut seen_segment_ids = BTreeSet::new();
     let mut joined_text = String::new();
@@ -289,6 +300,7 @@ fn validate_artifact(
         let path = format!("{artifact_path}#/segments/{index}");
         validate_segment_shape(&path, segment, &mut seen_segment_ids, issues);
         joined_text.push_str(&segment.text);
+        *segment_counts.entry(segment.kind).or_default() += 1;
 
         match segment.kind {
             SegmentKind::Claim | SegmentKind::RequirementStatus | SegmentKind::TemplateText => {
@@ -307,7 +319,10 @@ fn validate_artifact(
         counts.resolved_refs += bindings.resolved_refs;
         referenced_bindings.extend(bindings.binding_values.clone());
         validate_segment_bindings(&path, segment, &bindings, inventory, issues);
+        validate_segment_constraint_rules(&path, segment, &bindings, &constraint_rules, issues);
     }
+
+    validate_artifact_constraint_rules(artifact_path, &segment_counts, &constraint_rules, issues);
 
     if joined_text != artifact.output.text {
         issues.push(issue(
@@ -334,6 +349,198 @@ fn validate_artifact(
         unique_values(referenced_bindings),
         claim_check,
     ))
+}
+
+fn collect_proof_output_constraints(
+    inventory: &PackInventory,
+    route: Option<&RouteContext>,
+) -> Vec<ProofOutputConstraintRule> {
+    let mut seen = BTreeSet::new();
+    let mut rules = Vec::new();
+    for (card_id, card) in &inventory.cards {
+        let is_output_rules = card.kind == CardKind::OutputRules;
+        let is_route_selected =
+            route.is_some_and(|route| route.selected_card_ids.contains(card_id));
+        if !is_output_rules && !is_route_selected {
+            continue;
+        }
+        for (entry_id, entry) in &card.entries {
+            if entry.constraints.proof_output.is_empty() {
+                continue;
+            }
+            if !is_output_rules
+                && !route.is_some_and(|route| proof_constraint_entry_matches_route(entry, route))
+            {
+                continue;
+            }
+            let key = format!("{card_id}:{entry_id}:constraints.proof_output");
+            if !seen.insert(key) {
+                continue;
+            }
+            rules.push(ProofOutputConstraintRule {
+                card_id: card_id.clone(),
+                entry_id: entry_id.clone(),
+                title: entry.title.clone(),
+                route_scoped: !is_output_rules && is_route_selected,
+                constraints: entry.constraints.proof_output.clone(),
+            });
+        }
+    }
+    rules
+}
+
+fn proof_constraint_entry_matches_route(entry: &Entry, route: &RouteContext) -> bool {
+    token_overlap(
+        &tokens(&route.job),
+        &tokens(&format!("{} {} {}", entry.id, entry.title, entry.body)),
+    )
+}
+
+fn tokens(value: &str) -> BTreeSet<String> {
+    value
+        .to_lowercase()
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|part| part.len() > 1)
+        .map(str::to_string)
+        .collect()
+}
+
+fn token_overlap(left: &BTreeSet<String>, right: &BTreeSet<String>) -> bool {
+    left.iter().any(|token| right.contains(token))
+}
+
+fn validate_artifact_constraint_rules(
+    artifact_path: &str,
+    segment_counts: &BTreeMap<SegmentKind, usize>,
+    rules: &[ProofOutputConstraintRule],
+    issues: &mut Vec<Value>,
+) {
+    for rule in rules {
+        for required in &rule.constraints.required_segment_kinds {
+            let Some(kind) = parse_segment_kind(required) else {
+                push_unknown_segment_kind_issue(artifact_path, rule, required, issues);
+                continue;
+            };
+            if segment_counts.get(&kind).copied().unwrap_or(0) == 0 {
+                issues.push(issue(
+                    "proof_output_required_segment_missing",
+                    "error",
+                    artifact_path,
+                    format!(
+                        "proof-output rule {} requires at least one {required} segment",
+                        rule_label(rule)
+                    ),
+                ));
+            }
+        }
+        for (kind_name, minimum) in &rule.constraints.min_segments {
+            let Some(kind) = parse_segment_kind(kind_name) else {
+                push_unknown_segment_kind_issue(artifact_path, rule, kind_name, issues);
+                continue;
+            };
+            let actual = segment_counts.get(&kind).copied().unwrap_or(0);
+            if actual < *minimum {
+                issues.push(issue(
+                    "proof_output_segment_count_violation",
+                    "error",
+                    artifact_path,
+                    format!(
+                        "proof-output rule {} requires at least {minimum} {kind_name} segment(s), found {actual}",
+                        rule_label(rule)
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn validate_segment_constraint_rules(
+    path: &str,
+    segment: &ProofSegment,
+    bindings: &SegmentBindings,
+    rules: &[ProofOutputConstraintRule],
+    issues: &mut Vec<Value>,
+) {
+    for rule in rules {
+        if rule.constraints.require_source_refs_for_claims
+            && segment.kind == SegmentKind::Claim
+            && bindings.source_refs.is_empty()
+        {
+            issues.push(issue(
+                "proof_output_claim_source_ref_missing",
+                "error",
+                path,
+                format!(
+                    "proof-output rule {} requires every claim segment to include a resolved source ref",
+                    rule_label(rule)
+                ),
+            ));
+        }
+        if matches!(
+            segment.kind,
+            SegmentKind::Connective | SegmentKind::Formatting
+        ) {
+            if let Some(maximum) = rule.constraints.max_connective_words {
+                let actual = word_count(&segment.text);
+                if actual > maximum {
+                    issues.push(issue(
+                        "proof_output_connective_too_long",
+                        "error",
+                        format!("{path}/text"),
+                        format!(
+                            "proof-output rule {} allows at most {maximum} connective/formatting words, found {actual}",
+                            rule_label(rule)
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn parse_segment_kind(value: &str) -> Option<SegmentKind> {
+    match value {
+        "claim" => Some(SegmentKind::Claim),
+        "requirement_status" => Some(SegmentKind::RequirementStatus),
+        "template_text" => Some(SegmentKind::TemplateText),
+        "gap" => Some(SegmentKind::Gap),
+        "connective" => Some(SegmentKind::Connective),
+        "formatting" => Some(SegmentKind::Formatting),
+        _ => None,
+    }
+}
+
+fn push_unknown_segment_kind_issue(
+    artifact_path: &str,
+    rule: &ProofOutputConstraintRule,
+    kind: &str,
+    issues: &mut Vec<Value>,
+) {
+    issues.push(issue(
+        "unsupported_constraint_field",
+        "warning",
+        artifact_path,
+        format!(
+            "proof-output rule {} references unsupported segment kind {kind}",
+            rule_label(rule)
+        ),
+    ));
+}
+
+fn word_count(text: &str) -> usize {
+    text.split_whitespace().count()
+}
+
+fn rule_label(rule: &ProofOutputConstraintRule) -> String {
+    let scope = if rule.route_scoped {
+        "route-scoped"
+    } else {
+        "global"
+    };
+    format!(
+        "{scope} {}:{} ({})",
+        rule.card_id, rule.entry_id, rule.title
+    )
 }
 
 fn render_malformed_readable_review(artifact_path: &str, data: &Value) -> String {
@@ -2006,6 +2213,140 @@ mod tests {
         let result = verify_output_value(&root, &artifact, "inline").expect("verify should run");
         assert_eq!(result["valid"], true);
         assert_eq!(result["checked"]["non_material_segments"], 1);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn verify_output_rejects_missing_required_segment_kind() {
+        let root = temp_proposal_pack("proof-required-kind");
+        let artifact = json!({
+            "contract": "mdp.proof-output.v0",
+            "pack": {"id": "proposal-mdp-sample", "profile_id": "proposal"},
+            "route": {"persona": "Proposal Lead", "job": "compliance review"},
+            "output": {"kind": "proposal-review-section", "format": "markdown", "text": "Summary: "},
+            "coverage": {"mode": "full-segmentation", "material_policy": "bound-or-gap"},
+            "segments": [
+                {"id": "seg-001", "kind": "connective", "material": false, "text": "Summary: "}
+            ]
+        });
+
+        let result = verify_output_value(&root, &artifact, "inline").expect("verify should run");
+
+        assert_eq!(result["valid"], false);
+        assert!(issue_codes(&result).contains(&"proof_output_required_segment_missing"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn verify_output_rejects_segment_count_violation() {
+        let root = temp_proposal_pack("proof-min-segments");
+        let artifact = json!({
+            "contract": "mdp.proof-output.v0",
+            "pack": {"id": "proposal-mdp-sample", "profile_id": "proposal"},
+            "route": {"persona": "Proposal Lead", "job": "compliance review"},
+            "output": {
+                "kind": "proposal-review-section",
+                "format": "markdown",
+                "text": "Source-backed. The synthetic sample may discuss phased rollout planning and training readiness. Gap: the sample pack has no approved certification proof."
+            },
+            "coverage": {"mode": "full-segmentation", "material_policy": "bound-or-gap"},
+            "segments": [
+                {
+                    "id": "seg-001",
+                    "kind": "requirement_status",
+                    "text": "Source-backed. ",
+                    "refs": [
+                        {"type": "card_entry", "role": "requires", "card_id": "requirements-matrix", "entry_id": "must-answer-sections", "kind": "pains", "primitive": "needs-requirements"}
+                    ]
+                },
+                {
+                    "id": "seg-002",
+                    "kind": "claim",
+                    "text": "The synthetic sample may discuss phased rollout planning and training readiness.",
+                    "refs": [
+                        {"type": "card_entry", "role": "supports", "card_id": "proof-library", "entry_id": "approved-synthetic-proof", "kind": "claims", "primitive": "evidence-proof"},
+                        {"type": "source", "role": "supports", "source_id": "synthetic-proof-inventory"}
+                    ]
+                },
+                {
+                    "id": "seg-003",
+                    "kind": "gap",
+                    "text": " Gap: the sample pack has no approved certification proof.",
+                    "gap": {"code": "missing-approved-proof", "reason": "Certification proof is not present in the synthetic proof library."},
+                    "refs": [
+                        {"type": "card_entry", "role": "constrains", "card_id": "proof-library", "entry_id": "unsupported-certifications", "kind": "claims", "primitive": "boundaries"},
+                        {"type": "source", "role": "supports-gap", "source_id": "synthetic-proof-inventory"}
+                    ]
+                }
+            ]
+        });
+
+        let result = verify_output_value(&root, &artifact, "inline").expect("verify should run");
+
+        assert_eq!(result["valid"], false);
+        assert!(issue_codes(&result).contains(&"proof_output_segment_count_violation"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn verify_output_rejects_claim_without_required_source_ref() {
+        let root = temp_proposal_pack("proof-source-ref-required");
+        let mut artifact = valid_artifact();
+        artifact["segments"][2]["refs"] = json!([
+            {"type": "card_entry", "role": "supports", "card_id": "proof-library", "entry_id": "approved-synthetic-proof", "kind": "claims", "primitive": "evidence-proof"}
+        ]);
+
+        let result = verify_output_value(&root, &artifact, "inline").expect("verify should run");
+
+        assert_eq!(result["valid"], false);
+        assert!(issue_codes(&result).contains(&"proof_output_claim_source_ref_missing"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn verify_output_rejects_long_connective_when_constrained() {
+        let root = temp_proposal_pack("proof-connective-too-long");
+        let artifact = json!({
+            "contract": "mdp.proof-output.v0",
+            "pack": {"id": "proposal-mdp-sample", "profile_id": "proposal"},
+            "output": {"kind": "proposal-review-section", "format": "markdown", "text": "and then this short bridge helps reviewers follow sequence before the next labeled status line carefully without adding new facts. "},
+            "coverage": {"mode": "full-segmentation", "material_policy": "bound-or-gap"},
+            "segments": [
+                {"id": "seg-001", "kind": "connective", "material": false, "text": "and then this short bridge helps reviewers follow sequence before the next labeled status line carefully without adding new facts. "}
+            ]
+        });
+
+        let result = verify_output_value(&root, &artifact, "inline").expect("verify should run");
+
+        assert_eq!(result["valid"], false);
+        assert!(issue_codes(&result).contains(&"proof_output_connective_too_long"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn verify_output_does_not_apply_compliance_constraints_to_bid_no_bid_route() {
+        let root = temp_proposal_pack("proof-bid-no-bid-route");
+        let artifact = json!({
+            "contract": "mdp.proof-output.v0",
+            "pack": {"id": "proposal-mdp-sample", "profile_id": "proposal"},
+            "route": {"persona": "Proposal Lead", "job": "bid no bid review"},
+            "output": {"kind": "proposal-review-section", "format": "markdown", "text": "Summary: "},
+            "coverage": {"mode": "full-segmentation", "material_policy": "bound-or-gap"},
+            "segments": [
+                {"id": "seg-001", "kind": "connective", "material": false, "text": "Summary: "}
+            ]
+        });
+
+        let result = verify_output_value(&root, &artifact, "inline").expect("verify should run");
+
+        assert_eq!(result["valid"], true, "{result}");
+        assert!(!issue_codes(&result).contains(&"proof_output_required_segment_missing"));
+        assert!(!issue_codes(&result).contains(&"proof_output_segment_count_violation"));
 
         let _ = std::fs::remove_dir_all(root);
     }

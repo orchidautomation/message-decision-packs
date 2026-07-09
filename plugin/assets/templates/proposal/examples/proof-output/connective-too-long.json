@@ -11,7 +11,7 @@
   "output": {
     "kind": "proposal-review-section",
     "format": "markdown",
-    "text": "Requirement status: Source-backed. The sample team is CMMC compliant. Gap: the sample pack has no approved certification proof."
+    "text": "Requirement status: Source-backed. and then this short bridge helps reviewers follow sequence before the next labeled status line carefully without adding new facts. The synthetic sample may discuss phased rollout planning and training readiness. Gap: the sample pack has no approved certification proof."
   },
   "coverage": {
     "mode": "full-segmentation",
@@ -50,8 +50,14 @@
     },
     {
       "id": "seg-003",
+      "kind": "connective",
+      "material": false,
+      "text": "and then this short bridge helps reviewers follow sequence before the next labeled status line carefully without adding new facts. "
+    },
+    {
+      "id": "seg-004",
       "kind": "claim",
-      "text": "The sample team is CMMC compliant.",
+      "text": "The synthetic sample may discuss phased rollout planning and training readiness.",
       "refs": [
         {
           "type": "card_entry",
@@ -69,7 +75,7 @@
       ]
     },
     {
-      "id": "seg-004",
+      "id": "seg-005",
       "kind": "gap",
       "text": " Gap: the sample pack has no approved certification proof.",
       "gap": {

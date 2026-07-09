@@ -1,0 +1,7 @@
+id: proof-output-missing-required-segment
+command: verify-output
+proof_output_file: examples/proof-output/missing-required-segment.json
+expect_valid: false
+expect_decision: blocked
+expect_issue_codes_contains:
+- proof_output_required_segment_missing

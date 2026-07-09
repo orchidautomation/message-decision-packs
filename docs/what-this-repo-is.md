@@ -139,6 +139,8 @@ mdp gaps
 mdp eval
 ```
 
+`check-claims` owns draft-text guardrails such as avoid literals, unsupported claims, word counts, subject limits, max questions, exact paragraphs, and forbidden links/html/tracking. `verify-output` owns structured `mdp.proof-output.v0` validation, including pack-owned `constraints.proof_output` for required segment kinds, minimum segment counts, source refs on claim segments, and connective word limits. Arbitrary prose remains Layer 1 guidance unless it is mapped to a supported structured Layer 2 constraint.
+
 Pluxx translates the agent-facing skills and plugin package into the host-specific shapes people actually use. The goal is not fake parity across every host. The goal is to preserve the same intent and expose the best honest equivalent in each agent environment.
 
 The honest framing is:
