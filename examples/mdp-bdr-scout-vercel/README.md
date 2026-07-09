@@ -77,6 +77,8 @@ npm run typecheck
 
 ## Install for Vercel development
 
+Use Node.js 24 or newer; the Eve dependency used by this scaffold declares `node >=24`.
+
 ```bash
 npm install
 cp env.example .env.local
