@@ -138,8 +138,7 @@ function applyPersonResolution(account: CandidateWithEvidence, person: PersonRes
     segment: person.segment,
     signals: [
       ...(account.candidate.signals ?? []),
-      "Public person-level role evidence",
-      person.title
+      "Public person-level role evidence"
     ]
   };
   return candidateWithEvidenceSchema.parse({
@@ -167,7 +166,7 @@ function resultToCandidateWithEvidence(result: ExaSearchResult): CandidateWithEv
       trigger: snippet,
       persona: null,
       segment: null,
-      signals: ["Exa AI SDK public account discovery", title]
+      signals: [`Fit signal: ${title}`, `Why-now trigger evidence: ${snippet}`]
     },
     evidence: [{
       id,

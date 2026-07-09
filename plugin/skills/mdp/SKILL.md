@@ -23,7 +23,7 @@ messy row
   -> run check-claims before approving copy
 ```
 
-Normalization prepares runtime JSON. It does not mutate cards, decide final fit, or write copy. `lead_input_requirements` is the manifest wire key for the user-facing input readiness policy: required fields, required signal fields, required attributes, and allowed values. `activation_ready` is structural profile/template readiness, not market readiness, customer readiness, commercial readiness, compliance approval, or permission to contact an account.
+Normalization prepares runtime JSON. It does not mutate cards, decide final fit, or write copy. `lead_input_requirements` is the manifest wire key for the user-facing input readiness policy: required fields, required signal fields, required attributes, and allowed values. `qualification_gates` is the manifest wire key for pack-owned source-backed fit gates such as public person resolution, source-backed signal count, fit signal, and why-now signal. `activation_ready` is structural profile/template readiness, not market readiness, customer readiness, commercial readiness, compliance approval, or permission to contact an account.
 
 When explaining fields, keep these boundaries:
 
@@ -166,7 +166,7 @@ Prefer adding `company_domain`, `linkedin_url`, `company_url`, `background`, `tr
 
 Attributes are metadata, not proof. Do not cite an attribute as evidence for customer use, adoption, commercial traction, compliance, integrations, or product capability. Put raw proof snippets or source locators in `signals[].source`, `.mdp/sources.yaml`, or reviewed claim/proof cards, and surface a gap when those sources are missing.
 
-Packs may declare readiness requirements in `.mdp/manifest.yaml`:
+Packs may declare readiness and qualification requirements in `.mdp/manifest.yaml`:
 
 ```yaml
 lead_input_requirements:
@@ -182,6 +182,14 @@ lead_input_requirements:
     - source
   required_attributes:
     - fiscal_year
+qualification_gates:
+  require_person_resolution: true
+  signals:
+    min: 1
+    max: 3
+    require_fit_signal: true
+    require_why_now_signal: true
+  fail_policy: insufficient_context
   value_contracts:
     segment:
       type: string
@@ -239,7 +247,7 @@ Use this workflow:
 
 Fixture leads are `source_kind: synthetic-example`, `synthetic: true`, and `do_not_contact: true`. Do not enrich, research, upload, sequence, send to, or imply they represent real people or accounts.
 
-Run fit first and stop on `disqualified` or `insufficient-context` unless the user explicitly overrides. If the user only asked whether a row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, `context.missing_requirements`, `context.invalid_requirements`, and gaps instead of drafting or creating a parallel evaluation.
+Run fit first and stop on `disqualified` or `insufficient-context` unless the user explicitly overrides. If the user only asked whether a row should be messaged, return the `mdp fit` decision, matched rules, disqualifiers, `context.qualification_gate`, `context.missing_requirements`, `context.invalid_requirements`, and gaps instead of drafting or creating a parallel evaluation. Do not recreate qualification logic in the agent runtime; gather evidence, normalize the prospect, run `mdp fit`, and obey the pack-owned status plus gaps.
 
 Then create a brief:
 

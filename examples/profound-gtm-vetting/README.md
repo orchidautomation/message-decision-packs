@@ -23,6 +23,8 @@ This example uses public Profound pages plus the user-provided MDP hypothesis fr
 - Apify only for reviewed public actors/datasets with explicit source policy and budget approval.
 - No private LinkedIn, gated pages, contact databases, personal contact enrichment, CRM mutation, or autonomous outreach.
 
+The binary qualification decision lives in `.mdp/manifest.yaml` under `qualification_gates`, not in the scout runtime. `mdp fit` requires public person resolution plus 1-3 source-backed signals that include a fit signal and a why-now signal; missing evidence returns `insufficient-context` with machine-readable gate gaps.
+
 ## What To Inspect
 
 ```bash

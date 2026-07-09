@@ -311,6 +311,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
                 }
             },
             "lead_input_requirements": lead_input_requirements_schema(),
+            "qualification_gates": qualification_gates_schema(),
             "required_primitives": primitive_id_array_schema(),
             "primitive_map": primitive_map_schema(),
             "input_contracts": input_contracts_schema(),
@@ -786,6 +787,40 @@ fn lead_input_requirements_schema() -> Value {
                 "type": "boolean",
                 "default": true,
                 "description": "When false, prospect attributes must be declared in attribute_definitions."
+            }
+        }
+    })
+}
+
+fn qualification_gates_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Optional pack-owned qualification gates enforced by mdp fit after prospect input readiness checks.",
+        "properties": {
+            "require_person_resolution": {
+                "type": "boolean",
+                "description": "Require public person-level resolution with name, title, and a person-scoped public URL or source-backed person-resolution signal."
+            },
+            "signals": {
+                "type": "object",
+                "description": "Source-backed signal evidence gates for qualification.",
+                "properties": {
+                    "min": {"type": "integer", "minimum": 1},
+                    "max": {"type": "integer", "minimum": 1},
+                    "require_fit_signal": {
+                        "type": "boolean",
+                        "description": "Require at least one source-backed signal tied to role, persona, account, ICP, category, or signal fit."
+                    },
+                    "require_why_now_signal": {
+                        "type": "boolean",
+                        "description": "Require at least one source-backed signal tied to trigger, timing, priority, change, launch, hiring, demand, or opportunity."
+                    }
+                }
+            },
+            "fail_policy": {
+                "enum": ["insufficient_context"],
+                "default": "insufficient_context",
+                "description": "How mdp fit reports qualification gate misses. The first slice supports insufficient_context."
             }
         }
     })

@@ -1,4 +1,4 @@
-use crate::models::CardKind;
+use crate::models::{CardKind, QualificationGates};
 use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
 use crate::routing::{entry_context, entry_route, select_cards};
 use crate::utils::slugify;
@@ -253,6 +253,16 @@ fn fit_context(
         }
     }
 
+    let qualification_gate = qualification_gate_context(&manifest.qualification_gates, prospect);
+    if let Some(gate) = manifest.qualification_gates.as_ref() {
+        collect_qualification_gate_requirements(
+            gate,
+            &qualification_gate,
+            &mut missing_requirements,
+            &mut invalid_requirements,
+        );
+    }
+
     let mut missing = BTreeSet::new();
     for requirement in missing_requirements
         .iter()
@@ -275,6 +285,7 @@ fn fit_context(
         "has_background": has_background,
         "has_signals": has_signal,
         "has_signal_source": has_source,
+        "qualification_gate": qualification_gate,
         "normalization": {
             "company_domain": company_domain_normalization
         },
@@ -282,6 +293,231 @@ fn fit_context(
         "missing_requirements": missing_requirements,
         "invalid_requirements": invalid_requirements
     })
+}
+
+fn qualification_gate_context(
+    gate: &Option<QualificationGates>,
+    prospect: &crate::models::Prospect,
+) -> Value {
+    let source_backed_indexes = prospect
+        .signals
+        .iter()
+        .enumerate()
+        .filter(|(_, signal)| signal.source.as_ref().is_some_and(|value| present(value)))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let source_backed_count = source_backed_indexes.len();
+    let fit_signal_indexes = source_backed_indexes
+        .iter()
+        .copied()
+        .filter(|index| signal_text_matches(&prospect.signals[*index], FIT_SIGNAL_TERMS))
+        .collect::<Vec<_>>();
+    let why_now_signal_indexes = source_backed_indexes
+        .iter()
+        .copied()
+        .filter(|index| signal_text_matches(&prospect.signals[*index], WHY_NOW_SIGNAL_TERMS))
+        .collect::<Vec<_>>();
+    let person_resolution_indexes = source_backed_indexes
+        .iter()
+        .copied()
+        .filter(|index| signal_text_matches(&prospect.signals[*index], PERSON_RESOLUTION_TERMS))
+        .collect::<Vec<_>>();
+    let public_person_url = prospect
+        .linkedin_url
+        .as_deref()
+        .is_some_and(public_person_url_present);
+    let person_resolution = present(&prospect.name)
+        && present(&prospect.title)
+        && (public_person_url || !person_resolution_indexes.is_empty());
+
+    json!({
+        "enabled": gate.is_some(),
+        "person_resolution": {
+            "required": gate.as_ref().is_some_and(|gate| gate.require_person_resolution),
+            "resolved": person_resolution,
+            "public_person_url": public_person_url,
+            "signal_indexes": person_resolution_indexes,
+        },
+        "signals": {
+            "source_backed_count": source_backed_count,
+            "source_backed_indexes": source_backed_indexes,
+            "fit_signal_indexes": fit_signal_indexes,
+            "why_now_signal_indexes": why_now_signal_indexes,
+        },
+        "fail_policy": gate
+            .as_ref()
+            .and_then(|gate| gate.fail_policy.as_ref())
+            .map(|_| "insufficient_context")
+            .unwrap_or("insufficient_context")
+    })
+}
+
+fn collect_qualification_gate_requirements(
+    gate: &QualificationGates,
+    gate_context: &Value,
+    missing_requirements: &mut Vec<Value>,
+    invalid_requirements: &mut Vec<Value>,
+) {
+    if gate.require_person_resolution
+        && !gate_context["person_resolution"]["resolved"]
+            .as_bool()
+            .unwrap_or(false)
+    {
+        missing_requirements.push(qualification_issue(
+            "person_resolution",
+            "qualification_gates.require_person_resolution",
+            "requires public person-level resolution with name, title, and a person-scoped public URL or source-backed person-resolution signal",
+        ));
+    }
+
+    let source_backed_count = gate_context["signals"]["source_backed_count"]
+        .as_u64()
+        .unwrap_or(0) as usize;
+    if gate
+        .signals
+        .min
+        .is_some_and(|minimum| source_backed_count < minimum)
+    {
+        missing_requirements.push(qualification_issue(
+            "signals",
+            "qualification_gates.signals.min",
+            &format!(
+                "requires at least {} source-backed signal(s); found {source_backed_count}",
+                gate.signals.min.unwrap_or_default()
+            ),
+        ));
+    }
+    if gate
+        .signals
+        .max
+        .is_some_and(|maximum| source_backed_count > maximum)
+    {
+        invalid_requirements.push(qualification_issue(
+            "signals",
+            "qualification_gates.signals.max",
+            &format!(
+                "requires at most {} source-backed signal(s); found {source_backed_count}",
+                gate.signals.max.unwrap_or_default()
+            ),
+        ));
+    }
+    if gate.signals.require_fit_signal
+        && gate_context["signals"]["fit_signal_indexes"]
+            .as_array()
+            .map(Vec::is_empty)
+            .unwrap_or(true)
+    {
+        missing_requirements.push(qualification_issue(
+            "fit_signal",
+            "qualification_gates.signals.require_fit_signal",
+            "requires at least one source-backed fit signal tied to role, persona, account, ICP, category, or signal fit",
+        ));
+    }
+    if gate.signals.require_why_now_signal
+        && gate_context["signals"]["why_now_signal_indexes"]
+            .as_array()
+            .map(Vec::is_empty)
+            .unwrap_or(true)
+    {
+        missing_requirements.push(qualification_issue(
+            "why_now_signal",
+            "qualification_gates.signals.require_why_now_signal",
+            "requires at least one source-backed why-now signal tied to trigger, timing, priority, change, launch, hiring, demand, or opportunity",
+        ));
+    }
+}
+
+fn qualification_issue(field: &str, path: &str, reason: &str) -> Value {
+    json!({
+        "scope": "qualification_gate",
+        "field": field,
+        "path": path,
+        "reason": reason
+    })
+}
+
+const FIT_SIGNAL_TERMS: &[&str] = &[
+    "fit",
+    "icp",
+    "persona",
+    "role",
+    "title",
+    "ownership",
+    "owner",
+    "account",
+    "category",
+    "search",
+    "seo",
+    "aeo",
+    "agency",
+    "content",
+    "brand",
+    "pr",
+];
+
+const WHY_NOW_SIGNAL_TERMS: &[&str] = &[
+    "why-now",
+    "why now",
+    "trigger",
+    "timing",
+    "fresh",
+    "current",
+    "recent",
+    "change",
+    "launch",
+    "hiring",
+    "priority",
+    "demand",
+    "opportunity",
+    "initiative",
+    "project",
+    "moment",
+    "interest",
+    "mentions",
+];
+
+const PERSON_RESOLUTION_TERMS: &[&str] = &[
+    "person",
+    "profile",
+    "role resolution",
+    "person-role",
+    "named",
+    "linkedin.com/in/",
+    "author",
+    "bio",
+    "team",
+];
+
+fn signal_text_matches(signal: &crate::models::Signal, terms: &[&str]) -> bool {
+    let text = format!(
+        "{}\n{}\n{}",
+        signal.id,
+        signal.title,
+        signal.source.as_deref().unwrap_or("")
+    )
+    .to_lowercase();
+    let tokens = text
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    terms.iter().any(|term| {
+        if term.chars().all(|c| c.is_ascii_alphanumeric()) {
+            tokens.iter().any(|token| token == term)
+        } else {
+            text.contains(term)
+        }
+    })
+}
+
+fn public_person_url_present(url: &str) -> bool {
+    let value = url.trim().to_lowercase();
+    present(&value)
+        && (value.contains("linkedin.com/in/")
+            || value.contains("/author/")
+            || value.contains("/team/")
+            || value.contains("/people/")
+            || value.contains("/person/")
+            || value.contains("/bio/"))
 }
 
 fn normalize_company_domain_for_fit(prospect: &mut crate::models::Prospect) -> Value {
@@ -1529,6 +1765,20 @@ mod tests {
         std::fs::write(manifest_path, manifest).expect("manifest should be writable");
     }
 
+    fn add_qualification_gate(root: &Path, min: usize, max: usize) {
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let gate = format!(
+            "qualification_gates:\n  require_person_resolution: true\n  signals:\n    min: {min}\n    max: {max}\n    require_fit_signal: true\n    require_why_now_signal: true\n  fail_policy: insufficient_context\n"
+        );
+        let updated = raw.replacen(
+            "required_primitives:\n",
+            &format!("{gate}required_primitives:\n"),
+            1,
+        );
+        std::fs::write(manifest_path, updated).expect("manifest should be writable");
+    }
+
     fn rename_card_id(root: &Path, card_path: &str, from: &str, to: &str) {
         let path = root.join(".mdp").join("cards").join(card_path);
         let raw = std::fs::read_to_string(&path).expect("card should be readable");
@@ -1787,6 +2037,222 @@ mod tests {
             "normalized"
         );
         assert_eq!(result["status"], "fit");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_qualification_gate_requires_public_person_resolution() {
+        let root = temp_pack("fit-qualification-person");
+        add_qualification_gate(&root, 1, 3);
+        let prospect_path = root.join("examples").join("missing-person-resolution.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "persona": "PMM",
+  "segment": "agent-assisted GTM",
+  "trigger": "Recent launch creates urgency for message context",
+  "signals": [
+    {"id": "fit-signal", "title": "Strong fit signal for account category", "source": "public account page"},
+    {"id": "why-now-signal", "title": "Recent launch trigger creates a why-now opportunity", "source": "public launch post"}
+  ]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert!(
+            result["context"]["missing_requirements"]
+                .as_array()
+                .expect("missing requirements")
+                .iter()
+                .any(|issue| issue["scope"] == "qualification_gate"
+                    && issue["field"] == "person_resolution")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_qualification_gate_requires_source_backed_fit_signal() {
+        let root = temp_pack("fit-qualification-fit-signal");
+        add_qualification_gate(&root, 1, 3);
+        let prospect_path = root.join("examples").join("missing-fit-signal.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "linkedin_url": "https://www.linkedin.com/in/taylor-lee",
+  "persona": "PMM",
+  "segment": "agent-assisted GTM",
+  "trigger": "Recent launch creates urgency for message context",
+  "signals": [
+    {"id": "why-now-signal", "title": "Recent launch trigger creates a why-now opportunity", "source": "public launch post"}
+  ]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert!(
+            result["context"]["missing_requirements"]
+                .as_array()
+                .expect("missing requirements")
+                .iter()
+                .any(|issue| issue["field"] == "fit_signal")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_qualification_gate_requires_source_backed_why_now_signal() {
+        let root = temp_pack("fit-qualification-why-now");
+        add_qualification_gate(&root, 1, 3);
+        let prospect_path = root.join("examples").join("missing-why-now-signal.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "linkedin_url": "https://www.linkedin.com/in/taylor-lee",
+  "persona": "PMM",
+  "segment": "agent-assisted GTM",
+  "trigger": "Recent launch creates urgency for message context",
+  "signals": [
+    {"id": "fit-signal", "title": "Strong fit signal for account category", "source": "public account page"}
+  ]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert!(
+            result["context"]["missing_requirements"]
+                .as_array()
+                .expect("missing requirements")
+                .iter()
+                .any(|issue| issue["field"] == "why_now_signal")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_qualification_gate_accepts_valid_source_backed_signals() {
+        let root = temp_pack("fit-qualification-valid");
+        add_qualification_gate(&root, 1, 3);
+        let prospect_path = root.join("examples").join("qualified.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "linkedin_url": "https://www.linkedin.com/in/taylor-lee",
+  "persona": "PMM",
+  "segment": "agent-assisted GTM",
+  "trigger": "Recent launch creates urgency for message context",
+  "signals": [
+    {"id": "fit-signal", "title": "Strong fit signal for account category", "source": "public account page"},
+    {"id": "why-now-signal", "title": "Recent launch trigger creates a why-now opportunity", "source": "public launch post"}
+  ]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "fit");
+        assert_eq!(result["context"]["qualification_gate"]["enabled"], true);
+        assert_eq!(
+            result["context"]["qualification_gate"]["signals"]["source_backed_count"],
+            2
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_qualification_gate_reports_signal_count_bounds() {
+        let root = temp_pack("fit-qualification-counts");
+        add_qualification_gate(&root, 2, 2);
+        let prospect_path = root.join("examples").join("too-many-signals.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "linkedin_url": "https://www.linkedin.com/in/taylor-lee",
+  "persona": "PMM",
+  "segment": "agent-assisted GTM",
+  "trigger": "Recent launch creates urgency for message context",
+  "signals": [
+    {"id": "fit-signal", "title": "Strong fit signal for account category", "source": "public account page"},
+    {"id": "why-now-signal", "title": "Recent launch trigger creates a why-now opportunity", "source": "public launch post"},
+    {"id": "extra-fit-signal", "title": "Extra fit signal", "source": "public article"}
+  ]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert!(
+            result["context"]["invalid_requirements"]
+                .as_array()
+                .expect("invalid requirements")
+                .iter()
+                .any(|issue| issue["path"] == "qualification_gates.signals.max")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_without_qualification_gate_remains_compatible() {
+        let root = temp_pack("fit-no-qualification-gate");
+        let prospect_path = root.join("examples").join("no-gate.json");
+        std::fs::write(
+            &prospect_path,
+            r#"{
+  "name": "Taylor Lee",
+  "title": "Director of Demand Gen",
+  "company": "ExampleCo",
+  "company_domain": "example.com",
+  "persona": "PMM",
+  "segment": "agent-assisted GTM",
+  "trigger": "Recent launch creates urgency for message context",
+  "signals": [
+    {"id": "generic", "title": "Generic context", "source": "public account page"}
+  ]
+}"#,
+        )
+        .expect("prospect should be writable");
+
+        let result = fit(&root, &prospect_path).expect("fit should succeed");
+
+        assert_eq!(result["status"], "fit");
+        assert_eq!(result["context"]["qualification_gate"]["enabled"], false);
 
         let _ = std::fs::remove_dir_all(root);
     }
