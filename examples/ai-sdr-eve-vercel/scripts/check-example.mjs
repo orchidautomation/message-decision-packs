@@ -100,6 +100,16 @@ if (!scoutCycleLib.includes("validateQualifiedCandidate") || !scoutCycleLib.incl
   process.exit(1);
 }
 
+const discoverCandidatesTool = readFileSync("agent/tools/discover_candidates.ts", "utf8");
+if (!discoverCandidatesTool.includes("selectPersonResolutionQuery") || !discoverCandidatesTool.includes("personResolutionQueryTemplate")) {
+  console.error("discover_candidates tool must pass the MDP person-resolution query template into discovery");
+  process.exit(1);
+}
+if (!discoverCandidatesTool.includes("person_resolution_query")) {
+  console.error("discover_candidates tool must return the selected person-resolution query trace");
+  process.exit(1);
+}
+
 const appendLedgerTool = readFileSync("agent/tools/append_ledger.ts", "utf8");
 if (!appendLedgerTool.includes("assertQualifiedCandidate") || !appendLedgerTool.includes("person_resolution_evidence_ids")) {
   console.error("append_ledger tool must enforce the shared qualification contract");
