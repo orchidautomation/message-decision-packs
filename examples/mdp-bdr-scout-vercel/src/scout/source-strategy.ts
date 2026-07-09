@@ -7,6 +7,13 @@ export type SourceStrategy = {
   format: "mdp.source-strategy.v0";
   profile: { id: string; label: string };
   objective: Record<string, unknown> & { decision_needed: string };
+  agent_operating_plan?: {
+    role: string;
+    operating_instructions: string[];
+    stop_conditions: string[];
+    insufficient_evidence_action: string;
+    downstream_handoff_prompt: string;
+  };
   primitive_mappings: Array<{ primitive: string; known: string[]; evidence_needed: string[]; gaps: string[] }>;
   source_targets: SourceTarget[];
   queries_prompts: SourceQueryPrompt[];
@@ -33,10 +40,14 @@ export type SourceQueryPrompt = {
   id: string;
   scout_family: string;
   query_or_prompt: string;
+  agent_instruction: string;
+  construction_rules: string[];
   target_source_ids?: string[];
   negative_filters: string[];
   expected_signals: string[];
   max_results?: number;
+  required_receipts?: string[];
+  review_required?: boolean;
 };
 
 export type SelectedScoutQuery = {
@@ -98,6 +109,14 @@ export function assertSourceStrategy(value: unknown): asserts value is SourceStr
   requireString(value.profile, "label", "profile");
   if (!isRecord(value.objective)) throw new Error("source strategy objective is required");
   requireString(value.objective, "decision_needed", "objective");
+  if (value.agent_operating_plan !== undefined) {
+    if (!isRecord(value.agent_operating_plan)) throw new Error("source strategy agent_operating_plan must be an object");
+    requireString(value.agent_operating_plan, "role", "agent_operating_plan");
+    requireArray(value.agent_operating_plan.operating_instructions, "agent_operating_plan.operating_instructions");
+    requireArray(value.agent_operating_plan.stop_conditions, "agent_operating_plan.stop_conditions");
+    requireString(value.agent_operating_plan, "insufficient_evidence_action", "agent_operating_plan");
+    requireString(value.agent_operating_plan, "downstream_handoff_prompt", "agent_operating_plan");
+  }
   requireArray(value.primitive_mappings, "primitive_mappings");
   requireArray(value.source_targets, "source_targets");
   requireArray(value.queries_prompts, "queries_prompts");
@@ -120,9 +139,10 @@ export function assertSourceStrategy(value: unknown): asserts value is SourceStr
 
   for (const query of value.queries_prompts) {
     if (!isRecord(query)) throw new Error("source query prompt must be an object");
-    for (const field of ["id", "scout_family", "query_or_prompt"]) {
+    for (const field of ["id", "scout_family", "query_or_prompt", "agent_instruction"]) {
       requireString(query, field, "source query prompt");
     }
+    requireArray(query.construction_rules, `source query ${String(query.id)} construction_rules`);
     requireArray(query.negative_filters, `source query ${String(query.id)} negative_filters`);
     requireArray(query.expected_signals, `source query ${String(query.id)} expected_signals`);
   }

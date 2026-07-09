@@ -39,6 +39,14 @@ assertSourceStrategy(sourceStrategyJson);
 const sourceStrategy = await loadSourceStrategy(join(root, 'samples/source-strategy.json'));
 const strategySummary = summarizeSourceStrategy(sourceStrategy);
 if (!strategySummary.queries.includes('exa-ai-gtm-agent-triggers')) throw new Error('source strategy must include the Exa trigger query');
+if (!sourceStrategy.agent_operating_plan?.downstream_handoff_prompt.includes('mdp check-claims')) {
+  throw new Error('source strategy must include downstream mdp check-claims handoff language');
+}
+for (const query of sourceStrategy.queries_prompts) {
+  if (!query.agent_instruction || query.construction_rules.length === 0) {
+    throw new Error(`source strategy query ${query.id} must include agent instructions and construction rules`);
+  }
+}
 
 const result = await runScoutCycle({
   fixturePath: join(root, 'samples/public-source-fixture.json'),

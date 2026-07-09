@@ -35,12 +35,12 @@ The scout is a wrapper around MDP. MDP remains the local/offline decision and co
 
 ## MDP source strategy
 
-This example includes `samples/source-strategy.json`, a normalized `mdp.source-strategy.v0` artifact produced by the MDP source-strategy primitive. It is intentionally domain-agnostic: a GTM operator supplies or reviews the MDP pack, then the strategy defines public source targets, Exa/Firecrawl handoff prompts, exclusions, evidence requirements, routing jobs, gaps, and eval checks.
+This example includes `samples/source-strategy.json`, a normalized `mdp.source-strategy.v0` artifact produced by the MDP source-strategy primitive. It is intentionally domain-agnostic: a GTM operator supplies or reviews the MDP pack, then the strategy defines an agent operating plan, public source targets, Exa/Firecrawl/Apify prompt blocks, exclusions, evidence pass/fail gates, routing jobs, gaps, and eval checks.
 
 Runtime flow:
 
 ```text
-MDP pack ICP/signals/evals -> source strategy -> provider search/extraction -> MDP fit/brief -> ledger row
+MDP pack ICP/signals/evals -> source strategy operating plan -> provider search/extraction -> mdp fit -> mdp brief --context -> mdp check-claims -> ledger row
 ```
 
 Set `SCOUT_SOURCE_STRATEGY_PATH` to use an operator-reviewed strategy file. If it is unset, the demo uses `samples/source-strategy.json`.

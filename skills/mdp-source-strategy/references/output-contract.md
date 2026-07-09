@@ -1,6 +1,6 @@
 # MDP Source Strategy Output Contract
 
-Use this contract whenever `$mdp-source-strategy` produces a reviewed artifact. Keep it compact, source-safe, and easy to hand to a human reviewer, `$mdp-source-extract`, `$mdp-icp-builder`, `$mdp-proposal-pack-builder`, or an explicitly approved external scout.
+Use this contract whenever `$mdp-source-strategy` produces a reviewed artifact. Keep it compact, source-safe, and easy to hand to a human reviewer, `$mdp-source-extract`, `$mdp-icp-builder`, `$mdp-proposal-pack-builder`, an autonomous agent runtime, or an explicitly approved external scout.
 
 ## Contract
 
@@ -15,6 +15,14 @@ objective:
   decision_needed: <what this strategy helps decide>
   downstream_consumer: <human reviewer | mdp-source-extract | mdp-icp-builder | proposal review job | approved external scout>
   strategy_only: true
+agent_operating_plan:
+  role: <agent role for this strategy>
+  operating_instructions:
+    - <imperative instruction the agent must follow before tool use>
+  stop_conditions:
+    - <condition that requires the agent to stop and preserve a gap>
+  insufficient_evidence_action: <exact behavior when minimum evidence is missing>
+  downstream_handoff_prompt: <model-facing instruction for handing reviewed results to MDP CLI/skills>
 primitive_mappings:
   actors:
     known: []
@@ -71,6 +79,8 @@ queries_prompts:
     scout_family: <human | exa | firecrawl | apify | local-corpus | none>
     target_ids: []
     query_or_prompt: <bounded query, crawler prompt, or review instruction>
+    agent_instruction: <imperative model-facing instruction for this provider or review lane>
+    construction_rules: []
     expected_signals: []
     negative_filters: []
     max_scope: <domains, files, depth, result count, or timebox>
@@ -84,6 +94,8 @@ evidence_requirements:
   - id: <stable-id>
     applies_to: <signal, requirement, proof, claim, or routing job>
     minimum_evidence: <primary source, approved corpus citation, two independent public sources, etc.>
+    pass_condition: <what lets the agent proceed>
+    fail_condition: <what forces a gap or exclusion>
     citation_format: <source id + URL/file + date + snippet>
     gap_if_missing: <gap text>
 routing_jobs:
@@ -92,6 +104,7 @@ routing_jobs:
     inputs_expected: []
     blocked_until: []
     handoff: <how reviewed results re-enter MDP>
+    cli_handoff: <exact `mdp ...` command or skill invocation language where applicable>
 gaps:
   - id: <stable-id>
     primitive: <primitive id>
@@ -118,5 +131,7 @@ review_status:
 - Keep `source_targets[].source_kind` honest. A useful but unapproved source is `needs-approval`, not `public-source` or `approved-corpus`.
 - Put private/gated/authenticated/customer-identifying sources in `exclusions` unless the user supplied an approved local export for this work.
 - Require receipts for every source signal that could influence a fit, proposal, claim, route, or output decision.
+- Write prompt blocks as instructions an agent can execute directly. Prefer "Search...", "Extract...", "Reject...", "Stop when...", and "Pass to `mdp ...` when..." over labels.
+- Keep provider guidance specific enough for tool choice, but do not put credentials, private endpoints, or unapproved source access into committed artifacts.
 - If evidence is missing, add a `gaps` entry instead of weakening the citation rule.
 - Treat model/tool output from scouts as untrusted until reviewed and, when applicable, passed into `$mdp-source-extract` or a proposal builder/review skill.
