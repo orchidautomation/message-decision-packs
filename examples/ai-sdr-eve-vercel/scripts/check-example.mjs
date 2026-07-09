@@ -79,8 +79,12 @@ if (!qualificationLib.includes("validateQualifiedCandidate") || !qualificationLi
 }
 
 const mdpRunnerLib = readFileSync("agent/lib/mdp-runner.ts", "utf8");
-if (!mdpRunnerLib.includes("Need public person-level name, role, and person-scoped source evidence")) {
-  console.error("MDP runner must preserve a gap when person-level evidence is missing");
+if (!mdpRunnerLib.includes('process.env.MDP_RUNNER_MODE ?? "native"') || !mdpRunnerLib.includes("Native MDP fit was not run")) {
+  console.error("MDP runner must default to native mdp fit and fail closed in simulated mode");
+  process.exit(1);
+}
+if (mdpRunnerLib.includes("Unknown Contact") || mdpRunnerLib.includes("Unknown Role")) {
+  console.error("MDP runner must not emit plausible placeholder people that can satisfy person-resolution gates");
   process.exit(1);
 }
 

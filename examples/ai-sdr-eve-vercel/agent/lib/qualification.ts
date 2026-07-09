@@ -13,7 +13,6 @@ export type QualificationInput = {
   mdp: MdpDecision;
   score: ScoreBreakdown;
   minScore: number;
-  requirePerson?: boolean;
 };
 
 const BLOCKED_EVIDENCE_HOSTS = /(apollo|rocketreach|signalhire|lusha|hunter\.io|zoominfo|contactout|email-format|leadiq|seamless)\./i;
@@ -29,9 +28,6 @@ export function validateQualifiedCandidate(input: QualificationInput): Qualifica
   if (input.mdp.gaps.length > 0) reasons.push(`MDP gaps must be resolved before qualification: ${input.mdp.gaps.join("; ")}.`);
   if (input.score.overall < minScore) reasons.push(`Score ${input.score.overall} is below qualification threshold ${minScore}.`);
   if (!input.evidence.length) reasons.push("At least one evidence receipt is required.");
-  if (input.requirePerson !== false && personEvidence.length === 0) {
-    reasons.push("Public person-level evidence with name, title, and allowed source URL is required before qualification.");
-  }
 
   const blocked = input.evidence.find(isBlockedEvidenceSource);
   if (blocked) reasons.push(`Blocked evidence source is not allowed before ledger append: ${blocked.url}.`);

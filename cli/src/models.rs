@@ -21,6 +21,8 @@ pub(crate) struct Manifest {
     pub(crate) persona_mappings: Vec<PersonaMapping>,
     #[serde(default)]
     pub(crate) lead_input_requirements: LeadInputRequirements,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) qualification_gates: Option<QualificationGates>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) required_primitives: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -214,6 +216,43 @@ pub(crate) struct ValueContract {
     pub(crate) required: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct QualificationGates {
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) require_person_resolution: bool,
+    #[serde(default, skip_serializing_if = "QualificationSignalGates::is_empty")]
+    pub(crate) signals: QualificationSignalGates,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) fail_policy: Option<QualificationFailPolicy>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct QualificationSignalGates {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) min: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) max: Option<usize>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) require_fit_signal: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) require_why_now_signal: bool,
+}
+
+impl QualificationSignalGates {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.min.is_none()
+            && self.max.is_none()
+            && !self.require_fit_signal
+            && !self.require_why_now_signal
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum QualificationFailPolicy {
+    InsufficientContext,
 }
 
 fn default_allow_undeclared_attributes() -> bool {

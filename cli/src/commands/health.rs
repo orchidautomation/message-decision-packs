@@ -4,7 +4,7 @@ use crate::constants::{
 };
 use crate::models::{
     AgentSurface, CardKind, InputContract, Manifest, PrimitiveMapping, Profile, ProfileEval,
-    ProfileJob, PromptFile, ValueContract,
+    ProfileJob, PromptFile, QualificationGates, ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
@@ -183,6 +183,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         }
     }
     validate_lead_input_requirements(&manifest, &mut issues);
+    validate_qualification_gates(manifest.qualification_gates.as_ref(), &mut issues);
     validate_profile(manifest.profile.as_ref(), &mut issues);
     for card_ref in &manifest.cards {
         if !card_ids.insert(card_ref.id.clone()) {
@@ -291,6 +292,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "supported_channels",
             "persona_mappings",
             "lead_input_requirements",
+            "qualification_gates",
             "required_primitives",
             "primitive_map",
             "input_contracts",
@@ -424,6 +426,24 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "attribute_definitions",
         ),
         ".mdp/manifest.yaml#/lead_input_requirements/attribute_definitions",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(&value, "qualification_gates").unwrap_or(&YamlValue::Null),
+        &["require_person_resolution", "signals", "fail_policy"],
+        ".mdp/manifest.yaml#/qualification_gates",
+        "manifest_qualification_gates_unknown_field",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(
+            yaml_get(&value, "qualification_gates").unwrap_or(&YamlValue::Null),
+            "signals",
+        )
+        .unwrap_or(&YamlValue::Null),
+        &["min", "max", "require_fit_signal", "require_why_now_signal"],
+        ".mdp/manifest.yaml#/qualification_gates/signals",
+        "manifest_qualification_signal_gates_unknown_field",
         issues,
     );
     validate_object_keys(
@@ -1381,6 +1401,38 @@ fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: 
             ),
             issues,
         );
+    }
+}
+
+fn validate_qualification_gates(gate: Option<&QualificationGates>, issues: &mut Vec<Value>) {
+    let Some(gate) = gate else {
+        return;
+    };
+    if gate.signals.min == Some(0) {
+        issues.push(issue(
+            "qualification_gate_signal_min_zero",
+            "error",
+            ".mdp/manifest.yaml#/qualification_gates/signals/min",
+            "qualification_gates.signals.min must be at least 1 when present",
+        ));
+    }
+    if gate.signals.max == Some(0) {
+        issues.push(issue(
+            "qualification_gate_signal_max_zero",
+            "error",
+            ".mdp/manifest.yaml#/qualification_gates/signals/max",
+            "qualification_gates.signals.max must be at least 1 when present",
+        ));
+    }
+    if let (Some(min), Some(max)) = (gate.signals.min, gate.signals.max) {
+        if min > max {
+            issues.push(issue(
+                "qualification_gate_signal_min_gt_max",
+                "error",
+                ".mdp/manifest.yaml#/qualification_gates/signals",
+                format!("qualification_gates.signals.min ({min}) must not exceed max ({max})"),
+            ));
+        }
     }
 }
 

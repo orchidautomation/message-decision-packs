@@ -87,6 +87,7 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
             attribute_definitions,
             allow_undeclared_attributes: true,
         },
+        qualification_gates: None,
         required_primitives: gtm_required_primitives(),
         primitive_map: gtm_primitive_map(),
         input_contracts: vec![InputContract {

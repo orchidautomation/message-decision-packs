@@ -18,18 +18,18 @@
     {
       "confidence": "medium",
       "freshness": "synthetic-current",
-      "id": "content-production-signal",
-      "source": "synthetic-example-row",
-      "state_as": "supplied",
-      "title": "Account has a public content and resource-center motion"
-    },
-    {
-      "confidence": "medium",
-      "freshness": "synthetic-current",
       "id": "answer-engine-visibility-trigger",
       "source": "synthetic-example-row",
       "state_as": "hypothesis",
       "title": "Trigger is interest in measuring brand visibility across AI answer engines"
+    },
+    {
+      "confidence": "medium",
+      "freshness": "synthetic-current",
+      "id": "public-person-role-resolution-signal",
+      "source": "synthetic-public-row.person_profile",
+      "state_as": "supplied",
+      "title": "Public person-role page names Jordan Lee as Director of Organic Growth at ExampleMarket Co"
     }
   ],
   "source_kind": "synthetic-example",

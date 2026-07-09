@@ -156,12 +156,12 @@ Treat `ctas.yaml` as the policy for the ask or reply path. Treat `output-rules.y
 - Do not call MDP a sender, CRM, sequencer, enrichment provider, AI SDR, BI tool, or generic automation system.
 - Do not invent unsupported claims. Put gaps in the brief or card entries.
 - Use `signals` for evidence, prospect `attributes` for bounded reviewed row metadata, row fields such as `source_kind` for source markers, and entry `metadata` for card annotations. Do not put proof into attributes or prospect facts into entry metadata.
-- Treat `lead_input_requirements` as the manifest wire key for input readiness policy. Treat `activation_ready` as structural profile/template readiness only, not commercial readiness.
+- Treat `lead_input_requirements` as the manifest wire key for input readiness policy and `qualification_gates` as the manifest wire key for source-backed fit gates enforced by `mdp fit`. Treat `activation_ready` as structural profile/template readiness only, not commercial readiness.
 - Treat GTM, proposal, and future domains as profiles/templates over shared primitives. Keep profile nouns in card IDs, prompts, jobs, attributes, signals, traces, gaps, and evals unless the CLI core contract changes.
 - Keep `--json` on for CLI output that another tool, script, or agent will parse.
 - Use `--summary` for status checks instead of piping JSON into ad hoc scripts.
 - Starter `examples/clay-row.json` rows are synthetic fixtures kept for compatibility unless the prospect says otherwise. Do not present them as real prospects, and do not treat Clay as the required or default source system.
-- Do not add a parallel row-evaluation skill for fit. Use `$mdp-prospect-brief` and the CLI-owned `mdp fit` decision instead.
+- Do not add a parallel row-evaluation or qualification skill for fit. Use `$mdp-prospect-brief` and the CLI-owned `mdp fit` decision, including `context.qualification_gate`, instead.
 
 ## Closeout
 
