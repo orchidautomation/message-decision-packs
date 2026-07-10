@@ -15,11 +15,11 @@ mdp --json agent-surface --dir .
 
 Use this skill only when the surface is legacy/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
 
-Test whether the pack routes the right cards for realistic GTM tasks.
+Test whether the pack routes the right cards for realistic profile-owned jobs.
 
 ## Progressive References
 
-Read `references/installed-template-qa.md` when the goal is to QA the installed release artifact, default GTM template, default proposal template, or a clean scratch pack produced by `mdp init`.
+Read `references/installed-template-qa.md` when the goal is to QA the installed release artifact, default GTM, Proposal, or Recruiting template, or a clean scratch pack produced by `mdp init`.
 
 ## Workflow
 

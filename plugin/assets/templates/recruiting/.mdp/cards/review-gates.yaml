@@ -1,0 +1,49 @@
+id: review-gates
+kind: motions
+title: Recruiting review gates
+description: Named review jobs and their human checkpoints.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, routing, human-review]
+entries:
+- id: create-or-improve-recruiting-pack
+  title: Create or improve Recruiting pack job
+  body: Route all ten primitives, synthetic sources, safety boundaries, and eval gaps before treating a Recruiting pack as ready for human review.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [recruiting-safety-contract]
+  avoid: [execution workflow]
+  metadata: {primitive: routing-jobs}
+- id: role-requirements-review
+  title: Role requirements review job
+  body: Route role context, requirements, job-related criteria, boundaries, output rules, and gaps.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [synthetic-role-brief]
+  avoid: [candidate outcome]
+  metadata: {primitive: routing-jobs}
+- id: candidate-evidence-review
+  title: Candidate evidence review job
+  body: Route supplied candidate evidence, criteria, evidence standards, boundaries, output rules, and gaps without ranking or recommendation.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [candidate ranking]
+  metadata: {primitive: routing-jobs}
+- id: interview-brief
+  title: Interview brief job
+  body: Route job-related requirements, supplied evidence, missing evidence, boundaries, and interview output rules for a human interviewer.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-role-brief]
+  avoid: [protected inquiry]
+  metadata: {primitive: routing-jobs}
+- id: scorecard-gap-review
+  title: Scorecard gap review job
+  body: Route criterion-level evidence and gaps without totals, weights, comparative labels, or an employment outcome.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [aggregate score]
+  metadata: {primitive: routing-jobs}
+- id: pack-validation
+  title: Pack validation job
+  body: Route boundaries, output rules, gaps, and eval fixtures to validate the profile without processing real candidate data.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [recruiting-safety-contract]
+  avoid: [candidate processing]
+  metadata: {primitive: routing-jobs}

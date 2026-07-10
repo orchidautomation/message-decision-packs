@@ -1,0 +1,16 @@
+id: recruiting-insufficient-context
+profile_eval:
+  category: insufficient-context
+  primitives: [source-signals, needs-requirements, gaps]
+  jobs: [candidate-evidence-review]
+command: fit
+expect_status: insufficient-context
+prospect:
+  name: Candidate A
+  title: Candidate evidence subject
+  company: N/A
+  trigger: Review requested without a role source or candidate evidence source
+  persona: Recruiter
+  segment: software-engineering-review
+  synthetic: true
+  signals: []

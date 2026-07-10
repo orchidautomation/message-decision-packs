@@ -68,6 +68,20 @@ mdp --json check-claims --dir /tmp/mdp-proposal-demo --persona "Proposal Lead" -
 
 The proposal starter does not write a prospect row or fake lead fixtures. It is a synthetic proposal review pack for bid/no-bid, compliance, proof, red-team, and executive review jobs. Its `normalize-opportunity` prompt maps messy proposal/RFP context into bounded profile vocabulary and validated prompt-output fields; it does not submit, scrape, enrich, certify, or manage proposal work. Proposal packs need the same human-readable review-layer principle as prospect briefs, but should use opportunity/review metadata and proposal profile sections such as bid/no-bid read, compliance gaps, proof receipts, unsupported claims, red-team gaps, and `verify-output` status rather than prospect/outreach labels.
 
+Create and validate the synthetic Recruiting reference profile:
+
+```bash
+mdp --json init --template recruiting --dir /tmp/mdp-recruiting-demo --force
+mdp --json validate --strict --dir /tmp/mdp-recruiting-demo
+mdp --json eval --strict --dir /tmp/mdp-recruiting-demo
+mdp --json agent-surface --dir /tmp/mdp-recruiting-demo
+mdp --json validate-prompt-output --dir /tmp/mdp-recruiting-demo --prompt-id normalize-recruiting-context --file <prompt-output.json>
+mdp --json route --entries --dir /tmp/mdp-recruiting-demo --persona "Recruiter" --job "candidate evidence review"
+mdp --json verify-output --dir /tmp/mdp-recruiting-demo --file /tmp/mdp-recruiting-demo/examples/proof-output/valid-binding.json
+```
+
+The Recruiting template uses synthetic fixtures only. Candidate is an evidence subject; Recruiter, Hiring Manager, and Interviewer are operator personas. Readiness labels mean review-context sufficiency, not candidate fit. MDP does not source, enrich, scrape, background-check, schedule, rank, compare, advance, reject, hire, or provide employment-law/compliance approval.
+
 Use `brief` for production GTM prospect handoff. Add `--out <path>` when the machine brief should be saved; otherwise the artifact is stdout-only. Use `render-brief` when an existing artifact needs a compact human layer. `gtm-prospect` renders `mdp.message-brief.v0`; `proposal-review` and `proof-report` render `mdp.proof-output.v0` through the proof verifier. `--format json` emits the structured `mdp.human-brief.v0` object; Markdown is generated from that object by default. Failed gates remain failed: no-draft prospect briefs and proof gaps do not become send-ready or reusable draft text. Use `copy` only for local demos. Source inventory lives in `.mdp/sources.yaml`, reusable extraction prompts live in `.mdp/prompts/*.yaml`, CTA guidance lives in `cards/ctas.yaml`, channel rules live in `cards/channel-policies.yaml`, approved claims live in `cards/claims.yaml`, global style and structure rules live in `cards/output-rules.yaml`, and durable unknowns live in `cards/gaps.yaml`. Entries can use `avoid` for blocked literals, `exact_paragraphs` for fixed paragraph counts, and `constraints` for deterministic output limits. Draft-text constraints such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking are enforced by `check-claims`; proof-output constraints under `constraints.proof_output` are enforced by `verify-output`.
 
 Layer 1 rules are card body guidance an agent must read and follow. Layer 2 rules are structured constraints the CLI can enforce. For proposal `mdp.proof-output.v0` artifacts, packs can declare:

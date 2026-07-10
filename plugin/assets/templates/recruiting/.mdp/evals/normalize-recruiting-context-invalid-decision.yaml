@@ -1,0 +1,73 @@
+id: normalize-recruiting-context-invalid-decision
+profile_eval:
+  category: prompt-output-validation
+  primitives: [actors, source-signals, needs-requirements, gaps]
+  jobs: [candidate-evidence-review]
+command: validate-prompt-output
+prompt_id: normalize-recruiting-context
+expect_valid: false
+expect_issue_codes_contains:
+- value_contract_enum_mismatch
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-recruiting-context
+  source_summary:
+    company_domain: hiring.example
+    company_name: Example Hiring Team
+    person_name: Candidate A
+    person_title: Candidate evidence subject
+    account_name: Synthetic Recruiting review fixture
+    inputs_used: [raw_recruiting_context, person_data, existing_pack_context, source_kind]
+    confidence: medium
+  normalized_prospect:
+    name: Candidate A
+    title: Candidate evidence subject
+    company: Example Hiring Team
+    company_domain: hiring.example
+    source_kind: synthetic-example
+    synthetic: true
+    background: Synthetic role and work-sample evidence were supplied for criterion-level review.
+    trigger: Prepare a candidate evidence matrix for human review without an employment outcome.
+    persona: Recruiter
+    segment: software-engineering-review
+    attributes:
+      role_id: ROLE-SYNTH-001
+      candidate_id: CANDIDATE-SYNTH-A
+      review_stage: candidate-evidence
+      review_decision: hire
+      source_safety: synthetic
+    signals:
+    - id: synthetic-role-context
+      title: Synthetic role brief supplied
+      source: raw_recruiting_context.role_brief
+      confidence: medium
+      freshness: synthetic
+      state_as: supplied
+    - id: synthetic-api-work-sample
+      title: Synthetic API work sample supplied
+      source: raw_recruiting_context.candidate_evidence
+      confidence: medium
+      freshness: synthetic
+      state_as: supplied
+  normalization_trace:
+    persona:
+      source: existing_pack_context.personas
+      matched_keywords: [recruiter]
+      confidence: high
+      needs_review: false
+    fit_readiness:
+      has_role_source: true
+      has_job_related_criterion: true
+      has_review_stage: true
+      has_signal_source: true
+      has_permitted_source_safety: true
+      ready_for_mdp_fit: true
+    preserved_raw_fields:
+    - raw_recruiting_context.role_brief
+    - raw_recruiting_context.candidate_evidence
+    - raw_recruiting_context.review_stage
+    - source_kind
+    missing_required: []
+  card_patches: []
+  gaps: []
+  rejected_claims: []

@@ -1,0 +1,19 @@
+id: candidate-evidence-route
+profile_eval:
+  category: job-routing
+  primitives: [actors, source-signals, needs-requirements, decision-criteria, evidence-proof, boundaries, output-contracts, gaps]
+  jobs: [candidate-evidence-review]
+command: route
+persona: Recruiter
+job: candidate evidence review
+expect_load_order_contains:
+- .mdp/cards/candidate-evidence.yaml
+- .mdp/cards/role-requirements.yaml
+- .mdp/cards/review-criteria.yaml
+- .mdp/cards/evidence-standards.yaml
+- .mdp/cards/recruiting-boundaries.yaml
+- .mdp/cards/review-outputs.yaml
+- .mdp/cards/gaps.yaml
+expect_entry_titles_contains:
+- Candidate evidence review job
+- Candidate evidence matrix

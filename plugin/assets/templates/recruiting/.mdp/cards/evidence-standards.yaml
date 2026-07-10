@@ -1,0 +1,28 @@
+id: evidence-standards
+kind: claims
+title: Recruiting evidence standards
+description: Source-backed evidence rules and no-invention constraints.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, evidence, proof]
+entries:
+- id: supplied-work-sample-evidence
+  title: Supplied work sample evidence
+  body: The synthetic API work sample may support only the described API-change and testing evidence. Bind the claim to the card entry and synthetic source.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [generalized credential]
+  metadata: {primitive: evidence-proof}
+- id: no-credential-proof
+  title: No credential proof
+  body: No degree, certification, employer tenure, identity, or background-check result is verified by this sample. Represent any request for those facts as a gap.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [invented degree, invented certification]
+  metadata: {primitive: boundaries}
+- id: unverified-is-gap
+  title: Unverified source is a gap
+  body: Evidence marked unverified or restricted cannot become Source-backed review evidence until a human confirms its permitted use and provenance.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [recruiting-safety-contract]
+  avoid: [unverified proof]
+  metadata: {primitive: evidence-proof}

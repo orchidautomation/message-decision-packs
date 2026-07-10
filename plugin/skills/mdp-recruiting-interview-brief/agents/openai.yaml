@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Recruiting Interview Brief"
+  short_description: "Prepare safe interview questions"
+  default_prompt: "Use $mdp-recruiting-interview-brief to prepare job-related interview questions and evidence gaps for a human interviewer."

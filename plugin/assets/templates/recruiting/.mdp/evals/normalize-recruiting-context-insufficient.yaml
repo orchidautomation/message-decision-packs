@@ -1,0 +1,63 @@
+id: normalize-recruiting-context-insufficient
+profile_eval:
+  category: insufficient-context
+  primitives: [source-signals, needs-requirements, gaps]
+  jobs: [candidate-evidence-review]
+command: validate-prompt-output
+prompt_id: normalize-recruiting-context
+expect_valid: true
+expect_normalization_ready: false
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-recruiting-context
+  source_summary:
+    company_domain: N/A
+    company_name: N/A
+    person_name: Candidate A
+    person_title: Candidate evidence subject
+    account_name: Synthetic Recruiting review fixture
+    inputs_used: [raw_recruiting_context, person_data, source_kind]
+    confidence: low
+  normalized_prospect:
+    name: Candidate A
+    title: Candidate evidence subject
+    company: N/A
+    source_kind: synthetic-example
+    synthetic: true
+    background: A synthetic review request was supplied without a role source, job-related criterion, or candidate evidence source.
+    trigger: Prepare a review artifact after required context is supplied.
+    persona: Recruiter
+    segment: software-engineering-review
+    attributes:
+      role_id: ROLE-SYNTH-001
+      candidate_id: CANDIDATE-SYNTH-A
+      review_stage: candidate-evidence
+      review_decision: needs-more-context
+      source_safety: synthetic
+    signals: []
+  normalization_trace:
+    persona:
+      source: existing_pack_context.personas
+      matched_keywords: [recruiter]
+      confidence: high
+      needs_review: false
+    fit_readiness:
+      has_role_source: false
+      has_job_related_criterion: false
+      has_review_stage: true
+      has_signal_source: false
+      has_permitted_source_safety: true
+      ready_for_mdp_fit: false
+    preserved_raw_fields:
+    - raw_recruiting_context.review_request
+    - source_kind
+    missing_required:
+    - role_source
+    - job_related_criterion
+    - candidate_evidence_source
+  card_patches: []
+  gaps:
+  - Missing supplied role source.
+  - Missing job-related criterion and rationale.
+  - Missing supplied candidate evidence source.
+  rejected_claims: []

@@ -1,0 +1,35 @@
+id: recruiting-roles
+kind: personas
+title: Recruiting review roles
+description: Human operators for Recruiting review; candidates are evidence subjects, not operator personas.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, actors, roles]
+entries:
+- id: recruiter-reviewer
+  title: Recruiter reviewer
+  body: Prepares source-backed role and candidate review context, preserves gaps, and routes employment decisions to accountable humans.
+  applies_to: [Recruiter]
+  evidence: [synthetic-role-brief]
+  avoid: [candidate decision maker]
+  metadata: {primitive: actors}
+- id: hiring-manager-reviewer
+  title: Hiring Manager reviewer
+  body: Owns job-related role criteria and reviews evidence without delegating hiring authority to MDP.
+  applies_to: [Hiring Manager]
+  evidence: [synthetic-role-brief]
+  avoid: [automated outcome]
+  metadata: {primitive: actors}
+- id: interviewer-reviewer
+  title: Interviewer reviewer
+  body: Uses a job-related question brief, records supplied evidence, and leaves unresolved criteria as gaps.
+  applies_to: [Interviewer]
+  evidence: [synthetic-role-brief]
+  avoid: [protected inquiry]
+  metadata: {primitive: actors}
+- id: candidate-subject
+  title: Candidate is an evidence subject
+  body: Candidate A is a synthetic subject whose supplied evidence may be mapped per criterion. The candidate is never an operator persona or an MDP decision owner.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [candidate persona]
+  metadata: {primitive: actors}

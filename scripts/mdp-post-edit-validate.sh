@@ -162,12 +162,12 @@ if matches_any '^\.mdp/'; then
   run_root_pack=1
 fi
 
-if matches_any '^(plugin/)?assets/templates/basic/\.mdp/'; then
+if matches_any '^(plugin/)?assets/templates/(basic|proposal|recruiting)/\.mdp/'; then
   should_run=1
   run_template_pack=1
 fi
 
-if matches_any '^(plugin/)?assets/templates/basic/\.mdp/evals/'; then
+if matches_any '^(plugin/)?assets/templates/(basic|proposal|recruiting)/\.mdp/evals/'; then
   should_run=1
   run_template_eval=1
 fi
@@ -177,7 +177,7 @@ if matches_any '^(plugin/)?skills/|^pluxx\.config\.ts$'; then
   run_pluxx_lint=1
 fi
 
-if matches_any '^cli/(src/(models|starter|pack_io|app)\.rs|src/commands/(schemas|health|prompt_output|routing|briefs)\.rs|Cargo\.(toml|lock)|USAGE\.md)$'; then
+if matches_any '^cli/(src/(models|starter|pack_io|app)\.rs|src/commands/(init|schemas|health|prompt_output|routing|briefs)\.rs|Cargo\.(toml|lock)|USAGE\.md)$'; then
   should_run=1
   run_cargo_tests=1
 fi
@@ -207,19 +207,23 @@ if [ "$run_root_pack" -eq 1 ]; then
 fi
 
 if [ "$run_template_pack" -eq 1 ]; then
-  if [ -d "plugin/assets/templates/basic/.mdp" ]; then
-    run_mdp_command "template pack validate" --json --summary validate --dir plugin/assets/templates/basic
-  elif [ -d "assets/templates/basic/.mdp" ]; then
-    run_mdp_command "template pack validate" --json --summary validate --dir assets/templates/basic
-  fi
+  for template in basic proposal recruiting; do
+    if [ -d "plugin/assets/templates/$template/.mdp" ]; then
+      run_mdp_command "$template template validate" --json --summary validate --dir "plugin/assets/templates/$template"
+    elif [ -d "assets/templates/$template/.mdp" ]; then
+      run_mdp_command "$template template validate" --json --summary validate --dir "assets/templates/$template"
+    fi
+  done
 fi
 
 if [ "$run_template_eval" -eq 1 ]; then
-  if [ -d "plugin/assets/templates/basic/.mdp" ]; then
-    run_mdp_command "template pack eval" --json --summary eval --dir plugin/assets/templates/basic
-  elif [ -d "assets/templates/basic/.mdp" ]; then
-    run_mdp_command "template pack eval" --json --summary eval --dir assets/templates/basic
-  fi
+  for template in basic proposal recruiting; do
+    if [ -d "plugin/assets/templates/$template/.mdp" ]; then
+      run_mdp_command "$template template eval" --json --summary eval --dir "plugin/assets/templates/$template"
+    elif [ -d "assets/templates/$template/.mdp" ]; then
+      run_mdp_command "$template template eval" --json --summary eval --dir "assets/templates/$template"
+    fi
+  done
 fi
 
 if [ "$run_cargo_tests" -eq 1 ]; then

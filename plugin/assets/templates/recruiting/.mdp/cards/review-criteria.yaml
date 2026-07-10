@@ -1,0 +1,28 @@
+id: review-criteria
+kind: fit-rules
+title: Criterion-level review rules
+description: Rules for mapping supplied evidence without candidate outcomes.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, criteria, evidence]
+entries:
+- id: job-related-only
+  title: Job-related criteria only
+  body: Review only criteria with an explicit job-related rationale in the supplied role context. Surface ambiguous, preference-based, or proxy-like criteria for rewrite.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-role-brief]
+  avoid: [culture fit, vague polish]
+  metadata: {primitive: decision-criteria}
+- id: criterion-by-criterion
+  title: Review criterion by criterion
+  body: Map source-backed and partial evidence separately for each requirement. Do not aggregate, compare candidates, or infer an overall result.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [aggregate score, candidate ranking]
+  metadata: {primitive: decision-criteria}
+- id: no-evidence-is-not-negative
+  title: No evidence is not a negative finding
+  body: Missing evidence means Gap or Not assessed. It does not establish that a candidate lacks the skill or should receive an adverse outcome.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [recruiting-safety-contract]
+  avoid: [absence proves unqualified]
+  metadata: {primitive: decision-criteria}

@@ -55,6 +55,7 @@ Available templates are:
 
 - `gtm`: the generic GTM messaging starter.
 - `proposal`: the synthetic proposal reference profile for bid/no-bid, compliance, proof, red-team, and executive review workflows.
+- `recruiting`: the synthetic Recruiting reference profile for role requirements, candidate evidence, interview briefs, scorecard gaps, and pack validation.
 
 For the proposal reference profile:
 
@@ -69,6 +70,19 @@ mdp --json gaps --dir ./mdp-proposal-demo
 ```
 
 The proposal starter does not create prospect rows or outbound fixtures. It is a synthetic proposal review profile for bid/no-bid, compliance, proof, red-team, and executive review workflows. Its `normalize-opportunity` prompt normalizes messy proposal/RFP context into bounded profile vocabulary for local validation; `verify-output` checks proof-carrying generated text against real pack IDs before the text is trusted. Neither command submits, scrapes, enriches, certifies, or manages proposal work.
+
+For the Recruiting reference profile:
+
+```bash
+mdp --json init --template recruiting --dir ./mdp-recruiting-demo --force
+mdp --json validate --strict --dir ./mdp-recruiting-demo
+mdp --json eval --strict --dir ./mdp-recruiting-demo
+mdp --json agent-surface --dir ./mdp-recruiting-demo
+mdp --json route --entries --dir ./mdp-recruiting-demo --persona "Recruiter" --job "candidate evidence review"
+mdp --json verify-output --dir ./mdp-recruiting-demo --file ./mdp-recruiting-demo/examples/proof-output/valid-binding.json
+```
+
+The Recruiting starter contains only synthetic role and candidate evidence. It prepares criterion-level review artifacts and gaps for human review. It does not source, scrape, enrich, background-check, schedule, rank, compare, advance, reject, hire, or provide legal/compliance approval.
 
 The starter creates:
 
@@ -133,6 +147,14 @@ mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normaliz
 ```
 
 If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, keep the missing context in gaps and structured `normalization_trace.missing_required` entries. Do not invent proof, certifications, compliance status, deadlines, RFP text, past performance, pricing, evaluator criteria, approval status, or person context.
+
+For Recruiting packs, use `.mdp/prompts/normalize-recruiting-context.yaml` with supplied role/review facts, explicit candidate subject fields, pack-owned operator personas, bounded attributes, and reviewed source classification. Validate with:
+
+```bash
+mdp --json validate-prompt-output --dir ./mdp-recruiting-demo --prompt-id normalize-recruiting-context --file <prompt-output.json>
+```
+
+Here `human-review-ready` and `ready_for_mdp_fit` mean only that enough permitted context exists to prepare the requested review artifact. They never mean candidate fit or an employment outcome. Restricted or unverified material, protected/proxy requests, invented credentials, and ranking/rejection requests must fail closed or remain explicit gaps.
 
 Minimum parser admission is still `name`, `title`, and `company`, but the starter pack's fit-ready requirements are stricter:
 

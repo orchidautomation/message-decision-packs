@@ -1,0 +1,132 @@
+description: Turns supplied role, candidate-evidence, and review-stage context into bounded Recruiting vocabulary before review jobs run.
+format: mdp.prompt.v0
+id: normalize-recruiting-context
+inputs:
+- default: N/A
+  description: The full supplied role brief, candidate evidence, interview note, reviewer request, or scorecard context.
+  missing_behavior: Return gaps and do not create role or candidate facts from absent material.
+  name: raw_recruiting_context
+  required: true
+- default: N/A
+  description: Optional supplied candidate subject fields. Use only explicit values and never infer identity or protected characteristics.
+  missing_behavior: Set candidate name and title to N/A; candidate review may still proceed against a synthetic or local candidate identifier.
+  name: person_data
+  required: false
+- default: N/A
+  description: Relevant manifest personas, value contracts, attribute definitions, Recruiting cards, source policy, review jobs, and avoid rules.
+  missing_behavior: Do not assume roles, criteria, source kinds, review stages, readiness labels, or jobs when this field is N/A.
+  name: existing_pack_context
+  required: false
+- default: N/A
+  description: Optional runtime context for explicit temporal framing only.
+  missing_behavior: Do not infer candidate availability, tenure, age, deadlines, or hiring timelines.
+  name: runtime_context
+  required: false
+- default: synthetic-example
+  description: Pack-owned marker such as user-provided-role, user-provided-candidate-evidence, public-supplied, sanitized-example, synthetic-example, restricted-local, or unverified-source.
+  missing_behavior: Use synthetic-example only for template fixtures; real users must pass a reviewed classification.
+  name: source_kind
+  required: false
+instructions:
+- Use only raw_recruiting_context, person_data, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, source, enrich, background-check, schedule, contact, update an ATS, or call external systems.
+- Return strict JSON only without markdown, prose, comments, or code fences.
+- Emit the validated normalized_prospect object only as a compatibility bridge. Candidate is the evidence subject; persona is the human review operator. Never place a candidate in the operator persona field.
+- Set company to the supplied hiring organization when present. Set company_domain only from an explicitly supplied domain-like value. Do not infer it.
+- Use only pack-owned persona, segment, source_kind, review_stage, review_decision, and source_safety values. If a value is outside the contract, omit an optional field or add a gap.
+- Put role and candidate facts in signals with explicit supplied source references. Use attributes only for role_id, candidate_id, review_stage, review_decision, and source_safety.
+- Never infer or use a protected characteristic or a non-job-related proxy. Do not derive age, race, ethnicity, religion, sex, sexual orientation, gender identity, pregnancy, disability, genetic information, national origin, family status, appearance, voice, class, personality, culture fit, commute, school prestige, or language background from names, photos, audio, addresses, schools, dates, or other proxies.
+- Never invent credentials, certifications, education, employment history, skills, achievements, identity, source status, or evidence.
+- Never rank, compare, score, recommend, advance, reject, hire, or produce a final candidate outcome. review_decision describes only artifact readiness.
+- Preserve missing, conflicting, weak, restricted, and unverified evidence as gaps or normalization_trace.needs_review. No evidence means Not assessed, not a negative candidate finding.
+- Set review_decision to human-review-ready only when the requested artifact has a supplied role source, job-related criterion, explicit review stage, permitted source classification, and signal source. This label never means candidate fit.
+- Set review_decision to needs-more-context when required review context is missing. Set it to refuse-unsafe-request for protected/proxy use, autonomous outcomes, source acquisition, invented facts, or restricted public use.
+- Set normalization_trace.fit_readiness.ready_for_mdp_fit only for context sufficiency. It never signals candidate quality, fit, or an employment outcome.
+- Keep card_patches empty. This prompt normalizes supplied context and does not rewrite pack policy.
+- Treat output_contract.example as a neutral synthetic shape fixture. Retargeted packs must replace or clearly mark fixture content and preserve the safety contract.
+output_contract:
+  contract: mdp.prompt-output.v0
+  entry_defaults:
+    applies_to: []
+    avoid: []
+    body: N/A
+    confidence: unknown
+    evidence: []
+    provenance: []
+  example:
+    contract: mdp.prompt-output.v0
+    prompt_id: normalize-recruiting-context
+    source_summary:
+      company_domain: hiring.example
+      company_name: Example Hiring Team
+      person_name: Candidate A
+      person_title: Candidate evidence subject
+      account_name: Synthetic Recruiting review fixture
+      inputs_used: [raw_recruiting_context, person_data, existing_pack_context, source_kind]
+      confidence: medium
+    normalized_prospect:
+      name: Candidate A
+      title: Candidate evidence subject
+      company: Example Hiring Team
+      company_domain: hiring.example
+      source_kind: synthetic-example
+      synthetic: true
+      background: Synthetic role and work-sample evidence were supplied for criterion-level review.
+      trigger: Prepare a candidate evidence matrix for human review without an employment outcome.
+      persona: Recruiter
+      segment: software-engineering-review
+      attributes:
+        role_id: ROLE-SYNTH-001
+        candidate_id: CANDIDATE-SYNTH-A
+        review_stage: candidate-evidence
+        review_decision: human-review-ready
+        source_safety: synthetic
+      signals:
+      - id: synthetic-role-context
+        title: Synthetic role brief supplied
+        source: raw_recruiting_context.role_brief
+        confidence: medium
+        freshness: synthetic
+        state_as: supplied
+      - id: synthetic-api-work-sample
+        title: Synthetic API work sample supplied
+        source: raw_recruiting_context.candidate_evidence
+        confidence: medium
+        freshness: synthetic
+        state_as: supplied
+    normalization_trace:
+      persona:
+        source: existing_pack_context.personas
+        matched_keywords: [recruiter]
+        confidence: high
+        needs_review: false
+      fit_readiness:
+        has_role_source: true
+        has_job_related_criterion: true
+        has_review_stage: true
+        has_signal_source: true
+        has_permitted_source_safety: true
+        ready_for_mdp_fit: true
+      preserved_raw_fields:
+      - raw_recruiting_context.role_brief
+      - raw_recruiting_context.candidate_evidence
+      - raw_recruiting_context.review_stage
+      - source_kind
+      missing_required: []
+    card_patches: []
+    gaps: []
+    rejected_claims: []
+  output_kind: prospect-normalization
+  required_top_level:
+  - contract
+  - prompt_id
+  - source_summary
+  - normalized_prospect
+  - normalization_trace
+  - card_patches
+  - gaps
+  - rejected_claims
+  schema_ref: mdp.prompt-output.prospect-normalization.v0
+  strict_json_only: true
+tags: [prompt, normalization, recruiting, role, candidate-evidence, gaps]
+target_card_kinds: [signals, pains, fit-rules, claims, avoid-rules, gaps]
+title: Normalize Recruiting context

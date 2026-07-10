@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Recruiting Candidate Evidence Review"
+  short_description: "Map candidate evidence safely"
+  default_prompt: "Use $mdp-recruiting-candidate-evidence-review to map supplied candidate evidence to job-related criteria without scores or outcomes."

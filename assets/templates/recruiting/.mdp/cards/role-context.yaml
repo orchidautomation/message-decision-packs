@@ -1,0 +1,21 @@
+id: role-context
+kind: signals
+title: Synthetic role context
+description: Supplied role facts and source classification for the fictional example.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, role, source]
+entries:
+- id: role-brief-supplied
+  title: Role brief supplied
+  body: The synthetic Example Hiring Team supplied a fictional software engineer role brief for local requirements review.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-role-brief]
+  avoid: [inferred opening]
+  metadata: {primitive: source-signals}
+- id: role-source-classified
+  title: Role source classified
+  body: The role brief is marked synthetic-example. A real role source must be explicitly supplied and classified before review.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-role-brief]
+  avoid: [unknown source]
+  metadata: {primitive: source-signals}

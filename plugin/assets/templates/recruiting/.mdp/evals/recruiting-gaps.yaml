@@ -1,0 +1,12 @@
+id: recruiting-gaps
+profile_eval:
+  category: insufficient-context
+  primitives: [source-signals, needs-requirements, evidence-proof, gaps]
+  jobs: [scorecard-gap-review]
+command: gaps
+expect_gap_titles_contains:
+- Missing job-related rationale
+- Missing candidate evidence source
+- Missing credential proof
+- Restricted or unverified source
+- Conflicting evidence

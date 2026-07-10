@@ -1,0 +1,43 @@
+id: review-outputs
+kind: copy-patterns
+title: Recruiting review outputs
+description: Structures for role, candidate, interview, and scorecard review artifacts.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, review, output]
+entries:
+- id: role-requirements-matrix
+  title: Role requirements matrix
+  body: Return criterion, supplied source, job-related rationale, ambiguity or proxy risk, evidence expectation, gap, and human decision needed.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [synthetic-role-brief]
+  avoid: [candidate judgment]
+  metadata: {primitive: output-contracts}
+- id: candidate-evidence-matrix
+  title: Candidate evidence matrix
+  body: Return criterion, Source-backed or Partial evidence, supplied source, gap or Not assessed label, and Needs human review. Do not return a total, rank, recommendation, advance, reject, or hire field.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [aggregate outcome]
+  constraints:
+    proof_output:
+      required_segment_kinds: [requirement_status, gap]
+      min_segments:
+        requirement_status: 1
+        template_text: 1
+      require_source_refs_for_claims: true
+      max_connective_words: 18
+  metadata: {primitive: output-contracts}
+- id: interview-question-brief
+  title: Interview question brief
+  body: Return job-related criterion, source-backed context, neutral question, evidence to listen for, prohibited inference, open gap, and human reviewer note.
+  applies_to: [Interviewer, Hiring Manager]
+  evidence: [synthetic-role-brief]
+  avoid: [protected question]
+  metadata: {primitive: output-contracts}
+- id: scorecard-gap-report
+  title: Scorecard gap report
+  body: Return one row per criterion with Source-backed, Partial evidence, Gap, Not assessed, or Needs human review. No aggregate score or outcome.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [candidate score]
+  metadata: {primitive: output-contracts}

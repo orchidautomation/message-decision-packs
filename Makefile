@@ -17,6 +17,11 @@ validate-template:
 	cd cli && $(CARGO) run -- --json eval --dir ../plugin/assets/templates/proposal >/tmp/mdp-proposal-template-eval.json
 	cd cli && $(CARGO) run -- init --template proposal --dir /tmp/mdp-proposal-init-smoke --force >/tmp/mdp-proposal-init-smoke.json
 	cd cli && $(CARGO) run -- --json validate --dir /tmp/mdp-proposal-init-smoke >/tmp/mdp-proposal-init-smoke-validate.json
+	cd cli && $(CARGO) run -- --json validate --strict --dir ../plugin/assets/templates/recruiting >/tmp/mdp-recruiting-template-validate.json
+	cd cli && $(CARGO) run -- --json eval --strict --dir ../plugin/assets/templates/recruiting >/tmp/mdp-recruiting-template-eval.json
+	cd cli && $(CARGO) run -- init --template recruiting --dir /tmp/mdp-recruiting-init-smoke --force >/tmp/mdp-recruiting-init-smoke.json
+	cd cli && $(CARGO) run -- --json validate --strict --dir /tmp/mdp-recruiting-init-smoke >/tmp/mdp-recruiting-init-smoke-validate.json
+	cd cli && $(CARGO) run -- --json eval --strict --dir /tmp/mdp-recruiting-init-smoke >/tmp/mdp-recruiting-init-smoke-eval.json
 
 validate-skills:
 	@if [ -f "$(SKILL_VALIDATOR)" ]; then 		for skill_root in plugin/skills skills; do 			for skill in $$skill_root/*; do 				$(PYTHON) "$(SKILL_VALIDATOR)" "$$skill" || exit 1; 			done; 		done; 	else 		echo "Skipping skill validation; missing $(SKILL_VALIDATOR)"; 	fi

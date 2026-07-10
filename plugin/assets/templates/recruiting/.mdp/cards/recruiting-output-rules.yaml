@@ -1,0 +1,31 @@
+id: recruiting-output-rules
+kind: output-rules
+title: Recruiting output rules
+description: Evidence labels and human-review contracts for Recruiting artifacts.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, output, review]
+entries:
+- id: bounded-evidence-labels
+  title: Use bounded evidence labels
+  body: Label each criterion Source-backed, Partial evidence, Gap, Not assessed, or Needs human review. Never convert these labels into candidate fit, a score, or an employment outcome.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [candidate score, candidate fit, hiring recommendation]
+  constraints:
+    proof_output:
+      max_connective_words: 18
+  metadata: {primitive: output-contracts}
+- id: show-source-and-gap
+  title: Show source and gap
+  body: Each material evidence statement should identify its supplied source. Missing, conflicting, weak, restricted, or unverified evidence must remain visible as a gap or reviewer question.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [hidden gap, smoothed uncertainty]
+  metadata: {primitive: output-contracts}
+- id: human-review-checkpoint
+  title: End with a human review checkpoint
+  body: State that the artifact supports human review only and that real employment decisions remain outside MDP.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [recruiting-safety-contract]
+  avoid: [final decision]
+  metadata: {primitive: output-contracts}

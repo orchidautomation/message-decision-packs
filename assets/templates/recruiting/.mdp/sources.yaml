@@ -1,0 +1,45 @@
+format: mdp.sources.v0
+purpose: Source ledger for the synthetic Recruiting reference profile. Keep supplied facts separate from review interpretation.
+rules:
+- Every public fixture is fictional and contains no real candidate or employer data.
+- Do not add resumes, applications, interview notes, background checks, scraped profiles, identifying records, or access-controlled material to this public template.
+- Real Recruiting evidence belongs only in a user-controlled local pack when its use is approved and its source classification is explicit.
+- Source inclusion never authorizes ranking, rejection, hiring, or another employment outcome.
+sources:
+- id: synthetic-role-brief
+  kind: synthetic-example
+  locator: .mdp/cards/role-requirements.yaml
+  freshness: generated
+  confidence: demo-only
+  direct_claims:
+  - Example Hiring Team is fictional.
+  - The fictional role includes maintaining service interfaces and participating in technical review.
+  - The sample includes an ambiguous collaboration-hours statement for gap review.
+  interpretations:
+  - Use only for role-requirements, interview-brief, and route demonstrations.
+  gaps:
+  - No real requisition, employer, compensation, location rule, or selection procedure is included.
+- id: synthetic-candidate-evidence
+  kind: synthetic-example
+  locator: .mdp/cards/candidate-evidence.yaml
+  freshness: generated
+  confidence: demo-only
+  direct_claims:
+  - Candidate A is fictional.
+  - The fictional work sample describes an API change, tests, and review notes.
+  interpretations:
+  - Evidence may support only the criteria directly described in the sample.
+  gaps:
+  - No degree, certification, identity, employment history, background check, or protected characteristic is verified.
+- id: recruiting-safety-contract
+  kind: public-documentation
+  locator: docs/orchid/requirements/2026-07-10-recruiting-reference-profile.md
+  freshness: reviewed
+  confidence: maintained
+  direct_claims:
+  - MDP prepares local decision context and does not make employment decisions.
+  - Protected characteristics, non-job-related proxies, invented facts, and autonomous outcomes are prohibited.
+  interpretations:
+  - Human review is required for real employment decisions.
+  gaps:
+  - This source does not provide legal advice or compliance certification.

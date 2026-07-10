@@ -1,0 +1,28 @@
+id: role-requirements
+kind: pains
+title: Job-related role requirements
+description: Synthetic requirements with stated job-related rationale and evidence expectations.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, requirements, role]
+entries:
+- id: api-change-requirement
+  title: Explain and test an API change
+  body: The role requires explaining a scoped API change and demonstrating an appropriate test approach because the work includes maintaining service interfaces.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-role-brief]
+  avoid: [prestige proxy]
+  metadata: {primitive: needs-requirements}
+- id: review-collaboration-requirement
+  title: Respond to technical review
+  body: The role requires responding to technical review with clear tradeoffs because the team uses collaborative code review.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-role-brief]
+  avoid: [personality fit]
+  metadata: {primitive: needs-requirements}
+- id: ambiguous-availability-requirement
+  title: Clarify availability requirement
+  body: The supplied brief mentions collaboration hours but does not establish a job-related location or commute requirement. Keep the ambiguity for human review.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [synthetic-role-brief]
+  avoid: [commute distance]
+  metadata: {primitive: needs-requirements}

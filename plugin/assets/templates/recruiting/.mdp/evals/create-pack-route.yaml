@@ -1,0 +1,16 @@
+id: create-pack-route
+profile_eval:
+  category: job-routing
+  primitives: [actors, routing-jobs, evals]
+  jobs: [create-or-improve-recruiting-pack]
+command: route
+persona: Recruiter
+job: create or improve recruiting pack
+expect_load_order_contains:
+- .mdp/cards/recruiting-roles.yaml
+- .mdp/cards/recruiting-boundaries.yaml
+- .mdp/cards/recruiting-output-rules.yaml
+- .mdp/cards/review-gates.yaml
+- .mdp/cards/gaps.yaml
+expect_entry_titles_contains:
+- Create or improve Recruiting pack job

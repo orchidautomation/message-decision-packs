@@ -31,7 +31,7 @@ pub(crate) enum Commands {
         #[arg(
             long,
             default_value = "gtm",
-            help = "Starter template to write (available: gtm, proposal)"
+            help = "Starter template to write (available: gtm, proposal, recruiting)"
         )]
         template: String,
         #[arg(long, help = "Overwrite existing starter files")]
@@ -80,7 +80,7 @@ pub(crate) enum Commands {
         dir: PathBuf,
         #[arg(long)]
         file: PathBuf,
-        #[arg(long, help = "Emit a human-readable Markdown proposal review artifact")]
+        #[arg(long, help = "Emit a human-readable Markdown review artifact")]
         readable: bool,
     },
     #[command(about = "Render a compact human brief from an existing MDP artifact")]

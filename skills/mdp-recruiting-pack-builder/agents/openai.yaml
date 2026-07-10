@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Recruiting Pack Builder"
+  short_description: "Build safe Recruiting MDP packs"
+  default_prompt: "Use $mdp-recruiting-pack-builder to build a Recruiting Message Decision Pack from synthetic, sanitized, or approved local source material."

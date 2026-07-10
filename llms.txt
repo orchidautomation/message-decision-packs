@@ -1,8 +1,8 @@
 # Message Decision Packs
 
-> Message Decision Packs, or MDP, is a local/offline standard, CLI, and plugin for making GTM messaging and profile-specific review judgment explicit. It turns scattered product notes, ICP notes, proposal requirements, source evidence, fit or review rules, claims, proof, hooks, CTAs, avoid-rules, output rules, and eval fixtures into a versioned `.mdp/` folder that agents can inspect, route, validate, and use without rebuilding context from scratch.
+> Message Decision Packs, or MDP, is a local/offline standard, CLI, and plugin for making GTM messaging, Proposal review, and Recruiting review judgment explicit. It turns supplied source evidence, profile-owned rules, proof, boundaries, output contracts, gaps, and eval fixtures into a versioned `.mdp/` folder that agents can inspect, route, validate, and use without rebuilding context from scratch.
 
-> MDP is a decision/context layer. It is not an AI SDR, CRM, sequencer, enrichment provider, scraper, BI tool, or generic automation system. It does not send messages or update external systems.
+> MDP is a decision/context layer. It is not an AI SDR, CRM, ATS, job board, sourcing/enrichment provider, scraper, background-check service, scheduler, ranker, rejection engine, hiring decision maker, legal reviewer, compliance certifier, BI tool, or generic automation system. It does not send messages or update external systems.
 
 Agents should start here when they need to understand the project quickly.
 
@@ -70,6 +70,19 @@ approved RFP/source/proof material
   -> mdp eval when behavior changes
 ```
 
+Recruiting reference-profile flow:
+
+```text
+synthetic, sanitized, or approved local role/candidate evidence
+  -> source ledger and source-safety classification
+  -> job-related criteria, evidence, boundaries, outputs, and gaps
+  -> mdp validate --strict
+  -> mdp route --entries for role, candidate, interview, or scorecard-gap review
+  -> mdp check-claims and mdp verify-output for material review text
+  -> mdp eval --strict
+  -> accountable human employment decision outside MDP
+```
+
 ## Important CLI Commands
 
 ```bash
@@ -93,6 +106,16 @@ mdp --json route --entries --dir ./mdp-proposal-demo --persona "Proposal Lead" -
 mdp --json gaps --dir ./mdp-proposal-demo
 ```
 
+Recruiting starter commands:
+
+```bash
+mdp --json init --template recruiting --dir ./mdp-recruiting-demo --force
+mdp --json validate --strict --dir ./mdp-recruiting-demo
+mdp --json eval --strict --dir ./mdp-recruiting-demo
+mdp --json agent-surface --dir ./mdp-recruiting-demo
+mdp --json route --entries --dir ./mdp-recruiting-demo --persona "Recruiter" --job "candidate evidence review"
+```
+
 ## Plugin Skills
 
 The plugin source lives in `plugin/` and is distributed through Pluxx. Important skills:
@@ -104,6 +127,11 @@ The plugin source lives in `plugin/` and is distributed through Pluxx. Important
 - `mdp-proposal-compliance-review`: review supplied proposal requirements or answer drafts against compliance rules
 - `mdp-proposal-win-theme-proof-review`: review proposal themes or differentiators against approved proof
 - `mdp-proposal-red-team-gap-review`: prioritize proposal gaps, risks, and reviewer questions against pack constraints
+- `mdp-recruiting-pack-builder`: create or improve a safe Recruiting review-context pack
+- `mdp-recruiting-role-requirements-review`: review job-related criteria and proxy risk
+- `mdp-recruiting-candidate-evidence-review`: map supplied evidence per criterion without scores or outcomes
+- `mdp-recruiting-interview-brief`: prepare job-related questions for a human interviewer
+- `mdp-recruiting-scorecard-gap-review`: surface criterion-level gaps without aggregate decisions
 - `mdp-icp-builder`: sharpen ICP, personas, and fit logic
 - `mdp-source-extract`: turn supplied source material into card entries
 - `mdp-source-strategy`: plan source targets, scout queries, evidence rules, exclusions, and review gates before extraction

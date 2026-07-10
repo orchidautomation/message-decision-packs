@@ -1,0 +1,18 @@
+id: scorecard-gap-route
+profile_eval:
+  category: job-routing
+  primitives: [source-signals, needs-requirements, decision-criteria, evidence-proof, boundaries, output-contracts, gaps]
+  jobs: [scorecard-gap-review]
+command: route
+persona: Hiring Manager
+job: scorecard gap review
+expect_load_order_contains:
+- .mdp/cards/candidate-evidence.yaml
+- .mdp/cards/review-criteria.yaml
+- .mdp/cards/evidence-standards.yaml
+- .mdp/cards/recruiting-boundaries.yaml
+- .mdp/cards/review-outputs.yaml
+- .mdp/cards/gaps.yaml
+expect_entry_titles_contains:
+- Scorecard gap review job
+- Scorecard gap report
