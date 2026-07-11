@@ -779,7 +779,12 @@ pub(crate) fn check_claims(
     }
     for card in &output_rules_cards {
         collect_guardrail_hits(&mut guardrail_hits, &lower, &card.id, &card.entries);
-        collect_output_structure_hits(&mut guardrail_hits, paragraph_count, &card.entries);
+        collect_output_structure_hits(
+            &mut guardrail_hits,
+            paragraph_count,
+            &card.id,
+            &card.entries,
+        );
         collect_output_constraint_hits(
             &mut guardrail_hits,
             &mut constraint_warnings,
@@ -802,6 +807,7 @@ pub(crate) fn check_claims(
             &mut constraint_warnings,
             &mut unchecked_constraints,
             &raw,
+            paragraph_count,
             subject,
             &context,
         );
@@ -848,19 +854,19 @@ fn collect_guardrail_hits(
 fn collect_output_structure_hits(
     guardrail_hits: &mut Vec<Value>,
     paragraph_count: usize,
+    card_id: &str,
     entries: &[crate::models::Entry],
 ) {
     for entry in entries {
         if let Some(expected) = entry.exact_paragraphs {
             if paragraph_count != expected {
-                guardrail_hits.push(json!({
-                    "card_id": "output-rules",
-                    "entry_id": entry.id,
-                    "title": entry.title,
-                    "rule": "exact_paragraphs",
-                    "expected": expected,
-                    "actual": paragraph_count
-                }));
+                guardrail_hits.push(exact_paragraphs_hit(
+                    card_id,
+                    &entry.id,
+                    &entry.title,
+                    expected,
+                    paragraph_count,
+                ));
             }
         }
     }
@@ -898,6 +904,7 @@ fn collect_context_constraint_hits(
     constraint_warnings: &mut Vec<Value>,
     unchecked_constraints: &mut Vec<Value>,
     raw: &str,
+    paragraph_count: usize,
     subject: Option<&str>,
     context: &Value,
 ) {
@@ -907,6 +914,23 @@ fn collect_context_constraint_hits(
     for entry in entries {
         if entry["card_kind"].as_str() == Some("output-rules") {
             continue;
+        }
+        let card_id = entry["card_id"].as_str().unwrap_or("unknown");
+        let entry_id = entry["entry_id"].as_str().unwrap_or("unknown");
+        let title = entry["title"].as_str().unwrap_or("Untitled");
+        if let Some(expected) = entry["exact_paragraphs"]
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+        {
+            if paragraph_count != expected {
+                guardrail_hits.push(exact_paragraphs_hit(
+                    card_id,
+                    entry_id,
+                    title,
+                    expected,
+                    paragraph_count,
+                ));
+            }
         }
         let constraints = &entry["constraints"];
         if constraints
@@ -921,12 +945,29 @@ fn collect_context_constraint_hits(
             unchecked_constraints,
             raw,
             subject,
-            entry["card_id"].as_str().unwrap_or("unknown"),
-            entry["entry_id"].as_str().unwrap_or("unknown"),
-            entry["title"].as_str().unwrap_or("Untitled"),
+            card_id,
+            entry_id,
+            title,
             constraints,
         );
     }
+}
+
+fn exact_paragraphs_hit(
+    card_id: &str,
+    entry_id: &str,
+    title: &str,
+    expected: usize,
+    actual: usize,
+) -> Value {
+    json!({
+        "card_id": card_id,
+        "entry_id": entry_id,
+        "title": title,
+        "rule": "exact_paragraphs",
+        "expected": expected,
+        "actual": actual
+    })
 }
 
 fn collect_constraints(
@@ -1804,6 +1845,22 @@ mod tests {
             ),
         )
         .expect("output rules should be writable");
+    }
+
+    fn add_initial_linkedin_exact_paragraphs(root: &Path, expected: usize) {
+        let path = root
+            .join(".mdp")
+            .join("cards")
+            .join("channel-policies.yaml");
+        let raw = std::fs::read_to_string(&path).expect("channel policies should be readable");
+        std::fs::write(
+            path,
+            raw.replace(
+                "  avoid: []\n- id: linkedin-follow-up",
+                &format!("  avoid: []\n  exact_paragraphs: {expected}\n- id: linkedin-follow-up"),
+            ),
+        )
+        .expect("channel policies should be writable");
     }
 
     #[test]
@@ -2932,6 +2989,92 @@ mod tests {
         )
         .expect("check should run");
         assert_eq!(two_paragraphs["valid"], true);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_enforces_route_scoped_exact_paragraphs() {
+        let root = temp_pack("route-scoped-paragraph-count");
+        add_initial_linkedin_exact_paragraphs(&root, 3);
+
+        for (draft, actual) in [
+            ("First paragraph only.", 1),
+            ("First paragraph.\n\nSecond paragraph.", 2),
+            (
+                "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n\nFourth paragraph.",
+                4,
+            ),
+        ] {
+            let result = check_claims(
+                &root,
+                Some(draft),
+                None,
+                None,
+                Some("PMM"),
+                Some("linkedin outbound copy"),
+            )
+            .expect("check should run");
+
+            assert_eq!(result["valid"], false);
+            assert!(
+                result["guardrail_hits"]
+                    .as_array()
+                    .expect("guardrail hits array")
+                    .iter()
+                    .any(|hit| hit["card_id"] == "channel-policies"
+                        && hit["entry_id"] == "linkedin-initial-touch"
+                        && hit["title"] == "LinkedIn initial touch"
+                        && hit["rule"] == "exact_paragraphs"
+                        && hit["expected"] == 3
+                        && hit["actual"] == actual)
+            );
+        }
+
+        let three_paragraphs = check_claims(
+            &root,
+            Some("First paragraph.\n\nSecond paragraph.\n\nThird paragraph."),
+            None,
+            None,
+            Some("PMM"),
+            Some("linkedin outbound copy"),
+        )
+        .expect("check should run");
+        assert_eq!(three_paragraphs["valid"], true);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn route_scoped_exact_paragraphs_do_not_leak_to_other_routes() {
+        let root = temp_pack("route-scoped-paragraph-no-leak");
+        add_initial_linkedin_exact_paragraphs(&root, 3);
+
+        for job in [
+            "linkedin follow up message",
+            "initial email outbound message",
+            "call prep",
+        ] {
+            let result = check_claims(
+                &root,
+                Some("First paragraph only."),
+                None,
+                None,
+                Some("PMM"),
+                Some(job),
+            )
+            .expect("check should run");
+
+            assert!(
+                result["guardrail_hits"]
+                    .as_array()
+                    .expect("guardrail hits array")
+                    .iter()
+                    .all(|hit| hit["rule"] != "exact_paragraphs"
+                        || hit["entry_id"] != "linkedin-initial-touch"),
+                "initial LinkedIn paragraph rule should not apply to {job}"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(root);
     }
