@@ -110,9 +110,15 @@ persona_mappings:
   - subject matter reviewer
 lead_input_requirements:
   required_fields:
-  - company
-  - trigger
-  - segment
+  - profile_id
+  - context_id
+  - context_type
+  - subject_id
+  - subject_kind
+  - identity_mode
+  - operator_persona
+  - source_kind
+  - summary
   - signals
   - synthetic
   required_signal_fields:
@@ -122,12 +128,14 @@ lead_input_requirements:
   - review_decision
   - source_safety
   value_contracts:
-    segment:
+    context_type:
       type: string
       enum:
-      - software-engineering-review
-      - operations-review
-      description: Recruiting review segments accepted from normalization prompts.
+      - role-requirements-review
+      - candidate-evidence-review
+      - interview-brief
+      - scorecard-gap-review
+      description: Recruiting review-context types accepted from normalization prompts.
     source_kind:
       type: string
       enum:
@@ -248,6 +256,11 @@ primitive_map:
     - normalize-recruiting-context-invalid-decision
     - normalize-recruiting-context-missing-source
     - normalize-recruiting-context-missing-source-safety
+    - normalize-recruiting-context-autonomous-handoff
+    - normalize-recruiting-context-opaque-identity
+    - normalize-recruiting-context-opaque-identity-leak
+    - normalize-recruiting-context-source-coverage-inconsistent
+    - normalize-recruiting-context-missing-handoff-owner
 input_contracts:
 - id: recruiting-context
   description: Profile-owned contract for supplied role, candidate evidence, source classification, and requested review artifact.

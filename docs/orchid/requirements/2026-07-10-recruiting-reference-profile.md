@@ -45,15 +45,19 @@ No Recruiting-specific `CardKind` is allowed in this slice.
 The profile owns one `recruiting-context` input contract with schema reference `mdp.input.recruiting-context.v0` and prompt `prompts/normalize-recruiting-context.yaml`.
 It normalizes supplied role context, candidate-subject context, evidence, and requested review mode.
 
-The prompt emits `mdp.prompt-output.v0` using the current `normalized_prospect` schema as a compatibility bridge:
+The prompt emits `mdp.prompt-output.v0` with `output_kind: context-normalization` and `schema_ref: mdp.prompt-output.context-normalization.v0`. GTM keeps its existing prospect-normalization contract; Recruiting uses the additive profile-neutral contract:
 
-- `company` represents the supplied hiring organization, never an inferred employer.
-- `name` may carry a synthetic/sanitized candidate label or `N/A`; it must not be invented.
-- `persona` represents the review operator, not the candidate subject.
+- `profile_id`, `context_id`, and `context_type` identify the bounded review context.
+- `subject_id`, `subject_kind`, and `identity_mode` describe the evidence subject without turning it into a prospect.
+- `subject_label` is optional and forbidden in opaque mode; synthetic fixtures may use a fictional label.
+- `organization` represents the supplied hiring organization, never an inferred employer.
+- `operator_persona` represents the review operator, not the candidate subject.
 - `signals` carry role requirements and candidate evidence with source locators, confidence, freshness, and state.
 - bounded `attributes` carry `role_id`, `candidate_id`, `review_stage`, `review_decision`, and `source_safety` when supplied and contract-valid.
 - `review_decision` values are `human-review-ready`, `needs-more-context`, and `refuse-unsafe-request`.
-- `normalization_trace.fit_readiness.ready_for_mdp_fit` means sufficient context for the requested bounded review artifact, never candidate fit or hiring suitability.
+- `normalization_trace.review_readiness.ready_for_review` means sufficient context for the requested bounded review artifact, never candidate fit or hiring suitability.
+- `source_coverage` lists every expected source and classifies it exactly once as present, empty, or missing.
+- `review_handoff` carries review stage, human owner, source snapshot, artifact readiness, unresolved gaps, and a safe next human action.
 - `card_patches` remains empty.
 - missing or unsafe material becomes `gaps`, `rejected_claims`, or readiness false.
 
@@ -143,6 +147,11 @@ The machine artifact and verifier result remain authoritative; readable prose is
 | Prompt enum misuse | Out-of-contract review decision or source kind | Prompt-output validation fails. |
 | Missing required source field | Evidence signal without source | Prompt-output validation fails. |
 | Missing source-safety attribute | Readiness true without source safety | Prompt-output validation fails. |
+| Opaque identity | Real/local review context uses an opaque subject ID and no label | Prompt output valid. |
+| Opaque identity leak | Opaque context includes a display label | Prompt-output validation fails. |
+| Expected-source coverage | An expected source is not classified as present, empty, or missing | Prompt-output validation fails. |
+| Reviewer handoff | Review artifact omits its accountable human owner | Prompt-output validation fails. |
+| Autonomous handoff | Reviewer handoff instructs the system to hire, reject, rank, or advance a candidate | Prompt-output validation fails. |
 | Proof valid binding | Candidate evidence matrix binds real card/source IDs | `verify-output` proof-safe. |
 | Fake proof ID | Model invents an evidence/source ID | `verify-output` blocked. |
 | Missing binding | Material evidence text has no binding | `verify-output` blocked. |

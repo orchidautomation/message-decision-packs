@@ -11,24 +11,25 @@ prompt_output:
   contract: mdp.prompt-output.v0
   prompt_id: normalize-recruiting-context
   source_summary:
-    company_domain: hiring.example
-    company_name: Example Hiring Team
-    person_name: Candidate A
-    person_title: Candidate evidence subject
-    account_name: Synthetic Recruiting review fixture
+    profile_id: recruiting
+    context_id: RECRUITING-REVIEW-SYNTH-001
+    subject_id: CANDIDATE-SYNTH-A
+    organization: Example Hiring Team
     inputs_used: [raw_recruiting_context, person_data, existing_pack_context, source_kind]
     confidence: medium
-  normalized_prospect:
-    name: Candidate A
-    title: Candidate evidence subject
-    company: Example Hiring Team
-    company_domain: hiring.example
+  normalized_context:
+    profile_id: recruiting
+    context_id: RECRUITING-REVIEW-SYNTH-001
+    context_type: candidate-evidence-review
+    subject_id: CANDIDATE-SYNTH-A
+    subject_label: Candidate A
+    subject_kind: candidate-evidence-subject
+    identity_mode: synthetic
+    organization: Example Hiring Team
+    operator_persona: Recruiter
     source_kind: synthetic-example
     synthetic: true
-    background: Synthetic role and work-sample evidence were supplied for criterion-level review.
-    trigger: Prepare a candidate evidence matrix for human review without an employment outcome.
-    persona: Recruiter
-    segment: software-engineering-review
+    summary: Synthetic role and work-sample evidence were supplied for criterion-level human review.
     attributes:
       role_id: ROLE-SYNTH-001
       candidate_id: CANDIDATE-SYNTH-A
@@ -49,24 +50,37 @@ prompt_output:
       freshness: synthetic
       state_as: supplied
   normalization_trace:
-    persona:
+    operator:
       source: existing_pack_context.personas
       matched_keywords: [recruiter]
       confidence: high
       needs_review: false
-    fit_readiness:
+    review_readiness:
       has_role_source: true
       has_job_related_criterion: true
       has_review_stage: true
       has_signal_source: true
       has_permitted_source_safety: true
-      ready_for_mdp_fit: true
+      ready_for_review: true
+    source_coverage:
+      expected_source_ids: [role-brief, candidate-evidence, review-stage, source-kind]
+      present_source_ids: [role-brief, candidate-evidence, review-stage, source-kind]
+      empty_source_ids: []
+      missing_source_ids: []
+      coverage_complete: true
     preserved_raw_fields:
     - raw_recruiting_context.role_brief
     - raw_recruiting_context.candidate_evidence
     - raw_recruiting_context.review_stage
     - source_kind
     missing_required: []
+  review_handoff:
+    review_stage: candidate-evidence
+    human_owner: Recruiter
+    source_snapshot: synthetic-example
+    artifact_readiness: human-review-ready
+    unresolved_gaps: []
+    safe_next_action: Human reviewer checks the criterion-level evidence matrix and records any gaps.
   card_patches: []
   gaps: []
   rejected_claims: []

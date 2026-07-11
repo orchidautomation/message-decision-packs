@@ -16,7 +16,7 @@ Require the pack directory, supplied job-related criteria, supplied evidence row
 ## Workflow
 
 1. Run strict validation, eval, and gaps.
-2. Normalize supplied context with `normalize-recruiting-context` and validate it.
+2. Normalize supplied context with `normalize-recruiting-context` and validate it. Require every expected scorecard/evidence source to appear exactly once as present, empty, or missing, preserve opaque identity by default, and carry unresolved gaps plus the human owner in `review_handoff`.
 3. Route with:
 
 ```bash

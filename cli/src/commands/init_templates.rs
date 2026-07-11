@@ -377,6 +377,12 @@ pub(super) const RECRUITING_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/evals/normalize-recruiting-context-autonomous-handoff.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/recruiting/.mdp/evals/normalize-recruiting-context-autonomous-handoff.yaml"
+        ),
+    ),
+    (
         ".mdp/evals/normalize-recruiting-context-insufficient.yaml",
         include_str!(
             "../../../plugin/assets/templates/recruiting/.mdp/evals/normalize-recruiting-context-insufficient.yaml"
@@ -386,6 +392,12 @@ pub(super) const RECRUITING_TEMPLATE_FILES: &[(&str, &str)] = &[
         ".mdp/evals/normalize-recruiting-context-invalid-decision.yaml",
         include_str!(
             "../../../plugin/assets/templates/recruiting/.mdp/evals/normalize-recruiting-context-invalid-decision.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/normalize-recruiting-context-missing-handoff-owner.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/recruiting/.mdp/evals/normalize-recruiting-context-missing-handoff-owner.yaml"
         ),
     ),
     (
@@ -404,6 +416,24 @@ pub(super) const RECRUITING_TEMPLATE_FILES: &[(&str, &str)] = &[
         ".mdp/evals/normalize-recruiting-context-output.yaml",
         include_str!(
             "../../../plugin/assets/templates/recruiting/.mdp/evals/normalize-recruiting-context-output.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/normalize-recruiting-context-opaque-identity-leak.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/recruiting/.mdp/evals/normalize-recruiting-context-opaque-identity-leak.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/normalize-recruiting-context-opaque-identity.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/recruiting/.mdp/evals/normalize-recruiting-context-opaque-identity.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/normalize-recruiting-context-source-coverage-inconsistent.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/recruiting/.mdp/evals/normalize-recruiting-context-source-coverage-inconsistent.yaml"
         ),
     ),
     (

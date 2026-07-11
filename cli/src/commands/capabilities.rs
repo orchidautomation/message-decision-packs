@@ -1,6 +1,7 @@
 use crate::constants::{
-    DEFAULT_DIR, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
-    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    DEFAULT_DIR, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF,
+    PROMPT_CONTEXT_NORMALIZATION_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use serde_json::{Value, json};
 
@@ -13,7 +14,7 @@ pub(crate) fn capabilities() -> Value {
             "pack_dir": DEFAULT_DIR,
             "offline_by_default": true,
             "auth_required": false,
-            "init_templates": ["gtm", "proposal"]
+            "init_templates": ["gtm", "proposal", "recruiting"]
         },
         "global_options": [
             {"name": "--json", "description": "Emit stable machine-readable JSON"},
@@ -23,7 +24,8 @@ pub(crate) fn capabilities() -> Value {
             "prompt_format": PROMPT_FORMAT_VERSION,
             "prompt_output": PROMPT_OUTPUT_CONTRACT,
             "card_patch_schema_ref": PROMPT_CARD_PATCH_SCHEMA_REF,
-            "prospect_normalization_schema_ref": PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
+            "prospect_normalization_schema_ref": PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+            "context_normalization_schema_ref": PROMPT_CONTEXT_NORMALIZATION_SCHEMA_REF
         },
         "profile_contracts": {
             "manifest_profile": "mdp.profile.v0",
@@ -120,6 +122,11 @@ mod tests {
         assert_eq!(
             result["profile_contracts"]["agent_surface"],
             "mdp.agent-surface.v0"
+        );
+        assert_eq!(result["defaults"]["init_templates"][2], "recruiting");
+        assert_eq!(
+            result["prompt_contracts"]["context_normalization_schema_ref"],
+            PROMPT_CONTEXT_NORMALIZATION_SCHEMA_REF
         );
         assert!(
             result["commands"]

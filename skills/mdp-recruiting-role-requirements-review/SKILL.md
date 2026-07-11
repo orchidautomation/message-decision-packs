@@ -16,7 +16,7 @@ Require the pack directory, supplied role source, human review owner, requested 
 ## Workflow
 
 1. Run `mdp --json validate --strict --dir .` and `mdp --json gaps --dir .`.
-2. Normalize messy role context with `normalize-recruiting-context`; validate the output before use.
+2. Normalize messy role context with `normalize-recruiting-context`; validate the output before use. Read `normalized_context`, expected-source coverage, review readiness, and `review_handoff`. An empty expected role source must remain explicitly empty or missing, never silently absent.
 3. Route with:
 
 ```bash

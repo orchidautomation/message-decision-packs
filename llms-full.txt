@@ -209,7 +209,7 @@ Use first-class fields for enforceable behavior. Use `metadata` only for advisor
 
 Prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for two related jobs:
 
-- Runtime normalization prompts turn messy supplied rows into `normalized_prospect` JSON plus a trace that can feed `mdp fit` and `mdp brief`.
+- Runtime normalization prompts can emit GTM `normalized_prospect` for fit/brief or profile-neutral `normalized_context` with review readiness and a human-review handoff.
 - Extraction prompts classify supplied person, company, account, domain, row, or research data into reviewable `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance for pack authors.
 
 Prompt contracts do not browse, scrape, enrich, send, sequence, or update external systems.

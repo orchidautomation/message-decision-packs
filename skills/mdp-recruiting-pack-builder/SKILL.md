@@ -42,7 +42,9 @@ mdp --json init --template recruiting --dir .
 mdp --json validate-prompt-output --dir . --prompt-id normalize-recruiting-context --file <prompt-output.json>
 ```
 
-`normalized_prospect` is a compatibility bridge: the candidate is the evidence subject and `persona` is the human operator. `human-review-ready` and `ready_for_mdp_fit` mean only that enough permitted context exists for the requested artifact.
+The prompt emits the profile-neutral `normalized_context` contract. The candidate is the evidence subject, `operator_persona` is the human reviewer, and `review_readiness.ready_for_review` means only that enough permitted context exists for the requested artifact.
+
+For real local context, default to `identity_mode: opaque`, use an opaque `subject_id`, omit `subject_label`, and keep evidence text limited to redacted job-related facts. Classify every expected source exactly once in `source_coverage` as present, empty, or missing. Require `review_handoff` to name the review stage, human owner, source snapshot, artifact readiness, unresolved gaps, and a safe human next action.
 
 
 5. Map reviewed material into:
@@ -55,7 +57,7 @@ mdp --json validate-prompt-output --dir . --prompt-id normalize-recruiting-conte
 - `recruiting-output-rules` and `review-outputs` for bounded labels and structures
 - `review-gates` for the six jobs
 - `gaps` for missing, conflicting, weak, restricted, unverified, or unsupported evidence
-- `.mdp/evals/*.yaml` for route, refusal, unsafe-output, prompt-output, gap, and proof coverage
+- `.mdp/evals/*.yaml` for route, refusal, unsafe-output, prompt-output, source-coverage, privacy, reviewer-handoff, gap, and proof coverage
 
 6. Validate:
 

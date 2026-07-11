@@ -46,7 +46,7 @@ Recruiting needs a review-centered profile that preserves source provenance and 
 - **Candidate is a subject, not an operator persona.** Recruiter, Hiring Manager, and Interviewer are routing actors; candidate context remains source-ledgered subject evidence.
 - **`fit` means context sufficiency only.** The first slice does not use `mdp fit` to qualify a candidate; shared status terminology means readiness for a bounded human-review artifact.
 - **Job-related evidence only.** Role criteria and evidence mappings must be tied to supplied job requirements, with gaps visible and no protected characteristic or proxy used as evidence.
-- **Existing core contracts remain fixed.** Recruiting uses profile-owned IDs over existing `CardKind` families and the current normalized prompt-output shape as an explicit compatibility bridge.
+- **Existing GTM contracts remain stable.** Recruiting uses profile-owned IDs over existing `CardKind` families and an additive profile-neutral context-normalization output family; GTM prospect normalization remains backward compatible.
 - **Proof-carrying outputs are verified.** Evidence matrices or scorecard text that cites pack/source IDs must use `mdp.proof-output.v0` and pass `verify-output`.
 
 ### Actors
@@ -110,6 +110,10 @@ flowchart TB
 - R21. Strict validation must prove primitive coverage, input contracts, jobs, prompt-output validation, routing, gaps, refusal, unsafe-output handling, and proof bindings where used.
 - R22. Existing GTM and Proposal strict validation/evals must remain green.
 - R23. Canonical assets, bundled assets, root skills, plugin skills, CLI help, docs, and init output must remain in parity.
+- R24. Recruiting normalization must use a profile-neutral context contract while existing GTM prospect normalization remains backward compatible.
+- R25. Every expected Recruiting source must be classified exactly once as present, empty, or missing before review readiness can be true.
+- R26. Real/local Recruiting context must default to opaque subject identity and must not expose a display label unless explicitly authorized locally.
+- R27. Every normalized review artifact must carry a human-review handoff with stage, owner, source snapshot, artifact readiness, unresolved gaps, and a safe next human action.
 
 ### Acceptance Examples
 
@@ -119,6 +123,10 @@ flowchart TB
 - AE4. **Covers R14, R16, R18.** Mixed evidence produces per-criterion evidence/gap labels and a human-review handoff without a recommendation.
 - AE5. **Covers R17.** Generated evidence text with a fake source or card ID is blocked by `verify-output`.
 - AE6. **Covers R6, R10.** Non-public candidate material is refused from public repo paths and requires a controlled workspace or sanitized artifact.
+- AE7. **Covers R24.** Recruiting emits `normalized_context` and `ready_for_review`; existing GTM fixtures continue to emit `normalized_prospect` and `ready_for_mdp_fit` unchanged.
+- AE8. **Covers R25.** An expected role brief omitted from present/empty/missing coverage makes prompt-output validation fail.
+- AE9. **Covers R26.** Opaque identity with an opaque subject ID and no label passes; adding a display label fails.
+- AE10. **Covers R18, R27.** Missing human owner or a handoff that instructs hiring/rejection/ranking fails prompt-output validation.
 
 ### Success Criteria
 
@@ -143,7 +151,7 @@ flowchart TB
 ### Dependencies and Assumptions
 
 - Existing ten-primitive validation and fixed `CardKind` behavior remain authoritative.
-- The current prompt-output schema is a documented compatibility bridge, not a new core candidate schema.
+- The additive context-normalization schema is profile-neutral, not a core candidate or employment-decision object. Recruiting owns its domain vocabulary through manifest value contracts and attributes.
 - Official employment guidance informs conservative guardrails but does not make the template legally sufficient for any jurisdiction or use case.
 
 ### Sources and Research

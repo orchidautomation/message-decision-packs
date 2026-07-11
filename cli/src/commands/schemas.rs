@@ -1,7 +1,7 @@
 use crate::cli::SchemaTarget;
 use crate::constants::{
-    FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_CONTEXT_NORMALIZATION_SCHEMA_REF,
+    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -916,8 +916,8 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                 "properties": {
                     "contract": {"const": PROMPT_OUTPUT_CONTRACT},
                     "output_kind": {
-                        "enum": ["card-patches", "prospect-normalization"],
-                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs MDP prospect JSON for mdp fit/brief."
+                        "enum": ["card-patches", "prospect-normalization", "context-normalization"],
+                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs GTM prospect JSON for mdp fit/brief; context-normalization outputs profile-neutral review context without implying prospect or fit semantics."
                     },
                     "strict_json_only": {"const": true},
                     "required_top_level": {
@@ -929,7 +929,9 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 "source_summary",
                                 "runtime_context",
                                 "normalized_prospect",
+                                "normalized_context",
                                 "normalization_trace",
+                                "review_handoff",
                                 "card_patches",
                                 "gaps",
                                 "rejected_claims"
@@ -958,7 +960,8 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     "schema_ref": {
                         "enum": [
                             PROMPT_CARD_PATCH_SCHEMA_REF,
-                            PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
+                            PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+                            PROMPT_CONTEXT_NORMALIZATION_SCHEMA_REF
                         ],
                         "description": "Compact reference to the response schema family. The CLI derives the concrete schema from this ref, output_kind, prompt_id, and target_card_kinds."
                     },
@@ -1009,6 +1012,10 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                     "person_name": {"type": "string"},
                     "person_title": {"type": "string"},
                     "account_name": {"type": "string"},
+                    "profile_id": {"type": "string"},
+                    "context_id": {"type": "string"},
+                    "subject_id": {"type": "string"},
+                    "organization": {"type": "string"},
                     "inputs_used": string_array(),
                     "confidence": {"type": "string"}
                 }
@@ -1061,15 +1068,20 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                 }
             },
             "normalized_prospect": prospect_schema(),
+            "normalized_context": normalized_context_schema(),
             "normalization_trace": {
                 "type": "object",
                 "properties": {
                     "persona": {"type": "object"},
                     "fit_readiness": {"type": "object"},
+                    "operator": {"type": "object"},
+                    "review_readiness": {"type": "object"},
+                    "source_coverage": source_coverage_schema(),
                     "preserved_raw_fields": string_array(),
                     "missing_required": missing_required_trace_schema()
                 }
             },
+            "review_handoff": review_handoff_schema(),
             "gaps": string_array(),
             "rejected_claims": {
                 "type": "array",
@@ -1125,6 +1137,86 @@ fn prospect_schema() -> Value {
                 }
             },
             "attributes": attribute_schema()
+        }
+    })
+}
+
+fn normalized_context_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "profile_id", "context_id", "context_type", "subject_id", "subject_kind",
+            "identity_mode", "operator_persona", "source_kind", "synthetic", "summary",
+            "signals", "attributes"
+        ],
+        "properties": {
+            "profile_id": {"type": "string"},
+            "context_id": {"type": "string"},
+            "context_type": {"type": "string"},
+            "subject_id": {"type": "string"},
+            "subject_label": {"type": "string"},
+            "subject_kind": {"type": "string"},
+            "identity_mode": {"enum": ["opaque", "synthetic", "sanitized", "explicit-local"]},
+            "organization": {"type": "string"},
+            "operator_persona": {"type": "string"},
+            "source_kind": {"type": "string"},
+            "synthetic": {"type": "boolean"},
+            "summary": {"type": "string"},
+            "signals": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "title", "source"],
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "source": {"type": "string"},
+                        "confidence": {"type": "string"},
+                        "freshness": {"type": "string"},
+                        "state_as": {"type": "string"}
+                    }
+                }
+            },
+            "attributes": attribute_schema()
+        }
+    })
+}
+
+fn source_coverage_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "expected_source_ids", "present_source_ids", "empty_source_ids",
+            "missing_source_ids", "coverage_complete"
+        ],
+        "properties": {
+            "expected_source_ids": string_array(),
+            "present_source_ids": string_array(),
+            "empty_source_ids": string_array(),
+            "missing_source_ids": string_array(),
+            "coverage_complete": {"type": "boolean"}
+        }
+    })
+}
+
+fn review_handoff_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "review_stage", "human_owner", "source_snapshot", "artifact_readiness",
+            "unresolved_gaps", "safe_next_action"
+        ],
+        "properties": {
+            "review_stage": {"type": "string"},
+            "human_owner": {"type": "string"},
+            "source_snapshot": {"type": "string"},
+            "artifact_readiness": {"type": "string"},
+            "unresolved_gaps": string_array(),
+            "safe_next_action": {"type": "string"}
         }
     })
 }
@@ -1348,6 +1440,16 @@ mod tests {
         assert!(
             required_fields
                 .iter()
+                .any(|field| field == "normalized_context")
+        );
+        assert!(
+            required_fields
+                .iter()
+                .any(|field| field == "review_handoff")
+        );
+        assert!(
+            required_fields
+                .iter()
                 .any(|field| field == "normalization_trace")
         );
         assert!(
@@ -1358,6 +1460,10 @@ mod tests {
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["output_kind"]["enum"][1],
             "prospect-normalization"
+        );
+        assert_eq!(
+            result["properties"]["output_contract"]["properties"]["output_kind"]["enum"][2],
+            "context-normalization"
         );
     }
 }

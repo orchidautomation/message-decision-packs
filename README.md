@@ -378,7 +378,7 @@ Do not add a separate row-evaluation skill or workflow for fit. Normalize the su
 
 Prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for two related jobs:
 
-- Runtime normalization prompts, such as `normalize-prospect.yaml`, turn messy supplied rows into `normalized_prospect` JSON plus a trace that can feed `mdp fit` and `mdp brief`.
+- Runtime normalization prompts use two backward-compatible families: GTM prompts can emit `normalized_prospect` for `mdp fit` and `mdp brief`, while profile workflows can emit `normalized_context` with review readiness and a human-review handoff without implying prospect or fit semantics.
 - Extraction prompts classify supplied person, company, account, domain, row, or research data into reviewable `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance for pack authors.
 
 Both use `format: mdp.prompt.v0` and output `contract: mdp.prompt-output.v0`. Each prompt carries `output_contract.schema_ref`, a compact reference to its JSON output contract, plus a safe example. Use `mdp init --include-output-schemas` when you need starter prompt files with full inline JSON Schemas under `output_contract.schema`. They do not browse, scrape, enrich, send, sequence, or update external systems. See [Prompt Extraction Contract](docs/prompt-extraction-contract.md) and `mdp --json schema prompt`.

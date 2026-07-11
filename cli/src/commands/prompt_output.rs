@@ -3,7 +3,9 @@ use crate::models::{CardKind, Manifest, PromptFile};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
 use crate::runtime_context::validate_runtime_context;
 use crate::utils::{normalize_supplied_company_domain, resolve_pack_persona_label};
-use crate::value_contracts::normalized_prospect_contract_violations;
+use crate::value_contracts::{
+    normalized_context_contract_violations, normalized_prospect_contract_violations,
+};
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -256,6 +258,7 @@ fn validate_output_against_prompt(
     let inputs_used = validate_source_summary(
         output.get("source_summary"),
         &declared_inputs,
+        output_kind,
         &format!("{path}#/source_summary"),
         issues,
     );
@@ -307,6 +310,31 @@ fn validate_output_against_prompt(
             issues,
         );
     }
+    if output_kind == "context-normalization" {
+        validate_normalized_context(
+            manifest,
+            output.get("normalized_context"),
+            &format!("{path}#/normalized_context"),
+            issues,
+        );
+        validate_context_normalization_trace(
+            output.get("normalization_trace"),
+            &format!("{path}#/normalization_trace"),
+            issues,
+        );
+        validate_review_handoff(
+            output.get("review_handoff"),
+            &format!("{path}#/review_handoff"),
+            issues,
+        );
+        validate_context_readiness(manifest, output, path, issues);
+        validate_context_identity_invariants(
+            output,
+            &inputs_used,
+            &format!("{path}#/normalized_context"),
+            issues,
+        );
+    }
 
     if saw_supporting_reference && inputs_used.is_empty() {
         issues.push(issue(
@@ -321,6 +349,7 @@ fn validate_output_against_prompt(
 fn validate_source_summary(
     value: Option<&Value>,
     declared_inputs: &BTreeSet<String>,
+    output_kind: &str,
     path: &str,
     issues: &mut Vec<Value>,
 ) -> BTreeSet<String> {
@@ -334,31 +363,56 @@ fn validate_source_summary(
         return BTreeSet::new();
     };
 
+    let (allowed_fields, required_string_fields): (&[&str], &[&str]) =
+        if output_kind == "context-normalization" {
+            (
+                &[
+                    "profile_id",
+                    "context_id",
+                    "subject_id",
+                    "organization",
+                    "inputs_used",
+                    "confidence",
+                ],
+                &[
+                    "profile_id",
+                    "context_id",
+                    "subject_id",
+                    "organization",
+                    "confidence",
+                ],
+            )
+        } else {
+            (
+                &[
+                    "company_domain",
+                    "company_name",
+                    "person_name",
+                    "person_title",
+                    "account_name",
+                    "inputs_used",
+                    "confidence",
+                ],
+                &[
+                    "company_domain",
+                    "company_name",
+                    "person_name",
+                    "person_title",
+                    "account_name",
+                    "confidence",
+                ],
+            )
+        };
     validate_json_object_keys(
         summary,
-        &[
-            "company_domain",
-            "company_name",
-            "person_name",
-            "person_title",
-            "account_name",
-            "inputs_used",
-            "confidence",
-        ],
+        allowed_fields,
         path,
         "prompt_output_source_summary_unknown_field",
         issues,
     );
 
-    for field in [
-        "company_domain",
-        "company_name",
-        "person_name",
-        "person_title",
-        "account_name",
-        "confidence",
-    ] {
-        if summary.get(field).and_then(Value::as_str).is_none() {
+    for field in required_string_fields {
+        if summary.get(*field).and_then(Value::as_str).is_none() {
             issues.push(issue(
                 "prompt_output_source_summary_field_type",
                 "error",
@@ -439,14 +493,16 @@ fn validate_card_patches(
         return;
     };
 
-    if prompt.output_contract.output_kind.as_deref() == Some("prospect-normalization")
-        && !card_patches.is_empty()
+    if matches!(
+        prompt.output_contract.output_kind.as_deref(),
+        Some("prospect-normalization" | "context-normalization")
+    ) && !card_patches.is_empty()
     {
         issues.push(issue(
             "prompt_output_normalization_card_patches",
             "error",
             path,
-            "prospect-normalization outputs must keep card_patches empty",
+            "normalization outputs must keep card_patches empty",
         ));
     }
 
@@ -797,6 +853,186 @@ fn validate_normalized_prospect(
     }
 }
 
+fn validate_normalized_context(
+    manifest: &Manifest,
+    value: Option<&Value>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(context) = value.and_then(Value::as_object) else {
+        issues.push(issue(
+            "prompt_output_normalized_context_type",
+            "error",
+            path,
+            "normalized_context must be an object",
+        ));
+        return;
+    };
+
+    validate_json_object_keys(
+        context,
+        &[
+            "profile_id",
+            "context_id",
+            "context_type",
+            "subject_id",
+            "subject_label",
+            "subject_kind",
+            "identity_mode",
+            "organization",
+            "operator_persona",
+            "source_kind",
+            "synthetic",
+            "summary",
+            "signals",
+            "attributes",
+        ],
+        path,
+        "prompt_output_normalized_context_unknown_field",
+        issues,
+    );
+
+    for field in [
+        "profile_id",
+        "context_id",
+        "context_type",
+        "subject_id",
+        "subject_kind",
+        "identity_mode",
+        "operator_persona",
+        "source_kind",
+        "summary",
+    ] {
+        if context
+            .get(field)
+            .and_then(Value::as_str)
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            issues.push(issue(
+                "prompt_output_normalized_context_field_missing",
+                "error",
+                format!("{path}/{field}"),
+                format!("normalized_context must include non-empty {field}"),
+            ));
+        }
+    }
+    if !context.get("synthetic").is_some_and(Value::is_boolean) {
+        issues.push(issue(
+            "prompt_output_normalized_context_field_missing",
+            "error",
+            format!("{path}/synthetic"),
+            "normalized_context.synthetic must be a boolean",
+        ));
+    }
+
+    let identity_mode = context
+        .get("identity_mode")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !matches!(
+        identity_mode,
+        "opaque" | "synthetic" | "sanitized" | "explicit-local"
+    ) {
+        issues.push(issue(
+            "prompt_output_identity_mode_invalid",
+            "error",
+            format!("{path}/identity_mode"),
+            "normalized_context.identity_mode must be opaque, synthetic, sanitized, or explicit-local",
+        ));
+    }
+
+    let expected_profile = manifest
+        .profile
+        .as_ref()
+        .map(|profile| profile.id.as_str())
+        .unwrap_or_default();
+    if !expected_profile.is_empty()
+        && context.get("profile_id").and_then(Value::as_str) != Some(expected_profile)
+    {
+        issues.push(issue(
+            "prompt_output_profile_id_mismatch",
+            "error",
+            format!("{path}/profile_id"),
+            format!(
+                "normalized_context.profile_id must match manifest profile.id {expected_profile}"
+            ),
+        ));
+    }
+
+    validate_context_signals(context.get("signals"), &format!("{path}/signals"), issues);
+    if let Some(attributes) = context.get("attributes") {
+        validate_attributes(attributes, &format!("{path}/attributes"), issues);
+    } else {
+        issues.push(issue(
+            "prompt_output_normalized_context_field_missing",
+            "error",
+            format!("{path}/attributes"),
+            "normalized_context must include attributes",
+        ));
+    }
+
+    for violation in normalized_context_contract_violations(manifest, context, path) {
+        issues.push(issue(
+            violation.code,
+            "error",
+            violation.path,
+            violation.reason,
+        ));
+    }
+}
+
+fn validate_context_signals(value: Option<&Value>, path: &str, issues: &mut Vec<Value>) {
+    let Some(signals) = value.and_then(Value::as_array) else {
+        issues.push(issue(
+            "prompt_output_normalized_context_signals_type",
+            "error",
+            path,
+            "normalized_context.signals must be an array",
+        ));
+        return;
+    };
+    for (index, signal) in signals.iter().enumerate() {
+        let signal_path = format!("{path}/{index}");
+        let Some(signal) = signal.as_object() else {
+            issues.push(issue(
+                "prompt_output_normalized_context_signal_type",
+                "error",
+                &signal_path,
+                "normalized context signals must be objects",
+            ));
+            continue;
+        };
+        validate_json_object_keys(
+            signal,
+            &[
+                "id",
+                "title",
+                "source",
+                "confidence",
+                "freshness",
+                "state_as",
+            ],
+            &signal_path,
+            "prompt_output_normalized_context_signal_unknown_field",
+            issues,
+        );
+        for field in ["id", "title", "source"] {
+            if signal
+                .get(field)
+                .and_then(Value::as_str)
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                issues.push(issue(
+                    "prompt_output_normalized_context_signal_field_missing",
+                    "error",
+                    format!("{signal_path}/{field}"),
+                    format!("normalized context signals must include non-empty {field}"),
+                ));
+            }
+        }
+    }
+}
+
 fn validate_optional_domain(value: &str, path: &str, issues: &mut Vec<Value>) {
     if value.trim().is_empty() || value.trim().eq_ignore_ascii_case("n/a") {
         return;
@@ -903,6 +1139,407 @@ fn validate_normalization_trace(value: Option<&Value>, path: &str, issues: &mut 
         &format!("{path}/missing_required"),
         issues,
     );
+}
+
+fn validate_context_normalization_trace(
+    value: Option<&Value>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(trace) = value.and_then(Value::as_object) else {
+        issues.push(issue(
+            "prompt_output_normalization_trace_type",
+            "error",
+            path,
+            "normalization_trace must be an object",
+        ));
+        return;
+    };
+    validate_json_object_keys(
+        trace,
+        &[
+            "operator",
+            "review_readiness",
+            "source_coverage",
+            "preserved_raw_fields",
+            "missing_required",
+        ],
+        path,
+        "prompt_output_normalization_trace_unknown_field",
+        issues,
+    );
+    for field in ["operator", "review_readiness", "source_coverage"] {
+        if !trace.get(field).is_some_and(Value::is_object) {
+            issues.push(issue(
+                "prompt_output_normalization_trace_field_type",
+                "error",
+                format!("{path}/{field}"),
+                format!("normalization_trace.{field} must be an object"),
+            ));
+        }
+    }
+    validate_plain_string_array(
+        trace.get("preserved_raw_fields"),
+        &format!("{path}/preserved_raw_fields"),
+        "prompt_output_normalization_trace_field_type",
+        "normalization_trace.preserved_raw_fields must be an array of strings",
+        issues,
+    );
+    validate_missing_required_trace(
+        trace.get("missing_required"),
+        &format!("{path}/missing_required"),
+        issues,
+    );
+    validate_source_coverage(
+        trace.get("source_coverage"),
+        &format!("{path}/source_coverage"),
+        issues,
+    );
+    if !trace
+        .get("review_readiness")
+        .and_then(Value::as_object)
+        .and_then(|readiness| readiness.get("ready_for_review"))
+        .is_some_and(Value::is_boolean)
+    {
+        issues.push(issue(
+            "prompt_output_review_readiness_ready_type",
+            "error",
+            format!("{path}/review_readiness/ready_for_review"),
+            "normalization_trace.review_readiness.ready_for_review must be a boolean",
+        ));
+    }
+}
+
+fn validate_source_coverage(value: Option<&Value>, path: &str, issues: &mut Vec<Value>) {
+    let Some(coverage) = value.and_then(Value::as_object) else {
+        return;
+    };
+    validate_json_object_keys(
+        coverage,
+        &[
+            "expected_source_ids",
+            "present_source_ids",
+            "empty_source_ids",
+            "missing_source_ids",
+            "coverage_complete",
+        ],
+        path,
+        "prompt_output_source_coverage_unknown_field",
+        issues,
+    );
+
+    let mut sets = BTreeMap::new();
+    for field in [
+        "expected_source_ids",
+        "present_source_ids",
+        "empty_source_ids",
+        "missing_source_ids",
+    ] {
+        validate_plain_string_array(
+            coverage.get(field),
+            &format!("{path}/{field}"),
+            "prompt_output_source_coverage_field_type",
+            "source coverage fields must be arrays of strings",
+            issues,
+        );
+        let source_values = coverage
+            .get(field)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let values = source_values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+        if values.len() != source_values.len() {
+            issues.push(issue(
+                "prompt_output_source_coverage_duplicate",
+                "error",
+                format!("{path}/{field}"),
+                "source coverage arrays must not contain duplicate or non-string source ids",
+            ));
+        }
+        sets.insert(field, values);
+    }
+    let expected = &sets["expected_source_ids"];
+    let present = &sets["present_source_ids"];
+    let empty = &sets["empty_source_ids"];
+    let missing = &sets["missing_source_ids"];
+    let classified = present
+        .union(empty)
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .union(missing)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let overlaps = present.intersection(empty).next().is_some()
+        || present.intersection(missing).next().is_some()
+        || empty.intersection(missing).next().is_some();
+    if overlaps || classified != *expected {
+        issues.push(issue(
+            "prompt_output_source_coverage_inconsistent",
+            "error",
+            path,
+            "every expected source must appear exactly once in present, empty, or missing source ids",
+        ));
+    }
+    let computed_complete = !expected.is_empty()
+        && !overlaps
+        && classified == *expected
+        && empty.is_empty()
+        && missing.is_empty();
+    if coverage.get("coverage_complete").and_then(Value::as_bool) != Some(computed_complete) {
+        issues.push(issue(
+            "prompt_output_source_coverage_complete_mismatch",
+            "error",
+            format!("{path}/coverage_complete"),
+            format!("source_coverage.coverage_complete must be {computed_complete} for the classified expected sources"),
+        ));
+    }
+}
+
+fn validate_review_handoff(value: Option<&Value>, path: &str, issues: &mut Vec<Value>) {
+    let Some(handoff) = value.and_then(Value::as_object) else {
+        issues.push(issue(
+            "prompt_output_review_handoff_type",
+            "error",
+            path,
+            "review_handoff must be an object",
+        ));
+        return;
+    };
+    validate_json_object_keys(
+        handoff,
+        &[
+            "review_stage",
+            "human_owner",
+            "source_snapshot",
+            "artifact_readiness",
+            "unresolved_gaps",
+            "safe_next_action",
+        ],
+        path,
+        "prompt_output_review_handoff_unknown_field",
+        issues,
+    );
+    for field in [
+        "review_stage",
+        "human_owner",
+        "source_snapshot",
+        "artifact_readiness",
+        "safe_next_action",
+    ] {
+        if handoff
+            .get(field)
+            .and_then(Value::as_str)
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            issues.push(issue(
+                "prompt_output_review_handoff_field_missing",
+                "error",
+                format!("{path}/{field}"),
+                format!("review_handoff.{field} must be a non-empty string"),
+            ));
+        }
+    }
+    validate_plain_string_array(
+        handoff.get("unresolved_gaps"),
+        &format!("{path}/unresolved_gaps"),
+        "prompt_output_review_handoff_gaps_type",
+        "review_handoff.unresolved_gaps must be an array of strings",
+        issues,
+    );
+    for field in ["artifact_readiness", "safe_next_action"] {
+        let value = handoff
+            .get(field)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if contains_candidate_outcome(&value) {
+            issues.push(issue(
+                "prompt_output_review_handoff_candidate_outcome",
+                "error",
+                format!("{path}/{field}"),
+                "review_handoff must describe artifact readiness and a safe human review step, never a candidate outcome",
+            ));
+        }
+    }
+}
+
+fn contains_candidate_outcome(value: &str) -> bool {
+    let tokens = value
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect::<BTreeSet<_>>();
+    tokens.contains("candidate")
+        && [
+            "hire",
+            "reject",
+            "rank",
+            "advance",
+            "shortlist",
+            "recommend",
+            "score",
+        ]
+        .iter()
+        .any(|term| tokens.contains(term))
+}
+
+fn validate_context_readiness(
+    manifest: &Manifest,
+    output: &Value,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let ready = output
+        .pointer("/normalization_trace/review_readiness/ready_for_review")
+        .and_then(Value::as_bool);
+    let decision = output
+        .pointer("/normalized_context/attributes/review_decision")
+        .and_then(Value::as_str);
+    let handoff_readiness = output
+        .pointer("/review_handoff/artifact_readiness")
+        .and_then(Value::as_str);
+    let context = output.get("normalized_context").and_then(Value::as_object);
+    let source_summary = output.get("source_summary").and_then(Value::as_object);
+    for field in ["profile_id", "context_id", "subject_id"] {
+        let summary_value = source_summary.and_then(|summary| summary.get(field));
+        let context_value = context.and_then(|context| context.get(field));
+        if summary_value.is_some() && summary_value != context_value {
+            issues.push(issue(
+                "prompt_output_context_identity_mismatch",
+                "error",
+                format!("{path}#/source_summary/{field}"),
+                format!("source_summary.{field} must match normalized_context.{field}"),
+            ));
+        }
+    }
+    let handoff_stage = output
+        .pointer("/review_handoff/review_stage")
+        .and_then(Value::as_str);
+    let context_stage = output
+        .pointer("/normalized_context/attributes/review_stage")
+        .and_then(Value::as_str);
+    if context_stage.is_some() && handoff_stage != context_stage {
+        issues.push(issue(
+            "prompt_output_review_handoff_stage_mismatch",
+            "error",
+            format!("{path}#/review_handoff/review_stage"),
+            "review_handoff.review_stage must match normalized_context.attributes.review_stage",
+        ));
+    }
+    if decision.is_some() && handoff_readiness != decision {
+        issues.push(issue(
+            "prompt_output_review_handoff_readiness_mismatch",
+            "error",
+            format!("{path}#/review_handoff/artifact_readiness"),
+            "review_handoff.artifact_readiness must match normalized_context.attributes.review_decision",
+        ));
+    }
+    if let Some(ready) = ready {
+        let expected_ready = decision == Some("human-review-ready");
+        if ready != expected_ready {
+            issues.push(issue(
+                "prompt_output_review_readiness_mismatch",
+                "error",
+                format!("{path}#/normalization_trace/review_readiness/ready_for_review"),
+                "ready_for_review must be true only for the human-review-ready artifact state",
+            ));
+        }
+        let coverage_complete = output
+            .pointer("/normalization_trace/source_coverage/coverage_complete")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if ready && !coverage_complete {
+            issues.push(issue(
+                "prompt_output_review_readiness_incomplete_coverage",
+                "error",
+                format!("{path}#/normalization_trace/review_readiness/ready_for_review"),
+                "ready_for_review cannot be true when expected source coverage is incomplete",
+            ));
+        }
+        let output_gaps = output
+            .get("gaps")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        let handoff_gaps = output
+            .pointer("/review_handoff/unresolved_gaps")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        let missing_required = output
+            .pointer("/normalization_trace/missing_required")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        if ready && (output_gaps > 0 || handoff_gaps > 0 || missing_required > 0) {
+            issues.push(issue(
+                "prompt_output_review_readiness_unresolved_gaps",
+                "error",
+                format!("{path}#/normalization_trace/review_readiness/ready_for_review"),
+                "ready_for_review cannot be true while gaps or missing-required items remain unresolved",
+            ));
+        }
+        if decision == Some("needs-more-context") && output_gaps == 0 && handoff_gaps == 0 {
+            issues.push(issue(
+                "prompt_output_review_readiness_missing_gaps",
+                "error",
+                format!("{path}#/gaps"),
+                "needs-more-context outputs must preserve at least one gap in gaps or review_handoff.unresolved_gaps",
+            ));
+        }
+        if ready {
+            let Some(context) = context else {
+                return;
+            };
+            for field in &manifest.lead_input_requirements.required_fields {
+                let present = match field.as_str() {
+                    "signals" => context
+                        .get(field)
+                        .and_then(Value::as_array)
+                        .is_some_and(|signals| !signals.is_empty()),
+                    "synthetic" => context.get(field).is_some_and(Value::is_boolean),
+                    _ => context.get(field).is_some_and(meaningful_json_value),
+                };
+                if !present {
+                    issues.push(issue(
+                        "prompt_output_review_readiness_missing_required_field",
+                        "error",
+                        format!("{path}#/normalization_trace/review_readiness/ready_for_review"),
+                        format!("ready_for_review is true, but normalized_context is missing required field {field}"),
+                    ));
+                }
+            }
+            for field in &manifest.lead_input_requirements.required_signal_fields {
+                let signals = context
+                    .get("signals")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                if signals.is_empty()
+                    || signals
+                        .iter()
+                        .any(|signal| !normalized_signal_field_present(signal, field))
+                {
+                    issues.push(issue(
+                        "prompt_output_review_readiness_missing_required_signal_field",
+                        "error",
+                        format!("{path}#/normalization_trace/review_readiness/ready_for_review"),
+                        format!("ready_for_review is true, but normalized_context.signals is missing required field {field}"),
+                    ));
+                }
+            }
+            for attribute in &manifest.lead_input_requirements.required_attributes {
+                if !normalized_attribute_present(context, attribute) {
+                    issues.push(issue(
+                        "prompt_output_review_readiness_missing_required_attribute",
+                        "error",
+                        format!("{path}#/normalization_trace/review_readiness/ready_for_review"),
+                        format!("ready_for_review is true, but normalized_context.attributes is missing required attribute {attribute}"),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 fn validate_fit_readiness_against_manifest(
@@ -1159,6 +1796,56 @@ fn validate_normalization_invariants(
     }
 }
 
+fn validate_context_identity_invariants(
+    output: &Value,
+    inputs_used: &BTreeSet<String>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(context) = output.get("normalized_context").and_then(Value::as_object) else {
+        return;
+    };
+    let identity_mode = context
+        .get("identity_mode")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let subject_label = context
+        .get("subject_label")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if identity_mode == "opaque"
+        && !subject_label.trim().is_empty()
+        && !subject_label.trim().eq_ignore_ascii_case("n/a")
+    {
+        issues.push(issue(
+            "prompt_output_opaque_identity_label",
+            "error",
+            format!("{path}/subject_label"),
+            "opaque identity mode must omit subject_label or set it to N/A",
+        ));
+    }
+    if identity_mode == "synthetic"
+        && context.get("synthetic").and_then(Value::as_bool) != Some(true)
+    {
+        issues.push(issue(
+            "prompt_output_synthetic_identity_mismatch",
+            "error",
+            format!("{path}/synthetic"),
+            "synthetic identity mode requires normalized_context.synthetic to be true",
+        ));
+    }
+    if !inputs_used.contains("person_data")
+        && matches!(identity_mode, "sanitized" | "explicit-local")
+    {
+        issues.push(issue(
+            "prompt_output_identity_input_missing",
+            "error",
+            path,
+            "sanitized or explicit-local identity mode requires person_data in source_summary.inputs_used",
+        ));
+    }
+}
+
 fn validate_card_collisions(
     root: &Path,
     prompt: &PromptFile,
@@ -1338,6 +2025,11 @@ fn allowed_top_level_fields(output_kind: &str) -> Vec<&'static str> {
     if output_kind == "prospect-normalization" {
         fields.push("normalized_prospect");
         fields.push("normalization_trace");
+    }
+    if output_kind == "context-normalization" {
+        fields.push("normalized_context");
+        fields.push("normalization_trace");
+        fields.push("review_handoff");
     }
     fields
 }
@@ -2555,5 +3247,25 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn candidate_outcome_detection_rejects_decision_actions() {
+        assert!(contains_candidate_outcome(
+            "Human reviewer should reject the candidate."
+        ));
+        assert!(contains_candidate_outcome(
+            "Rank candidate and advance the top result."
+        ));
+    }
+
+    #[test]
+    fn candidate_outcome_detection_allows_review_artifact_language() {
+        assert!(!contains_candidate_outcome(
+            "Human reviewer checks the candidate scorecard gaps."
+        ));
+        assert!(!contains_candidate_outcome(
+            "Human reviewer checks the criterion-level evidence matrix."
+        ));
     }
 }

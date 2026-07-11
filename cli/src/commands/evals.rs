@@ -370,7 +370,10 @@ fn validate_prompt_output_fixture(
     if let Ok(value) = result.as_mut() {
         if let Some(object) = value.as_object_mut() {
             if let Some(ready) = prompt_output
-                .pointer("/normalization_trace/fit_readiness/ready_for_mdp_fit")
+                .pointer("/normalization_trace/review_readiness/ready_for_review")
+                .or_else(|| {
+                    prompt_output.pointer("/normalization_trace/fit_readiness/ready_for_mdp_fit")
+                })
                 .and_then(Value::as_bool)
             {
                 object.insert("normalization_ready".to_string(), json!(ready));

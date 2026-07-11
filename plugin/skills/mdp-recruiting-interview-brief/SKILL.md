@@ -16,7 +16,7 @@ Require the pack directory, supplied role criteria with job-related rationale, s
 ## Workflow
 
 1. Run strict validation and gaps.
-2. Normalize messy context with `normalize-recruiting-context` and validate it.
+2. Normalize messy context with `normalize-recruiting-context` and validate it. Inspect `normalized_context`, classify each expected role/evidence source as present, empty, or missing, and preserve the human owner and safe next action in `review_handoff`. Use opaque identity unless local display identity is explicitly authorized.
 3. Route with:
 
 ```bash

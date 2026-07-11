@@ -18,7 +18,7 @@ Use only synthetic, sanitized, public-supplied, or user-approved local evidence.
 ## Workflow
 
 1. Run strict validation, gaps, and the Recruiting agent surface.
-2. Normalize supplied context through `normalize-recruiting-context` and validate it.
+2. Normalize supplied context through `normalize-recruiting-context` and validate it. Require `normalized_context`, complete present/empty/missing `source_coverage`, and a `review_handoff` with a named human owner. Default real candidate context to opaque identity and omit display identity unless explicitly authorized locally.
 3. Route with:
 
 ```bash

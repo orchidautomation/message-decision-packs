@@ -72,6 +72,10 @@ It prepares source-backed role and candidate review artifacts while keeping empl
 - R21. Strict validation covers primitive mapping, prompt output, safety refusal, routes, gaps, and proof bindings.
 - R22. GTM and Proposal strict validation/evals remain green.
 - R23. Canonical/bundled templates, root/plugin skills, CLI, docs, and help remain aligned.
+- R24. Recruiting uses an additive profile-neutral context-normalization contract while GTM prospect normalization remains backward compatible.
+- R25. Expected sources are classified exactly once as present, empty, or missing before review readiness can be true.
+- R26. Real/local Recruiting context defaults to opaque subject identity and omits display labels unless explicitly authorized locally.
+- R27. Every normalized review artifact includes a human-review handoff with stage, owner, source snapshot, readiness, unresolved gaps, and a safe next action.
 
 ### Scope Boundaries
 
@@ -87,6 +91,10 @@ Outside MDP: ATS/HRIS/job-board behavior, sourcing, enrichment, scraping, backgr
 - AE4. Mixed evidence produces per-criterion evidence/gap labels without a recommendation.
 - AE5. Fake source or card IDs fail proof verification.
 - AE6. Restricted candidate material is refused from public repo artifacts.
+- AE7. Recruiting emits `normalized_context` and `ready_for_review`; GTM keeps `normalized_prospect` and `ready_for_mdp_fit`.
+- AE8. Incomplete expected-source classification fails prompt-output validation.
+- AE9. Opaque identity without a label passes; opaque identity with a display label fails.
+- AE10. Missing human owner or an autonomous candidate-outcome handoff fails prompt-output validation.
 
 ---
 
@@ -96,7 +104,7 @@ Outside MDP: ATS/HRIS/job-board behavior, sourcing, enrichment, scraping, backgr
 
 - KTD1. **Follow the Proposal embedded-template pattern.** Add Recruiting as a complete asset tree embedded by `cli/src/commands/init.rs`, with golden parity, custom-name, and dry-run coverage.
 - KTD2. **Do not change core ontology.** Reuse fixed core card kinds under Recruiting-owned IDs.
-- KTD3. **Use a compatibility normalization bridge.** `normalize-recruiting-context` emits the existing prospect-normalization shape with bounded Recruiting signals and attributes.
+- KTD3. **Use an additive neutral normalization contract.** `normalize-recruiting-context` emits `context-normalization` with `normalized_context`, review readiness, expected-source coverage, and a human-review handoff. Existing GTM prospect normalization remains unchanged.
 - KTD4. **Do not use `fit` as a candidate gate.** Review readiness is proven by prompt validation, routes, gaps, claim checks, and proof verification.
 - KTD5. **Layer safety gates.** Prompt instructions preserve inputs/gaps, avoid-rule entries drive deterministic text checks, proof constraints bind material evidence, and skills require human review.
 - KTD6. **Candidate evidence output is per criterion.** Proof examples use requirement, evidence, and gap segments with no aggregate candidate score.
@@ -127,6 +135,8 @@ U3 adds matching agent behavior.
 U4 registers the complete asset tree in the CLI.
 U5 aligns docs and validation entry points.
 U6 runs independent review and packages evidence.
+U7-U9 implement the neutral normalization amendment and reviewer-workflow safeguards.
+U10 re-runs independent review and PR handoff over the expanded diff.
 
 ### Risks and Mitigations
 
@@ -220,6 +230,46 @@ U6 runs independent review and packages evidence.
 - **Test scenarios:** Search forbidden claims/outcome language; inspect synthetic fixtures; compare mirrors; confirm unrelated/generated files are absent; confirm no autofix label.
 - **Verification:** Review artifact records findings/fixes, validation receipts, residual risks, and human merge checkpoint; MDP-101 stays blocked.
 
+### U7. Profile-neutral context-normalization core
+
+- **Goal:** Add a non-GTM normalization family without breaking the existing prospect contract.
+- **Requirements:** R2, R5, R21-R24, AE7.
+- **Dependencies:** U1-U6.
+- **Files:** `cli/src/constants.rs`, `cli/src/value_contracts.rs`, `cli/src/commands/{health,prompt_output,schemas,capabilities,evals}.rs`.
+- **Approach:** Register `context-normalization`, `mdp.prompt-output.context-normalization.v0`, `normalized_context`, review readiness, and review handoff; preserve all prospect-normalization behavior and advertise Recruiting in capabilities.
+- **Test scenarios:** Context schema/ref is discoverable; profile/persona/value contracts validate; GTM and Proposal normalization/evals stay green.
+- **Verification:** Focused CLI checks, Rust tests, and strict GTM/Proposal regressions pass.
+
+### U8. Privacy, coverage, and handoff hardening
+
+- **Goal:** Apply safe workflow insights without importing ATS retrieval, delivery, ranking, or private-data behavior.
+- **Requirements:** R6-R11, R14, R18, R25-R27, AE8-AE10.
+- **Dependencies:** U7.
+- **Files:** Recruiting prompt, manifest, evals, canonical/bundled templates, and CLI prompt-output validation.
+- **Approach:** Add opaque/synthetic/sanitized/explicit-local identity modes, present/empty/missing source coverage, readiness consistency, and a human-review handoff; fail candidate-outcome handoffs.
+- **Test scenarios:** Valid opaque context passes; identity leak, inconsistent coverage, missing owner, and autonomous handoff fail with stable issue codes.
+- **Verification:** Recruiting strict eval passes 27 fixtures and generated init preserves exact parity.
+
+### U9. Agent and documentation contract alignment
+
+- **Goal:** Ensure every agent-facing and public surface teaches the neutral contract and reviewer-workflow safeguards.
+- **Requirements:** R19-R27, AE7-AE10.
+- **Dependencies:** U7-U8.
+- **Files:** Recruiting skills, generic MDP skill, template README, CLI usage, root README, llms text, decisions, requirements, brainstorm, plan, and review artifact.
+- **Approach:** Remove Recruiting compatibility-bridge language, explain backward compatibility, and require identity, coverage, and handoff checks in matching skills.
+- **Test scenarios:** Recruiting surfaces contain no prospect/fit bridge terms; root/plugin mirrors match; capability/help text names both normalization families accurately.
+- **Verification:** Search, skill/plugin validation, mirror checks, and docs checks pass.
+
+### U10. Final regression review and PR update
+
+- **Goal:** Re-prove the expanded PR and return it to Brandon for human merge approval.
+- **Requirements:** R1-R27, AE1-AE10.
+- **Dependencies:** U7-U9.
+- **Files:** Review artifact, PR body, and Linear MDP-98/99/100 execution records.
+- **Approach:** Run narrow checks, full regressions, simplify/code/doc self-review, `make validate`, then commit/push and update durable coordination surfaces without the autofix label.
+- **Test scenarios:** No unresolved P1/P2, no domain leakage, no stale fixtures, no private data, and MDP-101 remains blocked.
+- **Verification:** Clean committed branch, green PR checks, updated review/PR/Linear evidence, and explicit human merge checkpoint.
+
 ---
 
 ## Verification Contract
@@ -231,7 +281,7 @@ U6 runs independent review and packages evidence.
 | Agent surface | `cargo run --manifest-path cli/Cargo.toml -- --json agent-surface --dir plugin/assets/templates/recruiting` | Recruiting skills recommended/allowed and conflicts blocked. |
 | Init smoke | Initialize a fresh Recruiting pack in temporary storage, then strict validate/eval it. | Generated tree matches bundle and passes. |
 | Routes | Run four Recruiting review routes with entries. | Expected cards/entries present; irrelevant outcomes absent. |
-| Prompt output | Validate ready, insufficient, invalid enum, missing source, and missing source-safety fixtures. | Expected valid/readiness/issue codes match. |
+| Prompt output | Validate ready, insufficient, invalid enum, missing source/safety, opaque identity, source coverage, reviewer owner, and autonomous handoff fixtures. | Expected valid/readiness/issue codes match. |
 | Proof output | Verify valid, fake-ID, missing-binding, missing-gap, and unsupported-claim examples. | Safe artifact proof-safe; unsafe artifacts blocked or need revision. |
 | GTM regression | Strict validate/eval `plugin/assets/templates/basic`. | Pass with zero warning/error. |
 | Proposal regression | Strict validate/eval `plugin/assets/templates/proposal`. | Pass with zero warning/error. |
@@ -244,7 +294,7 @@ U6 runs independent review and packages evidence.
 
 ## Definition of Done
 
-- U1-U5 surfaces exist, agree, and satisfy their scenarios.
+- U1-U10 surfaces exist, agree, and satisfy their scenarios.
 - Recruiting strict validation is activation ready with zero warnings/errors.
 - Recruiting strict eval passes every safety, route, prompt, gap, and proof fixture.
 - GTM and Proposal strict regressions pass.
