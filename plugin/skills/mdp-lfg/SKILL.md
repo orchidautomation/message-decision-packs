@@ -60,6 +60,14 @@ For proposal, RFP, capture, or bid/no-bid review packs:
 mdp --json init --template proposal --dir .
 ```
 
+For Recruiting role, candidate-evidence, interview-brief, or scorecard-gap packs, reroute to `$mdp-recruiting-pack-builder` and initialize:
+
+```bash
+mdp --json init --template recruiting --dir .
+```
+
+Recruiting work may prepare source-backed review context only. It must not source, rank, compare, advance, reject, or hire candidates.
+
 4. If a pack exists, validate before changing it:
 
 ```bash
@@ -73,6 +81,11 @@ Choose the narrow path and use that skill's workflow:
 
 - New or messy GTM pack: `$mdp-create-pack`
 - Proposal, RFP, capture, bid/no-bid, compliance, proof, red-team, or executive-review pack: `$mdp-proposal-pack-builder`
+- Recruiting role, candidate-evidence, interview-brief, scorecard-gap, or validation pack: `$mdp-recruiting-pack-builder`
+- Recruiting role criteria review: `$mdp-recruiting-role-requirements-review`
+- Recruiting candidate evidence review: `$mdp-recruiting-candidate-evidence-review`
+- Recruiting interview question brief: `$mdp-recruiting-interview-brief`
+- Recruiting scorecard gap review: `$mdp-recruiting-scorecard-gap-review`
 - Bid/no-bid review for a supplied proposal pursuit: `$mdp-proposal-bid-no-bid-review`
 - Compliance review for supplied proposal requirements, matrices, or answer drafts: `$mdp-proposal-compliance-review`
 - Win-theme or proof review for supplied proposal themes, differentiators, or claim-bearing draft text: `$mdp-proposal-win-theme-proof-review`

@@ -1,6 +1,6 @@
 # Installed Template QA Recipes
 
-Use this when testing a released installer, default GTM template, default proposal template, or fresh scratch workspace. This recipe tests the installed artifact, not whatever happens to be in the source checkout.
+Use this when testing a released installer, default GTM, Proposal, or Recruiting template, or a fresh scratch workspace. This recipe tests the installed artifact, not whatever happens to be in the source checkout.
 
 ## Folder Rule
 
@@ -63,6 +63,18 @@ Then validate opportunity prompt outputs:
 ```bash
 mdp --json validate-prompt-output --dir /tmp/mdp-template-qa/proposal --prompt-id normalize-opportunity --file <valid-output.json>
 mdp --json validate-prompt-output --dir /tmp/mdp-template-qa/proposal --prompt-id normalize-opportunity --file <invalid-output.json>
+```
+
+## Recruiting Smoke
+
+```bash
+mkdir -p /tmp/mdp-template-qa/recruiting
+mdp --json init --template recruiting --dir /tmp/mdp-template-qa/recruiting
+mdp --json validate --strict --dir /tmp/mdp-template-qa/recruiting
+mdp --json eval --strict --dir /tmp/mdp-template-qa/recruiting
+mdp --json agent-surface --dir /tmp/mdp-template-qa/recruiting
+mdp --json --summary route --entries --dir /tmp/mdp-template-qa/recruiting --persona "Recruiter" --job "candidate evidence review"
+mdp --json verify-output --dir /tmp/mdp-template-qa/recruiting --file /tmp/mdp-template-qa/recruiting/examples/proof-output/valid-binding.json
 ```
 
 ## What Passed Means

@@ -1,0 +1,127 @@
+{
+  "skill": "mdp-recruiting-pack-builder",
+  "description_under_test": "Use when the user wants to build or improve a Recruiting Message Decision Pack for safe local role and candidate review from approved material.",
+  "threshold": 0.5,
+  "queries": [
+    {
+      "id": "recruiting-train-001",
+      "split": "train",
+      "query": "Build a Recruiting MDP from this synthetic role brief and candidate evidence.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-train-002",
+      "split": "train",
+      "query": "Create role requirements, interview brief, and scorecard gap routes for a recruiting pack.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-train-003",
+      "split": "train",
+      "query": "Normalize this supplied recruiting context and validate the prompt output.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-train-004",
+      "split": "train",
+      "query": "Add safeguards for protected traits, proxies, invented credentials, and unverified candidate sources.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-train-005",
+      "split": "train",
+      "query": "Improve the Recruiting template proof bindings and strict eval fixtures.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-train-006",
+      "split": "train",
+      "query": "Build a local role and candidate evidence review pack from sanitized examples.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-train-007",
+      "split": "train",
+      "query": "Scrape LinkedIn to source candidates for this opening.",
+      "should_trigger": false
+    },
+    {
+      "id": "recruiting-train-008",
+      "split": "train",
+      "query": "Rank these candidates and reject the bottom half.",
+      "should_trigger": false
+    },
+    {
+      "id": "recruiting-train-009",
+      "split": "train",
+      "query": "Update the ATS and schedule interviews.",
+      "should_trigger": false
+    },
+    {
+      "id": "recruiting-train-010",
+      "split": "train",
+      "query": "Run a background check on this candidate.",
+      "should_trigger": false
+    },
+    {
+      "id": "recruiting-train-011",
+      "split": "train",
+      "query": "Create a GTM ICP pack for cold email.",
+      "should_trigger": false
+    },
+    {
+      "id": "recruiting-train-012",
+      "split": "train",
+      "query": "Build a proposal compliance review pack.",
+      "should_trigger": false
+    },
+    {
+      "id": "recruiting-validation-001",
+      "split": "validation",
+      "query": "Turn this fictional job and work sample into a safe Recruiting reference profile.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-validation-002",
+      "split": "validation",
+      "query": "The Recruiting MDP has stale synthetic fixtures; refresh and validate them.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-validation-003",
+      "split": "validation",
+      "query": "Map role criteria, candidate evidence, boundaries, outputs, and gaps into Recruiting cards.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-validation-004",
+      "split": "validation",
+      "query": "Make normalize-recruiting-context fail closed on restricted or unverified material.",
+      "should_trigger": true
+    },
+    {
+      "id": "recruiting-validation-005",
+      "split": "validation",
+      "query": "Tell me which applicant to hire.",
+      "should_trigger": false
+    },
+    {
+      "id": "recruiting-validation-006",
+      "split": "validation",
+      "query": "Infer age and culture fit from names and photos.",
+      "should_trigger": false
+    },
+    {
+      "id": "recruiting-validation-007",
+      "split": "validation",
+      "query": "Draft a cold email campaign for SaaS founders.",
+      "should_trigger": false
+    },
+    {
+      "id": "recruiting-validation-008",
+      "split": "validation",
+      "query": "Summarize this unrelated annual report.",
+      "should_trigger": false
+    }
+  ]
+}

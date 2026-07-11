@@ -28,6 +28,8 @@ The prompt contract lives under:
 
 It outputs `normalized_prospect` in the same shape accepted by `mdp --json schema prospect`, plus `normalization_trace`, `gaps`, empty `card_patches`, and `rejected_claims`.
 
+Profile workflows that must not imply prospect or fit semantics use the additive `context-normalization` family instead. It emits `normalized_context`, `normalization_trace.review_readiness`, `review_handoff`, gaps, empty `card_patches`, and rejected claims. Existing GTM prospect normalization remains unchanged.
+
 ## Boundary
 
 The normalization prompt may:

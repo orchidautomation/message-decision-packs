@@ -1,6 +1,6 @@
 # Message Decision Packs
 
-Message Decision Packs (MDP) are modular, agent-readable decision packs for GTM messaging and profile-specific review workflows. They give agents a small manifest, a source ledger, routed card files, and optional extraction prompt contracts. GTM packs can encode ICP, fit rules, personas, pains, signals, positioning, claims, motions, channel policy, hooks, CTA policy, avoid-rules, output-rules, objections, gaps, and copy patterns. Proposal packs can encode roles, requirements, bid/no-bid criteria, proof, compliance boundaries, review gates, output contracts, and reviewer gaps without turning MDP into proposal execution software.
+Message Decision Packs (MDP) are modular, agent-readable decision packs for GTM messaging and profile-specific review workflows. They give agents a small manifest, a source ledger, routed card files, and optional extraction prompt contracts. GTM packs encode messaging context; Proposal packs encode opportunity-review context; Recruiting packs encode role requirements, supplied candidate evidence, interview briefs, scorecard gaps, safety boundaries, and human-review contracts.
 
 This repo contains both the local CLI and the Pluxx source plugin for supported agent hosts:
 
@@ -12,7 +12,7 @@ message-decision-packs/
   examples/ # Canonical public-source example packs
 ```
 
-MDP is a decision/context layer. It is not a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.
+MDP is a decision/context layer. It is not a sender, CRM, ATS, job board, sourcing or enrichment provider, scraper, background-check service, scheduler, ranker, rejection engine, hiring decision maker, legal reviewer, compliance certifier, AI SDR, BI tool, or generic automation system.
 
 For a deeper explanation of what this repo is, why it matters, and how to ask your agent to explain it accurately, read [What This Repo Is](docs/what-this-repo-is.md). For the conceptual model behind fit, routing, and bounded drafting context, see [Conceptual Decision Flow](docs/conceptual-decision-flow.md). For Codex and Claude Code activation/validation hook boundaries, see [Agent Hook Guidance](docs/agent-hook-guidance.md).
 
@@ -152,7 +152,21 @@ mdp render-brief --dir /tmp/mdp-proposal-demo --file /tmp/mdp-proposal-demo/exam
 mdp --json gaps --dir /tmp/mdp-proposal-demo
 ```
 
-Available starter templates are `gtm` for the generic GTM messaging pack and `proposal` for the synthetic proposal reference profile. The proposal path does not create a prospect row or outbound-copy fixtures. Its proof-output examples are synthetic artifacts for testing that generated claim-bearing review text is bound to real pack evidence before use.
+Create a Recruiting reference-profile pack:
+
+```bash
+mdp --json init --template recruiting --dir /tmp/mdp-recruiting-demo --force
+mdp --json validate --strict --dir /tmp/mdp-recruiting-demo
+mdp --json agent-surface --dir /tmp/mdp-recruiting-demo
+mdp --json eval --strict --dir /tmp/mdp-recruiting-demo
+mdp --json route --entries --dir /tmp/mdp-recruiting-demo --persona "Recruiter" --job "candidate evidence review"
+mdp --json verify-output --dir /tmp/mdp-recruiting-demo --file /tmp/mdp-recruiting-demo/examples/proof-output/valid-binding.json
+mdp --json gaps --dir /tmp/mdp-recruiting-demo
+```
+
+Available starter templates are `gtm`, `proposal`, and `recruiting`. Proposal and Recruiting are synthetic reference profiles and do not create prospect rows or outbound-copy fixtures. Recruiting prepares criterion-level review context only: it does not source, rank, advance, reject, or hire candidates, and real employment decisions require human review outside MDP.
+
+See the [Recruiting recruiter user story](docs/recruiting-user-story.md) for a practical explanation of when to use the MVP, how the workflow operates, and what remains human-owned.
 
 ## Pack Layout
 
@@ -366,7 +380,7 @@ Do not add a separate row-evaluation skill or workflow for fit. Normalize the su
 
 Prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for two related jobs:
 
-- Runtime normalization prompts, such as `normalize-prospect.yaml`, turn messy supplied rows into `normalized_prospect` JSON plus a trace that can feed `mdp fit` and `mdp brief`.
+- Runtime normalization prompts use two backward-compatible families: GTM prompts can emit `normalized_prospect` for `mdp fit` and `mdp brief`, while profile workflows can emit `normalized_context` with review readiness and a human-review handoff without implying prospect or fit semantics.
 - Extraction prompts classify supplied person, company, account, domain, row, or research data into reviewable `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance for pack authors.
 
 Both use `format: mdp.prompt.v0` and output `contract: mdp.prompt-output.v0`. Each prompt carries `output_contract.schema_ref`, a compact reference to its JSON output contract, plus a safe example. Use `mdp init --include-output-schemas` when you need starter prompt files with full inline JSON Schemas under `output_contract.schema`. They do not browse, scrape, enrich, send, sequence, or update external systems. See [Prompt Extraction Contract](docs/prompt-extraction-contract.md) and `mdp --json schema prompt`.
@@ -384,6 +398,11 @@ Important skills include:
 - `mdp-proposal-compliance-review`: review supplied proposal requirements or answer drafts against compliance rules
 - `mdp-proposal-win-theme-proof-review`: review proposal themes or differentiators against approved proof
 - `mdp-proposal-red-team-gap-review`: prioritize proposal gaps, risks, and reviewer questions against pack constraints
+- `mdp-recruiting-pack-builder`: create or improve a safe Recruiting review-context pack
+- `mdp-recruiting-role-requirements-review`: review job-related criteria, rationale, ambiguity, and proxy risk
+- `mdp-recruiting-candidate-evidence-review`: map supplied evidence per criterion without scores or outcomes
+- `mdp-recruiting-interview-brief`: prepare job-related questions and prohibited-inference notes
+- `mdp-recruiting-scorecard-gap-review`: surface criterion-level evidence gaps without aggregate decisions
 - `mdp-icp-builder`: sharpen ICP/personas/fit logic
 - `mdp-source-extract`: turn source material into card entries
 - `mdp-source-strategy`: plan source targets, scout queries, evidence rules, exclusions, and review gates before extraction

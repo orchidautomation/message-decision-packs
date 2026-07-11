@@ -1,0 +1,111 @@
+{
+  "contract": "mdp.proof-output.v0",
+  "pack": {
+    "id": "recruiting-mdp-sample",
+    "profile_id": "recruiting"
+  },
+  "route": {
+    "persona": "Recruiter",
+    "job": "candidate evidence review"
+  },
+  "output": {
+    "kind": "candidate-evidence-review",
+    "format": "markdown",
+    "text": "Criterion status: Source-backed. Candidate A has an invented degree. Gap: no degree or certification is verified. Needs human review."
+  },
+  "coverage": {
+    "mode": "full-segmentation",
+    "material_policy": "bound-or-gap"
+  },
+  "segments": [
+    {
+      "id": "seg-001",
+      "kind": "template_text",
+      "text": "Criterion status: ",
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "renders",
+          "card_id": "review-outputs",
+          "entry_id": "candidate-evidence-matrix",
+          "kind": "copy-patterns",
+          "primitive": "output-contracts"
+        }
+      ]
+    },
+    {
+      "id": "seg-002",
+      "kind": "requirement_status",
+      "text": "Source-backed. ",
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "requires",
+          "card_id": "role-requirements",
+          "entry_id": "api-change-requirement",
+          "kind": "pains",
+          "primitive": "needs-requirements"
+        }
+      ]
+    },
+    {
+      "id": "seg-003",
+      "kind": "claim",
+      "text": "Candidate A has an invented degree.",
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "supports",
+          "card_id": "evidence-standards",
+          "entry_id": "supplied-work-sample-evidence",
+          "kind": "claims",
+          "primitive": "evidence-proof"
+        },
+        {
+          "type": "source",
+          "role": "supports",
+          "source_id": "synthetic-candidate-evidence"
+        }
+      ]
+    },
+    {
+      "id": "seg-004",
+      "kind": "gap",
+      "text": " Gap: no degree or certification is verified.",
+      "gap": {
+        "code": "missing-credential-proof",
+        "reason": "The synthetic candidate evidence does not verify a degree or certification."
+      },
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "constrains",
+          "card_id": "evidence-standards",
+          "entry_id": "no-credential-proof",
+          "kind": "claims",
+          "primitive": "boundaries"
+        },
+        {
+          "type": "source",
+          "role": "supports-gap",
+          "source_id": "synthetic-candidate-evidence"
+        }
+      ]
+    },
+    {
+      "id": "seg-005",
+      "kind": "template_text",
+      "text": " Needs human review.",
+      "refs": [
+        {
+          "type": "card_entry",
+          "role": "renders",
+          "card_id": "recruiting-output-rules",
+          "entry_id": "human-review-checkpoint",
+          "kind": "output-rules",
+          "primitive": "output-contracts"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+id: recruiting-boundaries
+kind: avoid-rules
+title: Recruiting safety boundaries
+description: Employment-safety, source, privacy, and human-authority boundaries.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, boundaries, safety, privacy]
+entries:
+- id: no-protected-or-proxy-use
+  title: No protected or proxy use
+  body: Do not infer, collect, compare, or use protected characteristics or non-job-related proxies. Flag age, race, ethnicity, religion, sex, sexual orientation, gender identity, pregnancy, disability, genetic information, national origin, family status, appearance, voice, name, school prestige, commute distance, and similar proxies.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [recruiting-safety-contract]
+  avoid: [protected characteristic, sexual orientation, gender identity, proxy ranking, culture fit score, native English speaker, school prestige, commute distance, facial analysis, voice analysis]
+  metadata: {primitive: boundaries}
+- id: no-autonomous-outcomes
+  title: No autonomous outcomes
+  body: Do not rank, compare, score, advance, reject, recommend, hire, or create a final candidate outcome. MDP may only prepare criterion-level evidence and gaps for human review.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [recruiting-safety-contract]
+  avoid: [rank candidates, top candidate, reject candidate, hire recommendation, advance candidate, aggregate score]
+  metadata: {primitive: boundaries}
+- id: no-source-acquisition
+  title: No source acquisition
+  body: Do not browse, scrape, enrich, background-check, or retrieve candidate data. Accept only supplied evidence with an explicit source classification.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [recruiting-safety-contract]
+  avoid: [scraped profile, background check, source candidates, enrich candidate]
+  metadata: {primitive: boundaries}
+- id: no-invented-candidate-facts
+  title: No invented candidate facts
+  body: Never invent credentials, certifications, education, employment history, skills, achievements, identity, or source status. Missing or unverified items remain gaps.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [invented degree, invented certification, fabricated experience]
+  metadata: {primitive: boundaries}
+- id: no-public-candidate-material
+  title: No public candidate material
+  body: Commit only synthetic or explicitly sanitized Recruiting artifacts. Restricted, identifying, access-controlled, or unapproved candidate material stays in a user-controlled local pack and must not enter public templates.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [recruiting-safety-contract]
+  avoid: [raw candidate record, restricted candidate material, private candidate data]
+  metadata: {primitive: boundaries}
+- id: no-legal-or-compliance-claim
+  title: No legal or compliance claim
+  body: Do not claim legal sufficiency, validated selection procedures, bias-free behavior, compliance certification, or approval for employment use.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [recruiting-safety-contract]
+  avoid: [legally compliant, bias free, validated selection procedure, compliance certified]
+  metadata: {primitive: boundaries}

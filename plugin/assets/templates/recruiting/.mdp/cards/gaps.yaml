@@ -1,0 +1,42 @@
+id: gaps
+kind: gaps
+title: Recruiting evidence gaps
+description: Missing, conflicting, weak, restricted, and unsupported evidence that must remain visible.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, gaps, evidence]
+entries:
+- id: missing-role-rationale
+  title: Missing job-related rationale
+  body: If a role criterion lacks a job-related rationale, do not use it for candidate review. Ask the Hiring Manager to clarify or remove it.
+  applies_to: [Recruiter, Hiring Manager]
+  evidence: [synthetic-role-brief]
+  avoid: [unstated rationale]
+  metadata: {primitive: gaps}
+- id: missing-candidate-source
+  title: Missing candidate evidence source
+  body: If candidate evidence has no supplied source, keep it as a gap and do not label it Source-backed.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [source-free evidence]
+  metadata: {primitive: gaps}
+- id: missing-credential-proof
+  title: Missing credential proof
+  body: An unsourced degree, certification, employment history, or achievement remains a gap. Do not infer or invent it.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [invented credential]
+  metadata: {primitive: gaps}
+- id: restricted-or-unverified-source
+  title: Restricted or unverified source
+  body: Restricted or unverified material is not review-ready evidence. Refuse public use and request an approved local source classification.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [recruiting-safety-contract]
+  avoid: [unverified source accepted]
+  metadata: {primitive: gaps}
+- id: conflicting-evidence
+  title: Conflicting evidence
+  body: Preserve conflicting statements as separate evidence with a reviewer question. Do not silently choose the more favorable interpretation.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [smoothed conflict]
+  metadata: {primitive: gaps}

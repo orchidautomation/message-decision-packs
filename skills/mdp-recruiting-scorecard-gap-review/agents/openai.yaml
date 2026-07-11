@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Recruiting Scorecard Gap Review"
+  short_description: "Surface scorecard evidence gaps"
+  default_prompt: "Use $mdp-recruiting-scorecard-gap-review to surface criterion-level evidence gaps without aggregate scores or outcomes."

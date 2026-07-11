@@ -1,0 +1,15 @@
+id: pack-validation-route
+profile_eval:
+  category: job-routing
+  primitives: [boundaries, output-contracts, routing-jobs, gaps, evals]
+  jobs: [pack-validation]
+command: route
+persona: Recruiter
+job: pack validation
+expect_load_order_contains:
+- .mdp/cards/recruiting-boundaries.yaml
+- .mdp/cards/recruiting-output-rules.yaml
+- .mdp/cards/review-gates.yaml
+- .mdp/cards/gaps.yaml
+expect_entry_titles_contains:
+- Pack validation job

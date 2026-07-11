@@ -1,6 +1,7 @@
 use crate::constants::{
-    DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
-    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF,
+    PROMPT_CONTEXT_NORMALIZATION_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
     AgentSurface, CardKind, InputContract, Manifest, PrimitiveMapping, Profile, ProfileEval,
@@ -10,7 +11,7 @@ use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
 use crate::routing::select_cards;
-use crate::value_contracts::PROSPECT_CONTRACT_FIELDS;
+use crate::value_contracts::{CONTEXT_CONTRACT_FIELDS, PROSPECT_CONTRACT_FIELDS};
 use anyhow::Result;
 use serde_json::{Value, json};
 use serde_yaml::Value as YamlValue;
@@ -1315,6 +1316,16 @@ fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: 
         "persona",
         "segment",
         "signals",
+        "profile_id",
+        "context_id",
+        "context_type",
+        "subject_id",
+        "subject_label",
+        "subject_kind",
+        "identity_mode",
+        "organization",
+        "operator_persona",
+        "summary",
     ];
     let allowed_signal_fields = [
         "id",
@@ -1329,7 +1340,7 @@ fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: 
         &allowed_fields,
         ".mdp/manifest.yaml#/lead_input_requirements/required_fields",
         "lead_input_required_field_unknown",
-        "required_fields entries must be supported prospect fields",
+        "required_fields entries must be supported prospect or profile-context fields",
         issues,
     );
     validate_requirement_values(
@@ -1368,12 +1379,14 @@ fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: 
     }
 
     for (field, contract) in &manifest.lead_input_requirements.value_contracts {
-        if !PROSPECT_CONTRACT_FIELDS.contains(&field.as_str()) {
+        if !PROSPECT_CONTRACT_FIELDS.contains(&field.as_str())
+            && !CONTEXT_CONTRACT_FIELDS.contains(&field.as_str())
+        {
             issues.push(issue(
                 "lead_input_value_contract_field_unknown",
                 "error",
                 format!(".mdp/manifest.yaml#/lead_input_requirements/value_contracts/{field}"),
-                format!("value_contracts key {field} must be a supported prospect scalar field"),
+                format!("value_contracts key {field} must be a supported prospect or profile-context scalar field"),
             ));
         }
         validate_value_contract(
@@ -2106,12 +2119,15 @@ fn validate_prompt_file(
 fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
     let contract = &prompt.output_contract;
     let output_kind = contract.output_kind.as_deref().unwrap_or("card-patches");
-    if !matches!(output_kind, "card-patches" | "prospect-normalization") {
+    if !matches!(
+        output_kind,
+        "card-patches" | "prospect-normalization" | "context-normalization"
+    ) {
         issues.push(issue(
             "prompt_output_kind_unknown",
             "error",
             format!("{path}#/output_contract/output_kind"),
-            format!("prompt output_kind must be card-patches or prospect-normalization, found {output_kind}"),
+            format!("prompt output_kind must be card-patches, prospect-normalization, or context-normalization; found {output_kind}"),
         ));
     }
     if contract.contract != PROMPT_OUTPUT_CONTRACT {
@@ -2172,6 +2188,26 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             }
         }
     }
+    if output_kind == "context-normalization" {
+        for field in [
+            "normalized_context",
+            "normalization_trace",
+            "review_handoff",
+        ] {
+            if !contract
+                .required_top_level
+                .iter()
+                .any(|required_field| required_field == field)
+            {
+                issues.push(issue(
+                    "prompt_normalization_required_field_missing",
+                    "error",
+                    format!("{path}#/output_contract/required_top_level"),
+                    format!("context-normalization prompts must require {field}"),
+                ));
+            }
+        }
+    }
     if contract.entry_defaults.body != "N/A"
         || !contract.entry_defaults.applies_to.is_empty()
         || !contract.entry_defaults.evidence.is_empty()
@@ -2214,10 +2250,10 @@ fn validate_prompt_schema_ref(
     let Some(schema_ref) = prompt.output_contract.schema_ref.as_deref() else {
         return;
     };
-    let expected = if output_kind == "prospect-normalization" {
-        PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
-    } else {
-        PROMPT_CARD_PATCH_SCHEMA_REF
+    let expected = match output_kind {
+        "prospect-normalization" => PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+        "context-normalization" => PROMPT_CONTEXT_NORMALIZATION_SCHEMA_REF,
+        _ => PROMPT_CARD_PATCH_SCHEMA_REF,
     };
     if schema_ref != expected {
         issues.push(issue(

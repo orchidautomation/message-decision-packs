@@ -8,18 +8,18 @@ Do not create new core system objects for every domain noun. Map domain nouns to
 
 ## Universal Primitive Matrix
 
-| Primitive | Purpose | GTM profile examples | Proposal profile examples |
-| --- | --- | --- | --- |
-| `actors` | Who matters | personas, buyers, users | proposal roles, evaluators, reviewers |
-| `decision-criteria` | When to proceed, pause, decline, route | fit rules, disqualifiers, segment rules | bid/no-bid rules, evaluation criteria |
-| `source-signals` | Observable facts from inputs | account signals, triggers, row fields | opportunity context, requirement signals |
-| `needs-requirements` | Problems, requirements, stakes | pains, jobs to be done | requirements matrix |
-| `evidence-proof` | Claims that need proof | claims, proof points | proof library, differentiators |
-| `boundaries` | Things not to say or do | avoid rules, no-message cases | compliance boundaries, no-invention rules |
-| `output-contracts` | What the downstream model may produce | output rules, copy patterns, CTAs | review outputs, proposal output rules |
-| `routing-jobs` | Which task loads which context | motions, channel policies | review gates |
-| `gaps` | Unknowns that must stay visible | missing ICP proof | missing RFP/proof/compliance context |
-| `evals` | Deterministic checks | route, fit, prompt-output fixtures | review route and safety fixtures |
+| Primitive | Purpose | GTM examples | Proposal examples | Recruiting examples |
+| --- | --- | --- | --- | --- |
+| `actors` | Who matters | personas, buyers, users | proposal roles, evaluators, reviewers | Recruiter, Hiring Manager, Interviewer; candidate subject |
+| `decision-criteria` | When to proceed, pause, decline, route | fit rules, disqualifiers | bid/no-bid and evaluation criteria | job-related criterion review rules |
+| `source-signals` | Observable facts from inputs | account signals and row fields | opportunity and requirement signals | role context and supplied candidate evidence |
+| `needs-requirements` | Problems, requirements, stakes | pains and jobs to be done | requirements matrix | role requirements and rationale |
+| `evidence-proof` | Claims that need proof | claims and proof points | proof library and differentiators | evidence standards and source bindings |
+| `boundaries` | Things not to say or do | avoid rules and no-message cases | compliance and no-invention rules | protected/proxy, source, privacy, and no-outcome rules |
+| `output-contracts` | What the downstream model may produce | output rules, copy patterns, CTAs | proposal review outputs | evidence matrices, interview briefs, and gap reports |
+| `routing-jobs` | Which task loads which context | motions and channel policies | proposal review gates | role, candidate, interview, scorecard, and validation gates |
+| `gaps` | Unknowns that must stay visible | missing ICP proof | missing RFP/proof/compliance context | missing, weak, conflicting, restricted, or unverified evidence |
+| `evals` | Deterministic checks | route, fit, prompt-output fixtures | review route and safety fixtures | route, refusal, prompt, gap, safety, and proof fixtures |
 
 ## GTM Account Context
 

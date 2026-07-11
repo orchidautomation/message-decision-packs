@@ -1,0 +1,18 @@
+id: interview-brief-route
+profile_eval:
+  category: job-routing
+  primitives: [actors, source-signals, needs-requirements, decision-criteria, boundaries, output-contracts, gaps]
+  jobs: [interview-brief]
+command: route
+persona: Interviewer
+job: interview brief
+expect_load_order_contains:
+- .mdp/cards/role-context.yaml
+- .mdp/cards/candidate-evidence.yaml
+- .mdp/cards/role-requirements.yaml
+- .mdp/cards/recruiting-boundaries.yaml
+- .mdp/cards/review-outputs.yaml
+- .mdp/cards/gaps.yaml
+expect_entry_titles_contains:
+- Interview brief job
+- Interview question brief

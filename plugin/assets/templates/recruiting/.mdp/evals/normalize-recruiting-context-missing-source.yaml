@@ -1,0 +1,62 @@
+id: normalize-recruiting-context-missing-source
+profile_eval:
+  category: prompt-output-validation
+  primitives: [actors, source-signals, needs-requirements, gaps]
+  jobs: [candidate-evidence-review]
+command: validate-prompt-output
+prompt_id: normalize-recruiting-context
+expect_valid: false
+expect_issue_codes_contains: [prompt_output_normalized_context_signal_field_missing, prompt_output_review_readiness_missing_required_signal_field]
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-recruiting-context
+  source_summary:
+    profile_id: recruiting
+    context_id: RECRUITING-REVIEW-SYNTH-MISSING-SOURCE
+    subject_id: CANDIDATE-SYNTH-A
+    organization: Example Hiring Team
+    inputs_used: [raw_recruiting_context, person_data, existing_pack_context, source_kind]
+    confidence: medium
+  normalized_context:
+    profile_id: recruiting
+    context_id: RECRUITING-REVIEW-SYNTH-MISSING-SOURCE
+    context_type: candidate-evidence-review
+    subject_id: CANDIDATE-SYNTH-A
+    subject_label: Candidate A
+    subject_kind: candidate-evidence-subject
+    identity_mode: synthetic
+    organization: Example Hiring Team
+    operator_persona: Recruiter
+    source_kind: synthetic-example
+    synthetic: true
+    summary: Synthetic signal intentionally omits its source.
+    attributes:
+      role_id: ROLE-SYNTH-001
+      candidate_id: CANDIDATE-SYNTH-A
+      review_stage: candidate-evidence
+      review_decision: human-review-ready
+      source_safety: synthetic
+    signals:
+    - id: synthetic-api-work-sample
+      title: Synthetic API work sample supplied
+  normalization_trace:
+    operator: {source: existing_pack_context.personas, confidence: high, needs_review: false}
+    review_readiness: {ready_for_review: true}
+    source_coverage:
+      expected_source_ids: [candidate-evidence]
+      present_source_ids: [candidate-evidence]
+      empty_source_ids: []
+      missing_source_ids: []
+      coverage_complete: true
+    preserved_raw_fields: [raw_recruiting_context.candidate_evidence]
+    missing_required: []
+  review_handoff:
+    review_stage: candidate-evidence
+    human_owner: Recruiter
+    source_snapshot: synthetic-example
+    artifact_readiness: human-review-ready
+    unresolved_gaps: []
+    safe_next_action: Human reviewer verifies signal provenance.
+  card_patches: []
+  gaps: []
+  rejected_claims: []

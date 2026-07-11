@@ -27,6 +27,21 @@ pub(crate) const PROSPECT_CONTRACT_FIELDS: &[&str] = &[
     "segment",
 ];
 
+pub(crate) const CONTEXT_CONTRACT_FIELDS: &[&str] = &[
+    "profile_id",
+    "context_id",
+    "context_type",
+    "subject_id",
+    "subject_label",
+    "subject_kind",
+    "identity_mode",
+    "organization",
+    "operator_persona",
+    "source_kind",
+    "synthetic",
+    "summary",
+];
+
 pub(crate) fn prospect_contract_violations(
     manifest: &Manifest,
     prospect: &Prospect,
@@ -182,6 +197,77 @@ pub(crate) fn normalized_prospect_contract_violations(
     }
 
     let attributes = prospect
+        .get("attributes")
+        .and_then(Value::as_object)
+        .map(|attributes| attributes.iter().collect::<Vec<_>>())
+        .unwrap_or_default();
+    collect_attribute_contract_violations(
+        &manifest.lead_input_requirements.attribute_definitions,
+        manifest.lead_input_requirements.allow_undeclared_attributes,
+        &attributes,
+        &format!("{path}/attributes"),
+        &mut violations,
+    );
+
+    violations
+}
+
+pub(crate) fn normalized_context_contract_violations(
+    manifest: &Manifest,
+    context: &Map<String, Value>,
+    path: &str,
+) -> Vec<ContractViolation> {
+    let mut violations = Vec::new();
+    let operator_persona = context
+        .get("operator_persona")
+        .and_then(Value::as_str)
+        .and_then(present_str);
+
+    if let Some(persona) = operator_persona {
+        if resolve_pack_persona_label(manifest, persona, "normalized_context.operator_persona")
+            .is_none()
+        {
+            violations.push(ContractViolation {
+                code: "value_contract_persona_unrecognized",
+                scope: "context",
+                field: "operator_persona".to_string(),
+                path: format!("{path}/operator_persona"),
+                reason: format!(
+                    "normalized_context.operator_persona must match a pack-owned persona or persona_mappings alias; received {persona}; allowed personas: {}",
+                    allowed_personas(manifest)
+                ),
+            });
+        }
+    }
+
+    for (field, contract) in &manifest.lead_input_requirements.value_contracts {
+        let value = if field == "persona" {
+            operator_persona.map(|persona| Value::String(persona.to_string()))
+        } else {
+            context
+                .get(field)
+                .filter(|value| meaningful_json_value(value))
+                .cloned()
+        };
+        if let Some(value) = value {
+            validate_value(
+                field,
+                &value,
+                contract,
+                &format!("{path}/{field}"),
+                "context",
+                &mut violations,
+            );
+        } else if contract.required {
+            violations.push(required_violation(
+                "context",
+                field,
+                &format!("{path}/{field}"),
+            ));
+        }
+    }
+
+    let attributes = context
         .get("attributes")
         .and_then(Value::as_object)
         .map(|attributes| attributes.iter().collect::<Vec<_>>())

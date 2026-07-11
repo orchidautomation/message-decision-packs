@@ -1,0 +1,62 @@
+id: normalize-recruiting-context-opaque-identity
+profile_eval:
+  category: prompt-output-validation
+  primitives: [actors, source-signals, boundaries, gaps]
+  jobs: [candidate-evidence-review]
+command: validate-prompt-output
+prompt_id: normalize-recruiting-context
+expect_valid: true
+expect_normalization_ready: true
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-recruiting-context
+  source_summary:
+    profile_id: recruiting
+    context_id: RECRUITING-REVIEW-OPAQUE-001
+    subject_id: SUBJECT-7F3A
+    organization: Example Hiring Team
+    inputs_used: [raw_recruiting_context, existing_pack_context, source_kind]
+    confidence: medium
+  normalized_context:
+    profile_id: recruiting
+    context_id: RECRUITING-REVIEW-OPAQUE-001
+    context_type: candidate-evidence-review
+    subject_id: SUBJECT-7F3A
+    subject_kind: candidate-evidence-subject
+    identity_mode: opaque
+    organization: Example Hiring Team
+    operator_persona: Recruiter
+    source_kind: user-provided-candidate-evidence
+    synthetic: false
+    summary: Redacted job-related work-sample evidence is ready for human review.
+    attributes:
+      role_id: ROLE-LOCAL-001
+      candidate_id: SUBJECT-7F3A
+      review_stage: candidate-evidence
+      review_decision: human-review-ready
+      source_safety: user-approved-local
+    signals:
+    - id: redacted-work-sample
+      title: Redacted work sample supplied
+      source: raw_recruiting_context.candidate_evidence
+  normalization_trace:
+    operator: {source: existing_pack_context.personas, confidence: high, needs_review: false}
+    review_readiness: {ready_for_review: true}
+    source_coverage:
+      expected_source_ids: [role-brief, candidate-evidence]
+      present_source_ids: [role-brief, candidate-evidence]
+      empty_source_ids: []
+      missing_source_ids: []
+      coverage_complete: true
+    preserved_raw_fields: [raw_recruiting_context.role_brief, raw_recruiting_context.candidate_evidence]
+    missing_required: []
+  review_handoff:
+    review_stage: candidate-evidence
+    human_owner: Recruiter
+    source_snapshot: user-approved-local
+    artifact_readiness: human-review-ready
+    unresolved_gaps: []
+    safe_next_action: Human reviewer checks the redacted evidence against the supplied criterion.
+  card_patches: []
+  gaps: []
+  rejected_claims: []

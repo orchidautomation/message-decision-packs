@@ -5,6 +5,7 @@ pub(crate) mod evals;
 pub(crate) mod health;
 pub(crate) mod human_brief;
 pub(crate) mod init;
+mod init_templates;
 pub(crate) mod pack;
 pub(crate) mod prompt_output;
 pub(crate) mod proof_output;

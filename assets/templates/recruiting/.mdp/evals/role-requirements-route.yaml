@@ -1,0 +1,18 @@
+id: role-requirements-route
+profile_eval:
+  category: job-routing
+  primitives: [actors, source-signals, needs-requirements, decision-criteria, boundaries, output-contracts, gaps]
+  jobs: [role-requirements-review]
+command: route
+persona: Hiring Manager
+job: role requirements review
+expect_load_order_contains:
+- .mdp/cards/role-context.yaml
+- .mdp/cards/role-requirements.yaml
+- .mdp/cards/review-criteria.yaml
+- .mdp/cards/recruiting-boundaries.yaml
+- .mdp/cards/review-outputs.yaml
+- .mdp/cards/gaps.yaml
+expect_entry_titles_contains:
+- Role requirements review job
+- Role requirements matrix

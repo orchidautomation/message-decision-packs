@@ -1,6 +1,6 @@
 # Installed Template QA
 
-Use this when the objective is to test a released MDP install or a freshly initialized GTM/proposal template.
+Use this when the objective is to test a released MDP install or a freshly initialized GTM, Proposal, or Recruiting template.
 
 ## Rules
 
@@ -29,6 +29,14 @@ mdp --json validate --strict --dir /tmp/mdp-installed-template-qa/proposal
 mdp --json eval --strict --dir /tmp/mdp-installed-template-qa/proposal
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-installed-template-qa/proposal --persona "Proposal Lead" --job "bid no bid review"
 mdp --json gaps --dir /tmp/mdp-installed-template-qa/proposal
+
+mkdir -p /tmp/mdp-installed-template-qa/recruiting
+mdp --json init --template recruiting --dir /tmp/mdp-installed-template-qa/recruiting
+mdp --json validate --strict --dir /tmp/mdp-installed-template-qa/recruiting
+mdp --json eval --strict --dir /tmp/mdp-installed-template-qa/recruiting
+mdp --json agent-surface --dir /tmp/mdp-installed-template-qa/recruiting
+mdp --json --summary route --entries --dir /tmp/mdp-installed-template-qa/recruiting --persona "Recruiter" --job "candidate evidence review"
+mdp --json verify-output --dir /tmp/mdp-installed-template-qa/recruiting --file /tmp/mdp-installed-template-qa/recruiting/examples/proof-output/valid-binding.json
 ```
 
 Prompt-output validation is covered by strict template evals, but direct prompt-output files should be checked when investigating normalization bugs:
@@ -36,6 +44,7 @@ Prompt-output validation is covered by strict template evals, but direct prompt-
 ```bash
 mdp --json validate-prompt-output --dir <pack-root> --prompt-id normalize-prospect-row --file <gtm-output.json>
 mdp --json validate-prompt-output --dir <pack-root> --prompt-id normalize-opportunity --file <proposal-output.json>
+mdp --json validate-prompt-output --dir <pack-root> --prompt-id normalize-recruiting-context --file <recruiting-output.json>
 ```
 
 ## Closeout

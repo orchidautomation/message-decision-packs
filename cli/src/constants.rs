@@ -6,3 +6,5 @@ pub(crate) const PROMPT_OUTPUT_CONTRACT: &str = "mdp.prompt-output.v0";
 pub(crate) const PROMPT_CARD_PATCH_SCHEMA_REF: &str = "mdp.prompt-output.card-patches.v0";
 pub(crate) const PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF: &str =
     "mdp.prompt-output.prospect-normalization.v0";
+pub(crate) const PROMPT_CONTEXT_NORMALIZATION_SCHEMA_REF: &str =
+    "mdp.prompt-output.context-normalization.v0";

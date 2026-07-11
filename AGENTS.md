@@ -21,6 +21,8 @@ Do not describe MDP as:
 - `cli/`: Rust `mdp` CLI.
 - `plugin/`: Codex plugin and skills.
 - `plugin/assets/templates/basic`: neutral example pack.
+- `plugin/assets/templates/proposal`: synthetic Proposal review reference profile.
+- `plugin/assets/templates/recruiting`: synthetic Recruiting review reference profile.
 - `docs/`: distribution and design notes.
 
 ## Linear Coordination
@@ -77,6 +79,8 @@ Prefer narrow checks first:
 ```bash
 cargo test --manifest-path cli/Cargo.toml
 cargo run --manifest-path cli/Cargo.toml -- --json validate --dir plugin/assets/templates/basic
+cargo run --manifest-path cli/Cargo.toml -- --json validate --strict --dir plugin/assets/templates/recruiting
+cargo run --manifest-path cli/Cargo.toml -- --json eval --strict --dir plugin/assets/templates/recruiting
 make validate
 ```
 

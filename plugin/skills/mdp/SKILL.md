@@ -110,6 +110,21 @@ mdp --json validate-prompt-output --dir . --prompt-id normalize-opportunity --fi
 
 `normalize-opportunity` emits the existing validated normalization artifact shape as a local compatibility bridge. It must keep `card_patches` empty, use only pack-owned enum values for fields such as `segment`, `source_kind`, `opportunity_stage`, `pursuit_decision`, and `source_safety`, preserve raw evidence in `signals` or `gaps`, and set `normalization_trace.fit_readiness.ready_for_mdp_fit` false when source context is too thin. Do not invent proposal contacts, RFP text, deadlines, proof, certifications, compliance status, past performance, pricing, evaluator criteria, customer approval, or approval status.
 
+
+For a Recruiting reference-profile demo:
+
+```bash
+mdp --json init --template recruiting --dir . --dry-run
+mdp --json init --template recruiting --dir .
+```
+
+For Recruiting packs, use profile-owned role, candidate-evidence, criteria, source-safety, review-stage, output, and gap vocabulary over the existing primitives and card kinds. Prefer `.mdp/prompts/normalize-recruiting-context.yaml` for supplied role or candidate evidence context, then validate it with `mdp --json validate-prompt-output --dir . --prompt-id normalize-recruiting-context --file <prompt-output.json>`.
+
+The Recruiting prompt emits `normalized_context`, not a prospect object. The candidate is the evidence subject; `Recruiter`, `Hiring Manager`, and `Interviewer` are `operator_persona` values. `human-review-ready` and `review_readiness.ready_for_review` mean only review-artifact context sufficiency. Never use them for candidate fit, ranking, advancement, rejection, or hiring.
+
+Default real Recruiting context to opaque identity, classify every expected source as present, empty, or missing, and require a `review_handoff` that preserves the accountable human owner, source snapshot, unresolved gaps, and safe next human action.
+
+Use only synthetic, sanitized, public-supplied, or user-approved local evidence. Do not collect, scrape, enrich, background-check, infer protected characteristics or proxies, invent credentials, or use restricted/unverified evidence as source-backed. Route safe work to the Recruiting-specific skills named by `mdp agent-surface`; real employment decisions require human review outside MDP.
 When brainstorming the pack, help fill these files:
 
 - `.mdp/manifest.yaml`

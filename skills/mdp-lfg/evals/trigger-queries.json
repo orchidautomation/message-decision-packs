@@ -5,7 +5,7 @@
   "queries": [
     {"id": "lfg-train-001", "split": "train", "query": "I'm confused about whether the GTM template account stuff landed. Walk me through what MDP does now.", "should_trigger": true},
     {"id": "lfg-train-002", "split": "train", "query": "Create a new MDP from these messy product and ICP notes, then validate it.", "should_trigger": true},
-    {"id": "lfg-train-003", "split": "train", "query": "Run the released installer and QA the default gtm and proposal templates in clean folders.", "should_trigger": true},
+    {"id": "lfg-train-003", "split": "train", "query": "Run the released installer and QA the default gtm, proposal, and recruiting templates in clean folders.", "should_trigger": true},
     {"id": "lfg-train-004", "split": "train", "query": "How do prompt outputs flow into the CLI validation gate for this pack?", "should_trigger": true},
     {"id": "lfg-train-005", "split": "train", "query": "I have a proposal pack and a gtm pack and I'm not sure which skill should own the work.", "should_trigger": true},
     {"id": "lfg-train-006", "split": "train", "query": "Can you evaluate this message decision pack and tell me what route and brief commands prove?", "should_trigger": true},

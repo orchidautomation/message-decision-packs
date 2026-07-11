@@ -1,0 +1,38 @@
+id: normalize-recruiting-context-opaque-identity-leak
+profile_eval:
+  category: unsafe-output
+  primitives: [actors, source-signals, boundaries, gaps]
+  jobs: [candidate-evidence-review]
+command: validate-prompt-output
+prompt_id: normalize-recruiting-context
+expect_valid: false
+expect_issue_codes_contains: [prompt_output_opaque_identity_label]
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-recruiting-context
+  source_summary: {profile_id: recruiting, context_id: RECRUITING-REVIEW-OPAQUE-LEAK, subject_id: SUBJECT-7F3A, organization: Example Hiring Team, inputs_used: [raw_recruiting_context, existing_pack_context, source_kind], confidence: medium}
+  normalized_context:
+    profile_id: recruiting
+    context_id: RECRUITING-REVIEW-OPAQUE-LEAK
+    context_type: candidate-evidence-review
+    subject_id: SUBJECT-7F3A
+    subject_label: Jamie Example
+    subject_kind: candidate-evidence-subject
+    identity_mode: opaque
+    organization: Example Hiring Team
+    operator_persona: Recruiter
+    source_kind: user-provided-candidate-evidence
+    synthetic: false
+    summary: Redacted job-related evidence.
+    attributes: {role_id: ROLE-LOCAL-001, candidate_id: SUBJECT-7F3A, review_stage: candidate-evidence, review_decision: human-review-ready, source_safety: user-approved-local}
+    signals: [{id: redacted-work-sample, title: Redacted work sample supplied, source: raw_recruiting_context.candidate_evidence}]
+  normalization_trace:
+    operator: {source: existing_pack_context.personas, confidence: high, needs_review: false}
+    review_readiness: {ready_for_review: true}
+    source_coverage: {expected_source_ids: [candidate-evidence], present_source_ids: [candidate-evidence], empty_source_ids: [], missing_source_ids: [], coverage_complete: true}
+    preserved_raw_fields: [raw_recruiting_context.candidate_evidence]
+    missing_required: []
+  review_handoff: {review_stage: candidate-evidence, human_owner: Recruiter, source_snapshot: user-approved-local, artifact_readiness: human-review-ready, unresolved_gaps: [], safe_next_action: Human reviewer checks the redacted evidence.}
+  card_patches: []
+  gaps: []
+  rejected_claims: []

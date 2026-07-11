@@ -292,6 +292,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
 fn default_init_name(template: &str) -> &'static str {
     match template {
         "proposal" => "Proposal Reference Profile Sample",
+        "recruiting" => "Recruiting Reference Profile Sample",
         _ => "Example Message Pack",
     }
 }

@@ -9,8 +9,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Message Decision Packs",
-    "shortDescription": "Create and route GTM message context.",
-    "longDescription": "Message Decision Packs helps supported agents create, validate, and use local GTM messaging decision packs. MDP stores ICP, fit rules, signals, approved claims, message angles, CTA policy, avoid-rules, output-rules, source evidence, eval fixtures, and explicit gaps, then routes the right cards into agent-readable briefs with the local mdp CLI. MDP stops at pack validation, fit checks, claim and output checks, and briefs; sending, CRM updates, enrichment, scraping, and sequencing stay outside MDP.",
+    "shortDescription": "Create and route local decision context.",
+    "longDescription": "Message Decision Packs helps supported agents create, validate, and use local GTM messaging plus Proposal and Recruiting review decision context. MDP stores profile-owned criteria, source evidence, proof, boundaries, output contracts, routes, eval fixtures, and explicit gaps over a stable local card model. It stops at validated context and human-review artifacts; sending, CRM or ATS updates, enrichment, scraping, sourcing, sequencing, proposal submission, candidate ranking, rejection, hiring, and other external execution stay outside MDP.",
     "developerName": "Orchid Labs",
     "category": "Productivity",
     "capabilities": [
@@ -20,7 +20,8 @@
     "defaultPrompt": [
       "Turn these ICP, positioning, and source notes into a local Message Decision Pack, then validate it.",
       "Review this .mdp pack for gaps, unsupported claims, routing issues, and weak eval coverage.",
-      "Given this prospect context, run the MDP fit gate and create a message brief only if the context is sufficient."
+      "Given this prospect context, run the MDP fit gate and create a message brief only if the context is sufficient.",
+      "Build a synthetic Recruiting review pack with source-backed criteria, evidence gaps, strict safety evals, and human-review boundaries."
     ],
     "websiteURL": "https://orchidautomation.com"
   },

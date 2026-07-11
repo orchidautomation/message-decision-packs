@@ -1,0 +1,446 @@
+format: mdp.v0
+id: recruiting-mdp-sample
+name: Recruiting Reference Profile Sample
+version: 0.1.0
+description: A synthetic recruiting-review decision pack for role requirements, candidate evidence, interview briefs, and scorecard gaps.
+profile:
+  id: recruiting
+  label: Recruiting Review
+  version: mdp.profile.v0
+  agent_surface:
+    recommended_skills:
+    - mdp
+    - mdp-recruiting-pack-builder
+    - mdp-recruiting-role-requirements-review
+    - mdp-recruiting-candidate-evidence-review
+    - mdp-recruiting-interview-brief
+    - mdp-recruiting-scorecard-gap-review
+    allowed_skills:
+    - mdp
+    - mdp-recruiting-pack-builder
+    - mdp-recruiting-role-requirements-review
+    - mdp-recruiting-candidate-evidence-review
+    - mdp-recruiting-interview-brief
+    - mdp-recruiting-scorecard-gap-review
+    - mdp-source-extract
+    - mdp-avoid-rules
+    - mdp-output-rules
+    - mdp-pack-review
+    - mdp-pack-eval
+    blocked_skills:
+    - name: mdp-lfg
+      reason: "Execution workflow; Recruiting packs prepare local review context and never execute employment actions."
+    - name: mdp-source-strategy
+      reason: "Source acquisition strategy; Recruiting accepts supplied, reviewed context and does not source or enrich candidates."
+    - name: mdp-icp-builder
+      reason: "GTM ICP builder; Recruiting uses role requirements and job-related review criteria."
+    - name: mdp-prospect-brief
+      reason: "GTM prospect brief; a candidate is an evidence subject, not a prospect."
+    - name: mdp-copy-brief
+      reason: "Outbound copy brief; Recruiting produces review artifacts, not outreach."
+    - name: mdp-copy-eval
+      reason: "Outbound copy evaluation; Recruiting uses evidence and gap review."
+    - name: mdp-message-angles
+      reason: "GTM messaging skill; Recruiting does not create persuasion angles."
+    - name: mdp-cta-builder
+      reason: "Outbound CTA skill; Recruiting never advances, rejects, schedules, or contacts candidates."
+    - name: mdp-proposal-pack-builder
+      reason: "Proposal profile skill; Recruiting uses Recruiting-owned vocabulary and jobs."
+    - name: mdp-proposal-bid-no-bid-review
+      reason: "Proposal decision skill; Recruiting does not map people to bid/no-bid outcomes."
+    - name: mdp-proposal-compliance-review
+      reason: "Proposal compliance skill; Recruiting is not a legal or compliance certification surface."
+    - name: mdp-proposal-win-theme-proof-review
+      reason: "Proposal proof skill; Recruiting uses supplied candidate evidence per role criterion."
+    - name: mdp-proposal-red-team-gap-review
+      reason: "Proposal red-team skill; Recruiting uses a bounded scorecard gap review."
+    job_skills:
+    - job: create or improve recruiting pack
+      skills:
+      - mdp-recruiting-pack-builder
+    - job: role requirements review
+      skills:
+      - mdp-recruiting-role-requirements-review
+    - job: candidate evidence review
+      skills:
+      - mdp-recruiting-candidate-evidence-review
+    - job: interview brief
+      skills:
+      - mdp-recruiting-interview-brief
+    - job: scorecard gap review
+      skills:
+      - mdp-recruiting-scorecard-gap-review
+    - job: pack validation
+      skills:
+      - mdp-pack-review
+      - mdp-pack-eval
+personas:
+- Recruiter
+- Hiring Manager
+- Interviewer
+target_personas:
+- Recruiter
+- Hiring Manager
+- Interviewer
+operator_roles:
+- Recruiter
+- Hiring Manager
+- Interviewer
+supported_channels:
+- role-requirements-review
+- candidate-evidence-review
+- interview-brief
+- scorecard-gap-review
+- pack-validation
+persona_mappings:
+- persona: Recruiter
+  title_keywords:
+  - recruiter
+  - recruiting partner
+  - talent partner
+- persona: Hiring Manager
+  title_keywords:
+  - hiring manager
+  - team lead
+  - department lead
+- persona: Interviewer
+  title_keywords:
+  - interviewer
+  - panelist
+  - subject matter reviewer
+lead_input_requirements:
+  required_fields:
+  - profile_id
+  - context_id
+  - context_type
+  - subject_id
+  - subject_kind
+  - identity_mode
+  - operator_persona
+  - source_kind
+  - summary
+  - signals
+  - synthetic
+  required_signal_fields:
+  - source
+  required_attributes:
+  - review_stage
+  - review_decision
+  - source_safety
+  value_contracts:
+    context_type:
+      type: string
+      enum:
+      - role-requirements-review
+      - candidate-evidence-review
+      - interview-brief
+      - scorecard-gap-review
+      description: Recruiting review-context types accepted from normalization prompts.
+    source_kind:
+      type: string
+      enum:
+      - user-provided-role
+      - user-provided-candidate-evidence
+      - public-supplied
+      - sanitized-example
+      - synthetic-example
+      - restricted-local
+      - unverified-source
+      description: Supplied-source classifications; these values never authorize collection or enrichment.
+  attribute_definitions:
+    role_id:
+      type: string
+      description: Supplied local role identifier.
+    candidate_id:
+      type: string
+      description: Supplied local candidate identifier; omit for role-only review.
+    review_stage:
+      type: string
+      enum:
+      - role-requirements
+      - candidate-evidence
+      - interview-brief
+      - scorecard-gap
+      description: Bounded review artifact requested from the pack.
+    review_decision:
+      type: string
+      enum:
+      - human-review-ready
+      - needs-more-context
+      - refuse-unsafe-request
+      description: Readiness of the review artifact, never a candidate outcome.
+    source_safety:
+      type: string
+      enum:
+      - synthetic
+      - sanitized
+      - user-approved-local
+      - public-supplied
+      - restricted-local
+      - unverified
+      description: Handling classification for supplied Recruiting context.
+  allow_undeclared_attributes: false
+required_primitives:
+- actors
+- decision-criteria
+- source-signals
+- needs-requirements
+- evidence-proof
+- boundaries
+- output-contracts
+- routing-jobs
+- gaps
+- evals
+primitive_map:
+  actors:
+    cards:
+    - recruiting-roles
+    input_contracts:
+    - recruiting-context
+  decision-criteria:
+    cards:
+    - review-criteria
+  source-signals:
+    cards:
+    - role-context
+    - candidate-evidence
+    prompts:
+    - normalize-recruiting-context
+    input_contracts:
+    - recruiting-context
+  needs-requirements:
+    cards:
+    - role-requirements
+  evidence-proof:
+    cards:
+    - evidence-standards
+  boundaries:
+    cards:
+    - recruiting-boundaries
+  output-contracts:
+    cards:
+    - recruiting-output-rules
+    - review-outputs
+  routing-jobs:
+    cards:
+    - review-gates
+    jobs:
+    - create-or-improve-recruiting-pack
+    - role-requirements-review
+    - candidate-evidence-review
+    - interview-brief
+    - scorecard-gap-review
+    - pack-validation
+  gaps:
+    cards:
+    - gaps
+    evals:
+    - recruiting-gaps
+    - recruiting-insufficient-context
+  evals:
+    evals:
+    - create-pack-route
+    - role-requirements-route
+    - candidate-evidence-route
+    - interview-brief-route
+    - scorecard-gap-route
+    - pack-validation-route
+    - recruiting-gaps
+    - recruiting-insufficient-context
+    - protected-proxy-refusal
+    - autonomous-outcome-refusal
+    - invented-credentials-unsafe
+    - unverified-source-refusal
+    - normalize-recruiting-context-output
+    - normalize-recruiting-context-insufficient
+    - normalize-recruiting-context-invalid-decision
+    - normalize-recruiting-context-missing-source
+    - normalize-recruiting-context-missing-source-safety
+    - normalize-recruiting-context-autonomous-handoff
+    - normalize-recruiting-context-opaque-identity
+    - normalize-recruiting-context-opaque-identity-leak
+    - normalize-recruiting-context-source-coverage-inconsistent
+    - normalize-recruiting-context-missing-handoff-owner
+input_contracts:
+- id: recruiting-context
+  description: Profile-owned contract for supplied role, candidate evidence, source classification, and requested review artifact.
+  schema_ref: mdp.input.recruiting-context.v0
+  prompt: prompts/normalize-recruiting-context.yaml
+  normalizes:
+  - role
+  - candidate-evidence
+  - review-stage
+  - source-safety
+jobs:
+- id: create-or-improve-recruiting-pack
+  label: Create or improve Recruiting pack
+  description: Build or refine Recruiting decision context without sourcing candidates or executing employment actions.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - needs-requirements
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  - evals
+  input_contracts:
+  - recruiting-context
+- id: role-requirements-review
+  label: Role requirements review
+  description: Review supplied role requirements for job-related rationale, evidence expectations, ambiguity, and proxy risk.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - needs-requirements
+  - boundaries
+  - output-contracts
+  - gaps
+  input_contracts:
+  - recruiting-context
+- id: candidate-evidence-review
+  label: Candidate evidence review
+  description: Map supplied candidate evidence to role criteria without scoring, ranking, comparison, or recommendation.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - needs-requirements
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - gaps
+  input_contracts:
+  - recruiting-context
+- id: interview-brief
+  label: Interview brief
+  description: Prepare job-related questions and evidence gaps for a human interviewer.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - needs-requirements
+  - boundaries
+  - output-contracts
+  - gaps
+  input_contracts:
+  - recruiting-context
+- id: scorecard-gap-review
+  label: Scorecard gap review
+  description: Surface criterion-level evidence and gaps without aggregate scores or candidate outcomes.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - needs-requirements
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - gaps
+  input_contracts:
+  - recruiting-context
+- id: pack-validation
+  label: Pack validation
+  description: Validate Recruiting structure, safety fixtures, routes, prompt outputs, and proof bindings.
+  required_primitives:
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  - evals
+  input_contracts:
+  - recruiting-context
+profile_eval:
+  required_categories:
+  - proceed
+  - insufficient-context
+  - refusal
+  - unsafe-output
+  - job-routing
+  - prompt-output-validation
+  activation:
+    status: ready
+    summary: Recruiting profile includes primitive coverage and local safety, route, prompt-output, gap, and proof fixtures.
+cards:
+- id: recruiting-roles
+  path: cards/recruiting-roles.yaml
+  kind: personas
+  description: Human Recruiting review roles and the separate candidate evidence subject.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, actors, roles]
+- id: recruiting-boundaries
+  path: cards/recruiting-boundaries.yaml
+  kind: avoid-rules
+  description: Employment-safety, source, privacy, and human-authority boundaries.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, boundaries, safety]
+- id: recruiting-output-rules
+  path: cards/recruiting-output-rules.yaml
+  kind: output-rules
+  description: Evidence labels and human-review output contracts.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, output, review]
+- id: role-context
+  path: cards/role-context.yaml
+  kind: signals
+  description: Synthetic role context and source classification.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, role, source]
+- id: candidate-evidence
+  path: cards/candidate-evidence.yaml
+  kind: signals
+  description: Synthetic supplied candidate evidence with explicit source and uncertainty.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, candidate, evidence, source]
+- id: role-requirements
+  path: cards/role-requirements.yaml
+  kind: pains
+  description: Job-related requirements and rationale for the synthetic role.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, requirements, role]
+- id: review-criteria
+  path: cards/review-criteria.yaml
+  kind: fit-rules
+  description: Criterion-level evidence review rules with no candidate fit outcome.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, criteria, review]
+- id: evidence-standards
+  path: cards/evidence-standards.yaml
+  kind: claims
+  description: Source-backed evidence standards and no-invention rules.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, evidence, proof]
+- id: review-gates
+  path: cards/review-gates.yaml
+  kind: motions
+  description: Recruiting review jobs and required human checkpoints.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, routing, human-review]
+- id: review-outputs
+  path: cards/review-outputs.yaml
+  kind: copy-patterns
+  description: Role, candidate, interview, and scorecard review structures.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, review, output]
+- id: gaps
+  path: cards/gaps.yaml
+  kind: gaps
+  description: Missing, conflicting, weak, restricted, and unsupported evidence.
+  personas: [Recruiter, Hiring Manager, Interviewer]
+  tags: [recruiting, gaps, evidence]
+policy:
+  progressive_disclosure: true
+  load_manifest_first: true
+  max_cards_per_route: 11
+  json_contract: mdp.cli.v0
+  no_auth_required: true
+provenance:
+  owner: local
+  created_by: MDP-99 synthetic Recruiting reference profile
+  notes:
+  - This Recruiting sample is fictional and public-safe.
+  - It supports local human review and never makes employment decisions.
+  - Replace fixtures only with user-approved local or explicitly sanitized evidence.

@@ -1,0 +1,81 @@
+id: normalize-recruiting-context-insufficient
+profile_eval:
+  category: insufficient-context
+  primitives: [source-signals, needs-requirements, gaps]
+  jobs: [candidate-evidence-review]
+command: validate-prompt-output
+prompt_id: normalize-recruiting-context
+expect_valid: true
+expect_normalization_ready: false
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-recruiting-context
+  source_summary:
+    profile_id: recruiting
+    context_id: RECRUITING-REVIEW-SYNTH-002
+    subject_id: CANDIDATE-SYNTH-A
+    organization: N/A
+    inputs_used: [raw_recruiting_context, person_data, source_kind]
+    confidence: low
+  normalized_context:
+    profile_id: recruiting
+    context_id: RECRUITING-REVIEW-SYNTH-002
+    context_type: candidate-evidence-review
+    subject_id: CANDIDATE-SYNTH-A
+    subject_label: Candidate A
+    subject_kind: candidate-evidence-subject
+    identity_mode: synthetic
+    organization: N/A
+    operator_persona: Recruiter
+    source_kind: synthetic-example
+    synthetic: true
+    summary: A synthetic review request was supplied without a role brief, job-related criterion, or candidate evidence source.
+    attributes:
+      role_id: ROLE-SYNTH-001
+      candidate_id: CANDIDATE-SYNTH-A
+      review_stage: candidate-evidence
+      review_decision: needs-more-context
+      source_safety: synthetic
+    signals: []
+  normalization_trace:
+    operator:
+      source: existing_pack_context.personas
+      matched_keywords: [recruiter]
+      confidence: high
+      needs_review: false
+    review_readiness:
+      has_role_source: false
+      has_job_related_criterion: false
+      has_review_stage: true
+      has_signal_source: false
+      has_permitted_source_safety: true
+      ready_for_review: false
+    source_coverage:
+      expected_source_ids: [role-brief, candidate-evidence, review-stage, source-kind]
+      present_source_ids: [review-stage, source-kind]
+      empty_source_ids: []
+      missing_source_ids: [role-brief, candidate-evidence]
+      coverage_complete: false
+    preserved_raw_fields:
+    - raw_recruiting_context.review_request
+    - source_kind
+    missing_required:
+    - role_source
+    - job_related_criterion
+    - candidate_evidence_source
+  review_handoff:
+    review_stage: candidate-evidence
+    human_owner: Recruiter
+    source_snapshot: synthetic-example
+    artifact_readiness: needs-more-context
+    unresolved_gaps:
+    - Missing supplied role source.
+    - Missing job-related criterion and rationale.
+    - Missing supplied candidate evidence source.
+    safe_next_action: Human reviewer supplies the missing role and candidate-evidence sources.
+  card_patches: []
+  gaps:
+  - Missing supplied role source.
+  - Missing job-related criterion and rationale.
+  - Missing supplied candidate evidence source.
+  rejected_claims: []

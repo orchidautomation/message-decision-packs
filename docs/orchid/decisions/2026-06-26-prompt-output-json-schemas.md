@@ -18,6 +18,7 @@ This keeps MDP provider-neutral while making prompt outputs more concrete:
 - Required top-level keys are explicit.
 - Card-patch prompts narrow `card_patches.kind` to the prompt's target card kinds.
 - Prospect-normalization prompts require `normalized_prospect` and `normalization_trace`.
+- Context-normalization prompts require `normalized_context`, `normalization_trace`, and `review_handoff`; they avoid prospect/fit vocabulary while preserving the same strict local validation boundary.
 - Normalization schemas force `card_patches` to be empty because they prepare runtime input rather than editing cards.
 - Root objects reject extra keys with `additionalProperties: false`.
 

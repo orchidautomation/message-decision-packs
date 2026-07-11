@@ -1,6 +1,6 @@
 ---
 name: mdp-create-pack
-description: Use when the user wants to create a new Message Decision Pack from messy GTM or proposal context, product notes, ICP notes, positioning docs, sales/proposal context, or a blank workspace. Creates or improves `.mdp/` cards and validates with `mdp`.
+description: Use when the user wants to create a new Message Decision Pack from GTM, Proposal, or Recruiting context, supplied notes, or a blank workspace. Creates or improves `.mdp/` cards and validates with `mdp`; route Recruiting work to the dedicated safe builder.
 ---
 
 # MDP Create Pack
@@ -9,7 +9,7 @@ description: Use when the user wants to create a new Message Decision Pack from 
 
 Load these files only when needed:
 
-- Read `references/profile-primitives-map.md` when mapping GTM or proposal vocabulary onto the universal MDP primitives, or when deciding whether a concept should become a new core object.
+- Read `references/profile-primitives-map.md` when mapping GTM, Proposal, or Recruiting vocabulary onto the universal MDP primitives, or when deciding whether a concept should become a new core object.
 - For fuzzy orchestration, prompt-output validation, or installed-template QA, return to `$mdp-lfg` and its progressive references.
 
 ## Profile Gate
@@ -34,7 +34,7 @@ When an operator asks where something belongs, use this layer model:
 - Route and brief own selected context for the next model step.
 - `mdp check-claims` owns post-draft claim and output-guardrail approval.
 
-Do not treat `activation_ready` as commercial readiness. It only means the profile/template has enough mapped primitives, input contracts, jobs, and eval categories to satisfy structural validation. GTM and proposal are profiles/templates over shared primitives; profile nouns belong in card IDs, prompts, jobs, attributes, signals, traces, gaps, and evals unless the core CLI contract changes.
+Do not treat `activation_ready` as commercial readiness. It only means the profile/template has enough mapped primitives, input contracts, jobs, and eval categories to satisfy structural validation. GTM, Proposal, and Recruiting are profiles/templates over shared primitives; profile nouns belong in card IDs, prompts, jobs, attributes, signals, traces, gaps, and evals unless the core CLI contract changes.
 
 ## Workflow
 
@@ -47,12 +47,14 @@ mdp --json doctor --dir .
 
 2. State the destination directory before writing. If Brandon did not specify one, use the current workspace root for durable work or an ignored scratch path for disposable demos. Do not silently create a pack in `$HOME`.
 
-3. If no pack exists, initialize with the closest template. Use `gtm` for generic messaging packs and `proposal` only when the user is explicitly building a proposal/RFP/capture review pack:
+3. If no pack exists, initialize with the closest template. Use `gtm` for generic messaging, `proposal` for proposal/RFP/capture review, and `recruiting` for safe role/candidate evidence review:
 
 ```bash
 mdp --json init --template gtm --name "<pack name>" --dir .
 # or
 mdp --json init --template proposal --dir .
+# or
+mdp --json init --template recruiting --dir .
 ```
 
 4. Build the source ledger before writing cards. Add public URLs, user-provided docs, or note identifiers to `.mdp/sources.yaml`; separate direct source claims from interpretation; preserve missing proof in `gaps.yaml`.
@@ -100,6 +102,8 @@ mdp --json init --template proposal --dir .
 - `.mdp/prompts/normalize-prospect.yaml`
 
 For proposal packs, keep the template's profile-owned card IDs and review jobs unless the user explicitly asks for a new proposal profile. Proposal packs may not have GTM prompt files by default; do not invent private proposal content or overwrite customer material.
+
+For Recruiting packs, use `$mdp-recruiting-pack-builder`. Preserve the candidate-as-subject/operator-persona split, source-safety classification, job-related criteria, bounded evidence labels, no-invention rules, and no ranking/rejection/hiring boundary. Do not use real candidate records in public artifacts.
 
 Work in slices instead of rewriting the whole pack at once:
 

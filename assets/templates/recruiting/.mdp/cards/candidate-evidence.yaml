@@ -1,0 +1,21 @@
+id: candidate-evidence
+kind: signals
+title: Synthetic candidate evidence
+description: Supplied fictional evidence with explicit sources and uncertainty.
+personas: [Recruiter, Hiring Manager, Interviewer]
+tags: [recruiting, candidate, evidence, source]
+entries:
+- id: supplied-api-example
+  title: Supplied API project example
+  body: Candidate A supplied a synthetic work sample describing an API change with tests and review notes. It may support only criteria directly evidenced by that sample.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [inferred seniority]
+  metadata: {primitive: source-signals}
+- id: credential-not-verified
+  title: Credential not verified
+  body: The synthetic evidence does not verify a degree, certification, identity, employment history, or background-check result.
+  applies_to: [Recruiter, Hiring Manager, Interviewer]
+  evidence: [synthetic-candidate-evidence]
+  avoid: [verified degree, certified candidate]
+  metadata: {primitive: source-signals}

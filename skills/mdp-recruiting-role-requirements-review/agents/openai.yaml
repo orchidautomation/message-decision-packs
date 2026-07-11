@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Recruiting Role Requirements Review"
+  short_description: "Review job-related role criteria"
+  default_prompt: "Use $mdp-recruiting-role-requirements-review to review supplied role criteria for sources, rationale, ambiguity, and proxy risk."

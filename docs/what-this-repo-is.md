@@ -22,7 +22,7 @@ It gives AI coding agents a shared source of truth for:
 - what output style and structure rules apply
 - what gaps should be surfaced instead of invented
 
-For GTM packs, that often means prospect fit, channel policy, CTAs, and copy patterns. For proposal review packs, it means roles, requirements, proof, compliance boundaries, review gates, output contracts, and reviewer gaps.
+For GTM packs, that often means prospect fit, channel policy, CTAs, and copy patterns. For Proposal review packs, it means roles, requirements, proof, compliance boundaries, review gates, output contracts, and reviewer gaps. For Recruiting review packs, it means job-related role criteria, supplied candidate evidence, source safety, interview briefs, scorecard gaps, protected/proxy boundaries, and human-review checkpoints.
 
 MDP is not the system that sends messages. It is the decision layer that tells an agent what context to load, what it is allowed to say, and when it should stop.
 
@@ -209,6 +209,11 @@ Important skills include:
 - `mdp-proposal-compliance-review`: reviews supplied proposal requirements or answer drafts against compliance rules
 - `mdp-proposal-win-theme-proof-review`: reviews proposal themes or differentiators against approved proof
 - `mdp-proposal-red-team-gap-review`: prioritizes proposal gaps, risks, and reviewer questions against pack constraints
+- `mdp-recruiting-pack-builder`: creates or improves a safe Recruiting review-context pack
+- `mdp-recruiting-role-requirements-review`: reviews criteria, rationale, ambiguity, and proxy risk
+- `mdp-recruiting-candidate-evidence-review`: maps supplied evidence per criterion without scores or outcomes
+- `mdp-recruiting-interview-brief`: prepares job-related questions and prohibited-inference notes
+- `mdp-recruiting-scorecard-gap-review`: surfaces criterion-level gaps without aggregate decisions
 - `mdp-icp-builder`: sharpens ICP, personas, and fit logic
 - `mdp-source-extract`: turns source material into card entries
 - `mdp-source-strategy`: plans source targets, scout queries, evidence rules, exclusions, and review gates before extraction
@@ -221,6 +226,12 @@ Important skills include:
 - `mdp-copy-eval`: evaluates generated copy against the pack
 - `mdp-pack-review`: reviews pack quality
 - `mdp-pack-eval`: tests routing and pack behavior
+
+### `plugin/assets/templates/recruiting`
+
+This is the synthetic Recruiting reference profile. It covers all ten primitives with Recruiting-owned vocabulary, one bounded normalization contract, six review/validation jobs, strict safety and proof evals, and five Recruiting-specific agent skills.
+
+The candidate is an evidence subject, not an operator persona. The template may prepare role-requirements matrices, candidate-evidence matrices, interview-question briefs, and scorecard-gap reports for human review. It cannot source, scrape, enrich, background-check, schedule, rank, compare, advance, reject, hire, or certify legal/compliance status.
 
 ### `plugin/assets/templates/basic`
 
