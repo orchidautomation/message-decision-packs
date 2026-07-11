@@ -6,6 +6,8 @@ MDP is not an ATS, job board, sourcing or enrichment provider, scraper, backgrou
 
 Candidate A, Example Hiring Team, the role, and every source are synthetic. Do not replace them in this public template with resumes, applications, interview notes, identifying data, access-controlled material, or other real candidate records.
 
+For a practical walkthrough of when a recruiter would use this MVP, how the review moves from supplied evidence to a human-owned handoff, and what the recruiter gains, see [Recruiting Reference Profile: Recruiter User Story](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/recruiting-user-story.md).
+
 The profile keeps the candidate as an evidence subject and uses `Recruiter`, `Hiring Manager`, and `Interviewer` as operator personas. The normalization prompt emits profile-neutral `normalized_context`; `human-review-ready` and `ready_for_review` mean only that enough permitted context exists to prepare the requested review artifact. They never mean candidate fit, advancement, rejection, or a hiring recommendation.
 
 Real local context defaults to an opaque subject ID with no display name. Prompt output also reports expected sources as present, empty, or missing and carries a human-review handoff with the accountable owner, source snapshot, unresolved gaps, and safe next action.

@@ -166,6 +166,8 @@ mdp --json gaps --dir /tmp/mdp-recruiting-demo
 
 Available starter templates are `gtm`, `proposal`, and `recruiting`. Proposal and Recruiting are synthetic reference profiles and do not create prospect rows or outbound-copy fixtures. Recruiting prepares criterion-level review context only: it does not source, rank, advance, reject, or hire candidates, and real employment decisions require human review outside MDP.
 
+See the [Recruiting recruiter user story](docs/recruiting-user-story.md) for a practical explanation of when to use the MVP, how the workflow operates, and what remains human-owned.
+
 ## Pack Layout
 
 A pack is a local `.mdp/` folder:
