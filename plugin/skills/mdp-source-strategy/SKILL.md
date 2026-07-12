@@ -1,6 +1,6 @@
 ---
 name: mdp-source-strategy
-description: Use when the user needs a reviewed, domain-agnostic MDP source strategy before source extraction, pack building, or external scout handoff, including GTM/BDR scouting plans from ICP/account/persona context, proposal/RFP source-intake planning from approved opportunity or corpus context, and mapping any domain's actors, decision criteria, source signals, requirements, evidence, boundaries, output contracts, routing jobs, gaps, and evals into source targets, queries, exclusions, evidence rules, and review checks.
+description: Use when planning an MDP source strategy before extraction, pack building, or external scout handoff for GTM/BDR, proposal/RFP, or other domains. Maps actors, criteria, signals, requirements, evidence, boundaries, routing jobs, gaps, and evals.
 ---
 
 # MDP Source Strategy

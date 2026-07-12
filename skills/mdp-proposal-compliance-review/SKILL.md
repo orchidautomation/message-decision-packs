@@ -1,6 +1,6 @@
 ---
 name: mdp-proposal-compliance-review
-description: Use when the user wants to review supplied proposal, RFP, requirement, or answer-draft context against a proposal MDP pack's compliance rules. Produces review support with requirement coverage, gaps, risks, owner questions, and explicit human-review boundaries without certifying compliance.
+description: Use when reviewing supplied proposal, RFP, requirement, or answer-draft context against a proposal MDP pack. Produces requirement coverage, gaps, risks, owner questions, and explicit human-review boundaries; never certifies compliance.
 ---
 
 # MDP Proposal Compliance Review

@@ -1,6 +1,6 @@
 ---
 name: mdp-proposal-red-team-gap-review
-description: Use when the user wants to red-team or gap-review supplied proposal, RFP, capture, compliance-matrix, or answer-draft material against a proposal MDP pack. Produces prioritized gaps, risks, evidence references, affected sections, owner questions, and next actions without rewriting the proposal or claiming final review authority.
+description: Use when red-teaming proposal, RFP, capture, compliance-matrix, or answer-draft material against a proposal MDP pack. Produces prioritized gaps, risks, evidence references, owner questions, and next actions without claiming final authority.
 ---
 
 # MDP Proposal Red-Team Gap Review

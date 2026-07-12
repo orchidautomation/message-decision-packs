@@ -30,12 +30,35 @@ def fail(message: str, errors: list[str]) -> None:
     errors.append(message)
 
 
+def read_skill_description(path: Path, errors: list[str]) -> str | None:
+    skill_file = path.parent.parent / "SKILL.md"
+    if not skill_file.exists():
+        fail(f"{path}: missing sibling SKILL.md", errors)
+        return None
+    for line in skill_file.read_text(encoding="utf-8").splitlines():
+        if line.startswith("description: "):
+            value = line.removeprefix("description: ").strip()
+            if value.startswith('"') and value.endswith('"'):
+                return json.loads(value)
+            if value.startswith("'") and value.endswith("'"):
+                return value[1:-1].replace("''", "'")
+            return value
+    fail(f"{skill_file}: missing single-line description frontmatter", errors)
+    return None
+
+
 def validate_trigger_file(path: Path, errors: list[str]) -> dict[str, Any]:
     payload = load_json(path)
     skill = payload.get("skill")
+    description_under_test = payload.get("description_under_test")
     queries = payload.get("queries")
     if not isinstance(skill, str) or not skill:
         fail(f"{path}: skill must be a non-empty string", errors)
+    skill_description = read_skill_description(path, errors)
+    if not isinstance(description_under_test, str) or not description_under_test:
+        fail(f"{path}: description_under_test must be a non-empty string", errors)
+    elif skill_description is not None and description_under_test != skill_description:
+        fail(f"{path}: description_under_test must match sibling SKILL.md frontmatter", errors)
     if not isinstance(queries, list) or not queries:
         fail(f"{path}: queries must be a non-empty list", errors)
         return {"total": 0, "should_trigger": 0, "should_not_trigger": 0, "splits": {}}

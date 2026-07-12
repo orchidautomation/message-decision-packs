@@ -57,6 +57,31 @@ Starting point:
 - Source plugin: `plugin/`
 - Pluxx CLI: `0.1.22`
 
+### Compatibility Refresh: Pluxx 0.1.31
+
+Date: 2026-07-12
+
+MDP CI and release builds now pin Pluxx `0.1.31`. The refresh from `0.1.22` through `0.1.31` was reviewed against MDP's maintained source and generated bundles.
+
+Relevant results:
+
+- Codex hook manifest generation and `PLUXX_HOOK_WORKSPACE_ROOT` propagation are covered by `scripts/test-pluxx-hooks.sh` and pass with `0.1.31`.
+- Migrated scaffold hook metadata now uses the current `safe` mode values. MDP is a plugin-migrated project with a placeholder MCP source, so `pluxx sync` is not a supported maintenance path unless MDP later adopts a real MCP source.
+- New Claude Code description-length diagnostics identified five skills whose discovery descriptions exceeded the 250-character display limit; the root and `plugin/skills/` copies were shortened together.
+- CI now runs the MDP-specific Pluxx hook fixture, rejects future skill-description truncation, and checks that eval fixtures with `description_under_test` stay aligned with their skill frontmatter.
+- Codex cache secret scanning, stdio MCP runtime launchers, MCP workspace-root preservation, and custom-agent registration require no MDP-specific config because this plugin declares no MCP servers, install-time secrets, or custom agents.
+- MDP keeps its top-level installer because it coordinates the Rust CLI and multiple Pluxx host bundles. Pluxx-generated host installers and release assets remain part of the release workflow.
+
+Validation commands for this refresh:
+
+```bash
+pluxx doctor --json
+pluxx lint --json
+pluxx eval --json
+pluxx test --json
+bash scripts/test-pluxx-hooks.sh
+```
+
 Migration command:
 
 ```bash
@@ -103,7 +128,7 @@ Results:
 | Command | Result | Notes |
 |---|---:|---|
 | `pluxx doctor --json` | Pass | Initial migration had branding warnings; current polished config validates cleanly. |
-| `pluxx lint --json` | Pass | Current polished config passes with zero warnings. |
+| `pluxx lint --json` | Pass | The original Pluxx `0.1.22` evaluation passed with zero warnings. |
 | `pluxx eval --json` | Pass | Scaffold file-level eval skipped because this is not MCP-tool-derived. |
 | `pluxx test --target codex --json` | Pass | Builds Codex bundle and smoke-checks the plugin manifest. |
 | `pluxx build --json` | Pass | Builds all configured targets. |
@@ -138,7 +163,7 @@ Fixed:
 - Reduced Codex default prompts from four to three because Codex supports at most three.
 - Replaced unknown Codex capability `Workflow` with `Interactive`.
 
-Current Pluxx validation passes with zero warnings after adding brand icon and screenshot metadata and tightening long skill descriptions.
+Under Pluxx `0.1.31`, validation passes without errors or skill-description truncation. The remaining lint output is expected host-translation guidance for Codex and OpenCode hooks.
 
 ## What Pluxx Solves
 
