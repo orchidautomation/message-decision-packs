@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Message Decision Packs</title>
+  <desc id="desc">A layered paper airplane with a cobalt decision fold.</desc>
+  <rect width="512" height="512" fill="#0B1220"/>
+  <g fill="#F4F7FA">
+    <path d="M88 211 421 82 226 242Z"/>
+    <path d="m122 264 112 22L421 82 253 315Z"/>
+    <path d="m154 318 92 20L421 82 269 408Z"/>
+  </g>
+  <path d="m226 274 195-192-174 224-12-14Z" fill="#3366FF"/>
+</svg>
