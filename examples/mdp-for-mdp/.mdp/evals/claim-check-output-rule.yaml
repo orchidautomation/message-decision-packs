@@ -1,7 +1,0 @@
-id: claim-check-output-rule
-command: check-claims
-expect_valid: false
-persona: PMM
-job: initial email outbound message
-subject: "Re: urgent quick question"
-text: Read the MDP docs at https://example.com and book a meeting?

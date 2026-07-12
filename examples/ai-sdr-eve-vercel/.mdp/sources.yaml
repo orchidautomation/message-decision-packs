@@ -1,6 +1,7 @@
 format: mdp.sources.v0
 purpose: Source ledger for evidence used in cards. Keep direct source claims separate from interpretation, and preserve gaps instead of inventing proof.
 rules:
+- All Synthetic Vendor product entries are fictional fixtures for demonstrating pack structure; they are not claims about a real company or product.
 - Add public URLs, user-provided docs, or note identifiers before bulk card writing.
 - Use direct_claims for facts the source states, and interpretations for how the pack may use them.
 - Mark confidence and freshness when known.
@@ -20,164 +21,164 @@ sources:
   locator: ../../../README.md
 - confidence: high
   direct_claims:
-  - User hypothesis says a company should be able to create an MDP that codifies ICP, target company characteristics, person types, product relevance, hooks, CTAs, and decision-tree rules.
-  - User hypothesis says skills should help research, build personas, hooks, CTAs, and make the result clean and auditable for downstream agents.
-  freshness: provided-2026-06-25
+  - The fictional product brief requires ICP, target-company characteristics, personas, product relevance, hooks, CTAs, and decision-tree rules.
+  - The fictional product brief requires clean, auditable context for downstream agents.
+  freshness: synthetic-fixture
   gaps: []
-  id: user-mdp-hypothesis
+  id: synthetic-product-brief
   interpretations:
-  - Use this as the example's narrative contract; Profound is the seller building a pack for its own target-customer motion.
+  - Use this as the example's narrative contract; Synthetic Vendor is the seller building a pack for its own target-customer motion.
   - Keep the result as a decision pack, not an execution workflow.
-  kind: user-provided-context
-  locator: current Codex thread, 2026-06-25
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/product-brief
 - confidence: high
   direct_claims:
-  - Profound describes itself as a full stack marketing platform for marketers to understand, analyze, build, and measure.
-  - Profound names platform surfaces including Answer Engine Insights, Prompt Volumes, Shopping, Agent Analytics, Agents, and Aim.
-  - Profound names answer engines including Perplexity, ChatGPT, Claude, Gemini, Grok, Microsoft Copilot, Meta AI, DeepSeek, and Google AI Overviews.
-  freshness: retrieved-2026-07-09
+  - Synthetic Vendor describes itself as a full stack marketing platform for marketers to understand, analyze, build, and measure.
+  - Synthetic Vendor names platform surfaces including Visibility analytics, Prompt research, commerce research, Crawler analytics, Agents, and Opportunity workflow.
+  - Synthetic Vendor names answer engines including Perplexity, ChatGPT, Claude, Gemini, Grok, Microsoft Copilot, Meta AI, DeepSeek, and Google AI Overviews.
+  freshness: synthetic-fixture
   gaps: []
-  id: profound-homepage
+  id: synthetic-vendor-homepage
   interpretations:
-  - Use this source for Profound's high-level category and current platform taxonomy.
+  - Use this source for Synthetic Vendor's high-level category and current platform taxonomy.
   - Do not infer a prospect has poor AI visibility, budget, or intent from this source.
-  kind: public-web
-  locator: https://www.tryprofound.com/
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/
 - confidence: high
   direct_claims:
-  - Answer Engine Insights tracks AI visibility, mentions, citations, sentiment, competitive benchmarking, platform comparisons, and trends over time.
-  - The page says Profound runs tracked prompts daily and captures from the consumer front-end experience rather than API outputs.
+  - Visibility analytics tracks AI visibility, mentions, citations, sentiment, competitive benchmarking, platform comparisons, and trends over time.
+  - The page says Synthetic Vendor runs tracked prompts daily and captures from the consumer front-end experience rather than API outputs.
   - The page says customers can design or upload prompts and export raw data as CSV.
-  freshness: retrieved-2026-07-09
+  freshness: synthetic-fixture
   gaps: []
-  id: profound-answer-engine-insights
+  id: synthetic-vendor-visibility-analytics
   interpretations:
   - Use this source for AEO Lead pains, claims, and message hooks about measurement, citations, share of voice, and answer-engine representation.
   - Do not claim a prospect has poor visibility without prospect-specific evidence.
-  kind: public-web
-  locator: https://www.tryprofound.com/features/answer-engine-insights
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/features/visibility-analytics
 - confidence: high
   direct_claims:
-  - Profound for AEO Teams frames the job as showing up in answer engines, increasing visibility, earning citations, and winning share of voice.
-  - The page includes an AEO-team case study for Statsig and a quote from Xero's Head of SEO.
-  freshness: retrieved-2026-06-25
+  - Synthetic Vendor for AEO Teams frames the job as showing up in answer engines, increasing visibility, earning citations, and winning share of voice.
+  - The fictional brief includes an AEO-team proof placeholder that must not be presented as real customer evidence.
+  freshness: synthetic-fixture
   gaps: []
-  id: profound-aeo-teams
+  id: synthetic-vendor-aeo-teams
   interpretations:
   - Use this source to define the AEO Lead persona and target-account slice.
-  - Do not reuse customer quotes as claims about a new prospect unless explicitly framed as public Profound proof.
-  kind: public-web
-  locator: https://www.tryprofound.com/solutions/aeo-teams
+  - Do not reuse customer quotes as claims about a new prospect unless explicitly framed as public Synthetic Vendor proof.
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/solutions/aeo-teams
 - confidence: high
   direct_claims:
-  - Profound for Content Teams says content teams can automate optimization of existing content and create net new content faster.
-  - The page describes data-backed content strategy, templates, content optimization, and a Ramp case study.
-  freshness: retrieved-2026-06-25
+  - Synthetic Vendor for Content Teams says content teams can automate optimization of existing content and create net new content faster.
+  - The fictional brief describes data-backed content strategy, templates, and content optimization without naming real customers.
+  freshness: synthetic-fixture
   gaps: []
-  id: profound-content-teams
+  id: synthetic-vendor-content-teams
   interpretations:
   - Use this source to define the Content Lead persona and hooks about content gap discovery, brief generation, and content optimization.
   - Do not promise a quantified lift to a new prospect unless that exact proof is sourced and allowed for the message.
-  kind: public-web
-  locator: https://www.tryprofound.com/solutions/content-teams
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/solutions/content-teams
 - confidence: high
   direct_claims:
-  - Profound for PR & Brand Teams says PR and brand teams can control brand narrative in AI, understand brand sentiment, see citation domains, and drive earned media placements.
+  - Synthetic Vendor for PR & Brand Teams says PR and brand teams can control brand narrative in AI, understand brand sentiment, see citation domains, and drive earned media placements.
   - The page describes surfacing opportunities to get mentioned on relevant media and Reddit threads.
-  freshness: retrieved-2026-06-25
+  freshness: synthetic-fixture
   gaps: []
-  id: profound-pr-teams
+  id: synthetic-vendor-pr-teams
   interpretations:
   - Use this source to define the PR & Brand Lead persona and hooks about brand narrative, sentiment, citations, and earned media.
   - Do not let agents drift into spam or unapproved outreach.
-  kind: public-web
-  locator: https://www.tryprofound.com/solutions/pr-teams
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/solutions/pr-teams
 - confidence: high
   direct_claims:
-  - Profound Agents are described as custom marketing agents that extend brand reach.
+  - Synthetic Vendor content workflows are described as custom marketing agents that extend brand reach.
   - The Agents page describes templates for content refresh, AEO FAQ generation, competitive research, and net-new content creation.
   - The page states Agents use a no-code workflow builder, brand kit or knowledge base context, human-in-the-loop approvals, and CMS integration.
-  freshness: retrieved-2026-07-09
+  freshness: synthetic-fixture
   gaps: []
-  id: profound-agents
+  id: synthetic-vendor-content-workflows
   interpretations:
   - Use this source for content workflow, marketing engineering, and handoff-to-agent hooks.
-  - Do not claim Profound sends outbound messages or replaces a customer GTM execution stack.
-  kind: public-web
-  locator: https://www.tryprofound.com/features/agents
+  - Do not claim Synthetic Vendor sends outbound messages or replaces a customer GTM execution stack.
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/features/agents
 - confidence: high
   direct_claims:
-  - Agent Analytics tracks AI systems crawling a site, how they interpret content, and whether activity converts to traffic.
+  - Crawler analytics tracks AI systems crawling a site, how they interpret content, and whether activity converts to traffic.
   - The page describes AI crawler visibility, attribution and traffic insights, content performance tracking, benchmarking, and real-time AI crawler monitoring.
   - The page lists integrations including AWS, Akamai, Cloudflare, Fastly, Google Cloud Platform, Netlify, Vercel, WordPress, Shopify, and Adobe.
-  freshness: retrieved-2026-07-09
+  freshness: synthetic-fixture
   gaps: []
-  id: profound-agent-analytics
+  id: synthetic-vendor-crawler-analytics
   interpretations:
   - Use this source for technical and analytics buyer hooks around AI crawler visibility, attribution, and infrastructure fit.
-  - Use compliance or integration claims only when source-backed and routed.
-  kind: public-web
-  locator: https://www.tryprofound.com/features/agent-analytics
+  - No compliance, certification, security, or integration claim is approved by this synthetic source.
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/features/crawler-analytics
 - confidence: high
   direct_claims:
-  - Profound pricing describes Starter, Growth, and Enterprise tiers.
+  - Synthetic Vendor pricing describes Starter, Growth, and Enterprise tiers.
   - Growth tracks ChatGPT, Perplexity, and Google AI Overviews; Enterprise can track up to 10 answer engines and supports custom needs.
-  - Pricing describes Enterprise support for multiple companies, tailored prompt tracking, dedicated Slack support, SSO/SAML, and SOC2 compliance.
-  freshness: retrieved-2026-06-25
+  - The fictional brief describes multi-brand and tailored prompt-tracking needs but intentionally omits compliance, certification, security, and integration claims.
+  freshness: synthetic-fixture
   gaps:
   - Numeric prices were not used because rendered pricing text was not reliable in the extracted source.
-  id: profound-pricing
+  id: synthetic-vendor-pricing
   interpretations:
   - Use this source for fit rules around company complexity, multiple brands, agencies, enterprise needs, and plan-level constraints.
-  - Do not quote exact prices from this extracted page.
-  kind: public-web
-  locator: https://www.tryprofound.com/pricing
-- id: profound-prompt-volumes
-  kind: public-web
-  locator: https://www.tryprofound.com/features/prompt-volumes
+  - Do not quote prices, certifications, integrations, or security claims from this synthetic fixture.
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/pricing
+- id: synthetic-vendor-prompt-research
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/features/prompt-research
   confidence: high
-  freshness: retrieved-2026-07-09
+  freshness: synthetic-fixture
   direct_claims:
-  - Prompt Volumes is positioned as uncovering the keywords and topics driving AI conversations.
+  - Prompt research is positioned as uncovering the keywords and topics driving AI conversations.
   - The page describes exact keyword volumes, topic trends, intent signals, and relationships across prompts.
   - The page says keyword data is pulled from millions of AI conversations and can help identify which prompts to track.
   interpretations:
   - Use this source for search/source strategy, AEO/content pains, and hooks about choosing prompts before tracking or content work.
   - Do not quote proprietary volume numbers for a prospect unless a reviewed source row contains them.
   gaps: []
-- id: profound-aim
-  kind: public-web
-  locator: https://www.tryprofound.com/features/aim
+- id: synthetic-vendor-opportunity-workflow
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/features/opportunity-workflow
   confidence: high
-  freshness: retrieved-2026-07-09
+  freshness: synthetic-fixture
   direct_claims:
-  - Aim is described as the background agent built for marketers that keeps a brand growing from first signal to tracked result.
-  - The page says Aim identifies opportunities, turns accepted opportunities into projects, creates data-backed execution briefs, hands plans to Profound Agents, measures impact, and supports co-working with documents, sheets, agents, and skills.
-  - The FAQ says Aim scans Profound answer-engine insights, prompt volumes, agent analytics, fact check, benchmarking, knowledge bases, sitemaps, competitive landscape, and integrated app data.
+  - Opportunity workflow is described as the background agent built for marketers that keeps a brand growing from first signal to tracked result.
+  - The page says Opportunity workflow identifies opportunities, turns accepted opportunities into projects, creates data-backed execution briefs, hands plans to Synthetic Vendor content workflows, measures impact, and supports co-working with documents, sheets, agents, and skills.
+  - The fictional brief says the opportunity workflow can use approved visibility, prompt, crawler, and knowledge-base inputs to rank review work.
   interpretations:
   - Use this source for hooks about moving from AI visibility signals to ranked projects, briefs, agent handoffs, and measurement.
-  - Do not claim a prospect has access to Aim data or a specific opportunity unless the source row provides it.
+  - Do not claim a prospect has access to Opportunity workflow data or a specific opportunity unless the source row provides it.
   gaps: []
-- id: profound-agencies
-  kind: public-web
-  locator: https://www.tryprofound.com/solutions/agencies
+- id: synthetic-vendor-agencies
+  kind: synthetic-example
+  locator: synthetic://synthetic-vendor/solutions/agencies
   confidence: high
-  freshness: retrieved-2026-07-09
+  freshness: synthetic-fixture
   direct_claims:
-  - Profound for Agencies frames the agency job as empowering clients to own their AI presence.
+  - Synthetic Vendor for Agencies frames the agency job as empowering clients to own their AI presence.
   - The page describes complete AEO visibility, data for action, centralized client management, dedicated agency support, and go-to-market support.
-  - The page lists Answer Engine Insights, Prompt Volumes, Agent Analytics, and Agents as part of the agency platform.
+  - The page lists Visibility analytics, Prompt research, Crawler analytics, and Agents as part of the agency platform.
   interpretations:
   - Use this source for agency partner persona, multi-client reporting fit, and public-source search targets for agencies with AI visibility services.
-  - Do not use agency customer quotes as proof about a new prospect unless framed as Profound public proof.
+  - Do not use agency customer quotes as proof about a new prospect unless framed as Synthetic Vendor public proof.
   gaps: []
-- id: profound-source-strategy
+- id: synthetic-vendor-source-strategy
   kind: local-artifact
   locator: .mdp/source-strategy.json
   confidence: high
   freshness: generated-2026-07-09
   direct_claims:
-  - The source strategy translates Profound ICP, personas, fit rules, signals, avoid-rules, and source policy into public-source discovery targets.
+  - The source strategy translates Synthetic Vendor ICP, personas, fit rules, signals, avoid-rules, and source policy into public-source discovery targets.
   - The source strategy uses Exa-first public discovery, Firecrawl for accepted URL extraction, and optional Apify for reviewed long-running or marketplace actor extraction.
   - The source strategy excludes private LinkedIn, gated sources, personal contact enrichment, CRM mutation, and autonomous outreach.
   - The source strategy requires public person-level name, title or role, company match, and person source URL before a row can become a qualified ledger lead.

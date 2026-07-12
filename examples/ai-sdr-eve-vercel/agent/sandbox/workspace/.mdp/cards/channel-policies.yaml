@@ -20,7 +20,7 @@ tags:
 entries:
 - id: linkedin-initial-touch
   title: LinkedIn initial touch
-  body: For the first LinkedIn touch, use one public or supplied signal, one fit hypothesis, and one low-pressure owner or relevance question. Do not imply the prospect has intent or that Profound measured their current visibility.
+  body: For the first LinkedIn touch, use one public or supplied signal, one fit hypothesis, and one low-pressure owner or relevance question. Do not imply the prospect has intent or that Synthetic Vendor measured their current visibility.
   applies_to:
   - AEO Lead
   - Content Lead
@@ -39,11 +39,11 @@ entries:
   - Agency Partner
   evidence:
   - mdp-readme
-  - profound-homepage
+  - synthetic-vendor-homepage
   avoid: []
 - id: initial-email
   title: Initial email
-  body: For the first email, lead with the account-vetting reason, map it to one Profound capability, and ask for the right owner or a quick relevance check instead of forcing a calendar ask.
+  body: For the first email, lead with the account-vetting reason, map it to one Synthetic Vendor capability, and ask for the right owner or a quick relevance check instead of forcing a calendar ask.
   applies_to:
   - AEO Lead
   - Content Lead
@@ -51,7 +51,7 @@ entries:
   - Agency Partner
   evidence:
   - mdp-readme
-  - profound-homepage
+  - synthetic-vendor-homepage
   avoid: []
 - id: email-follow-up
   title: Email follow-up
@@ -63,7 +63,7 @@ entries:
   - Agency Partner
   evidence:
   - mdp-readme
-  - profound-homepage
+  - synthetic-vendor-homepage
   avoid: []
 - id: call-prep
   title: Call prep
@@ -96,7 +96,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-source-strategy
+  - synthetic-vendor-source-strategy
   avoid:
   - private LinkedIn
   - contact enrichment

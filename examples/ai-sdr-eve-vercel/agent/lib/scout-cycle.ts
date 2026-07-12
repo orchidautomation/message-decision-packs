@@ -85,7 +85,7 @@ export async function runScoutCycle(input: ScoutCycleInput = {}): Promise<ScoutC
       rows.push({
         contract_version: "mdp_scout_candidate/v0",
         run_id: runId,
-        pack_id: process.env.MDP_PACK_ID ?? "profound-gtm-vetting-example",
+        pack_id: process.env.MDP_PACK_ID ?? "synthetic-vendor-gtm-vetting-example",
         source_strategy: {
           ...trace,
           person_resolution_status: qualification.personResolutionStatus,

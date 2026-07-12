@@ -198,7 +198,7 @@ function homeHtml(): string {
     <header>
       <div class="eyebrow">Message Decision Packs × Eve</div>
       <h1>Autonomous GTM scouting, bounded by MDP.</h1>
-      <p>This Vercel Eve agent loads a Profound Message Decision Pack, targets 3 qualified people per live run, runs public-source discovery, resolves people-level evidence, scores fit, and appends reviewed ledger rows. It does not send outreach or sync CRM records.</p>
+      <p>This Vercel Eve agent loads a Synthetic Vendor Message Decision Pack, targets 3 qualified people per live run, runs public-source discovery, resolves people-level evidence, scores fit, and appends reviewed ledger rows. It does not send outreach or sync CRM records.</p>
     </header>
 
     <section>

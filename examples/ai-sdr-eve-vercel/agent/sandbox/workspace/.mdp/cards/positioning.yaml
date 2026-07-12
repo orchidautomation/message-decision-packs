@@ -1,7 +1,7 @@
 id: positioning
 kind: positioning
 title: Positioning and boundaries
-description: Profound positioning, market-slice boundaries, and what this MDP example is designed to prove.
+description: Synthetic Vendor positioning, market-slice boundaries, and what this MDP example is designed to prove.
 personas:
 - AEO Lead
 - Content Lead
@@ -12,20 +12,20 @@ tags:
 - category
 - boundary
 entries:
-- id: profound-category
+- id: synthetic-vendor-category
   title: AI answer engine optimization platform
-  body: "Profound helps brands understand and improve visibility in AI-generated answers across answer engines, with platform surfaces for insights, prompt volumes, agents, shopping, and agent analytics."
+  body: "Synthetic Vendor is a fictional AI-visibility product with demonstration capabilities for visibility research, evidence review, and content-workflow planning."
   applies_to:
   - AEO Lead
   - Content Lead
   - "PR & Brand Lead"
   - Agency Partner
   evidence:
-  - profound-homepage
+  - synthetic-vendor-homepage
   avoid: []
 - id: seller-side-mdp
   title: Seller-side decision pack
-  body: "This pack represents Profound's GTM decision layer: target slices, buyer personas, fit gates, evidence-backed claims, hooks, CTAs, avoid-rules, and gaps before any downstream copy or outreach tool acts."
+  body: "This pack represents Synthetic Vendor's GTM decision layer: target slices, buyer personas, fit gates, evidence-backed claims, hooks, CTAs, avoid-rules, and gaps before any downstream copy or outreach tool acts."
   applies_to:
   - AEO Lead
   - Content Lead
@@ -33,7 +33,7 @@ entries:
   - Agency Partner
   evidence:
   - mdp-readme
-  - user-mdp-hypothesis
+  - synthetic-product-brief
   avoid: []
 - id: target-slice
   title: Target slice, not total market
@@ -44,10 +44,10 @@ entries:
   - "PR & Brand Lead"
   - Agency Partner
   evidence:
-  - profound-aeo-teams
-  - profound-content-teams
-  - profound-pr-teams
-  - profound-pricing
+  - synthetic-vendor-aeo-teams
+  - synthetic-vendor-content-teams
+  - synthetic-vendor-pr-teams
+  - synthetic-vendor-pricing
   avoid: []
 - id: mdp-not-execution
   title: MDP is not execution

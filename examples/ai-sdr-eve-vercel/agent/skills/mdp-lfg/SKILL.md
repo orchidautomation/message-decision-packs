@@ -23,7 +23,7 @@ Before using this skill against an existing pack, run:
 mdp --json agent-surface --dir .
 ```
 
-Use this skill only when the surface is legacy/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
+Use this skill only when the surface is compatibility/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
 
 Run the Message Decision Pack workflow end to end. Use this as the entry point for fuzzy or multi-step requests, then route to narrower MDP skills when the task becomes specific.
 

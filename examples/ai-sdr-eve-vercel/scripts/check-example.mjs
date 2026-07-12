@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { relative, resolve } from "node:path";
 
 const required = [
   ".mdp/manifest.yaml",
@@ -20,7 +21,8 @@ const required = [
   "agent/tools/mdp_fit.ts",
   "agent/tools/mdp_create_brief.ts",
   "agent/tools/append_ledger.ts",
-  "samples/profound-public-source-fixture.json"
+  "samples/synthetic-public-source-fixture.json",
+  "samples/synthetic-prospect.json"
 ];
 
 const missing = required.filter((file) => !existsSync(file));
@@ -29,9 +31,42 @@ if (missing.length) {
   process.exit(1);
 }
 
+for (const removedExample of ["../" + "mdp-for-" + "mdp", "../" + "pro" + "found-" + "gtm-vetting"]) {
+  if (existsSync(removedExample)) {
+    console.error(`obsolete public example still exists: ${removedExample}`);
+    process.exit(1);
+  }
+}
+
+assertDirectoryMirror(".mdp", "agent/sandbox/workspace/.mdp");
+
+const canonicalProspectBriefSkill = readFileSync("../../plugin/skills/mdp-prospect-brief/SKILL.md", "utf8");
+const eveProspectBriefSkill = readFileSync("agent/skills/mdp-prospect-brief/SKILL.md", "utf8");
+if (canonicalProspectBriefSkill !== eveProspectBriefSkill) {
+  console.error("Eve mdp-prospect-brief skill must match the canonical plugin skill");
+  process.exit(1);
+}
+
+const forbiddenVendorName = "pro" + "found";
+for (const root of [".mdp", "agent", "samples"]) {
+  for (const file of listFiles(root)) {
+    if (file.includes("node_modules") || file.includes("artifacts")) continue;
+    if (readFileSync(file, "utf8").toLowerCase().includes(forbiddenVendorName)) {
+      console.error(`canonical Eve file contains a removed vendor name: ${file}`);
+      process.exit(1);
+    }
+  }
+}
+
 const instructions = readFileSync("agent/instructions.md", "utf8");
 if (/send outreach|update CRM/i.test(instructions.replace(/Do not send outreach|Do not update CRM records/g, ""))) {
   console.error("instructions contain unsafe outreach/CRM language");
+  process.exit(1);
+}
+
+const envExample = readFileSync("env.example", "utf8");
+if (!envExample.includes("Explicit dry-runs use samples/synthetic-public-source-fixture.json") || !envExample.includes("Live and Cron runs require EXA_API_KEY and fail closed")) {
+  console.error("env.example must describe the dry-run-only fixture and fail-closed live discovery policy");
   process.exit(1);
 }
 
@@ -64,7 +99,7 @@ if (!discoveryLib.includes("personResolutionQueryTemplate") || !discoveryLib.inc
   process.exit(1);
 }
 if (discoveryLib.includes("DEFAULT_PERSON_RESOLUTION_QUERY_TEMPLATE") || discoveryLib.includes("PERSON_ROLE_TERMS")) {
-  console.error("discovery must not carry hardcoded Profound person-resolution query fallbacks; use .mdp/source-strategy.json");
+  console.error("discovery must not carry hardcoded vendor person-resolution query fallbacks; use .mdp/source-strategy.json");
   process.exit(1);
 }
 if (!discoveryLib.includes("resolvePersonForAccount") || !discoveryLib.includes("SCOUT_REQUIRE_PERSON")) {
@@ -180,6 +215,29 @@ if (!Array.isArray(vercelConfig.crons) || !vercelConfig.crons.some((cron) => cro
 }
 
 console.log("ok ai-sdr-eve-vercel scaffold check passed");
+
+function assertDirectoryMirror(leftRoot, rightRoot) {
+  const leftFiles = listFiles(leftRoot).map((file) => relative(leftRoot, file)).sort();
+  const rightFiles = listFiles(rightRoot).map((file) => relative(rightRoot, file)).sort();
+  if (JSON.stringify(leftFiles) !== JSON.stringify(rightFiles)) {
+    throw new Error(`${leftRoot} and ${rightRoot} must contain the same files`);
+  }
+  for (const file of leftFiles) {
+    const left = readFileSync(resolve(leftRoot, file));
+    const right = readFileSync(resolve(rightRoot, file));
+    if (!left.equals(right)) throw new Error(`${leftRoot}/${file} differs from ${rightRoot}/${file}`);
+  }
+}
+
+function listFiles(root) {
+  const files = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = resolve(root, entry.name);
+    if (entry.isDirectory()) files.push(...listFiles(path));
+    else if (entry.isFile()) files.push(path);
+  }
+  return files;
+}
 
 function assertSourceStrategy(strategy, label) {
   if (strategy.format !== "mdp.source-strategy.v0") throw new Error(`${label} has unexpected source strategy format`);

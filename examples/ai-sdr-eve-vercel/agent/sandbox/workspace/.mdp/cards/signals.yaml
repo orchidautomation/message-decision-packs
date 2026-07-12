@@ -1,7 +1,7 @@
 id: signals
 kind: signals
 title: Account vetting signals
-description: Observable account and persona signals that make Profound relevant.
+description: Observable account and persona signals that make Synthetic Vendor relevant.
 personas:
 - AEO Lead
 - Content Lead
@@ -19,7 +19,7 @@ entries:
   applies_to:
   - AEO Lead
   evidence:
-  - profound-aeo-teams
+  - synthetic-vendor-aeo-teams
   avoid: []
 - id: content-production-signal
   title: Content production signal
@@ -27,8 +27,8 @@ entries:
   applies_to:
   - Content Lead
   evidence:
-  - profound-content-teams
-  - profound-agents
+  - synthetic-vendor-content-teams
+  - synthetic-vendor-content-workflows
   avoid: []
 - id: brand-narrative-signal
   title: Brand narrative signal
@@ -36,7 +36,7 @@ entries:
   applies_to:
   - PR & Brand Lead
   evidence:
-  - profound-pr-teams
+  - synthetic-vendor-pr-teams
   avoid: []
 - id: multi-brand-agency-signal
   title: Multi-brand or agency signal
@@ -44,7 +44,7 @@ entries:
   applies_to:
   - Agency Partner
   evidence:
-  - profound-pricing
+  - synthetic-vendor-pricing
   avoid: []
 - id: ai-crawler-infra-signal
   title: AI crawler and infrastructure signal
@@ -53,7 +53,7 @@ entries:
   - AEO Lead
   - Content Lead
   evidence:
-  - profound-agent-analytics
+  - synthetic-vendor-crawler-analytics
   avoid: []
 - id: prompt-volume-opportunity-signal
   title: Prompt volume opportunity signal
@@ -63,10 +63,10 @@ entries:
   - Content Lead
   - Agency Partner
   evidence:
-  - profound-prompt-volumes
+  - synthetic-vendor-prompt-research
   avoid: []
-- id: aim-project-ops-signal
-  title: Aim project operations signal
+- id: opportunity-project-ops-signal
+  title: Opportunity workflow project operations signal
   body: Strong signal when the source row shows the team needs to convert many AI visibility gaps into prioritized projects, execution briefs, agent handoffs, and measured outcomes.
   applies_to:
   - AEO Lead
@@ -74,7 +74,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-aim
+  - synthetic-vendor-opportunity-workflow
   avoid: []
 - id: agency-aeo-client-signal
   title: Agency AEO client signal
@@ -82,7 +82,7 @@ entries:
   applies_to:
   - Agency Partner
   evidence:
-  - profound-agencies
+  - synthetic-vendor-agencies
   avoid: []
 - id: public-source-ready-signal
   title: Public-source ready signal
@@ -93,7 +93,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-source-strategy
+  - synthetic-vendor-source-strategy
   avoid:
   - login-required
   - private profile
@@ -107,7 +107,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-source-strategy
+  - synthetic-vendor-source-strategy
   avoid:
   - private profile
   - jobs-only page

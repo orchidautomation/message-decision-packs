@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import bundledFixture from "../../samples/profound-public-source-fixture.json";
+import bundledFixture from "../../samples/synthetic-public-source-fixture.json";
 import { fixturePath } from "./paths.ts";
 import { capabilityFor, providerCapabilities, runExaSearch, type ExaSearchResult, type ProviderCapability } from "./provider-tools.ts";
 import { findPersonResolutionEvidence } from "./qualification.ts";

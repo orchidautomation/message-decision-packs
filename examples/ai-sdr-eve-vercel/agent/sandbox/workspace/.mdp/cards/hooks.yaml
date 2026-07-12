@@ -1,7 +1,7 @@
 id: hooks
 kind: hooks
 title: Message hooks
-description: Reusable angles for explaining why a target account belongs in Profound's market slice.
+description: Reusable angles for explaining why a target account belongs in Synthetic Vendor's market slice.
 personas:
 - AEO Lead
 - Content Lead
@@ -18,8 +18,8 @@ entries:
   applies_to:
   - AEO Lead
   evidence:
-  - profound-answer-engine-insights
-  - profound-aeo-teams
+  - synthetic-vendor-visibility-analytics
+  - synthetic-vendor-aeo-teams
   avoid: []
 - id: content-gap-to-brief-hook
   title: Content gap to brief hook
@@ -27,8 +27,8 @@ entries:
   applies_to:
   - Content Lead
   evidence:
-  - profound-content-teams
-  - profound-agents
+  - synthetic-vendor-content-teams
+  - synthetic-vendor-content-workflows
   avoid: []
 - id: brand-narrative-hook
   title: Brand narrative hook
@@ -36,8 +36,8 @@ entries:
   applies_to:
   - PR & Brand Lead
   evidence:
-  - profound-pr-teams
-  - profound-answer-engine-insights
+  - synthetic-vendor-pr-teams
+  - synthetic-vendor-visibility-analytics
   avoid: []
 - id: ai-crawler-attribution-hook
   title: AI crawler attribution hook
@@ -46,7 +46,7 @@ entries:
   - AEO Lead
   - Content Lead
   evidence:
-  - profound-agent-analytics
+  - synthetic-vendor-crawler-analytics
   avoid: []
 - id: agency-scale-hook
   title: Agency scale hook
@@ -54,7 +54,7 @@ entries:
   applies_to:
   - Agency Partner
   evidence:
-  - profound-pricing
+  - synthetic-vendor-pricing
   avoid: []
 - id: prompt-volume-hook
   title: Prompt volume hook
@@ -64,10 +64,10 @@ entries:
   - Content Lead
   - Agency Partner
   evidence:
-  - profound-prompt-volumes
+  - synthetic-vendor-prompt-research
   avoid: []
-- id: aim-project-hook
-  title: Aim project hook
+- id: opportunity-project-hook
+  title: Opportunity workflow project hook
   body: If the target already has AI visibility signals, frame the hook around turning those signals into ranked projects, execution briefs, agent handoffs, and measurable follow-through.
   applies_to:
   - AEO Lead
@@ -75,7 +75,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-aim
+  - synthetic-vendor-opportunity-workflow
   avoid: []
 - id: agency-client-presence-hook
   title: Agency client AI presence hook
@@ -83,5 +83,5 @@ entries:
   applies_to:
   - Agency Partner
   evidence:
-  - profound-agencies
+  - synthetic-vendor-agencies
   avoid: []

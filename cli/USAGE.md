@@ -108,7 +108,7 @@ mdp --json check-claims --strict --dir . --text "<draft copy>" --subject "<subje
 mdp --json eval --strict --dir .
 ```
 
-JSON errors use stable top-level codes where the CLI can classify the failure: `pack_not_found`, `invalid_manifest`, `missing_card`, `unsupported_claim`, `insufficient_context`, `write_conflict`, `invalid_argument`, and fallback `mdp_error`.
+JSON errors use stable top-level codes where the CLI can classify the failure. Run `mdp --json capabilities` for the current complete command, side-effect, and error-code inventory instead of relying on a copied partial list.
 
 `profile.id` and `profile.agent_surface` are skill-routing metadata. A profile is activation-ready only when `mdp --json validate --dir .` reports `data.profile.activation_ready: true`. Profile-aware manifests can declare `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories`; validation rejects unknown primitive IDs and missing mapped card, prompt, input contract, job, or eval references. Missing required primitive or eval-category coverage is warning-first by default and fails with `--strict`. Eval fixtures can run `command: validate-prompt-output` with `prompt_id` or `prompt` plus inline `prompt_output`, so profile activation can prove normalization contracts before rows reach `mdp fit` or `mdp brief`.
 

@@ -1,7 +1,7 @@
 {
-  "background": "Synthetic target-account fixture for Profound GTM vetting. This represents a company with an organic growth function, public content surface, and a likely need to understand how AI answer engines mention and cite the brand.",
+  "background": "Synthetic B2B SaaS account with a visible organic growth and content motion.",
   "company": "ExampleMarket Co",
-  "company_url": "https://example.com",
+  "company_domain": "example.com",
   "linkedin_url": "https://www.linkedin.com/in/example-organic-growth",
   "name": "Jordan Lee",
   "persona": "AEO Lead",
@@ -21,7 +21,7 @@
       "id": "answer-engine-visibility-trigger",
       "source": "synthetic-example-row",
       "state_as": "hypothesis",
-      "title": "Trigger is interest in measuring brand visibility across AI answer engines"
+      "title": "Trigger is recent interest in measuring brand visibility across AI answer engines"
     },
     {
       "confidence": "medium",

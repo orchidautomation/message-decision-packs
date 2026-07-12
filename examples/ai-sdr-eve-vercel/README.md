@@ -2,6 +2,8 @@
 
 This is the intended Vercel/Eve example for an autonomous, schedule-backed AI SDR/BDR scout powered by Message Decision Packs (MDP).
 
+The bundled seller and prospect are explicitly synthetic. They demonstrate the workflow without exposing a customer pack, implying real buyer intent, or approving real-world product, customer, security, certification, or compliance claims.
+
 The important split:
 
 - **Eve** is the autonomous runtime: instructions, schedules, sandbox, skills, tools, durable sessions, and future MCP/connections.
@@ -88,7 +90,7 @@ npm install
 npm run check
 ```
 
-The fixture run uses `samples/profound-public-source-fixture.json`, reports the dry-run fallback reason, and writes `artifacts/scout-ledger.jsonl`. Non-dry-run executions require `EXA_API_KEY`; without it they return zero qualified rows rather than writing demo data.
+The fixture run uses `samples/synthetic-public-source-fixture.json`, reports the dry-run fallback reason, and writes `artifacts/scout-ledger.jsonl`. Non-dry-run executions require `EXA_API_KEY`; without it they return zero qualified rows rather than writing demo data.
 
 ## Native MDP CLI mode
 
@@ -98,7 +100,7 @@ If the `mdp` CLI is installed in the app runtime, test the bounded native path:
 MDP_RUNNER_MODE=native npm run scout:fixture
 ```
 
-The Eve sandbox also receives the same `.mdp` under `/workspace/.mdp`, including Profound person-resolution fit cards, gaps, sources, and source-strategy query templates, so a future Vercel Sandbox bootstrap can install the CLI there and let the agent run CLI commands through sandbox `bash`. This first slice keeps `simulated` as the deployment-safe default.
+The Eve sandbox also receives the same `.mdp` under `/workspace/.mdp`, including Synthetic Vendor person-resolution fit cards, gaps, sources, and source-strategy query templates, so a future Vercel Sandbox bootstrap can install the CLI there and let the agent run CLI commands through sandbox `bash`. This first slice keeps `simulated` as the deployment-safe default.
 
 ## Eve schedule
 

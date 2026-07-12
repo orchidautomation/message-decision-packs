@@ -1,7 +1,7 @@
 id: fit-rules
 kind: fit-rules
 title: Fit rules
-description: ICP, qualification, disqualification, and no-message rules for Profound target-account vetting.
+description: ICP, qualification, disqualification, and no-message rules for Synthetic Vendor target-account vetting.
 personas:
 - AEO Lead
 - Content Lead
@@ -19,8 +19,8 @@ entries:
   applies_to:
   - AEO Lead
   evidence:
-  - profound-aeo-teams
-  - profound-answer-engine-insights
+  - synthetic-vendor-aeo-teams
+  - synthetic-vendor-visibility-analytics
   avoid: []
 - id: good-fit-content-engine
   title: 'Good fit: content engine'
@@ -28,8 +28,8 @@ entries:
   applies_to:
   - Content Lead
   evidence:
-  - profound-content-teams
-  - profound-agents
+  - synthetic-vendor-content-teams
+  - synthetic-vendor-content-workflows
   avoid: []
 - id: good-fit-pr-brand
   title: 'Good fit: PR and brand narrative'
@@ -37,8 +37,8 @@ entries:
   applies_to:
   - PR & Brand Lead
   evidence:
-  - profound-pr-teams
-  - profound-answer-engine-insights
+  - synthetic-vendor-pr-teams
+  - synthetic-vendor-visibility-analytics
   avoid: []
 - id: good-fit-agency-or-enterprise
   title: 'Good fit: agency or enterprise complexity'
@@ -47,8 +47,8 @@ entries:
   - Agency Partner
   - AEO Lead
   evidence:
-  - profound-pricing
-  - profound-homepage
+  - synthetic-vendor-pricing
+  - synthetic-vendor-homepage
   avoid: []
 - id: no-context-no-vetting
   title: No fit decision without context
@@ -66,14 +66,14 @@ entries:
   - unknown persona
 - id: bad-fit-no-public-marketing-surface
   title: 'Bad fit: no public marketing surface'
-  body: Disqualify rows where the account has no meaningful web, content, brand, PR, search, ecommerce, agency, or AI visibility surface for Profound to evaluate.
+  body: Disqualify rows where the account has no meaningful web, content, brand, PR, search, ecommerce, agency, or AI visibility surface for Synthetic Vendor to evaluate.
   applies_to:
   - AEO Lead
   - Content Lead
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-homepage
+  - synthetic-vendor-homepage
   avoid:
   - no website
   - no content
@@ -103,9 +103,9 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-homepage
-  - profound-prompt-volumes
-  - profound-aim
+  - synthetic-vendor-homepage
+  - synthetic-vendor-prompt-research
+  - synthetic-vendor-opportunity-workflow
   avoid: []
 - id: good-fit-agency-ai-presence
   title: 'Good fit: agency AI presence practice'
@@ -113,7 +113,7 @@ entries:
   applies_to:
   - Agency Partner
   evidence:
-  - profound-agencies
+  - synthetic-vendor-agencies
   avoid: []
 - id: bad-fit-private-source-only
   title: 'Bad fit: private-source-only evidence'
@@ -124,7 +124,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-source-strategy
+  - synthetic-vendor-source-strategy
   - mdp-readme
   avoid:
   - private LinkedIn
@@ -141,7 +141,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-source-strategy
+  - synthetic-vendor-source-strategy
   - mdp-readme
   avoid:
   - no named owner

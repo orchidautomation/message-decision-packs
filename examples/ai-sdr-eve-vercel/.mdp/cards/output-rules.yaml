@@ -1,7 +1,7 @@
 id: output-rules
 kind: output-rules
 title: Output rules
-description: Global style, formatting, and output-structure rules generated Profound GTM text must follow.
+description: Global style, formatting, and output-structure rules generated Synthetic Vendor GTM text must follow.
 personas:
 - AEO Lead
 - Content Lead
