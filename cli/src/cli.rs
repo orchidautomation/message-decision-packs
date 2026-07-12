@@ -26,6 +26,32 @@ pub(crate) enum Commands {
     Init {
         #[arg(long, help = "Pack display name; defaults by template")]
         name: Option<String>,
+        #[arg(
+            long,
+            help = "External company, product, or project this pack positions"
+        )]
+        target_name: Option<String>,
+        #[arg(
+            long,
+            default_value = "company",
+            help = "Target identity kind (company, product, or project)"
+        )]
+        target_kind: String,
+        #[arg(
+            long = "target-alias",
+            help = "Repeatable external alias for the target"
+        )]
+        target_aliases: Vec<String>,
+        #[arg(
+            long = "target-term",
+            help = "Repeatable source-backed external term the pack may use"
+        )]
+        target_terms: Vec<String>,
+        #[arg(
+            long = "exclude-term",
+            help = "Repeatable prior-target or starter term that must not survive authoring"
+        )]
+        exclude_terms: Vec<String>,
         #[arg(long, default_value = ".")]
         dir: PathBuf,
         #[arg(

@@ -46,12 +46,25 @@ mdp --json doctor --dir .
 
 2. Before initializing, state the exact destination directory. If the user did not specify one, prefer the current repo/workspace root or an ignored scratch path; do not silently create a pack in `$HOME` or an unrelated code folder.
 
-3. If `.mdp/manifest.yaml` is missing and the user wants a pack, initialize with exactly one closest template.
+3. Before authoring a new GTM pack, resolve the external target identity from the user's request and supplied evidence:
 
-For generic GTM packs:
+- identify the company, product, or project that prospect-facing positioning should sell;
+- record the primary name, supported aliases, source-backed external terms, and any prior-target/starter terms that must be excluded;
+- treat MDP, the CLI, manifests, schemas, prompts, cards, evals, and control-plane language as internal implementation vocabulary only;
+- if two plausible targets remain or the evidence names a company but not which product/project is being positioned, stop and ask one clarification question. Do not use the pack display name, starter content, prior pack, or schema vocabulary as the answer.
+
+4. If `.mdp/manifest.yaml` is missing and the user wants a pack, initialize with exactly one closest template.
+
+For a target-aware GTM pack:
 
 ```bash
-mdp --json init --template gtm --name "<pack name>" --dir .
+mdp --json init --template gtm --name "<target> Messaging" --target-name "<target>" --target-kind <company|product|project> --dir .
+```
+
+Repeat `--target-alias`, `--target-term`, and `--exclude-term` as needed. Use the target-less default only when the operator explicitly wants the MDP reference/demo:
+
+```bash
+mdp --json init --template gtm --dir .
 ```
 
 For proposal, RFP, capture, or bid/no-bid review packs:
@@ -60,7 +73,7 @@ For proposal, RFP, capture, or bid/no-bid review packs:
 mdp --json init --template proposal --dir .
 ```
 
-4. If a pack exists, validate before changing it:
+5. If a pack exists, validate before changing it. For a retarget, capture the old target name, aliases, product nouns, personas, jobs, tags, and sample labels under `manifest.target.excluded_terms` before rewriting content; never carry old claims forward as evidence:
 
 ```bash
 mdp --json validate --dir .
@@ -101,16 +114,17 @@ For most requests, run this loop:
 1. Establish the current objective in one sentence.
 2. Run `mdp --json doctor --dir .` and `mdp --json validate --dir .` when a pack exists.
 3. Capture source facts in `.mdp/sources.yaml` before bulk card writing. Keep direct source claims separate from interpretation, and put missing proof in `gaps.yaml`.
-4. Identify which card files matter; do not load the entire pack unless reviewing the whole pack.
-5. Make the smallest useful pack edits. For new packs, fill cards in slices: positioning/fit/claims/gaps first, then personas/signals/pains, then motions/hooks/ctas/output-rules/copy-patterns/evals.
-6. Validate again.
-7. Test one representative route:
+4. Load `manifest.target` before any card or prompt example. Every external surface must use its external lexicon or remain explicitly neutral. Internal control-plane terms may appear in schema refs and authoring instructions, never as positioning, claims, pains, hooks, or outbound copy.
+5. Identify which card files matter; do not load the entire pack unless reviewing the whole pack.
+6. Make the smallest useful pack edits. For new packs, fill cards in slices: positioning/fit/claims/gaps first, then personas/signals/pains, then motions/hooks/ctas/output-rules/copy-patterns/evals.
+7. Validate again. Treat `target_contamination_excluded_term` and `target_contamination_internal_vocabulary` as blocking authoring failures and fix the exact reported file/field.
+8. Test one representative route:
 
 ```bash
 mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
-8. If a prospect/source row is involved, normalize it through `$mdp-prospect-brief`, using `.mdp/prompts/normalize-prospect.yaml` when the pack provides it. Treat the prompt's `output_contract.schema_ref` as the response contract; if it includes `output_contract.schema`, give that literal schema to the model or host. Use the example as a reference, not the contract. Then run `mdp fit`, and produce the brief only when fit allows. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
+9. If a prospect/source row is involved, normalize it through `$mdp-prospect-brief`, using `.mdp/prompts/normalize-prospect.yaml` when the pack provides it. Treat the prompt's `output_contract.schema_ref` as the response contract; if it includes `output_contract.schema`, give that literal schema to the model or host. Use the example as a reference, not the contract. Then run `mdp fit`, and produce the brief only when fit allows. Use `--out` when the user expects a durable artifact; otherwise say the brief was emitted to stdout only:
 
 ```bash
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel <channel> --out .mdp/briefs/<brief-name>.json

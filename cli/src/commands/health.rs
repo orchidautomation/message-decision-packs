@@ -4,7 +4,7 @@ use crate::constants::{
 };
 use crate::models::{
     AgentSurface, Card, CardKind, InputContract, Manifest, PrimitiveMapping, Profile, ProfileEval,
-    ProfileJob, PromptFile, QualificationGates, ValueContract,
+    ProfileJob, PromptFile, QualificationGates, TargetIdentity, ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
@@ -42,6 +42,15 @@ pub(crate) const KNOWN_PROFILE_EVAL_CATEGORIES: &[&str] = &[
     "account-context-missing",
     "account-only-no-draft",
     "prompt-output-validation",
+];
+
+const BUILTIN_INTERNAL_TARGET_TERMS: &[&str] = &[
+    "MDP",
+    "Message Decision Pack",
+    "mdp CLI",
+    "manifest plus modular cards",
+    "local offline decision layer",
+    "agent handoffs",
 ];
 
 pub(crate) fn doctor(root: &Path) -> Value {
@@ -278,6 +287,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         &eval_inventory,
         &mut issues,
     );
+    validate_target_identity(root, &manifest, &mut issues)?;
     let error_count = issue_count(&issues, "error");
     let warning_count = issue_count(&issues, "warning");
     Ok(json!({
@@ -290,6 +300,330 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         "profile": profile,
         "issues": issues
     }))
+}
+
+fn validate_target_identity(
+    root: &Path,
+    manifest: &Manifest,
+    issues: &mut Vec<Value>,
+) -> Result<()> {
+    let Some(target) = manifest.target.as_ref() else {
+        return Ok(());
+    };
+    if !matches!(target.kind.as_str(), "company" | "product" | "project") {
+        issues.push(issue(
+            "target_identity_kind_invalid",
+            "error",
+            ".mdp/manifest.yaml#/target/kind",
+            "target.kind must be company, product, or project",
+        ));
+    }
+    if target.name.trim().is_empty() {
+        issues.push(issue(
+            "target_identity_name_empty",
+            "error",
+            ".mdp/manifest.yaml#/target/name",
+            "target.name must resolve the external company, product, or project before authoring",
+        ));
+    }
+    if target.source_ids.is_empty() {
+        issues.push(issue(
+            "target_identity_sources_empty",
+            "error",
+            ".mdp/manifest.yaml#/target/source_ids",
+            "target identity must cite at least one source ledger entry; unsupported product detail belongs in gaps",
+        ));
+    } else {
+        let source_ids = target_source_ids(root)?;
+        for (index, source_id) in target.source_ids.iter().enumerate() {
+            if !source_ids.contains(source_id) {
+                issues.push(issue(
+                    "target_identity_source_missing",
+                    "error",
+                    format!(".mdp/manifest.yaml#/target/source_ids/{index}"),
+                    format!(
+                        "target identity source '{source_id}' does not exist in .mdp/sources.yaml"
+                    ),
+                ));
+            }
+        }
+    }
+    for (index, excluded) in target.excluded_terms.iter().enumerate() {
+        if excluded.trim().len() < 2 {
+            issues.push(issue(
+                "target_excluded_term_too_short",
+                "error",
+                format!(".mdp/manifest.yaml#/target/excluded_terms/{index}"),
+                "excluded target terms must contain at least two characters to avoid broad false positives",
+            ));
+        }
+        if std::iter::once(&target.name)
+            .chain(target.aliases.iter())
+            .chain(target.external_terms.iter())
+            .any(|allowed| allowed.eq_ignore_ascii_case(excluded))
+        {
+            issues.push(issue(
+                "target_lexicon_conflict",
+                "error",
+                format!(".mdp/manifest.yaml#/target/excluded_terms/{index}"),
+                format!(
+                    "excluded term '{excluded}' conflicts with the active target name or alias"
+                ),
+            ));
+        }
+    }
+
+    let files = target_scan_files(root)?;
+    for path in files {
+        let display = display_target_scan_path(root, &path);
+        for excluded in &target.excluded_terms {
+            if contains_term(&display, excluded) {
+                issues.push(issue(
+                    "target_contamination_excluded_term",
+                    "error",
+                    &display,
+                    format!("excluded prior-target or starter term '{excluded}' appears in the file path"),
+                ));
+            }
+        }
+        let raw = fs::read_to_string(&path)?;
+        let Some(value) = parse_scan_value(&path, &raw) else {
+            for excluded in &target.excluded_terms {
+                if contains_term(&raw, excluded) {
+                    issues.push(issue(
+                        "target_contamination_excluded_term",
+                        "error",
+                        &display,
+                        format!("excluded prior-target or starter term '{excluded}' survived in an unparseable generated artifact"),
+                    ));
+                }
+            }
+            continue;
+        };
+        walk_strings(&value, "", &mut |pointer, text| {
+            if display == ".mdp/manifest.yaml"
+                && (pointer.starts_with("/target/excluded_terms")
+                    || pointer.starts_with("/target/internal_terms"))
+            {
+                return;
+            }
+            for excluded in &target.excluded_terms {
+                if contains_term(text, excluded) {
+                    issues.push(issue(
+                        "target_contamination_excluded_term",
+                        "error",
+                        format!("{display}#{pointer}"),
+                        format!("excluded prior-target or starter term '{excluded}' survived target authoring"),
+                    ));
+                }
+            }
+            if is_external_surface(&display, pointer, &value)
+                && !active_target_allows_internal_term(target, text)
+            {
+                if let Some(internal) = internal_target_terms(target)
+                    .filter(|internal| contains_term(text, internal))
+                    .max_by_key(|internal| internal.len())
+                {
+                    issues.push(issue(
+                        "target_contamination_internal_vocabulary",
+                        "error",
+                        format!("{display}#{pointer}"),
+                        format!("internal control-plane term '{internal}' appears on a prospect-facing surface; position '{}' instead", target.name),
+                    ));
+                }
+            }
+        });
+    }
+    Ok(())
+}
+
+fn target_source_ids(root: &Path) -> Result<BTreeSet<String>> {
+    let path = root.join(DEFAULT_DIR).join("sources.yaml");
+    if !path.exists() {
+        return Ok(BTreeSet::new());
+    }
+    let raw = fs::read_to_string(path)?;
+    let value = serde_yaml::from_str::<Value>(&raw).unwrap_or(Value::Null);
+    Ok(value["sources"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|source| source["id"].as_str().map(str::to_string))
+        .collect())
+}
+
+fn target_scan_files(root: &Path) -> Result<Vec<std::path::PathBuf>> {
+    let mut files = Vec::new();
+    for directory in [root.join(DEFAULT_DIR), root.join("examples")] {
+        collect_scan_files(&directory, &mut files)?;
+    }
+    files.sort();
+    Ok(files)
+}
+
+fn collect_scan_files(directory: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<()> {
+    if !directory.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_scan_files(&path, files)?;
+        } else if matches!(
+            path.extension().and_then(|extension| extension.to_str()),
+            Some("yaml" | "yml" | "json" | "md" | "txt")
+        ) {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn display_target_scan_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn parse_scan_value(path: &Path, raw: &str) -> Option<Value> {
+    match path.extension().and_then(|extension| extension.to_str()) {
+        Some("json") => serde_json::from_str(raw).ok(),
+        Some("yaml" | "yml") => serde_yaml::from_str(raw).ok(),
+        _ => None,
+    }
+}
+
+fn walk_strings(value: &Value, pointer: &str, visit: &mut impl FnMut(&str, &str)) {
+    match value {
+        Value::String(text) => visit(pointer, text),
+        Value::Array(values) => {
+            for (index, value) in values.iter().enumerate() {
+                walk_strings(value, &format!("{pointer}/{index}"), visit);
+            }
+        }
+        Value::Object(values) => {
+            for (key, value) in values {
+                let key = key.replace('~', "~0").replace('/', "~1");
+                walk_strings(value, &format!("{pointer}/{key}"), visit);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_external_surface(display: &str, pointer: &str, root: &Value) -> bool {
+    if display.starts_with("examples/") {
+        return true;
+    }
+    if display == ".mdp/manifest.yaml" {
+        return matches_pointer_prefix(
+            pointer,
+            &[
+                "/description",
+                "/personas",
+                "/target_personas",
+                "/persona_mappings",
+                "/profile/context_dimensions",
+                "/jobs",
+                "/cards",
+            ],
+        );
+    }
+    if display == ".mdp/sources.yaml" {
+        return pointer == "/purpose"
+            || pointer.contains("/direct_claims/")
+            || pointer.contains("/interpretations/")
+            || pointer.contains("/gaps/");
+    }
+    if display.starts_with(".mdp/cards/") {
+        if root.get("kind").and_then(Value::as_str) == Some("avoid-rules")
+            && pointer.contains("/avoid/")
+        {
+            return false;
+        }
+        return matches_pointer_prefix(
+            pointer,
+            &["/title", "/description", "/tags", "/personas", "/entries"],
+        );
+    }
+    if display.starts_with(".mdp/prompts/") {
+        return pointer.starts_with("/output_contract/example/card_patches")
+            || pointer.starts_with("/output_contract/example/normalized_prospect");
+    }
+    if display.starts_with(".mdp/evals/") {
+        let negative_guardrail = root.get("command").and_then(Value::as_str)
+            == Some("check-claims")
+            && root.get("expect_valid").and_then(Value::as_bool) == Some(false);
+        if negative_guardrail
+            && (pointer == "/text" || pointer.starts_with("/expect_guardrail_terms_contains"))
+        {
+            return false;
+        }
+        return matches_pointer_prefix(
+            pointer,
+            &[
+                "/persona",
+                "/job",
+                "/text",
+                "/prospect",
+                "/prompt_output",
+                "/expect_entry_titles_contains",
+                "/expect_entry_titles_excludes",
+            ],
+        );
+    }
+    false
+}
+
+fn matches_pointer_prefix(pointer: &str, prefixes: &[&str]) -> bool {
+    prefixes
+        .iter()
+        .any(|prefix| pointer == *prefix || pointer.starts_with(&format!("{prefix}/")))
+}
+
+fn active_target_allows_internal_term(target: &TargetIdentity, text: &str) -> bool {
+    internal_target_terms(target).any(|internal| {
+        contains_term(text, internal)
+            && std::iter::once(&target.name)
+                .chain(target.aliases.iter())
+                .any(|allowed| contains_term(allowed, internal) && contains_term(text, allowed))
+    })
+}
+
+fn internal_target_terms(target: &TargetIdentity) -> impl Iterator<Item = &str> {
+    BUILTIN_INTERNAL_TARGET_TERMS
+        .iter()
+        .copied()
+        .chain(target.internal_terms.iter().map(String::as_str))
+}
+
+fn contains_term(text: &str, term: &str) -> bool {
+    let text = text.to_lowercase();
+    let term = term.trim().to_lowercase();
+    if term.is_empty() {
+        return false;
+    }
+    let mut offset = 0usize;
+    while let Some(relative) = text[offset..].find(&term) {
+        let start = offset + relative;
+        let end = start + term.len();
+        let before_ok = start == 0
+            || !text[..start]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric);
+        let after_ok = end == text.len()
+            || !text[end..]
+                .chars()
+                .next()
+                .is_some_and(char::is_alphanumeric);
+        if before_ok && after_ok {
+            return true;
+        }
+        offset = end;
+    }
+    false
 }
 
 fn portfolio_eval_coverage(root: &Path) -> Result<(bool, bool)> {
@@ -361,6 +695,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "name",
             "version",
             "description",
+            "target",
             "profile",
             "personas",
             "target_personas",
@@ -380,6 +715,22 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         ],
         ".mdp/manifest.yaml",
         "manifest_unknown_field",
+        issues,
+    );
+    let target = yaml_get(&value, "target").unwrap_or(&YamlValue::Null);
+    validate_object_keys(
+        target,
+        &[
+            "kind",
+            "name",
+            "aliases",
+            "external_terms",
+            "excluded_terms",
+            "internal_terms",
+            "source_ids",
+        ],
+        ".mdp/manifest.yaml#/target",
+        "manifest_target_unknown_field",
         issues,
     );
     let profile = yaml_get(&value, "profile").unwrap_or(&YamlValue::Null);
@@ -3012,7 +3363,7 @@ fn issue_count(issues: &[Value], severity: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::init::init_pack;
+    use crate::commands::init::{TargetInitOptions, init_pack, init_pack_targeted};
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -3025,6 +3376,113 @@ mod tests {
         init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
         root
+    }
+
+    fn targeted_pack(name: &str, excluded: &[String]) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-targeted-{nonce}"));
+        init_pack_targeted(
+            &root,
+            &format!("{name} Messaging"),
+            "gtm",
+            &TargetInitOptions {
+                custom_name: true,
+                name: Some(name),
+                excluded_terms: excluded,
+                ..TargetInitOptions::default()
+            },
+            true,
+            false,
+        )
+        .expect("targeted pack should initialize");
+        root
+    }
+
+    #[test]
+    fn validate_reports_excluded_target_term_with_field_location() {
+        let root = targeted_pack("Company B", &["Company A".to_string()]);
+        let card_path = root.join(".mdp/cards/hooks.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("hook card should be readable");
+        std::fs::write(
+            &card_path,
+            raw.replace("No hook is approved", "Company A says no hook is approved"),
+        )
+        .expect("hook card should be writable");
+        let prompt_path = root.join(".mdp/prompts/pains.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        std::fs::write(&prompt_path, raw.replace("Possible pain", "Company A pain"))
+            .expect("prompt should be writable");
+        let eval_path = root.join(".mdp/evals/target-route.yaml");
+        let raw = std::fs::read_to_string(&eval_path).expect("eval should be readable");
+        std::fs::write(
+            &eval_path,
+            raw.replace("create or improve messaging", "Company A messaging"),
+        )
+        .expect("eval should be writable");
+        let source_path = root.join(".mdp/sources.yaml");
+        let raw = std::fs::read_to_string(&source_path).expect("sources should be readable");
+        std::fs::write(
+            &source_path,
+            raw.replace("Source ledger for Company B", "Source ledger for Company A"),
+        )
+        .expect("sources should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let contamination_paths = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter(|issue| issue["code"] == "target_contamination_excluded_term")
+            .filter_map(|issue| issue["path"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(contamination_paths.contains(".mdp/cards/hooks.yaml#/entries/0/body"));
+        assert!(contamination_paths.iter().any(|path| {
+            path.starts_with(".mdp/prompts/pains.yaml#/output_contract/example/card_patches")
+        }));
+        assert!(contamination_paths.contains(".mdp/evals/target-route.yaml#/job"));
+        assert!(contamination_paths.contains(".mdp/sources.yaml#/purpose"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_internal_vocabulary_as_positioning_but_allows_negative_eval() {
+        let root = targeted_pack("Company B", &[]);
+        let card_path = root.join(".mdp/cards/positioning.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("positioning should be readable");
+        std::fs::write(
+            &card_path,
+            raw.replace(
+                "Prospect-facing positioning",
+                "Message Decision Pack positioning",
+            ),
+        )
+        .expect("positioning should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(
+                    |issue| issue["code"] == "target_contamination_internal_vocabulary"
+                        && issue["path"] == ".mdp/cards/positioning.yaml#/entries/0/body"
+                )
+        );
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .all(|issue| issue["path"]
+                    != ".mdp/evals/internal-control-plane-rejected.yaml#/text")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

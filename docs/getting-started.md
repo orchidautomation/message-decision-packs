@@ -48,7 +48,7 @@ Supported agent bundles package activation and validation hooks where the host s
 ## Create A Starter Pack
 
 ```bash
-mdp --json init --template gtm --name "Example Message Pack" --dir ./mdp-demo --force
+mdp --json init --template gtm --dir ./mdp-demo --force
 mdp --json validate --dir ./mdp-demo
 mdp --json eval --dir ./mdp-demo
 ```
@@ -57,6 +57,15 @@ Available templates are:
 
 - `gtm`: the generic GTM messaging starter.
 - `proposal`: the synthetic proposal reference profile for bid/no-bid, compliance, proof, red-team, and executive review workflows.
+
+The default GTM template is an intentional MDP reference/demo. To create a pack for an external target, resolve the target first and pass it explicitly:
+
+```bash
+mdp --json init --template gtm --name "Example Company Messaging" --target-name "Example Company" --target-kind company --dir ./example-company-mdp
+mdp --json validate --dir ./example-company-mdp
+```
+
+`--target-kind` accepts `company`, `product`, or `project`. Repeat `--target-alias` for supported external names, `--target-term` for source-backed category/product language, and `--exclude-term` for every prior target or starter term that must not survive. Existing packs without `manifest.target` remain compatible. A custom `--name` without `--target-name` now stops before writing because a display name is not enough to identify what is being positioned. Target-aware `init --force` also refuses a different existing target; use a clean directory or explicitly migrate the old target, lexicon, cards, prompts, examples, and evals before validation.
 
 For the proposal reference profile:
 

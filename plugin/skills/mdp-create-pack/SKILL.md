@@ -47,17 +47,21 @@ mdp --json doctor --dir .
 
 2. State the destination directory before writing. If Brandon did not specify one, use the current workspace root for durable work or an ignored scratch path for disposable demos. Do not silently create a pack in `$HOME`.
 
-3. If no pack exists, initialize with the closest template. Use `gtm` for generic messaging packs and `proposal` only when the user is explicitly building a proposal/RFP/capture review pack:
+3. Resolve target identity before writing a GTM pack. Identify the external company, product, or project from user intent and supplied evidence, plus supported aliases, source-backed target terms, and prior-target/starter terms to exclude. MDP/CLI/schema/prompt/card/eval vocabulary is internal only. If identity is genuinely ambiguous, stop and ask for the missing target choice instead of inferring it from the starter or pack name.
+
+4. If no pack exists, initialize with the closest template. Use the explicit target-aware path for a real GTM pack and `proposal` only when the user is explicitly building a proposal/RFP/capture review pack:
 
 ```bash
-mdp --json init --template gtm --name "<pack name>" --dir .
+mdp --json init --template gtm --name "<target> Messaging" --target-name "<target>" --target-kind <company|product|project> --dir .
 # or
 mdp --json init --template proposal --dir .
 ```
 
-4. Build the source ledger before writing cards. Add public URLs, user-provided docs, or note identifiers to `.mdp/sources.yaml`; separate direct source claims from interpretation; preserve missing proof in `gaps.yaml`.
+Repeat `--target-alias`, `--target-term`, and `--exclude-term` as needed. A custom `--name` does not resolve the sold target. Use `mdp --json init --template gtm --dir .` only for an intentional MDP reference/demo.
 
-5. Gather or infer the first version:
+5. Build the source ledger before writing cards. Add public URLs, user-provided docs, or note identifiers to `.mdp/sources.yaml`; separate direct source claims from interpretation; preserve missing proof in `gaps.yaml`.
+
+6. Gather or infer the first version from the resolved target and its evidence, never from starter or prior-target content:
 
 - product/category in one sentence
 - positioning and product boundaries
@@ -77,7 +81,7 @@ mdp --json init --template proposal --dir .
 - copy patterns by channel
 - open gaps that need source evidence
 
-6. Edit only the pack files:
+7. Edit only the pack files:
 
 - `.mdp/manifest.yaml`
 - `.mdp/sources.yaml`
@@ -107,7 +111,7 @@ Work in slices instead of rewriting the whole pack at once:
 - Second: personas, signals, pains, and motions.
 - Third: channel-policies, hooks, ctas, output-rules, copy-patterns, objections, and evals.
 
-7. Validate after each meaningful slice:
+8. Validate after each meaningful slice. Fix `target_contamination_excluded_term` and `target_contamination_internal_vocabulary` at their reported file/field locations before continuing:
 
 ```bash
 mdp --json validate --dir .
@@ -141,7 +145,8 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 - Put custom advisory annotations about card content under entry `metadata`; do not add arbitrary unsupported fields as if the CLI routes or enforces them.
 - Add custom channel names to `.mdp/manifest.yaml` `supported_channels` before relying on channel-policy routing for those channels.
 - For profile-aware packs, keep `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories` in sync with the cards, prompts, jobs, and eval fixtures you add. `profile.id` and `profile.agent_surface` only route skills; `mdp validate` owns activation readiness.
-- When retargeting a starter/profile pack, update eval filenames, IDs, personas, jobs, expected titles, example rows, and prompt `output_contract.example` fixtures together. Passing evals can still be semantically stale if names and examples still describe old personas or scenarios.
+- When retargeting a starter/profile pack, first move the old target name, aliases, product nouns, personas, job names, tags, and sample labels into `manifest.target.excluded_terms`. Then update pack metadata, sources, every card surface, eval filenames/IDs/personas/jobs/expected titles, example rows, prompt descriptions/instructions/output examples, trace labels, tags, and gaps together. Passing evals is not enough when semantic residue remains.
+- Keep `manifest.target.external_terms` source-backed. Internal terms may appear in format/schema refs and authoring instructions, but never in positioning, claims, pains, hooks, CTA copy, or outbound examples. An explicit negative `check-claims` eval may quote internal terms only to prove rejection.
 - Use the fixed universal primitives (`actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evidence-proof`, `boundaries`, `output-contracts`, `routing-jobs`, `gaps`, `evals`) and keep domain vocabulary in profile-owned IDs. Do not add custom core card kinds for account context, opportunity context, or other profile nouns.
 - For one-pack portfolios, declare canonical `profile.context_dimensions` such as product, capability, solution, or segment and put enforced applicability under entry `scope`. Do not turn those nouns into primitives, overload `applies_to`, or hide routing requirements in advisory `metadata`.
 - Use `profile.context_dimension_dependencies` when a dimension such as capability or solution must always carry a companion product dimension. Every dependent entry must declare the required dimensions, and direct routes must select them together.

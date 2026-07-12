@@ -104,6 +104,7 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
         name: name.to_string(),
         version: "0.1.0".to_string(),
         description: Some("A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, output rules, and copy guidance.".to_string()),
+        target: None,
         profile: Some(gtm_profile()),
         personas: personas.clone(),
         target_personas: personas,

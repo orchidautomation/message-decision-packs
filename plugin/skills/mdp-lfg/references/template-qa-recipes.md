@@ -30,7 +30,7 @@ Record the exact binary path and version in the QA notes.
 
 ```bash
 mkdir -p /tmp/mdp-template-qa/gtm
-mdp --json init --template gtm --name "Synthetic GTM QA" --dir /tmp/mdp-template-qa/gtm
+mdp --json init --template gtm --dir /tmp/mdp-template-qa/gtm
 mdp --json validate --strict --dir /tmp/mdp-template-qa/gtm
 mdp --json eval --strict --dir /tmp/mdp-template-qa/gtm
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-template-qa/gtm --persona "GTM Engineering" --job "email outbound copy"

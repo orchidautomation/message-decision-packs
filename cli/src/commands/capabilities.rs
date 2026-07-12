@@ -32,9 +32,15 @@ pub(crate) fn capabilities() -> Value {
             "context_dimensions": "Optional profile-owned applicability dimensions such as product, capability, solution, or segment; agnostic primitives remain unchanged.",
             "entry_scope": "OR within an entry dimension and AND across dimensions; unscoped entries are global."
         },
+        "target_contracts": {
+            "manifest_target": "Optional for existing/reference packs; required by the target-aware GTM authoring path.",
+            "kinds": ["company", "product", "project"],
+            "external_vs_internal": "External target terms may drive positioning. MDP, CLI, schema, prompt, card, and eval vocabulary remains internal implementation context.",
+            "contamination_issue_codes": ["target_contamination_excluded_term", "target_contamination_internal_vocabulary"]
+        },
         "commands": [
             command("capabilities", "mdp.capabilities.v0", "read-only", false, false, false, &[]),
-            command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
+            command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--target-name", "--target-kind", "--target-alias", "--target-term", "--exclude-term", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("agent-surface", "mdp.agent-surface.v0", "read-only", false, false, false, &["--dir"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
@@ -123,6 +129,7 @@ mod tests {
             result["profile_contracts"]["agent_surface"],
             "mdp.agent-surface.v0"
         );
+        assert_eq!(result["target_contracts"]["kinds"][0], "company");
         assert!(
             result["commands"]
                 .as_array()

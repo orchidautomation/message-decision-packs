@@ -81,18 +81,18 @@ Hooks do not authorize hidden execution. Do not use hook activation to enrich pr
 
 ## Create Or Improve A Pack
 
-For a new generic pack:
+For a real target-aware pack, resolve the external company, product, or project first. If the target is ambiguous, ask before running `init`:
 
 ```bash
-mdp --json init --name "Message Pack" --dir . --dry-run
-mdp --json init --name "Message Pack" --dir .
+mdp --json init --template gtm --name "Example Company Messaging" --target-name "Example Company" --target-kind company --dir . --dry-run
+mdp --json init --template gtm --name "Example Company Messaging" --target-name "Example Company" --target-kind company --dir .
 ```
 
-For a neutral demo:
+For the intentional MDP reference/demo:
 
 ```bash
-mdp --json init --template gtm --name "Example Message Pack" --dir . --dry-run
-mdp --json init --template gtm --name "Example Message Pack" --dir .
+mdp --json init --template gtm --dir . --dry-run
+mdp --json init --template gtm --dir .
 ```
 
 For a proposal reference-profile demo:

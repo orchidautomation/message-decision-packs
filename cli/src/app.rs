@@ -1,10 +1,11 @@
 use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat};
 use crate::commands::{
-    agent_surface, capabilities, check_claims_scoped, demo_copy, doctor, emit_brief_scoped,
-    eval_pack, explain, fit, gaps, init_pack, init_pack_dry_run, pack, prospect_brief_with_context,
-    render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief,
-    route_scoped, sample_leads, schema, validate_pack, validate_prompt_output_file,
-    verify_output_file, verify_output_readable_file,
+    TargetInitOptions, agent_surface, capabilities, check_claims_scoped, demo_copy, doctor,
+    emit_brief_scoped, eval_pack, explain, fit, gaps, init_pack_targeted,
+    init_pack_targeted_dry_run, pack, prospect_brief_with_context, render_human_brief_file,
+    render_human_brief_markdown, render_readable_prospect_brief, route_scoped, sample_leads,
+    schema, validate_pack, validate_prompt_output_file, verify_output_file,
+    verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -22,26 +23,42 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         }
         Commands::Init {
             name,
+            target_name,
+            target_kind,
+            target_aliases,
+            target_terms,
+            exclude_terms,
             dir,
             template,
             force,
             include_output_schemas,
             dry_run,
         } => {
+            let custom_name = name.is_some();
             let resolved_name = name.unwrap_or_else(|| default_init_name(&template).to_string());
+            let target_options = TargetInitOptions {
+                custom_name,
+                name: target_name.as_deref(),
+                kind: &target_kind,
+                aliases: &target_aliases,
+                terms: &target_terms,
+                excluded_terms: &exclude_terms,
+            };
             let data = if dry_run {
-                init_pack_dry_run(
+                init_pack_targeted_dry_run(
                     &dir,
                     &resolved_name,
                     &template,
+                    &target_options,
                     force,
                     include_output_schemas,
                 )?
             } else {
-                init_pack(
+                init_pack_targeted(
                     &dir,
                     &resolved_name,
                     &template,
+                    &target_options,
                     force,
                     include_output_schemas,
                 )?

@@ -17,7 +17,7 @@ command -v mdp
 mdp --version
 
 mkdir -p /tmp/mdp-installed-template-qa/gtm
-mdp --json init --template gtm --name "Synthetic GTM QA" --dir /tmp/mdp-installed-template-qa/gtm
+mdp --json init --template gtm --dir /tmp/mdp-installed-template-qa/gtm
 mdp --json validate --strict --dir /tmp/mdp-installed-template-qa/gtm
 mdp --json eval --strict --dir /tmp/mdp-installed-template-qa/gtm
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-installed-template-qa/gtm --persona "GTM Engineering" --job "email outbound copy"
