@@ -49,6 +49,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                                 "title": {"type": "string"},
                                 "body": {"type": "string"},
                                 "applies_to": {"type": "array", "items": {"type": "string"}},
+                                "scope": scope_map_schema(),
                                 "evidence": {"type": "array", "items": {"type": "string"}},
                                 "avoid": {"type": "array", "items": {"type": "string"}},
                                 "exact_paragraphs": {"type": "integer", "minimum": 1},
@@ -88,6 +89,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                     "profile_eval": profile_eval_fixture_schema(),
                     "persona": {"type": "string"},
                     "job": {"type": "string"},
+                    "scope": string_array(),
                     "channel": {"type": "string"},
                     "prospect": {"type": "object"},
                     "prompt": {"type": "string"},
@@ -107,6 +109,8 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                     "expect_valid": {"type": "boolean"},
                     "expect_normalization_ready": {"type": "boolean"},
                     "expect_issue_codes_contains": string_array(),
+                    "expect_scope_issue_codes_contains": string_array(),
+                    "expect_entry_gap_reasons_contains": string_array(),
                     "expect_gap_titles_contains": string_array(),
                     "expect_guardrail_terms_contains": string_array(),
                     "expect_unsupported_claims_contains": string_array()
@@ -491,6 +495,8 @@ fn profile_schema() -> Value {
             "id": {"type": "string"},
             "label": {"type": "string"},
             "version": {"const": "mdp.profile.v0"},
+            "context_dimensions": scope_map_schema(),
+            "context_dimension_dependencies": scope_map_schema(),
             "agent_surface": agent_surface_properties_schema()
         }
     })
@@ -507,11 +513,13 @@ fn agent_surface_schema() -> Value {
             "pack": pack_schema(),
             "profile": {
                 "type": "object",
-                "required": ["id"],
+                "required": ["id", "context_dimensions", "context_dimension_dependencies"],
                 "properties": {
                     "id": {"type": "string"},
                     "label": {"type": ["string", "null"]},
-                    "version": {"type": ["string", "null"]}
+                    "version": {"type": ["string", "null"]},
+                    "context_dimensions": scope_map_schema(),
+                    "context_dimension_dependencies": scope_map_schema()
                 }
             },
             "agent_surface": agent_surface_properties_schema(),
@@ -555,8 +563,8 @@ fn agent_surface_properties_schema() -> Value {
 
 fn brief_schema() -> Value {
     json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Brief Contracts v0", "oneOf": [
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "required_load_order", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "required_load_order": string_array(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"]}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "scope", "portfolio_sensitive", "draft_status", "required_load_order", "context", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "draft_status": {"enum": ["ready", "blocked"]}, "required_load_order": string_array(), "context": context_schema(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "scope", "portfolio_sensitive", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"]}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
     ]})
 }
 
@@ -605,7 +613,45 @@ fn human_brief_schema() -> Value {
 }
 
 fn context_schema() -> Value {
-    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "source_load_order", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "source_load_order": string_array(), "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "evidence", "avoid", "constraints", "metadata", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "scope", "evidence", "avoid", "constraints", "metadata", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+}
+
+fn scope_map_schema() -> Value {
+    json!({
+        "type": "object",
+        "propertyNames": {"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+        "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"}
+        }
+    })
+}
+
+fn scope_resolution_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["requested", "selected", "issues"],
+        "properties": {
+            "requested": scope_map_schema(),
+            "selected": scope_map_schema(),
+            "issues": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["code", "dimension", "reason"],
+                    "properties": {
+                        "code": {"enum": ["scope_dimension_unknown", "scope_value_unknown", "scope_attribute_empty", "scope_attribute_type_invalid", "scope_segment_conflict", "scope_dependency_missing", "scope_dimension_missing", "scope_value_mismatch"]},
+                        "dimension": {"type": "string"},
+                        "value": {"type": ["string", "null"]},
+                        "reason": {"type": "string"}
+                    }
+                }
+            }
+        }
+    })
 }
 
 fn string_array() -> Value {
@@ -1043,6 +1089,7 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                                     "title": {"type": "string"},
                                     "body": {"type": "string"},
                                     "applies_to": string_array(),
+                                    "scope": scope_map_schema(),
                                     "evidence": string_array(),
                                     "avoid": string_array(),
                                     "exact_paragraphs": {"type": "integer", "minimum": 1},
@@ -1271,6 +1318,19 @@ mod tests {
             result["oneOf"][1]["properties"]["context"]["properties"]["runtime_context"]["properties"]
                 ["date_utc"]["format"],
             "date"
+        );
+        assert_eq!(
+            result["oneOf"][0]["properties"]["scope"]["required"][0],
+            "requested"
+        );
+        assert_eq!(
+            result["oneOf"][1]["properties"]["portfolio_sensitive"]["type"],
+            "boolean"
+        );
+        assert_eq!(
+            result["oneOf"][1]["properties"]["scope"]["properties"]["issues"]["items"]["required"]
+                [0],
+            "code"
         );
     }
 

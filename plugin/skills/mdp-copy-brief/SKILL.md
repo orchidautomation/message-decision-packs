@@ -52,12 +52,14 @@ Then save one fixture row to ignored scratch if needed, run `mdp fit`, build `md
 If the user only needs a route-level writing contract, build a persona/job brief:
 
 ```bash
-mdp --json --summary emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
+mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
+
+If the pack route is portfolio-sensitive, include every reviewed required selector, for example `--scope product=<product-id> --scope capability=<capability-id>`. Stop when scope is missing or invalid. Do not blend two values for one dimension in V1.
 
 Route-style commands resolve pack-owned persona aliases before routing. Check `requested_persona` and `persona_resolution` when the user supplied an alias.
 
-4. Read `data.context.entries` first. Open `data.context.full_card_required` paths only when present. If `draft_status` is `no-draft`, surface the fit decision and do not draft. If the brief says the prospect is synthetic, treat it as a demo or fixture lead.
+4. Read `data.context.entries` first. When `portfolio_sensitive: true`, shared card paths are audit-only and bounded entries are the entire draft-safe context. Open `data.context.full_card_required` paths only for non-portfolio routes when present. If `draft_status` is `no-draft` or `blocked`, surface the fit/scope decision and do not draft. If the brief says the prospect is synthetic, treat it as a demo or fixture lead.
 5. Build a copy brief with:
 
 - audience/persona

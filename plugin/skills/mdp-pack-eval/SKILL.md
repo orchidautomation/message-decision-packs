@@ -43,6 +43,8 @@ For profile-aware packs, inspect `mdp --json validate --dir .` before and after 
 
 Passing evals only proves the declared fixture assertions. After retargeting personas, routes, profile jobs, or scenario vocabulary, also audit eval filenames, `id`, `persona`, `job`, expected titles, example prospect rows, and prompt `output_contract.example` blocks so stale starter labels do not keep passing with misleading names.
 
+Portfolio packs should declare `scope` selectors on fixtures and exercise the enforced boundary, not just ordinary route inclusion. At minimum, add one fixture for each product-like branch plus one missing-scope fixture. Use `expect_scope_issue_codes_contains` for selector/dependency failures and `expect_entry_gap_reasons_contains` for bounded-entry exclusions. Validation emits `portfolio_scope_eval_coverage_missing` when scoped entries lack both selected-scope and missing-scope coverage.
+
 `mdp eval` can run `command: validate-prompt-output` fixtures with `prompt_id` or `prompt` plus inline `prompt_output`. Use this to prove normalization contracts reject invented account/person output before a prospect row reaches `mdp fit` or `mdp brief`.
 
 `mdp eval` can also run `command: verify-output` fixtures with either inline `proof_output` or `proof_output_file`. Use this to prove generated claim-bearing text fails closed when a model invents card/source IDs, omits material bindings, smooths a gap, violates pack-owned `constraints.proof_output`, or includes unsupported full-text claims. Source IDs are not proof until `mdp verify-output` resolves them against the loaded pack.
@@ -64,6 +66,16 @@ Passing evals only proves the declared fixture assertions. After retargeting per
 
 ```bash
 mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>" --job "<job>"
+```
+
+For scoped cases, repeat one selector per dimension. V1 accepts one runtime value per dimension:
+
+```bash
+mdp --json --summary route --entries --eval-fixture --dir . \
+  --persona "<persona>" \
+  --job "<job>" \
+  --scope product=<product-id> \
+  --scope capability=<capability-id>
 ```
 
 4. When outbound-copy testing needs prospect-shaped inputs but no real or sanitized row was supplied, generate fake fixture leads:
@@ -101,6 +113,9 @@ For each case, check:
 - profile eval categories cover the declared activation gates
 - prompt-output validation fixtures reject invented people, unsupported values, or out-of-contract account context before fit/brief
 - proof-output fixtures reject fake source/card IDs and unbound material generated claims before output text is treated as usable
+- scoped product A cannot load product B entries, broader multi-product entries can still match either selected product, and missing/invalid scope produces no draftable shared-card context
+- capability/solution selectors satisfy declared `context_dimension_dependencies`; impossible combinations return bounded gaps rather than blended messaging
+- scoped claim checks use the same selectors as routing and briefs; V1 proof-output validation fails closed with `proof_output_scope_unsupported` when scoped entries exist
 - primitive map references point to existing cards, prompts, input contracts, jobs, and eval fixtures
 - decision trace is understandable
 - generated eval fixture scaffolds are reviewed before committing so tests encode intended behavior, not accidental routing noise

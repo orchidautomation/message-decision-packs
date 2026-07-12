@@ -261,6 +261,19 @@ fn validate_artifact(
     inventory: &PackInventory,
     issues: &mut Vec<Value>,
 ) -> Result<Value> {
+    if inventory
+        .cards
+        .values()
+        .flat_map(|card| card.entries.values())
+        .any(|entry| !entry.scope.is_empty())
+    {
+        issues.push(issue(
+            "proof_output_scope_unsupported",
+            "error",
+            artifact_path,
+            "verify-output cannot yet validate portfolio-scoped card-entry bindings; use an unscoped pack or a route/brief/check-claims workflow with explicit scope",
+        ));
+    }
     if artifact.contract != PROOF_OUTPUT_CONTRACT {
         issues.push(issue(
             "proof_output_contract_unknown",
@@ -2132,6 +2145,25 @@ mod tests {
         assert_eq!(result["valid"], true, "{result}");
         assert_eq!(result["decision"], "proof-safe");
         assert_eq!(result["checked"]["segments"], 4);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn verify_output_rejects_portfolio_scoped_packs_until_artifacts_carry_scope() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-proof-scoped-{nonce}"));
+        init_pack(&root, "Scoped GTM Pack", "gtm", true, false)
+            .expect("GTM pack should initialize");
+
+        let result = verify_output_value(&root, &valid_artifact(), "inline")
+            .expect("verify-output should run");
+
+        assert_eq!(result["valid"], false);
+        assert!(issue_codes(&result).contains(&"proof_output_scope_unsupported"));
 
         let _ = std::fs::remove_dir_all(root);
     }

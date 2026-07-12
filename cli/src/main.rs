@@ -8,6 +8,7 @@ mod pack_io;
 mod prospect_validation;
 mod routing;
 mod runtime_context;
+mod scope;
 mod starter;
 mod utils;
 mod value_contracts;

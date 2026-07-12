@@ -18,6 +18,8 @@ pub(crate) fn agent_surface(root: &Path) -> Result<Value> {
         let profile_id = profile.id;
         let profile_label = profile.label;
         let profile_version = profile.version;
+        let context_dimensions = profile.context_dimensions;
+        let context_dimension_dependencies = profile.context_dimension_dependencies;
         let surface = profile.agent_surface;
         if surface.is_empty() {
             return Ok(fallback_payload(
@@ -25,7 +27,9 @@ pub(crate) fn agent_surface(root: &Path) -> Result<Value> {
                 json!({
                     "id": profile_id,
                     "label": profile_label,
-                    "version": profile_version
+                    "version": profile_version,
+                    "context_dimensions": context_dimensions,
+                    "context_dimension_dependencies": context_dimension_dependencies
                 }),
                 "This pack has profile metadata but no profile.agent_surface entries, so use generic MDP skills and CLI commands.",
             ));
@@ -36,7 +40,9 @@ pub(crate) fn agent_surface(root: &Path) -> Result<Value> {
             "profile": {
                 "id": profile_id,
                 "label": profile_label,
-                "version": profile_version
+                "version": profile_version,
+                "context_dimensions": context_dimensions,
+                "context_dimension_dependencies": context_dimension_dependencies
             },
             "agent_surface": agent_surface_payload(surface),
             "legacy_profile": false,
@@ -53,7 +59,9 @@ pub(crate) fn agent_surface(root: &Path) -> Result<Value> {
         json!({
             "id": "legacy",
             "label": "Legacy MDP pack",
-            "version": Value::Null
+            "version": Value::Null,
+            "context_dimensions": {},
+            "context_dimension_dependencies": {}
         }),
         "This pack has no profile.agent_surface metadata, so use generic MDP skills and CLI commands.",
     ))
@@ -118,6 +126,14 @@ mod tests {
 
         assert_eq!(result["contract"], CONTRACT);
         assert_eq!(result["profile"]["id"], "gtm");
+        assert_eq!(
+            result["profile"]["context_dimensions"]["product"][0],
+            "local-cli"
+        );
+        assert_eq!(
+            result["profile"]["context_dimension_dependencies"]["capability"][0],
+            "product"
+        );
         assert_eq!(result["legacy_profile"], false);
         assert!(
             result["agent_surface"]["recommended_skills"]

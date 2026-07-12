@@ -1,0 +1,20 @@
+command: route
+expect_entry_titles_contains:
+- Scope qualifies primitives
+- Local CLI portfolio angle
+expect_entry_titles_excludes:
+- Codex plugin portfolio angle
+- Portfolio routing capability angle
+id: portfolio-local-cli-route
+job: portfolio scope example
+persona: PMM
+profile_eval:
+  category: job-routing
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - output-contracts
+  - routing-jobs
+scope:
+- product=local-cli

@@ -83,10 +83,14 @@ fn summarize(command: &str, data: &Value) -> Value {
             "requested_persona": data["requested_persona"],
             "persona_resolution": data["persona_resolution"],
             "job": data["job"],
+            "scope": data["scope"],
+            "portfolio_sensitive": data["portfolio_sensitive"],
+            "draft_status": data["draft_status"],
             "card_count": array_len(&data["load_order"]),
             "load_order": data["load_order"],
             "entry_match_count": array_len(&data["entry_route"]["matches"]),
             "entry_gap_count": array_len(&data["entry_route"]["gaps"]),
+            "entry_gaps": data["entry_route"]["gaps"],
             "eval_fixture": data["eval_fixture"]
         }),
         "sample-leads" => json!({
@@ -110,6 +114,8 @@ fn summarize(command: &str, data: &Value) -> Value {
         "fit" => json!({
             "status": data["status"],
             "decision": data["decision"],
+            "scope": data["scope"],
+            "portfolio_sensitive": data["portfolio_sensitive"],
             "match_count": array_len(&data["matches"]),
             "disqualifier_count": array_len(&data["disqualifiers"]),
             "company_domain": data["prospect"]["company_domain"],
@@ -123,6 +129,8 @@ fn summarize(command: &str, data: &Value) -> Value {
             "persona": data["persona"],
             "job": data["job"],
             "draft_status": data["draft_status"],
+            "scope": data["scope"],
+            "portfolio_sensitive": data["portfolio_sensitive"],
             "fit_status": data["fit"]["status"],
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
@@ -139,8 +147,12 @@ fn summarize(command: &str, data: &Value) -> Value {
             "requested_persona": data["inputs"]["requested_persona"],
             "persona_resolution": data["persona_resolution"],
             "job": data["inputs"]["job"],
+            "scope": data["scope"],
+            "portfolio_sensitive": data["portfolio_sensitive"],
+            "draft_status": data["draft_status"],
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
+            "context": context_summary(&data["context"]),
             "artifact": data["artifact"],
             "dry_run": data["dry_run"],
             "write_plan": data["write_plan"]
@@ -167,6 +179,9 @@ fn summarize(command: &str, data: &Value) -> Value {
             "valid": data["valid"],
             "decision": data["decision"],
             "strict": data["strict"],
+            "scope": data["scope"],
+            "portfolio_sensitive": data["portfolio_sensitive"],
+            "scope_blocked": data["scope_blocked"],
             "matched_claim_count": array_len(&data["matched_claims"]),
             "claim_gap_count": array_len(&data["claim_gaps"]),
             "guardrail_hit_count": array_len(&data["guardrail_hits"]),
@@ -204,10 +219,15 @@ fn context_summary(context: &Value) -> Value {
     json!({
         "contract": context["contract"],
         "status": context["status"],
+        "reason": context["reason"],
+        "scope": context["scope"],
+        "portfolio_sensitive": context["portfolio_sensitive"],
         "entry_count": context["summary"]["entry_count"],
         "required_entry_count": context["summary"]["required_entry_count"],
         "supporting_entry_count": context["summary"]["supporting_entry_count"],
         "guardrail_entry_count": context["summary"]["guardrail_entry_count"],
+        "gap_count": array_len(&context["gaps"]),
+        "gaps": context["gaps"],
         "full_card_required": context["full_card_required"]
     })
 }
@@ -250,6 +270,7 @@ fn classify_error(message: &str, details: &[String]) -> &'static str {
         || lower.contains("pass at most one of --prompt and --prompt-id")
         || lower.contains("unsupported template")
         || lower.contains("--count must")
+        || lower.contains("invalid --scope")
     {
         "invalid_argument"
     } else if lower.contains("already exists; pass --force") {
@@ -397,6 +418,8 @@ mod tests {
                 "persona": "PMM",
                 "job": "write outbound message",
                 "draft_status": "ready",
+                "scope": {"requested": {"product": ["local-cli"]}, "selected": {"product": ["local-cli"]}, "issues": []},
+                "portfolio_sensitive": true,
                 "fit": {"status": "fit"},
                 "required_load_order": [".mdp/cards/personas.yaml", ".mdp/cards/claims.yaml"],
                 "prospect_source": {"kind": "synthetic-example", "synthetic": true},
@@ -445,11 +468,16 @@ mod tests {
                 "persona": "PMM",
                 "job": "write outbound message",
                 "draft_status": "ready",
+                "scope": {"requested": {"product": ["local-cli"]}, "selected": {"product": ["local-cli"]}, "issues": []},
+                "portfolio_sensitive": true,
                 "fit": {"status": "fit"},
                 "required_load_order": [".mdp/cards/personas.yaml"],
                 "context": {
                     "contract": "mdp.context.v0",
                     "status": "ready",
+                    "scope": {"requested": {"product": ["local-cli"]}, "selected": {"product": ["local-cli"]}, "issues": []},
+                    "portfolio_sensitive": true,
+                    "gaps": [],
                     "entries": [{"body": "should not appear in summary"}],
                     "full_card_required": [],
                     "summary": {
@@ -467,6 +495,8 @@ mod tests {
 
         assert_eq!(summary["context"]["contract"], "mdp.context.v0");
         assert_eq!(summary["context"]["entry_count"], 4);
+        assert_eq!(summary["portfolio_sensitive"], true);
+        assert_eq!(summary["scope"]["selected"]["product"][0], "local-cli");
         assert!(summary["context"].get("entries").is_none());
     }
 
@@ -507,6 +537,10 @@ mod tests {
         assert_eq!(
             classify_error("reading .mdp/manifest.yaml", &[]),
             "pack_not_found"
+        );
+        assert_eq!(
+            classify_error("invalid --scope \"product\"; expected dimension=value", &[]),
+            "invalid_argument"
         );
     }
 }

@@ -28,7 +28,9 @@ pub(crate) fn capabilities() -> Value {
         "profile_contracts": {
             "manifest_profile": "mdp.profile.v0",
             "agent_surface": "mdp.agent-surface.v0",
-            "profile_metadata_optional": true
+            "profile_metadata_optional": true,
+            "context_dimensions": "Optional profile-owned applicability dimensions such as product, capability, solution, or segment; agnostic primitives remain unchanged.",
+            "entry_scope": "OR within an entry dimension and AND across dimensions; unscoped entries are global."
         },
         "commands": [
             command("capabilities", "mdp.capabilities.v0", "read-only", false, false, false, &[]),
@@ -40,15 +42,15 @@ pub(crate) fn capabilities() -> Value {
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
             command("render-brief", "mdp.human-brief.v0", "writes-files-with-out", false, true, true, &["--dir", "--file", "--template", "--format", "--out", "--strict"]),
             command("explain", "mdp.explain.v0", "read-only", false, false, false, &["--dir", "--persona"]),
-            command("route", "mdp.route.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--entries", "--eval-fixture"]),
+            command("route", "mdp.route.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--scope", "--entries", "--eval-fixture"]),
             command("sample-leads", "mdp.sample-leads.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--count", "--seed", "--format"]),
             command("fit", "mdp.fit.v0", "read-only", false, false, false, &["--dir", "--prospect"]),
-            command("check-claims", "mdp.claim-check.v0", "read-only", false, false, true, &["--dir", "--text", "--file", "--subject", "--persona", "--job", "--strict"]),
+            command("check-claims", "mdp.claim-check.v0", "read-only", false, false, true, &["--dir", "--text", "--file", "--subject", "--persona", "--job", "--scope", "--strict"]),
             command("gaps", "mdp.gaps.v0", "read-only", false, false, false, &["--dir"]),
             command("eval", "mdp.eval.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("brief", "mdp.message-brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--prospect", "--channel", "--job", "--context", "--out", "--dry-run"]),
             command("copy", "mdp.copy-demo.v0", "writes-files-with-out", false, true, false, &["--dir", "--prospect", "--channel", "--out"]),
-            command("emit-brief", "mdp.brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--persona", "--motion", "--job", "--out", "--dry-run"]),
+            command("emit-brief", "mdp.brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--persona", "--motion", "--job", "--scope", "--out", "--dry-run"]),
             command("pack", "mdp.pack.v0", "writes-files-with-out", true, true, false, &["--dir", "--out", "--dry-run"]),
             command("schema", "mdp.schema.v0", "read-only", false, false, false, &["target"])
         ],

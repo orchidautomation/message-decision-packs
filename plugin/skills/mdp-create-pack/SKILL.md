@@ -143,6 +143,10 @@ mdp --json --summary route --entries --eval-fixture --dir . --persona "<persona>
 - For profile-aware packs, keep `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories` in sync with the cards, prompts, jobs, and eval fixtures you add. `profile.id` and `profile.agent_surface` only route skills; `mdp validate` owns activation readiness.
 - When retargeting a starter/profile pack, update eval filenames, IDs, personas, jobs, expected titles, example rows, and prompt `output_contract.example` fixtures together. Passing evals can still be semantically stale if names and examples still describe old personas or scenarios.
 - Use the fixed universal primitives (`actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evidence-proof`, `boundaries`, `output-contracts`, `routing-jobs`, `gaps`, `evals`) and keep domain vocabulary in profile-owned IDs. Do not add custom core card kinds for account context, opportunity context, or other profile nouns.
+- For one-pack portfolios, declare canonical `profile.context_dimensions` such as product, capability, solution, or segment and put enforced applicability under entry `scope`. Do not turn those nouns into primitives, overload `applies_to`, or hide routing requirements in advisory `metadata`.
+- Use `profile.context_dimension_dependencies` when a dimension such as capability or solution must always carry a companion product dimension. Every dependent entry must declare the required dimensions, and direct routes must select them together.
+- Keep runtime portfolio values scalar in V1. Prospect `attributes` may supply declared product/capability/solution values; a declared segment dimension uses the top-level prospect `segment`. Do not infer product from free-form company text or signals.
+- Add selected product A, selected product B, and missing-scope eval fixtures. Portfolio-sensitive agents must draft from bounded entries, not full shared cards. Treat `proof_output_scope_unsupported` as a V1 boundary, not a validator to bypass.
 
 ## Response
 

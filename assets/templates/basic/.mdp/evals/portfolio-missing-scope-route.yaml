@@ -1,0 +1,16 @@
+command: route
+expect_draft_status: blocked
+expect_entry_gap_reasons_contains:
+- scope_dimension_missing
+id: portfolio-missing-scope-route
+job: portfolio scope example
+persona: PMM
+profile_eval:
+  category: insufficient-context
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - output-contracts
+  - routing-jobs
+  - gaps

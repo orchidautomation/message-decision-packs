@@ -1,0 +1,50 @@
+id: portfolio-examples
+kind: hooks
+title: Portfolio scope examples
+description: Synthetic examples showing how product scope filters otherwise agnostic message decisions.
+personas:
+- PMM
+tags:
+- portfolio
+- scope
+- example
+entries:
+- id: portfolio-scope-is-applicability
+  title: Scope qualifies primitives
+  body: Product, capability, solution, and segment narrow where an entry applies. They do not replace actors, pains, proof, boundaries, hooks, CTAs, or other agnostic primitives.
+  applies_to:
+  - PMM
+  evidence: []
+  avoid: []
+- id: local-cli-angle
+  title: Local CLI portfolio angle
+  body: Lead with local validation, versionable decision context, and deterministic routing for the local CLI product example.
+  applies_to:
+  - PMM
+  scope:
+    product:
+    - local-cli
+  evidence: []
+  avoid: []
+- id: codex-plugin-angle
+  title: Codex plugin portfolio angle
+  body: Lead with bounded context handoff and workflow guidance for the plugin product example.
+  applies_to:
+  - PMM
+  scope:
+    product:
+    - agent-plugin
+  evidence: []
+  avoid: []
+- id: portfolio-routing-capability
+  title: Portfolio routing capability angle
+  body: Use structured product-aware routing when the selected local CLI product and portfolio-routing capability are both relevant.
+  applies_to:
+  - PMM
+  scope:
+    capability:
+    - portfolio-routing
+    product:
+    - local-cli
+  evidence: []
+  avoid: []

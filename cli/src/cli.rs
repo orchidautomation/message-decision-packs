@@ -113,6 +113,12 @@ pub(crate) enum Commands {
         persona: String,
         #[arg(long)]
         job: String,
+        #[arg(
+            long = "scope",
+            value_name = "DIMENSION=VALUE",
+            help = "Repeatable portfolio context selector"
+        )]
+        scope: Vec<String>,
         #[arg(long, help = "Include entry-level route matches and gaps")]
         entries: bool,
         #[arg(long, help = "Include an eval fixture scaffold based on this route")]
@@ -157,6 +163,12 @@ pub(crate) enum Commands {
         persona: Option<String>,
         #[arg(long, help = "Optional job for route-scoped constraint checks")]
         job: Option<String>,
+        #[arg(
+            long = "scope",
+            value_name = "DIMENSION=VALUE",
+            help = "Repeatable portfolio context selector"
+        )]
+        scope: Vec<String>,
         #[arg(long, help = "Treat advisory constraint warnings as failures")]
         strict: bool,
     },
@@ -215,6 +227,12 @@ pub(crate) enum Commands {
         motion: Option<String>,
         #[arg(long)]
         job: Option<String>,
+        #[arg(
+            long = "scope",
+            value_name = "DIMENSION=VALUE",
+            help = "Repeatable portfolio context selector"
+        )]
+        scope: Vec<String>,
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, help = "Show the output artifact write without writing it")]

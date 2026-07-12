@@ -3,13 +3,14 @@ use crate::constants::{
     PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
-    AgentSurface, CardKind, InputContract, Manifest, PrimitiveMapping, Profile, ProfileEval,
+    AgentSurface, Card, CardKind, InputContract, Manifest, PrimitiveMapping, Profile, ProfileEval,
     ProfileJob, PromptFile, QualificationGates, ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
 use crate::routing::select_cards;
+use crate::scope::valid_declared_identifier;
 use crate::value_contracts::PROSPECT_CONTRACT_FIELDS;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -102,6 +103,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     validate_manifest_shape(root, &mut issues);
     let mut card_ids = BTreeSet::new();
     let mut loaded_cards = Vec::new();
+    let mut scoped_entry_count = 0usize;
     if manifest.format != FORMAT_VERSION {
         issues.push(issue(
             "manifest_format",
@@ -209,7 +211,18 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         let display_path = display_pack_path(&card_ref.path);
         match read_card(&path) {
             Ok(card) => {
+                scoped_entry_count += card
+                    .entries
+                    .iter()
+                    .filter(|entry| !entry.scope.is_empty())
+                    .count();
                 validate_card_shape(&path, &display_path, &mut issues);
+                validate_card_entry_scopes(
+                    &card,
+                    manifest.profile.as_ref(),
+                    &display_path,
+                    &mut issues,
+                );
                 if card.id != card_ref.id {
                     issues.push(issue(
                         "card_id_mismatch",
@@ -247,6 +260,17 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     let loaded_prompts = validate_prompts(root, &mut issues)?;
     let prompt_inventory = prompt_inventory(&loaded_prompts);
     let eval_inventory = collect_eval_inventory(root, &mut issues)?;
+    if scoped_entry_count > 0 {
+        let (has_selected_scope, has_missing_scope) = portfolio_eval_coverage(root)?;
+        if !has_selected_scope || !has_missing_scope {
+            issues.push(issue(
+                "portfolio_scope_eval_coverage_missing",
+                "warning",
+                format!("{DEFAULT_DIR}/evals"),
+                "packs with scoped entries should include both selected-scope isolation and missing-scope blocking eval fixtures",
+            ));
+        }
+    }
     let profile = validate_profile_mapping(
         &manifest,
         &card_ids,
@@ -266,6 +290,58 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         "profile": profile,
         "issues": issues
     }))
+}
+
+fn portfolio_eval_coverage(root: &Path) -> Result<(bool, bool)> {
+    let eval_dir = root.join(DEFAULT_DIR).join("evals");
+    if !eval_dir.exists() {
+        return Ok((false, false));
+    }
+    let mut has_selected_scope = false;
+    let mut has_missing_scope = false;
+    for entry in fs::read_dir(eval_dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("yaml") {
+            continue;
+        }
+        let raw = fs::read_to_string(path)?;
+        let Ok(value) = serde_yaml::from_str::<YamlValue>(&raw) else {
+            continue;
+        };
+        let scope_selected = yaml_get(&value, "scope")
+            .and_then(YamlValue::as_sequence)
+            .is_some_and(|values| !values.is_empty());
+        let command = yaml_get(&value, "command")
+            .and_then(YamlValue::as_str)
+            .unwrap_or("route");
+        let has_inclusion = yaml_get(&value, "expect_entry_titles_contains")
+            .and_then(YamlValue::as_sequence)
+            .is_some_and(|values| !values.is_empty());
+        let has_exclusion = yaml_get(&value, "expect_entry_titles_excludes")
+            .and_then(YamlValue::as_sequence)
+            .is_some_and(|values| !values.is_empty());
+        let has_scope_gap = yaml_get(&value, "expect_entry_gap_reasons_contains")
+            .and_then(YamlValue::as_sequence)
+            .is_some_and(|values| {
+                values.iter().any(|value| {
+                    value.as_str().is_some_and(|reason| {
+                        matches!(reason, "scope_dimension_missing" | "scope_value_mismatch")
+                    })
+                })
+            })
+            || yaml_get(&value, "expect_scope_issue_codes_contains")
+                .and_then(YamlValue::as_sequence)
+                .is_some_and(|values| !values.is_empty());
+        has_selected_scope |=
+            command == "route" && scope_selected && has_inclusion && has_exclusion;
+        has_missing_scope |= command == "route"
+            && !scope_selected
+            && yaml_get(&value, "expect_draft_status")
+                .and_then(YamlValue::as_str)
+                .is_some_and(|status| matches!(status, "blocked" | "no-draft"))
+            && has_scope_gap;
+    }
+    Ok((has_selected_scope, has_missing_scope))
 }
 
 fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
@@ -309,7 +385,14 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
     let profile = yaml_get(&value, "profile").unwrap_or(&YamlValue::Null);
     validate_object_keys(
         profile,
-        &["id", "label", "version", "agent_surface"],
+        &[
+            "id",
+            "label",
+            "version",
+            "context_dimensions",
+            "context_dimension_dependencies",
+            "agent_surface",
+        ],
         ".mdp/manifest.yaml#/profile",
         "manifest_profile_unknown_field",
         issues,
@@ -492,6 +575,74 @@ fn validate_profile(profile: Option<&Profile>, issues: &mut Vec<Value>) {
             ".mdp/manifest.yaml#/profile/version",
             "profile.version should be mdp.profile.v0 for the current profile contract",
         ));
+    }
+    for (dimension, values) in &profile.context_dimensions {
+        if !valid_declared_identifier(dimension) {
+            issues.push(issue(
+                "profile_context_dimension_invalid",
+                "error",
+                format!(".mdp/manifest.yaml#/profile/context_dimensions/{dimension}"),
+                "context dimension identifiers must use lowercase kebab-case",
+            ));
+        }
+        if values.is_empty() {
+            issues.push(issue(
+                "profile_context_dimension_values_empty",
+                "error",
+                format!(".mdp/manifest.yaml#/profile/context_dimensions/{dimension}"),
+                "context dimensions must declare at least one allowed value",
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        for (index, value) in values.iter().enumerate() {
+            let path =
+                format!(".mdp/manifest.yaml#/profile/context_dimensions/{dimension}/{index}");
+            if !valid_declared_identifier(value) {
+                issues.push(issue(
+                    "profile_context_dimension_value_invalid",
+                    "error",
+                    path,
+                    "context dimension values must use lowercase kebab-case",
+                ));
+            } else if !seen.insert(value.to_ascii_lowercase()) {
+                issues.push(issue(
+                    "profile_context_dimension_value_duplicate",
+                    "error",
+                    path,
+                    format!("duplicate context dimension value {value}"),
+                ));
+            }
+        }
+    }
+    for (dimension, dependencies) in &profile.context_dimension_dependencies {
+        let path =
+            format!(".mdp/manifest.yaml#/profile/context_dimension_dependencies/{dimension}");
+        if !profile.context_dimensions.contains_key(dimension) {
+            issues.push(issue(
+                "profile_context_dependency_dimension_unknown",
+                "error",
+                &path,
+                format!("dependency source dimension {dimension} is not declared"),
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        for (index, dependency) in dependencies.iter().enumerate() {
+            if dependency == dimension || !profile.context_dimensions.contains_key(dependency) {
+                issues.push(issue(
+                    "profile_context_dependency_invalid",
+                    "error",
+                    format!("{path}/{index}"),
+                    format!("dependency {dependency} must name another declared context dimension"),
+                ));
+            } else if !seen.insert(dependency.to_ascii_lowercase()) {
+                issues.push(issue(
+                    "profile_context_dependency_duplicate",
+                    "error",
+                    format!("{path}/{index}"),
+                    format!("duplicate context dependency {dependency}"),
+                ));
+            }
+        }
     }
     validate_agent_surface(&profile.agent_surface, issues);
 }
@@ -1567,6 +1718,76 @@ fn valid_attribute_key(key: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
+fn validate_card_entry_scopes(
+    card: &Card,
+    profile: Option<&Profile>,
+    display_path: &str,
+    issues: &mut Vec<Value>,
+) {
+    for (entry_index, entry) in card.entries.iter().enumerate() {
+        for (dimension, values) in &entry.scope {
+            let path = format!("{display_path}#/entries/{entry_index}/scope/{dimension}");
+            let Some(allowed_values) =
+                profile.and_then(|profile| profile.context_dimensions.get(dimension))
+            else {
+                issues.push(issue(
+                    "card_entry_scope_dimension_unknown",
+                    "error",
+                    &path,
+                    format!(
+                        "entry scope dimension {dimension} is not declared by profile.context_dimensions"
+                    ),
+                ));
+                continue;
+            };
+            if values.is_empty() {
+                issues.push(issue(
+                    "card_entry_scope_values_empty",
+                    "error",
+                    &path,
+                    "entry scope dimensions must select at least one declared value",
+                ));
+            }
+            let mut seen = BTreeSet::new();
+            for (value_index, value) in values.iter().enumerate() {
+                if !allowed_values.contains(value) {
+                    issues.push(issue(
+                        "card_entry_scope_value_unknown",
+                        "error",
+                        format!("{path}/{value_index}"),
+                        format!(
+                            "entry scope value {value} is not declared for dimension {dimension}"
+                        ),
+                    ));
+                } else if !seen.insert(value.to_ascii_lowercase()) {
+                    issues.push(issue(
+                        "card_entry_scope_value_duplicate",
+                        "error",
+                        format!("{path}/{value_index}"),
+                        format!("duplicate entry scope value {value}"),
+                    ));
+                }
+            }
+            if let Some(dependencies) =
+                profile.and_then(|profile| profile.context_dimension_dependencies.get(dimension))
+            {
+                for dependency in dependencies {
+                    if !entry.scope.contains_key(dependency) {
+                        issues.push(issue(
+                            "card_entry_scope_dependency_missing",
+                            "error",
+                            &path,
+                            format!(
+                                "entry scope dimension {dimension} requires companion dimension {dependency}"
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn validate_card_shape(path: &Path, display_path: &str, issues: &mut Vec<Value>) {
     let Ok(raw) = fs::read_to_string(path) else {
         return;
@@ -1603,6 +1824,7 @@ fn validate_card_shape(path: &Path, display_path: &str, issues: &mut Vec<Value>)
                 "title",
                 "body",
                 "applies_to",
+                "scope",
                 "evidence",
                 "avoid",
                 "exact_paragraphs",
@@ -2873,6 +3095,35 @@ mod tests {
     }
 
     #[test]
+    fn portfolio_eval_coverage_rejects_vacuous_scope_fixtures() {
+        let root = temp_pack("portfolio-vacuous-evals");
+        let eval_dir = root.join(".mdp").join("evals");
+        std::fs::remove_dir_all(&eval_dir).expect("starter eval directory should be removable");
+        std::fs::create_dir_all(&eval_dir).expect("eval directory should be recreated");
+        std::fs::write(
+            eval_dir.join("selected.yaml"),
+            "id: selected\ncommand: route\npersona: PMM\njob: portfolio scope example\nscope:\n- product=local-cli\n",
+        )
+        .expect("selected fixture should be writable");
+        std::fs::write(
+            eval_dir.join("missing.yaml"),
+            "id: missing\ncommand: route\npersona: PMM\njob: portfolio scope example\nexpect_draft_status: blocked\n",
+        )
+        .expect("missing fixture should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert!(
+            result["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| issue["code"] == "portfolio_scope_eval_coverage_missing")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn validate_distinguishes_profile_surface_from_activation() {
         let root = temp_pack("profile-surface-only");
         let manifest_path = root.join(".mdp").join("manifest.yaml");
@@ -3094,8 +3345,8 @@ expect_load_order_contains:
             "value_contracts:\n    unsupported_field:\n      type: object\n      enumm:\n      - enterprise\n    segment:",
         );
         raw = raw.replace(
-            "attribute_definitions:\n    fiscal_year:",
-            "attribute_definitions:\n    renewal date:\n      type: string\n      format: month\n    fiscal_year:\n      type: integer\n      enum:\n      - \"2027\"\n    close_date:",
+            "attribute_definitions:",
+            "attribute_definitions:\n    renewal date:\n      type: string\n      format: month\n    fiscal_year_override:\n      type: integer\n      enum:\n      - \"2027\"\n    close_date:\n      type: string\n      enumm: []",
         );
         std::fs::write(&manifest_path, raw).expect("manifest should be writable");
 

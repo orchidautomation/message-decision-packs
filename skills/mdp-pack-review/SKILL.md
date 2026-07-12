@@ -38,6 +38,7 @@ Use `mdp --json capabilities` when reviewing agent-facing CLI support, and use `
 - `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories` when profile metadata is present
 - `data.profile.activation_ready`, missing primitive coverage, and missing eval categories from `mdp validate`
 - personas, target personas, and operator roles
+- portfolio `context_dimensions`, canonical lowercase kebab-case values, and any `context_dimension_dependencies`
 - supported channels, including any custom channel names used by channel-policies
 - card index
 - progressive disclosure policy
@@ -62,6 +63,9 @@ Use `mdp --json capabilities` when reviewing agent-facing CLI support, and use `
 - prospect `attributes` used as an evidence dump instead of bounded reviewed row metadata
 - arbitrary unsupported YAML fields that should move under entry `metadata` or become first-class card content
 - entry `metadata` that agents can inspect but should not treat as an enforceable CLI rule
+- product/capability/solution applicability hidden in `metadata` or `applies_to` instead of enforced entry `scope`
+- scoped capability/solution entries missing their dependency dimensions, which can create impossible or blended portfolio routes
+- portfolio-sensitive routes that expose full shared-card load paths as draftable context instead of bounded entries
 
 4. Test routing with representative jobs:
 
@@ -69,6 +73,8 @@ Use `mdp --json capabilities` when reviewing agent-facing CLI support, and use `
 mdp --json route --entries --dir . --persona "<persona>" --job "linkedin outbound copy"
 mdp --json route --entries --dir . --persona "<persona>" --job "email follow-up"
 ```
+
+For a portfolio pack, repeat the same cases with product/capability selectors and with scope intentionally omitted. Confirm product A excludes product B, global entries remain available, broader entries can match either selected product, missing/unknown/conflicting scope blocks drafting, and the pack includes selected-scope plus missing-scope eval fixtures. Treat `proof_output_scope_unsupported` as the explicit V1 proof-artifact boundary, not a warning to bypass.
 
 ## Findings Format
 

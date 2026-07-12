@@ -52,17 +52,52 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
             },
         ),
     ]);
-    let attribute_definitions = BTreeMap::from([(
-        "fiscal_year".to_string(),
-        ValueContract {
-            value_type: Some("string".to_string()),
-            description: Some(
-                "Optional reviewed account metadata. Keep proof in signals, not attributes."
-                    .to_string(),
-            ),
-            ..ValueContract::default()
-        },
-    )]);
+    let attribute_definitions = BTreeMap::from([
+        (
+            "fiscal_year".to_string(),
+            ValueContract {
+                value_type: Some("string".to_string()),
+                description: Some(
+                    "Optional reviewed account metadata. Keep proof in signals, not attributes."
+                        .to_string(),
+                ),
+                ..ValueContract::default()
+            },
+        ),
+        (
+            "product".to_string(),
+            ValueContract {
+                value_type: Some("string".to_string()),
+                enum_values: strings(&["local-cli", "agent-plugin"]),
+                description: Some(
+                    "Optional pack-owned product context used for entry scope routing.".to_string(),
+                ),
+                ..ValueContract::default()
+            },
+        ),
+        (
+            "capability".to_string(),
+            ValueContract {
+                value_type: Some("string".to_string()),
+                enum_values: strings(&["portfolio-routing", "bounded-context"]),
+                description: Some(
+                    "Optional capability context; select product with capability.".to_string(),
+                ),
+                ..ValueContract::default()
+            },
+        ),
+        (
+            "solution".to_string(),
+            ValueContract {
+                value_type: Some("string".to_string()),
+                enum_values: strings(&["gtm-messaging", "agent-enablement"]),
+                description: Some(
+                    "Optional solution context; select product with solution.".to_string(),
+                ),
+                ..ValueContract::default()
+            },
+        ),
+    ]);
     Manifest {
         format: FORMAT_VERSION.to_string(),
         id: slug.to_string(),
@@ -131,6 +166,7 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
             card_ref("motions", "cards/motions.yaml", CardKind::Motions, "Approved GTM motions and motion boundaries.", &["GTM Engineering", "PMM"], &["motion", "workflow"]),
             card_ref("channel-policies", "cards/channel-policies.yaml", CardKind::ChannelPolicies, "Channel-specific policy for LinkedIn, email, call prep, and agent briefs.", &["GTM Engineering", "PMM"], &["channel", "linkedin", "email", "initial", "follow-up", "call", "prep", "agent", "brief"]),
             card_ref("hooks", "cards/hooks.yaml", CardKind::Hooks, "Messaging hooks that can be reused after evidence checks.", &["PMM"], &["hook", "copy", "message"]),
+            card_ref("portfolio-examples", "cards/portfolio-examples.yaml", CardKind::Hooks, "Synthetic portfolio scope demonstration.", &[], &["portfolio", "scope", "example"]),
             card_ref("ctas", "cards/ctas.yaml", CardKind::Ctas, "CTA rules, reply paths, and ask boundaries for outbound copy.", &["PMM", "GTM Engineering"], &["cta", "ask", "reply", "copy", "outbound", "message"]),
             card_ref("avoid-rules", "cards/avoid-rules.yaml", CardKind::AvoidRules, "Claims and categories the agent must avoid.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"]),
             card_ref("output-rules", "cards/output-rules.yaml", CardKind::OutputRules, "Global style, formatting, and output-structure rules for generated text.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"]),
@@ -148,6 +184,16 @@ fn gtm_profile() -> Profile {
         id: "gtm".to_string(),
         label: Some("GTM Messaging".to_string()),
         version: Some("mdp.profile.v0".to_string()),
+        context_dimensions: BTreeMap::from([
+            ("product".to_string(), strings(&["local-cli", "agent-plugin"])),
+            ("capability".to_string(), strings(&["portfolio-routing", "bounded-context"])),
+            ("solution".to_string(), strings(&["gtm-messaging", "agent-enablement"])),
+            ("segment".to_string(), strings(&["agent-assisted-gtm"])),
+        ]),
+        context_dimension_dependencies: BTreeMap::from([
+            ("capability".to_string(), strings(&["product"])),
+            ("solution".to_string(), strings(&["product"])),
+        ]),
         agent_surface: AgentSurface {
             recommended_skills: vec![
                 "mdp".to_string(),
@@ -294,6 +340,7 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
                     "copy-patterns",
                     "ctas",
                     "hooks",
+                    "portfolio-examples",
                     "channel-policies",
                 ],
                 &[],
@@ -359,6 +406,9 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
                     "prompt-output-missing-readiness-boolean",
                     "prompt-output-missing-required-field",
                     "prompt-output-validation",
+                    "portfolio-local-cli-route",
+                    "portfolio-codex-plugin-route",
+                    "portfolio-missing-scope-route",
                 ],
             ),
         ),
@@ -472,8 +522,8 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
         ])),
         ("fit-rules.yaml", card("fit-rules", CardKind::FitRules, "Fit rules", "ICP, qualification, disqualification, and no-message rules.", &["GTM Engineering", "PMM", "PM"], &["fit", "icp", "disqualifier", "no-message"], vec![
             entry_with_evidence("good-fit-agent-gtm", "Good fit: agent-assisted GTM", "Use when the account is building GTM workflows with agents, provider-neutral source rows, Codex/Claude Code/OpenCode, or multiple systems that need consistent message context.", &["GTM Engineering", "PMM"], &["README.md", "examples/clay-row.json"]),
-            Entry { id: "no-context-no-copy".to_string(), title: "No message without context".to_string(), body: "If the row has no persona, trigger, source, or useful account context, return insufficient-context instead of drafting polished copy.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["no source".to_string(), "unknown persona".to_string(), "no trigger".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
-            Entry { id: "bad-fit-sending-only".to_string(), title: "Bad fit: sending-only ask".to_string(), body: "If the request is only to blast, sequence, or auto-send messages without decision context, treat it as out of scope for MDP.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["blast".to_string(), "auto-send".to_string(), "sequence everyone".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "no-context-no-copy".to_string(), title: "No message without context".to_string(), body: "If the row has no persona, trigger, source, or useful account context, return insufficient-context instead of drafting polished copy.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], scope: BTreeMap::new(), evidence: vec!["README.md".to_string()], avoid: vec!["no source".to_string(), "unknown persona".to_string(), "no trigger".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "bad-fit-sending-only".to_string(), title: "Bad fit: sending-only ask".to_string(), body: "If the request is only to blast, sequence, or auto-send messages without decision context, treat it as out of scope for MDP.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], scope: BTreeMap::new(), evidence: vec!["README.md".to_string()], avoid: vec!["blast".to_string(), "auto-send".to_string(), "sequence everyone".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
         ])),
         ("signals.yaml", card("signals", CardKind::Signals, "Signals and triggers", "How to interpret source rows, LinkedIn context, source material, and account signals.", &["GTM Engineering", "PMM", "PM"], &["signal", "trigger", "source", "source-row", "csv", "crm", "linkedin"], vec![
             entry_with_evidence("source-row-signal", "Source row signal", "Treat user-provided rows, CSVs, CRM exports, Clay, Deepline, or other supplied row-like inputs as evidence inputs. Preserve source and confidence when present, and state weak signals as hypotheses.", &["GTM Engineering", "PMM"], &["examples/clay-row.json"]),
@@ -498,7 +548,7 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
         ("channel-policies.yaml", card("channel-policies", CardKind::ChannelPolicies, "Channel policies", "Channel and lifecycle rules for how routed message decisions should be used.", &["GTM Engineering", "PMM"], &["channel", "linkedin", "email", "initial", "follow-up", "call", "prep", "agent", "brief"], vec![
             entry_with_evidence("linkedin-initial-touch", "LinkedIn initial touch", "For a first LinkedIn touch, use one sourced observation or explicitly labeled hypothesis, one relevant angle, and one low-friction ask. Keep it brief and do not make the first note feel like a full pitch.", &["PMM"], &["README.md"]),
             entry_with_evidence("linkedin-follow-up", "LinkedIn follow-up", "For a later LinkedIn note, reference the earlier outreach lightly, add one new relevance angle or question, and keep the ask low-friction. Do not use guilt, breakup framing, or a bare bump.", &["PMM"], &["README.md"]),
-            Entry { id: "email-initial-touch".to_string(), title: "Email initial touch".to_string(), body: "For a first cold email, use the email output rules, one source-backed reason or explicit hypothesis, one approved angle, and one reply path. Keep one soft CTA and one question only. Do not lead with a calendar ask unless fit is strong and the source context supports it. Default to no links, attachments, images, HTML polish, or tracking unless the user explicitly overrides.".to_string(), applies_to: vec!["PMM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec![], exact_paragraphs: None, constraints: initial_email_constraints(), metadata: BTreeMap::new() },
+            Entry { id: "email-initial-touch".to_string(), title: "Email initial touch".to_string(), body: "For a first cold email, use the email output rules, one source-backed reason or explicit hypothesis, one approved angle, and one reply path. Keep one soft CTA and one question only. Do not lead with a calendar ask unless fit is strong and the source context supports it. Default to no links, attachments, images, HTML polish, or tracking unless the user explicitly overrides.".to_string(), applies_to: vec!["PMM".to_string()], scope: BTreeMap::new(), evidence: vec!["README.md".to_string()], avoid: vec![], exact_paragraphs: None, constraints: initial_email_constraints(), metadata: BTreeMap::new() },
             entry_with_evidence("email-follow-up", "Email follow-up", "For follow-up email copy, assume a maximum of three follow-up notes after the initial email. Refer back without assuming interest, add one concrete reason, question, angle, or proof gap, and keep the reply path to owner validation or relevance. Do not use bump language, bare bumps, guilt breakup framing, or imply a longer follow-up sequence than the user supplied.", &["PMM"], &["README.md"]),
             entry_with_evidence("call-prep", "Call prep", "Return likely persona, pains, allowed claims, avoid-rules, open questions, and the exact cards loaded. Do not pretend this is CRM history.", &["GTM Engineering", "PMM"], &["README.md"]),
             entry_with_evidence("agent-brief", "Agent brief", "Return fit status, loaded cards, approved claims, avoid-rules, source hypotheses, open gaps, and exact handoff boundaries. Do not send, enrich, or update external systems.", &["GTM Engineering", "PMM"], &["README.md"]),
@@ -508,6 +558,12 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("evidence-before-action", "Evidence before action", "Emphasize that GTM execution should start with source context, contracts, and approval boundaries.", &["PMM"], &["README.md"]),
             entry_with_evidence("one-context-many-agents", "One context, many agents", "Use when the account has Claude Code, Codex, OpenCode, Clay, or other systems that need the same source of messaging truth.", &["PMM", "GTM Engineering"], &["README.md", "examples/clay-row.json"]),
         ])),
+        ("portfolio-examples.yaml", card("portfolio-examples", CardKind::Hooks, "Portfolio scope examples", "Synthetic examples showing how product scope filters otherwise agnostic message decisions.", &["PMM"], &["portfolio", "scope", "example"], vec![
+            entry("portfolio-scope-is-applicability", "Scope qualifies primitives", "Product, capability, solution, and segment narrow where an entry applies. They do not replace actors, pains, proof, boundaries, hooks, CTAs, or other agnostic primitives.", &["PMM"]),
+            scoped_entry("local-cli-angle", "Local CLI portfolio angle", "Lead with local validation, versionable decision context, and deterministic routing for the local CLI product example.", &["PMM"], &[("product", &["local-cli"])]),
+            scoped_entry("codex-plugin-angle", "Codex plugin portfolio angle", "Lead with bounded context handoff and workflow guidance for the plugin product example.", &["PMM"], &[("product", &["agent-plugin"])]),
+            scoped_entry("portfolio-routing-capability", "Portfolio routing capability angle", "Use structured product-aware routing when the selected local CLI product and portfolio-routing capability are both relevant.", &["PMM"], &[("product", &["local-cli"]), ("capability", &["portfolio-routing"])]),
+        ])),
         ("ctas.yaml", card("ctas", CardKind::Ctas, "CTA rules", "Calls to action, reply paths, and ask boundaries for outbound copy.", &["PMM", "GTM Engineering"], &["cta", "ask", "reply", "copy", "outbound", "message"], vec![
             entry_with_evidence("soft-ask", "Soft ask", "Default to a low-friction ask that optimizes for a human reply: compare notes, sanity-check the hypothesis, ask who owns the problem, or ask whether the angle is worth a quick look.", &["PMM", "GTM Engineering"], &["README.md"]),
             entry_with_evidence("calendar-second", "Calendar second", "Do not make the first CTA a calendar booking unless fit is strong, the reason for urgency is sourced, and the channel policy allows it. Use a reply-path question first when fit or ownership is uncertain.", &["PMM", "GTM Engineering"], &["README.md"]),
@@ -515,12 +571,12 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("reply-path", "Reply path", "When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.", &["PMM", "GTM Engineering"], &["README.md"]),
         ])),
         ("avoid-rules.yaml", card("avoid-rules", CardKind::AvoidRules, "Avoid rules", "Category and claim boundaries agents must keep intact.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"], vec![
-            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, meeting booker, sender, AI-owned response system, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string(), "update CRM".to_string(), "updates CRM".to_string(), "sends for you".to_string(), "auto-sends".to_string(), "books meetings".to_string(), "launches campaigns".to_string(), "AI can own the response".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
-            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance/security approval, production adoption, design partner, paid pilot, market validation, commercial traction, weak trust claims, fake personalization, RFP/proposal-platform replacement, or product capability claims unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "doubles reply rates".to_string(), "fully automated".to_string(), "connect to your CRM".to_string(), "connects to your CRM".to_string(), "native CRM integration".to_string(), "security-approved".to_string(), "handles compliance".to_string(), "compliance approval".to_string(), "customers already use".to_string(), "customers rely on".to_string(), "customer adoption".to_string(), "design partner".to_string(), "design partners".to_string(), "paid pilot".to_string(), "paid pilots".to_string(), "production adoption".to_string(), "production use".to_string(), "validated adoption".to_string(), "ARR conversion".to_string(), "workshop conversion".to_string(), "workshops converted".to_string(), "market validated".to_string(), "market validation".to_string(), "I loved your recent LinkedIn post".to_string(), "bypasses procurement".to_string(), "bypass legal".to_string(), "replace proposal management software".to_string(), "replaces proposal management software".to_string(), "best-in-class".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, meeting booker, sender, AI-owned response system, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], scope: BTreeMap::new(), evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string(), "update CRM".to_string(), "updates CRM".to_string(), "sends for you".to_string(), "auto-sends".to_string(), "books meetings".to_string(), "launches campaigns".to_string(), "AI can own the response".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance/security approval, production adoption, design partner, paid pilot, market validation, commercial traction, weak trust claims, fake personalization, RFP/proposal-platform replacement, or product capability claims unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], scope: BTreeMap::new(), evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "doubles reply rates".to_string(), "fully automated".to_string(), "connect to your CRM".to_string(), "connects to your CRM".to_string(), "native CRM integration".to_string(), "security-approved".to_string(), "handles compliance".to_string(), "compliance approval".to_string(), "customers already use".to_string(), "customers rely on".to_string(), "customer adoption".to_string(), "design partner".to_string(), "design partners".to_string(), "paid pilot".to_string(), "paid pilots".to_string(), "production adoption".to_string(), "production use".to_string(), "validated adoption".to_string(), "ARR conversion".to_string(), "workshop conversion".to_string(), "workshops converted".to_string(), "market validated".to_string(), "market validation".to_string(), "I loved your recent LinkedIn post".to_string(), "bypasses procurement".to_string(), "bypass legal".to_string(), "replace proposal management software".to_string(), "replaces proposal management software".to_string(), "best-in-class".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
         ])),
         ("output-rules.yaml", card("output-rules", CardKind::OutputRules, "Output rules", "Global style, formatting, and output-structure rules generated text must follow.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"], vec![
-            Entry { id: "no-em-dashes".to_string(), title: "No em dashes".to_string(), body: "Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], evidence: vec![], avoid: vec!["—".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
-            Entry { id: "plain-text-by-default".to_string(), title: "Plain text by default".to_string(), body: "For outbound email or LinkedIn copy, default to plain text. Do not include links, attachments, images, HTML, tracking parameters, or decorative formatting unless the user explicitly asks and the pack supports it.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], evidence: vec![], avoid: vec!["http://".to_string(), "https://".to_string(), "<html".to_string(), "<img".to_string(), "utm_".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "no-em-dashes".to_string(), title: "No em dashes".to_string(), body: "Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], scope: BTreeMap::new(), evidence: vec![], avoid: vec!["—".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "plain-text-by-default".to_string(), title: "Plain text by default".to_string(), body: "For outbound email or LinkedIn copy, default to plain text. Do not include links, attachments, images, HTML, tracking parameters, or decorative formatting unless the user explicitly asks and the pack supports it.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], scope: BTreeMap::new(), evidence: vec![], avoid: vec!["http://".to_string(), "https://".to_string(), "<html".to_string(), "<img".to_string(), "utm_".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
             entry("initial-email-shape", "Initial email shape", "When drafting an initial cold email, aim for roughly 90-125 words, use a short non-clickbait subject, and avoid fake Re: or Fwd: framing. Put detailed narrative structure in copy-patterns, not here.", &["PMM"]),
             entry("no-fake-personalization", "No fake personalization", "Do not imply the sender read, watched, met, noticed, or personally researched something unless that source context is present. Use hypotheses when the source signal is weak.", &["PMM", "GTM Engineering"]),
             entry("honor-paragraph-count", "Honor paragraph count", "If the user or pack states a paragraph count, match it exactly. Do not add setup, recap, or explanation paragraphs outside the requested structure.", &["PMM", "GTM Engineering", "PM"]),
@@ -1447,7 +1503,138 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "expect_valid": true
             }),
         ),
+        (
+            "portfolio-local-cli-route.yaml",
+            json!({
+                "id": "portfolio-local-cli-route",
+                "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "output-contracts", "routing-jobs"],
+                    &["outbound-copy-brief"]
+                ),
+                "persona": "PMM",
+                "job": "portfolio scope example",
+                "scope": ["product=local-cli"],
+                "expect_entry_titles_contains": ["Scope qualifies primitives", "Local CLI portfolio angle"],
+                "expect_entry_titles_excludes": ["Codex plugin portfolio angle", "Portfolio routing capability angle"]
+            }),
+        ),
+        (
+            "portfolio-codex-plugin-route.yaml",
+            json!({
+                "id": "portfolio-codex-plugin-route",
+                "command": "route",
+                "profile_eval": eval_profile(
+                    "job-routing",
+                    &["actors", "output-contracts", "routing-jobs"],
+                    &["outbound-copy-brief"]
+                ),
+                "persona": "PMM",
+                "job": "portfolio scope example",
+                "scope": ["product=agent-plugin"],
+                "expect_entry_titles_contains": ["Scope qualifies primitives", "Codex plugin portfolio angle"],
+                "expect_entry_titles_excludes": ["Local CLI portfolio angle", "Portfolio routing capability angle"]
+            }),
+        ),
+        (
+            "portfolio-missing-scope-route.yaml",
+            json!({
+                "id": "portfolio-missing-scope-route",
+                "command": "route",
+                "profile_eval": eval_profile(
+                    "insufficient-context",
+                    &["actors", "output-contracts", "routing-jobs", "gaps"],
+                    &["outbound-copy-brief"]
+                ),
+                "persona": "PMM",
+                "job": "portfolio scope example",
+                "expect_draft_status": "blocked",
+                "expect_entry_gap_reasons_contains": ["scope_dimension_missing"]
+            }),
+        ),
+        (
+            "portfolio-local-cli-brief.yaml",
+            json!({
+                "id": "portfolio-local-cli-brief",
+                "command": "brief",
+                "profile_eval": eval_profile(
+                    "proceed",
+                    &["actors", "source-signals", "output-contracts", "routing-jobs"],
+                    &["prospect-fit-or-brief", "outbound-copy-brief"]
+                ),
+                "channel": "linkedin",
+                "job": "portfolio scope example",
+                "prospect": portfolio_eval_prospect("local-cli"),
+                "expect_draft_status": "ready",
+                "expect_entry_titles_contains": ["Scope qualifies primitives", "Local CLI portfolio angle"],
+                "expect_entry_titles_excludes": ["Codex plugin portfolio angle", "Portfolio routing capability angle"]
+            }),
+        ),
+        (
+            "portfolio-agent-plugin-brief.yaml",
+            json!({
+                "id": "portfolio-agent-plugin-brief",
+                "command": "brief",
+                "profile_eval": eval_profile(
+                    "proceed",
+                    &["actors", "source-signals", "output-contracts", "routing-jobs"],
+                    &["prospect-fit-or-brief", "outbound-copy-brief"]
+                ),
+                "channel": "linkedin",
+                "job": "portfolio scope example",
+                "prospect": portfolio_eval_prospect("agent-plugin"),
+                "expect_draft_status": "ready",
+                "expect_entry_titles_contains": ["Scope qualifies primitives", "Codex plugin portfolio angle"],
+                "expect_entry_titles_excludes": ["Local CLI portfolio angle", "Portfolio routing capability angle"]
+            }),
+        ),
+        (
+            "portfolio-missing-scope-brief.yaml",
+            json!({
+                "id": "portfolio-missing-scope-brief",
+                "command": "brief",
+                "profile_eval": eval_profile(
+                    "insufficient-context",
+                    &["actors", "source-signals", "output-contracts", "routing-jobs", "gaps"],
+                    &["prospect-fit-or-brief", "outbound-copy-brief"]
+                ),
+                "channel": "linkedin",
+                "job": "portfolio scope example",
+                "prospect": portfolio_eval_prospect_without_product(),
+                "expect_draft_status": "no-draft",
+                "expect_entry_gap_reasons_contains": ["scope_dimension_missing"]
+            }),
+        ),
     ]
+}
+
+fn portfolio_eval_prospect(product: &str) -> Value {
+    let mut prospect = portfolio_eval_prospect_without_product();
+    prospect["attributes"] = json!({"product": product});
+    prospect
+}
+
+fn portfolio_eval_prospect_without_product() -> Value {
+    json!({
+        "name": "Alex Rivera",
+        "title": "Revenue Operations Lead",
+        "company": "ExampleCo",
+        "company_domain": "example.com",
+        "persona": "GTM Engineering",
+        "segment": "agent-assisted GTM",
+        "trigger": "standardizing outbound context before agents draft or route campaign briefs",
+        "source_kind": "synthetic-example",
+        "synthetic": true,
+        "signals": [{
+            "id": "portfolio-context-standardization",
+            "title": "Standardizing portfolio messaging context",
+            "source": "synthetic portfolio eval fixture",
+            "confidence": "medium",
+            "freshness": "recent",
+            "state_as": "supplied"
+        }]
+    })
 }
 
 pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str, Value)> {
@@ -1871,6 +2058,31 @@ fn entry(id: &str, title: &str, body: &str, applies_to: &[&str]) -> Entry {
         title: title.to_string(),
         body: body.to_string(),
         applies_to: applies_to.iter().map(|s| s.to_string()).collect(),
+        scope: BTreeMap::new(),
+        evidence: vec![],
+        avoid: vec![],
+        exact_paragraphs: None,
+        constraints: EntryConstraints::default(),
+        metadata: BTreeMap::new(),
+    }
+}
+
+fn scoped_entry(
+    id: &str,
+    title: &str,
+    body: &str,
+    applies_to: &[&str],
+    scope: &[(&str, &[&str])],
+) -> Entry {
+    Entry {
+        id: id.to_string(),
+        title: title.to_string(),
+        body: body.to_string(),
+        applies_to: strings(applies_to),
+        scope: scope
+            .iter()
+            .map(|(dimension, values)| ((*dimension).to_string(), strings(values)))
+            .collect(),
         evidence: vec![],
         avoid: vec![],
         exact_paragraphs: None,
@@ -1891,6 +2103,7 @@ fn entry_with_evidence(
         title: title.to_string(),
         body: body.to_string(),
         applies_to: applies_to.iter().map(|s| s.to_string()).collect(),
+        scope: BTreeMap::new(),
         evidence: evidence.iter().map(|s| s.to_string()).collect(),
         avoid: vec![],
         exact_paragraphs: None,

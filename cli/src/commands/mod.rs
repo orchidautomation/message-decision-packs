@@ -14,7 +14,7 @@ pub(crate) mod schemas;
 
 pub(crate) use agent_surface::agent_surface;
 pub(crate) use briefs::{
-    demo_copy, emit_brief, prospect_brief_with_context, render_readable_prospect_brief,
+    demo_copy, emit_brief_scoped, prospect_brief_with_context, render_readable_prospect_brief,
 };
 pub(crate) use capabilities::capabilities;
 pub(crate) use evals::eval_pack;
@@ -26,6 +26,6 @@ pub(crate) use prompt_output::validate_prompt_output_file;
 pub(crate) use proof_output::{
     verify_output_file, verify_output_readable_file, verify_output_value,
 };
-pub(crate) use routing::{check_claims, fit, route};
+pub(crate) use routing::{check_claims_scoped, fit, route_scoped};
 pub(crate) use sample_leads::sample_leads;
 pub(crate) use schemas::schema;

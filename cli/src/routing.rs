@@ -2,6 +2,7 @@ use crate::constants::DEFAULT_DIR;
 use crate::models::{CardKind, Entry, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
 use crate::runtime_context::current_runtime_context;
+use crate::scope::{ScopeResolution, match_entry_scope};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -12,6 +13,22 @@ struct EntryRouteDetails {
     context_entries: Vec<Value>,
     gaps: Vec<Value>,
     full_card_required: Vec<Value>,
+    portfolio_sensitive: bool,
+    compatible_scoped_entry_count: usize,
+    scoped_decision_candidate_count: usize,
+    compatible_scoped_decision_count: usize,
+}
+
+impl EntryRouteDetails {
+    fn scope_ready(&self, scope: &ScopeResolution) -> bool {
+        let compatible_requirement_met = if self.scoped_decision_candidate_count > 0 {
+            self.compatible_scoped_decision_count > 0
+        } else {
+            self.compatible_scoped_entry_count > 0
+        };
+        !self.portfolio_sensitive
+            || (!scope.selected.is_empty() && scope.is_valid() && compatible_requirement_met)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -138,64 +155,107 @@ pub(crate) fn entry_route(
     persona: &str,
     job: &str,
 ) -> Result<Value> {
-    let details = route_entry_details(root, manifest, persona, job, false)?;
+    entry_route_scoped(root, manifest, persona, job, &ScopeResolution::default())
+}
+
+pub(crate) fn entry_route_scoped(
+    root: &Path,
+    manifest: &Manifest,
+    persona: &str,
+    job: &str,
+    scope: &ScopeResolution,
+) -> Result<Value> {
+    let details = route_entry_details(root, manifest, persona, job, false, scope)?;
+    let blocked = !details.scope_ready(scope);
 
     Ok(json!({
         "contract": "mdp.entry-route.v0",
+        "status": if blocked { "blocked" } else { "ready" },
         "persona": persona,
         "job": job,
+        "scope": scope,
+        "portfolio_sensitive": details.portfolio_sensitive,
         "matches": details.matches,
         "gaps": details.gaps,
-        "policy": "Load matched entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Load the full card only when an entry is ambiguous, missing, or a guardrail card needs complete review."
+        "policy": if details.portfolio_sensitive { "Use matched bounded entries only. Shared card paths are not scope-filtered drafting context. Resolve missing or invalid scope before drafting." } else { "Load matched entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Load the full card only when an entry is ambiguous, missing, or a guardrail card needs complete review." }
     }))
 }
 
-pub(crate) fn entry_context(
+pub(crate) fn entry_context_scoped(
     root: &Path,
     manifest: &Manifest,
     persona: &str,
     job: &str,
     draft_ready: bool,
+    scope: &ScopeResolution,
 ) -> Result<Value> {
     let runtime_context = current_runtime_context()?;
-    entry_context_with_runtime(root, manifest, persona, job, draft_ready, &runtime_context)
+    entry_context_with_runtime_scoped(
+        root,
+        manifest,
+        persona,
+        job,
+        draft_ready,
+        &runtime_context,
+        scope,
+    )
 }
 
-pub(crate) fn entry_context_with_runtime(
+pub(crate) fn entry_context_with_runtime_scoped(
     root: &Path,
     manifest: &Manifest,
     persona: &str,
     job: &str,
     draft_ready: bool,
     runtime_context: &Value,
+    scope: &ScopeResolution,
 ) -> Result<Value> {
     let load_order: Vec<Value> = select_cards(manifest, Some(persona), Some(job))
         .iter()
         .filter_map(|value| value["path"].as_str().map(|path| json!(path)))
         .collect();
-    if !draft_ready {
+    let details = route_entry_details(root, manifest, persona, job, true, scope)?;
+    let scope_blocked = !details.scope_ready(scope);
+    if !draft_ready || scope_blocked {
+        let entries: Vec<Value> = if scope_blocked {
+            details
+                .context_entries
+                .into_iter()
+                .filter(|entry| entry["selection"] == "guardrail")
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let required_entry_count = entries
+            .iter()
+            .filter(|entry| entry["status"].as_str() == Some("required"))
+            .count();
+        let guardrail_entry_count = entries.len();
+        let entry_count = entries.len();
         return Ok(json!({
             "contract": "mdp.context.v0",
             "status": "blocked",
             "runtime_context": runtime_context,
-            "reason": "draft_status no-draft",
+            "reason": if scope_blocked { "portfolio scope is missing or invalid" } else { "draft_status no-draft" },
             "persona": persona,
             "job": job,
-            "source_load_order": load_order,
-            "entries": [],
+            "scope": scope,
+            "portfolio_sensitive": details.portfolio_sensitive,
+            "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
+            "entries": entries,
+            "gaps": details.gaps,
             "full_card_required": [],
             "summary": {
                 "card_count": load_order.len(),
-                "entry_count": 0,
-                "required_entry_count": 0,
-                "supporting_entry_count": 0,
-                "guardrail_entry_count": 0
+                "entry_count": entry_count,
+                "required_entry_count": required_entry_count,
+                "supporting_entry_count": entry_count.saturating_sub(required_entry_count),
+                "guardrail_entry_count": guardrail_entry_count
             },
-            "policy": "Do not draft from bounded context when draft_status is no-draft. Entry metadata is advisory context only."
+            "policy": if scope_blocked { "Do not draft until portfolio scope is resolved. Global bounded guardrails may be inspected, but shared card paths are not scope-filtered context." } else { "Do not draft from bounded context when draft_status is no-draft. Entry metadata is advisory context only." }
         }));
     }
 
-    let details = route_entry_details(root, manifest, persona, job, true)?;
     let required_entry_count = details
         .context_entries
         .iter()
@@ -214,8 +274,11 @@ pub(crate) fn entry_context_with_runtime(
         "runtime_context": runtime_context,
         "persona": persona,
         "job": job,
-        "source_load_order": load_order,
+        "scope": scope,
+        "portfolio_sensitive": details.portfolio_sensitive,
+        "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
         "entries": details.context_entries,
+        "gaps": details.gaps,
         "full_card_required": details.full_card_required,
         "summary": {
             "card_count": load_order.len(),
@@ -224,7 +287,7 @@ pub(crate) fn entry_context_with_runtime(
             "supporting_entry_count": entry_count.saturating_sub(required_entry_count),
             "guardrail_entry_count": guardrail_entry_count
         },
-        "policy": "Use context.entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Open full_card_required paths only when present, or when the user asks for a full pack/card audit."
+        "policy": if details.portfolio_sensitive { "Use scope-filtered context.entries only. Shared full cards are not scope-safe drafting context. Treat entry metadata as advisory context, not enforced CLI constraints." } else { "Use context.entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Open full_card_required paths only when present, or when the user asks for a full pack/card audit." }
     }))
 }
 
@@ -234,6 +297,7 @@ fn route_entry_details(
     persona: &str,
     job: &str,
     include_context: bool,
+    scope: &ScopeResolution,
 ) -> Result<EntryRouteDetails> {
     let selected = select_cards(manifest, Some(persona), Some(job));
     let selected_ids: BTreeSet<String> = selected
@@ -246,6 +310,10 @@ fn route_entry_details(
     let mut context_entries = Vec::new();
     let mut gaps = Vec::new();
     let mut full_card_required = Vec::new();
+    let mut portfolio_sensitive = false;
+    let mut compatible_scoped_entry_count = 0usize;
+    let mut scoped_decision_candidate_count = 0usize;
+    let mut compatible_scoped_decision_count = 0usize;
 
     for card_ref in &manifest.cards {
         if !selected_ids.contains(&card_ref.id) {
@@ -276,7 +344,34 @@ fn route_entry_details(
             let matched = !(matches!(card.kind, CardKind::ChannelPolicies) && !job_match)
                 && entry_allowed
                 && (applies || job_match || persona_match);
-            let guardrail = include_context && is_context_guardrail(&card.kind, entry);
+            let guardrail = is_context_guardrail(&card.kind, entry);
+            let scope_match = match_entry_scope(scope, &entry.scope);
+            if (matched || guardrail) && !entry.scope.is_empty() {
+                portfolio_sensitive = true;
+                if scope_match.compatible {
+                    compatible_scoped_entry_count += 1;
+                }
+                if matched && !guardrail {
+                    scoped_decision_candidate_count += 1;
+                    if scope_match.compatible {
+                        compatible_scoped_decision_count += 1;
+                    }
+                }
+            }
+            if (matched || guardrail) && !scope_match.compatible {
+                for issue in scope_match.issues {
+                    gaps.push(json!({
+                        "card_id": card.id,
+                        "entry_id": entry.id,
+                        "title": entry.title,
+                        "reason": issue.code,
+                        "dimension": issue.dimension,
+                        "value": issue.value,
+                        "detail": issue.reason
+                    }));
+                }
+                continue;
+            }
 
             if matched {
                 card_match_count += 1;
@@ -320,11 +415,19 @@ fn route_entry_details(
         }
     }
 
+    if portfolio_sensitive {
+        full_card_required.clear();
+    }
+
     Ok(EntryRouteDetails {
         matches,
         context_entries,
         gaps,
         full_card_required,
+        portfolio_sensitive,
+        compatible_scoped_entry_count,
+        scoped_decision_candidate_count,
+        compatible_scoped_decision_count,
     })
 }
 
@@ -339,7 +442,8 @@ fn entry_summary(card_id: &str, card_kind: &CardKind, entry: &Entry, reason: &st
         "metadata": entry.metadata,
         "evidence_count": entry.evidence.len(),
         "avoid_count": entry.avoid.len(),
-        "constraints": entry.constraints
+        "constraints": entry.constraints,
+        "scope": entry.scope
     })
 }
 
@@ -359,6 +463,7 @@ fn entry_context_value(
         "title": entry.title,
         "body": entry.body,
         "applies_to": entry.applies_to,
+        "scope": entry.scope,
         "evidence": entry.evidence,
         "avoid": entry.avoid,
         "exact_paragraphs": entry.exact_paragraphs,
@@ -686,6 +791,7 @@ mod tests {
             title: "Custom annotation".to_string(),
             body: "Use this entry for custom context.".to_string(),
             applies_to: vec!["PMM".to_string()],
+            scope: std::collections::BTreeMap::new(),
             evidence: vec![],
             avoid: vec![],
             exact_paragraphs: None,
