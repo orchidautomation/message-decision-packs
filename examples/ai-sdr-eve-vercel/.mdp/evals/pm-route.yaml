@@ -1,6 +1,6 @@
 command: route
 expect_entry_titles_contains:
-- Profound Agents content workflows
+- Synthetic Vendor content workflows
 - Content throughput gap
 - Prompt or citation gap pattern
 expect_load_order_contains:

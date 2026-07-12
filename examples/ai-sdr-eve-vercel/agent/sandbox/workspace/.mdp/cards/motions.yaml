@@ -1,7 +1,7 @@
 id: motions
 kind: motions
 title: Approved motions
-description: Profound-side workflows this pack can support as local GTM decision context.
+description: Synthetic Vendor-side workflows this pack can support as local GTM decision context.
 personas:
 - AEO Lead
 - Content Lead
@@ -17,14 +17,14 @@ tags:
 entries:
 - id: target-account-vetting
   title: Target account vetting
-  body: "Use the pack to decide whether a supplied company/person row matches Profound's target slice before any outbound copy is written."
+  body: "Use the pack to decide whether a supplied company/person row matches Synthetic Vendor's target slice before any outbound copy is written."
   applies_to:
   - AEO Lead
   - Content Lead
   - "PR & Brand Lead"
   - Agency Partner
   evidence:
-  - user-mdp-hypothesis
+  - synthetic-product-brief
   - mdp-readme
   avoid: []
 - id: outbound-brief
@@ -47,7 +47,7 @@ entries:
   - "PR & Brand Lead"
   - Agency Partner
   evidence:
-  - profound-homepage
+  - synthetic-vendor-homepage
   - mdp-readme
   avoid: []
 - id: source-to-card-maintenance
@@ -59,6 +59,6 @@ entries:
   - "PR & Brand Lead"
   - Agency Partner
   evidence:
-  - user-mdp-hypothesis
+  - synthetic-product-brief
   - mdp-readme
   avoid: []

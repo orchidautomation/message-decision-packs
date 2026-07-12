@@ -2,13 +2,13 @@
   "format": "mdp.source-strategy.v0",
   "profile": {
     "id": "gtm",
-    "label": "Profound GTM scouting"
+    "label": "Synthetic Vendor GTM scouting"
   },
   "objective": {
-    "decision_needed": "Find public-source account trigger evidence and then resolve a named public person/role owner before Profound MDP fit, route, and brief generation.",
+    "decision_needed": "Find public-source account trigger evidence and then resolve a named public person/role owner before Synthetic Vendor MDP fit, route, and brief generation.",
     "downstream_consumer": "Eve-native MDP SDR Scout on Vercel or local dry-run",
     "strategy_mode": "public-source handoff",
-    "pack_hint": "Use this Profound pack as the scoring authority after evidence collection; do not draft or sync until the MDP brief passes review.",
+    "pack_hint": "Use this Synthetic Vendor pack as the scoring authority after evidence collection; do not draft or sync until the MDP brief passes review.",
     "person_resolution_required": true
   },
   "run_policy": {
@@ -43,13 +43,13 @@
     {
       "primitive": "decision-criteria",
       "known": [
-        "Fit requires AI search, content, brand, PR, agency, or crawler/analytics evidence tied to Profound capabilities."
+        "Fit requires AI search, content, brand, PR, agency, or crawler/analytics evidence tied to Synthetic Vendor capabilities."
       ],
       "evidence_needed": [
         "Prompt demand, AI visibility, citation, crawler, content, agency reporting, or project-ops trigger"
       ],
       "gaps": [
-        "Budget, authority, internal tooling, and current Profound usage remain gaps unless public or user-provided."
+        "Budget, authority, internal tooling, and current Synthetic Vendor usage remain gaps unless public or user-provided."
       ]
     },
     {
@@ -114,7 +114,7 @@
       "source_kind": "public-source",
       "scout_family": "exa",
       "target": "Public career pages and job posts for SEO, AEO, content strategy, growth, brand, PR, marketing engineering, analytics, or web infrastructure roles",
-      "purpose": "Find team-building signals that imply ownership of Profound-relevant workflows.",
+      "purpose": "Find team-building signals that imply ownership of Synthetic Vendor-relevant workflows.",
       "allowed_access": "Public unauthenticated job pages only",
       "freshness": "Active or recently posted roles only",
       "primitives": [
@@ -127,7 +127,7 @@
       "id": "public-person-role-resolution",
       "source_kind": "public-source",
       "scout_family": "exa",
-      "target": "Public person-role surfaces: LinkedIn public profile metadata, company team pages, author pages, conference bios, podcast/webinar speaker pages, and public bylines that connect a named person to the target account and Profound-relevant workflow.",
+      "target": "Public person-role surfaces: LinkedIn public profile metadata, company team pages, author pages, conference bios, podcast/webinar speaker pages, and public bylines that connect a named person to the target account and Synthetic Vendor-relevant workflow.",
       "purpose": "Resolve account-level trigger evidence into a named buyer/persona owner before qualification, without collecting personal contact data.",
       "allowed_access": "Public unauthenticated pages only; names, titles, profile URLs, and role snippets are allowed, but emails, phones, private profiles, and enrichment databases are excluded.",
       "freshness": "Prefer current public profiles or recent bylines/events; use stale profile pages only as role evidence paired with fresh account trigger evidence.",
@@ -180,10 +180,10 @@
       ]
     },
     {
-      "id": "approved-profound-mdp-pack",
+      "id": "approved-synthetic-vendor-mdp-pack",
       "source_kind": "user-provided-approved",
       "scout_family": "manual",
-      "target": "This Profound MDP pack",
+      "target": "This Synthetic Vendor MDP pack",
       "purpose": "Supply blessed ICP, personas, signal ids, fit rules, claims, avoid-rules, CTA policy, evals, and brief routing.",
       "allowed_access": "Local pack files only; do not upload private pack contents to unapproved providers.",
       "freshness": "Repo-current or operator-approved version",
@@ -221,7 +221,7 @@
         "confidence"
       ],
       "max_results": 30,
-      "agent_instruction": "Search the public web for fresh account-level AEO, AI search visibility, content, brand, PR, or agency workflow trigger evidence. Treat this as the account trigger pass only; before qualification, run the person-role resolution query_template and require a named public person, role/title, profile/author/team URL, bounded snippet, and explicit mapping to one active Profound MDP persona.",
+      "agent_instruction": "Search the public web for fresh account-level AEO, AI search visibility, content, brand, PR, or agency workflow trigger evidence. Treat this as the account trigger pass only; before qualification, run the person-role resolution query_template and require a named public person, role/title, profile/author/team URL, bounded snippet, and explicit mapping to one active Synthetic Vendor MDP persona.",
       "construction_rules": [
         "Combine one AEO/AI-search term with one role/workflow trigger family per query so evidence can be traced to a specific pack primitive.",
         "Prefer company blogs, careers pages, launch posts, docs, funding/news, public founder/operator sources, and agency service pages before generic listicles.",
@@ -275,7 +275,7 @@
         "Bind the person query to the accepted account company/domain so the named person is tied to the account trigger.",
         "Use query_template as the programmatic template for Eve/Exa runs; replace <company>, <domain>, and <company-domain> from the accepted account candidate only.",
         "Prefer public LinkedIn profile metadata, company-owned author/team pages, webinar/event speaker pages, and public bylines over generic people directories.",
-        "Require both a person name and a role/title snippet that maps to a Profound pack persona before qualification.",
+        "Require both a person name and a role/title snippet that maps to a Synthetic Vendor pack persona before qualification.",
         "Reject pages whose only value is email, phone, scraped enrichment, login-required profile data, unrelated job listings, or jobs-only owner inference."
       ],
       "required_receipts": [
@@ -310,7 +310,7 @@
         "bounded snippet"
       ],
       "max_results": 25,
-      "agent_instruction": "Search for public evidence that a company or agency is studying prompt demand, AI-search queries, ChatGPT/Perplexity traffic, content gaps, or citation opportunities relevant to Profound.",
+      "agent_instruction": "Search for public evidence that a company or agency is studying prompt demand, AI-search queries, ChatGPT/Perplexity traffic, content gaps, or citation opportunities relevant to Synthetic Vendor.",
       "construction_rules": [
         "Pair prompt-volume or AI-search-query language with content, citation, comparison-page, or resource-center language.",
         "Prefer primary source pages with publication dates and sourceable snippets over SEO roundups or thin syndicated summaries.",
@@ -434,7 +434,7 @@
   "exclusions": [
     "No outreach, sequencing, CRM mutation, or personal contact enrichment.",
     "No private LinkedIn, logged-in sources, paywalled/gated sources, or access-control bypass.",
-    "No invented titles, metrics, Profound usage, customer proof, or buying intent.",
+    "No invented titles, metrics, Synthetic Vendor usage, customer proof, or buying intent.",
     "No upload of private MDP packs or customer data to unapproved external providers."
   ],
   "evidence_requirements": {
@@ -456,7 +456,7 @@
     "review_owner": "human operator before CRM sync or outreach",
     "gap_policy": "If a required field is missing, mark a gap and route to operator review instead of inventing context.",
     "minimum_trigger_gate": "A candidate may proceed only when at least one current public primary source or two independent public secondary sources support the trigger.",
-    "pass_condition": "Proceed to MDP fit only when account trigger evidence and public person-role evidence are public or user-approved, map to an active Profound pack signal/persona, include required receipts, and avoid excluded data classes.",
+    "pass_condition": "Proceed to MDP fit only when account trigger evidence and public person-role evidence are public or user-approved, map to an active Synthetic Vendor pack signal/persona, include required receipts, and avoid excluded data classes.",
     "fail_condition": "Preserve a gap when evidence is stale, gated, contact-enrichment-only, missing a snippet/date/source URL, or requires inferring buying intent.",
     "claim_check_policy": "Before ledger append, run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy, preserving the brief citations and unresolved gaps used to create that copy.",
     "person_resolution_required": true,
@@ -490,14 +490,14 @@
       "cli_handoff": "For each account trigger row, run the reviewed person-resolution query. If no name/title/source receipts are available, keep the row as a gap and do not pass it to `mdp --json fit` unless account-only review is explicitly enabled."
     },
     {
-      "id": "normalize-profound-prospect",
+      "id": "normalize-synthetic-vendor-prospect",
       "next_skill": "mdp-prospect-brief",
       "review_job": "normalization-review",
       "handoff": "Run prompts/normalize-prospect.yaml against a bounded raw row and preserve missing fields as gaps.",
       "cli_handoff": "Normalize accepted receipts into a prospect JSON file that matches `mdp --json schema prospect`; preserve missing fields as gaps."
     },
     {
-      "id": "score-and-brief-with-profound-pack",
+      "id": "score-and-brief-with-synthetic-vendor-pack",
       "next_skill": "mdp-prospect-brief",
       "review_job": "fit-and-brief-review",
       "handoff": "Run mdp --json fit, then mdp --json brief --context, then save reviewed ledger rows.",
@@ -571,7 +571,7 @@
   "agent_operating_plan": {
     "role": "Public-source AEO/AI-search BDR scout operating plan for an autonomous Eve runtime",
     "operating_instructions": [
-      "Start with the approved Profound MDP pack boundaries. Do not broaden ICP, persona, trigger, or avoid-rule semantics from search results alone.",
+      "Start with the approved Synthetic Vendor MDP pack boundaries. Do not broaden ICP, persona, trigger, or avoid-rule semantics from search results alone.",
       "Use Exa for broad public discovery, Firecrawl only to normalize already accepted public URLs, and Apify only for reviewed public actors or datasets explicitly allowed by the operator.",
       "After account trigger discovery, run public person-role resolution. Require a named person, public title/role, company match, and person source URL before autonomous qualification.",
       "For every candidate, preserve the exact source URL, title, observed date or publication date, bounded snippet, provider, confidence, and content hash before invoking MDP fit or brief steps.",
@@ -584,10 +584,10 @@
       "Stop when the candidate lacks required receipts after one discovery pass and one accepted-URL cleanup pass.",
       "Stop before qualification when account trigger evidence exists but no public person-level owner can be resolved, unless operator explicitly enables account-only review.",
       "Stop before ledger append when `mdp fit` returns `no_fit` or `insufficient_context`; preserve the MDP gate gaps and continue discovery until the run policy is satisfied or exhausted.",
-      "Stop when all available evidence is gated, personal, stale without operator approval, or unrelated to the active Profound pack primitives.",
+      "Stop when all available evidence is gated, personal, stale without operator approval, or unrelated to the active Synthetic Vendor pack primitives.",
       "Stop before outreach, CRM mutation, private data enrichment, or any provider path not allowed by the reviewed source strategy."
     ],
-    "insufficient_evidence_action": "Do not qualify the candidate. Write a gap explaining which trigger, person-resolution receipt, source receipt, or Profound pack primitive could not be supported.",
+    "insufficient_evidence_action": "Do not qualify the candidate. Write a gap explaining which trigger, person-resolution receipt, source receipt, or Synthetic Vendor pack primitive could not be supported.",
     "downstream_handoff_prompt": "When account and person evidence pass review, normalize them to MDP prospect JSON with person name, title, company, trigger, persona, and cited source receipts, then run `mdp --json fit --dir <pack> --prospect <prospect.json>`. If fit passes, run `mdp --json brief --context --dir <pack> --prospect <prospect.json> --channel <channel> --out <brief.json>`. Run `mdp --json check-claims --dir <pack> --text <draft-copy>` on any drafted copy before ledger append. If person name/title/source is missing, preserve a gap and do not invent a contact."
   }
 }

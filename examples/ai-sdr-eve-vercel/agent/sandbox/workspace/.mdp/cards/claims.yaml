@@ -12,53 +12,53 @@ tags:
 - proof
 - evidence
 entries:
-- id: profound-ai-answer-engine-optimization
-  title: Profound AI answer engine optimization
-  body: Profound helps brands understand, analyze, build, and measure their presence across AI-generated answers and answer-engine discovery surfaces.
+- id: synthetic-vendor-ai-answer-engine-optimization
+  title: Synthetic Vendor AI answer engine optimization
+  body: Synthetic Vendor helps brands understand, analyze, build, and measure their presence across AI-generated answers and answer-engine discovery surfaces.
   applies_to:
   - AEO Lead
   - Content Lead
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-homepage
+  - synthetic-vendor-homepage
   avoid: []
-- id: answer-engine-insights-visibility
-  title: Answer Engine Insights visibility
-  body: Answer Engine Insights tracks AI visibility, mentions, citations, sentiment, competitive benchmarking, platform comparisons, and trends across answer engines.
+- id: visibility-analytics-visibility
+  title: Visibility analytics visibility
+  body: Visibility analytics tracks AI visibility, mentions, citations, sentiment, competitive benchmarking, platform comparisons, and trends across answer engines.
   applies_to:
   - AEO Lead
   - PR & Brand Lead
   evidence:
-  - profound-answer-engine-insights
+  - synthetic-vendor-visibility-analytics
   avoid: []
-- id: profound-agents-content-workflows
-  title: Profound Agents content workflows
-  body: Profound Agents support content refresh, AEO FAQ generation, competitive research, net-new content creation, no-code workflow building, brand-kit context, human approval steps, and CMS integration.
+- id: synthetic-vendor-content-workflows
+  title: Synthetic Vendor content workflows
+  body: Synthetic Vendor content workflows support content refresh, AEO FAQ generation, competitive research, net-new content creation, no-code workflow building, brand-kit context, human approval steps, and CMS integration.
   applies_to:
   - Content Lead
   - AEO Lead
   evidence:
-  - profound-agents
+  - synthetic-vendor-content-workflows
   avoid: []
-- id: agent-analytics-crawler-attribution
-  title: Agent Analytics crawler attribution
-  body: Agent Analytics tracks AI crawler activity, content interpretation, traffic attribution, page performance, benchmarking, and infrastructure-level signals using server-log and crawler-visibility workflows.
+- id: crawler-analytics-crawler-attribution
+  title: Crawler analytics crawler attribution
+  body: Crawler analytics tracks AI crawler activity, content interpretation, traffic attribution, page performance, benchmarking, and infrastructure-level signals using server-log and crawler-visibility workflows.
   applies_to:
   - AEO Lead
   - Content Lead
   evidence:
-  - profound-agent-analytics
+  - synthetic-vendor-crawler-analytics
   avoid: []
-- id: enterprise-compliance-security
-  title: Enterprise compliance/security
-  body: Profound's public pages describe enterprise compliance/security capabilities such as SOC 2 Type II, SSO, RBAC, encryption, and GDPR compliance.
+- id: compliance-claims-not-approved
+  title: Compliance claims are not approved
+  body: This synthetic pack does not approve compliance, certification, security, or integration claims. Add a reviewed source before using one.
   applies_to:
   - Agency Partner
   - AEO Lead
   evidence:
-  - profound-agent-analytics
-  - profound-pricing
+  - synthetic-vendor-crawler-analytics
+  - synthetic-vendor-pricing
   avoid: []
 - id: mdp-vetting-context
   title: MDP vetting context
@@ -71,32 +71,32 @@ entries:
   evidence:
   - mdp-readme
   avoid: []
-- id: prompt-volumes-demand-intelligence
-  title: Prompt Volumes demand intelligence
-  body: Prompt Volumes helps teams identify the keywords, topics, prompt demand, trend lines, and intent signals driving AI conversations before choosing what to track or create.
+- id: prompt-research-demand-intelligence
+  title: Prompt research demand intelligence
+  body: Prompt research helps teams identify the keywords, topics, prompt demand, trend lines, and intent signals driving AI conversations before choosing what to track or create.
   applies_to:
   - AEO Lead
   - Content Lead
   - Agency Partner
   evidence:
-  - profound-prompt-volumes
+  - synthetic-vendor-prompt-research
   avoid: []
-- id: aim-marketing-agent-projects
-  title: Aim marketing agent projects
-  body: Aim surfaces ranked AI-search marketing opportunities, turns accepted opportunities into projects and data-backed execution briefs, hands work to Profound Agents, and tracks impact.
+- id: opportunity-workflow-projects
+  title: Opportunity workflow marketing agent projects
+  body: Opportunity workflow surfaces ranked AI-search marketing opportunities, turns accepted opportunities into projects and data-backed execution briefs, hands work to Synthetic Vendor content workflows, and tracks impact.
   applies_to:
   - AEO Lead
   - Content Lead
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-aim
+  - synthetic-vendor-opportunity-workflow
   avoid: []
 - id: agency-client-ai-presence
   title: Agency client AI presence
-  body: Profound for Agencies supports agencies managing AI visibility, prompt data, crawler analytics, agent workflows, and repeatable client reporting across brands.
+  body: Synthetic Vendor for Agencies supports agencies managing AI visibility, prompt data, crawler analytics, agent workflows, and repeatable client reporting across brands.
   applies_to:
   - Agency Partner
   evidence:
-  - profound-agencies
+  - synthetic-vendor-agencies
   avoid: []

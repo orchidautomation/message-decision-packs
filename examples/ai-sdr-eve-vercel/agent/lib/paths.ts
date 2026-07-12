@@ -17,5 +17,5 @@ export function outputDir(): string {
 }
 
 export function fixturePath(): string {
-  return resolve(process.env.SCOUT_FIXTURE_PATH ?? join(appRoot(), "samples", "profound-public-source-fixture.json"));
+  return resolve(process.env.SCOUT_FIXTURE_PATH ?? join(appRoot(), "samples", "synthetic-public-source-fixture.json"));
 }

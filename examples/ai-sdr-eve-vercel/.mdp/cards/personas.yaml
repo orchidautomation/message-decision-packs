@@ -1,7 +1,7 @@
 id: personas
 kind: personas
 title: Target buyer personas
-description: Buyer personas Profound wants to reach and what each needs from an AI search visibility platform.
+description: Buyer personas Synthetic Vendor wants to reach and what each needs from an AI search visibility platform.
 personas:
 - AEO Lead
 - Content Lead
@@ -16,8 +16,8 @@ entries:
   applies_to:
   - AEO Lead
   evidence:
-  - profound-aeo-teams
-  - profound-answer-engine-insights
+  - synthetic-vendor-aeo-teams
+  - synthetic-vendor-visibility-analytics
   avoid: []
 - id: content-lead
   title: Content Lead
@@ -25,8 +25,8 @@ entries:
   applies_to:
   - Content Lead
   evidence:
-  - profound-content-teams
-  - profound-agents
+  - synthetic-vendor-content-teams
+  - synthetic-vendor-content-workflows
   avoid: []
 - id: pr-brand-lead
   title: "PR & Brand Lead"
@@ -34,8 +34,8 @@ entries:
   applies_to:
   - "PR & Brand Lead"
   evidence:
-  - profound-pr-teams
-  - profound-answer-engine-insights
+  - synthetic-vendor-pr-teams
+  - synthetic-vendor-visibility-analytics
   avoid: []
 - id: agency-partner
   title: Agency Partner
@@ -43,6 +43,6 @@ entries:
   applies_to:
   - Agency Partner
   evidence:
-  - profound-pricing
-  - profound-homepage
+  - synthetic-vendor-pricing
+  - synthetic-vendor-homepage
   avoid: []

@@ -1,7 +1,7 @@
 id: pains
 kind: pains
 title: Buyer pains and triggers
-description: Reusable pains that make a Profound target account worth vetting.
+description: Reusable pains that make a Synthetic Vendor target account worth vetting.
 personas:
 - AEO Lead
 - Content Lead
@@ -17,8 +17,8 @@ entries:
   applies_to:
   - AEO Lead
   evidence:
-  - profound-answer-engine-insights
-  - profound-aeo-teams
+  - synthetic-vendor-visibility-analytics
+  - synthetic-vendor-aeo-teams
   avoid: []
 - id: citation-share-gap
   title: Citation and share-of-voice gap
@@ -27,8 +27,8 @@ entries:
   - AEO Lead
   - PR & Brand Lead
   evidence:
-  - profound-answer-engine-insights
-  - profound-pr-teams
+  - synthetic-vendor-visibility-analytics
+  - synthetic-vendor-pr-teams
   avoid: []
 - id: content-throughput-gap
   title: Content throughput gap
@@ -36,8 +36,8 @@ entries:
   applies_to:
   - Content Lead
   evidence:
-  - profound-content-teams
-  - profound-agents
+  - synthetic-vendor-content-teams
+  - synthetic-vendor-content-workflows
   avoid: []
 - id: ai-crawler-attribution-gap
   title: AI crawler attribution gap
@@ -46,7 +46,7 @@ entries:
   - AEO Lead
   - Content Lead
   evidence:
-  - profound-agent-analytics
+  - synthetic-vendor-crawler-analytics
   avoid: []
 - id: client-reporting-gap
   title: Client reporting gap
@@ -54,7 +54,7 @@ entries:
   applies_to:
   - Agency Partner
   evidence:
-  - profound-pricing
+  - synthetic-vendor-pricing
   avoid: []
 - id: prompt-demand-blindspot
   title: Prompt demand blind spot
@@ -64,7 +64,7 @@ entries:
   - Content Lead
   - Agency Partner
   evidence:
-  - profound-prompt-volumes
+  - synthetic-vendor-prompt-research
   avoid: []
 - id: signal-to-project-gap
   title: Signal to project gap
@@ -75,5 +75,5 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-aim
+  - synthetic-vendor-opportunity-workflow
   avoid: []

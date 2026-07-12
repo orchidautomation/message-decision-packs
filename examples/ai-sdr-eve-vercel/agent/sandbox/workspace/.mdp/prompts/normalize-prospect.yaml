@@ -1,4 +1,4 @@
-description: Turns a supplied messy public/source row, CRM/CSV row, Clay row, research note, or scout ledger candidate into provider-neutral Profound MDP prospect JSON before mdp fit or brief runs.
+description: Turns a supplied messy public/source row, CRM/CSV row, Clay row, research note, or scout ledger candidate into provider-neutral Synthetic Vendor MDP prospect JSON before mdp fit or brief runs.
 format: mdp.prompt.v0
 id: normalize-prospect-row
 inputs:
@@ -35,7 +35,7 @@ instructions:
 - Use runtime_context.now_utc and runtime_context.date_utc only to state when this normalization ran or to compare against explicitly supplied timing metadata. Do not hardcode fiscal year or infer customer-specific calendars from the current date.
 - When existing_pack_context includes lead_input_requirements.value_contracts, emit only values allowed by those pack-owned enum/type/format contracts for persona, segment, source_kind, and other normalized scalar fields. If the source value is outside the contract, omit the optional field or add a gap instead of inventing a synonym.
 - Use explicit persona from the row only when it already matches a pack-owned persona. Otherwise use pack-owned persona_mappings from existing_pack_context and emit the canonical persona label; if no pack-owned mapping applies, omit persona and add a gap instead of guessing.
-- 'For Profound, map titles and source context only to pack-owned personas: AEO Lead, Content Lead, PR & Brand Lead, or Agency Partner. If no mapping applies, omit persona and add a gap.'
+- 'For Synthetic Vendor, map titles and source context only to pack-owned personas: AEO Lead, Content Lead, PR & Brand Lead, or Agency Partner. If no mapping applies, omit persona and add a gap.'
 - Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.
 - Attributes are metadata, not proof. Do not use attributes to substantiate customer adoption, production use, design partners, paid pilots, ARR conversion, market validation, compliance, integrations, or product capability claims.
 - When existing_pack_context includes lead_input_requirements.attribute_definitions, emit only declared attributes when allow_undeclared_attributes is false, and match declared type, enum, date, or date-time formats. Invalid or unreviewed metadata belongs in gaps or normalization_trace, not attributes.
@@ -85,7 +85,7 @@ output_contract:
       - raw_row.trigger
     normalized_prospect:
       attributes:
-        source_strategy_id: profound-ai-search-public-scouting
+        source_strategy_id: synthetic-vendor-ai-search-public-scouting
         provider_family: exa
       background: Source row says the team owns organic growth and is researching AI answer visibility, prompt demand, and content opportunities.
       company: ExampleMarket Co
