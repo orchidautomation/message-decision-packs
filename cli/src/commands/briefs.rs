@@ -1,29 +1,52 @@
 use crate::models::Prospect;
 use crate::pack_io::{read_manifest, read_prospect};
-use crate::routing::{entry_context_with_runtime, select_cards};
+use crate::routing::{entry_context_with_runtime_scoped, select_cards};
 use crate::runtime_context::current_runtime_context;
+use crate::scope::{parse_scope_selectors, resolve_runtime_scope, scope_from_prospect};
 use crate::utils::{resolve_persona, resolve_persona_label, routable_persona};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::path::Path;
 
+#[cfg(test)]
 pub(crate) fn emit_brief(
     root: &Path,
     persona: &str,
     motion: Option<&str>,
     job: Option<&str>,
 ) -> Result<Value> {
+    emit_brief_scoped(root, persona, motion, job, &[])
+}
+
+pub(crate) fn emit_brief_scoped(
+    root: &Path,
+    persona: &str,
+    motion: Option<&str>,
+    job: Option<&str>,
+    scope_selectors: &[String],
+) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let runtime_context = current_runtime_context()?;
     let job_text = job.unwrap_or("unspecified GTM decision task");
     let persona_resolution = resolve_persona_label(&manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution);
+    let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
     let selected = select_cards(&manifest, Some(resolved_persona), Some(job_text));
     let load_order: Vec<String> = selected
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
         .collect();
+    let context = entry_context_with_runtime_scoped(
+        root,
+        &manifest,
+        resolved_persona,
+        job_text,
+        true,
+        &runtime_context,
+        &scope,
+    )?;
+    let portfolio_sensitive = context["portfolio_sensitive"].as_bool().unwrap_or(false);
     Ok(json!({
         "contract": "mdp.brief.v0",
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
@@ -31,8 +54,12 @@ pub(crate) fn emit_brief(
         "persona": resolved_persona,
         "requested_persona": persona,
         "persona_resolution": persona_resolution,
+        "scope": scope,
+        "portfolio_sensitive": portfolio_sensitive,
+        "draft_status": context["status"],
         "inputs": {"persona": resolved_persona, "requested_persona": persona, "motion": motion, "job": job_text},
-        "required_load_order": load_order,
+        "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
+        "context": context,
         "decision_trace": [
             {"step": "load_manifest", "reason": "discover pack metadata and card index"},
             {"step": "resolve_persona", "reason": "map aliases through pack-owned persona mappings when available"},
@@ -84,6 +111,7 @@ pub(crate) fn prospect_brief_from_value_with_context(
     let manifest = read_manifest(root)?;
     let runtime_context = current_runtime_context()?;
     let persona_resolution = resolve_persona(&manifest, &prospect);
+    let scope = scope_from_prospect(&manifest, &prospect);
     let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
     let fit_status = fit_result["status"]
         .as_str()
@@ -107,15 +135,34 @@ pub(crate) fn prospect_brief_from_value_with_context(
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
         .collect();
-    let draft_status = if fit_status == "fit" {
+    let fit_draft_ready = fit_status == "fit";
+    let initial_draft_status = if fit_draft_ready { "ready" } else { "no-draft" };
+    let context = entry_context_with_runtime_scoped(
+        root,
+        &manifest,
+        &persona,
+        job_text,
+        fit_draft_ready,
+        &runtime_context,
+        &scope,
+    )?;
+    let portfolio_sensitive = context["portfolio_sensitive"].as_bool().unwrap_or(false);
+    let bounded_context = include_context || portfolio_sensitive;
+    let draft_status = if initial_draft_status == "ready" && context["status"] == "ready" {
         "ready"
     } else {
         "no-draft"
     };
     let no_draft_reason = if draft_status == "ready" {
         Value::Null
-    } else {
+    } else if fit_status != "fit" {
         json!(brief_no_draft_reason(&fit_result))
+    } else {
+        json!(
+            context["reason"]
+                .as_str()
+                .unwrap_or("Portfolio scope did not resolve to draft-safe bounded context.")
+        )
     };
     let mut payload = json!({
         "contract": "mdp.message-brief.v0",
@@ -130,12 +177,14 @@ pub(crate) fn prospect_brief_from_value_with_context(
         },
         "persona": persona,
         "persona_resolution": persona_resolution,
+        "scope": scope,
+        "portfolio_sensitive": portfolio_sensitive,
         "fit": fit_result,
         "draft_status": draft_status,
         "draft_decision": if draft_status == "ready" { "Proceed with routed brief using stated assumptions." } else { "Do not draft outbound copy unless the user explicitly overrides this fit gate." },
         "no_draft_reason": no_draft_reason,
         "job": job_text,
-        "required_load_order": load_order,
+        "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
         "route": route,
         "decision_trace": [
             {"step": "read_prospect", "reason": "use supplied prospect/account JSON as task input"},
@@ -144,22 +193,15 @@ pub(crate) fn prospect_brief_from_value_with_context(
             {"step": "generate_or_handoff", "reason": "use the brief as the agent/model input contract"}
         ],
         "agent_instruction": if draft_status == "ready" {
-            if include_context {
+            if bounded_context {
                 "Use data.context.entries before opening card files. Open full_card_required paths only when present. Combine bounded context with prospect, use the routed CTA and output rules when present, and do not invent claims outside the loaded context."
             } else {
                 "Read only required_load_order card files, combine them with prospect, then draft copy. Use the routed CTA policy and output rules when present. Do not invent claims outside the loaded cards."
             }
         } else { "Stop before drafting. Surface the fit status and missing context/disqualifiers, then ask for explicit user override before creating outbound copy." }
     });
-    if include_context {
-        payload["context"] = entry_context_with_runtime(
-            root,
-            &manifest,
-            &persona,
-            job_text,
-            draft_status == "ready",
-            &runtime_context,
-        )?;
+    if bounded_context {
+        payload["context"] = context;
     }
     Ok(payload)
 }
@@ -883,6 +925,41 @@ mod tests {
                 .expect("entries array")
                 .len(),
             0
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_ready_prospect_stays_no_draft_when_portfolio_context_blocks() {
+        let root = temp_pack("brief-portfolio-scope-blocked");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result = prospect_brief_with_context(
+            &root,
+            &prospect_path,
+            "linkedin",
+            Some("portfolio scope example"),
+            true,
+        )
+        .expect("brief should succeed");
+
+        assert_eq!(result["fit"]["status"], "fit");
+        assert_eq!(result["portfolio_sensitive"], true);
+        assert_eq!(result["context"]["status"], "blocked");
+        assert_eq!(result["draft_status"], "no-draft");
+        assert!(
+            result["context"]["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|entry| entry["selection"] == "guardrail")
+        );
+        assert!(
+            result["agent_instruction"]
+                .as_str()
+                .unwrap()
+                .starts_with("Stop before drafting")
         );
 
         let _ = std::fs::remove_dir_all(root);

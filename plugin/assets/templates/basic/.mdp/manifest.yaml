@@ -7,6 +7,23 @@ profile:
   id: gtm
   label: GTM Messaging
   version: mdp.profile.v0
+  context_dimensions:
+    capability:
+    - portfolio-routing
+    - bounded-context
+    product:
+    - local-cli
+    - agent-plugin
+    segment:
+    - agent-assisted-gtm
+    solution:
+    - gtm-messaging
+    - agent-enablement
+  context_dimension_dependencies:
+    capability:
+    - product
+    solution:
+    - product
   agent_surface:
     recommended_skills:
     - mdp
@@ -135,9 +152,27 @@ lead_input_requirements:
       - synthetic-example
       description: Provider-neutral source markers accepted from normalization prompts.
   attribute_definitions:
+    capability:
+      type: string
+      enum:
+      - portfolio-routing
+      - bounded-context
+      description: Optional capability context; select product with capability.
     fiscal_year:
       type: string
       description: Optional reviewed account metadata. Keep proof in signals, not attributes.
+    product:
+      type: string
+      enum:
+      - local-cli
+      - agent-plugin
+      description: Optional pack-owned product context used for entry scope routing.
+    solution:
+      type: string
+      enum:
+      - gtm-messaging
+      - agent-enablement
+      description: Optional solution context; select product with solution.
 required_primitives:
 - actors
 - decision-criteria
@@ -181,6 +216,9 @@ primitive_map:
     - prompt-output-missing-readiness-boolean
     - prompt-output-missing-required-field
     - prompt-output-validation
+    - portfolio-local-cli-route
+    - portfolio-codex-plugin-route
+    - portfolio-missing-scope-route
   evidence-proof:
     cards:
     - claims
@@ -205,6 +243,7 @@ primitive_map:
     - copy-patterns
     - ctas
     - hooks
+    - portfolio-examples
     - channel-policies
   routing-jobs:
     cards:
@@ -409,6 +448,15 @@ cards:
   - hook
   - copy
   - message
+- id: portfolio-examples
+  path: cards/portfolio-examples.yaml
+  kind: hooks
+  description: Synthetic portfolio scope demonstration.
+  personas: []
+  tags:
+  - portfolio
+  - scope
+  - example
 - id: ctas
   path: cards/ctas.yaml
   kind: ctas

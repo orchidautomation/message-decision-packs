@@ -62,6 +62,8 @@ Preferred fields:
 
 Use prospect `attributes` for reviewed row metadata only. Do not put source evidence there, and do not use entry `metadata` for prospect facts.
 
+When the profile declares portfolio `context_dimensions`, copy only reviewed scalar product/capability/solution values into matching prospect `attributes`. A declared `segment` dimension uses the top-level prospect `segment`; do not add a conflicting `attributes.segment`. Scope is not proof and must not be inferred from company prose, persona, or signals. Missing/invalid scope should remain `insufficient-context` and `draft_status: no-draft`.
+
 Decision rule:
 
 - Evidence or account behavior belongs in `signals[]` with `source`, confidence, and freshness when known.
@@ -125,7 +127,7 @@ Treat the readable Markdown as the human review layer, not the machine contract.
 
 Do not apply this prospect artifact shape to proposal packs. Proposal packs need the same human-review-layer concept, but should use opportunity/review metadata and proposal profile sections such as bid/no-bid read, compliance gaps, requirement status, proof or win-theme receipts, unsupported claims, red-team gaps, and `verify-output` status. Keep proposal-readable artifacts as review support over routed MDP context and proof validation, not blank-page proposal generation, proposal management software, legal/procurement approval, or automated submission.
 
-12. Read `data.runtime_context` and `data.context.runtime_context` as the brief run timestamp/policy. Then read `data.context.entries` first if drafting is requested and `data.draft_status` is `ready`. Open `data.context.full_card_required` paths only when present.
+12. Read `data.runtime_context` and `data.context.runtime_context` as the brief run timestamp/policy. Then read `data.context.entries` first if drafting is requested and `data.draft_status` is `ready`. When `portfolio_sensitive: true`, use only bounded entries; shared card paths are audit-only and must not become drafting context. Open `data.context.full_card_required` paths only for non-portfolio routes when present.
 13. If copy is drafted from the brief, run `mdp --json check-claims --dir . --text "<draft copy>"` before treating the draft as approved.
 
 ## Response

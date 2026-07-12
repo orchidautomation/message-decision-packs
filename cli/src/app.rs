@@ -1,10 +1,10 @@
 use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat};
 use crate::commands::{
-    agent_surface, capabilities, check_claims, demo_copy, doctor, emit_brief, eval_pack, explain,
-    fit, gaps, init_pack, init_pack_dry_run, pack, prospect_brief_with_context,
-    render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief, route,
-    sample_leads, schema, validate_pack, validate_prompt_output_file, verify_output_file,
-    verify_output_readable_file,
+    agent_surface, capabilities, check_claims_scoped, demo_copy, doctor, emit_brief_scoped,
+    eval_pack, explain, fit, gaps, init_pack, init_pack_dry_run, pack, prospect_brief_with_context,
+    render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief,
+    route_scoped, sample_leads, schema, validate_pack, validate_prompt_output_file,
+    verify_output_file, verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -138,13 +138,14 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             dir,
             persona,
             job,
+            scope,
             entries,
             eval_fixture,
         } => print_output(
             json_mode,
             summary_mode,
             "route",
-            route(&dir, &persona, &job, entries, eval_fixture)?,
+            route_scoped(&dir, &persona, &job, &scope, entries, eval_fixture)?,
         ),
         Commands::SampleLeads {
             dir,
@@ -167,15 +168,17 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             subject,
             persona,
             job,
+            scope,
             strict,
         } => {
-            let data = check_claims(
+            let data = check_claims_scoped(
                 &dir,
                 text.as_deref(),
                 file.as_deref(),
                 subject.as_deref(),
                 persona.as_deref(),
                 job.as_deref(),
+                &scope,
             )?;
             let data = apply_strict(data, strict, StrictWarningSource::ConstraintWarnings);
             print_checked(json_mode, summary_mode, "check-claims", data)
@@ -253,10 +256,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             persona,
             motion,
             job,
+            scope,
             out,
             dry_run,
         } => {
-            let mut data = emit_brief(&dir, &persona, motion.as_deref(), job.as_deref())?;
+            let mut data =
+                emit_brief_scoped(&dir, &persona, motion.as_deref(), job.as_deref(), &scope)?;
             if let Some(path) = out {
                 if dry_run {
                     data = attach_dry_run_artifact(data, &path);

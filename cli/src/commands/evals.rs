@@ -1,12 +1,13 @@
 use crate::commands::briefs::prospect_brief_from_value;
 use crate::commands::health::{KNOWN_PRIMITIVES, KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
 use crate::commands::prompt_output::validate_prompt_output_value;
-use crate::commands::routing::{check_claims, fit_prospect, route};
+use crate::commands::routing::{check_claims_scoped, fit_prospect, route_scoped};
 use crate::commands::{verify_output_file, verify_output_value};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
 use crate::pack_io::read_manifest;
 use crate::prospect_validation::validate_prospect_value;
+use crate::scope::parse_scope_selectors;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -22,6 +23,8 @@ struct EvalFixture {
     profile_eval: Option<EvalProfileMetadata>,
     persona: Option<String>,
     job: Option<String>,
+    #[serde(default)]
+    scope: Vec<String>,
     channel: Option<String>,
     prospect: Option<Value>,
     prompt: Option<std::path::PathBuf>,
@@ -41,6 +44,8 @@ struct EvalFixture {
     expect_valid: Option<bool>,
     expect_normalization_ready: Option<bool>,
     expect_issue_codes_contains: Option<Vec<String>>,
+    expect_scope_issue_codes_contains: Option<Vec<String>>,
+    expect_entry_gap_reasons_contains: Option<Vec<String>>,
     expect_gap_titles_contains: Option<Vec<String>>,
     expect_guardrail_terms_contains: Option<Vec<String>>,
     expect_unsupported_claims_contains: Option<Vec<String>>,
@@ -147,10 +152,11 @@ fn run_fixture(
     }
 
     let output = match fixture.command.as_str() {
-        "route" => route(
+        "route" => route_scoped(
             root,
             fixture.persona.as_deref().expect("validated persona"),
             fixture.job.as_deref().expect("validated job"),
+            &fixture.scope,
             true,
             false,
         )?,
@@ -170,13 +176,14 @@ fn run_fixture(
         "gaps" => gaps(root)?,
         "validate-prompt-output" => validate_prompt_output_fixture(root, path, fixture)?,
         "verify-output" => validate_proof_output_fixture(root, path, fixture)?,
-        "check-claims" => check_claims(
+        "check-claims" => check_claims_scoped(
             root,
             fixture.text.as_deref(),
             None,
             fixture.subject.as_deref(),
             fixture.persona.as_deref(),
             fixture.job.as_deref(),
+            &fixture.scope,
         )?,
         other => {
             issues.push(issue(
@@ -199,6 +206,14 @@ fn validate_fixture(
     profile_job_ids: Option<&BTreeSet<String>>,
 ) -> Vec<Value> {
     let mut issues = Vec::new();
+    if let Err(err) = parse_scope_selectors(&fixture.scope) {
+        issues.push(issue(
+            "eval_fixture_scope_invalid",
+            "error",
+            format!("{}#/scope", path.display()),
+            err.to_string(),
+        ));
+    }
     if let Some(profile_eval) = &fixture.profile_eval {
         if profile_eval.category.trim().is_empty() {
             issues.push(issue(
@@ -577,6 +592,47 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
             }
         }
     }
+    if let Some(expected_codes) = &fixture.expect_scope_issue_codes_contains {
+        let actual_codes = output["scope"]["issues"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|issue| issue["code"].as_str().map(str::to_string))
+            .collect::<Vec<_>>();
+        for expected_code in expected_codes {
+            if !actual_codes.iter().any(|code| code == expected_code) {
+                issues.push(issue(
+                    "eval_expected_scope_issue_code_missing",
+                    "error",
+                    path.display().to_string(),
+                    format!("missing expected scope issue code {expected_code}"),
+                ));
+            }
+        }
+    }
+    if let Some(expected_reasons) = &fixture.expect_entry_gap_reasons_contains {
+        let actual_reasons = output["entry_route"]["gaps"]
+            .as_array()
+            .into_iter()
+            .chain(output["context"]["gaps"].as_array())
+            .flatten()
+            .filter_map(|gap| gap["reason"].as_str().map(str::to_string))
+            .collect::<Vec<_>>();
+        for expected_reason in expected_reasons {
+            if !actual_reasons
+                .iter()
+                .any(|reason| reason == expected_reason)
+            {
+                issues.push(issue(
+                    "eval_expected_entry_gap_reason_missing",
+                    "error",
+                    path.display().to_string(),
+                    format!("missing expected entry gap reason {expected_reason}"),
+                ));
+            }
+        }
+    }
     if let Some(expected_titles) = &fixture.expect_gap_titles_contains {
         let titles = gap_titles(output);
         for expected_title in expected_titles {
@@ -621,9 +677,9 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
 fn entry_titles(output: &Value) -> Vec<String> {
     output["entry_route"]["matches"]
         .as_array()
-        .cloned()
-        .unwrap_or_default()
         .into_iter()
+        .chain(output["context"]["entries"].as_array())
+        .flatten()
         .filter_map(|value| value["title"].as_str().map(str::to_string))
         .collect()
 }
@@ -697,6 +753,23 @@ mod tests {
         init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
         root
+    }
+
+    #[test]
+    fn entry_title_assertions_read_bounded_brief_context() {
+        let titles = entry_titles(&json!({
+            "context": {
+                "entries": [
+                    {"title": "Local CLI portfolio angle"},
+                    {"title": "Global guardrail"}
+                ]
+            }
+        }));
+
+        assert_eq!(
+            titles,
+            vec!["Local CLI portfolio angle", "Global guardrail"]
+        );
     }
 
     #[test]

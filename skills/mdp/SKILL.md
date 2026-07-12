@@ -148,6 +148,8 @@ mdp --json validate --strict --dir .
 
 Pack extensions must use supported surfaces. Use prospect `attributes` for bounded reviewed row metadata that `mdp fit` may require through `.mdp/manifest.yaml` `lead_input_requirements.required_attributes`. Use entry `metadata` for advisory annotations about card content, such as owner, review status, source priority, or internal notes; `mdp route --entries` and `mdp brief --context` surface that metadata for agents, but the CLI does not enforce unknown metadata keys. Do not add arbitrary sibling fields to entries, cards, or manifests as if they were supported contract fields; `mdp validate` warns that unsupported fields are ignored. For custom channels, add the channel string to `.mdp/manifest.yaml` `supported_channels`, then write matching channel-policy entries.
 
+For portfolio GTM packs, use profile `context_dimensions` and entry `scope`; do not add product, capability, solution, or segment to the universal primitive list. `context_dimension_dependencies` can require a capability- or solution-like entry to also name its product-like companion. `applies_to` remains actor/persona applicability, while `scope` is enforced portfolio applicability and `metadata` remains advisory. Keep one runtime value per dimension in V1, leave company-wide entries unscoped, and add product A, product B, and missing-scope eval fixtures before activation.
+
 Profile metadata is optional but preferred for deterministic skill routing. When `.mdp/manifest.yaml` declares `profile.agent_surface`, treat `recommended_skills`, `allowed_skills`, `blocked_skills`, and `job_skills` as the pack-owned routing contract for MDP skills. Existing packs without this metadata remain valid; `mdp agent-surface` returns a legacy generic surface and tells agents to fall back to generic MDP CLI commands.
 
 Do not confuse profile routing with profile activation. `profile.id` and `profile.agent_surface` tell an agent which skills are appropriate. Full activation is reported by `mdp --json validate --dir .` in `data.profile.activation_ready` and is based on `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and categorized `profile_eval` fixture coverage. Missing mapped card, prompt, input contract, job, or eval references are validation errors. Missing required primitive or eval category coverage is warning-first by default, fails with `--strict`, and blocks activation. Activation is structural only: it does not prove commercial readiness, customer readiness, market fit, compliance approval, or that a real prospect should be contacted. Keep profile vocabulary such as account context or opportunity context in card IDs, input contracts, prompts, jobs, and evals; do not invent new core card kinds.
@@ -274,11 +276,13 @@ Read `data.runtime_context` and `data.context.runtime_context` as the run timest
 ```bash
 mdp --json --summary route --entries --eval-fixture --dir . --persona "VP Finance" --job "linkedin outbound copy"
 mdp --json emit-brief --dir . --persona "VP Finance" --job "linkedin outbound copy"
+mdp --json route --entries --dir . --persona "GTM Engineering" --job "portfolio scope example" --scope product=local-cli
+mdp --json emit-brief --dir . --persona "GTM Engineering" --job "portfolio scope example" --scope product=local-cli
 ```
 
 Direct persona/job commands resolve pack-owned persona aliases before routing. Check `requested_persona` and `persona_resolution` before drafting so alias resolution stays visible.
 
-Use `load_order` or `required_load_order` as the progressive-disclosure contract.
+Use `load_order` or `required_load_order` as the progressive-disclosure contract only for routes that are not portfolio-sensitive. When `portfolio_sensitive: true`, shared card paths are audit-only metadata: draft from `entry_route.matches` or `context.entries`, require `draft_status: ready`, and stop on missing/invalid scope.
 
 
 Before drafting from a prospect row, check fit:
@@ -299,6 +303,7 @@ When route-specific constraints or subject rules matter, include the subject and
 
 ```bash
 mdp --json check-claims --dir . --text "<draft copy>" --subject "<subject>" --persona "<persona>" --job "<channel> outbound copy"
+mdp --json check-claims --dir . --text "<draft copy>" --persona "<persona>" --job "<job>" --scope product=<product-id>
 ```
 
 Add `--strict` when advisory constraint warnings should fail the approval gate.
@@ -310,7 +315,7 @@ mdp --json verify-output --dir . --file <proof-output.json>
 mdp verify-output --readable --dir . --file <proof-output.json>
 ```
 
-`verify-output` accepts `contract: mdp.proof-output.v0` artifacts with complete ordered segments. Material `claim`, `requirement_status`, and `template_text` segments must bind to real pack IDs; `gap` segments must stay explicit about missing proof or source context; `connective` or `formatting` segments may be unbound only when `material: false`. A source ID in model-written prose is not proof until `verify-output` resolves it and the embedded full-text `check-claims` pass is clean. `verify-output` also enforces pack-owned `constraints.proof_output` from output-rule cards and route-selected entries: required segment kinds, minimum segment counts, source refs for claim segments, and connective word limits. For proposal packs, `--readable` emits a Markdown proposal review layer with YAML frontmatter, proof receipts, unsupported claims, gaps, and next actions; treat it as human review output, not the machine source of truth.
+`verify-output` accepts `contract: mdp.proof-output.v0` artifacts with complete ordered segments. Material `claim`, `requirement_status`, and `template_text` segments must bind to real pack IDs; `gap` segments must stay explicit about missing proof or source context; `connective` or `formatting` segments may be unbound only when `material: false`. A source ID in model-written prose is not proof until `verify-output` resolves it and the embedded full-text `check-claims` pass is clean. `verify-output` also enforces pack-owned `constraints.proof_output` from output-rule cards and route-selected entries: required segment kinds, minimum segment counts, source refs for claim segments, and connective word limits. Proof-output artifacts do not carry portfolio scope in V1, so `verify-output` returns `proof_output_scope_unsupported` when the pack contains scoped entries; do not bypass that fail-closed result. For proposal packs, `--readable` emits a Markdown proposal review layer with YAML frontmatter, proof receipts, unsupported claims, gaps, and next actions; treat it as human review output, not the machine source of truth.
 
 For pack QA:
 

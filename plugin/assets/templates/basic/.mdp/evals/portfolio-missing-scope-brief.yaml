@@ -1,0 +1,35 @@
+channel: linkedin
+command: brief
+expect_draft_status: no-draft
+expect_entry_gap_reasons_contains:
+- scope_dimension_missing
+id: portfolio-missing-scope-brief
+job: portfolio scope example
+profile_eval:
+  category: insufficient-context
+  jobs:
+  - prospect-fit-or-brief
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - source-signals
+  - output-contracts
+  - routing-jobs
+  - gaps
+prospect:
+  company: ExampleCo
+  company_domain: example.com
+  name: Alex Rivera
+  persona: GTM Engineering
+  segment: agent-assisted GTM
+  signals:
+  - confidence: medium
+    freshness: recent
+    id: portfolio-context-standardization
+    source: synthetic portfolio eval fixture
+    state_as: supplied
+    title: Standardizing portfolio messaging context
+  source_kind: synthetic-example
+  synthetic: true
+  title: Revenue Operations Lead
+  trigger: standardizing outbound context before agents draft or route campaign briefs

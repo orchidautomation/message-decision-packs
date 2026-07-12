@@ -4,6 +4,8 @@ Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and 
 
 If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a provider-neutral prospect/source row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, output-rules, and bounded context for drafting.
 
+If one GTM pack needs shared company rules plus product-, capability-, solution-, or segment-specific pains, proof, hooks, and CTAs, read [Portfolio-Aware GTM Scope](portfolio-scope.md). Those dimensions filter the applicability of existing agnostic primitives; they do not create new primitives or require one pack per product.
+
 ## Install
 
 Install the CLI and supported agent bundles:

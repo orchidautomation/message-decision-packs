@@ -31,6 +31,15 @@ or:
 mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy"
 ```
 
+When the route is portfolio-sensitive, pass the same reviewed selectors to every command in the evaluation path:
+
+```bash
+mdp --json emit-brief --dir . --persona "<persona>" --job "<channel> outbound copy" --scope product=<product-id>
+mdp --json check-claims --dir . --text "<draft copy>" --persona "<persona>" --job "<channel> outbound copy" --scope product=<product-id>
+```
+
+Require `draft_status: ready` and evaluate only the bounded `context.entries` or `entry_route.matches`. Do not open or draft from full shared cards when `portfolio_sensitive: true`; their paths are audit metadata and may contain entries for other products. Stop on missing/invalid scope rather than choosing a product from the persona, company description, or draft text.
+
 2. Run the deterministic claim/guardrail check against the draft:
 
 ```bash

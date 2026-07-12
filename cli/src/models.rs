@@ -46,6 +46,10 @@ pub(crate) struct Profile {
     pub(crate) label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) version: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) context_dimensions: BTreeMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) context_dimension_dependencies: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "AgentSurface::is_empty")]
     pub(crate) agent_surface: AgentSurface,
 }
@@ -387,6 +391,8 @@ pub(crate) struct Entry {
     pub(crate) body: String,
     #[serde(default)]
     pub(crate) applies_to: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) scope: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub(crate) evidence: Vec<String>,
     #[serde(default)]

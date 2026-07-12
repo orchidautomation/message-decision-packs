@@ -46,6 +46,7 @@ Candidate entries carry normal MDP entry fields:
   "title": "Local decision context",
   "body": "Supplied source material describes the product as local decision context for GTM messaging.",
   "applies_to": ["PMM", "GTM Engineering"],
+  "scope": {"product": ["local-cli"]},
   "evidence": ["source_notes"],
   "avoid": [],
   "constraints": {
@@ -76,6 +77,8 @@ They also carry review metadata:
 ```
 
 Only the normal MDP entry fields should be copied into `.mdp/cards/*.yaml` after review. `constraints` is a normal optional MDP entry field when the source explicitly calls for deterministic output limits. Draft-text constraints are checked by `mdp check-claims`; `constraints.proof_output` is checked by `mdp verify-output` for structured proof-output artifacts. Keep confidence, provenance, status, gaps, and rejected claims in the review artifact or source ledger.
+
+`scope` is also a normal optional entry field when the profile declares portfolio `context_dimensions`. Copy only reviewed canonical values from those declarations, include dependency dimensions required by `context_dimension_dependencies`, and leave company-wide entries unscoped. Product, capability, solution, and segment remain applicability dimensions rather than universal MDP primitives. A prompt may propose scope for review, but it must not infer product applicability from persona text or treat scope as evidence.
 
 ## Safe Defaults
 

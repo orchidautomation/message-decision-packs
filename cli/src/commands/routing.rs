@@ -1,6 +1,9 @@
 use crate::models::{CardKind, QualificationGates};
 use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
-use crate::routing::{entry_context, entry_route, select_cards};
+use crate::routing::{entry_context_scoped, entry_route_scoped, select_cards};
+use crate::scope::{
+    match_entry_scope, parse_scope_selectors, resolve_runtime_scope, scope_from_prospect,
+};
 use crate::utils::slugify;
 use crate::utils::{
     normalize_supplied_company_domain, prospect_haystack_with_persona, resolve_persona,
@@ -13,6 +16,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+#[cfg(test)]
 pub(crate) fn route(
     root: &Path,
     persona: &str,
@@ -20,19 +24,43 @@ pub(crate) fn route(
     include_entries: bool,
     include_eval_fixture: bool,
 ) -> Result<Value> {
+    route_scoped(
+        root,
+        persona,
+        job,
+        &[],
+        include_entries,
+        include_eval_fixture,
+    )
+}
+
+pub(crate) fn route_scoped(
+    root: &Path,
+    persona: &str,
+    job: &str,
+    scope_selectors: &[String],
+    include_entries: bool,
+    include_eval_fixture: bool,
+) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let persona_resolution = resolve_persona_label(&manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution);
+    let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
     let selected = select_cards(&manifest, Some(resolved_persona), Some(job));
     let load_order: Vec<String> = selected
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
         .collect();
+    let routed_entries = entry_route_scoped(root, &manifest, resolved_persona, job, &scope)?;
+    let portfolio_sensitive = routed_entries["portfolio_sensitive"]
+        .as_bool()
+        .unwrap_or(false);
     let mut payload = json!({
         "persona": resolved_persona,
         "requested_persona": persona,
         "persona_resolution": persona_resolution,
         "job": job,
+        "scope": scope,
         "route": selected,
         "decision_trace": [
             "manifest loaded",
@@ -41,15 +69,22 @@ pub(crate) fn route(
             "job keywords matched against card descriptions and tags",
             "base policy cards included for guardrails"
         ],
-        "load_order": load_order
+        "load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
+        "portfolio_sensitive": portfolio_sensitive,
+        "draft_status": if routed_entries["status"] == "blocked" { "blocked" } else { "ready" }
     });
-    if include_entries || include_eval_fixture {
-        let routed_entries = entry_route(root, &manifest, resolved_persona, job)?;
+    if include_entries || include_eval_fixture || portfolio_sensitive {
         if include_eval_fixture {
-            payload["eval_fixture"] =
-                eval_fixture(persona, resolved_persona, job, &payload, &routed_entries);
+            payload["eval_fixture"] = eval_fixture(
+                persona,
+                resolved_persona,
+                job,
+                scope_selectors,
+                &payload,
+                &routed_entries,
+            );
         }
-        if include_entries {
+        if include_entries || portfolio_sensitive {
             payload["entry_route"] = json!(routed_entries);
         }
     }
@@ -60,6 +95,7 @@ fn eval_fixture(
     requested_persona: &str,
     persona: &str,
     job: &str,
+    scope: &[String],
     route_output: &Value,
     routed_entries: &Value,
 ) -> Value {
@@ -77,6 +113,7 @@ fn eval_fixture(
         "persona": persona,
         "requested_persona": requested_persona,
         "job": job,
+        "scope": scope,
         "expect_load_order_contains": route_output["load_order"],
         "expect_entry_titles_contains": expected_titles,
         "notes": [
@@ -102,15 +139,28 @@ pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -
         .fit_usable
         .then_some(persona_resolution.persona.as_str());
     let haystack = prospect_haystack_with_persona(&prospect, resolved_persona_for_fit);
-    let context = fit_context(
+    let mut context = fit_context(
         &manifest,
         &prospect,
         &persona_resolution,
         company_domain_normalization,
     );
+    let scope = scope_from_prospect(&manifest, &prospect);
+    let mut portfolio_sensitive = false;
+    let mut compatible_scoped_entry_count = 0usize;
 
     for fit_card in &fit_cards {
         for entry in &fit_card.entries {
+            if !entry.scope.is_empty() {
+                portfolio_sensitive = true;
+            }
+            let scope_match = match_entry_scope(&scope, &entry.scope);
+            if !scope_match.compatible {
+                continue;
+            }
+            if !entry.scope.is_empty() {
+                compatible_scoped_entry_count += 1;
+            }
             let entry_text = format!("{} {}", entry.title, entry.body).to_lowercase();
             let applies = entry.applies_to.iter().any(|candidate| {
                 haystack.contains(&candidate.to_lowercase())
@@ -136,6 +186,15 @@ pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -
         }
     }
 
+    let scope_ready = !portfolio_sensitive
+        || (!scope.selected.is_empty() && scope.is_valid() && compatible_scoped_entry_count > 0);
+    context["scope_ready"] = json!(scope_ready);
+    context["scope"] = json!(&scope);
+    context["portfolio_sensitive"] = json!(portfolio_sensitive);
+    if !scope_ready {
+        context["ready"] = json!(false);
+    }
+
     let status = if !disqualifiers.is_empty() {
         "disqualified"
     } else if !context["ready"].as_bool().unwrap_or(false) {
@@ -148,6 +207,8 @@ pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -
     Ok(json!({
         "contract": "mdp.fit.v0",
         "prospect": prospect,
+        "scope": scope,
+        "portfolio_sensitive": portfolio_sensitive,
         "persona_resolution": persona_resolution,
         "status": status,
         "context": context,
@@ -718,6 +779,18 @@ pub(crate) fn check_claims(
     persona: Option<&str>,
     job: Option<&str>,
 ) -> Result<Value> {
+    check_claims_scoped(root, text, file, subject, persona, job, &[])
+}
+
+pub(crate) fn check_claims_scoped(
+    root: &Path,
+    text: Option<&str>,
+    file: Option<&Path>,
+    subject: Option<&str>,
+    persona: Option<&str>,
+    job: Option<&str>,
+    scope_selectors: &[String],
+) -> Result<Value> {
     if persona.is_some() != job.is_some() {
         return Err(anyhow!(
             "pass both --persona and --job for route-scoped constraint checks"
@@ -733,13 +806,34 @@ pub(crate) fn check_claims(
     };
     let paragraph_count = count_paragraphs(&raw);
     let lower = raw.to_lowercase();
+    let manifest = read_manifest(root)?;
+    let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
     let claims_cards = read_cards_by_id_or_kind(root, "claims", CardKind::Claims)?;
     let avoid_cards = read_cards_by_id_or_kind(root, "avoid-rules", CardKind::AvoidRules)?;
     let output_rules_cards =
         read_cards_by_id_or_kind(root, "output-rules", CardKind::OutputRules).unwrap_or_default();
+    let entry_compatible =
+        |entry: &crate::models::Entry| match_entry_scope(&scope, &entry.scope).compatible;
+    let scoped_rule_count = claims_cards
+        .iter()
+        .chain(avoid_cards.iter())
+        .chain(output_rules_cards.iter())
+        .flat_map(|card| card.entries.iter())
+        .filter(|entry| !entry.scope.is_empty())
+        .count();
+    let compatible_scoped_rule_count = claims_cards
+        .iter()
+        .chain(avoid_cards.iter())
+        .chain(output_rules_cards.iter())
+        .flat_map(|card| card.entries.iter())
+        .filter(|entry| !entry.scope.is_empty() && entry_compatible(entry))
+        .count();
+    let mut portfolio_sensitive = scoped_rule_count > 0;
+    let mut route_scope_blocked = false;
     let approved_claim_context = claims_cards
         .iter()
         .flat_map(|card| card.entries.iter())
+        .filter(|entry| entry_compatible(entry))
         .map(|entry| {
             format!(
                 "{} {} {}",
@@ -761,8 +855,13 @@ pub(crate) fn check_claims(
     let mut resolved_persona_for_output: Option<String> = None;
 
     for card in &claims_cards {
-        collect_guardrail_hits(&mut guardrail_hits, &lower, &card.id, &card.entries);
-        for entry in &card.entries {
+        collect_guardrail_hits(
+            &mut guardrail_hits,
+            &lower,
+            &card.id,
+            card.entries.iter().filter(|entry| entry_compatible(entry)),
+        );
+        for entry in card.entries.iter().filter(|entry| entry_compatible(entry)) {
             let title = entry.title.to_lowercase();
             let title_match = title.len() > 4 && lower.contains(&title);
             let evidence_missing = entry.evidence.is_empty();
@@ -775,15 +874,25 @@ pub(crate) fn check_claims(
         }
     }
     for card in &avoid_cards {
-        collect_guardrail_hits(&mut guardrail_hits, &lower, &card.id, &card.entries);
+        collect_guardrail_hits(
+            &mut guardrail_hits,
+            &lower,
+            &card.id,
+            card.entries.iter().filter(|entry| entry_compatible(entry)),
+        );
     }
     for card in &output_rules_cards {
-        collect_guardrail_hits(&mut guardrail_hits, &lower, &card.id, &card.entries);
+        collect_guardrail_hits(
+            &mut guardrail_hits,
+            &lower,
+            &card.id,
+            card.entries.iter().filter(|entry| entry_compatible(entry)),
+        );
         collect_output_structure_hits(
             &mut guardrail_hits,
             paragraph_count,
             &card.id,
-            &card.entries,
+            card.entries.iter().filter(|entry| entry_compatible(entry)),
         );
         collect_output_constraint_hits(
             &mut guardrail_hits,
@@ -792,15 +901,16 @@ pub(crate) fn check_claims(
             &raw,
             subject,
             &card.id,
-            &card.entries,
+            card.entries.iter().filter(|entry| entry_compatible(entry)),
         );
     }
     if let (Some(persona), Some(job)) = (persona, job) {
-        let manifest = read_manifest(root)?;
         let persona_resolution = resolve_persona_label(&manifest, persona);
         let resolved_persona = routable_persona(persona, &persona_resolution);
         resolved_persona_for_output = Some(resolved_persona.to_string());
-        let context = entry_context(root, &manifest, resolved_persona, job, true)?;
+        let context = entry_context_scoped(root, &manifest, resolved_persona, job, true, &scope)?;
+        portfolio_sensitive |= context["portfolio_sensitive"].as_bool().unwrap_or(false);
+        route_scope_blocked = context["status"].as_str() == Some("blocked");
         route_persona_resolution = serde_json::to_value(&persona_resolution)?;
         collect_context_constraint_hits(
             &mut guardrail_hits,
@@ -812,10 +922,22 @@ pub(crate) fn check_claims(
             &context,
         );
     }
-    let valid = guardrail_hits.is_empty() && claim_gaps.is_empty() && unsupported_claims.is_empty();
+    let scoped_rules_unsatisfied = scoped_rule_count > 0 && compatible_scoped_rule_count == 0;
+    let scope_blocked = portfolio_sensitive
+        && (scope.selected.is_empty()
+            || !scope.is_valid()
+            || scoped_rules_unsatisfied
+            || route_scope_blocked);
+    let valid = !scope_blocked
+        && guardrail_hits.is_empty()
+        && claim_gaps.is_empty()
+        && unsupported_claims.is_empty();
     Ok(json!({
         "contract": "mdp.claim-check.v0",
         "valid": valid,
+        "scope": scope,
+        "portfolio_sensitive": portfolio_sensitive,
+        "scope_blocked": scope_blocked,
         "checked": {
             "subject": subject.is_some(),
             "route_scoped": persona.is_some() && job.is_some(),
@@ -834,11 +956,11 @@ pub(crate) fn check_claims(
     }))
 }
 
-fn collect_guardrail_hits(
+fn collect_guardrail_hits<'a>(
     guardrail_hits: &mut Vec<Value>,
     lower: &str,
     card_id: &str,
-    entries: &[crate::models::Entry],
+    entries: impl IntoIterator<Item = &'a crate::models::Entry>,
 ) {
     for entry in entries {
         for term in &entry.avoid {
@@ -851,11 +973,11 @@ fn collect_guardrail_hits(
     }
 }
 
-fn collect_output_structure_hits(
+fn collect_output_structure_hits<'a>(
     guardrail_hits: &mut Vec<Value>,
     paragraph_count: usize,
     card_id: &str,
-    entries: &[crate::models::Entry],
+    entries: impl IntoIterator<Item = &'a crate::models::Entry>,
 ) {
     for entry in entries {
         if let Some(expected) = entry.exact_paragraphs {
@@ -872,14 +994,14 @@ fn collect_output_structure_hits(
     }
 }
 
-fn collect_output_constraint_hits(
+fn collect_output_constraint_hits<'a>(
     guardrail_hits: &mut Vec<Value>,
     constraint_warnings: &mut Vec<Value>,
     unchecked_constraints: &mut Vec<Value>,
     raw: &str,
     subject: Option<&str>,
     card_id: &str,
-    entries: &[crate::models::Entry],
+    entries: impl IntoIterator<Item = &'a crate::models::Entry>,
 ) {
     for entry in entries {
         if entry.constraints.is_empty() {
@@ -1847,6 +1969,24 @@ mod tests {
         .expect("output rules should be writable");
     }
 
+    fn add_scoped_integration_claim(root: &Path) {
+        let path = root.join(".mdp").join("cards").join("claims.yaml");
+        let mut raw = std::fs::read_to_string(&path).expect("claims should be readable");
+        raw.push_str(
+            "- id: local-cli-salesforce-integration\n  title: Local CLI Salesforce integration\n  body: The local CLI product example has an approved Salesforce integration claim.\n  applies_to:\n  - PMM\n  scope:\n    product:\n    - local-cli\n  evidence:\n  - synthetic-product-source\n  avoid: []\n",
+        );
+        std::fs::write(path, raw).expect("scoped claim should be writable");
+    }
+
+    fn add_scoped_nonmatching_guardrail(root: &Path) {
+        let path = root.join(".mdp").join("cards").join("output-rules.yaml");
+        let mut raw = std::fs::read_to_string(&path).expect("output rules should be readable");
+        raw.push_str(
+            "- id: finance-only-local-cli-guardrail\n  title: Finance-only local CLI guardrail\n  body: Synthetic scoped guardrail with no route persona or job match.\n  applies_to:\n  - Finance\n  scope:\n    product:\n    - local-cli\n  evidence: []\n  avoid:\n  - synthetic-unsafe-term\n",
+        );
+        std::fs::write(path, raw).expect("scoped guardrail should be writable");
+    }
+
     fn add_initial_linkedin_exact_paragraphs(root: &Path, expected: usize) {
         let path = root
             .join(".mdp")
@@ -1896,6 +2036,47 @@ mod tests {
         );
         assert!(load_order.contains(&".mdp/cards/ctas.yaml"));
         assert!(load_order.len() <= 13);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn route_blocks_when_only_an_unrelated_scope_dimension_is_selected() {
+        let root = temp_pack("route-unrelated-scope");
+        let result = route_scoped(
+            &root,
+            "PMM",
+            "portfolio scope example",
+            &["segment=agent-assisted-gtm".to_string()],
+            true,
+            false,
+        )
+        .expect("route should succeed");
+
+        assert_eq!(result["portfolio_sensitive"], true);
+        assert_eq!(result["draft_status"], "blocked");
+        assert_eq!(result["entry_route"]["status"], "blocked");
+        assert!(result["load_order"].as_array().unwrap().is_empty());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn direct_route_detects_scoped_guardrails_without_entry_matches() {
+        let root = temp_pack("route-scoped-guardrail");
+        add_scoped_nonmatching_guardrail(&root);
+        let result = route(&root, "PMM", "call prep", true, false).expect("route should succeed");
+
+        assert_eq!(result["portfolio_sensitive"], true);
+        assert_eq!(result["draft_status"], "blocked");
+        assert!(
+            result["entry_route"]["gaps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|gap| gap["entry_id"] == "finance-only-local-cli-guardrail"
+                    && gap["reason"] == "scope_dimension_missing")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -3204,6 +3385,59 @@ mod tests {
                 "text should produce unsupported claim: {text}"
             );
         }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn claim_check_does_not_approve_integration_claim_across_product_scope() {
+        let root = temp_pack("claim-product-scope");
+        add_scoped_integration_claim(&root);
+        let text = "MDP integrates with Salesforce.";
+
+        let local_cli = check_claims_scoped(
+            &root,
+            Some(text),
+            None,
+            None,
+            None,
+            None,
+            &["product=local-cli".to_string()],
+        )
+        .expect("local CLI claim check should run");
+        assert_eq!(local_cli["valid"], true, "{local_cli}");
+
+        let plugin = check_claims_scoped(
+            &root,
+            Some(text),
+            None,
+            None,
+            None,
+            None,
+            &["product=agent-plugin".to_string()],
+        )
+        .expect("plugin claim check should run");
+        assert_eq!(plugin["valid"], false, "{plugin}");
+        assert!(
+            plugin["unsupported_claims"]
+                .as_array()
+                .expect("unsupported claims")
+                .iter()
+                .any(|claim| claim["category"] == "integration")
+        );
+
+        let unrelated = check_claims_scoped(
+            &root,
+            Some(text),
+            None,
+            None,
+            None,
+            None,
+            &["segment=agent-assisted-gtm".to_string()],
+        )
+        .expect("unrelated scope claim check should run");
+        assert_eq!(unrelated["scope_blocked"], true);
+        assert_eq!(unrelated["valid"], false);
 
         let _ = std::fs::remove_dir_all(root);
     }
