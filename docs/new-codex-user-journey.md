@@ -1,5 +1,7 @@
 # New Codex User Journey
 
+> Historical journey draft retained for provenance. Use [Getting Started](getting-started.md) for the current supported installation and first-run path.
+
 ## Purpose
 
 This document describes the first useful experience for a brand new Codex user who installs the Message Decision Packs plugin and wants to understand what it does, how much work it takes, and why it matters.

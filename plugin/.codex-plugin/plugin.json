@@ -1,6 +1,6 @@
 {
   "name": "message-decision-packs",
-  "version": "0.1.39",
+  "version": "0.1.44",
   "description": "Author, validate, and use Message Decision Packs with the local mdp CLI.",
   "author": {
     "name": "Orchid Labs",
@@ -9,8 +9,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Message Decision Packs",
-    "shortDescription": "Create and route GTM message context.",
-    "longDescription": "Message Decision Packs helps supported agents create, validate, and use local GTM messaging decision packs. MDP stores ICP, fit rules, signals, approved claims, message angles, CTA policy, avoid-rules, output-rules, source evidence, eval fixtures, and explicit gaps, then routes the right cards into agent-readable briefs with the local mdp CLI. MDP stops at pack validation, fit checks, claim and output checks, and briefs; sending, CRM updates, enrichment, scraping, and sequencing stay outside MDP.",
+    "shortDescription": "Create and route message decision context.",
+    "longDescription": "Message Decision Packs helps supported agents create, validate, and use local decision packs for GTM messaging and proposal review workflows. MDP stores personas or roles, fit or review rules, signals, approved claims, proof, avoid-rules, output-rules, source evidence, eval fixtures, and explicit gaps, then routes the right cards into agent-readable context with the local mdp CLI. MDP stops at pack validation, fit/review checks, claim and output checks, gaps, and briefs; sending, CRM updates, enrichment, scraping, sequencing, proposal submission, and approval workflow ownership stay outside MDP.",
     "developerName": "Orchid Labs",
     "category": "Productivity",
     "capabilities": [
@@ -18,9 +18,9 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Turn these ICP, positioning, and source notes into a local Message Decision Pack, then validate it.",
+      "Turn these GTM or proposal source notes into a local Message Decision Pack, then validate it.",
       "Review this .mdp pack for gaps, unsupported claims, routing issues, and weak eval coverage.",
-      "Given this prospect context, run the MDP fit gate and create a message brief only if the context is sufficient."
+      "Given this prospect or proposal context, run the right MDP route, fit, or review gate before drafting."
     ],
     "websiteURL": "https://orchidautomation.com"
   },

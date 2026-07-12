@@ -25,7 +25,7 @@ Before editing an existing pack, run:
 mdp --json agent-surface --dir .
 ```
 
-Use this skill only when the surface is legacy/generic during new-pack creation or `profile.id` is `proposal` and `mdp-proposal-pack-builder` is allowed. If the surface blocks `mdp-proposal-pack-builder`, stop and reroute to the allowed/recommended skill named in the surface. GTM packs should use GTM pack and ICP skills, not proposal review cards.
+Use this skill only when the surface is compatibility/generic during new-pack creation or `profile.id` is `proposal` and `mdp-proposal-pack-builder` is allowed. If the surface blocks `mdp-proposal-pack-builder`, stop and reroute to the allowed/recommended skill named in the surface. GTM packs should use GTM pack and ICP skills, not proposal review cards.
 
 `profile.id: proposal` and `profile.agent_surface` only route skills. Full proposal profile activation is reported by `mdp --json validate --dir .` in `data.profile.activation_ready` and depends on the proposal `primitive_map`, `opportunity` input contract, profile jobs, and categorized `profile_eval` fixtures. Keep opportunity context, requirements, proof, and review jobs as proposal profile vocabulary; do not add proposal-specific core card kinds.
 

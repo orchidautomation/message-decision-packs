@@ -1,306 +1,232 @@
 # Message Decision Packs - Full Agent Context
 
-This file is a curated, agent-readable briefing for Message Decision Packs. It is longer than `llms.txt`, but still intentionally edited. It is not a raw repository dump.
+Last updated: 2026-07-12
 
-Last updated: 2026-07-02
+Message Decision Packs (MDP) is a local/offline file standard, Rust CLI, and agent plugin for making decision context explicit and testable.
 
-## One-Screen Summary
-
-Message Decision Packs, or MDP, is a local/offline standard, Rust CLI, and Pluxx-packaged plugin for GTM messaging and profile-specific review decision context.
-
-MDP exists because agents are good at producing polished output from thin context. That is useful when the source material is strong and dangerous when the source material is weak. A pack gives the agent a quality floor: source evidence, fit or review rules, approved claims, proof, avoid-rules, output constraints, gaps, and evals are all explicit local files.
-
-The core idea:
+The core rule is simple:
 
 ```text
-Do not ask an agent to remember the GTM messaging or proposal review system.
+Do not ask an agent to remember the messaging or review system.
 Put the judgment in local files, validate it, route only the needed entries, and check the output.
 ```
 
-MDP stops at decision context, validation, briefs, gaps, and checks. Sending, CRM updates, enrichment, scraping, sequencing, proposal submission, approval workflow ownership, and external automation stay outside MDP.
+## Product Boundary
 
-## Product Boundaries
-
-MDP is:
-
-- a local file standard for GTM messaging context and profile-specific review context
-- a CLI for validation, routing, fit/review checks, briefs, claim checks, gaps, and evals
-- a plugin that teaches supported hosts how to use the CLI and pack structure
-- a way to make no-draft or needs-review decisions explicit when evidence is missing or fit/review support is weak
-- a way to preserve source-backed claims and avoid-rule boundaries across agent threads
+MDP stores source evidence, fit or review rules, approved claims or proof, routing contracts, output boundaries, gaps, and evals. It can validate packs, route entries, evaluate fit/readiness, produce bounded briefs, check claims, verify proof bindings, render review artifacts, and surface gaps.
 
 MDP is not:
 
-- AI SDR
-- CRM
-- sequencer
-- enrichment provider
-- scraper
-- BI tool
-- hosted messaging API
-- generic automation platform
+- an AI SDR, CRM, sequencer, enrichment provider, scraper, or BI tool;
+- a proposal management system or approval workflow owner;
+- a generic automation platform.
 
-Agents should not describe MDP as execution infrastructure. It is decision infrastructure.
+Sending, CRM mutation, enrichment, scraping, sequencing, proposal submission, legal/compliance approval, and external automation remain outside MDP.
 
 ## Repository Shape
 
 ```text
 message-decision-packs/
-  cli/      # Rust mdp CLI
-  plugin/   # Pluxx source plugin with MDP skills, templates, helper scripts, and assets
-  docs/     # project notes, distribution guidance, design notes, and user journeys
-  examples/ # canonical public-source example packs
+  cli/      # Rust `mdp` CLI
+  plugin/   # canonical plugin source
+  docs/     # current user and maintainer docs
+  examples/ # one canonical runnable Eve example
 ```
 
-The CLI and plugin live together because they must stay version-aligned. CLI behavior, schema contracts, starter templates, docs, and plugin skills should not drift.
+CLI behavior, schema contracts, starter templates, docs, and skills must stay aligned.
 
 ## Install And Update
-
-The public installer is the canonical unit because it keeps the local CLI and plugin instructions together.
-
-Install CLI plus supported agent bundles:
 
 ```bash
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
-Install one supported host bundle and bootstrap the local `mdp` CLI when it is missing:
+Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--opencode` for one host bundle. The installer uses GitHub release assets and pairs agent instructions with the matching CLI. Rerun it to update or set `MDP_VERSION` to pin a release.
+
+Verify:
 
 ```bash
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --codex -y
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --claude-code -y
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cursor -y
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
+mdp --version
+mdp --json doctor --dir .
+mdp --json capabilities
 ```
 
-The update path is to rerun the installer. A CLI-only self-update can cause drift: the installed plugin skills may still describe old CLI behavior. Prefer the installer unless a future upgrade command can preserve CLI and plugin version alignment.
+`mdp --json capabilities` is the canonical machine-readable command, side-effect, strict-mode, dry-run, and error-contract inventory.
 
 ## Pack Layout
-
-A pack is a local `.mdp/` folder:
 
 ```text
 .mdp/
   manifest.yaml
   sources.yaml
+  source-strategy.json   # optional reviewed discovery plan
+  prompts/*.yaml         # optional normalization/extraction contracts
+  cards/*.yaml
   briefs/
-  prompts/*.yaml
-  cards/personas.yaml
-  cards/positioning.yaml
-  cards/fit-rules.yaml
-  cards/signals.yaml
-  cards/pains.yaml
-  cards/claims.yaml
-  cards/motions.yaml
-  cards/channel-policies.yaml
-  cards/hooks.yaml
-  cards/ctas.yaml
-  cards/avoid-rules.yaml
-  cards/output-rules.yaml
-  cards/copy-patterns.yaml
-  cards/objections.yaml
-  cards/gaps.yaml
   evals/*.yaml
-examples/
-  clay-row.json
 ```
 
-The manifest declares pack identity, personas, supported channels, mappings, and routing assumptions. The source ledger records evidence. Cards hold modular decisions. Evals test whether routing, fit, brief, and claim behavior still match the pack.
+The manifest declares pack identity, profiles, input contracts, card paths, jobs, routing, and skill surface. The source ledger distinguishes direct facts from interpretations and gaps. Cards hold modular decisions. Evals protect route, fit, brief, prompt-output, proof-output, claim, and rendering behavior.
 
-## Decision Flow
+## Universal Primitive Model
 
-MDP routes messaging and review context as a decision tree. GTM packs commonly use this row-to-brief path:
+Every profile maps domain vocabulary onto ten primitives:
+
+| Primitive | GTM expression | Proposal expression |
+|---|---|---|
+| `actors` | personas | proposal roles |
+| `decision-criteria` | fit/disqualification rules | bid/no-bid and evaluation criteria |
+| `source-signals` | account/person signals | opportunity and requirement signals |
+| `needs-requirements` | pains and readiness needs | requirements matrix |
+| `evidence-proof` | positioning and approved claims | proof library and past performance |
+| `boundaries` | avoid-rules and objections | compliance and proposal boundaries |
+| `output-contracts` | output rules, hooks, CTAs, patterns | review outputs and response rules |
+| `routing-jobs` | motions and channel policies | review gates and jobs |
+| `gaps` | missing evidence or owner context | unsupported requirements or proof |
+| `evals` | route, fit, brief, and copy checks | review, proof, and safety checks |
+
+Account context, opportunity context, personas, proposal roles, and other domain terms belong to profile-owned input contracts and card IDs. They are not separate core engines.
+
+## GTM Decision Flow
 
 ```text
-messy supplied row
-  |
-  v
-.mdp/prompts/normalize-prospect.yaml
-  |
-  v
-provider-neutral prospect JSON
-  |
-  +-- title/persona -> pack-owned persona
-  +-- trigger ------> why now
-  +-- segment ------> market/context
-  +-- signals ------> evidence or hypotheses
-  |
-  v
-fit gate
-  |
-  +-- no fit or too thin -> no-draft
-  |
-  v
-persona -> pains -> hooks -> approved claims/proof -> CTA/channel policy
-                              |
-                              v
-                         avoid rules
-                              |
-                              v
-                         output rules
-                              |
-                              v
-                      bounded context.entries
+supplied source row
+  -> optional normalize-prospect prompt contract
+  -> provider-neutral prospect JSON
+  -> deterministic fit gate
+  -> routed context entries
+  -> bounded brief
+  -> agent draft, only when allowed
+  -> claim/output checks
 ```
 
-Use `mdp brief --context` to give an agent the selected entries first. Whole card paths appear in `context.full_card_required` only when the bounded entry set is not enough.
+Use `company_domain` as the stronger account key for new workflows while keeping `company` as the human-readable name. MDP canonicalizes supplied domains locally; it does not browse, DNS-check, enrich, or infer a domain from a company name.
+
+Packs can declare required fields, signals, attributes, value contracts, and attribute definitions. Keep bounded reviewed metadata in `attributes` and evidence/provenance in `signals[].source`.
+
+The fit gate returns `fit`, `disqualified`, or `insufficient-context`. Packs can declare `qualification_gates` in `manifest.yaml` for requirements such as public-person resolution and minimum or maximum source-backed signal coverage across fit and why-now categories. The CLI owns those gates; external scouts gather and normalize evidence but must not recreate the pass/fail policy. Stop on `disqualified` or `insufficient-context` unless the user explicitly requests a different analysis. Do not invent missing person, account, proof, or timing facts to unlock drafting.
+
+## Portfolio Scope And Routed Output Constraints
+
+A GTM profile can declare context dimensions such as `product`, `capability`, `solution`, or `segment`. Card entries use `scope` to narrow where an existing universal-primitive decision applies; dimensions do not create new primitives or separate engines. Unscoped entries remain global.
+
+Use repeatable `--scope dimension=value` selectors on `route` and route-scoped `check-claims`. Prospect-driven `fit` and `brief` derive declared scope from scalar prospect attributes, with top-level `segment` used for a declared segment dimension. Missing or invalid scope blocks portfolio-sensitive drafting instead of mixing entries across products.
+
+`check-claims` applies global output rules plus the rules selected by persona, job, and scope. Supported deterministic checks include unsupported claims, avoid literals, word and question limits, subject constraints, forbidden links/HTML/tracking, and routed `exact_paragraphs`. Target ranges are advisory unless strict mode promotes them; hard bounds fail the gate.
+
+## Proposal Review Flow
+
+Proposal profiles use the same primitives without manufacturing prospect rows:
+
+```text
+approved opportunity, requirement, and proof sources
+  -> source ledger
+  -> proposal roles, criteria, requirements, proof, and boundaries
+  -> validate
+  -> route the review job
+  -> verify source-bound generated claims
+  -> surface gaps and human sign-off needs
+```
+
+Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership.
 
 ## CLI Contract
-
-Most agent-facing work should use JSON output.
 
 ```bash
 mdp --json doctor --dir .
 mdp --json validate --dir .
+mdp --json agent-surface --dir .
 mdp --json --summary route --entries --dir . --persona "PMM" --job "linkedin outbound copy"
+mdp --json route --entries --dir . --persona "PMM" --job "portfolio scope example" --scope product=local-cli
 mdp --json fit --dir . --prospect <prospect.json>
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel linkedin
-mdp --json check-claims --dir . --text "<draft copy>"
+mdp render-brief --dir . --file <brief.json> --template gtm-prospect
+mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "linkedin outbound copy"
+mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "portfolio scope example" --scope product=local-cli
+mdp --json verify-output --dir . --file <proof-output.json>
 mdp --json gaps --dir .
 mdp --json eval --dir .
 ```
 
-Proposal reference profiles use the same validate, route, check, gaps, and eval primitives without a prospect row:
+Use `brief --context` and draft from `data.context.entries`. Open `data.context.full_card_required` paths only when present. Human-readable renderers are review layers, not machine sources of truth or permission to use blocked output.
 
-```bash
-mdp --json init --template proposal --dir ./mdp-proposal-demo --force
-mdp --json validate --dir ./mdp-proposal-demo
-mdp --json eval --dir ./mdp-proposal-demo
-mdp --json route --entries --dir ./mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
-mdp --json route --entries --dir ./mdp-proposal-demo --persona "Executive Reviewer" --job "red team gap review"
-mdp --json gaps --dir ./mdp-proposal-demo
-```
+`check-claims` handles plain text against claims, avoid-rules, output-rules, and constraints. When generated output cites source, card, proof, requirement, or template IDs, require a `mdp.proof-output.v0` artifact and run `verify-output`; model-written IDs alone are not proof.
 
-The fit gate returns `fit`, `disqualified`, or `insufficient-context`. Agents should stop on `disqualified` or `insufficient-context` unless the user explicitly asks for a different kind of analysis. Do not invent missing prospect facts to unlock drafting.
+Generated starter rows carry `source_kind: synthetic-example` and `synthetic: true`. Rows created by `sample-leads` additionally carry `do_not_contact: true`. Never enrich, upload, sequence, contact, or present either kind as a real prospect.
 
-`check-claims` catches unsupported claims, avoid-rule hits, output-rule hits, hard constraint violations, and advisory target misses. It does not replace human review, but it gives agents a deterministic safety check before copy approval.
+## Prompt And Source-Strategy Contracts
 
-## Source Ledger
+Prompt files use `format: mdp.prompt.v0` and return `contract: mdp.prompt-output.v0`:
 
-Use `.mdp/sources.yaml` before bulk card writing. Add public URLs, user-provided docs, or note identifiers, then separate direct source claims from interpretations and gaps. Cards should cite source ids, URLs, or document names from the ledger when possible.
+- normalization prompts turn messy supplied rows into validated prospect or opportunity context;
+- extraction prompts propose reviewable card patches, gaps, rejected claims, confidence, and provenance.
 
-Source-backed claims matter because MDP's job is not to make copy sound confident. Its job is to preserve what is known, what is inferred, and what is missing.
+Prompt contracts do not browse or execute. Source-strategy artifacts plan approved source targets, queries, evidence rules, exclusions, receipts, budgets, review gates, and downstream handoff instructions. External scouts may execute an approved strategy, but MDP remains the local scoring and routing authority.
 
-## Channel And Output Rules
+## Plugin And Pluxx
 
-Keep outbound rules split by responsibility:
-
-- `channel-policies.yaml`: channel and lifecycle policy, such as email initial, email follow-up, LinkedIn initial touch, LinkedIn follow-up, call prep, and agent briefs.
-- `output-rules.yaml`: global text and formatting constraints, such as plain text by default, no links/HTML/tracking by default, no fake personalization, word-count guidance, subject guidance, paragraph counts, and no meta commentary.
-- `ctas.yaml`: ask boundaries and reply paths, including soft asks, calendar-second policy, owner-routing questions, and false-urgency limits.
-- `copy-patterns.yaml`: reusable structures, such as trigger or hypothesis -> proof gap -> approved angle -> one soft CTA.
-
-Use first-class fields for enforceable behavior. Use `metadata` only for advisory annotations that agents can inspect.
-
-## Prompt Contracts
-
-Prompt contracts in `.mdp/prompts/*.yaml` define local/offline instructions for two related jobs:
-
-- Runtime normalization prompts turn messy supplied rows into `normalized_prospect` JSON plus a trace that can feed `mdp fit` and `mdp brief`.
-- Extraction prompts classify supplied person, company, account, domain, row, or research data into reviewable `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance for pack authors.
-
-Prompt contracts do not browse, scrape, enrich, send, sequence, or update external systems.
-
-Prospect rows keep `name`, `title`, and `company` as compatibility admission fields, but new lead workflows should provide `company_domain` as the stronger account key. `mdp fit` canonicalizes supplied domain-like values, for example `https://www.apple.com/` -> `apple.com`, without browsing, DNS checks, enrichment, or inferring a domain from company name. Packs can declare `lead_input_requirements.required_fields`, `required_signal_fields`, `required_attributes`, `value_contracts`, and `attribute_definitions`; `validate-prompt-output` and `fit` report missing or invalid enum, type, date/date-time, persona, segment, source_kind, and attribute requirements deterministically.
-
-## Plugin
-
-The plugin source lives in `plugin/` and includes skills for creating, reviewing, routing, and using MDPs. Pluxx packages this source for Claude Code, Cursor, Codex, and OpenCode.
+`plugin/` is the canonical plugin source. Pluxx packages it into release bundles for Claude Code, Cursor, Codex, and OpenCode. The MDP installer combines those bundles with the Rust CLI; Pluxx is not the MDP runtime or a hosted service.
 
 Important skills:
 
-- `mdp-lfg`: orchestrates multi-step MDP work
-- `mdp-create-pack`: creates or improves a pack
-- `mdp-proposal-pack-builder`: creates or improves a proposal/RFP review pack from approved source material
-- `mdp-proposal-bid-no-bid-review`: assesses supplied proposal pursuit context against bid/no-bid rules
-- `mdp-proposal-compliance-review`: reviews supplied proposal requirements or answer drafts against compliance rules
-- `mdp-proposal-win-theme-proof-review`: reviews proposal themes or differentiators against approved proof
-- `mdp-proposal-red-team-gap-review`: prioritizes proposal gaps, risks, and reviewer questions against pack constraints
-- `mdp-icp-builder`: sharpens ICP, personas, and fit logic
-- `mdp-source-extract`: turns source material into card entries
-- `mdp-source-strategy`: plans source targets, scout queries, evidence rules, exclusions, and review gates before extraction
-- `mdp-message-angles`: codifies hooks and angles
-- `mdp-cta-builder`: codifies CTA and reply-path policy
-- `mdp-avoid-rules`: enforces category and claim boundaries
-- `mdp-output-rules`: codifies global style, punctuation, formatting, and structure constraints
-- `mdp-prospect-brief`: turns provider-neutral prospect/source rows into fit decisions and briefs
-- `mdp-copy-brief`: produces model-ready writing contracts
-- `mdp-copy-eval`: evaluates generated copy against the pack
-- `mdp-pack-review`: reviews pack quality
-- `mdp-pack-eval`: tests routing and pack behavior
+- `mdp-lfg`: end-to-end orchestration;
+- `mdp-create-pack`: create or improve a pack;
+- `mdp-source-strategy`: design evidence collection and handoff;
+- `mdp-source-extract`: turn approved source material into card entries;
+- `mdp-icp-builder`: sharpen GTM actors and fit logic;
+- `mdp-prospect-brief`: normalize, fit, and create bounded prospect briefs;
+- copy, angle, CTA, avoid-rule, and output-rule builders/evaluators;
+- pack review/eval skills;
+- proposal pack, bid/no-bid, compliance, proof-theme, and red-team gap review skills.
 
-## Example Packs
+When `.mdp/manifest.yaml` declares `profile.agent_surface`, follow its recommended, allowed, blocked, and job-specific skill lists. Existing packs without that metadata use the generic compatibility surface.
 
-[MDP for MDP](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/mdp-for-mdp) is the fastest public demo. It explains what MDP itself stores, how messy source rows become normalized context, why no-draft states matter, and how route, fit, brief, claim-check, gaps, and eval commands work together.
+## Canonical Runnable Example
 
-[Profound GTM Vetting](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/profound-gtm-vetting) is a complete public-source pack for a company-like GTM evaluation workflow. It codifies ICP, target personas, fit rules, hooks, CTAs, guardrails, output rules, source-backed claims, prospect brief generation, gaps, and evals.
+[AI SDR Eve on Vercel](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/ai-sdr-eve-vercel) is the sole canonical runnable example. Eve is the runtime and MDP is its decision/context source of truth.
 
-The active Profound deployable path is the Eve-native Vercel scout in `examples/ai-sdr-eve-vercel`, which embeds the Profound pack, source strategy, Exa person-resolution flow, MDP fit/brief gates, and append-only ledger output. Older non-Eve deployable experiments are archived under `docs/orchid/history/archived-examples/`.
+The example:
+
+- loads a synthetic MDP pack and reviewed source strategy;
+- gathers bounded public-source evidence through approved provider tools;
+- targets three qualified people per live run, continuing across approved strategy prompts until the target or bounded exhaustion;
+- uses pack-owned `qualification_gates` to require person-level public receipts and source-backed fit/why-now evidence;
+- runs MDP validation, fit, brief, and claim gates;
+- appends reviewed ledger rows;
+- does not send outreach or sync a CRM.
 
 ## Agent Operating Rules
 
-When using MDP:
-
 - Load the manifest first.
-- Preserve source provenance.
-- Run `mdp validate` before relying on a pack.
-- Use `.mdp/prompts/normalize-prospect.yaml` to normalize messy supplied lead rows before CLI ingestion.
-- Use `mdp fit` before drafting from a prospect row.
-- Stop on `disqualified` or `insufficient-context`.
-- Use `mdp brief --context` for bounded drafting context.
-- Draft from `data.context.entries`, not the entire repo.
-- Open `data.context.full_card_required` paths only when they are present.
-- Run `mdp check-claims` before approving generated copy.
-- Use `mdp gaps` to expose missing evidence.
-- Use `mdp eval` when pack behavior changes.
-- For proposal review packs, route the supplied review job directly and use `gaps` plus `check-claims`; do not manufacture prospect rows or outbound fixtures.
+- Preserve source provenance and explicit gaps.
+- Validate before relying on a pack.
+- Normalize supplied inputs before deterministic gates.
+- Use routed entries instead of reading every card.
+- Stop on no-draft, blocked review, missing proof, or insufficient context.
+- Never turn a synthetic fixture into a real prospect or claim.
+- Run deterministic checks before approval.
+- Re-run evals when pack behavior changes.
+- Keep external execution outside MDP and require explicit user approval for it.
 
-When no real or intentionally sanitized prospect row exists, use `mdp sample-leads` to create clearly fake fixtures:
+## Current Docs
 
-```bash
-mdp sample-leads --dir . --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
-```
-
-Synthetic fixtures include `source_kind: synthetic-example`, `synthetic: true`, and `do_not_contact: true`. Never enrich, research, upload, sequence, contact, or treat those fixtures as real prospects.
-
-## Public Docs
-
-- What This Repo Is: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/what-this-repo-is.md>
+- README: <https://github.com/orchidautomation/message-decision-packs/blob/main/README.md>
 - Getting Started: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/getting-started.md>
 - Conceptual Decision Flow: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/conceptual-decision-flow.md>
-- Prompt Extraction Contract: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md>
-- Distribution Notes: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md>
-- New Codex User Journey: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/new-codex-user-journey.md>
+- Portfolio-Aware GTM Scope: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/portfolio-scope.md>
+- Prompt Contracts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md>
+- Agent Hook Guidance: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/agent-hook-guidance.md>
+- Distribution: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md>
+- CLI Usage: <https://github.com/orchidautomation/message-decision-packs/blob/main/cli/USAGE.md>
 
-## Programmatic And Hosted Access
-
-- Repository: <https://github.com/orchidautomation/message-decision-packs>
-- Latest release assets: <https://github.com/orchidautomation/message-decision-packs/releases/latest>
-- Short context file: <https://github.com/orchidautomation/message-decision-packs/raw/main/llms.txt>
-- Full context file: <https://github.com/orchidautomation/message-decision-packs/raw/main/llms-full.txt>
-
-The preferred hosted shape is:
-
-```text
-https://mdp.orchidlabs.dev/llms.txt
-https://mdp.orchidlabs.dev/llms-full.txt
-```
-
-That vanity hosting should serve the same files from the current release or `main`, matching the existing installer vanity URL pattern.
+Released agent context is available at <https://mdp.orchidlabs.dev/llms.txt> and <https://mdp.orchidlabs.dev/llms-full.txt>.
 
 ## Validation
-
-From the repo root:
-
-```bash
-make validate
-```
-
-Narrow checks:
 
 ```bash
 cargo test --manifest-path cli/Cargo.toml
 cargo run --manifest-path cli/Cargo.toml -- --json validate --dir plugin/assets/templates/basic
+make validate
 ```
 
-Use release/install smoke tests when CLI behavior, plugin behavior, skills, starter templates, installer scripts, or release assets change.
+Run the documented installer and smoke-test the installed artifact after release-affecting changes.

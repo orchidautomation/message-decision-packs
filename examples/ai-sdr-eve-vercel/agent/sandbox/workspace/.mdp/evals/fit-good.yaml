@@ -1,6 +1,6 @@
 command: fit
 expect_status: fit
-id: fit-good-profound-aeo-target
+id: fit-good-synthetic-vendor-aeo-target
 prospect:
   background: Synthetic B2B SaaS account with a visible organic growth and content motion.
   company: ExampleMarket Co

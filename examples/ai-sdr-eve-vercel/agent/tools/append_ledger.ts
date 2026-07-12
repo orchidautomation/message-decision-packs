@@ -33,7 +33,7 @@ export default defineTool({
     const row = {
       contract_version: "mdp_scout_candidate/v0" as const,
       run_id: input.runId ?? createRunId(),
-      pack_id: input.packId ?? process.env.MDP_PACK_ID ?? "profound-gtm-vetting-example",
+      pack_id: input.packId ?? process.env.MDP_PACK_ID ?? "synthetic-vendor-gtm-vetting-example",
       source_strategy: sourceStrategy,
       candidate: input.candidate,
       evidence: input.evidence,

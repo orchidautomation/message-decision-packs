@@ -19,7 +19,7 @@ entries:
   - AEO Lead
   - PR & Brand Lead
   evidence:
-  - profound-answer-engine-insights
+  - synthetic-vendor-visibility-analytics
   avoid: []
 - id: missing-current-owner
   title: Missing current owner
@@ -39,8 +39,8 @@ entries:
   - Content Lead
   - AEO Lead
   evidence:
-  - profound-agent-analytics
-  - profound-agents
+  - synthetic-vendor-crawler-analytics
+  - synthetic-vendor-content-workflows
   avoid: []
 - id: pricing-not-quoted
   title: Pricing not quoted
@@ -49,11 +49,11 @@ entries:
   - Agency Partner
   - AEO Lead
   evidence:
-  - profound-pricing
+  - synthetic-vendor-pricing
   avoid: []
 - id: mdp-boundary-gap
   title: MDP boundary
-  body: MDP can model target-account decisions and produce a brief, but it does not perform external execution or prove production Profound strategy.
+  body: MDP can model target-account decisions and produce a brief, but it does not perform external execution or prove production Synthetic Vendor strategy.
   applies_to:
   - AEO Lead
   - Content Lead
@@ -71,7 +71,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-source-strategy
+  - synthetic-vendor-source-strategy
   avoid: []
 - id: missing-person-resolution-receipt
   title: Missing person resolution receipt
@@ -82,7 +82,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-source-strategy
+  - synthetic-vendor-source-strategy
   avoid:
   - fabricated contact
   - generic marketing owner

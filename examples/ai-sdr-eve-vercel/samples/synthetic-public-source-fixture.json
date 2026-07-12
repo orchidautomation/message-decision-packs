@@ -9,15 +9,15 @@
     "trigger": "ExampleMarket is researching AI search visibility, prompt demand, and content opportunities for category discovery.",
     "persona": "AEO Lead",
     "segment": "AEO and organic growth team",
-    "signals": [
-      "SEO or AEO ownership signal",
-      "Prompt volume opportunity signal",
-      "Public person-role resolution signal"
-    ]
+      "signals": [
+        "SEO or AEO ownership signal",
+        "Prompt volume opportunity signal",
+        "Public person-role resolution signal"
+      ]
   },
   "evidence": [
     {
-      "id": "prof_ev_001",
+      "id": "fixture_account_001",
       "url": "https://example.com/resources/ai-search-category-discovery",
       "title": "ExampleMarket studies AI search prompts for category discovery",
       "observed_at": "2026-07-09T00:00:00Z",

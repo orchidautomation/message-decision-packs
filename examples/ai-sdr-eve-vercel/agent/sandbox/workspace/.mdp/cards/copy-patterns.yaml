@@ -1,7 +1,7 @@
 id: copy-patterns
 kind: copy-patterns
 title: Copy and brief patterns
-description: Reusable structures for Profound GTM outputs.
+description: Reusable structures for Synthetic Vendor GTM outputs.
 personas:
 - AEO Lead
 - Content Lead
@@ -29,7 +29,7 @@ entries:
   avoid: []
 - id: signal-hypothesis-question
   title: Signal -> hypothesis -> question
-  body: For outbound, structure copy as one observable signal, one fit hypothesis, one Profound-relevant pain, and one owner or relevance question.
+  body: For outbound, structure copy as one observable signal, one fit hypothesis, one Synthetic Vendor-relevant pain, and one owner or relevance question.
   applies_to:
   - AEO Lead
   - Content Lead
@@ -44,8 +44,8 @@ entries:
   applies_to:
   - Content Lead
   evidence:
-  - profound-content-teams
-  - profound-agents
+  - synthetic-vendor-content-teams
+  - synthetic-vendor-content-workflows
   avoid: []
 - id: pr-citation-pattern
   title: PR citation pattern
@@ -53,7 +53,7 @@ entries:
   applies_to:
   - PR & Brand Lead
   evidence:
-  - profound-pr-teams
+  - synthetic-vendor-pr-teams
   avoid: []
 - id: agency-reporting-pattern
   title: Agency reporting pattern
@@ -61,7 +61,7 @@ entries:
   applies_to:
   - Agency Partner
   evidence:
-  - profound-pricing
+  - synthetic-vendor-pricing
   avoid: []
 - id: brief-command-pattern
   title: Brief command pattern
@@ -73,7 +73,7 @@ entries:
   - Agency Partner
   evidence:
   - mdp-readme
-  - profound-source-strategy
+  - synthetic-vendor-source-strategy
   avoid:
   - model-directed shell
   - direct send
@@ -86,7 +86,7 @@ entries:
   - PR & Brand Lead
   - Agency Partner
   evidence:
-  - profound-source-strategy
+  - synthetic-vendor-source-strategy
   avoid:
   - uncited score
   - invented buying intent

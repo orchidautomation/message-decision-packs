@@ -13,7 +13,7 @@ Before using this skill against an existing pack, run:
 mdp --json agent-surface --dir .
 ```
 
-Use this skill only when the surface is legacy/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
+Use this skill only when the surface is compatibility/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
 
 Create a writing brief from MDP routing. The brief should constrain a copywriter or model before copy is drafted.
 

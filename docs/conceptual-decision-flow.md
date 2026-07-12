@@ -76,7 +76,7 @@ The `trigger` field is an input from the prospect JSON. It means why this messag
 
 ## Row Inputs
 
-The prospect schema still admits legacy rows with `name`, `title`, and `company`, but new lead workflows should also provide `company_domain`. `company` stays useful for human-readable drafts; `company_domain` is the stronger account routing key when the pack requires it.
+For compatibility, the prospect schema still admits rows with `name`, `title`, and `company`, but new lead workflows should also provide `company_domain`. `company` stays useful for human-readable drafts; `company_domain` is the stronger account routing key when the pack requires it.
 
 `mdp fit` canonicalizes supplied domains and URLs locally. For example, `https://www.apple.com/` becomes `apple.com`. It does not browse, DNS-check, enrich, or infer a domain from a company name.
 
@@ -159,7 +159,7 @@ lead_input_requirements:
       description: Optional reviewed account metadata.
 ```
 
-Treat `lead_input_requirements` as the wire key for the pack's user-facing input readiness policy. A row can parse successfully and still return `insufficient-context` if it does not satisfy that policy or emits a value outside the pack's declared enum/type/date contracts.
+Treat `lead_input_requirements` as the wire key for the pack's user-facing input readiness policy. A row can parse successfully and still return `insufficient-context` if it does not satisfy that policy or emits a value outside the pack's declared enum/type/date contracts. Packs can also declare `qualification_gates` for deterministic public-person resolution and source-backed fit/why-now signal coverage. The CLI owns those gates; discovery runtimes gather evidence but should not duplicate the pass/fail policy.
 
 If the input is account-only and does not include a person name and title, do not invent a contact just to satisfy the prospect schema. Preserve the account facts, explain the absent person fields in `normalization_trace.missing_required`, and return an insufficient-context/no-draft decision until MDP has reviewed person context or a provider-neutral account input contract.
 
@@ -188,6 +188,8 @@ Do not use normalization prompts to smooth over disqualifying language. If a row
 
 The pack is modular. Each card holds entries with ids, bodies, applicability rules, evidence, avoid terms, and optional structured `constraints`.
 Output-rule entries can also set `exact_paragraphs` when a fixed paragraph count should be checked deterministically. Entry `constraints` cover deterministic output limits. Draft-text constraints such as body word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking are enforced by `check-claims`; min/max violations fail and target ranges are advisory warnings. Proof-output constraints under `constraints.proof_output` are enforced by `verify-output` against `mdp.proof-output.v0` artifacts and can require segment kinds, minimum segment counts, source refs for claim segments, and connective word limits. Actual send metadata such as file attachments or tracking pixels cannot be proven from a single draft body, so those checks surface caveats in `unchecked_constraints`.
+
+Portfolio-aware packs can declare product, capability, solution, or segment context dimensions and attach `scope` to existing entries. Scope filters applicability; it does not add primitives. `route` and route-scoped `check-claims` accept explicit `--scope dimension=value` selectors, while `fit` and `brief` derive declared scope from prospect attributes. Routed constraints such as `exact_paragraphs` apply only to the selected persona, job, and scope. See [Portfolio-Aware GTM Scope](portfolio-scope.md).
 
 Do not confuse prospect `attributes` with entry `metadata`. Prospect `attributes` live on the input row and are bounded reviewed lead/account metadata that `mdp fit` can require through `manifest.yaml` `lead_input_requirements.required_attributes`. Entry `metadata` lives on card entries and describes the pack content itself for agent or human inspection.
 

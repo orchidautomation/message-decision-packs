@@ -12,9 +12,11 @@
     "start": "eve start",
     "typecheck": "tsc --noEmit",
     "check:scaffold": "node scripts/check-example.mjs",
+    "mdp:brief-smoke": "node scripts/check-brief-command.mjs",
     "mdp:validate": "mdp --summary validate --dir .",
+    "mdp:eval": "mdp --summary eval --dir .",
     "scout:fixture": "tsx scripts/run-fixture.ts",
-    "check": "npm run check:scaffold && npm run typecheck && npm run mdp:validate && npm run scout:fixture"
+    "check": "npm run check:scaffold && npm run typecheck && npm run mdp:validate && npm run mdp:eval && npm run mdp:brief-smoke && npm run scout:fixture"
   },
   "dependencies": {
     "ai": "^7.0.18",

@@ -1,7 +1,7 @@
 id: ctas
 kind: ctas
 title: CTA and next-step rules
-description: Calls to action and reply paths for Profound target-account qualification outputs.
+description: Calls to action and reply paths for Synthetic Vendor target-account qualification outputs.
 personas:
 - AEO Lead
 - Content Lead
@@ -37,16 +37,16 @@ entries:
   - Content Lead
   - PR & Brand Lead
   evidence:
-  - profound-homepage
+  - synthetic-vendor-homepage
   avoid: []
 - id: aeo-report-or-demo-ask
   title: AEO report or demo ask
-  body: When the source context supports it, offer a Profound demo or AEO report as the next step. Do not imply a custom analysis has already been run.
+  body: When the source context supports it, offer a Synthetic Vendor demo or AEO report as the next step. Do not imply a custom analysis has already been run.
   applies_to:
   - AEO Lead
   - Agency Partner
   evidence:
-  - profound-homepage
+  - synthetic-vendor-homepage
   avoid: []
 - id: no-false-urgency
   title: No false urgency
@@ -61,7 +61,7 @@ entries:
   avoid: []
 - id: create-brief-first-ask
   title: Create brief before copy
-  body: 'For scout handoffs, ask the operator to run or review an MDP brief before drafting outreach. Recommended local command: mdp --json brief --dir examples/profound-gtm-vetting --prospect examples/profound-gtm-vetting/examples/profound-aeo-scout-row.json --channel linkedin --job "linkedin outbound copy" --context.'
+  body: 'For scout handoffs, ask the operator to run or review an MDP brief before drafting outreach. From the repository root, run: mdp --json brief --dir examples/ai-sdr-eve-vercel --prospect examples/ai-sdr-eve-vercel/samples/synthetic-prospect.json --channel linkedin --job "linkedin outbound copy" --context.'
   applies_to:
   - AEO Lead
   - Content Lead

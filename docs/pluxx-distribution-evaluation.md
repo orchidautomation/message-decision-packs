@@ -1,5 +1,7 @@
 # Pluxx Distribution Evaluation
 
+> Historical evaluation retained for provenance. Its pre-release validation results are superseded by the current [Distribution](distribution.md) contract and release closeout process.
+
 Date: 2026-06-24
 
 ## Decision

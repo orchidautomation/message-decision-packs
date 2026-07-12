@@ -67,7 +67,7 @@ output_contract:
         provenance:
         - 'company_data: supplied company data'
         status: needs-review
-        title: Profound GTM strategy
+        title: Synthetic Vendor GTM strategy
       kind: personas
     - card_id: fit-rules
       entries:

@@ -1,73 +1,22 @@
-# Distribution Notes
+# Distribution
 
-The intended public shape is one repo containing both the CLI and the Codex plugin:
+MDP ships the Rust CLI and agent instructions together from one repository so command contracts, templates, docs, and skills stay version-aligned.
 
-```text
-message-decision-packs/
-  cli/
-  plugin/
-  docs/
-```
+## Public Install
 
-## Why One Repo
-
-The CLI and plugin are tightly coupled:
-
-- the CLI defines the pack schema, JSON contracts, validation, routing, entry routing, fit checks, claim checks, gaps, eval fixtures, and brief emission
-- the plugin teaches agents how to author, inspect, and use those contracts
-- examples, eval fixtures, and templates need to stay aligned with CLI behavior
-- `mdp capabilities` exposes the installed CLI command surface, side-effect classes, dry-run support, strict-mode support, and stable error codes so agent hosts can drive the CLI without guessing from help text
-
-Keeping them together avoids version drift while the standard is young.
-
-## Local Use
-
-Install the CLI:
-
-```bash
-make install-cli
-```
-
-Install the released CLI binary only:
-
-```bash
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
-```
-
-Use the plugin source at `plugin/` when testing local Codex plugin installs.
-
-This repository is source-available under the Elastic License 2.0. Local/offline and internal use are within the intended public distribution boundary. Offering MDP as a hosted or managed service requires a separate commercial license; see [Commercial Use](../COMMERCIAL.md).
-
-## Future Distribution
-
-Possible later channels:
-
-- GitHub releases for CLI binaries
-- Pluxx-generated plugin release archives and installers
-- Homebrew formula for `mdp`
-- npm wrapper only if agent workflows need Node distribution
-- Codex/agent plugin marketplace entry for `plugin/`
-- commercially licensed hosted MDP API that can serve validated packs and briefs
-
-Do not treat hosted serving as part of the local MVP. The current implementation is offline and auth-free.
-
-See [Pluxx Distribution Evaluation](pluxx-distribution-evaluation.md) for the current packaging recommendation and validation evidence.
-
-## Release Installers
-
-The public single-host install path uses the top-level installer plus a host flag:
-
-```bash
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --codex -y
-```
-
-The CLI plus supported agent-bundle installer mirrors Railway's agent installer shape:
+Install the CLI and all supported host bundles:
 
 ```bash
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
-Host-specific installs should use the same short vanity installer instead of long release-asset URLs:
+Install only the CLI:
+
+```bash
+bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+```
+
+Install one host bundle plus the CLI when it is missing:
 
 ```bash
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --codex -y
@@ -76,71 +25,74 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cursor -y
 bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
 ```
 
-Use the CLI-only release installer when an agent/plugin bundle is not needed:
+The vanity installer redirects to assets from the latest GitHub release. Rerun the same command to update. Set `MDP_VERSION` to pin a release.
 
-```bash
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
-```
+## What Ships
 
-The top-level installer keeps the surfaces distinct:
+Each release contains:
 
-- `--cli` / `--cli-only`: install only the `mdp` CLI.
-- `--agents`: install the CLI once, then install supported host bundles for Claude Code, Cursor, Codex, and OpenCode. If Claude Code is not available, this path skips it with a warning.
-- `--codex`, `--cursor`, `--claude-code`, `--opencode`: install one host bundle.
+- platform-specific `mdp` CLI binaries;
+- Pluxx-generated bundles and installers for Claude Code, Cursor, Codex, and OpenCode;
+- `install.sh` and `install-cli.sh`;
+- checksums and release metadata;
+- released `llms.txt` and `llms-full.txt` files.
 
-The tag-based release workflow installs Pluxx in CI, builds host plugin bundles, publishes Pluxx release assets, and uploads `mdp-*` CLI binaries plus `install.sh` and `install-cli.sh`. Host installer scripts install the plugin and use `scripts/bootstrap-runtime.sh` to prepare the local `mdp` CLI when it is missing.
+`plugin/` is the canonical plugin source. Pluxx packages that source for each supported host. Pluxx does not replace the Rust CLI, and the plugin does not hide a separate hosted runtime.
 
-## Agent-Readable Context Files
+The tag, `cli/Cargo.toml`, `pluxx.config.ts`, and plugin manifests must use the same semantic version.
 
-The repo root includes two curated files for agents:
+## Agent-Readable Context
 
-- `llms.txt`: concise project, install, workflow, command, and docs context.
-- `llms-full.txt`: fuller pack layout, CLI contract, safety boundaries, plugin skills, examples, and validation context.
-
-These files are static docs, not a hosted API. The release workflow uploads them next to `install.sh` so vanity routing can serve:
+Released context files are available at:
 
 ```text
 https://mdp.orchidlabs.dev/llms.txt
 https://mdp.orchidlabs.dev/llms-full.txt
 ```
 
-The vanity URLs should serve the current released copies, or the same files from `main` when explicitly operating as latest docs.
+The redirect source lives in `deploy/mdp-installer/`. Keep those routes pointed at released assets so install instructions and agent context describe the same version.
 
-The source for `mdp.orchidlabs.dev` lives in `deploy/mdp-installer/`.
-It is a Vercel redirect-only project named `mdp-installer`; keep those
-vanity routes pointed at GitHub Release assets so installs and agent context
-stay aligned with the current released version.
+## Local Development
 
-## Updates
-
-The public update path is to rerun the same installer:
+Install the source CLI locally:
 
 ```bash
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
+make install-cli
+mdp --json doctor --dir .
 ```
 
-For CLI-only installs:
+Validate the source plugin and release configuration:
 
 ```bash
-bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --cli -y
+make validate
 ```
 
-That keeps the update mechanism explicit and auditable. MDP changes can affect local CLI behavior, pack validation, routing, fit checks, claim checks, and agent skill instructions, so the plugin should not silently replace itself during normal agent work.
+`make validate` covers the Rust CLI, bundled templates, mirrored skill content, and the available plugin validators. Use `mdp --json capabilities` as the machine-readable command and side-effect contract.
 
-Use `scripts/check-update.sh` as a lightweight drift check:
+## Updates And Drift
+
+The plugin must not silently replace the CLI or itself during ordinary pack work. Use the explicit installer for updates and `scripts/check-update.sh` for a read-only drift check:
 
 ```bash
 scripts/check-update.sh
 ```
 
-The script compares the local `mdp --version` and nearby plugin manifest version against the latest GitHub Release tag, then returns both the full install command and the CLI-only install command to run when either side is stale.
+The script compares the installed CLI and nearby plugin version to the latest release and prints the appropriate installer command when they differ.
 
-Host hooks may call this check at session start or plugin load time, but they should only notify. They should not auto-update by default. If a future host supports a trusted, user-approved update flow, the hook can offer the installer command as the next action.
+## Release Closeout
 
-Agent hosts should prefer `mdp --json capabilities` before invoking advanced flows. Use `--dry-run` for selected local write paths before mutating packs, and use `--strict` when warnings should fail an automated gate. These affordances do not change the update policy: the CLI should not silently replace itself or plugin bundles during ordinary pack work.
+Release-affecting changes are not shipped when a PR merely merges. From clean current `main`:
 
-Version policy:
+1. Run `make validate`.
+2. Create the next approved release tag through the repository release process.
+3. Confirm the expected GitHub release assets exist.
+4. Run the documented installer.
+5. Smoke-test the installed CLI and the behavior that changed.
 
-- Release tags, `cli/Cargo.toml`, `pluxx.config.ts`, and plugin manifests should stay on the same semver.
-- A user who pins `MDP_VERSION` should not be nudged to latest unless they ask for update checks against latest.
-- `scripts/bootstrap-runtime.sh` should keep bootstrapping missing CLIs, not replacing an existing CLI unless the user reruns the installer or a future explicit `--force` update path is added.
+Repository source, GitHub releases, and an installed artifact are three different states; closeout should report each explicitly.
+
+## Boundaries
+
+MDP is source-available under the [Elastic License 2.0](../LICENSE). Local/offline and internal use are allowed under its terms. Offering a hosted or managed service that exposes a substantial set of MDP functionality requires a separate commercial license; see [Commercial Use](../COMMERCIAL.md).
+
+Distribution does not change the product boundary: MDP stores and validates decision context. It does not provide sending, CRM mutation, enrichment, scraping, sequencing, proposal submission, or a hosted MDP API.

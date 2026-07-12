@@ -1,8 +1,8 @@
 format: mdp.v0
-id: profound-gtm-vetting-example
-name: Profound GTM Vetting Example
+id: synthetic-vendor-gtm-vetting-example
+name: Synthetic Vendor GTM Vetting Example
 version: 0.1.0
-description: 'A canonical seller-side MDP pack for Profound GTM scouting: it codifies target personas, source strategy, public evidence requirements, fit rules, hooks, CTA policy, approved claims, gaps, evals, and brief routing for AI search visibility work.'
+description: 'A synthetic seller-side MDP pack for the canonical Eve scout example. It demonstrates target personas, source strategy, public evidence requirements, fit rules, hooks, CTA policy, approved fictional claims, gaps, evals, and brief routing for AI search visibility work.'
 personas:
 - AEO Lead
 - Content Lead
@@ -14,9 +14,9 @@ target_personas:
 - PR & Brand Lead
 - Agency Partner
 operator_roles:
-- Profound GTM
-- Profound Product Marketing
-- Profound Marketing Engineering
+- Synthetic Vendor GTM
+- Synthetic Vendor Product Marketing
+- Synthetic Vendor Marketing Engineering
 supported_channels:
 - linkedin
 - email
@@ -68,7 +68,7 @@ cards:
 - id: personas
   path: cards/personas.yaml
   kind: personas
-  description: Target buyer personas Profound wants to reach and what each buyer needs to decide.
+  description: Target buyer personas Synthetic Vendor wants to reach and what each buyer needs to decide.
   personas:
   - AEO Lead
   - Content Lead
@@ -79,7 +79,7 @@ cards:
 - id: positioning
   path: cards/positioning.yaml
   kind: positioning
-  description: Profound category, market slice, boundaries, and MDP role in the GTM workflow.
+  description: Synthetic Vendor category, market slice, boundaries, and MDP role in the GTM workflow.
   personas:
   - AEO Lead
   - Content Lead
@@ -92,7 +92,7 @@ cards:
 - id: fit-rules
   path: cards/fit-rules.yaml
   kind: fit-rules
-  description: ICP, fit, disqualification, and no-message rules for Profound target-account vetting.
+  description: ICP, fit, disqualification, and no-message rules for Synthetic Vendor target-account vetting.
   personas:
   - AEO Lead
   - Content Lead
@@ -106,7 +106,7 @@ cards:
 - id: signals
   path: cards/signals.yaml
   kind: signals
-  description: Observable account and persona signals that make Profound relevant.
+  description: Observable account and persona signals that make Synthetic Vendor relevant.
   personas:
   - AEO Lead
   - Content Lead
@@ -120,7 +120,7 @@ cards:
 - id: pains
   path: cards/pains.yaml
   kind: pains
-  description: Buyer pains, triggers, stakes, and why the account may need Profound.
+  description: Buyer pains, triggers, stakes, and why the account may need Synthetic Vendor.
   personas:
   - AEO Lead
   - Content Lead
@@ -132,7 +132,7 @@ cards:
 - id: claims
   path: cards/claims.yaml
   kind: claims
-  description: Approved Profound claims and proof requirements an agent may use.
+  description: Approved Synthetic Vendor claims and proof requirements an agent may use.
   personas:
   - AEO Lead
   - Content Lead
@@ -145,7 +145,7 @@ cards:
 - id: motions
   path: cards/motions.yaml
   kind: motions
-  description: Approved Profound GTM motions and handoff boundaries.
+  description: Approved Synthetic Vendor GTM motions and handoff boundaries.
   personas: []
   tags:
   - motion
@@ -172,7 +172,7 @@ cards:
 - id: hooks
   path: cards/hooks.yaml
   kind: hooks
-  description: Reusable Profound message hooks after fit and evidence checks.
+  description: Reusable Synthetic Vendor message hooks after fit and evidence checks.
   personas:
   - AEO Lead
   - Content Lead
@@ -185,7 +185,7 @@ cards:
 - id: ctas
   path: cards/ctas.yaml
   kind: ctas
-  description: CTA rules, reply paths, and ask boundaries for Profound outreach.
+  description: CTA rules, reply paths, and ask boundaries for Synthetic Vendor outreach.
   personas: []
   tags:
   - cta
@@ -212,7 +212,7 @@ cards:
 - id: output-rules
   path: cards/output-rules.yaml
   kind: output-rules
-  description: Global style, formatting, and output-structure rules for generated Profound GTM text.
+  description: Global style, formatting, and output-structure rules for generated Synthetic Vendor GTM text.
   personas:
   - AEO Lead
   - Content Lead
@@ -225,7 +225,7 @@ cards:
 - id: copy-patterns
   path: cards/copy-patterns.yaml
   kind: copy-patterns
-  description: Reusable message and brief structures for Profound GTM outputs.
+  description: Reusable message and brief structures for Synthetic Vendor GTM outputs.
   personas: []
   tags:
   - copy
@@ -272,10 +272,10 @@ provenance:
   notes:
   - This pack is guidance and evidence context, not an execution system.
   - Agents should load only routed cards unless the user asks for a full audit.
-  - 2026-07-09 LFG pass refreshed public Profound source coverage, source strategy, brief command artifacts, and prompt contracts.
+  - 2026-07-09 LFG pass refreshed public Synthetic Vendor source coverage, source strategy, brief command artifacts, and prompt contracts.
 profile:
   id: gtm
-  label: Profound GTM scouting
+  label: Synthetic Vendor GTM scouting
   version: mdp.profile.v0
   agent_surface:
     recommended_skills:
@@ -302,17 +302,17 @@ profile:
     - mdp-pack-eval
     blocked_skills:
     - name: mdp-proposal-pack-builder
-      reason: Proposal/RFP review pack builder; this Profound pack is for GTM scouting and outbound-fit briefs.
+      reason: Proposal/RFP review pack builder; this Synthetic Vendor pack is for GTM scouting and outbound-fit briefs.
     - name: mdp-proposal-bid-no-bid-review
       reason: Proposal review job; use only for proposal packs, not prospect qualification.
     - name: mdp-proposal-compliance-review
       reason: Proposal compliance review job; use MDP claim/guardrail review for GTM copy instead.
     job_skills:
-    - job: create or improve Profound GTM pack
+    - job: create or improve Synthetic Vendor GTM pack
       skills:
       - mdp-create-pack
       - mdp-icp-builder
-    - job: source strategy before Profound scouting
+    - job: source strategy before Synthetic Vendor scouting
       skills:
       - mdp-source-strategy
     - job: prospect row to fit decision or brief
@@ -347,7 +347,7 @@ lead_input_requirements:
       - PR and brand team
       - agency or multi-brand team
       - AI search marketing team
-      description: Pack-owned Profound GTM segment labels accepted from normalization prompts.
+      description: Pack-owned Synthetic Vendor GTM segment labels accepted from normalization prompts.
     source_kind:
       type: string
       enum:
@@ -399,7 +399,7 @@ primitive_map:
     cards:
     - fit-rules
     evals:
-    - fit-good-profound-aeo-target
+    - fit-good-synthetic-vendor-aeo-target
     - fit-insufficient-context
     - fit-disqualified-execution-ask
   source-signals:
@@ -410,8 +410,8 @@ primitive_map:
     input_contracts:
     - prospect
     evals:
-    - fit-good-profound-aeo-target
-    - prompt-output-validation-profound
+    - fit-good-synthetic-vendor-aeo-target
+    - prompt-output-validation-synthetic
   needs-requirements:
     cards:
     - pains
@@ -447,8 +447,8 @@ primitive_map:
     - channel-policies
     - motions
     jobs:
-    - create-or-improve-profound-gtm-pack
-    - source-strategy-for-profound-scouting
+    - create-or-improve-synthetic-vendor-gtm-pack
+    - source-strategy-for-synthetic-vendor-scouting
     - prospect-fit-or-brief
     - outbound-copy-brief
     - pack-validation
@@ -460,7 +460,7 @@ primitive_map:
     - brief-insufficient-context
   evals:
     evals:
-    - fit-good-profound-aeo-target
+    - fit-good-synthetic-vendor-aeo-target
     - fit-insufficient-context
     - fit-disqualified-execution-ask
     - claim-check-approved
@@ -468,10 +468,10 @@ primitive_map:
     - linkedin-aeo-copy-route
     - email-initial-route
     - call-prep-pr-brand-route
-    - prompt-output-validation-profound
+    - prompt-output-validation-synthetic
 input_contracts:
 - id: prospect
-  description: Reviewed public/source-row input contract for Profound target accounts and people.
+  description: Reviewed public/source-row input contract for Synthetic Vendor target accounts and people.
   schema_ref: mdp.input.prospect.v0
   prompt: prompts/normalize-prospect.yaml
   normalizes:
@@ -479,9 +479,9 @@ input_contracts:
   - person
   - relationship
 jobs:
-- id: create-or-improve-profound-gtm-pack
-  label: Create or improve Profound GTM pack
-  description: Author or revise reviewed Profound GTM decision context, not execution infrastructure.
+- id: create-or-improve-synthetic-vendor-gtm-pack
+  label: Create or improve Synthetic Vendor GTM pack
+  description: Author or revise reviewed Synthetic Vendor GTM decision context, not execution infrastructure.
   required_primitives:
   - actors
   - decision-criteria
@@ -492,9 +492,9 @@ jobs:
   - output-contracts
   - gaps
   - evals
-- id: source-strategy-for-profound-scouting
-  label: Source strategy for Profound scouting
-  description: Turn Profound ICP, personas, signals, and avoid-rules into public-source discovery targets before extraction.
+- id: source-strategy-for-synthetic-vendor-scouting
+  label: Source strategy for Synthetic Vendor scouting
+  description: Turn Synthetic Vendor ICP, personas, signals, and avoid-rules into public-source discovery targets before extraction.
   required_primitives:
   - actors
   - decision-criteria
@@ -550,4 +550,4 @@ profile_eval:
   - prompt-output-validation
   activation:
     status: ready
-    summary: Profound GTM profile includes primitive coverage, local fit/refusal/claim/route fixtures, prompt-output validation, source strategy, and create-brief artifacts. Live provider and CRM actions still require operator approvals.
+    summary: Synthetic Vendor GTM profile includes primitive coverage, local fit/refusal/claim/route fixtures, prompt-output validation, source strategy, and create-brief artifacts. Live provider and CRM actions still require operator approvals.

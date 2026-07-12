@@ -21,26 +21,26 @@ entries:
   applies_to:
   - AEO Lead
   evidence:
-  - profound-answer-engine-insights
-  - profound-agent-analytics
+  - synthetic-vendor-visibility-analytics
+  - synthetic-vendor-crawler-analytics
   avoid: []
 - id: we-have-ai-writing-tools
   title: We already have AI writing tools
-  body: "Response logic: avoid tool-bashing; explain that Profound's content workflow starts from prompt, citation, and visibility signals before briefs and drafts."
+  body: "Response logic: avoid tool-bashing; explain that Synthetic Vendor's content workflow starts from prompt, citation, and visibility signals before briefs and drafts."
   applies_to:
   - Content Lead
   evidence:
-  - profound-agents
-  - profound-content-teams
+  - synthetic-vendor-content-workflows
+  - synthetic-vendor-content-teams
   avoid: []
 - id: automation-risk
   title: Automation risk
-  body: "Response logic: point to brand-kit context and human-in-the-loop approvals for Profound Agents, and keep any generated content framed as reviewable."
+  body: "Response logic: point to brand-kit context and human-in-the-loop approvals for Synthetic Vendor content workflows, and keep any generated content framed as reviewable."
   applies_to:
   - Content Lead
   - "PR & Brand Lead"
   evidence:
-  - profound-agents
+  - synthetic-vendor-content-workflows
   avoid: []
 - id: need-proof-first
   title: Need proof first
@@ -49,6 +49,6 @@ entries:
   - AEO Lead
   - Agency Partner
   evidence:
-  - profound-homepage
-  - profound-pricing
+  - synthetic-vendor-homepage
+  - synthetic-vendor-pricing
   avoid: []

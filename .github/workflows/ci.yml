@@ -40,3 +40,24 @@ jobs:
         run: pluxx test
       - name: Test Pluxx hook and diagnostic contracts
         run: bash scripts/test-pluxx-hooks.sh
+
+  eve-example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: examples/ai-sdr-eve-vercel/package-lock.json
+      - name: Build source MDP CLI
+        run: cargo build --manifest-path cli/Cargo.toml
+      - name: Add source MDP CLI to PATH
+        run: echo "$GITHUB_WORKSPACE/cli/target/debug" >> "$GITHUB_PATH"
+      - name: Install Eve dependencies
+        run: npm ci
+        working-directory: examples/ai-sdr-eve-vercel
+      - name: Validate canonical Eve example
+        run: npm run check
+        working-directory: examples/ai-sdr-eve-vercel

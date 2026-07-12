@@ -19,7 +19,7 @@ Before editing an existing pack, run:
 mdp --json agent-surface --dir .
 ```
 
-Use this skill only when the surface is legacy/generic or `profile.id` is `gtm` and `mdp-icp-builder` is allowed. If the surface blocks `mdp-icp-builder`, stop and reroute to the allowed/recommended skill named in the surface. Proposal packs should use proposal profile skills, not GTM ICP cards.
+Use this skill only when the surface is compatibility/generic or `profile.id` is `gtm` and `mdp-icp-builder` is allowed. If the surface blocks `mdp-icp-builder`, stop and reroute to the allowed/recommended skill named in the surface. Proposal packs should use proposal profile skills, not GTM ICP cards.
 
 ## Inputs To Seek
 

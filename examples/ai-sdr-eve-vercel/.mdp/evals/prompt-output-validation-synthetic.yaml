@@ -1,7 +1,7 @@
 command: validate-prompt-output
 expect_valid: true
 expect_normalization_ready: true
-id: prompt-output-validation-profound
+id: prompt-output-validation-synthetic
 profile_eval:
   category: prompt-output-validation
   jobs:
@@ -40,7 +40,7 @@ prompt_output:
     - raw_row.public_source_url
   normalized_prospect:
     attributes:
-      source_strategy_id: profound-ai-search-public-scouting
+      source_strategy_id: synthetic-vendor-ai-search-public-scouting
       provider_family: exa
     background: Source row says the team owns organic growth and is researching AI answer visibility, prompt demand, and content opportunities.
     company: ExampleMarket Co

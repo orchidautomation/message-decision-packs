@@ -13,7 +13,7 @@ Before using this skill against an existing pack, run:
 mdp --json agent-surface --dir .
 ```
 
-Use this skill only when the surface is legacy/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
+Use this skill only when the surface is compatibility/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
 
 Use an existing proposal MDP pack to red-team supplied proposal material and surface the highest-risk gaps, weak inferences, unsupported claims, contradictions, and reviewer questions. This skill provides review support only. It does not replace proposal leadership, legal, procurement, security, compliance, or customer review.
 

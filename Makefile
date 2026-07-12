@@ -3,9 +3,9 @@ PYTHON ?= $(shell if [ -x "$(HOME)/.pyenv/versions/3.13.5/bin/python3" ]; then e
 SKILL_VALIDATOR ?= $(HOME)/.codex/skills/.system/skill-creator/scripts/quick_validate.py
 PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py
 
-.PHONY: validate validate-cli validate-template validate-skills validate-skill-evals validate-skill-sync validate-asset-sync validate-plugin validate-pluxx-hooks validate-installers validate-llms install-cli demo
+.PHONY: validate validate-cli validate-template validate-skills validate-skill-evals validate-skill-sync validate-asset-sync validate-plugin validate-version-sync validate-pluxx-hooks validate-installers validate-llms install-cli demo
 
-validate: validate-cli validate-template validate-skills validate-skill-evals validate-skill-sync validate-asset-sync validate-plugin validate-pluxx-hooks validate-installers validate-llms
+validate: validate-cli validate-template validate-skills validate-skill-evals validate-skill-sync validate-asset-sync validate-plugin validate-version-sync validate-pluxx-hooks validate-installers validate-llms
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
@@ -32,6 +32,13 @@ validate-asset-sync:
 
 validate-plugin:
 	@if [ -f "$(PLUGIN_VALIDATOR)" ]; then 		$(PYTHON) "$(PLUGIN_VALIDATOR)" plugin; 	else 		echo "Skipping plugin validation; missing $(PLUGIN_VALIDATOR)"; 	fi
+
+validate-version-sync:
+	@cli_version=$$(awk -F'"' '/^version = / { print $$2; exit }' cli/Cargo.toml); \
+	plugin_version=$$($(PYTHON) -c 'import json; print(json.load(open("plugin/.codex-plugin/plugin.json"))["version"])'); \
+	pluxx_version=$$(sed -n "s/^[[:space:]]*version: '\([^']*\)'.*/\1/p" pluxx.config.ts); \
+	test "$$cli_version" = "$$plugin_version"; \
+	test "$$cli_version" = "$$pluxx_version"
 
 validate-pluxx-hooks:
 	bash scripts/test-pluxx-hooks.sh
