@@ -31,13 +31,15 @@ jobs:
         with:
           node-version: 24
       - name: Install Pluxx
-        run: npm install -g @orchid-labs/pluxx@0.1.25
+        run: npm install -g @orchid-labs/pluxx@0.1.31
       - name: Check Pluxx source health
         run: pluxx doctor
       - name: Lint Pluxx source
         run: pluxx lint
       - name: Test Pluxx bundles
         run: pluxx test
+      - name: Test Pluxx hook and diagnostic contracts
+        run: bash scripts/test-pluxx-hooks.sh
 
   eve-example:
     runs-on: ubuntu-latest

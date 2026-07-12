@@ -1,6 +1,6 @@
 ---
 name: mdp-proposal-win-theme-proof-review
-description: Use when the user wants to propose or review proposal win themes against approved proof, evaluation criteria, customer needs, and proposal MDP pack constraints. Produces proof-grounded theme review with missing evidence, risks, and SME questions without inventing claims.
+description: Use when proposing or reviewing proposal win themes against approved proof, evaluation criteria, customer needs, and proposal MDP constraints. Produces proof-grounded themes, missing evidence, risks, and SME questions without inventing claims.
 ---
 
 # MDP Proposal Win Theme And Proof Review

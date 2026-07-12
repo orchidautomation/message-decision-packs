@@ -1,6 +1,6 @@
 ---
 name: mdp-proposal-pack-builder
-description: Use when the user wants an agent to build or improve a proposal, RFP, capture, bid/no-bid, compliance, proof, red-team, or executive-review Message Decision Pack from approved source material. Produces a validated proposal pack draft or an explicit missing-information list.
+description: Use when building or improving a proposal, RFP, capture, bid/no-bid, compliance, proof, red-team, or executive-review MDP pack from approved sources. Produces a validated pack draft or an explicit missing-information list.
 ---
 
 # MDP Proposal Pack Builder

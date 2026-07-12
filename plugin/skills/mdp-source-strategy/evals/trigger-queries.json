@@ -1,6 +1,6 @@
 {
   "skill": "mdp-source-strategy",
-  "description_under_test": "Use when the user needs a reviewed, domain-agnostic MDP source strategy before source extraction, pack building, or external scout handoff, including GTM/BDR scouting plans and proposal/RFP source-intake planning.",
+  "description_under_test": "Use when planning an MDP source strategy before extraction, pack building, or external scout handoff for GTM/BDR, proposal/RFP, or other domains. Maps actors, criteria, signals, requirements, evidence, boundaries, routing jobs, gaps, and evals.",
   "threshold": 0.5,
   "queries": [
     {"id": "source-strategy-train-001", "split": "train", "query": "Before we run an Exa account scout, create an MDP source strategy from this ICP, account list, and buyer persona.", "should_trigger": true},

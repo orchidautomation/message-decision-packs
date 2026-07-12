@@ -16,8 +16,8 @@
     "displayName": "Message Decision Packs",
     "description": "Author, validate, and use Message Decision Packs with the local mdp CLI.",
     "skillGrouping": "workflow",
-    "requestedHookMode": "custom",
-    "generatedHookMode": "native",
+    "requestedHookMode": "safe",
+    "generatedHookMode": "safe",
     "generatedHookEvents": [
       "sessionStart",
       "beforeSubmitPrompt",
