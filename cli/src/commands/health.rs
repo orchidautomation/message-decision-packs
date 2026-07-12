@@ -348,6 +348,22 @@ fn validate_target_identity(
             }
         }
     }
+    let source_claims = target_source_direct_claims(root, &target.source_ids)?;
+    for (index, term) in target.external_terms.iter().enumerate() {
+        let identity_term = std::iter::once(&target.name)
+            .chain(target.aliases.iter())
+            .any(|identity| identity.eq_ignore_ascii_case(term));
+        if !identity_term && !source_claims.iter().any(|claim| contains_term(claim, term)) {
+            issues.push(issue(
+                "target_external_term_source_missing",
+                "error",
+                format!(".mdp/manifest.yaml#/target/external_terms/{index}"),
+                format!(
+                    "external target term '{term}' must appear in a direct_claim from a source listed in target.source_ids; otherwise keep it as a gap"
+                ),
+            ));
+        }
+    }
     for (index, excluded) in target.excluded_terms.iter().enumerate() {
         if excluded.trim().len() < 2 {
             issues.push(issue(
@@ -388,14 +404,32 @@ fn validate_target_identity(
         }
         let raw = fs::read_to_string(&path)?;
         let Some(value) = parse_scan_value(&path, &raw) else {
-            for excluded in &target.excluded_terms {
-                if contains_term(&raw, excluded) {
-                    issues.push(issue(
-                        "target_contamination_excluded_term",
-                        "error",
-                        &display,
-                        format!("excluded prior-target or starter term '{excluded}' survived in an unparseable generated artifact"),
-                    ));
+            for (line_index, line) in raw.lines().enumerate() {
+                for excluded in &target.excluded_terms {
+                    if contains_term(line, excluded) {
+                        issues.push(issue(
+                            "target_contamination_excluded_term",
+                            "error",
+                            format!("{display}:{}", line_index + 1),
+                            format!("excluded prior-target or starter term '{excluded}' survived in a generated artifact"),
+                        ));
+                    }
+                }
+                if is_raw_external_surface(&display) {
+                    let external_text = strip_internal_implementation_tokens(line);
+                    if let Some(internal) = internal_target_terms(target)
+                        .filter(|internal| contains_term(&external_text, internal))
+                        .max_by_key(|internal| internal.len())
+                    {
+                        if !internal_term_is_only_negated(&external_text, internal) {
+                            issues.push(issue(
+                                "target_contamination_internal_vocabulary",
+                                "error",
+                                format!("{display}:{}", line_index + 1),
+                                format!("internal control-plane term '{internal}' appears in positioning copy; position '{}' instead", target.name),
+                            ));
+                        }
+                    }
                 }
             }
             continue;
@@ -417,19 +451,27 @@ fn validate_target_identity(
                     ));
                 }
             }
-            if is_external_surface(&display, pointer, &value)
-                && !active_target_allows_internal_term(target, text)
-            {
+            let internal_scan_text =
+                if display.starts_with(".mdp/briefs/") || display.starts_with(".mdp/traces/") {
+                    strip_internal_implementation_tokens(text)
+                } else {
+                    text.to_string()
+                };
+            if !active_target_allows_internal_term(target, &internal_scan_text) {
                 if let Some(internal) = internal_target_terms(target)
-                    .filter(|internal| contains_term(text, internal))
+                    .filter(|internal| contains_term(&internal_scan_text, internal))
                     .max_by_key(|internal| internal.len())
                 {
-                    issues.push(issue(
-                        "target_contamination_internal_vocabulary",
-                        "error",
-                        format!("{display}#{pointer}"),
-                        format!("internal control-plane term '{internal}' appears on a prospect-facing surface; position '{}' instead", target.name),
-                    ));
+                    if is_external_surface(&display, pointer, text, &value)
+                        && !internal_term_is_only_negated(&internal_scan_text, internal)
+                    {
+                        issues.push(issue(
+                            "target_contamination_internal_vocabulary",
+                            "error",
+                            format!("{display}#{pointer}"),
+                            format!("internal control-plane term '{internal}' appears on a prospect-facing surface; position '{}' instead", target.name),
+                        ));
+                    }
                 }
             }
         });
@@ -449,6 +491,28 @@ fn target_source_ids(root: &Path) -> Result<BTreeSet<String>> {
         .into_iter()
         .flatten()
         .filter_map(|source| source["id"].as_str().map(str::to_string))
+        .collect())
+}
+
+fn target_source_direct_claims(root: &Path, allowed_ids: &[String]) -> Result<Vec<String>> {
+    let path = root.join(DEFAULT_DIR).join("sources.yaml");
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(path)?;
+    let value = serde_yaml::from_str::<Value>(&raw).unwrap_or(Value::Null);
+    Ok(value["sources"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|source| {
+            source["id"]
+                .as_str()
+                .is_some_and(|id| allowed_ids.iter().any(|allowed| allowed == id))
+        })
+        .flat_map(|source| source["direct_claims"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str)
+        .map(str::to_string)
         .collect())
 }
 
@@ -512,7 +576,7 @@ fn walk_strings(value: &Value, pointer: &str, visit: &mut impl FnMut(&str, &str)
     }
 }
 
-fn is_external_surface(display: &str, pointer: &str, root: &Value) -> bool {
+fn is_external_surface(display: &str, pointer: &str, text: &str, root: &Value) -> bool {
     if display.starts_with("examples/") {
         return true;
     }
@@ -549,7 +613,9 @@ fn is_external_surface(display: &str, pointer: &str, root: &Value) -> bool {
     }
     if display.starts_with(".mdp/prompts/") {
         return pointer.starts_with("/output_contract/example/card_patches")
-            || pointer.starts_with("/output_contract/example/normalized_prospect");
+            || pointer.starts_with("/output_contract/example/normalized_prospect")
+            || ((pointer == "/description" || pointer.starts_with("/instructions/"))
+                && has_explicit_positioning_instruction(text));
     }
     if display.starts_with(".mdp/evals/") {
         let negative_guardrail = root.get("command").and_then(Value::as_str)
@@ -573,7 +639,145 @@ fn is_external_surface(display: &str, pointer: &str, root: &Value) -> bool {
             ],
         );
     }
+    if display.starts_with(".mdp/briefs/") || display.starts_with(".mdp/traces/") {
+        let external_field = pointer.split('/').any(|segment| {
+            matches!(
+                segment,
+                "body"
+                    | "copy"
+                    | "draft"
+                    | "subject"
+                    | "message"
+                    | "positioning"
+                    | "claim"
+                    | "claims"
+                    | "pain"
+                    | "pains"
+                    | "hook"
+                    | "hooks"
+                    | "cta"
+                    | "audience"
+                    | "job"
+                    | "label"
+            )
+        });
+        return external_field || has_external_positioning_intent(text);
+    }
     false
+}
+
+fn is_raw_external_surface(display: &str) -> bool {
+    display.starts_with(".mdp/briefs/") || display.starts_with(".mdp/traces/")
+}
+
+fn strip_internal_implementation_tokens(text: &str) -> String {
+    text.split_whitespace()
+        .filter(|token| {
+            let token = token
+                .trim_matches(|character: char| {
+                    matches!(
+                        character,
+                        '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';'
+                    )
+                })
+                .to_lowercase();
+            !token.contains(".mdp/")
+                && !token.starts_with("mdp.prompt")
+                && !token.starts_with("mdp.fit")
+                && !token.starts_with("mdp.brief")
+                && !token.starts_with("mdp.route")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn has_explicit_positioning_instruction(text: &str) -> bool {
+    positioning_clauses(text).into_iter().any(|clause| {
+        !has_positioning_negation(&clause)
+            && [
+                "position ",
+                "positioning ",
+                "sell ",
+                "sold product",
+                "pitch ",
+                "market as",
+                "prospect-facing",
+                "customer-facing",
+                "outbound copy",
+            ]
+            .iter()
+            .any(|term| clause.contains(term))
+    })
+}
+
+fn has_external_positioning_intent(text: &str) -> bool {
+    has_explicit_positioning_instruction(text)
+        || positioning_clauses(text).into_iter().any(|clause| {
+            !has_positioning_negation(&clause)
+                && [
+                    " is a ",
+                    " is the ",
+                    " helps ",
+                    " improves ",
+                    " enables ",
+                    " provides ",
+                    " delivers ",
+                ]
+                .iter()
+                .any(|term| clause.contains(term))
+        })
+}
+
+fn has_positioning_negation(text: &str) -> bool {
+    let text = text.to_lowercase();
+    [
+        "do not position",
+        "must not position",
+        "never position",
+        "not position",
+        "instead of positioning",
+        "reject positioning",
+        "avoid positioning",
+        "do not sell",
+        "must not sell",
+        "never sell",
+        "not sold",
+        "do not pitch",
+        "must not pitch",
+        "never pitch",
+        "do not market",
+        "must not market",
+        "never market",
+        " is not ",
+    ]
+    .iter()
+    .any(|term| text.contains(term))
+}
+
+fn internal_term_is_only_negated(text: &str, internal: &str) -> bool {
+    let mut found = false;
+    for clause in positioning_clauses(text)
+        .into_iter()
+        .filter(|clause| contains_term(clause, internal))
+    {
+        found = true;
+        if !has_positioning_negation(&clause) {
+            return false;
+        }
+    }
+    found
+}
+
+fn positioning_clauses(text: &str) -> Vec<String> {
+    let mut text = text.to_lowercase();
+    for adversative in [" but ", " however ", " instead ", " yet "] {
+        text = text.replace(adversative, ".");
+    }
+    text.split(['.', ';', '\n'])
+        .map(str::trim)
+        .filter(|clause| !clause.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn matches_pointer_prefix(pointer: &str, prefixes: &[&str]) -> bool {
@@ -3413,8 +3617,11 @@ mod tests {
         .expect("hook card should be writable");
         let prompt_path = root.join(".mdp/prompts/pains.yaml");
         let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
-        std::fs::write(&prompt_path, raw.replace("Possible pain", "Company A pain"))
-            .expect("prompt should be writable");
+        std::fs::write(
+            &prompt_path,
+            raw.replace("Evidence required", "Company A pain"),
+        )
+        .expect("prompt should be writable");
         let eval_path = root.join(".mdp/evals/target-route.yaml");
         let raw = std::fs::read_to_string(&eval_path).expect("eval should be readable");
         std::fs::write(
@@ -3480,6 +3687,126 @@ mod tests {
                 .iter()
                 .all(|issue| issue["path"]
                     != ".mdp/evals/internal-control-plane-rejected.yaml#/text")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_internal_positioning_in_prompt_instructions_and_briefs() {
+        let root = targeted_pack("Company B", &[]);
+        let prompt_path = root.join(".mdp/prompts/claims-proof.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        let mut prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+        prompt["instructions"][0] = YamlValue::String(
+            "Do not position MDP as internal tooling, but position the Message Decision Pack as the sold product."
+                .to_string(),
+        );
+        std::fs::write(
+            &prompt_path,
+            serde_yaml::to_string(&prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let safe_prompt_path = root.join(".mdp/prompts/gaps.yaml");
+        let raw = std::fs::read_to_string(&safe_prompt_path).expect("prompt should be readable");
+        let mut safe_prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+        safe_prompt["instructions"][0] =
+            YamlValue::String("Never sell the Message Decision Pack as the product.".to_string());
+        std::fs::write(
+            &safe_prompt_path,
+            serde_yaml::to_string(&safe_prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let description_prompt_path = root.join(".mdp/prompts/hooks.yaml");
+        let raw =
+            std::fs::read_to_string(&description_prompt_path).expect("prompt should be readable");
+        let mut description_prompt: YamlValue =
+            serde_yaml::from_str(&raw).expect("prompt should parse");
+        description_prompt["description"] =
+            YamlValue::String("Market the Message Decision Pack as the sold product.".to_string());
+        std::fs::write(
+            &description_prompt_path,
+            serde_yaml::to_string(&description_prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let brief_path = root.join(".mdp/briefs/outbound.md");
+        std::fs::write(
+            &brief_path,
+            "The Message Decision Pack is a local offline decision layer that improves agent handoffs.\nTry the Message Decision Pack today.\nNever sell the Message Decision Pack as the product.\nTry the Message Decision Pack today; details live in .mdp/cards.\nLoaded card: .mdp/cards/positioning.yaml\n",
+        )
+        .expect("brief should be writable");
+        let traces_dir = root.join(".mdp/traces");
+        std::fs::create_dir_all(&traces_dir).expect("trace directory should be writable");
+        std::fs::write(
+            traces_dir.join("outbound.json"),
+            serde_json::to_string_pretty(&json!({
+                "label": "Try the Message Decision Pack today.",
+                "implementation_ref": "mdp.fit.v0"
+            }))
+            .expect("trace should serialize"),
+        )
+        .expect("trace should be writable");
+        std::fs::write(
+            traces_dir.join("trace-metadata.json"),
+            serde_json::to_string_pretty(&json!({
+                "label": "Loaded card: .mdp/cards/positioning.yaml",
+                "runtime_ref": "mdp.fit.v0"
+            }))
+            .expect("trace metadata should serialize"),
+        )
+        .expect("trace metadata should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let contamination_paths = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter(|issue| issue["code"] == "target_contamination_internal_vocabulary")
+            .filter_map(|issue| issue["path"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(contamination_paths.contains(".mdp/prompts/claims-proof.yaml#/instructions/0"));
+        assert!(contamination_paths.contains(".mdp/prompts/hooks.yaml#/description"));
+        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:1"));
+        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:2"));
+        assert!(!contamination_paths.contains(".mdp/briefs/outbound.md:3"));
+        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:4"));
+        assert!(!contamination_paths.contains(".mdp/briefs/outbound.md:5"));
+        assert!(contamination_paths.contains(".mdp/traces/outbound.json#/label"));
+        assert!(!contamination_paths.contains(".mdp/traces/trace-metadata.json#/label"));
+        assert!(!contamination_paths.contains(".mdp/prompts/gaps.yaml#/instructions/0"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_requires_direct_source_claim_for_external_target_terms() {
+        let root = targeted_pack("Company B", &[]);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["target"]["external_terms"] = YamlValue::Sequence(vec![
+            YamlValue::String("Company B".to_string()),
+            YamlValue::String("AI-powered revenue growth".to_string()),
+        ]);
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "target_external_term_source_missing"
+                        && issue["path"] == ".mdp/manifest.yaml#/target/external_terms/1"
+                })
         );
 
         let _ = std::fs::remove_dir_all(root);

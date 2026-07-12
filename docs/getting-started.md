@@ -65,7 +65,7 @@ mdp --json init --template gtm --name "Example Company Messaging" --target-name 
 mdp --json validate --dir ./example-company-mdp
 ```
 
-`--target-kind` accepts `company`, `product`, or `project`. Repeat `--target-alias` for supported external names, `--target-term` for source-backed category/product language, and `--exclude-term` for every prior target or starter term that must not survive. Existing packs without `manifest.target` remain compatible. A custom `--name` without `--target-name` now stops before writing because a display name is not enough to identify what is being positioned. Target-aware `init --force` also refuses a different existing target; use a clean directory or explicitly migrate the old target, lexicon, cards, prompts, examples, and evals before validation.
+`--target-kind` accepts `company`, `product`, or `project`. Repeat `--target-alias` for supported external names and `--exclude-term` for every prior target or starter term that must not survive. Initial scaffolding does not accept category, capability, or outcome terms because it has no source receipt capable of proving them; add those to `manifest.target.external_terms` only after adding the supporting source IDs and claims to `.mdp/sources.yaml`. Existing packs without `manifest.target` remain compatible. A custom `--name` without `--target-name` now stops before writing because a display name is not enough to identify what is being positioned. Target-aware `init --force` also refuses a different existing target; use a clean directory or explicitly migrate the old target, lexicon, cards, prompts, examples, and evals before validation.
 
 For the proposal reference profile:
 

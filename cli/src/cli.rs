@@ -43,11 +43,6 @@ pub(crate) enum Commands {
         )]
         target_aliases: Vec<String>,
         #[arg(
-            long = "target-term",
-            help = "Repeatable source-backed external term the pack may use"
-        )]
-        target_terms: Vec<String>,
-        #[arg(
             long = "exclude-term",
             help = "Repeatable prior-target or starter term that must not survive authoring"
         )]

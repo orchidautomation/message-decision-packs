@@ -40,7 +40,7 @@ pub(crate) fn capabilities() -> Value {
         },
         "commands": [
             command("capabilities", "mdp.capabilities.v0", "read-only", false, false, false, &[]),
-            command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--target-name", "--target-kind", "--target-alias", "--target-term", "--exclude-term", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
+            command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--target-name", "--target-kind", "--target-alias", "--exclude-term", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("agent-surface", "mdp.agent-surface.v0", "read-only", false, false, false, &["--dir"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),

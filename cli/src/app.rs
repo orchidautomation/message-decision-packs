@@ -26,7 +26,6 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             target_name,
             target_kind,
             target_aliases,
-            target_terms,
             exclude_terms,
             dir,
             template,
@@ -41,7 +40,6 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 name: target_name.as_deref(),
                 kind: &target_kind,
                 aliases: &target_aliases,
-                terms: &target_terms,
                 excluded_terms: &exclude_terms,
             };
             let data = if dry_run {

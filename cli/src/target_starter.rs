@@ -363,7 +363,8 @@ pub(crate) fn target_prompts(
     starter_prompts(include_output_schemas)
         .into_iter()
         .map(|(name, mut prompt)| {
-            retarget_value(&mut prompt, target);
+            remove_starter_identifiers(&mut prompt);
+            neutralize_prompt_example(&mut prompt, target);
             if let Some(instructions) = prompt
                 .get_mut("instructions")
                 .and_then(Value::as_array_mut)
@@ -481,33 +482,118 @@ fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_string()).collect()
 }
 
-fn retarget_value(value: &mut Value, target: &TargetIdentity) {
+fn neutralize_prompt_example(prompt: &mut Value, target: &TargetIdentity) {
+    let evidence_input = prompt
+        .get("inputs")
+        .and_then(Value::as_object)
+        .and_then(|inputs| {
+            inputs.keys().find(|key| {
+                !matches!(
+                    key.as_str(),
+                    "existing_pack_context" | "runtime_context" | "source_kind"
+                )
+            })
+        })
+        .cloned()
+        .unwrap_or_else(|| "source_notes".to_string());
+    let Some(example) = prompt
+        .get_mut("output_contract")
+        .and_then(|contract| contract.get_mut("example"))
+    else {
+        return;
+    };
+
+    if let Some(card_patches) = example
+        .get_mut("card_patches")
+        .and_then(Value::as_array_mut)
+    {
+        for patch in card_patches {
+            let card_id = patch["card_id"].as_str().unwrap_or("target").to_string();
+            let kind = patch["kind"].as_str().unwrap_or(&card_id).to_string();
+            patch["entries"] = json!([{
+                "id": format!("{card_id}-evidence-gap"),
+                "title": "Evidence required",
+                "body": format!(
+                    "No {} {} candidate is supported by supplied evidence yet. Record the missing evidence as a gap instead of drafting target-specific content.",
+                    target.name, kind
+                ),
+                "applies_to": PERSONAS,
+                "evidence": [evidence_input.clone()],
+                "avoid": [],
+                "confidence": "low",
+                "provenance": [format!("{evidence_input}: supplied input reviewed; target-specific support remains missing")],
+                "notes": [],
+                "status": "needs-review"
+            }]);
+        }
+        if let Some(source_summary) = example
+            .get_mut("source_summary")
+            .and_then(Value::as_object_mut)
+        {
+            source_summary.insert("inputs_used".to_string(), json!([evidence_input]));
+            source_summary.insert("confidence".to_string(), json!("low"));
+        }
+    }
+
+    if example.get("normalized_prospect").is_some() {
+        example["normalized_prospect"] = target_prospect(target);
+        example["source_summary"] = json!({
+            "account_name": "Example Prospect Company",
+            "company_domain": "N/A",
+            "company_name": "Example Prospect Company",
+            "confidence": "unknown",
+            "inputs_used": ["raw_row"],
+            "person_name": "Example Person",
+            "person_title": "Example Operator"
+        });
+        example["normalization_trace"] = json!({
+            "fit_readiness": {
+                "has_company_domain": false,
+                "has_persona": true,
+                "has_segment": true,
+                "has_signal_source": false,
+                "has_signals": false,
+                "has_trigger": false,
+                "ready_for_mdp_fit": false,
+                "ready_for_brief": false
+            },
+            "missing_required": [
+                {"field": "company_domain", "reason": "not_available_in_source", "source_evidence": "Synthetic example intentionally omits a company domain."},
+                {"field": "trigger", "reason": "not_available_in_source", "source_evidence": "Synthetic example intentionally omits a target-specific trigger."},
+                {"field": "signals", "reason": "not_available_in_source", "source_evidence": "Synthetic example intentionally contains no source-backed signals."}
+            ],
+            "persona": {
+                "confidence": "low",
+                "matched_keywords": [],
+                "needs_review": true,
+                "source": "synthetic-example"
+            },
+            "preserved_raw_fields": ["raw_row.name", "raw_row.title", "raw_row.company"]
+        });
+    }
+}
+
+fn remove_starter_identifiers(value: &mut Value) {
     match value {
         Value::String(text) => {
-            let replacements = [
-                (
-                    "Basic MDP Template",
-                    format!("{} messaging pack", target.name),
-                ),
-                ("Message Decision Pack", "decision pack".to_string()),
-                ("MDP", "the decision pack".to_string()),
-                ("agent-assisted GTM", "reviewed target workflow".to_string()),
-                ("local-cli", "target-product".to_string()),
-                ("agent-plugin", "target-extension".to_string()),
-                ("example-mdp-demo", "example-target-demo".to_string()),
-            ];
-            for (from, to) in replacements {
-                *text = text.replace(from, &to);
+            for (from, to) in [
+                ("Basic MDP Template", "target messaging scaffold"),
+                ("agent-assisted GTM", "target-specific operations"),
+                ("local-cli", "target-product"),
+                ("agent-plugin", "target-extension"),
+                ("example-mdp-demo", "example-target-demo"),
+            ] {
+                *text = text.replace(from, to);
             }
         }
         Value::Array(values) => {
             for value in values {
-                retarget_value(value, target);
+                remove_starter_identifiers(value);
             }
         }
         Value::Object(values) => {
             for value in values.values_mut() {
-                retarget_value(value, target);
+                remove_starter_identifiers(value);
             }
         }
         _ => {}

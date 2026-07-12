@@ -157,8 +157,8 @@ The result is a local `.mdp/` folder:
   briefs/
   cards/
   evals/
-  examples/
-  clay-row.json
+examples/
+  prospect-row.json
 ```
 
 The target-aware sample row is synthetic and neutral. The target-less reference template keeps its historical sample path for compatibility, but the reference template must not be renamed and mistaken for a different sold target.

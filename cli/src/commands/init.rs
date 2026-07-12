@@ -28,7 +28,6 @@ pub(crate) struct TargetInitOptions<'a> {
     pub(crate) name: Option<&'a str>,
     pub(crate) kind: &'a str,
     pub(crate) aliases: &'a [String],
-    pub(crate) terms: &'a [String],
     pub(crate) excluded_terms: &'a [String],
 }
 
@@ -39,7 +38,6 @@ impl Default for TargetInitOptions<'_> {
             name: None,
             kind: "company",
             aliases: &[],
-            terms: &[],
             excluded_terms: &[],
         }
     }
@@ -368,7 +366,6 @@ pub(crate) fn init_pack_targeted(
         target_options.name,
         target_options.kind,
         target_options.aliases,
-        target_options.terms,
         target_options.excluded_terms,
     )?;
     match template {
@@ -504,7 +501,6 @@ pub(crate) fn init_pack_targeted_dry_run(
         target_options.name,
         target_options.kind,
         target_options.aliases,
-        target_options.terms,
         target_options.excluded_terms,
     )?;
     match template {
@@ -607,13 +603,10 @@ fn resolve_target_identity(
     target_name: Option<&str>,
     target_kind: &str,
     target_aliases: &[String],
-    target_terms: &[String],
     exclude_terms: &[String],
 ) -> Result<Option<TargetIdentity>> {
-    let has_target_details = !target_aliases.is_empty()
-        || !target_terms.is_empty()
-        || !exclude_terms.is_empty()
-        || target_kind != "company";
+    let has_target_details =
+        !target_aliases.is_empty() || !exclude_terms.is_empty() || target_kind != "company";
     let Some(target_name) = target_name.map(str::trim).filter(|value| !value.is_empty()) else {
         if (template == "gtm" && custom_name) || has_target_details {
             return Err(anyhow!(
@@ -642,8 +635,7 @@ fn resolve_target_identity(
     extend_unique(&mut excluded, exclude_terms);
     let mut aliases = Vec::new();
     extend_unique(&mut aliases, target_aliases);
-    let mut external_terms = vec![target_name.to_string()];
-    extend_unique(&mut external_terms, target_terms);
+    let external_terms = vec![target_name.to_string()];
     if let Some(conflict) = excluded.iter().find(|excluded| {
         excluded.eq_ignore_ascii_case(target_name)
             || aliases
@@ -1236,6 +1228,30 @@ mod tests {
         .expect("sample row should parse");
         assert!(sample.get("company_domain").is_none());
         assert_eq!(sample["signals"], json!([]));
+        for entry in std::fs::read_dir(root.join(".mdp/prompts"))
+            .expect("prompt directory should be readable")
+        {
+            let path = entry.expect("prompt entry should be readable").path();
+            let raw = std::fs::read_to_string(&path).expect("prompt should be readable");
+            let prompt: Value = serde_yaml::from_str(&raw).expect("prompt should parse");
+            let example = serde_json::to_string(&prompt["output_contract"]["example"])
+                .expect("prompt example should serialize");
+            for residue in [
+                "PMM",
+                "GTM Engineering",
+                "persona-gtm-ops",
+                "agent-assisted GTM",
+                "local decision context",
+                "Alex Rivera",
+                "ExampleCo",
+            ] {
+                assert!(
+                    !example.contains(residue),
+                    "{} retained starter residue '{residue}'",
+                    path.display()
+                );
+            }
+        }
 
         let _ = std::fs::remove_dir_all(root);
     }

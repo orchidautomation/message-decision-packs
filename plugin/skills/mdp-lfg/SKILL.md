@@ -61,7 +61,7 @@ For a target-aware GTM pack:
 mdp --json init --template gtm --name "<target> Messaging" --target-name "<target>" --target-kind <company|product|project> --dir .
 ```
 
-Repeat `--target-alias`, `--target-term`, and `--exclude-term` as needed. Use the target-less default only when the operator explicitly wants the MDP reference/demo:
+Repeat `--target-alias` and `--exclude-term` as needed. Initial scaffolding accepts identity names and aliases only; add category, capability, or outcome language to `manifest.target.external_terms` only after its supporting source is recorded in `.mdp/sources.yaml`. Use the target-less default only when the operator explicitly wants the MDP reference/demo:
 
 ```bash
 mdp --json init --template gtm --dir .

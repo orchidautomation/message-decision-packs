@@ -57,7 +57,7 @@ mdp --json init --template gtm --name "<target> Messaging" --target-name "<targe
 mdp --json init --template proposal --dir .
 ```
 
-Repeat `--target-alias`, `--target-term`, and `--exclude-term` as needed. A custom `--name` does not resolve the sold target. Use `mdp --json init --template gtm --dir .` only for an intentional MDP reference/demo.
+Repeat `--target-alias` and `--exclude-term` as needed. Initial scaffolding accepts identity names and aliases only; add category, capability, or outcome language to `manifest.target.external_terms` only after its supporting source is recorded in `.mdp/sources.yaml`. A custom `--name` does not resolve the sold target. Use `mdp --json init --template gtm --dir .` only for an intentional MDP reference/demo.
 
 5. Build the source ledger before writing cards. Add public URLs, user-provided docs, or note identifiers to `.mdp/sources.yaml`; separate direct source claims from interpretation; preserve missing proof in `gaps.yaml`.
 
