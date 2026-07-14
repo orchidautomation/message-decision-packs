@@ -8,7 +8,7 @@ On each scheduled run, find source-backed account/persona evidence, run MDP-owne
 
 ## Required loop
 
-1. Load the `mdp-lfg`, `mdp-source-strategy`, or `mdp-prospect-brief` skill when you need the detailed MDP procedure.
+1. Load `mdp-gtm-brief` for pack-grounded fit and brief procedure, or `mdp` for CLI/operator guidance. Public-source discovery remains an Eve/provider responsibility outside MDP.
 2. Call `mdp_validate` before relying on the pack.
 3. Call `load_source_strategy` before choosing queries, sources, providers, or extraction tools.
 4. Honor `strategy.run_policy`: live scheduled runs should continue across the approved account-discovery query prompts until at least 3 qualified people pass validation or the bounded discovery pass budget is exhausted.

@@ -202,27 +202,15 @@ The plugin is the agent-facing workflow layer.
 
 It contains skills that teach supported agents how to create, inspect, improve, route, and use Message Decision Packs.
 
-Important skills include:
+The public skill surface is intentionally limited to five coherent user jobs:
 
-- `mdp-lfg`: orchestrates multi-step MDP work
-- `mdp-create-pack`: creates or improves a pack
-- `mdp-proposal-pack-builder`: creates or improves a proposal/RFP review pack from approved source material
-- `mdp-proposal-bid-no-bid-review`: assesses supplied proposal pursuit context against bid/no-bid rules
-- `mdp-proposal-compliance-review`: reviews supplied proposal requirements or answer drafts against compliance rules
-- `mdp-proposal-win-theme-proof-review`: reviews proposal themes or differentiators against approved proof
-- `mdp-proposal-red-team-gap-review`: prioritizes proposal gaps, risks, and reviewer questions against pack constraints
-- `mdp-icp-builder`: sharpens ICP, personas, and fit logic
-- `mdp-source-extract`: turns source material into card entries
-- `mdp-source-strategy`: plans source targets, scout queries, evidence rules, exclusions, and review gates before extraction
-- `mdp-message-angles`: codifies hooks and angles
-- `mdp-cta-builder`: codifies CTA and reply-path policy
-- `mdp-avoid-rules`: enforces category and claim boundaries
-- `mdp-output-rules`: codifies global style and structure constraints
-- `mdp-prospect-brief`: turns provider-neutral prospect/source rows into fit decisions and briefs
-- `mdp-copy-brief`: produces model-ready writing contracts
-- `mdp-copy-eval`: evaluates generated copy against the pack
-- `mdp-pack-review`: reviews pack quality
-- `mdp-pack-eval`: tests routing and pack behavior
+- `mdp`: explicit CLI/operator help and mixed MDP coordination
+- `mdp-pack-builder`: evidence-grounded GTM or proposal pack creation and improvement
+- `mdp-pack-review`: structural, routing, prompt, gap, output-rule, and eval review of the pack artifact
+- `mdp-gtm-brief`: GTM prospect fit/brief, pre-draft context, and supplied-copy review
+- `mdp-proposal-review`: proposal bid/no-bid, compliance, proof, and red-team review support
+
+Specialized card authoring and review stages are modes or shallow references inside those skills, not additional discovery entries. The CLI owns exact eligibility and job-to-skill routing; the agent host owns skill discovery.
 
 ### `plugin/assets/templates/basic`
 

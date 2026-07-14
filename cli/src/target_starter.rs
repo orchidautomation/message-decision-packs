@@ -91,16 +91,16 @@ pub(crate) fn target_manifest(
     }
     for job in &mut manifest.jobs {
         job.description = Some(match job.id.as_str() {
-            "create-or-improve-gtm-pack" => format!(
-                "Author reviewed messaging decisions for {} without inheriting starter or prior-target language.",
-                target.name
-            ),
             "prospect-fit-or-brief" => format!(
                 "Normalize supplied prospect context and check fit against reviewed {} evidence.",
                 target.name
             ),
             "outbound-copy-brief" => format!(
                 "Produce grounded {} copy guidance only after fit, proof, and boundaries are supported.",
+                target.name
+            ),
+            "outbound-copy-review" => format!(
+                "Review supplied copy against approved {} claims, proof, boundaries, and output rules.",
                 target.name
             ),
             _ => {
@@ -393,7 +393,7 @@ pub(crate) fn target_evals(target: &TargetIdentity) -> Vec<(&'static str, Value)
             json!({
                 "id": "target-route",
                 "command": "route",
-                "profile_eval": {"category": "job-routing", "primitives": ["actors", "boundaries", "output-contracts"], "jobs": ["create-or-improve-gtm-pack"]},
+                "profile_eval": {"category": "job-routing", "primitives": ["actors", "boundaries", "output-contracts"], "jobs": ["outbound-copy-brief"]},
                 "persona": "Operator",
                 "job": format!("create or improve messaging for {}", target.name),
                 "expect_load_order_contains": [".mdp/cards/personas.yaml", ".mdp/cards/positioning.yaml"]

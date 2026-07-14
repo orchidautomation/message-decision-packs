@@ -1,5 +1,5 @@
 ---
-title: Prevent LFG cross-target contamination with explicit target identity
+title: Prevent cross-target contamination with explicit target identity
 date: 2026-07-12
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
@@ -8,11 +8,11 @@ execution: code
 origin: Linear MDP-104
 ---
 
-# Prevent LFG cross-target contamination with explicit target identity
+# Prevent cross-target contamination with explicit target identity
 
 ## Goal Capsule
 
-- Objective: ensure every LFG/create-pack run either resolves an explicit sold target or stops before authoring, and ensure validation rejects target residue with actionable locations.
+- Objective: ensure every GTM pack-builder run either resolves an explicit external target or stops before authoring, and ensure validation rejects target residue with actionable locations.
 - Authority: repository `AGENTS.md`, Linear MDP-104, then this plan.
 - Execution profile: characterize the current target-blind scaffold, add the contract and validation first, then align generated surfaces and agent skills.
 - Stop conditions: do not invent target claims, do not copy private reference-pack content, and do not publish a release before review and merge.
@@ -40,7 +40,7 @@ The current GTM scaffold is a complete MDP product example. `starter_manifest` r
 - R6. Validation must reject excluded terms anywhere outside the lexicon declaration and reject MDP/CLI/schema vocabulary in prospect-facing fields while allowing it in implementation contracts and negative guardrail fixtures.
 - R7. Every contamination issue must include a stable code and a concrete file plus JSON-pointer-like field path.
 - R8. Company A then Company B regression coverage must prove no Company A, starter-demo, private reference-target, or MDP-as-product residue.
-- R9. CLI help, templates, docs, `mdp-lfg`, `mdp-create-pack`, review/eval skills, and skill evals must describe the same identity gate and retarget procedure.
+- R9. CLI help, templates, docs, `mdp-pack-builder`, `mdp-pack-review`, shared MDP coordination, and skill evals must describe the same identity gate and retarget procedure.
 
 ### Acceptance Examples
 
@@ -114,8 +114,8 @@ The current GTM scaffold is a complete MDP product example. `starter_manifest` r
 
 ### U4. Agent and public contract alignment
 
-- **Goal:** make LFG/create-pack/review/eval behavior consume the target gate and retarget lexicon.
-- **Files:** `plugin/skills/mdp-lfg/**`, `plugin/skills/mdp-create-pack/**`, `plugin/skills/mdp-pack-review/**`, `plugin/skills/mdp-pack-eval/**`, `docs/**`, `README.md` where applicable.
+- **Goal:** make builder/review/coordinator behavior consume the target gate and retarget lexicon.
+- **Files:** `plugin/skills/mdp-pack-builder/**`, `plugin/skills/mdp-pack-review/**`, `plugin/skills/mdp/**`, `plugin/skills/mdp-gtm-brief/**`, `docs/**`, `README.md` where applicable.
 - **Patterns:** progressive references and public-safe skill eval fixtures.
 - **Test scenarios:** trigger/output evals mention identity resolution, ambiguity stop, excluded prior terms, and control-plane separation.
 - **Covers:** R9.

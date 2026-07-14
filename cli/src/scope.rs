@@ -306,9 +306,7 @@ pub(crate) fn valid_declared_identifier(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{
-        AgentSurface, LeadInputRequirements, Policy, Profile, ProfileEval, Provenance,
-    };
+    use crate::models::{LeadInputRequirements, Policy, Profile, ProfileEval, Provenance};
 
     fn manifest() -> Manifest {
         Manifest {
@@ -340,7 +338,6 @@ mod tests {
                     "capability".to_string(),
                     vec!["product".to_string()],
                 )]),
-                agent_surface: AgentSurface::default(),
             }),
             personas: vec![],
             target_personas: vec![],

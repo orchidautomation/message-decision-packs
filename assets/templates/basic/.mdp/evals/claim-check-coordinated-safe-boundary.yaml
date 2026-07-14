@@ -4,7 +4,7 @@ id: claim-check-coordinated-safe-boundary
 profile_eval:
   category: proceed
   jobs:
-  - pack-validation
+  - outbound-copy-review
   primitives:
   - evidence-proof
   - boundaries

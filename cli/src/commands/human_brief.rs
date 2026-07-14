@@ -485,7 +485,7 @@ fn current_role_caveat(prospect: &Value) -> Option<&str> {
         if prospect["title"].as_str().is_none_or(|title| title.trim().is_empty()) {
             Some("No reviewed current role/title was supplied.")
         } else {
-            Some("Current role is based on supplied prospect data and has not been independently verified by MDP.")
+            Some("Current role is based on supplied prospect data and has not been independently verified.")
         }
     })
 }

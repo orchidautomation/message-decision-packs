@@ -1,87 +1,64 @@
 ---
 name: mdp-pack-review
-description: Use when the user asks to review, audit, harden, QA, or improve a Message Decision Pack. Checks structure, routing, ICP clarity, evidence strength, CTA policy, avoid-rules, output-rules, duplication, claim risk, and missing cards.
+description: "Use when auditing, validating, hardening, testing, or diagnosing an existing Message Decision Pack itself: structure, evidence, jobs, routes, prompts, gaps, rules, or evals. Do not use to review a prospect, copy draft, proposal, or RFP."
 ---
 
 # MDP Pack Review
 
-## Profile Gate
+Review an existing pack and produce evidence-backed findings. Do not silently repair it unless the user also asks for changes.
 
-Before using this skill against an existing pack, run:
+## Gate
 
-```bash
-mdp --json agent-surface --dir .
-```
-
-Use this skill only when the surface is compatibility/generic or this skill is listed in `recommended_skills` or `allowed_skills` and is not listed in `blocked_skills`. If the surface blocks this skill, stop and reroute to an allowed or recommended skill named by the surface before editing or reviewing pack content.
-
-Review an MDP like a GTM control surface: structure first, then decision quality.
-
-## Workflow
-
-1. Run deterministic checks:
+Identify the exact pack root and inspect its policy state:
 
 ```bash
-mdp --json doctor --dir .
-mdp --json validate --dir .
-mdp --json pack --dir .
-mdp --json gaps --dir .
-mdp --json eval --dir .
+mdp --json skills --dir PACK_ROOT
+mdp --json doctor --dir PACK_ROOT
 ```
 
-Use `mdp --json capabilities` when reviewing agent-facing CLI support, and use `--strict` on `validate` or `eval` when warnings should fail the review gate. Use `mdp --json pack --dir . --out <path> --dry-run` before saving a portable pack artifact.
+This is a shared skill and remains eligible for invalid packs so it can diagnose them. Host discovery remains unobserved and host-managed.
 
-2. Review the manifest:
+## Deterministic Review
 
-- format and version
-- profile routing metadata (`profile.id`, `profile.agent_surface`) separately from activation readiness
-- `required_primitives`, `primitive_map`, `input_contracts`, profile `jobs`, and `profile_eval.required_categories` when profile metadata is present
-- `data.profile.activation_ready`, missing primitive coverage, and missing eval categories from `mdp validate`
-- personas, target personas, and operator roles
-- portfolio `context_dimensions`, canonical lowercase kebab-case values, and any `context_dimension_dependencies`
-- supported channels, including any custom channel names used by channel-policies
-- card index
-- progressive disclosure policy
-- max cards per route
-
-3. Review cards:
-
-- unclear personas
-- broad ICP
-- missing fit-rules or no-message logic
-- weak or unsourced claims
-- missing signals or source interpretation rules
-- missing disqualifiers
-- missing channel policies
-- missing CTA rules or hard-sell asks
-- missing avoid-rules
-- missing output-rules for global style or structure constraints
-- missing objections or alternatives
-- missing durable gaps
-- duplicated hooks or pains
-- copy patterns that imply unsupported claims or bury global style rules outside output-rules
-- prospect `attributes` used as an evidence dump instead of bounded reviewed row metadata
-- arbitrary unsupported YAML fields that should move under entry `metadata` or become first-class card content
-- entry `metadata` that agents can inspect but should not treat as an enforceable CLI rule
-- product/capability/solution applicability hidden in `metadata` or `applies_to` instead of enforced entry `scope`
-- scoped capability/solution entries missing their dependency dimensions, which can create impossible or blended portfolio routes
-- portfolio-sensitive routes that expose full shared-card load paths as draftable context instead of bounded entries
-
-4. Test routing with representative jobs:
+Run the narrow checks first, then strict gates:
 
 ```bash
-mdp --json route --entries --dir . --persona "<persona>" --job "linkedin outbound copy"
-mdp --json route --entries --dir . --persona "<persona>" --job "email follow-up"
+mdp --json validate --dir PACK_ROOT
+mdp --json gaps --dir PACK_ROOT
+mdp --json eval --dir PACK_ROOT
+mdp --json validate --strict --dir PACK_ROOT
+mdp --json eval --strict --dir PACK_ROOT
 ```
 
-For a portfolio pack, repeat the same cases with product/capability selectors and with scope intentionally omitted. Confirm product A excludes product B, global entries remain available, broader entries can match either selected product, missing/unknown/conflicting scope blocks drafting, and the pack includes selected-scope plus missing-scope eval fixtures. Treat `proof_output_scope_unsupported` as the explicit V1 proof-artifact boundary, not a warning to bypass.
+Preview a portable compilation when needed:
 
-## Findings Format
+```bash
+mdp --json pack --dir PACK_ROOT --out PACK_JSON --dry-run
+```
 
-Lead with issues, ordered by severity:
+Read [references/structural-audit.md](references/structural-audit.md) for manifest, primitive, evidence, and content review. Read [references/routing-evals.md](references/routing-evals.md) for job binding, route, prompt, and eval review. Read [references/installed-template-qa.md](references/installed-template-qa.md) only when testing a released install or freshly initialized templates.
 
-- High: likely to cause wrong messaging or unsupported claims
-- Medium: likely to reduce usefulness or routing quality
-- Low: cleanup, wording, duplication, metadata polish
+## Review Rules
 
-Include exact file paths and card ids when possible.
+- Treat CLI errors as findings, not prose to reinterpret away.
+- Verify every agent-routable `jobs[]` entry has one canonical `skill_id` and a supported closed pair.
+- Check source receipts, freshness, confidence, approved claims/proof, avoid rules, output rules, and gaps for internal consistency.
+- When `manifest.target` exists, verify target kind/name, source IDs, aliases, supported external terms, exclusions, and internal vocabulary boundaries. Treat target contamination as a high-severity wrong-product risk.
+- Distinguish structural validity from commercial readiness or human approval.
+- Sample representative routes and deterministic claim/output gates when the pack changed those decisions.
+- Exercise generated surfaces such as sample leads, prompt output, JSON/readable briefs, and eval payloads; required contracts and CLI receipts are implementation metadata, while their prospect-facing content must remain target-aware or neutral.
+- Keep evaluation output and temporary packs outside committed source paths.
+
+## Findings
+
+Report findings first, ordered by severity:
+
+- High: invalid pack, unsafe boundary, unsupported proof, broken job binding, or route/eval behavior that can produce a wrong decision.
+- Medium: ambiguous decision context, weak evidence, missing high-value fixture, or output rule that is not enforceable as written.
+- Low: clarity, duplication, naming, or maintainability issue with limited behavior risk.
+
+For each finding include the file or CLI path, evidence, impact, and smallest durable fix. If there are no findings, say so and list the commands and coverage limits.
+
+## Boundaries
+
+Pack review does not enrich prospects, review supplied copy/proposals as business artifacts, certify compliance, submit work, or mutate downstream systems. Route those user jobs to the appropriate specialized skill.

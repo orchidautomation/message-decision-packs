@@ -1,11 +1,10 @@
 use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat};
 use crate::commands::{
-    TargetInitOptions, agent_surface, capabilities, check_claims_scoped, demo_copy, doctor,
-    emit_brief_scoped, eval_pack, explain, fit, gaps, init_pack_targeted,
-    init_pack_targeted_dry_run, pack, prospect_brief_with_context, render_human_brief_file,
-    render_human_brief_markdown, render_readable_prospect_brief, route_scoped, sample_leads,
-    schema, validate_pack, validate_prompt_output_file, verify_output_file,
-    verify_output_readable_file,
+    TargetInitOptions, capabilities, check_claims_scoped, demo_copy, doctor, emit_brief_scoped,
+    eval_pack, explain, fit, gaps, init_pack_targeted, init_pack_targeted_dry_run, pack,
+    prospect_brief_with_context, render_human_brief_file, render_human_brief_markdown,
+    render_readable_prospect_brief, route_scoped, sample_leads, schema, skills, validate_pack,
+    validate_prompt_output_file, verify_output_file, verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -64,11 +63,11 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             print_output(json_mode, summary_mode, "init", data)
         }
         Commands::Doctor { dir } => print_output(json_mode, summary_mode, "doctor", doctor(&dir)),
-        Commands::AgentSurface { dir } => print_output(
+        Commands::Skills { dir, job } => print_output(
             json_mode,
             summary_mode,
-            "agent-surface",
-            agent_surface(&dir)?,
+            "skills",
+            skills(dir.as_deref(), job.as_deref()),
         ),
         Commands::Validate { dir, strict } => {
             let data = apply_strict(validate_pack(&dir)?, strict, StrictWarningSource::Issues);

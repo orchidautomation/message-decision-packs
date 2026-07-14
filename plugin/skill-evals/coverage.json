@@ -1,0 +1,65 @@
+{
+  "model": "mdp.skill-eval-coverage.v1",
+  "skills": [
+    {
+      "id": "mdp",
+      "risk_tier": "standard",
+      "modes": ["operator-help", "validate", "mixed-route"],
+      "required_assertion_categories": ["routing", "boundary"]
+    },
+    {
+      "id": "mdp-pack-builder",
+      "risk_tier": "elevated",
+      "modes": ["source-plan", "source-extract", "gtm-authoring", "proposal-authoring"],
+      "required_assertion_categories": ["content", "evidence", "boundary"]
+    },
+    {
+      "id": "mdp-pack-review",
+      "risk_tier": "elevated",
+      "modes": ["structural", "routing-eval", "installed-qa"],
+      "required_assertion_categories": ["cli-gate", "content", "handoff"]
+    },
+    {
+      "id": "mdp-gtm-brief",
+      "risk_tier": "high",
+      "modes": ["prospect-fit-or-brief", "outbound-copy-brief", "outbound-copy-review"],
+      "required_assertion_categories": ["cli-gate", "evidence", "boundary"]
+    },
+    {
+      "id": "mdp-proposal-review",
+      "risk_tier": "high",
+      "modes": ["bid-no-bid", "compliance", "proof", "red-team"],
+      "required_assertion_categories": ["evidence", "safety", "human-review"]
+    }
+  ],
+  "trigger_requirements": {
+    "minimum_owned_cases_per_skill_per_split": 3,
+    "minimum_null_route_cases_per_split": 2,
+    "require_all_modes_per_split": true,
+    "require_full_ordered_collision_matrix": true,
+    "require_profile_crossing_per_split": true
+  },
+  "output_requirements": {
+    "require_every_mode_per_split": true,
+    "allowed_assertion_categories": [
+      "routing",
+      "cli-gate",
+      "content",
+      "evidence",
+      "boundary",
+      "safety",
+      "handoff",
+      "human-review"
+    ]
+  },
+  "host_observation_requirements": {
+    "require_all_trigger_cases": true,
+    "minimum_trigger_accuracy": 1.0,
+    "require_all_output_cases": true,
+    "minimum_output_assertion_accuracy": 1.0
+  },
+  "cli_fixtures": {
+    "gtm": "plugin/assets/templates/basic",
+    "proposal": "plugin/assets/templates/proposal"
+  }
+}

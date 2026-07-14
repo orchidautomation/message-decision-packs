@@ -24,60 +24,6 @@ profile:
     - product
     solution:
     - product
-  agent_surface:
-    recommended_skills:
-    - mdp
-    - mdp-create-pack
-    - mdp-icp-builder
-    - mdp-source-strategy
-    - mdp-prospect-brief
-    - mdp-pack-eval
-    allowed_skills:
-    - mdp
-    - mdp-lfg
-    - mdp-create-pack
-    - mdp-icp-builder
-    - mdp-source-extract
-    - mdp-source-strategy
-    - mdp-message-angles
-    - mdp-cta-builder
-    - mdp-avoid-rules
-    - mdp-output-rules
-    - mdp-prospect-brief
-    - mdp-copy-brief
-    - mdp-copy-eval
-    - mdp-pack-review
-    - mdp-pack-eval
-    blocked_skills:
-    - name: mdp-proposal-pack-builder
-      reason: 'Proposal/RFP review pack builder; use only with profile.id: proposal. GTM packs may cover proposal-governance positioning or outbound fit, not proposal compliance, bid/no-bid, or customer proposal handling.'
-    - name: mdp-proposal-bid-no-bid-review
-      reason: Proposal review job; not a GTM prospect or outbound-copy workflow.
-    - name: mdp-proposal-compliance-review
-      reason: Proposal compliance review job; not a GTM messaging workflow or proposal-governance positioning wedge.
-    - name: mdp-proposal-win-theme-proof-review
-      reason: Proposal proof review job; use GTM claims/copy review skills instead.
-    - name: mdp-proposal-red-team-gap-review
-      reason: Proposal red-team review job; use mdp-pack-review or mdp-pack-eval for GTM packs.
-    job_skills:
-    - job: create or improve GTM messaging pack
-      skills:
-      - mdp-create-pack
-      - mdp-icp-builder
-    - job: source strategy before GTM scout or extraction
-      skills:
-      - mdp-source-strategy
-    - job: prospect row to fit decision or brief
-      skills:
-      - mdp-prospect-brief
-    - job: copy brief or copy evaluation
-      skills:
-      - mdp-copy-brief
-      - mdp-copy-eval
-    - job: pack validation and eval coverage
-      skills:
-      - mdp-pack-review
-      - mdp-pack-eval
 personas:
 - GTM Engineering
 - PMM
@@ -250,10 +196,9 @@ primitive_map:
     - channel-policies
     - motions
     jobs:
-    - create-or-improve-gtm-pack
     - prospect-fit-or-brief
     - outbound-copy-brief
-    - pack-validation
+    - outbound-copy-review
   source-signals:
     cards:
     - signals
@@ -277,20 +222,8 @@ input_contracts:
   - person
   - relationship
 jobs:
-- id: create-or-improve-gtm-pack
-  label: Create or improve GTM messaging pack
-  description: Author or revise reviewed GTM decision context, not execution infrastructure.
-  required_primitives:
-  - actors
-  - decision-criteria
-  - source-signals
-  - needs-requirements
-  - evidence-proof
-  - boundaries
-  - output-contracts
-  - gaps
-  - evals
 - id: prospect-fit-or-brief
+  skill_id: mdp-gtm-brief
   label: Prospect row to fit decision or brief
   description: Normalize supplied row context, check fit, and route a bounded local brief.
   required_primitives:
@@ -305,6 +238,7 @@ jobs:
   input_contracts:
   - prospect
 - id: outbound-copy-brief
+  skill_id: mdp-gtm-brief
   label: Outbound copy brief
   description: Produce grounded copy guidance after fit, proof, guardrails, and output contracts are loaded.
   required_primitives:
@@ -318,13 +252,21 @@ jobs:
   - gaps
   input_contracts:
   - prospect
-- id: pack-validation
-  label: Pack validation and eval coverage
-  description: Check structural validity, profile primitive coverage, and local eval categories.
+- id: outbound-copy-review
+  skill_id: mdp-gtm-brief
+  label: Supplied outbound copy review
+  description: Evaluate a supplied copy draft against fit, proof, guardrails, and output rules.
   required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
   - boundaries
+  - output-contracts
+  - routing-jobs
   - gaps
-  - evals
+  input_contracts:
+  - prospect
 profile_eval:
   required_categories:
   - proceed

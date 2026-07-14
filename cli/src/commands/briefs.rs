@@ -544,7 +544,10 @@ fn current_role_caveat(brief: &Value) -> Option<String> {
     if is_unknownish(&title) {
         return Some("No reviewed current role/title was supplied.".to_string());
     }
-    Some("Current role is based on supplied prospect data and has not been independently verified by MDP.".to_string())
+    Some(
+        "Current role is based on supplied prospect data and has not been independently verified."
+            .to_string(),
+    )
 }
 
 fn list_named_items<F>(out: &mut String, heading: &str, value: &Value, render: F) -> bool

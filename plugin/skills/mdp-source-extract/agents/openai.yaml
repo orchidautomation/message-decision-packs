@@ -1,4 +1,0 @@
-interface:
-  display_name: "MDP Source Extract"
-  short_description: "Extract cards from source material"
-  default_prompt: "Use $mdp-source-extract to turn source material into MDP card entries."

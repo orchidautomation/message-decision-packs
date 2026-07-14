@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Proposal Review"
+  short_description: "Run bounded proposal review modes"
+  default_prompt: "Use $mdp-proposal-review to review this supplied proposal material against the active proposal pack."

@@ -10,7 +10,7 @@ persona: PM
 profile_eval:
   category: job-routing
   jobs:
-  - create-or-improve-gtm-pack
+  - prospect-fit-or-brief
   primitives:
   - actors
   - boundaries

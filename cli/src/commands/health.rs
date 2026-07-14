@@ -3,14 +3,15 @@ use crate::constants::{
     PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
-    AgentSurface, Card, CardKind, InputContract, Manifest, PrimitiveMapping, Profile, ProfileEval,
-    ProfileJob, PromptFile, QualificationGates, TargetIdentity, ValueContract,
+    Card, CardKind, InputContract, Manifest, PrimitiveMapping, Profile, ProfileEval, ProfileJob,
+    PromptFile, QualificationGates, TargetIdentity, ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
 use crate::routing::select_cards;
 use crate::scope::valid_declared_identifier;
+use crate::skill_catalog::{JOB_ROUTE_SPECS, is_packaged_skill, route_spec};
 use crate::value_contracts::PROSPECT_CONTRACT_FIELDS;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -416,7 +417,8 @@ fn validate_target_identity(
                     }
                 }
                 if is_raw_external_surface(&display) {
-                    let external_text = strip_internal_implementation_tokens(line);
+                    let external_text =
+                        strip_internal_implementation_tokens(line, is_raw_internal_receipt(line));
                     if let Some(internal) = internal_target_terms(target)
                         .filter(|internal| contains_term(&external_text, internal))
                         .max_by_key(|internal| internal.len())
@@ -452,11 +454,7 @@ fn validate_target_identity(
                 }
             }
             let internal_scan_text =
-                if display.starts_with(".mdp/briefs/") || display.starts_with(".mdp/traces/") {
-                    strip_internal_implementation_tokens(text)
-                } else {
-                    text.to_string()
-                };
+                strip_internal_implementation_tokens(text, is_internal_receipt_pointer(pointer));
             if !active_target_allows_internal_term(target, &internal_scan_text) {
                 if let Some(internal) = internal_target_terms(target)
                     .filter(|internal| contains_term(&internal_scan_text, internal))
@@ -581,6 +579,9 @@ fn is_external_surface(display: &str, pointer: &str, text: &str, root: &Value) -
         return true;
     }
     if display == ".mdp/manifest.yaml" {
+        if pointer.starts_with("/jobs/") {
+            return pointer.ends_with("/label") || pointer.ends_with("/description");
+        }
         return matches_pointer_prefix(
             pointer,
             &[
@@ -589,7 +590,6 @@ fn is_external_surface(display: &str, pointer: &str, text: &str, root: &Value) -
                 "/target_personas",
                 "/persona_mappings",
                 "/profile/context_dimensions",
-                "/jobs",
                 "/cards",
             ],
         );
@@ -670,25 +670,105 @@ fn is_raw_external_surface(display: &str) -> bool {
     display.starts_with(".mdp/briefs/") || display.starts_with(".mdp/traces/")
 }
 
-fn strip_internal_implementation_tokens(text: &str) -> String {
-    text.split_whitespace()
-        .filter(|token| {
-            let token = token
-                .trim_matches(|character: char| {
-                    matches!(
-                        character,
-                        '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';'
-                    )
-                })
-                .to_lowercase();
-            !token.contains(".mdp/")
-                && !token.starts_with("mdp.prompt")
-                && !token.starts_with("mdp.fit")
-                && !token.starts_with("mdp.brief")
-                && !token.starts_with("mdp.route")
+fn strip_internal_implementation_tokens(text: &str, allow_contract_token: bool) -> String {
+    let tokens = text.split_whitespace().collect::<Vec<_>>();
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, raw)| {
+            let token = normalized_scan_token(raw);
+            let next = tokens
+                .get(index + 1)
+                .map(|next| normalized_scan_token(next));
+            let implementation_token = token.contains(".mdp/")
+                || (allow_contract_token && is_mdp_contract_token(&token))
+                || token.starts_with("mdp.prompt")
+                || token.starts_with("mdp.fit")
+                || token.starts_with("mdp.brief")
+                || token.starts_with("mdp.route")
+                || (token == "mdp" && next.as_deref().is_some_and(is_mdp_cli_command_token));
+            (!implementation_token).then_some(*raw)
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn is_internal_receipt_pointer(pointer: &str) -> bool {
+    let field = pointer.rsplit('/').next().unwrap_or_default();
+    matches!(
+        field,
+        "artifact_type"
+            | "brief_contract"
+            | "context_contract"
+            | "contract"
+            | "implementation_ref"
+            | "runtime_ref"
+            | "schema_ref"
+            | "source_artifact_type"
+    ) || field.ends_with("_contract")
+        || field.ends_with("_schema_ref")
+}
+
+fn is_raw_internal_receipt(line: &str) -> bool {
+    let line = line.trim().trim_start_matches('-').trim();
+    let Some((field, _)) = line.split_once(':') else {
+        return false;
+    };
+    matches!(
+        field.trim(),
+        "artifact_type"
+            | "brief_contract"
+            | "context_contract"
+            | "contract"
+            | "implementation_ref"
+            | "runtime_ref"
+            | "schema_ref"
+            | "source_artifact_type"
+    ) || field.trim().ends_with("_contract")
+        || field.trim().ends_with("_schema_ref")
+}
+
+fn normalized_scan_token(token: &str) -> String {
+    token
+        .trim_matches(|character: char| {
+            matches!(
+                character,
+                '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';' | ':'
+            )
+        })
+        .to_lowercase()
+}
+
+fn is_mdp_contract_token(token: &str) -> bool {
+    token.starts_with("mdp.")
+        && token.rsplit_once(".v").is_some_and(|(_, version)| {
+            !version.is_empty() && version.chars().all(|character| character.is_ascii_digit())
+        })
+}
+
+fn is_mdp_cli_command_token(token: &str) -> bool {
+    matches!(
+        token,
+        "--json"
+            | "--summary"
+            | "brief"
+            | "capabilities"
+            | "check-claims"
+            | "doctor"
+            | "eval"
+            | "explain"
+            | "fit"
+            | "gaps"
+            | "init"
+            | "render-brief"
+            | "route"
+            | "sample-leads"
+            | "schemas"
+            | "skills"
+            | "validate"
+            | "validate-prompt-output"
+            | "verify-output"
+    )
 }
 
 fn has_explicit_positioning_instruction(text: &str) -> bool {
@@ -730,6 +810,23 @@ fn has_external_positioning_intent(text: &str) -> bool {
 
 fn has_positioning_negation(text: &str) -> bool {
     let text = text.to_lowercase();
+    if [
+        "do not avoid positioning",
+        "don't avoid positioning",
+        "must not avoid positioning",
+        "never avoid positioning",
+        "not avoid positioning",
+        "do not reject positioning",
+        "don't reject positioning",
+        "must not reject positioning",
+        "never reject positioning",
+        "not reject positioning",
+    ]
+    .iter()
+    .any(|term| text.contains(term))
+    {
+        return false;
+    }
     [
         "do not position",
         "must not position",
@@ -946,37 +1043,9 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "version",
             "context_dimensions",
             "context_dimension_dependencies",
-            "agent_surface",
         ],
         ".mdp/manifest.yaml#/profile",
         "manifest_profile_unknown_field",
-        issues,
-    );
-    let agent_surface = yaml_get(profile, "agent_surface").unwrap_or(&YamlValue::Null);
-    validate_object_keys(
-        agent_surface,
-        &[
-            "recommended_skills",
-            "allowed_skills",
-            "blocked_skills",
-            "job_skills",
-        ],
-        ".mdp/manifest.yaml#/profile/agent_surface",
-        "manifest_agent_surface_unknown_field",
-        issues,
-    );
-    validate_sequence_object_keys(
-        yaml_get(agent_surface, "blocked_skills"),
-        &["name", "reason"],
-        ".mdp/manifest.yaml#/profile/agent_surface/blocked_skills",
-        "manifest_blocked_skill_unknown_field",
-        issues,
-    );
-    validate_sequence_object_keys(
-        yaml_get(agent_surface, "job_skills"),
-        &["job", "skills"],
-        ".mdp/manifest.yaml#/profile/agent_surface/job_skills",
-        "manifest_job_skill_unknown_field",
         issues,
     );
     validate_primitive_map_shape(
@@ -995,6 +1064,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         yaml_get(&value, "jobs"),
         &[
             "id",
+            "skill_id",
             "label",
             "description",
             "required_primitives",
@@ -1199,144 +1269,6 @@ fn validate_profile(profile: Option<&Profile>, issues: &mut Vec<Value>) {
             }
         }
     }
-    validate_agent_surface(&profile.agent_surface, issues);
-}
-
-fn validate_agent_surface(surface: &AgentSurface, issues: &mut Vec<Value>) {
-    if surface.is_empty() {
-        issues.push(issue(
-            "profile_agent_surface_empty",
-            "warning",
-            ".mdp/manifest.yaml#/profile/agent_surface",
-            "profile.agent_surface is empty; agents will fall back to generic MDP skill selection",
-        ));
-        return;
-    }
-
-    let recommended = validate_skill_list(
-        &surface.recommended_skills,
-        ".mdp/manifest.yaml#/profile/agent_surface/recommended_skills",
-        "profile_recommended_skill",
-        issues,
-    );
-    let allowed = validate_skill_list(
-        &surface.allowed_skills,
-        ".mdp/manifest.yaml#/profile/agent_surface/allowed_skills",
-        "profile_allowed_skill",
-        issues,
-    );
-
-    for (index, skill) in surface.blocked_skills.iter().enumerate() {
-        let path = format!(".mdp/manifest.yaml#/profile/agent_surface/blocked_skills/{index}");
-        if skill.name.trim().is_empty() {
-            issues.push(issue(
-                "profile_blocked_skill_name_empty",
-                "error",
-                format!("{path}/name"),
-                "blocked_skills entries must name a skill",
-            ));
-            continue;
-        }
-        if skill.reason.trim().is_empty() {
-            issues.push(issue(
-                "profile_blocked_skill_reason_empty",
-                "error",
-                format!("{path}/reason"),
-                "blocked_skills entries must explain the reroute reason",
-            ));
-        }
-        let key = skill.name.to_lowercase();
-        if recommended.contains(&key) || allowed.contains(&key) {
-            issues.push(issue(
-                "profile_blocked_skill_overlap",
-                "warning",
-                format!("{path}/name"),
-                format!(
-                    "blocked skill {} also appears in recommended_skills or allowed_skills",
-                    skill.name
-                ),
-            ));
-        }
-    }
-
-    for skill in &surface.recommended_skills {
-        if !allowed.is_empty() && !allowed.contains(&skill.to_lowercase()) {
-            issues.push(issue(
-                "profile_recommended_skill_not_allowed",
-                "warning",
-                ".mdp/manifest.yaml#/profile/agent_surface/recommended_skills",
-                format!(
-                    "recommended skill {skill} is not listed in allowed_skills; add it or leave allowed_skills empty"
-                ),
-            ));
-        }
-    }
-
-    for (index, route) in surface.job_skills.iter().enumerate() {
-        let path = format!(".mdp/manifest.yaml#/profile/agent_surface/job_skills/{index}");
-        if route.job.trim().is_empty() {
-            issues.push(issue(
-                "profile_job_skill_job_empty",
-                "error",
-                format!("{path}/job"),
-                "job_skills entries must name a job",
-            ));
-        }
-        if route.skills.is_empty() {
-            issues.push(issue(
-                "profile_job_skill_skills_empty",
-                "warning",
-                format!("{path}/skills"),
-                "job_skills entries should include at least one skill",
-            ));
-        }
-        for (skill_index, skill) in route.skills.iter().enumerate() {
-            if skill.trim().is_empty() {
-                issues.push(issue(
-                    "profile_job_skill_skill_empty",
-                    "error",
-                    format!("{path}/skills/{skill_index}"),
-                    "job skill names must not be empty",
-                ));
-            } else if !allowed.is_empty() && !allowed.contains(&skill.to_lowercase()) {
-                issues.push(issue(
-                    "profile_job_skill_not_allowed",
-                    "warning",
-                    format!("{path}/skills/{skill_index}"),
-                    format!(
-                        "job skill {skill} is not listed in allowed_skills; add it or leave allowed_skills empty"
-                    ),
-                ));
-            }
-        }
-    }
-}
-
-fn validate_skill_list(
-    values: &[String],
-    path: &str,
-    code_prefix: &str,
-    issues: &mut Vec<Value>,
-) -> BTreeSet<String> {
-    let mut seen = BTreeSet::new();
-    for (index, value) in values.iter().enumerate() {
-        if value.trim().is_empty() {
-            issues.push(issue(
-                &format!("{code_prefix}_empty"),
-                "error",
-                format!("{path}/{index}"),
-                "skill names must not be empty",
-            ));
-        } else if !seen.insert(value.to_lowercase()) {
-            issues.push(issue(
-                &format!("{code_prefix}_duplicate"),
-                "warning",
-                format!("{path}/{index}"),
-                format!("duplicate skill {value}"),
-            ));
-        }
-    }
-    seen
 }
 
 fn validate_profile_mapping(
@@ -1369,7 +1301,7 @@ fn validate_profile_mapping(
             "eval_categories": {},
             "missing_eval_categories": [],
             "jobs": [],
-            "activation_policy": "profile.id and profile.agent_surface route agents, but full activation requires required_primitives, primitive_map, input_contracts, jobs, and profile_eval coverage."
+            "activation_policy": "profile.id and jobs[].skill_id route agents, while activation requires required_primitives, primitive_map, input_contracts, jobs, and profile_eval coverage."
         });
     }
 
@@ -1390,6 +1322,11 @@ fn validate_profile_mapping(
     );
     let job_ids = validate_profile_jobs(
         &manifest.jobs,
+        manifest
+            .profile
+            .as_ref()
+            .map(|profile| profile.id.as_str())
+            .unwrap_or_default(),
         &known_primitives,
         &input_contract_ids,
         ".mdp/manifest.yaml#/jobs",
@@ -1657,6 +1594,7 @@ fn validate_input_contracts(
 
 fn validate_profile_jobs(
     jobs: &[ProfileJob],
+    profile_id: &str,
     known_primitives: &BTreeSet<&str>,
     input_contract_ids: &BTreeSet<String>,
     path: &str,
@@ -1675,9 +1613,50 @@ fn validate_profile_jobs(
         } else if !seen.insert(job.id.clone()) {
             issues.push(issue(
                 "profile_job_duplicate",
-                "warning",
+                "error",
                 format!("{job_path}/id"),
                 format!("duplicate profile job {}", job.id),
+            ));
+        }
+        if job.skill_id.trim().is_empty() {
+            issues.push(issue(
+                "profile_job_skill_id_empty",
+                "error",
+                format!("{job_path}/skill_id"),
+                "jobs entries must bind exactly one canonical skill_id",
+            ));
+        } else if !is_packaged_skill(&job.skill_id) {
+            issues.push(issue(
+                "profile_job_skill_unknown",
+                "error",
+                format!("{job_path}/skill_id"),
+                format!("unknown canonical skill_id {}", job.skill_id),
+            ));
+        } else if let Some(route) = route_spec(profile_id, &job.id) {
+            if route.skill_id != job.skill_id {
+                issues.push(issue(
+                    "profile_job_route_incompatible",
+                    "error",
+                    format!("{job_path}/skill_id"),
+                    format!(
+                        "{} profile job {} must bind {}",
+                        profile_id, job.id, route.skill_id
+                    ),
+                ));
+            }
+        } else if JOB_ROUTE_SPECS.iter().any(|route| route.job_id == job.id) {
+            issues.push(issue(
+                "profile_job_route_incompatible",
+                "error",
+                format!("{job_path}/id"),
+                format!("job {} is not valid for profile {}", job.id, profile_id),
+            ));
+        } else {
+            issues.push(issue(
+                "profile_job_route_unknown",
+                "error",
+                format!("{job_path}/id"),
+                format!("job {} is not in the closed routing vocabulary", job.id),
             ));
         }
         validate_primitive_list(
@@ -3656,6 +3635,17 @@ mod tests {
     }
 
     #[test]
+    fn targeted_starter_is_valid_under_current_skill_and_job_contract() {
+        let root = targeted_pack("Company B", &["Company A".to_string()]);
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
+        assert_eq!(result["error_count"], 0);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn validate_rejects_internal_vocabulary_as_positioning_but_allows_negative_eval() {
         let root = targeted_pack("Company B", &[]);
         let card_path = root.join(".mdp/cards/positioning.yaml");
@@ -3735,7 +3725,7 @@ mod tests {
         let brief_path = root.join(".mdp/briefs/outbound.md");
         std::fs::write(
             &brief_path,
-            "The Message Decision Pack is a local offline decision layer that improves agent handoffs.\nTry the Message Decision Pack today.\nNever sell the Message Decision Pack as the product.\nTry the Message Decision Pack today; details live in .mdp/cards.\nLoaded card: .mdp/cards/positioning.yaml\n",
+            "The Message Decision Pack is a local offline decision layer that improves agent handoffs.\nTry the Message Decision Pack today.\nNever sell the Message Decision Pack as the product.\nTry the Message Decision Pack today; details live in .mdp/cards.\nLoaded card: .mdp/cards/positioning.yaml\nmdp.message-brief.v0 helps teams.\n",
         )
         .expect("brief should be writable");
         let traces_dir = root.join(".mdp/traces");
@@ -3774,9 +3764,119 @@ mod tests {
         assert!(!contamination_paths.contains(".mdp/briefs/outbound.md:3"));
         assert!(contamination_paths.contains(".mdp/briefs/outbound.md:4"));
         assert!(!contamination_paths.contains(".mdp/briefs/outbound.md:5"));
+        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:6"));
         assert!(contamination_paths.contains(".mdp/traces/outbound.json#/label"));
         assert!(!contamination_paths.contains(".mdp/traces/trace-metadata.json#/label"));
         assert!(!contamination_paths.contains(".mdp/prompts/gaps.yaml#/instructions/0"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_double_negation_that_reauthorizes_internal_positioning() {
+        let root = targeted_pack("Company B", &[]);
+        let prompt_path = root.join(".mdp/prompts/claims-proof.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        let mut prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+        prompt["instructions"][0] = YamlValue::String(
+            "Do not avoid positioning MDP as the product for Company B.".to_string(),
+        );
+        std::fs::write(
+            &prompt_path,
+            serde_yaml::to_string(&prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "target_contamination_internal_vocabulary"
+                        && issue["path"] == ".mdp/prompts/claims-proof.yaml#/instructions/0"
+                })
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn internal_contract_and_command_receipts_are_not_positioning() {
+        for text in [
+            "mdp.prompt-output.v0",
+            "mdp.sample-leads.v0",
+            "mdp.message-brief.v0",
+            "mdp.context.v0",
+            "Run mdp validate-prompt-output before accepting this output.",
+            "Use mdp --json brief as the machine source of truth.",
+            "Loaded .mdp/cards/positioning.yaml.",
+        ] {
+            let external_text = strip_internal_implementation_tokens(text, true);
+            assert!(!contains_term(&external_text, "MDP"), "{text}");
+        }
+        assert!(contains_term(
+            &strip_internal_implementation_tokens("MDP helps teams.", false),
+            "MDP"
+        ));
+        assert!(contains_term(
+            &strip_internal_implementation_tokens("mdp.message-brief.v0 helps teams.", false),
+            "MDP"
+        ));
+    }
+
+    #[test]
+    fn generated_samples_and_readable_brief_preserve_target_isolation() {
+        let root = targeted_pack("Company B", &["Company A".to_string()]);
+        let fixtures =
+            crate::commands::sample_leads(&root, "Operator", "outbound copy fixture", 2, 0)
+                .expect("target-aware sample leads should generate");
+        std::fs::write(
+            root.join("examples/sample-leads.json"),
+            serde_json::to_string_pretty(&fixtures).expect("fixtures should serialize"),
+        )
+        .expect("fixtures should be writable");
+
+        let prospect_path = root.join("examples/prospect-row.json");
+        let brief = crate::commands::prospect_brief_with_context(
+            &root,
+            &prospect_path,
+            "linkedin",
+            None,
+            true,
+        )
+        .expect("target-aware brief should generate");
+        std::fs::write(
+            root.join(".mdp/briefs/prospect.md"),
+            crate::commands::render_readable_prospect_brief(&brief),
+        )
+        .expect("readable brief should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let contamination = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter(|issue| {
+                matches!(
+                    issue["code"].as_str(),
+                    Some(
+                        "target_contamination_internal_vocabulary"
+                            | "target_contamination_excluded_term"
+                    )
+                )
+            })
+            .filter_map(|issue| issue["path"].as_str())
+            .filter(|path| {
+                path.starts_with("examples/sample-leads.json")
+                    || path.starts_with(".mdp/briefs/prospect.md")
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            contamination.is_empty(),
+            "generated files must remain target-isolated: {contamination:?}"
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -3909,8 +4009,8 @@ mod tests {
     }
 
     #[test]
-    fn validate_distinguishes_profile_surface_from_activation() {
-        let root = temp_pack("profile-surface-only");
+    fn validate_distinguishes_profile_metadata_from_activation() {
+        let root = temp_pack("profile-metadata-only");
         let manifest_path = root.join(".mdp").join("manifest.yaml");
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
         let mut value: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
@@ -4158,8 +4258,8 @@ expect_load_order_contains:
     }
 
     #[test]
-    fn validate_reports_bad_profile_agent_surface() {
-        let root = temp_pack("profile-agent-surface");
+    fn validate_reports_bad_profile_job_skill_bindings() {
+        let root = temp_pack("profile-job-skill-bindings");
         let manifest_path = root.join(".mdp").join("manifest.yaml");
         let mut raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
         raw = raw.replace(
@@ -4167,16 +4267,20 @@ expect_load_order_contains:
             "  id: ''\n  unknown_profile_field: ignored\n  label: GTM Messaging",
         );
         raw = raw.replace(
-            "    recommended_skills:\n    - mdp",
-            "    recommended_skills:\n    - ''\n    - mdp",
+            "- id: prospect-fit-or-brief\n  skill_id: mdp-gtm-brief",
+            "- id: prospect-fit-or-brief\n  skill_id: ''",
         );
         raw = raw.replace(
-            "    blocked_skills:\n    - name: mdp-proposal-pack-builder",
-            "    blocked_skills:\n    - name: mdp\n      reason: ''\n    - name: mdp-proposal-pack-builder",
+            "- id: outbound-copy-brief\n  skill_id: mdp-gtm-brief",
+            "- id: outbound-copy-brief\n  skill_id: unknown-skill",
         );
         raw = raw.replace(
-            "    - job: create or improve GTM messaging pack",
-            "    - job: ''\n      skills:\n      - ''\n    - job: create or improve GTM messaging pack",
+            "- id: outbound-copy-review\n  skill_id: mdp-gtm-brief",
+            "- id: outbound-copy-review\n  skill_id: mdp-proposal-review",
+        );
+        raw = raw.replace(
+            "profile_eval:",
+            "- id: custom-job\n  skill_id: mdp-pack-review\n  required_primitives: []\nprofile_eval:",
         );
         std::fs::write(&manifest_path, raw).expect("manifest should be writable");
 
@@ -4191,11 +4295,10 @@ expect_load_order_contains:
         assert_eq!(result["valid"], false);
         assert!(codes.contains(&"manifest_profile_unknown_field"));
         assert!(codes.contains(&"profile_id_empty"));
-        assert!(codes.contains(&"profile_recommended_skill_empty"));
-        assert!(codes.contains(&"profile_blocked_skill_reason_empty"));
-        assert!(codes.contains(&"profile_blocked_skill_overlap"));
-        assert!(codes.contains(&"profile_job_skill_job_empty"));
-        assert!(codes.contains(&"profile_job_skill_skill_empty"));
+        assert!(codes.contains(&"profile_job_skill_id_empty"));
+        assert!(codes.contains(&"profile_job_skill_unknown"));
+        assert!(codes.contains(&"profile_job_route_incompatible"));
+        assert!(codes.contains(&"profile_job_route_unknown"));
 
         let _ = std::fs::remove_dir_all(root);
     }

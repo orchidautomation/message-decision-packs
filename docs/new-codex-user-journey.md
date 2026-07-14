@@ -105,7 +105,7 @@ What Codex should do:
 
 ```text
 Detect the installed MDP skills.
-Use $mdp-lfg or $mdp when the user asks about Message Decision Packs.
+Use $mdp when the user explicitly asks about Message Decision Packs, then route one bounded job to the matching specialized skill.
 Avoid hijacking generic LinkedIn/email writing unless MDP is explicitly mentioned or a .mdp pack is present.
 ```
 
