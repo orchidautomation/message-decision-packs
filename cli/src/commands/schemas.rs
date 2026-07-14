@@ -444,6 +444,7 @@ fn profile_jobs_schema() -> Value {
             "type": "object",
             "required": ["id", "skill_id", "required_primitives"],
             "additionalProperties": false,
+            "oneOf": canonical_job_skill_pairs("id"),
             "properties": {
                 "id": {"type": "string"},
                 "skill_id": canonical_skill_id_schema(),
@@ -493,6 +494,7 @@ fn profile_schema() -> Value {
         "type": "object",
         "description": "Optional pack profile metadata for domain-aware agent orchestration. Existing packs remain valid without this block.",
         "required": ["id"],
+        "additionalProperties": false,
         "properties": {
             "id": {"type": "string"},
             "label": {"type": "string"},
@@ -560,6 +562,7 @@ fn job_route_schema() -> Value {
         "type": "object",
         "required": ["job_id", "skill_id", "pack_ready", "missing_primitives", "required_input_contracts"],
         "additionalProperties": false,
+        "oneOf": canonical_job_skill_pairs("job_id"),
         "properties": {
             "job_id": {"type": "string"},
             "skill_id": canonical_skill_id_schema(),
@@ -568,6 +571,29 @@ fn job_route_schema() -> Value {
             "required_input_contracts": string_array()
         }
     })
+}
+
+fn canonical_job_skill_pairs(job_field: &str) -> Vec<Value> {
+    [
+        ("prospect-fit-or-brief", "mdp-gtm-brief"),
+        ("outbound-copy-brief", "mdp-gtm-brief"),
+        ("outbound-copy-review", "mdp-gtm-brief"),
+        ("bid-no-bid-review", "mdp-proposal-review"),
+        ("compliance-review", "mdp-proposal-review"),
+        ("proof-review", "mdp-proposal-review"),
+        ("red-team-review", "mdp-proposal-review"),
+    ]
+    .into_iter()
+    .map(|(job_id, skill_id)| {
+        json!({
+            "properties": {
+                (job_field): {"const": job_id},
+                "skill_id": {"const": skill_id}
+            },
+            "required": [job_field, "skill_id"]
+        })
+    })
+    .collect()
 }
 
 fn canonical_skill_id_schema() -> Value {
@@ -1458,5 +1484,12 @@ mod tests {
             result["properties"]["host_discovery"]["properties"]["status"]["const"],
             "unobserved"
         );
+        assert_eq!(
+            result["properties"]["job_routes"]["items"]["oneOf"]
+                .as_array()
+                .map(Vec::len),
+            Some(7)
+        );
+        assert_eq!(profile_schema()["additionalProperties"], false);
     }
 }

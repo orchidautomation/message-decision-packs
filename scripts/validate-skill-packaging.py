@@ -18,6 +18,33 @@ GENERATED_INVENTORIES = {
     "opencode": "skills.generated.json",
 }
 FRONTMATTER_NAME = re.compile(r"^name:\s*['\"]?([^'\"\n]+?)['\"]?\s*$", re.MULTILINE)
+CURRENT_AGENT_SURFACES = (
+    Path("llms.txt"),
+    Path("llms-full.txt"),
+    Path("examples/ai-sdr-eve-vercel/agent/instructions.md"),
+)
+REMOVED_SURFACE_TERMS = (
+    "agent" + "-surface",
+    "profile." + "agent_surface",
+    "mdp" + "-avoid-rules",
+    "mdp" + "-copy-brief",
+    "mdp" + "-copy-eval",
+    "mdp" + "-lfg",
+    "mdp" + "-create-pack",
+    "mdp" + "-cta-builder",
+    "mdp" + "-message-angles",
+    "mdp" + "-output-rules",
+    "mdp" + "-source-strategy",
+    "mdp" + "-source-extract",
+    "mdp" + "-icp-builder",
+    "mdp" + "-prospect-brief",
+    "mdp" + "-pack-eval",
+    "mdp" + "-proposal-bid-no-bid-review",
+    "mdp" + "-proposal-compliance-review",
+    "mdp" + "-proposal-pack-builder",
+    "mdp" + "-proposal-red-team-gap-review",
+    "mdp" + "-proposal-win-theme-proof-review",
+)
 
 
 def file_digest(path: Path) -> str:
@@ -114,6 +141,17 @@ def validate_generated_inventory(
         )
 
 
+def validate_current_agent_surfaces(errors: list[str]) -> None:
+    for path in CURRENT_AGENT_SURFACES:
+        if not path.is_file():
+            errors.append(f"missing current agent surface: {path}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for term in REMOVED_SURFACE_TERMS:
+            if term in text:
+                errors.append(f"current agent surface retains removed term {term}: {path}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=Path("plugin/skills"))
@@ -135,6 +173,7 @@ def main() -> int:
         )
 
     expected = skill_inventory(args.source, errors)
+    validate_current_agent_surfaces(errors)
 
     if args.require_bundles:
         for host in HOSTS:

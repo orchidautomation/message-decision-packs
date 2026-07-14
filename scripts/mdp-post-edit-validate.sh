@@ -156,6 +156,7 @@ run_template_eval=0
 run_cargo_tests=0
 run_pluxx_lint=0
 run_skill_packaging=0
+run_skill_evals=0
 run_shell_lint=0
 
 if matches_any '^\.mdp/'; then
@@ -179,7 +180,12 @@ if matches_any '^plugin/skills/|^pluxx\.config\.ts$|^scripts/validate-skill-pack
   run_skill_packaging=1
 fi
 
-if matches_any '^cli/(src/(models|starter|pack_io|app)\.rs|src/commands/(schemas|health|prompt_output|routing|briefs)\.rs|Cargo\.(toml|lock)|USAGE\.md)$'; then
+if matches_any '^plugin/skill-evals/|^scripts/(skill-eval-harness|test_skill_eval_harness)\.py$|^cli/src/.*\.rs$'; then
+  should_run=1
+  run_skill_evals=1
+fi
+
+if matches_any '^cli/(src/.*\.rs|Cargo\.(toml|lock)|USAGE\.md)$'; then
   should_run=1
   run_cargo_tests=1
 fi
@@ -242,6 +248,16 @@ fi
 if [ "$run_skill_packaging" -eq 1 ]; then
   if [ -f "scripts/validate-skill-packaging.py" ] && command -v python3 >/dev/null 2>&1; then
     run_check "skill packaging source" python3 scripts/validate-skill-packaging.py
+  fi
+fi
+
+if [ "$run_skill_evals" -eq 1 ]; then
+  if [ -f "scripts/skill-eval-harness.py" ] && [ -f "cli/Cargo.toml" ] && command -v python3 >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
+    run_check "build source CLI for skill evals" cargo build --manifest-path cli/Cargo.toml
+    run_check "five-skill semantic evals" python3 scripts/skill-eval-harness.py --mdp-bin cli/target/debug/mdp
+  else
+    echo "MDP validation warning: skill eval files changed but Python, Cargo, or required files are unavailable."
+    failed=1
   fi
 fi
 

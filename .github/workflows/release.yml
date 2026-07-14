@@ -109,3 +109,15 @@ jobs:
           cp llms-full.txt release-assets/llms-full.txt
           chmod +x release-assets/install.sh release-assets/install-cli.sh
           gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/install.sh release-assets/install-cli.sh release-assets/llms.txt release-assets/llms-full.txt --clobber
+      - name: Install and smoke-test the published release
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_home="$(mktemp -d)"
+          version="${{ steps.version.outputs.version }}"
+          HOME="$install_home" MDP_INSTALL_DIR="$install_home/.local/bin" \
+            bash scripts/install.sh --version "$version" --cli --codex -y
+          "$install_home/.local/bin/mdp" --version
+          python3 scripts/skill-eval-harness.py \
+            --mdp-bin "$install_home/.local/bin/mdp" \
+            --installed-skills-root "$install_home/.codex/plugins/message-decision-packs/skills"

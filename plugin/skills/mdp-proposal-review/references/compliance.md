@@ -14,4 +14,4 @@ Return:
 - `human_review_required` and `next_questions`
 - claim/proof/readable verification results when run
 
-Use coverage values such as supported, partial, missing, unsupported, out-of-scope, or needs-human-review. Do not claim regulatory, security, privacy, accessibility, CMMC, NIST, or CUI status unless the exact supplied source supports the exact source-labeled statement; even then, require the responsible human reviewer.
+Use coverage values such as supported, partial, missing, unsupported, out-of-scope, or needs-human-review. Never claim or certify regulatory, security, privacy, accessibility, CMMC, NIST, or CUI status. Attribute supplied source statements as unverified inputs, surface gaps or contradictions, and require the responsible human reviewer.

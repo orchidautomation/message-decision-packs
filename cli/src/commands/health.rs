@@ -3274,7 +3274,11 @@ expect_load_order_contains:
         );
         raw = raw.replace(
             "- id: outbound-copy-review\n  skill_id: mdp-gtm-brief",
-            "- id: custom-job\n  skill_id: mdp-pack-review",
+            "- id: outbound-copy-review\n  skill_id: mdp-proposal-review",
+        );
+        raw = raw.replace(
+            "profile_eval:",
+            "- id: custom-job\n  skill_id: mdp-pack-review\n  required_primitives: []\nprofile_eval:",
         );
         std::fs::write(&manifest_path, raw).expect("manifest should be writable");
 
@@ -3291,6 +3295,7 @@ expect_load_order_contains:
         assert!(codes.contains(&"profile_id_empty"));
         assert!(codes.contains(&"profile_job_skill_id_empty"));
         assert!(codes.contains(&"profile_job_skill_unknown"));
+        assert!(codes.contains(&"profile_job_route_incompatible"));
         assert!(codes.contains(&"profile_job_route_unknown"));
 
         let _ = std::fs::remove_dir_all(root);

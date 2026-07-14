@@ -14,6 +14,7 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
             "bootstrap",
             json!({"status": "not-supplied"}),
             json!({"status": "not-supplied"}),
+            requested_job,
             Vec::new(),
         );
     };
@@ -26,6 +27,7 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
                 "bootstrap",
                 json!({"path": root.display().to_string(), "status": "unavailable"}),
                 json!({"status": "unresolved"}),
+                requested_job,
                 vec![diagnostic(
                     "pack_unavailable",
                     ".mdp/manifest.yaml",
@@ -43,6 +45,7 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
                 "bootstrap",
                 pack_payload(&manifest),
                 profile_payload(&manifest),
+                requested_job,
                 vec![diagnostic(
                     "pack_validation_unavailable",
                     ".mdp/manifest.yaml",
@@ -58,6 +61,7 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
             "unresolved",
             pack_payload(&manifest),
             profile_payload(&manifest),
+            requested_job,
             diagnostics,
         );
     }
@@ -70,7 +74,7 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
                 format!("job {job_id} is not available without an active profile"),
             ));
         }
-        let mut payload = bootstrap_payload(
+        return bootstrap_payload(
             requested_job.is_none(),
             if requested_job.is_none() {
                 "ready"
@@ -79,10 +83,9 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
             },
             pack_payload(&manifest),
             profile_payload(&manifest),
+            requested_job,
             diagnostics,
         );
-        payload["requested_job"] = requested_job.map_or(Value::Null, |job| json!(job));
-        return payload;
     };
 
     let mut routes = JOB_ROUTE_SPECS
@@ -178,6 +181,7 @@ fn bootstrap_payload(
     status: &str,
     pack: Value,
     profile: Value,
+    requested_job: Option<&str>,
     diagnostics: Vec<Value>,
 ) -> Value {
     let ineligible = PACKAGED_SKILL_IDS
@@ -202,7 +206,7 @@ fn bootstrap_payload(
             "eligible_skill_ids": BOOTSTRAP_SKILL_IDS,
             "ineligible_skills": ineligible
         },
-        "requested_job": Value::Null,
+        "requested_job": requested_job,
         "recommendation": Value::Null,
         "job_routes": [],
         "diagnostics": diagnostics
@@ -439,6 +443,17 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic["code"] == "pack_unavailable")
         );
+    }
+
+    #[test]
+    fn skills_missing_pack_preserves_the_requested_job() {
+        let root = temp_root("skills-missing-pack-requested-job");
+
+        let result = skills(Some(&root), Some("prospect-fit-or-brief"));
+
+        assert_eq!(result["valid"], false);
+        assert_eq!(result["requested_job"], "prospect-fit-or-brief");
+        assert!(result["recommendation"].is_null());
     }
 
     fn temp_root(name: &str) -> std::path::PathBuf {

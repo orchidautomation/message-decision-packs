@@ -22,6 +22,7 @@ validate-skills:
 	@if [ -f "$(SKILL_VALIDATOR)" ]; then 		for skill in plugin/skills/*; do 			$(PYTHON) "$(SKILL_VALIDATOR)" "$$skill" || exit 1; 		done; 	else 		echo "Skipping skill validation; missing $(SKILL_VALIDATOR)"; 	fi
 
 validate-skill-evals:
+	$(PYTHON) -m unittest scripts/test_skill_eval_harness.py
 	$(PYTHON) scripts/skill-eval-harness.py --plugin-skills plugin/skills --output /tmp/mdp-skill-evals
 
 validate-skill-packaging:

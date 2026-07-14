@@ -22,6 +22,10 @@ jobs:
       - name: Eval bundled template
         run: cargo run -- --json eval --dir ../plugin/assets/templates/basic
         working-directory: cli
+      - name: Validate five-skill routing and eval corpus
+        run: |
+          python3 -m unittest scripts/test_skill_eval_harness.py
+          python3 scripts/skill-eval-harness.py --mdp-bin cli/target/debug/mdp
 
   pluxx:
     runs-on: ubuntu-latest
