@@ -3876,6 +3876,38 @@ mod tests {
     }
 
     #[test]
+    fn target_name_with_internal_token_does_not_mask_other_internal_vocabulary() {
+        let root = targeted_pack("Acme MDP", &[]);
+        let prompt_path = root.join(".mdp/prompts/hooks.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        let mut prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+        prompt["description"] = YamlValue::String(
+            "Position Acme MDP as a Message Decision Pack for agent handoffs.".to_string(),
+        );
+        std::fs::write(
+            &prompt_path,
+            serde_yaml::to_string(&prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "target_contamination_internal_vocabulary"
+                        && issue["path"] == ".mdp/prompts/hooks.yaml#/description"
+                }),
+            "internal vocabulary outside the active target name must remain visible: {}",
+            result["issues"]
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn validate_rejects_double_negation_that_reauthorizes_internal_positioning() {
         let root = targeted_pack("Company B", &[]);
         let prompt_path = root.join(".mdp/prompts/claims-proof.yaml");
