@@ -2,7 +2,7 @@
 
 Date: 2026-07-13
 
-Status: Proposed for Brandon approval
+Status: Accepted by Brandon on 2026-07-13
 
 Linear: MDP-106, under MDP-105 and project `MDP: Agent Skill Surface Redesign`
 
@@ -32,7 +32,7 @@ The current `profile.agent_surface` object and `mdp.agent-surface.v0` output sho
 The replacement CLI contract should describe packaged inventory, pack eligibility, and job routes.
 It must explicitly state that host discovery is outside MDP's control and unobserved unless a host reports it.
 
-Downstream implementation remains blocked until Brandon approves this ADR.
+Brandon approved the greenfield redesign and explicitly waived backwards-compatibility work because the product is pre-launch.
 
 ## Evidence And Prior Decisions
 
@@ -413,4 +413,4 @@ Rejected because the five-skill bundle plus deterministic pack eligibility is si
 ## Approval Gate
 
 Brandon must approve this ADR before MDP-107, MDP-109, MDP-108, or MDP-92 begins implementation.
-Approval should confirm the five public IDs, the closed profile-scoped `job_id -> skill_id` pairs, no capability-ID layer, `plugin/skills/` as the authored source, and the discovery-versus-eligibility semantics.
+Approval confirms the five public IDs, the closed profile-scoped `job_id -> skill_id` pairs, no capability-ID layer, `plugin/skills/` as the authored source, and the discovery-versus-eligibility semantics.
