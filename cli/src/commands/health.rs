@@ -419,6 +419,7 @@ fn validate_target_identity(
                 if is_raw_external_surface(&display) {
                     let external_text =
                         strip_internal_implementation_tokens(line, is_raw_internal_receipt(line));
+                    let external_text = strip_active_target_identity_terms(target, &external_text);
                     if let Some(internal) = internal_target_terms(target)
                         .filter(|internal| contains_term(&external_text, internal))
                         .max_by_key(|internal| internal.len())
@@ -455,21 +456,21 @@ fn validate_target_identity(
             }
             let internal_scan_text =
                 strip_internal_implementation_tokens(text, is_internal_receipt_pointer(pointer));
-            if !active_target_allows_internal_term(target, &internal_scan_text) {
-                if let Some(internal) = internal_target_terms(target)
-                    .filter(|internal| contains_term(&internal_scan_text, internal))
-                    .max_by_key(|internal| internal.len())
+            let external_scan_text =
+                strip_active_target_identity_terms(target, &internal_scan_text);
+            if let Some(internal) = internal_target_terms(target)
+                .filter(|internal| contains_term(&external_scan_text, internal))
+                .max_by_key(|internal| internal.len())
+            {
+                if is_external_surface(&display, pointer, text, &value)
+                    && !internal_term_is_only_negated(&external_scan_text, internal)
                 {
-                    if is_external_surface(&display, pointer, text, &value)
-                        && !internal_term_is_only_negated(&internal_scan_text, internal)
-                    {
-                        issues.push(issue(
-                            "target_contamination_internal_vocabulary",
-                            "error",
-                            format!("{display}#{pointer}"),
-                            format!("internal control-plane term '{internal}' appears on a prospect-facing surface; position '{}' instead", target.name),
-                        ));
-                    }
+                    issues.push(issue(
+                        "target_contamination_internal_vocabulary",
+                        "error",
+                        format!("{display}#{pointer}"),
+                        format!("internal control-plane term '{internal}' appears on a prospect-facing surface; position '{}' instead", target.name),
+                    ));
                 }
             }
         });
@@ -883,13 +884,53 @@ fn matches_pointer_prefix(pointer: &str, prefixes: &[&str]) -> bool {
         .any(|prefix| pointer == *prefix || pointer.starts_with(&format!("{prefix}/")))
 }
 
-fn active_target_allows_internal_term(target: &TargetIdentity, text: &str) -> bool {
-    internal_target_terms(target).any(|internal| {
-        contains_term(text, internal)
-            && std::iter::once(&target.name)
-                .chain(target.aliases.iter())
-                .any(|allowed| contains_term(allowed, internal) && contains_term(text, allowed))
-    })
+fn strip_active_target_identity_terms(target: &TargetIdentity, text: &str) -> String {
+    std::iter::once(&target.name)
+        .chain(target.aliases.iter())
+        .fold(text.to_string(), |scan_text, allowed| {
+            strip_term_occurrences(&scan_text, allowed)
+        })
+}
+
+fn strip_term_occurrences(text: &str, term: &str) -> String {
+    let lower_text = text.to_lowercase();
+    let lower_term = term.trim().to_lowercase();
+    if lower_term.is_empty() {
+        return text.to_string();
+    }
+
+    let mut result = String::with_capacity(text.len());
+    let mut offset = 0usize;
+    while let Some(relative) = lower_text[offset..].find(&lower_term) {
+        let start = offset + relative;
+        let end = start + lower_term.len();
+        let before_ok = start == 0
+            || !lower_text[..start]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric);
+        let after_ok = end == lower_text.len()
+            || !lower_text[end..]
+                .chars()
+                .next()
+                .is_some_and(char::is_alphanumeric);
+        if before_ok && after_ok {
+            result.push_str(&text[offset..start]);
+            result.extend(text[start..end].chars().map(|character| {
+                if character.is_whitespace() {
+                    character
+                } else {
+                    ' '
+                }
+            }));
+            offset = end;
+        } else {
+            result.push_str(&text[offset..end]);
+            offset = end;
+        }
+    }
+    result.push_str(&text[offset..]);
+    result
 }
 
 fn internal_target_terms(target: &TargetIdentity) -> impl Iterator<Item = &str> {
@@ -3768,6 +3809,38 @@ mod tests {
         assert!(contamination_paths.contains(".mdp/traces/outbound.json#/label"));
         assert!(!contamination_paths.contains(".mdp/traces/trace-metadata.json#/label"));
         assert!(!contamination_paths.contains(".mdp/prompts/gaps.yaml#/instructions/0"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn target_name_with_internal_token_does_not_mask_other_internal_vocabulary() {
+        let root = targeted_pack("Acme MDP", &[]);
+        let prompt_path = root.join(".mdp/prompts/hooks.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        let mut prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+        prompt["description"] = YamlValue::String(
+            "Position Acme MDP as a Message Decision Pack for agent handoffs.".to_string(),
+        );
+        std::fs::write(
+            &prompt_path,
+            serde_yaml::to_string(&prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "target_contamination_internal_vocabulary"
+                        && issue["path"] == ".mdp/prompts/hooks.yaml#/description"
+                }),
+            "internal vocabulary outside the active target name must remain visible: {}",
+            result["issues"]
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
