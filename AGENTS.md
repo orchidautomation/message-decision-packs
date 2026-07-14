@@ -37,6 +37,8 @@ This is a public-facing source-available repo. Keep public GitHub references lim
 
 When adding, changing, or removing MDP behavior, update the matching agent-facing skill instructions in `plugin/skills/` in the same change. The CLI contract, starter/template pack, docs, and skills should not drift apart.
 
+`plugin/skills/` is the only authored skill source. Do not add root-level, example-vendored, or host-specific skill copies. Pluxx generates every supported host bundle from the canonical tree, and `scripts/validate-skill-packaging.py` enforces inventory and byte-for-byte fidelity.
+
 ## Proposal Public Artifact Guardrails
 
 Proposal AI Lab and future proposal-profile work must keep public artifacts generic, synthetic, or explicitly sanitized.

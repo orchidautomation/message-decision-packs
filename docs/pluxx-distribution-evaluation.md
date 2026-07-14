@@ -2,6 +2,8 @@
 
 > Historical evaluation retained for provenance. Its pre-release validation results are superseded by the current [Distribution](distribution.md) contract and release closeout process.
 
+> The migrated root skill tree and scaffold metadata described below were removed in July 2026. `plugin/skills/` is now the only authored skill source, and generated bundles are verified against it.
+
 Date: 2026-06-24
 
 ## Decision
@@ -287,7 +289,7 @@ This can generate plugin archives, installer scripts, release metadata, and chec
 
 ## Recommended Next Build
 
-1. Keep `plugin/` as the existing Codex source until the team decides to fully adopt Pluxx's root `skills/`, `scripts/`, and `assets/` layout.
+1. Keep `plugin/skills/` as the canonical skill source and generate every host bundle from it.
 2. Add `/dist/` to `.gitignore` if Pluxx is adopted.
 3. Add release automation that builds `mdp` binaries and then runs Pluxx publish.
 4. Update install docs so the first user sees one primary command, backed by separate CLI and plugin artifacts.

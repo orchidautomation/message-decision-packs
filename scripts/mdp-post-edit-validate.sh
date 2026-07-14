@@ -155,6 +155,7 @@ run_template_pack=0
 run_template_eval=0
 run_cargo_tests=0
 run_pluxx_lint=0
+run_skill_packaging=0
 run_shell_lint=0
 
 if matches_any '^\.mdp/'; then
@@ -172,9 +173,10 @@ if matches_any '^(plugin/)?assets/templates/basic/\.mdp/evals/'; then
   run_template_eval=1
 fi
 
-if matches_any '^(plugin/)?skills/|^pluxx\.config\.ts$'; then
+if matches_any '^plugin/skills/|^pluxx\.config\.ts$|^scripts/validate-skill-packaging\.py$'; then
   should_run=1
   run_pluxx_lint=1
+  run_skill_packaging=1
 fi
 
 if matches_any '^cli/(src/(models|starter|pack_io|app)\.rs|src/commands/(schemas|health|prompt_output|routing|briefs)\.rs|Cargo\.(toml|lock)|USAGE\.md)$'; then
@@ -234,6 +236,12 @@ fi
 if [ "$run_pluxx_lint" -eq 1 ]; then
   if [ -f "pluxx.config.ts" ] && command -v pluxx >/dev/null 2>&1; then
     run_check "Pluxx lint" pluxx lint --json
+  fi
+fi
+
+if [ "$run_skill_packaging" -eq 1 ]; then
+  if [ -f "scripts/validate-skill-packaging.py" ] && command -v python3 >/dev/null 2>&1; then
+    run_check "skill packaging source" python3 scripts/validate-skill-packaging.py
   fi
 fi
 

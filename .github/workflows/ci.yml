@@ -38,6 +38,8 @@ jobs:
         run: pluxx lint
       - name: Test Pluxx bundles
         run: pluxx test
+      - name: Verify generated skill bundles
+        run: python3 scripts/validate-skill-packaging.py --require-bundles
       - name: Test Pluxx hook and diagnostic contracts
         run: bash scripts/test-pluxx-hooks.sh
 

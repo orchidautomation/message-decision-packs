@@ -84,6 +84,8 @@ jobs:
         run: pluxx doctor
       - name: Run Pluxx release checks
         run: pluxx test
+      - name: Verify generated skill bundles
+        run: python3 scripts/validate-skill-packaging.py --require-bundles
       - name: Diagnose built host bundles
         run: |
           pluxx doctor --consumer ./dist/claude-code

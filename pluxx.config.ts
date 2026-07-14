@@ -25,7 +25,7 @@ export default definePlugin({
     ]
   },
 
-  skills: './skills/',
+  skills: './plugin/skills/',
   scripts: './scripts/',
   assets: './assets/',
 
