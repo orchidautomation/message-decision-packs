@@ -10,9 +10,6 @@ const required = [
   "agent/schedules/weekday-scout.md",
   "agent/sandbox/workspace/.mdp/manifest.yaml",
   "agent/sandbox/workspace/.mdp/source-strategy.json",
-  "agent/skills/mdp-lfg/SKILL.md",
-  "agent/skills/mdp-source-strategy/SKILL.md",
-  "agent/skills/mdp-prospect-brief/SKILL.md",
   "agent/lib/provider-tools.ts",
   "agent/lib/qualification.ts",
   "agent/tools/mdp_validate.ts",
@@ -40,10 +37,8 @@ for (const removedExample of ["../" + "mdp-for-" + "mdp", "../" + "pro" + "found
 
 assertDirectoryMirror(".mdp", "agent/sandbox/workspace/.mdp");
 
-const canonicalProspectBriefSkill = readFileSync("../../plugin/skills/mdp-prospect-brief/SKILL.md", "utf8");
-const eveProspectBriefSkill = readFileSync("agent/skills/mdp-prospect-brief/SKILL.md", "utf8");
-if (canonicalProspectBriefSkill !== eveProspectBriefSkill) {
-  console.error("Eve mdp-prospect-brief skill must match the canonical plugin skill");
+if (existsSync("agent/skills")) {
+  console.error("Eve must consume packaged MDP skills; vendored skill copies are forbidden");
   process.exit(1);
 }
 

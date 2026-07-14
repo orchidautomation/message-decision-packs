@@ -1,4 +1,0 @@
-interface:
-  display_name: "MDP"
-  short_description: "Use Message Decision Packs with mdp"
-  default_prompt: "Use $mdp to validate a Message Decision Pack and create an agent-readable brief."

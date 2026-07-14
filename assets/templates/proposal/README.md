@@ -6,7 +6,7 @@ It demonstrates how a proposal profile can use the existing `mdp.v0` card model 
 
 The sample is fictional. It does not represent a real customer, RFP, agency, opportunity, price, certification, or past performance claim.
 
-The manifest includes a proposal `primitive_map`, an `opportunity` input contract, `prompts/normalize-opportunity.yaml`, profile jobs, and categorized `profile_eval` metadata. Run `mdp --json validate --dir plugin/assets/templates/proposal` to inspect `data.profile.activation_ready`; `profile.id: proposal` and `profile.agent_surface` route skills, but they are not the full activation gate.
+The manifest includes a proposal `primitive_map`, an `opportunity` input contract, `prompts/normalize-opportunity.yaml`, canonical `jobs[].skill_id` routes, and categorized `profile_eval` metadata. Run `mdp --json skills --dir plugin/assets/templates/proposal` to inspect eligibility and `mdp --json validate --dir plugin/assets/templates/proposal` to inspect `data.profile.activation_ready`.
 
 ## Demo Scenario
 

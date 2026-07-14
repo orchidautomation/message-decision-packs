@@ -37,7 +37,7 @@ Each release contains:
 - checksums and release metadata;
 - released `llms.txt` and `llms-full.txt` files.
 
-`plugin/` is the canonical plugin source. Pluxx packages that source for each supported host. Pluxx does not replace the Rust CLI, and the plugin does not hide a separate hosted runtime.
+`plugin/` is the canonical plugin source, and `plugin/skills/` is the only authored skill tree. Pluxx packages that tree for each supported host. Root-level, example-vendored, and hand-edited host skill copies are forbidden. Pluxx does not replace the Rust CLI, and the plugin does not hide a separate hosted runtime.
 
 The tag, `cli/Cargo.toml`, `pluxx.config.ts`, and plugin manifests must use the same semantic version.
 
@@ -67,7 +67,7 @@ Validate the source plugin and release configuration:
 make validate
 ```
 
-`make validate` covers the Rust CLI, bundled templates, mirrored skill content, and the available plugin validators. Use `mdp --json capabilities` as the machine-readable command and side-effect contract.
+`make validate` covers the Rust CLI, bundled templates, canonical skill content, generated-host packaging fidelity, and the available plugin validators. Use `mdp --json skills` as the machine-readable skill inventory; add `--dir <pack>` for eligible routes and `--job <job-id>` for an exact route.
 
 ## Updates And Drift
 

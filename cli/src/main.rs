@@ -9,6 +9,7 @@ mod prospect_validation;
 mod routing;
 mod runtime_context;
 mod scope;
+mod skill_catalog;
 mod starter;
 mod utils;
 mod value_contracts;

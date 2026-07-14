@@ -51,6 +51,18 @@ fn summarize(command: &str, data: &Value) -> Value {
             "stable_error_code_count": array_len(&data["stable_error_codes"]),
             "offline_by_default": data["defaults"]["offline_by_default"]
         }),
+        "skills" => json!({
+            "contract": data["contract"],
+            "status": data["status"],
+            "valid": data["valid"],
+            "profile_id": data["profile"]["id"],
+            "packaged_skill_ids": data["packaged_skill_ids"],
+            "eligible_skill_ids": data["eligibility"]["eligible_skill_ids"],
+            "requested_job": data["requested_job"],
+            "recommendation": data["recommendation"],
+            "route_count": array_len(&data["job_routes"]),
+            "diagnostics": data["diagnostics"]
+        }),
         "doctor" | "validate" | "validate-prompt-output" => json!({
             "valid": data["valid"],
             "strict": data["strict"],
@@ -519,6 +531,30 @@ mod tests {
         assert_eq!(summary["fixture_count"], 2);
         assert_eq!(summary["issue_count"], 1);
         assert_eq!(summary["failing_fixtures"][0], "bad");
+    }
+
+    #[test]
+    fn skills_summary_preserves_route_and_diagnostic_state() {
+        let summary = summarize(
+            "skills",
+            &json!({
+                "contract": "mdp.skills.v1",
+                "status": "ready",
+                "valid": true,
+                "profile": {"id": "gtm"},
+                "packaged_skill_ids": ["mdp", "mdp-gtm-brief"],
+                "eligibility": {"eligible_skill_ids": ["mdp", "mdp-gtm-brief"]},
+                "requested_job": "prospect-fit-or-brief",
+                "recommendation": {"job_id": "prospect-fit-or-brief", "skill_id": "mdp-gtm-brief"},
+                "job_routes": [{"job_id": "prospect-fit-or-brief"}],
+                "diagnostics": []
+            }),
+        );
+
+        assert_eq!(summary["contract"], "mdp.skills.v1");
+        assert_eq!(summary["profile_id"], "gtm");
+        assert_eq!(summary["route_count"], 1);
+        assert_eq!(summary["recommendation"]["skill_id"], "mdp-gtm-brief");
     }
 
     #[test]

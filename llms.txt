@@ -18,7 +18,7 @@ Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--op
 2. Preserve facts, interpretations, and gaps in `.mdp/sources.yaml`.
 3. Use optional prompt contracts to normalize supplied rows or extract reviewable card patches.
 4. Run `mdp --json validate --dir <pack>`.
-5. Use `agent-surface`, `route --entries`, `fit`, and `brief --context` to load only allowed context. Let pack-owned `qualification_gates` decide required person and source-backed signal coverage.
+5. Use `skills`, `route --entries`, `fit`, and `brief --context` to load only eligible context. Let pack-owned `qualification_gates` decide required person and source-backed signal coverage.
 6. Stop on `disqualified`, `insufficient-context`, proof gaps, or blocked review states.
 7. Run `check-claims` or `verify-output` before approving claim-bearing output.
 8. Run `gaps` and `eval` when the pack changes.
@@ -27,7 +27,8 @@ Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--op
 mdp --json capabilities
 mdp --json doctor --dir .
 mdp --json validate --dir .
-mdp --json agent-surface --dir .
+mdp --json skills --dir .
+mdp --json skills --dir . --job prospect-fit-or-brief
 mdp --json --summary route --entries --dir . --persona "PMM" --job "linkedin outbound copy"
 mdp --json route --entries --dir . --persona "PMM" --job "portfolio scope example" --scope product=local-cli
 mdp --json fit --dir . --prospect <prospect.json>
@@ -64,7 +65,7 @@ Portfolio dimensions do not add primitives. A pack can declare product, capabili
 
 `plugin/` is the canonical source. Pluxx packages it for Claude Code, Cursor, Codex, and OpenCode; the public installer pairs those bundles with the matching Rust CLI.
 
-Important skills include `mdp-lfg`, `mdp-create-pack`, `mdp-source-strategy`, `mdp-source-extract`, `mdp-icp-builder`, `mdp-prospect-brief`, copy/policy builders, pack review/eval skills, and proposal-profile review skills. Follow the pack-owned `profile.agent_surface` routing contract.
+MDP ships exactly five skills: `mdp`, `mdp-pack-builder`, `mdp-pack-review`, `mdp-gtm-brief`, and `mdp-proposal-review`. Use `mdp --json skills --dir <pack> --job <job-id>` to validate profile eligibility and the exact job route. Host discovery remains separate and host-managed.
 
 ## Canonical Example
 

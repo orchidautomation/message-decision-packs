@@ -1,4 +1,3 @@
-pub(crate) mod agent_surface;
 pub(crate) mod briefs;
 pub(crate) mod capabilities;
 pub(crate) mod evals;
@@ -11,8 +10,8 @@ pub(crate) mod proof_output;
 pub(crate) mod routing;
 pub(crate) mod sample_leads;
 pub(crate) mod schemas;
+pub(crate) mod skills;
 
-pub(crate) use agent_surface::agent_surface;
 pub(crate) use briefs::{
     demo_copy, emit_brief_scoped, prospect_brief_with_context, render_readable_prospect_brief,
 };
@@ -29,3 +28,4 @@ pub(crate) use proof_output::{
 pub(crate) use routing::{check_claims_scoped, fit, route_scoped};
 pub(crate) use sample_leads::sample_leads;
 pub(crate) use schemas::schema;
+pub(crate) use skills::skills;

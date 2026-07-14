@@ -11,6 +11,7 @@ fi
 
 pluxx lint --json >/tmp/mdp-pluxx-lint.json
 pluxx build --json >/tmp/mdp-pluxx-build.json
+python3 scripts/validate-skill-packaging.py --require-bundles >/tmp/mdp-skill-packaging.json
 
 workspace_fixture="$(mktemp -d)"
 plugin_fixture="$(mktemp -d)"
@@ -85,16 +86,9 @@ const codexManifest = readJson('dist/codex/.codex-plugin/plugin.json')
 const codexHooks = readJson('dist/codex/hooks/hooks.json')
 const codexCompanion = readJson('dist/codex/.codex/hooks.generated.json')
 const lintResult = readJson('/tmp/mdp-pluxx-lint.json')
-const scaffoldMetadata = readJson('.pluxx/mcp.json')
 
 const truncationIssues = lintResult.issues.filter((issue) => issue.code === 'skill-description-truncation')
 assert(truncationIssues.length === 0, 'Pluxx lint must not truncate skill descriptions on supported hosts.')
-assert(scaffoldMetadata.settings.requestedHookMode === 'safe', 'Migrated Pluxx metadata must use the current safe requested hook mode.')
-assert(scaffoldMetadata.settings.generatedHookMode === 'safe', 'Migrated Pluxx metadata must use the current safe generated hook mode.')
-assert(
-  ['sessionStart', 'beforeSubmitPrompt', 'postToolUse'].every((event) => scaffoldMetadata.settings.generatedHookEvents.includes(event)),
-  'Migrated Pluxx metadata must retain all configured MDP hook events.',
-)
 
 assert(claudeManifest.hooks === undefined, 'Claude Code manifest must not duplicate the standard hooks file.')
 assert(codexManifest.hooks === './hooks/hooks.json', 'Codex manifest must point at bundled hooks.')

@@ -1,4 +1,0 @@
-interface:
-  display_name: "MDP Proposal Pack Builder"
-  short_description: "Build proposal MDP packs"
-  default_prompt: "Use $mdp-proposal-pack-builder to build a proposal Message Decision Pack from approved source material."

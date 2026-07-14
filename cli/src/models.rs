@@ -50,45 +50,6 @@ pub(crate) struct Profile {
     pub(crate) context_dimensions: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) context_dimension_dependencies: BTreeMap<String, Vec<String>>,
-    #[serde(default, skip_serializing_if = "AgentSurface::is_empty")]
-    pub(crate) agent_surface: AgentSurface,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
-pub(crate) struct AgentSurface {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) recommended_skills: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) allowed_skills: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) blocked_skills: Vec<BlockedSkill>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) job_skills: Vec<JobSkillRoute>,
-}
-
-impl AgentSurface {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.recommended_skills.is_empty()
-            && self.allowed_skills.is_empty()
-            && self.blocked_skills.is_empty()
-            && self.job_skills.is_empty()
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
-pub(crate) struct BlockedSkill {
-    #[serde(default)]
-    pub(crate) name: String,
-    #[serde(default)]
-    pub(crate) reason: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
-pub(crate) struct JobSkillRoute {
-    #[serde(default)]
-    pub(crate) job: String,
-    #[serde(default)]
-    pub(crate) skills: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -133,6 +94,8 @@ pub(crate) struct InputContract {
 pub(crate) struct ProfileJob {
     #[serde(default)]
     pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) skill_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

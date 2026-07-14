@@ -135,7 +135,8 @@ Public artifacts must remain generic, synthetic, or explicitly sanitized. Never 
 ```bash
 mdp --json doctor --dir .
 mdp --json validate --dir .
-mdp --json agent-surface --dir .
+mdp --json skills --dir .
+mdp --json skills --dir . --job prospect-fit-or-brief
 mdp --json --summary route --entries --dir . --persona "PMM" --job "linkedin outbound copy"
 mdp --json route --entries --dir . --persona "PMM" --job "portfolio scope example" --scope product=local-cli
 mdp --json fit --dir . --prospect <prospect.json>
@@ -167,19 +168,15 @@ Prompt contracts do not browse or execute. Source-strategy artifacts plan approv
 
 `plugin/` is the canonical plugin source. Pluxx packages it into release bundles for Claude Code, Cursor, Codex, and OpenCode. The MDP installer combines those bundles with the Rust CLI; Pluxx is not the MDP runtime or a hosted service.
 
-Important skills:
+MDP ships exactly five skills:
 
-- `mdp-lfg`: end-to-end orchestration;
-- `mdp-create-pack`: create or improve a pack;
-- `mdp-source-strategy`: design evidence collection and handoff;
-- `mdp-source-extract`: turn approved source material into card entries;
-- `mdp-icp-builder`: sharpen GTM actors and fit logic;
-- `mdp-prospect-brief`: normalize, fit, and create bounded prospect briefs;
-- copy, angle, CTA, avoid-rule, and output-rule builders/evaluators;
-- pack review/eval skills;
-- proposal pack, bid/no-bid, compliance, proof-theme, and red-team gap review skills.
+- `mdp`: CLI/operator help and mixed MDP coordination;
+- `mdp-pack-builder`: source-grounded GTM or proposal pack authoring;
+- `mdp-pack-review`: structural, routing/eval, and installed-artifact QA;
+- `mdp-gtm-brief`: GTM fit, pre-draft copy context, and supplied-copy review;
+- `mdp-proposal-review`: bounded bid/no-bid, compliance, proof, and red-team review.
 
-When `.mdp/manifest.yaml` declares `profile.agent_surface`, follow its recommended, allowed, blocked, and job-specific skill lists. Existing packs without that metadata use the generic compatibility surface.
+Use `mdp --json skills --dir <pack> --job <job-id>` before profile-sensitive work. `packaged_skill_ids` is the released inventory; `eligibility` is pack policy; `host_discovery.status: unobserved` means MDP does not claim to hide or expose skills in the agent host. Unknown and profile-crossing jobs have no fallback.
 
 ## Canonical Runnable Example
 

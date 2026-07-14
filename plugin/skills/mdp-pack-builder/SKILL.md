@@ -1,0 +1,86 @@
+---
+name: mdp-pack-builder
+description: Use when creating, initializing, reconstructing, or improving a Message Decision Pack from approved GTM, ICP, source, RFP, proposal, or capture material. Do not use for generic research, messaging strategy, proposal writing, or pack-only review.
+---
+
+# MDP Pack Builder
+
+Build evidence-grounded `.mdp/` decision context. Use the CLI for deterministic structure and validation; use judgment only for interpreting approved source material and authoring explicit decisions.
+
+## Intake Gate
+
+1. Identify the pack root and intended profile: `gtm` or `proposal`.
+2. Classify each source as user-approved local material, approved corpus, public unauthenticated source, synthetic/sanitized example, needs approval, or excluded.
+3. Ask for source authority when access or confidentiality would materially change the work. Never scrape gated sources or commit restricted source material.
+4. Inspect the runtime and existing pack before editing:
+
+```bash
+mdp --json skills --dir PACK_ROOT
+mdp --json doctor --dir PACK_ROOT
+```
+
+An invalid or absent pack still leaves this shared skill bootstrap-eligible.
+
+## Initialize Or Inspect
+
+For a new pack, preview then initialize:
+
+```bash
+mdp --json init --template gtm --name "PACK_NAME" --dir PACK_ROOT --dry-run
+mdp --json init --template gtm --name "PACK_NAME" --dir PACK_ROOT
+mdp --json init --template proposal --dir PACK_ROOT --dry-run
+mdp --json init --template proposal --dir PACK_ROOT
+```
+
+For an existing pack, run:
+
+```bash
+mdp --json validate --dir PACK_ROOT
+mdp --json explain --dir PACK_ROOT
+mdp --json gaps --dir PACK_ROOT
+```
+
+## Load Only The Needed References
+
+- Read [references/source-intake.md](references/source-intake.md) when planning sources, extracting evidence, normalizing messy material, or mapping profile vocabulary to primitives.
+- Read [references/gtm-authoring.md](references/gtm-authoring.md) for ICP, personas, fit, signals, message angles, CTA policy, and GTM job bindings.
+- Read [references/proposal-authoring.md](references/proposal-authoring.md) for proposal opportunity context, requirements, proof, confidentiality, and proposal job bindings.
+- Read [references/boundaries-output.md](references/boundaries-output.md) when authoring claims, avoid rules, output constraints, or proof-carrying artifacts.
+
+Do not read every reference by default.
+
+## Authoring Loop
+
+1. Preserve source receipts: source ID, file or URL, snippet, observed/as-of date, confidence, and approval class.
+2. Map reviewed facts into universal primitives; keep profile terminology in labels and entries.
+3. Separate observed evidence from inferred decisions. Put unresolved or unsupported material in gaps.
+4. Author prompts with explicit input and output contracts. Validate model-produced output before using it:
+
+```bash
+mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
+```
+
+5. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
+6. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, and job routing.
+7. Validate, fix, and repeat:
+
+```bash
+mdp --json validate --dir PACK_ROOT
+mdp --json gaps --dir PACK_ROOT
+mdp --json eval --dir PACK_ROOT
+mdp --json validate --strict --dir PACK_ROOT
+mdp --json eval --strict --dir PACK_ROOT
+```
+
+Do not finish while normal validation has errors. Use strict validation as the final authoring gate unless the user explicitly accepts documented warnings.
+
+## Boundaries
+
+- Build decision context, not source-collection infrastructure or execution automation.
+- Do not invent claims, contacts, personas, proof, certifications, compliance status, past performance, pricing, deadlines, or approvals.
+- Do not add old skill aliases, custom routable job IDs, obsolete surface metadata, or host visibility policy.
+- Keep public fixtures synthetic or explicitly sanitized.
+
+## Response
+
+Report the profile, sources accepted/excluded, files changed, job bindings, commands run, validation/eval state, and remaining gaps or required human review.

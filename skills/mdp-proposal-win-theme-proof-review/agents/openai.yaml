@@ -1,4 +1,0 @@
-interface:
-  display_name: "MDP Proposal Win Theme Proof Review"
-  short_description: "Review themes against proof"
-  default_prompt: "Use $mdp-proposal-win-theme-proof-review to review proposal win themes against approved proof and pack constraints."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "MDP Pack Eval"
-  short_description: "Test pack routing behavior"
-  default_prompt: "Use $mdp-pack-eval to test route behavior for sample personas and jobs."

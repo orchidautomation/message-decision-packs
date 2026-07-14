@@ -159,7 +159,7 @@ mdp --json check-claims \
 For portfolio-sensitive routes, use bounded `entry_route.matches` or `context.entries` as drafting context.
 `load_order` and `required_load_order` are empty because shared card files may contain entries for several products.
 The `route` array still records audit metadata about how cards were considered; it is not a scope-filtered drafting payload.
-`agent-surface` exposes the pack's declared dimensions and dependencies, and `--summary` preserves scope plus draft/check blocking state without including full entry bodies.
+`skills --dir <pack>` exposes the active profile's declared dimensions, dependencies, eligibility, and deterministic job routes. `--summary` preserves scope plus draft/check blocking state without including full entry bodies.
 
 ## Prospect-Driven Fit and Briefs
 

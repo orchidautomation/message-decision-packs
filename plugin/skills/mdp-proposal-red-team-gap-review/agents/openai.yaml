@@ -1,4 +1,0 @@
-interface:
-  display_name: "MDP Proposal Red-Team Gap Review"
-  short_description: "Prioritize proposal gaps and risks"
-  default_prompt: "Use $mdp-proposal-red-team-gap-review to red-team supplied proposal material against pack rules, proof constraints, and known gaps."
