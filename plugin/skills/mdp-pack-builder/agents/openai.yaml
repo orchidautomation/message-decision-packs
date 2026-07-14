@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP Pack Builder"
+  short_description: "Build evidence-grounded MDP packs"
+  default_prompt: "Use $mdp-pack-builder to build or improve this Message Decision Pack from approved sources."

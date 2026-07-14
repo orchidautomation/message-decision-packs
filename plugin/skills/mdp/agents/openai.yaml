@@ -1,4 +1,4 @@
 interface:
   display_name: "MDP"
-  short_description: "Use Message Decision Packs with mdp"
-  default_prompt: "Use $mdp to validate a Message Decision Pack and create an agent-readable brief."
+  short_description: "Operate and route explicit MDP work"
+  default_prompt: "Use $mdp to inspect and coordinate this Message Decision Pack task."

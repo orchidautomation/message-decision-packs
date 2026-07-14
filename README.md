@@ -130,7 +130,7 @@ Profile vocabulary belongs in the manifest, cards, prompts, input contracts, job
 
 `plugin/` is the canonical plugin source. [Pluxx](https://pluxx.dev) packages it into release bundles for Claude Code, Cursor, Codex, and OpenCode. The public MDP installer combines those bundles with the matching Rust CLI binary; Pluxx is the packaging layer, not the CLI runtime or a hosted MDP service.
 
-Important skills include `mdp-lfg`, `mdp-create-pack`, `mdp-source-strategy`, `mdp-source-extract`, `mdp-icp-builder`, `mdp-prospect-brief`, the copy and policy builders, pack review/eval skills, and proposal-profile review skills. Pack-owned `profile.agent_surface` metadata determines which skills are recommended, allowed, or blocked.
+MDP ships five job-shaped skills: `mdp` for explicit CLI/operator and mixed work, `mdp-pack-builder` for pack authoring, `mdp-pack-review` for the pack artifact itself, `mdp-gtm-brief` for the three GTM fit/brief/copy-review jobs, and `mdp-proposal-review` for the four proposal review jobs. `mdp --json skills --dir <pack> --job <job-id>` validates pack eligibility and the exact job route; host discovery remains separate and host-managed.
 
 See [Distribution](docs/distribution.md) for the release and update contract and [Agent Hook Guidance](docs/agent-hook-guidance.md) for activation/validation boundaries.
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDP GTM Brief"
+  short_description: "Route GTM fit and copy decisions"
+  default_prompt: "Use $mdp-gtm-brief to evaluate this prospect or supplied copy against the active GTM pack."
