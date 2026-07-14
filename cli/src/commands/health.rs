@@ -417,8 +417,10 @@ fn validate_target_identity(
                     }
                 }
                 if is_raw_external_surface(&display) {
-                    let external_text =
-                        strip_internal_implementation_tokens(line, is_raw_internal_receipt(line));
+                    let external_text = redact_active_target_identity(
+                        target,
+                        &strip_internal_implementation_tokens(line, is_raw_internal_receipt(line)),
+                    );
                     if let Some(internal) = internal_target_terms(target)
                         .filter(|internal| contains_term(&external_text, internal))
                         .max_by_key(|internal| internal.len())
@@ -453,23 +455,23 @@ fn validate_target_identity(
                     ));
                 }
             }
-            let internal_scan_text =
-                strip_internal_implementation_tokens(text, is_internal_receipt_pointer(pointer));
-            if !active_target_allows_internal_term(target, &internal_scan_text) {
-                if let Some(internal) = internal_target_terms(target)
-                    .filter(|internal| contains_term(&internal_scan_text, internal))
-                    .max_by_key(|internal| internal.len())
+            let internal_scan_text = redact_active_target_identity(
+                target,
+                &strip_internal_implementation_tokens(text, is_internal_receipt_pointer(pointer)),
+            );
+            if let Some(internal) = internal_target_terms(target)
+                .filter(|internal| contains_term(&internal_scan_text, internal))
+                .max_by_key(|internal| internal.len())
+            {
+                if is_external_surface(&display, pointer, text, &value)
+                    && !internal_term_is_only_negated(&internal_scan_text, internal)
                 {
-                    if is_external_surface(&display, pointer, text, &value)
-                        && !internal_term_is_only_negated(&internal_scan_text, internal)
-                    {
-                        issues.push(issue(
-                            "target_contamination_internal_vocabulary",
-                            "error",
-                            format!("{display}#{pointer}"),
-                            format!("internal control-plane term '{internal}' appears on a prospect-facing surface; position '{}' instead", target.name),
-                        ));
-                    }
+                    issues.push(issue(
+                        "target_contamination_internal_vocabulary",
+                        "error",
+                        format!("{display}#{pointer}"),
+                        format!("internal control-plane term '{internal}' appears on a prospect-facing surface; position '{}' instead", target.name),
+                    ));
                 }
             }
         });
@@ -883,13 +885,59 @@ fn matches_pointer_prefix(pointer: &str, prefixes: &[&str]) -> bool {
         .any(|prefix| pointer == *prefix || pointer.starts_with(&format!("{prefix}/")))
 }
 
-fn active_target_allows_internal_term(target: &TargetIdentity, text: &str) -> bool {
-    internal_target_terms(target).any(|internal| {
-        contains_term(text, internal)
-            && std::iter::once(&target.name)
-                .chain(target.aliases.iter())
-                .any(|allowed| contains_term(allowed, internal) && contains_term(text, allowed))
-    })
+fn redact_active_target_identity(target: &TargetIdentity, text: &str) -> String {
+    let mut identities = std::iter::once(target.name.as_str())
+        .chain(target.aliases.iter().map(String::as_str))
+        .filter(|identity| {
+            internal_target_terms(target).any(|internal| contains_term(identity, internal))
+        })
+        .collect::<Vec<_>>();
+    identities.sort_by_key(|identity| std::cmp::Reverse(identity.len()));
+
+    identities
+        .into_iter()
+        .fold(text.to_string(), |redacted, identity| {
+            redact_bounded_term(&redacted, identity)
+        })
+}
+
+fn redact_bounded_term(text: &str, term: &str) -> String {
+    let term = term.trim();
+    if term.is_empty() {
+        return text.to_string();
+    }
+
+    let mut redacted = String::with_capacity(text.len());
+    let mut cursor = 0usize;
+    for (start, _) in text.char_indices() {
+        if start < cursor {
+            continue;
+        }
+        let end = start + term.len();
+        if end > text.len()
+            || !text.is_char_boundary(end)
+            || !text[start..end].eq_ignore_ascii_case(term)
+        {
+            continue;
+        }
+        let before_ok = start == 0
+            || !text[..start]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric);
+        let after_ok = end == text.len()
+            || !text[end..]
+                .chars()
+                .next()
+                .is_some_and(char::is_alphanumeric);
+        if before_ok && after_ok {
+            redacted.push_str(&text[cursor..start]);
+            redacted.push(' ');
+            cursor = end;
+        }
+    }
+    redacted.push_str(&text[cursor..]);
+    redacted
 }
 
 fn internal_target_terms(target: &TargetIdentity) -> impl Iterator<Item = &str> {
@@ -3641,6 +3689,61 @@ mod tests {
         let result = validate_pack(&root).expect("validate should return diagnostics");
         assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
         assert_eq!(result["error_count"], 0);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn target_name_only_exempts_its_own_internal_vocabulary_occurrence() {
+        let alias_target = TargetIdentity {
+            name: "Acme".to_string(),
+            aliases: vec!["Acme MDP".to_string()],
+            ..TargetIdentity::default()
+        };
+        let alias_scan = redact_active_target_identity(
+            &alias_target,
+            "Acme MDP is powered by the Message Decision Pack.",
+        );
+        assert!(!contains_term(&alias_scan, "MDP"));
+        assert!(contains_term(&alias_scan, "Message Decision Pack"));
+
+        let root = targeted_pack("Acme MDP", &[]);
+
+        let baseline = validate_pack(&root).expect("validate should return diagnostics");
+        assert_eq!(baseline["valid"], true, "issues: {}", baseline["issues"]);
+
+        let card_path = root.join(".mdp/cards/positioning.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("positioning should be readable");
+        let mut positioning: YamlValue =
+            serde_yaml::from_str(&raw).expect("positioning should parse");
+        positioning["entries"][0]["body"] = YamlValue::String(
+            "Acme MDP is powered by the Message Decision Pack and improves agent handoffs."
+                .to_string(),
+        );
+        std::fs::write(
+            &card_path,
+            serde_yaml::to_string(&positioning).expect("positioning should serialize"),
+        )
+        .expect("positioning should be writable");
+
+        let brief_path = root.join(".mdp/briefs/outbound.md");
+        std::fs::write(
+            &brief_path,
+            "Acme MDP helps teams.\nAcme MDP is powered by the Message Decision Pack.\n",
+        )
+        .expect("brief should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let contamination_paths = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter(|issue| issue["code"] == "target_contamination_internal_vocabulary")
+            .filter_map(|issue| issue["path"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(contamination_paths.contains(".mdp/cards/positioning.yaml#/entries/0/body"));
+        assert!(!contamination_paths.contains(".mdp/briefs/outbound.md:1"));
+        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:2"));
 
         let _ = std::fs::remove_dir_all(root);
     }
