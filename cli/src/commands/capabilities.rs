@@ -27,7 +27,7 @@ pub(crate) fn capabilities() -> Value {
         },
         "profile_contracts": {
             "manifest_profile": "mdp.profile.v0",
-            "agent_surface": "mdp.agent-surface.v0",
+            "skills": "mdp.skills.v1",
             "profile_metadata_optional": true,
             "context_dimensions": "Optional profile-owned applicability dimensions such as product, capability, solution, or segment; agnostic primitives remain unchanged.",
             "entry_scope": "OR within an entry dimension and AND across dimensions; unscoped entries are global."
@@ -36,7 +36,7 @@ pub(crate) fn capabilities() -> Value {
             command("capabilities", "mdp.capabilities.v0", "read-only", false, false, false, &[]),
             command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
-            command("agent-surface", "mdp.agent-surface.v0", "read-only", false, false, false, &["--dir"]),
+            command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--prompt", "--prompt-id", "--strict"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
@@ -119,16 +119,13 @@ mod tests {
                 .iter()
                 .any(|command| command["name"] == "init" && command["supports_dry_run"] == true)
         );
-        assert_eq!(
-            result["profile_contracts"]["agent_surface"],
-            "mdp.agent-surface.v0"
-        );
+        assert_eq!(result["profile_contracts"]["skills"], "mdp.skills.v1");
         assert!(
             result["commands"]
                 .as_array()
                 .expect("commands array")
                 .iter()
-                .any(|command| command["name"] == "agent-surface")
+                .any(|command| command["name"] == "skills")
         );
         assert!(
             result["stable_error_codes"]

@@ -3,10 +3,9 @@ use crate::constants::{
     PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
-    AgentSurface, BlockedSkill, Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints,
-    InputContract, JobSkillRoute, LeadInputRequirements, Manifest, PersonaMapping, Policy,
-    PrimitiveMapping, Profile, ProfileActivation, ProfileEval, ProfileJob, Provenance,
-    ValueContract,
+    Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints, InputContract,
+    LeadInputRequirements, Manifest, PersonaMapping, Policy, PrimitiveMapping, Profile,
+    ProfileActivation, ProfileEval, ProfileJob, Provenance, ValueContract,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -185,91 +184,24 @@ fn gtm_profile() -> Profile {
         label: Some("GTM Messaging".to_string()),
         version: Some("mdp.profile.v0".to_string()),
         context_dimensions: BTreeMap::from([
-            ("product".to_string(), strings(&["local-cli", "agent-plugin"])),
-            ("capability".to_string(), strings(&["portfolio-routing", "bounded-context"])),
-            ("solution".to_string(), strings(&["gtm-messaging", "agent-enablement"])),
+            (
+                "product".to_string(),
+                strings(&["local-cli", "agent-plugin"]),
+            ),
+            (
+                "capability".to_string(),
+                strings(&["portfolio-routing", "bounded-context"]),
+            ),
+            (
+                "solution".to_string(),
+                strings(&["gtm-messaging", "agent-enablement"]),
+            ),
             ("segment".to_string(), strings(&["agent-assisted-gtm"])),
         ]),
         context_dimension_dependencies: BTreeMap::from([
             ("capability".to_string(), strings(&["product"])),
             ("solution".to_string(), strings(&["product"])),
         ]),
-        agent_surface: AgentSurface {
-            recommended_skills: vec![
-                "mdp".to_string(),
-                "mdp-create-pack".to_string(),
-                "mdp-icp-builder".to_string(),
-                "mdp-source-strategy".to_string(),
-                "mdp-prospect-brief".to_string(),
-                "mdp-pack-eval".to_string(),
-            ],
-            allowed_skills: vec![
-                "mdp".to_string(),
-                "mdp-lfg".to_string(),
-                "mdp-create-pack".to_string(),
-                "mdp-icp-builder".to_string(),
-                "mdp-source-extract".to_string(),
-                "mdp-source-strategy".to_string(),
-                "mdp-message-angles".to_string(),
-                "mdp-cta-builder".to_string(),
-                "mdp-avoid-rules".to_string(),
-                "mdp-output-rules".to_string(),
-                "mdp-prospect-brief".to_string(),
-                "mdp-copy-brief".to_string(),
-                "mdp-copy-eval".to_string(),
-                "mdp-pack-review".to_string(),
-                "mdp-pack-eval".to_string(),
-            ],
-            blocked_skills: vec![
-                BlockedSkill {
-                    name: "mdp-proposal-pack-builder".to_string(),
-                    reason: "Proposal/RFP review pack builder; use only with profile.id: proposal. GTM packs may cover proposal-governance positioning or outbound fit, not proposal compliance, bid/no-bid, or customer proposal handling."
-                        .to_string(),
-                },
-                BlockedSkill {
-                    name: "mdp-proposal-bid-no-bid-review".to_string(),
-                    reason: "Proposal review job; not a GTM prospect or outbound-copy workflow."
-                        .to_string(),
-                },
-                BlockedSkill {
-                    name: "mdp-proposal-compliance-review".to_string(),
-                    reason: "Proposal compliance review job; not a GTM messaging workflow or proposal-governance positioning wedge."
-                        .to_string(),
-                },
-                BlockedSkill {
-                    name: "mdp-proposal-win-theme-proof-review".to_string(),
-                    reason: "Proposal proof review job; use GTM claims/copy review skills instead."
-                        .to_string(),
-                },
-                BlockedSkill {
-                    name: "mdp-proposal-red-team-gap-review".to_string(),
-                    reason: "Proposal red-team review job; use mdp-pack-review or mdp-pack-eval for GTM packs."
-                        .to_string(),
-                },
-            ],
-            job_skills: vec![
-                JobSkillRoute {
-                    job: "create or improve GTM messaging pack".to_string(),
-                    skills: vec!["mdp-create-pack".to_string(), "mdp-icp-builder".to_string()],
-                },
-                JobSkillRoute {
-                    job: "source strategy before GTM scout or extraction".to_string(),
-                    skills: vec!["mdp-source-strategy".to_string()],
-                },
-                JobSkillRoute {
-                    job: "prospect row to fit decision or brief".to_string(),
-                    skills: vec!["mdp-prospect-brief".to_string()],
-                },
-                JobSkillRoute {
-                    job: "copy brief or copy evaluation".to_string(),
-                    skills: vec!["mdp-copy-brief".to_string(), "mdp-copy-eval".to_string()],
-                },
-                JobSkillRoute {
-                    job: "pack validation and eval coverage".to_string(),
-                    skills: vec!["mdp-pack-review".to_string(), "mdp-pack-eval".to_string()],
-                },
-            ],
-        },
     }
 }
 
@@ -356,10 +288,9 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
                 &[],
                 &[],
                 &[
-                    "create-or-improve-gtm-pack",
                     "prospect-fit-or-brief",
                     "outbound-copy-brief",
-                    "pack-validation",
+                    "outbound-copy-review",
                 ],
                 &[],
             ),
@@ -418,27 +349,8 @@ fn gtm_primitive_map() -> BTreeMap<String, PrimitiveMapping> {
 fn gtm_profile_jobs() -> Vec<ProfileJob> {
     vec![
         ProfileJob {
-            id: "create-or-improve-gtm-pack".to_string(),
-            label: Some("Create or improve GTM messaging pack".to_string()),
-            description: Some(
-                "Author or revise reviewed GTM decision context, not execution infrastructure."
-                    .to_string(),
-            ),
-            required_primitives: strings(&[
-                "actors",
-                "decision-criteria",
-                "source-signals",
-                "needs-requirements",
-                "evidence-proof",
-                "boundaries",
-                "output-contracts",
-                "gaps",
-                "evals",
-            ]),
-            input_contracts: Vec::new(),
-        },
-        ProfileJob {
             id: "prospect-fit-or-brief".to_string(),
+            skill_id: "mdp-gtm-brief".to_string(),
             label: Some("Prospect row to fit decision or brief".to_string()),
             description: Some(
                 "Normalize supplied row context, check fit, and route a bounded local brief."
@@ -458,6 +370,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
+            skill_id: "mdp-gtm-brief".to_string(),
             label: Some("Outbound copy brief".to_string()),
             description: Some(
                 "Produce grounded copy guidance after fit, proof, guardrails, and output contracts are loaded."
@@ -476,14 +389,24 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             input_contracts: strings(&["prospect"]),
         },
         ProfileJob {
-            id: "pack-validation".to_string(),
-            label: Some("Pack validation and eval coverage".to_string()),
+            id: "outbound-copy-review".to_string(),
+            skill_id: "mdp-gtm-brief".to_string(),
+            label: Some("Supplied outbound copy review".to_string()),
             description: Some(
-                "Check structural validity, profile primitive coverage, and local eval categories."
+                "Evaluate a supplied copy draft against fit, proof, guardrails, and output rules."
                     .to_string(),
             ),
-            required_primitives: strings(&["boundaries", "gaps", "evals"]),
-            input_contracts: Vec::new(),
+            required_primitives: strings(&[
+                "actors",
+                "decision-criteria",
+                "source-signals",
+                "evidence-proof",
+                "boundaries",
+                "output-contracts",
+                "routing-jobs",
+                "gaps",
+            ]),
+            input_contracts: strings(&["prospect"]),
         },
     ]
 }
@@ -730,7 +653,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "profile_eval": eval_profile(
                     "job-routing",
                     &["actors", "boundaries", "output-contracts"],
-                    &["create-or-improve-gtm-pack"]
+                    &["prospect-fit-or-brief"]
                 ),
                 "persona": "PM",
                 "job": "create or improve GTM pack for founder GTM lead",
@@ -1182,7 +1105,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "profile_eval": eval_profile(
                     "job-routing",
                     &["actors", "boundaries", "output-contracts"],
-                    &["pack-validation"]
+                    &["outbound-copy-review"]
                 ),
                 "persona": "Unknown",
                 "job": "task hygiene",
@@ -1469,7 +1392,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "profile_eval": eval_profile(
                     "proceed",
                     &["evidence-proof", "boundaries"],
-                    &["pack-validation"]
+                    &["outbound-copy-review"]
                 ),
                 "text": "MDP is local-first AI-assisted decision context before drafting with approved claims, evidence, and review rules. It does not send emails, does not connect to your CRM, does not update CRM records, does not bypass legal, does not replace proposal management software, and does not claim compliance approval.",
                 "expect_valid": true
@@ -1483,7 +1406,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "profile_eval": eval_profile(
                     "proceed",
                     &["evidence-proof", "boundaries"],
-                    &["pack-validation"]
+                    &["outbound-copy-review"]
                 ),
                 "text": "MDP is local-first decision context. It does not update CRM records, send emails, or bypass legal review.",
                 "expect_valid": true
@@ -1497,7 +1420,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 "profile_eval": eval_profile(
                     "proceed",
                     &["evidence-proof", "boundaries"],
-                    &["pack-validation"]
+                    &["outbound-copy-review"]
                 ),
                 "text": "MDP is a local offline CLI that stores versionable message context in a manifest plus modular cards.",
                 "expect_valid": true

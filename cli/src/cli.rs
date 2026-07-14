@@ -49,10 +49,12 @@ pub(crate) enum Commands {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
     },
-    #[command(about = "Print pack-aware agent skill routing guidance")]
-    AgentSurface {
-        #[arg(long, default_value = ".")]
-        dir: PathBuf,
+    #[command(about = "Print canonical skill inventory and pack-aware eligibility")]
+    Skills {
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        #[arg(long, requires = "dir")]
+        job: Option<String>,
     },
     #[command(about = "Validate manifest and card references")]
     Validate {
@@ -265,7 +267,7 @@ pub(crate) enum SchemaTarget {
     RuntimeContext,
     Prospect,
     Eval,
-    AgentSurface,
+    Skills,
 }
 
 #[derive(Clone, ValueEnum, PartialEq, Eq)]
@@ -278,4 +280,55 @@ pub(crate) enum SampleLeadsFormat {
 pub(crate) enum HumanBriefFormat {
     Markdown,
     Json,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skills_accepts_inventory_pack_and_single_job_forms() {
+        let inventory =
+            Cli::try_parse_from(["mdp", "--json", "skills"]).expect("inventory form should parse");
+        assert!(matches!(
+            inventory.command,
+            Commands::Skills {
+                dir: None,
+                job: None
+            }
+        ));
+
+        let pack =
+            Cli::try_parse_from(["mdp", "skills", "--dir", "."]).expect("pack form should parse");
+        assert!(matches!(
+            pack.command,
+            Commands::Skills {
+                dir: Some(_),
+                job: None
+            }
+        ));
+
+        let job = Cli::try_parse_from([
+            "mdp",
+            "skills",
+            "--dir",
+            ".",
+            "--job",
+            "prospect-fit-or-brief",
+        ])
+        .expect("single-job form should parse");
+        assert!(matches!(
+            job.command,
+            Commands::Skills {
+                dir: Some(_),
+                job: Some(_)
+            }
+        ));
+    }
+
+    #[test]
+    fn skills_requires_dir_for_job_and_removed_agent_surface_is_unknown() {
+        assert!(Cli::try_parse_from(["mdp", "skills", "--job", "prospect-fit-or-brief"]).is_err());
+        assert!(Cli::try_parse_from(["mdp", "agent-surface"]).is_err());
+    }
 }

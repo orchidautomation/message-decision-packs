@@ -277,55 +277,6 @@ profile:
   id: gtm
   label: Synthetic Vendor GTM scouting
   version: mdp.profile.v0
-  agent_surface:
-    recommended_skills:
-    - mdp
-    - mdp-lfg
-    - mdp-source-strategy
-    - mdp-prospect-brief
-    - mdp-pack-eval
-    allowed_skills:
-    - mdp
-    - mdp-lfg
-    - mdp-create-pack
-    - mdp-icp-builder
-    - mdp-source-extract
-    - mdp-source-strategy
-    - mdp-message-angles
-    - mdp-cta-builder
-    - mdp-avoid-rules
-    - mdp-output-rules
-    - mdp-prospect-brief
-    - mdp-copy-brief
-    - mdp-copy-eval
-    - mdp-pack-review
-    - mdp-pack-eval
-    blocked_skills:
-    - name: mdp-proposal-pack-builder
-      reason: Proposal/RFP review pack builder; this Synthetic Vendor pack is for GTM scouting and outbound-fit briefs.
-    - name: mdp-proposal-bid-no-bid-review
-      reason: Proposal review job; use only for proposal packs, not prospect qualification.
-    - name: mdp-proposal-compliance-review
-      reason: Proposal compliance review job; use MDP claim/guardrail review for GTM copy instead.
-    job_skills:
-    - job: create or improve Synthetic Vendor GTM pack
-      skills:
-      - mdp-create-pack
-      - mdp-icp-builder
-    - job: source strategy before Synthetic Vendor scouting
-      skills:
-      - mdp-source-strategy
-    - job: prospect row to fit decision or brief
-      skills:
-      - mdp-prospect-brief
-    - job: copy brief or copy evaluation
-      skills:
-      - mdp-copy-brief
-      - mdp-copy-eval
-    - job: pack validation and eval coverage
-      skills:
-      - mdp-pack-review
-      - mdp-pack-eval
 lead_input_requirements:
   required_fields:
   - name
@@ -447,11 +398,9 @@ primitive_map:
     - channel-policies
     - motions
     jobs:
-    - create-or-improve-synthetic-vendor-gtm-pack
-    - source-strategy-for-synthetic-vendor-scouting
     - prospect-fit-or-brief
     - outbound-copy-brief
-    - pack-validation
+    - outbound-copy-review
   gaps:
     cards:
     - gaps
@@ -479,33 +428,8 @@ input_contracts:
   - person
   - relationship
 jobs:
-- id: create-or-improve-synthetic-vendor-gtm-pack
-  label: Create or improve Synthetic Vendor GTM pack
-  description: Author or revise reviewed Synthetic Vendor GTM decision context, not execution infrastructure.
-  required_primitives:
-  - actors
-  - decision-criteria
-  - source-signals
-  - needs-requirements
-  - evidence-proof
-  - boundaries
-  - output-contracts
-  - gaps
-  - evals
-- id: source-strategy-for-synthetic-vendor-scouting
-  label: Source strategy for Synthetic Vendor scouting
-  description: Turn Synthetic Vendor ICP, personas, signals, and avoid-rules into public-source discovery targets before extraction.
-  required_primitives:
-  - actors
-  - decision-criteria
-  - source-signals
-  - evidence-proof
-  - boundaries
-  - output-contracts
-  - routing-jobs
-  - gaps
-  - evals
 - id: prospect-fit-or-brief
+  skill_id: mdp-gtm-brief
   label: Prospect row to fit decision or brief
   description: Normalize supplied row context, check fit, and route a bounded local brief.
   required_primitives:
@@ -520,6 +444,7 @@ jobs:
   input_contracts:
   - prospect
 - id: outbound-copy-brief
+  skill_id: mdp-gtm-brief
   label: Outbound copy brief
   description: Produce grounded copy guidance after fit, proof, guardrails, CTA policy, and output rules are loaded.
   required_primitives:
@@ -533,13 +458,21 @@ jobs:
   - gaps
   input_contracts:
   - prospect
-- id: pack-validation
-  label: Pack validation and eval coverage
-  description: Check structural validity, profile primitive coverage, source strategy, and eval fixtures.
+- id: outbound-copy-review
+  skill_id: mdp-gtm-brief
+  label: Supplied outbound copy review
+  description: Evaluate a supplied copy draft against fit, proof, guardrails, and output rules.
   required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
   - boundaries
+  - output-contracts
+  - routing-jobs
   - gaps
-  - evals
+  input_contracts:
+  - prospect
 profile_eval:
   required_categories:
   - proceed

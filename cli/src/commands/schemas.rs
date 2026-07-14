@@ -117,7 +117,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
                 }
             })
         }
-        SchemaTarget::AgentSurface => agent_surface_schema(),
+        SchemaTarget::Skills => skills_schema(),
     }
 }
 
@@ -442,9 +442,11 @@ fn profile_jobs_schema() -> Value {
         "type": "array",
         "items": {
             "type": "object",
-            "required": ["id", "required_primitives"],
+            "required": ["id", "skill_id", "required_primitives"],
+            "additionalProperties": false,
             "properties": {
                 "id": {"type": "string"},
+                "skill_id": canonical_skill_id_schema(),
                 "label": {"type": "string"},
                 "description": {"type": "string"},
                 "required_primitives": primitive_id_array_schema(),
@@ -496,69 +498,84 @@ fn profile_schema() -> Value {
             "label": {"type": "string"},
             "version": {"const": "mdp.profile.v0"},
             "context_dimensions": scope_map_schema(),
-            "context_dimension_dependencies": scope_map_schema(),
-            "agent_surface": agent_surface_properties_schema()
+            "context_dimension_dependencies": scope_map_schema()
         }
     })
 }
 
-fn agent_surface_schema() -> Value {
+fn skills_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "title": "MDP Agent Surface v0",
+        "title": "MDP Skills v1",
         "type": "object",
-        "required": ["contract", "pack", "profile", "agent_surface", "legacy_profile", "guidance"],
+        "required": ["contract", "status", "valid", "pack", "profile", "packaged_skill_ids", "host_discovery", "eligibility", "requested_job", "recommendation", "job_routes", "diagnostics"],
+        "additionalProperties": false,
         "properties": {
-            "contract": {"const": "mdp.agent-surface.v0"},
-            "pack": pack_schema(),
-            "profile": {
+            "contract": {"const": "mdp.skills.v1"},
+            "status": {"enum": ["bootstrap", "ready", "unresolved"]},
+            "valid": {"type": "boolean"},
+            "pack": {"type": "object"},
+            "profile": {"type": "object"},
+            "packaged_skill_ids": canonical_skill_id_array_schema(),
+            "host_discovery": {
                 "type": "object",
-                "required": ["id", "context_dimensions", "context_dimension_dependencies"],
+                "required": ["status", "managed_by", "guidance"],
+                "additionalProperties": false,
                 "properties": {
-                    "id": {"type": "string"},
-                    "label": {"type": ["string", "null"]},
-                    "version": {"type": ["string", "null"]},
-                    "context_dimensions": scope_map_schema(),
-                    "context_dimension_dependencies": scope_map_schema()
+                    "status": {"const": "unobserved"},
+                    "managed_by": {"const": "agent-host"},
+                    "guidance": {"type": "string"}
                 }
             },
-            "agent_surface": agent_surface_properties_schema(),
-            "legacy_profile": {"type": "boolean"},
-            "guidance": string_array()
+            "eligibility": {
+                "type": "object",
+                "required": ["eligible_skill_ids", "ineligible_skills"],
+                "additionalProperties": false,
+                "properties": {
+                    "eligible_skill_ids": canonical_skill_id_array_schema(),
+                    "ineligible_skills": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["skill_id", "reason"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "skill_id": canonical_skill_id_schema(),
+                                "reason": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            },
+            "requested_job": {"type": ["string", "null"]},
+            "recommendation": {"oneOf": [{"type": "null"}, job_route_schema()]},
+            "job_routes": {"type": "array", "items": job_route_schema()},
+            "diagnostics": {"type": "array", "items": {"type": "object"}}
         }
     })
 }
 
-fn agent_surface_properties_schema() -> Value {
+fn job_route_schema() -> Value {
     json!({
         "type": "object",
+        "required": ["job_id", "skill_id", "pack_ready", "missing_primitives", "required_input_contracts"],
+        "additionalProperties": false,
         "properties": {
-            "recommended_skills": string_array(),
-            "allowed_skills": string_array(),
-            "blocked_skills": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["name", "reason"],
-                    "properties": {
-                        "name": {"type": "string"},
-                        "reason": {"type": "string"}
-                    }
-                }
-            },
-            "job_skills": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["job", "skills"],
-                    "properties": {
-                        "job": {"type": "string"},
-                        "skills": string_array()
-                    }
-                }
-            }
+            "job_id": {"type": "string"},
+            "skill_id": canonical_skill_id_schema(),
+            "pack_ready": {"type": "boolean"},
+            "missing_primitives": string_array(),
+            "required_input_contracts": string_array()
         }
     })
+}
+
+fn canonical_skill_id_schema() -> Value {
+    json!({"enum": ["mdp", "mdp-pack-builder", "mdp-pack-review", "mdp-gtm-brief", "mdp-proposal-review"]})
+}
+
+fn canonical_skill_id_array_schema() -> Value {
+    json!({"type": "array", "items": canonical_skill_id_schema(), "uniqueItems": true})
 }
 
 fn brief_schema() -> Value {
@@ -1418,6 +1435,28 @@ mod tests {
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["output_kind"]["enum"][1],
             "prospect-normalization"
+        );
+    }
+
+    #[test]
+    fn skills_schema_exposes_only_the_greenfield_contract() {
+        let result = schema(SchemaTarget::Skills);
+
+        assert_eq!(result["title"], "MDP Skills v1");
+        assert_eq!(result["properties"]["contract"]["const"], "mdp.skills.v1");
+        assert_eq!(
+            result["properties"]["packaged_skill_ids"]["items"]["enum"],
+            json!([
+                "mdp",
+                "mdp-pack-builder",
+                "mdp-pack-review",
+                "mdp-gtm-brief",
+                "mdp-proposal-review"
+            ])
+        );
+        assert_eq!(
+            result["properties"]["host_discovery"]["properties"]["status"]["const"],
+            "unobserved"
         );
     }
 }

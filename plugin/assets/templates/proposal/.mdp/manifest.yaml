@@ -7,64 +7,6 @@ profile:
   id: proposal
   label: Proposal Review
   version: mdp.profile.v0
-  agent_surface:
-    recommended_skills:
-    - mdp
-    - mdp-proposal-pack-builder
-    - mdp-source-strategy
-    - mdp-proposal-bid-no-bid-review
-    - mdp-proposal-compliance-review
-    - mdp-proposal-red-team-gap-review
-    allowed_skills:
-    - mdp
-    - mdp-lfg
-    - mdp-proposal-pack-builder
-    - mdp-proposal-bid-no-bid-review
-    - mdp-proposal-compliance-review
-    - mdp-proposal-win-theme-proof-review
-    - mdp-proposal-red-team-gap-review
-    - mdp-source-extract
-    - mdp-source-strategy
-    - mdp-avoid-rules
-    - mdp-output-rules
-    - mdp-pack-review
-    - mdp-pack-eval
-    blocked_skills:
-    - name: mdp-icp-builder
-      reason: "GTM ICP builder; proposal packs use proposal roles, requirements, bid/no-bid rules, and review gates."
-    - name: mdp-prospect-brief
-      reason: "GTM prospect/source-row brief skill; proposal packs route supplied opportunity or requirement context."
-    - name: mdp-copy-brief
-      reason: "Outbound copy brief skill; proposal packs produce review support, not prospecting copy."
-    - name: mdp-copy-eval
-      reason: "Outbound copy evaluation skill; proposal packs use proposal proof, compliance, and red-team review skills."
-    - name: mdp-message-angles
-      reason: "GTM message-angle skill; proposal packs use win-theme/proof and review-output rules."
-    - name: mdp-cta-builder
-      reason: "Outbound CTA skill; proposal packs must not produce send/sequence calls to action."
-    job_skills:
-    - job: create or improve proposal review pack
-      skills:
-      - mdp-proposal-pack-builder
-    - job: source strategy before proposal source intake
-      skills:
-      - mdp-source-strategy
-    - job: bid no bid review
-      skills:
-      - mdp-proposal-bid-no-bid-review
-    - job: compliance review
-      skills:
-      - mdp-proposal-compliance-review
-    - job: proof or win theme review
-      skills:
-      - mdp-proposal-win-theme-proof-review
-    - job: red team gap review
-      skills:
-      - mdp-proposal-red-team-gap-review
-    - job: pack validation and eval coverage
-      skills:
-      - mdp-pack-review
-      - mdp-pack-eval
 personas:
 - Proposal Lead
 - Solution Owner
@@ -239,6 +181,7 @@ input_contracts:
   - risk
 jobs:
 - id: bid-no-bid-review
+  skill_id: mdp-proposal-review
   label: Bid/no-bid review
   description: Evaluate whether supplied opportunity context supports bid, no-bid, pause, or escalation.
   required_primitives:
@@ -251,6 +194,7 @@ jobs:
   input_contracts:
   - opportunity
 - id: compliance-review
+  skill_id: mdp-proposal-review
   label: Compliance review
   description: Review requirements, compliance-sensitive boundaries, unsupported claims, and required escalation points.
   required_primitives:
@@ -263,6 +207,7 @@ jobs:
   input_contracts:
   - opportunity
 - id: proof-review
+  skill_id: mdp-proposal-review
   label: Proof or win theme review
   description: Check proposed proof and win themes against approved synthetic proof patterns and gaps.
   required_primitives:
@@ -276,6 +221,7 @@ jobs:
   input_contracts:
   - opportunity
 - id: red-team-review
+  skill_id: mdp-proposal-review
   label: Red-team gap review
   description: Surface unsupported proof, missing requirements, risky assumptions, and review gates.
   required_primitives:

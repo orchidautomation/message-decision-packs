@@ -12,7 +12,7 @@ persona: Unknown
 profile_eval:
   category: job-routing
   jobs:
-  - pack-validation
+  - outbound-copy-review
   primitives:
   - actors
   - boundaries
