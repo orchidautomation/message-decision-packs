@@ -40,10 +40,10 @@ See [Getting Started](docs/getting-started.md) for the complete first-run walkth
 
 ## First Workflow
 
-Create and validate a generic GTM pack:
+Create and validate the generic MDP reference pack:
 
 ```bash
-mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
+mdp --json init --template gtm --dir /tmp/mdp-demo --force
 mdp --json validate --dir /tmp/mdp-demo
 mdp --json skills --dir /tmp/mdp-demo
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
@@ -58,6 +58,15 @@ mdp --json check-claims --dir /tmp/mdp-demo --text "<draft copy>" --persona "PMM
 mdp --json gaps --dir /tmp/mdp-demo
 mdp --json eval --dir /tmp/mdp-demo
 ```
+
+For a real company, product, or project, use the target-aware path. A custom pack name does not establish the sold target by itself:
+
+```bash
+mdp --json init --template gtm --name "Example Company Messaging" --target-name "Example Company" --target-kind company --dir /tmp/example-company-mdp
+mdp --json validate --dir /tmp/example-company-mdp
+```
+
+The target-aware scaffold records unsupported positioning, ICP, persona, pain, proof, hook, and CTA detail as gaps. Add `--exclude-term` for each prior target or starter noun that must not survive a retarget; validation reports the exact file and field when residue remains. `init --force` refuses to overwrite an existing different target because unreferenced old files could survive; use a clean directory or explicitly migrate and validate the existing pack.
 
 The generated starter prospect is synthetic. Rows created by `sample-leads` are also marked `do_not_contact`. Never treat either as a real prospect. MDP should stop with `disqualified` or `insufficient-context` when evidence is too weak for drafting.
 

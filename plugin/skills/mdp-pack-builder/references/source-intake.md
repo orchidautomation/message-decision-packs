@@ -9,11 +9,12 @@ Read this when source material must become pack decisions.
 - Record source class, locator, snippet, date, confidence, and intended primitive.
 - Exclude secrets, gated pages, contact databases, and unapproved exports.
 - Preserve disagreement, staleness, and missing evidence as gaps.
+- For targeted GTM packs, cite the target identity in `target.source_ids`. Treat additional `target.external_terms` as supported only when a listed source contains the term in a direct claim; otherwise keep the term as a gap.
 
 ## Workflow
 
 1. State the decision the pack must support.
-2. Inventory approved sources and exclusions.
+2. Resolve the external target identity and inventory approved sources, aliases, and excluded prior-target or starter terms.
 3. Map evidence needs across `actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evidence-proof`, `boundaries`, `output-contracts`, `routing-jobs`, `gaps`, and `evals`.
 4. Extract atomic facts with receipts. Do not blend multiple sources into an unsupported stronger claim.
 5. Author reviewed entries and prompts; validate prompt output before accepting normalized values.

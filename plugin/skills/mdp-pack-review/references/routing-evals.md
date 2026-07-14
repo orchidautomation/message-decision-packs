@@ -29,3 +29,11 @@ Use `validate-prompt-output` for valid and adversarial normalization results. Us
 ## Fixture Quality
 
 Require both successful and failing cases. Include insufficient context, refusal/unsafe output, job routing, unsupported proof, prompt-output invention, and declared profile-specific categories. Prefer distinct scenario families over paraphrases.
+
+For a targeted GTM pack, also require an isolation family:
+
+- create Company A and Company B packs in separate clean roots, with Company A listed as an excluded term for Company B
+- confirm Company B validation reports exact paths for intentionally injected Company A residue
+- generate target-aware sample leads and JSON/readable briefs, save them under scanned pack paths, and confirm they do not produce contamination findings
+- confirm required `mdp.*.vN` contracts, `.mdp/` paths, and `mdp <command>` receipts remain allowed as implementation metadata
+- confirm direct or double-negated attempts to sell MDP/internal control-plane language are rejected

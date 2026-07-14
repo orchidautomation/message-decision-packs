@@ -41,10 +41,12 @@ Do not reproduce these decisions manually in a skill.
 Preview commands that support `--dry-run` before writing:
 
 ```bash
-mdp --json init --template gtm --dir PACK_ROOT --dry-run
+mdp --json init --template gtm --name PACK_NAME --target-name TARGET_NAME --target-kind company --target-alias TARGET_ALIAS --exclude-term PRIOR_TARGET --dir PACK_ROOT --dry-run
 mdp --json brief --context --dir PACK_ROOT --prospect PROSPECT_JSON --out BRIEF_JSON --dry-run
 mdp --json emit-brief --dir PACK_ROOT --persona PERSONA --out BRIEF_JSON --dry-run
 mdp --json pack --dir PACK_ROOT --out PACK_JSON --dry-run
 ```
+
+For a named GTM pack, pass `--target-name` explicitly. Repeat `--target-alias` and `--exclude-term` when needed; never force-retarget an existing pack directory.
 
 Write a durable artifact only when the user asks for one or the task requires a repository change.

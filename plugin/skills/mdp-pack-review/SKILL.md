@@ -43,8 +43,10 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
 - Treat CLI errors as findings, not prose to reinterpret away.
 - Verify every agent-routable `jobs[]` entry has one canonical `skill_id` and a supported closed pair.
 - Check source receipts, freshness, confidence, approved claims/proof, avoid rules, output rules, and gaps for internal consistency.
+- When `manifest.target` exists, verify target kind/name, source IDs, aliases, supported external terms, exclusions, and internal vocabulary boundaries. Treat target contamination as a high-severity wrong-product risk.
 - Distinguish structural validity from commercial readiness or human approval.
 - Sample representative routes and deterministic claim/output gates when the pack changed those decisions.
+- Exercise generated surfaces such as sample leads, prompt output, JSON/readable briefs, and eval payloads; required contracts and CLI receipts are implementation metadata, while their prospect-facing content must remain target-aware or neutral.
 - Keep evaluation output and temporary packs outside committed source paths.
 
 ## Findings

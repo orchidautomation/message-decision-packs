@@ -138,10 +138,12 @@ The user says:
 Create an MDP for our outbound messaging.
 ```
 
+Codex first resolves which company, product, or project the pack should position. If the supplied intent or evidence leaves more than one plausible target, Codex asks before authoring. For a resolved fictional target:
+
 Codex runs:
 
 ```bash
-mdp --json init --template gtm --name "Example Message Pack" --dir .
+mdp --json init --template gtm --name "Example Company Messaging" --target-name "Example Company" --target-kind company --dir .
 mdp --json validate --dir .
 mdp --json eval --dir .
 ```
@@ -155,11 +157,11 @@ The result is a local `.mdp/` folder:
   briefs/
   cards/
   evals/
-  examples/
-  clay-row.json
+examples/
+  prospect-row.json
 ```
 
-The starter fixture path is kept for compatibility. It represents a synthetic provider-neutral prospect/source row, not a Clay dependency.
+The target-aware sample row is synthetic and neutral. The target-less reference template keeps its historical sample path for compatibility, but the reference template must not be renamed and mistaken for a different sold target.
 
 The user now has a local source of truth for messaging decisions. It can live in their repo, be reviewed in PRs, and be tested by CI.
 

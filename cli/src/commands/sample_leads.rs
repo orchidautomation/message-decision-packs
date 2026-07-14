@@ -1,3 +1,4 @@
+use crate::models::TargetIdentity;
 use crate::pack_io::read_manifest;
 use crate::routing::{entry_route, select_cards};
 use crate::utils::{resolve_persona_label, routable_persona};
@@ -44,9 +45,29 @@ pub(crate) fn sample_leads(
                 seed,
                 index,
                 &matched_entry_titles,
+                manifest.target.as_ref(),
             )
         })
         .collect();
+    let workflow = if manifest.target.is_some() {
+        json!([
+            "Generate 2 to 5 synthetic fixture leads.",
+            "Save one fixture row to ignored scratch if a command requires a prospect file.",
+            "Run the pack's fit gate and brief gate for each fixture.",
+            "Draft only from safe_personalization while retaining every known gap.",
+            "Check claims before treating any copy as ready.",
+            "Never treat fixture leads as real prospects or evidence about the target."
+        ])
+    } else {
+        json!([
+            "Generate 2 to 5 fake fixture leads.",
+            "Save one fixture row to ignored scratch if a command requires --prospect.",
+            "Run mdp fit, then mdp brief --context for each fixture.",
+            "Draft only against safe_personalization and known_gaps.",
+            "Run mdp check-claims before treating copy as ready.",
+            "Never treat fixture leads as real prospects."
+        ])
+    };
 
     Ok(json!({
         "contract": FIXTURE_CONTRACT,
@@ -72,14 +93,7 @@ pub(crate) fn sample_leads(
             "gaps": entries["gaps"].clone()
         },
         "fixture_leads": fixture_leads,
-        "workflow": [
-            "Generate 2 to 5 fake fixture leads.",
-            "Save one fixture row to ignored scratch if a command requires --prospect.",
-            "Run mdp fit, then mdp brief --context for each fixture.",
-            "Draft only against safe_personalization and known_gaps.",
-            "Run mdp check-claims before treating copy as ready.",
-            "Never treat fixture leads as real prospects."
-        ]
+        "workflow": workflow
     }))
 }
 
@@ -90,6 +104,7 @@ fn fixture_lead(
     seed: u64,
     index: usize,
     matched_entry_titles: &[Value],
+    target: Option<&TargetIdentity>,
 ) -> Value {
     let offset = seed as usize + index;
     let name = pick(
@@ -112,25 +127,42 @@ fn fixture_lead(
         ],
         offset,
     );
-    let focus = pick(
-        &[
-            "standardizing agent-generated outbound context",
-            "testing a new message QA workflow before campaign launch",
-            "reducing claim drift across GTM agent handoffs",
-            "turning supplied source rows into safer message briefs",
-            "evaluating first-touch email constraints across draft variants",
-        ],
-        offset,
+    let focus = target.map_or_else(
+        || {
+            pick(
+                &[
+                    "standardizing agent-generated outbound context",
+                    "testing a new message QA workflow before campaign launch",
+                    "reducing claim drift across GTM agent handoffs",
+                    "turning supplied source rows into safer message briefs",
+                    "evaluating first-touch email constraints across draft variants",
+                ],
+                offset,
+            )
+            .to_string()
+        },
+        |target| {
+            format!(
+                "testing evidence-gated messaging decisions for {} with synthetic inputs",
+                target.name
+            )
+        },
     );
-    let source_signal = pick(
-        &[
-            "synthetic fixture row: no external source",
-            "fake QA signal: generated only for MDP evals",
-            "local test fixture: intentionally not research-backed",
-            "synthetic row: no LinkedIn, CRM, Clay, or web lookup",
-            "fixture-only context: created by mdp sample-leads",
-        ],
-        offset,
+    let source_signal = target.map_or_else(
+        || {
+            pick(
+                &[
+                    "synthetic fixture row: no external source",
+                    "fake QA signal: generated only for MDP evals",
+                    "local test fixture: intentionally not research-backed",
+                    "synthetic row: no LinkedIn, CRM, Clay, or web lookup",
+                    "fixture-only context: created by mdp sample-leads",
+                ],
+                offset,
+            )
+            .to_string()
+        },
+        |_| "synthetic fixture row: no external source or real account research".to_string(),
     );
     let title = title_for_persona(persona, offset);
     let matched_titles: Vec<String> = matched_entry_titles
@@ -141,8 +173,18 @@ fn fixture_lead(
     let observed_context = format!(
         "{company} is a fictional account used to test {job}. The only observed context is that the fake {persona} buyer is {focus}."
     );
-    let fit_reason = format!(
-        "Synthetic fit because the fixture explicitly names {persona}, agent-assisted GTM context, and a source-labeled trigger for local copy testing."
+    let fit_reason = target.map_or_else(
+        || {
+            format!(
+                "Synthetic fit because the fixture explicitly names {persona}, agent-assisted GTM context, and a source-labeled trigger for local copy testing."
+            )
+        },
+        |target| {
+            format!(
+                "Synthetic workflow context only; this fixture does not establish real-account fit or product evidence for {}.",
+                target.name
+            )
+        },
     );
     let known_gaps = vec![
         "No real person, company, profile, buying intent, or account research exists.".to_string(),
@@ -156,6 +198,12 @@ fn fixture_lead(
         format!("Say this is a hypothesis for a {persona} owner, not a confirmed priority."),
         "Avoid implying the sender researched the person or company.".to_string(),
     ];
+    if let Some(target) = target {
+        safe_personalization.push(format!(
+            "Do not infer any capability, outcome, customer proof, or fit claim for {} from this fixture.",
+            target.name
+        ));
+    }
     if !matched_titles.is_empty() {
         safe_personalization.push(format!(
             "Route matched entries available for testing: {}.",
@@ -173,7 +221,7 @@ fn fixture_lead(
         "do_not_contact": true,
         "persona": persona,
         "requested_persona": requested_persona,
-        "segment": "agent-assisted GTM",
+        "segment": target.map_or("agent-assisted GTM", |_| "target-segment"),
         "trigger": focus,
         "background": observed_context,
         "source_signal": source_signal,
@@ -183,7 +231,7 @@ fn fixture_lead(
         "safe_personalization": safe_personalization,
         "signals": [
             {
-                "id": "synthetic-mdp-example",
+                "id": target.map_or("synthetic-mdp-example", |_| "synthetic-target-example"),
                 "title": focus,
                 "source": source_signal,
                 "confidence": "fixture-only",
@@ -238,7 +286,7 @@ fn title_for_persona(persona: &str, offset: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::init::init_pack;
+    use crate::commands::init::{TargetInitOptions, init_pack, init_pack_targeted};
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -331,6 +379,51 @@ mod tests {
         assert_ne!(
             first["fixture_leads"][0]["name"],
             second["fixture_leads"][0]["name"]
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sample_leads_uses_resolved_target_without_generic_positioning_residue() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-sample-targeted-{nonce}"));
+        init_pack_targeted(
+            &root,
+            "Company B Messaging",
+            "gtm",
+            &TargetInitOptions {
+                custom_name: true,
+                name: Some("Company B"),
+                excluded_terms: &["Company A".to_string()],
+                ..TargetInitOptions::default()
+            },
+            true,
+            false,
+        )
+        .expect("targeted pack should initialize");
+
+        let result = sample_leads(&root, "Operator", "outbound copy test", 2, 0)
+            .expect("target-aware sample leads should generate");
+        let first = &result["fixture_leads"][0];
+        assert_eq!(first["segment"], "target-segment");
+        assert!(first["trigger"].as_str().unwrap().contains("Company B"));
+        assert!(
+            first["fit_reason"]
+                .as_str()
+                .unwrap()
+                .contains("does not establish real-account fit")
+        );
+        assert!(!first["source_signal"].as_str().unwrap().contains("MDP"));
+        assert!(
+            result["workflow"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|step| !step.as_str().unwrap().contains("mdp "))
         );
 
         let _ = std::fs::remove_dir_all(root);

@@ -21,4 +21,6 @@ For each template:
 5. Validate one good and one adversarial prompt output when the template includes normalization.
 6. Exercise claim or proof-output checks relevant to the profile.
 
+For the GTM template, initialize a second clean root with explicit `--target-name`, `--target-kind`, at least one alias, and an excluded prior-target term. Verify the target manifest, target-aware generated fixtures, readable brief output, strict validation, and the cross-target force-overwrite refusal.
+
 Confirm installed skill IDs equal the five CLI `packaged_skill_ids`. Packaging byte fidelity is validated separately by the repository packaging gate.

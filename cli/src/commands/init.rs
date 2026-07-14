@@ -1,11 +1,16 @@
 use crate::constants::{DEFAULT_DIR, FORMAT_VERSION};
+use crate::models::TargetIdentity;
 use crate::pack_io::{
-    planned_directory, planned_json_write_after_dirs, planned_yaml_write_after_dirs,
+    planned_directory, planned_json_write_after_dirs, planned_yaml_write_after_dirs, read_manifest,
     write_json_file, write_yaml,
 };
 use crate::starter::{
     starter_cards, starter_evals, starter_manifest, starter_prompts, starter_prospect,
     starter_source_ledger,
+};
+use crate::target_starter::{
+    target_cards, target_evals, target_manifest, target_prompts, target_prospect,
+    target_source_ledger,
 };
 use crate::utils::slugify;
 use anyhow::{Context, Result, anyhow};
@@ -17,6 +22,26 @@ use std::path::{Path, PathBuf};
 
 const AVAILABLE_TEMPLATES: &str = "gtm, proposal";
 const PROPOSAL_TEMPLATE_NAME: &str = "Proposal Reference Profile Sample";
+
+pub(crate) struct TargetInitOptions<'a> {
+    pub(crate) custom_name: bool,
+    pub(crate) name: Option<&'a str>,
+    pub(crate) kind: &'a str,
+    pub(crate) aliases: &'a [String],
+    pub(crate) excluded_terms: &'a [String],
+}
+
+impl Default for TargetInitOptions<'_> {
+    fn default() -> Self {
+        Self {
+            custom_name: false,
+            name: None,
+            kind: "company",
+            aliases: &[],
+            excluded_terms: &[],
+        }
+    }
+}
 
 const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
     (
@@ -309,6 +334,7 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
     ),
 ];
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn init_pack(
     root: &Path,
     name: &str,
@@ -316,8 +342,41 @@ pub(crate) fn init_pack(
     force: bool,
     include_output_schemas: bool,
 ) -> Result<Value> {
+    init_pack_targeted(
+        root,
+        name,
+        template,
+        &TargetInitOptions::default(),
+        force,
+        include_output_schemas,
+    )
+}
+
+pub(crate) fn init_pack_targeted(
+    root: &Path,
+    name: &str,
+    template: &str,
+    target_options: &TargetInitOptions<'_>,
+    force: bool,
+    include_output_schemas: bool,
+) -> Result<Value> {
+    let target = resolve_target_identity(
+        target_options.custom_name,
+        template,
+        target_options.name,
+        target_options.kind,
+        target_options.aliases,
+        target_options.excluded_terms,
+    )?;
     match template {
-        "gtm" => init_gtm_pack(root, name, template, force, include_output_schemas),
+        "gtm" => init_gtm_pack(
+            root,
+            name,
+            template,
+            target.as_ref(),
+            force,
+            include_output_schemas,
+        ),
         "proposal" => init_proposal_pack(root, name, force),
         _ => Err(unsupported_template(template)),
     }
@@ -327,9 +386,11 @@ fn init_gtm_pack(
     root: &Path,
     name: &str,
     template: &str,
+    target: Option<&TargetIdentity>,
     force: bool,
     include_output_schemas: bool,
 ) -> Result<Value> {
+    validate_target_destination(root, target)?;
     let pack_dir = root.join(DEFAULT_DIR);
     let cards_dir = pack_dir.join("cards");
     let briefs_dir = pack_dir.join("briefs");
@@ -346,30 +407,55 @@ fn init_gtm_pack(
         .with_context(|| format!("creating {}", examples_dir.display()))?;
     let slug = slugify(name);
     let manifest_path = pack_dir.join("manifest.yaml");
-    write_yaml(
-        &manifest_path,
-        &starter_manifest(name, &slug, template),
-        force,
-    )?;
+    if let Some(target) = target {
+        write_yaml(
+            &manifest_path,
+            &target_manifest(name, &slug, template, target),
+            force,
+        )?;
+    } else {
+        write_yaml(
+            &manifest_path,
+            &starter_manifest(name, &slug, template),
+            force,
+        )?;
+    }
     let source_ledger_path = pack_dir.join("sources.yaml");
-    write_yaml(&source_ledger_path, &starter_source_ledger(template), force)?;
-    for (filename, card) in starter_cards(template) {
+    let source_ledger = target
+        .map(target_source_ledger)
+        .unwrap_or_else(|| starter_source_ledger(template));
+    write_yaml(&source_ledger_path, &source_ledger, force)?;
+    let cards = target
+        .map(target_cards)
+        .unwrap_or_else(|| starter_cards(template));
+    for (filename, card) in cards {
         write_yaml(&cards_dir.join(filename), &card, force)?;
     }
-    for (filename, eval) in starter_evals() {
+    let evals = target.map(target_evals).unwrap_or_else(starter_evals);
+    for (filename, eval) in evals {
         write_yaml(&evals_dir.join(filename), &eval, force)?;
     }
-    for (filename, prompt) in starter_prompts(include_output_schemas) {
+    let prompts = target
+        .map(|target| target_prompts(target, include_output_schemas))
+        .unwrap_or_else(|| starter_prompts(include_output_schemas));
+    for (filename, prompt) in prompts {
         write_yaml(&prompts_dir.join(filename), &prompt, force)?;
     }
-    let prospect_path = examples_dir.join("clay-row.json");
+    let prospect_path = examples_dir.join(if target.is_some() {
+        "prospect-row.json"
+    } else {
+        "clay-row.json"
+    });
     if prospect_path.exists() && !force {
         return Err(anyhow!(
             "{} already exists; pass --force to overwrite",
             prospect_path.display()
         ));
     }
-    write_json_file(&prospect_path, &starter_prospect(template))?;
+    let prospect = target
+        .map(target_prospect)
+        .unwrap_or_else(|| starter_prospect(template));
+    write_json_file(&prospect_path, &prospect)?;
     Ok(init_payload(
         root,
         &pack_dir,
@@ -379,9 +465,11 @@ fn init_gtm_pack(
         &evals_dir,
         &prompts_dir,
         &prospect_path,
+        target,
     ))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn init_pack_dry_run(
     root: &Path,
     name: &str,
@@ -389,8 +477,41 @@ pub(crate) fn init_pack_dry_run(
     force: bool,
     include_output_schemas: bool,
 ) -> Result<Value> {
+    init_pack_targeted_dry_run(
+        root,
+        name,
+        template,
+        &TargetInitOptions::default(),
+        force,
+        include_output_schemas,
+    )
+}
+
+pub(crate) fn init_pack_targeted_dry_run(
+    root: &Path,
+    name: &str,
+    template: &str,
+    target_options: &TargetInitOptions<'_>,
+    force: bool,
+    include_output_schemas: bool,
+) -> Result<Value> {
+    let target = resolve_target_identity(
+        target_options.custom_name,
+        template,
+        target_options.name,
+        target_options.kind,
+        target_options.aliases,
+        target_options.excluded_terms,
+    )?;
     match template {
-        "gtm" => init_gtm_pack_dry_run(root, name, template, force, include_output_schemas),
+        "gtm" => init_gtm_pack_dry_run(
+            root,
+            name,
+            template,
+            target.as_ref(),
+            force,
+            include_output_schemas,
+        ),
         "proposal" => init_proposal_pack_dry_run(root, name, force),
         _ => Err(unsupported_template(template)),
     }
@@ -400,9 +521,11 @@ fn init_gtm_pack_dry_run(
     root: &Path,
     name: &str,
     template: &str,
+    target: Option<&TargetIdentity>,
     force: bool,
     include_output_schemas: bool,
 ) -> Result<Value> {
+    validate_target_destination(root, target)?;
     let pack_dir = root.join(DEFAULT_DIR);
     let cards_dir = pack_dir.join("cards");
     let briefs_dir = pack_dir.join("briefs");
@@ -411,7 +534,11 @@ fn init_gtm_pack_dry_run(
     let examples_dir = root.join("examples");
     let manifest_path = pack_dir.join("manifest.yaml");
     let source_ledger_path = pack_dir.join("sources.yaml");
-    let prospect_path = examples_dir.join("clay-row.json");
+    let prospect_path = examples_dir.join(if target.is_some() {
+        "prospect-row.json"
+    } else {
+        "clay-row.json"
+    });
     let mut payload = init_payload(
         root,
         &pack_dir,
@@ -421,6 +548,7 @@ fn init_gtm_pack_dry_run(
         &evals_dir,
         &prompts_dir,
         &prospect_path,
+        target,
     );
     let slug = slugify(name);
     let mut write_plan = vec![
@@ -433,19 +561,26 @@ fn init_gtm_pack_dry_run(
         planned_yaml_write_after_dirs(&manifest_path, force),
         planned_yaml_write_after_dirs(&source_ledger_path, force),
     ];
-    for (filename, _) in starter_cards(template) {
+    let cards = target
+        .map(target_cards)
+        .unwrap_or_else(|| starter_cards(template));
+    for (filename, _) in cards {
         write_plan.push(planned_yaml_write_after_dirs(
             &cards_dir.join(filename),
             force,
         ));
     }
-    for (filename, _) in starter_evals() {
+    let evals = target.map(target_evals).unwrap_or_else(starter_evals);
+    for (filename, _) in evals {
         write_plan.push(planned_yaml_write_after_dirs(
             &evals_dir.join(filename),
             force,
         ));
     }
-    for (filename, _) in starter_prompts(include_output_schemas) {
+    let prompts = target
+        .map(|target| target_prompts(target, include_output_schemas))
+        .unwrap_or_else(|| starter_prompts(include_output_schemas));
+    for (filename, _) in prompts {
         write_plan.push(planned_yaml_write_after_dirs(
             &prompts_dir.join(filename),
             force,
@@ -460,6 +595,112 @@ fn init_gtm_pack_dry_run(
         object.insert("write_plan".to_string(), Value::Array(write_plan));
     }
     Ok(payload)
+}
+
+fn resolve_target_identity(
+    custom_name: bool,
+    template: &str,
+    target_name: Option<&str>,
+    target_kind: &str,
+    target_aliases: &[String],
+    exclude_terms: &[String],
+) -> Result<Option<TargetIdentity>> {
+    let has_target_details =
+        !target_aliases.is_empty() || !exclude_terms.is_empty() || target_kind != "company";
+    let Some(target_name) = target_name.map(str::trim).filter(|value| !value.is_empty()) else {
+        if (template == "gtm" && custom_name) || has_target_details {
+            return Err(anyhow!(
+                "target identity is ambiguous; pass --target-name with --target-kind company|product|project, or omit custom target arguments for the generic reference template"
+            ));
+        }
+        return Ok(None);
+    };
+    if template != "gtm" {
+        return Err(anyhow!(
+            "explicit target-aware initialization currently requires --template gtm; proposal packs use the proposal-specific builder workflow"
+        ));
+    }
+    if !matches!(target_kind, "company" | "product" | "project") {
+        return Err(anyhow!(
+            "unsupported target kind '{target_kind}'; available: company, product, project"
+        ));
+    }
+    let mut excluded = vec![
+        "Basic MDP Template".to_string(),
+        "agent-assisted GTM".to_string(),
+        "local-cli".to_string(),
+        "agent-plugin".to_string(),
+        "example-mdp-demo".to_string(),
+    ];
+    extend_unique(&mut excluded, exclude_terms);
+    let mut aliases = Vec::new();
+    extend_unique(&mut aliases, target_aliases);
+    let external_terms = vec![target_name.to_string()];
+    if let Some(conflict) = excluded.iter().find(|excluded| {
+        excluded.eq_ignore_ascii_case(target_name)
+            || aliases
+                .iter()
+                .chain(external_terms.iter())
+                .any(|allowed| allowed.eq_ignore_ascii_case(excluded))
+    }) {
+        return Err(anyhow!(
+            "target lexicon conflict: excluded term '{conflict}' is also the active target name, alias, or external term"
+        ));
+    }
+    Ok(Some(TargetIdentity {
+        kind: target_kind.to_string(),
+        name: target_name.to_string(),
+        aliases,
+        external_terms,
+        excluded_terms: excluded,
+        internal_terms: vec![
+            "MDP".to_string(),
+            "Message Decision Pack".to_string(),
+            "mdp CLI".to_string(),
+            "manifest plus modular cards".to_string(),
+            "local offline decision layer".to_string(),
+            "agent handoffs".to_string(),
+        ],
+        source_ids: vec!["target-identity".to_string()],
+    }))
+}
+
+fn validate_target_destination(root: &Path, target: Option<&TargetIdentity>) -> Result<()> {
+    let Some(target) = target else {
+        return Ok(());
+    };
+    let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+    if !manifest_path.exists() {
+        return Ok(());
+    }
+    let existing = read_manifest(root).with_context(|| {
+        format!(
+            "reading existing target identity from {} before target-aware initialization",
+            manifest_path.display()
+        )
+    })?;
+    let same_target = existing.target.as_ref().is_some_and(|existing| {
+        existing.kind == target.kind && existing.name.eq_ignore_ascii_case(&target.name)
+    });
+    if !same_target {
+        return Err(anyhow!(
+            "refusing to retarget an existing pack with init --force; use a clean directory or explicitly migrate the existing pack, add prior nouns to target.excluded_terms, and validate every surface"
+        ));
+    }
+    Ok(())
+}
+
+fn extend_unique(target: &mut Vec<String>, values: &[String]) {
+    for value in values {
+        let value = value.trim();
+        if !value.is_empty()
+            && !target
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(value))
+        {
+            target.push(value.to_string());
+        }
+    }
 }
 
 fn init_proposal_pack(root: &Path, name: &str, force: bool) -> Result<Value> {
@@ -569,8 +810,16 @@ fn init_payload(
     evals_dir: &Path,
     prompts_dir: &Path,
     prospect_path: &Path,
+    target: Option<&TargetIdentity>,
 ) -> Value {
-    let example_persona = "GTM Engineering";
+    let example_persona = if target.is_some() {
+        "Operator"
+    } else {
+        "GTM Engineering"
+    };
+    let example_job = target
+        .map(|target| format!("review evidence gaps for {}", target.name))
+        .unwrap_or_else(|| "linkedin outbound copy".to_string());
     json!({
         "format": FORMAT_VERSION,
         "root": root.display().to_string(),
@@ -584,7 +833,7 @@ fn init_payload(
         "example_prospect_kind": "synthetic-example",
         "next_commands": [
             format!("mdp --json validate --dir {}", root.display()),
-            format!("mdp --json route --entries --dir {} --persona \\\"{}\\\" --job \\\"linkedin outbound copy\\\"", root.display(), example_persona),
+            format!("mdp --json route --entries --dir {} --persona \\\"{}\\\" --job \\\"{}\\\"", root.display(), example_persona, example_job),
             format!("mdp --json fit --dir {} --prospect {}", root.display(), prospect_path.display()),
             format!("mdp --json --summary brief --dir {} --prospect {} --channel linkedin", root.display(), prospect_path.display()),
             format!("mdp --json eval --dir {}", root.display())
@@ -922,6 +1171,127 @@ mod tests {
             .expect("prospect plan should be present");
         assert_eq!(prospect_plan["action"], "blocked");
         assert_eq!(prospect_plan["would_write"], false);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn custom_pack_name_requires_explicit_target_identity() {
+        let root = std::env::temp_dir().join(format!("mdp-target-gate-{}", nonce()));
+        let err = init_pack_targeted(
+            &root,
+            "Company A Messaging",
+            "gtm",
+            &TargetInitOptions {
+                custom_name: true,
+                ..TargetInitOptions::default()
+            },
+            false,
+            false,
+        )
+        .expect_err("custom pack name without target should be ambiguous");
+
+        assert!(err.to_string().contains("target identity is ambiguous"));
+        assert!(!root.exists(), "identity gate must run before authoring");
+    }
+
+    #[test]
+    fn targeted_init_writes_resolved_identity() {
+        let root = std::env::temp_dir().join(format!("mdp-resolved-target-{}", nonce()));
+        init_pack_targeted(
+            &root,
+            "Company B Messaging",
+            "gtm",
+            &TargetInitOptions {
+                custom_name: true,
+                name: Some("Company B"),
+                excluded_terms: &["Company A".to_string()],
+                ..TargetInitOptions::default()
+            },
+            true,
+            false,
+        )
+        .expect("targeted pack should initialize");
+
+        let manifest = std::fs::read_to_string(root.join(".mdp/manifest.yaml"))
+            .expect("manifest should be readable");
+        assert!(manifest.contains("name: Company B"));
+        assert!(manifest.contains("- Company A"));
+        let positioning = std::fs::read_to_string(root.join(".mdp/cards/positioning.yaml"))
+            .expect("positioning should be readable");
+        assert!(positioning.contains("Company B"));
+        assert!(!positioning.contains("Company A"));
+        let sample: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("examples/prospect-row.json"))
+                .expect("sample row should be readable"),
+        )
+        .expect("sample row should parse");
+        assert!(sample.get("company_domain").is_none());
+        assert_eq!(sample["signals"], json!([]));
+        for entry in std::fs::read_dir(root.join(".mdp/prompts"))
+            .expect("prompt directory should be readable")
+        {
+            let path = entry.expect("prompt entry should be readable").path();
+            let raw = std::fs::read_to_string(&path).expect("prompt should be readable");
+            let prompt: Value = serde_yaml::from_str(&raw).expect("prompt should parse");
+            let example = serde_json::to_string(&prompt["output_contract"]["example"])
+                .expect("prompt example should serialize");
+            for residue in [
+                "PMM",
+                "GTM Engineering",
+                "persona-gtm-ops",
+                "agent-assisted GTM",
+                "local decision context",
+                "Alex Rivera",
+                "ExampleCo",
+            ] {
+                assert!(
+                    !example.contains(residue),
+                    "{} retained starter residue '{residue}'",
+                    path.display()
+                );
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn targeted_init_refuses_cross_target_force_overwrite() {
+        let root = std::env::temp_dir().join(format!("mdp-retarget-gate-{}", nonce()));
+        init_pack_targeted(
+            &root,
+            "Company A Messaging",
+            "gtm",
+            &TargetInitOptions {
+                custom_name: true,
+                name: Some("Company A"),
+                ..TargetInitOptions::default()
+            },
+            true,
+            false,
+        )
+        .expect("first target should initialize");
+
+        let err = init_pack_targeted(
+            &root,
+            "Company B Messaging",
+            "gtm",
+            &TargetInitOptions {
+                custom_name: true,
+                name: Some("Company B"),
+                excluded_terms: &["Company A".to_string()],
+                ..TargetInitOptions::default()
+            },
+            true,
+            false,
+        )
+        .expect_err("cross-target force overwrite should be rejected");
+        assert!(err.to_string().contains("refusing to retarget"));
+        let manifest = std::fs::read_to_string(root.join(".mdp/manifest.yaml"))
+            .expect("manifest should be readable");
+        assert!(manifest.contains("name: Company A"));
+        assert!(!manifest.contains("name: Company B"));
 
         let _ = std::fs::remove_dir_all(root);
     }

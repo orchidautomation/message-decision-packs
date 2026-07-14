@@ -298,6 +298,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             "name": {"type": "string"},
             "version": {"type": "string"},
             "description": {"type": "string"},
+            "target": target_identity_schema(),
             "profile": profile_schema(),
             "personas": {"type": "array", "items": {"type": "string"}},
             "target_personas": {"type": "array", "items": {"type": "string"}},
@@ -356,6 +357,24 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
                     "notes": {"type": "array", "items": {"type": "string"}}
                 }
             }
+        }
+    })
+}
+
+fn target_identity_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Optional sold-target identity and contamination lexicon for target-aware authoring.",
+        "required": ["kind", "name"],
+        "additionalProperties": false,
+        "properties": {
+            "kind": {"enum": ["company", "product", "project"]},
+            "name": {"type": "string", "minLength": 1},
+            "aliases": string_array(),
+            "external_terms": string_array(),
+            "excluded_terms": string_array(),
+            "internal_terms": string_array(),
+            "source_ids": string_array()
         }
     })
 }
@@ -1262,6 +1281,11 @@ mod tests {
 
         assert_eq!(result["properties"]["policy"]["type"], "object");
         assert_eq!(result["properties"]["provenance"]["type"], "object");
+        assert_eq!(result["properties"]["target"]["type"], "object");
+        assert_eq!(
+            result["properties"]["target"]["properties"]["kind"]["enum"][0],
+            "company"
+        );
         assert_eq!(result["properties"]["cards"]["items"]["required"][0], "id");
         assert_eq!(
             result["properties"]["persona_mappings"]["items"]["properties"]["title_keywords"]["type"],

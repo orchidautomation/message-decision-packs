@@ -9,6 +9,8 @@ pub(crate) struct Manifest {
     pub(crate) version: String,
     pub(crate) description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) target: Option<TargetIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) profile: Option<Profile>,
     pub(crate) personas: Vec<String>,
     #[serde(default)]
@@ -36,6 +38,24 @@ pub(crate) struct Manifest {
     pub(crate) cards: Vec<CardRef>,
     pub(crate) policy: Policy,
     pub(crate) provenance: Provenance,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct TargetIdentity {
+    #[serde(default)]
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) aliases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) external_terms: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) excluded_terms: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) internal_terms: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) source_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]

@@ -10,9 +10,10 @@ Build evidence-grounded `.mdp/` decision context. Use the CLI for deterministic 
 ## Intake Gate
 
 1. Identify the pack root and intended profile: `gtm` or `proposal`.
-2. Classify each source as user-approved local material, approved corpus, public unauthenticated source, synthetic/sanitized example, needs approval, or excluded.
-3. Ask for source authority when access or confidentiality would materially change the work. Never scrape gated sources or commit restricted source material.
-4. Inspect the runtime and existing pack before editing:
+2. For a real GTM pack, resolve the external company, product, or project being positioned separately from the pack display name. Record known aliases and prior-target or starter terms that must be excluded.
+3. Classify each source as user-approved local material, approved corpus, public unauthenticated source, synthetic/sanitized example, needs approval, or excluded.
+4. Ask for source authority when access or confidentiality would materially change the work. Never scrape gated sources or commit restricted source material.
+5. Inspect the runtime and existing pack before editing:
 
 ```bash
 mdp --json skills --dir PACK_ROOT
@@ -26,11 +27,13 @@ An invalid or absent pack still leaves this shared skill bootstrap-eligible.
 For a new pack, preview then initialize:
 
 ```bash
-mdp --json init --template gtm --name "PACK_NAME" --dir PACK_ROOT --dry-run
-mdp --json init --template gtm --name "PACK_NAME" --dir PACK_ROOT
+mdp --json init --template gtm --name "PACK_NAME" --target-name "TARGET_NAME" --target-kind company --target-alias "TARGET_ALIAS" --exclude-term "PRIOR_TARGET" --dir PACK_ROOT --dry-run
+mdp --json init --template gtm --name "PACK_NAME" --target-name "TARGET_NAME" --target-kind company --target-alias "TARGET_ALIAS" --exclude-term "PRIOR_TARGET" --dir PACK_ROOT
 mdp --json init --template proposal --dir PACK_ROOT --dry-run
 mdp --json init --template proposal --dir PACK_ROOT
 ```
+
+Repeat `--target-alias` and `--exclude-term` as needed. A custom GTM pack name is not a substitute for `--target-name`; do not author into an ambiguous or previously targeted directory.
 
 For an existing pack, run:
 
@@ -54,15 +57,16 @@ Do not read every reference by default.
 1. Preserve source receipts: source ID, file or URL, snippet, observed/as-of date, confidence, and approval class.
 2. Map reviewed facts into universal primitives; keep profile terminology in labels and entries.
 3. Separate observed evidence from inferred decisions. Put unresolved or unsupported material in gaps.
-4. Author prompts with explicit input and output contracts. Validate model-produced output before using it:
+4. Keep every prospect-facing surface about the resolved external target. Pack, CLI, schema, prompt, card, eval, starter, and prior-target vocabulary is internal implementation context only.
+5. Author prompts with explicit input and output contracts. Validate model-produced output before using it:
 
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
 ```
 
-5. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
-6. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, and job routing.
-7. Validate, fix, and repeat:
+6. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
+7. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target.
+8. Validate, fix, and repeat:
 
 ```bash
 mdp --json validate --dir PACK_ROOT
@@ -78,6 +82,7 @@ Do not finish while normal validation has errors. Use strict validation as the f
 
 - Build decision context, not source-collection infrastructure or execution automation.
 - Do not invent claims, contacts, personas, proof, certifications, compliance status, past performance, pricing, deadlines, or approvals.
+- Target identity proves only what is explicitly stated in its cited direct claim. Unsupported category, capability, ICP, outcome, or proof belongs in gaps.
 - Do not add old skill aliases, custom routable job IDs, obsolete surface metadata, or host visibility policy.
 - Keep public fixtures synthetic or explicitly sanitized.
 

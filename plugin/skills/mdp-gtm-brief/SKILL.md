@@ -26,21 +26,22 @@ Proceed only when `data.recommendation.skill_id` is `mdp-gtm-brief`, the returne
 ## Shared Gate
 
 1. Require the exact pack root and supplied prospect/source context. Do not collect missing prospect data through this skill.
-2. Validate the pack before using it:
+2. When the manifest declares a target, confirm the requested work is for that exact company, product, or project. Do not apply the pack to a different external target, and do not infer capabilities or fit from target identity alone.
+3. Validate the pack before using it:
 
 ```bash
 mdp --json validate --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 ```
 
-3. When a pack normalization prompt exists, use its literal output contract and validate the full model output before saving the nested prospect object:
+4. When a pack normalization prompt exists, use its literal output contract and validate the full model output before saving the nested prospect object:
 
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
 ```
 
-4. Never invent a person, title, signal, date, persona, segment, or required attribute. Account-only context stays insufficient/no-draft when the pack requires person readiness.
-5. Treat synthetic fixtures as `do_not_contact`; they are for testing only.
+5. Never invent a person, title, signal, date, persona, segment, or required attribute. Account-only context stays insufficient/no-draft when the pack requires person readiness.
+6. Treat synthetic fixtures as `do_not_contact`; they are for testing only.
 
 ## Load The Mode Reference
 

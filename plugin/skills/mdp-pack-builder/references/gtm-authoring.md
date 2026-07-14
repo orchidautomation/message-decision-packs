@@ -15,6 +15,13 @@ Author reviewed context for:
 
 Keep account context distinct from person/persona readiness. Account-only evidence must not become a plausible invented contact or draft-ready decision.
 
+## Target Isolation
+
+- Keep `manifest.target.name`, aliases, source IDs, supported external terms, excluded terms, and internal terms explicit.
+- Use the target name as external identity, not as evidence for capabilities, category, fit, outcomes, or proof.
+- Make generated prospect rows, sample leads, briefs, prompt examples, and eval payloads target-aware or neutral. Internal contracts and CLI receipts may remain as implementation metadata, never as positioning.
+- Before reusing or retargeting a pack, initialize a clean directory. Do not force-overwrite a pack whose existing target differs.
+
 ## Closed Job Bindings
 
 ```yaml

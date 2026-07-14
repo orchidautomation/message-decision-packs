@@ -68,6 +68,7 @@ Read [references/cli-operator.md](references/cli-operator.md) for command select
 - MDP stores and validates decision context. It is not a CRM, sequencer, enrichment provider, scraper, BI tool, proposal writer, or generic automation system.
 - Do not enrich prospects, send outreach, mutate CRM records, scrape gated sources, submit proposals, or approve compliance through this skill.
 - Preserve missing or unsupported information as gaps. Never smooth a failed CLI decision into a plausible answer.
+- When a GTM manifest declares `target`, keep all external positioning on that exact company, product, or project. The target name alone does not prove product claims or fit.
 - Prefer user-approved local sources. Keep restricted material out of public artifacts and committed fixtures.
 
 ## Closeout
