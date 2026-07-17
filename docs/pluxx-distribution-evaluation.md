@@ -70,6 +70,7 @@ MDP CI and release builds now pin Pluxx `0.1.35`. The refresh from `0.1.22` thro
 Relevant results:
 
 - Codex hook manifest generation, OpenCode plugin-root separation, and `PLUXX_HOOK_WORKSPACE_ROOT` propagation are covered by `scripts/test-pluxx-hooks.sh` and pass with `0.1.35`.
+- Pluxx's generic semantic rubric is retained as a warning gate (`warningThreshold: 60`, `failureThreshold: 40`) because MDP is a migrated/manual plugin with repo-owned skill evals in `plugin/skill-evals/`.
 - Migrated scaffold hook metadata now uses the current `safe` mode values. MDP is a plugin-migrated project with a placeholder MCP source, so `pluxx sync` is not a supported maintenance path unless MDP later adopts a real MCP source.
 - New Claude Code description-length diagnostics identified five skills whose discovery descriptions exceeded the 250-character display limit; the root and `plugin/skills/` copies were shortened together.
 - CI now runs the MDP-specific Pluxx hook fixture, rejects future skill-description truncation, and checks that eval fixtures with `description_under_test` stay aligned with their skill frontmatter.
