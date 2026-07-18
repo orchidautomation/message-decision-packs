@@ -85,7 +85,7 @@ Release-affecting changes are not shipped when a PR merely merges. From clean cu
 
 1. Run `make validate`.
 2. Create the next approved release tag through the repository release process.
-3. Confirm the expected GitHub release assets exist.
+3. Download the GitHub release assets, confirm the release manifest lists each supported host once, and validate both checksum files from the flat download directory.
 4. Run the documented installer.
 5. Smoke-test the installed CLI and the behavior that changed.
 

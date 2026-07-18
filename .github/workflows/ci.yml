@@ -35,7 +35,13 @@ jobs:
         with:
           node-version: 24
       - name: Install Pluxx
-        run: npm install -g @orchid-labs/pluxx@0.1.36
+        run: |
+          expected='sha512-23lcYezDYXG0FM5Ys9Nrw7oBvp6pX5StkeWeoDcBm7HZ/V3z3djA9y3p3KVXAGzhkubIEUUaC1kD7evKqBB1DQ=='
+          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.36 --pack-destination "$RUNNER_TEMP" --silent)"
+          pluxx_tarball_path="$RUNNER_TEMP/$pluxx_tarball"
+          actual="$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`)' "$pluxx_tarball_path")"
+          test "$actual" = "$expected"
+          npm install -g "$pluxx_tarball_path"
       - name: Check Pluxx source health
         run: pluxx doctor
       - name: Lint Pluxx source
