@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
-PLUXX_VERSION="${PLUXX_VERSION:-0.1.35}"
-if command -v pluxx >/dev/null 2>&1; then
+PLUXX_VERSION="${PLUXX_VERSION:-0.1.36}"
+if command -v pluxx >/dev/null 2>&1 && [ "$(pluxx --version)" = "$PLUXX_VERSION" ]; then
   PLUXX_CMD=(pluxx)
 elif command -v npx >/dev/null 2>&1; then
   PLUXX_CMD=(npx --yes --package "@orchid-labs/pluxx@$PLUXX_VERSION" pluxx)
@@ -130,3 +130,13 @@ assert(opencodePlugin.includes('PLUXX_PLUGIN_ROOT: pluginRoot'), 'OpenCode hooks
 
 console.log('Pluxx hook fixture validation passed.')
 NODE
+
+if [ "${PLUXX_CMD[0]}" = "pluxx" ]; then
+  pluxx_bin="$(command -v pluxx)"
+  node scripts/test-opencode-wrapper.mjs "$pluxx_bin"
+else
+  npx --yes --package "@orchid-labs/pluxx@$PLUXX_VERSION" -c '
+    pluxx_bin="$(command -v pluxx)"
+    node scripts/test-opencode-wrapper.mjs "$pluxx_bin"
+  '
+fi

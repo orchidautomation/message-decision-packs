@@ -35,7 +35,7 @@ jobs:
         with:
           node-version: 24
       - name: Install Pluxx
-        run: npm install -g @orchid-labs/pluxx@0.1.35
+        run: npm install -g @orchid-labs/pluxx@0.1.36
       - name: Check Pluxx source health
         run: pluxx doctor
       - name: Lint Pluxx source
