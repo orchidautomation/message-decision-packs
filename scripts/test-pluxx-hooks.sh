@@ -4,13 +4,18 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
-if ! command -v pluxx >/dev/null 2>&1; then
-  echo "Skipping Pluxx hook fixture validation; missing pluxx on PATH."
+PLUXX_VERSION="${PLUXX_VERSION:-0.1.35}"
+if command -v pluxx >/dev/null 2>&1; then
+  PLUXX_CMD=(pluxx)
+elif command -v npx >/dev/null 2>&1; then
+  PLUXX_CMD=(npx --yes --package "@orchid-labs/pluxx@$PLUXX_VERSION" pluxx)
+else
+  echo "Skipping Pluxx hook fixture validation; missing pluxx and npx on PATH."
   exit 0
 fi
 
-pluxx lint --json >/tmp/mdp-pluxx-lint.json
-pluxx build --json >/tmp/mdp-pluxx-build.json
+"${PLUXX_CMD[@]}" lint --json >/tmp/mdp-pluxx-lint.json
+"${PLUXX_CMD[@]}" build --json >/tmp/mdp-pluxx-build.json
 python3 scripts/validate-skill-packaging.py --require-bundles >/tmp/mdp-skill-packaging.json
 
 workspace_fixture="$(mktemp -d)"
@@ -114,6 +119,14 @@ const generatedText = generatedFiles.map((path) => fs.readFileSync(path, 'utf8')
 assert(generatedText.includes('mdp-activate.sh'), 'Generated hook wrappers must call mdp-activate.sh.')
 assert(generatedText.includes('mdp-post-edit-validate.sh'), 'Generated hook wrappers must call mdp-post-edit-validate.sh.')
 assert(generatedText.includes('PLUXX_HOOK_WORKSPACE_ROOT'), 'Generated hook wrappers must expose PLUXX_HOOK_WORKSPACE_ROOT.')
+
+const opencodePlugin = fs.readFileSync('dist/opencode/index.ts', 'utf8')
+assert(opencodePlugin.includes('fileURLToPath(import.meta.url)'), 'OpenCode plugin must derive plugin root from its installed module URL.')
+assert(opencodePlugin.includes('const workspaceRoot = directory'), 'OpenCode plugin must preserve directory as the active workspace root.')
+assert(opencodePlugin.includes('replaceAll("${PLUGIN_ROOT}", pluginRoot)'), 'OpenCode hooks must resolve ${PLUGIN_ROOT} against the installed plugin root.')
+assert(!opencodePlugin.includes('replaceAll("${PLUGIN_ROOT}", directory)'), 'OpenCode hooks must not resolve ${PLUGIN_ROOT} against the active workspace directory.')
+assert(opencodePlugin.includes('PLUXX_HOOK_WORKSPACE_ROOT: workspaceRoot'), 'OpenCode hooks must expose the active workspace root separately.')
+assert(opencodePlugin.includes('PLUXX_PLUGIN_ROOT: pluginRoot'), 'OpenCode hooks must expose the installed plugin root separately.')
 
 console.log('Pluxx hook fixture validation passed.')
 NODE

@@ -2,7 +2,7 @@ import { definePlugin } from 'pluxx'
 
 export default definePlugin({
   name: 'message-decision-packs',
-  version: '0.1.46',
+  version: '0.1.47',
   description: 'Author, validate, and use Message Decision Packs with the local mdp CLI.',
   homepage: 'https://orchidautomation.com',
   author: {
@@ -28,6 +28,13 @@ export default definePlugin({
   skills: './plugin/skills/',
   scripts: './scripts/',
   assets: './assets/',
+
+  // MDP is a migrated/manual plugin with repo-owned skill evals; keep Pluxx's
+  // generic semantic rubric visible without blocking release-package checks.
+  eval: {
+    warningThreshold: 60,
+    failureThreshold: 40,
+  },
 
   hooks: {
     sessionStart: [
