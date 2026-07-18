@@ -11,6 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -34,13 +35,64 @@ const run = (command, args, options = {}) => {
   return result
 }
 
+const sha256 = (filepath) =>
+  createHash('sha256').update(readFileSync(filepath)).digest('hex')
+
+const parseChecksums = (filepath) =>
+  new Map(
+    readFileSync(filepath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const separator = line.indexOf('  ')
+        assert(separator > 0, `Invalid checksum record in ${filepath}: ${line}`)
+        return [line.slice(separator + 2), line.slice(0, separator)]
+      }),
+  )
+
 const pluxxBin = process.argv[2]
 assert(pluxxBin && existsSync(pluxxBin), 'Pass the exact Pluxx executable path as the first argument.')
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const sourceVersion = JSON.parse(
+  readFileSync(join(root, 'plugin/.codex-plugin/plugin.json'), 'utf8'),
+).version
+const releaseWorkflow = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8')
+const publishCommands = releaseWorkflow.match(/pluxx publish --github-release/g) ?? []
+assert(
+  publishCommands.length === 1 && !releaseWorkflow.includes('pluxx publish --github-release --dry-run'),
+  'Release workflow must publish once so generated manifest entries are not duplicated.',
+)
+assert(
+  releaseWorkflow.includes('npm pack @orchid-labs/pluxx@0.1.36') &&
+    releaseWorkflow.includes('npm install -g "$pluxx_tarball_path"') &&
+    releaseWorkflow.includes(
+      'sha512-23lcYezDYXG0FM5Ys9Nrw7oBvp6pX5StkeWeoDcBm7HZ/V3z3djA9y3p3KVXAGzhkubIEUUaC1kD7evKqBB1DQ==',
+    ),
+  'Release workflow must hash and install the same exact Pluxx 0.1.36 tarball.',
+)
+const releaseSequence = [
+  'pluxx publish --github-release --allow-dirty --version "$version"',
+  'gh release download "v$version" --dir release-assets',
+  'cp scripts/install.sh release-assets/install.sh',
+  'scripts/finalize-release-assets.sh release-assets',
+  'gh release upload "v$version"',
+]
+const releaseSequenceIndexes = releaseSequence.map((command) => releaseWorkflow.indexOf(command))
+assert(
+  releaseSequenceIndexes.every((index) => index >= 0) &&
+    releaseSequenceIndexes.every((index, position) =>
+      position === 0 ? true : releaseSequenceIndexes[position - 1] < index,
+    ) &&
+    releaseWorkflow.includes('release-assets/SHA256SUMS.txt') &&
+    releaseWorkflow.includes('release-assets/release-manifest.json'),
+  `Release workflow must publish, download, stage, finalize, and upload in order; got ${releaseSequenceIndexes.join(', ')}.`,
+)
 const tempRoot = mkdtempSync(join(tmpdir(), 'mdp-opencode-wrapper-'))
+const remoteReleaseRoot = join(tempRoot, 'remote-release')
 const releaseRoot = join(tempRoot, 'release')
 const fakeBin = join(tempRoot, 'bin')
+mkdirSync(remoteReleaseRoot, { recursive: true })
 mkdirSync(releaseRoot, { recursive: true })
 mkdirSync(fakeBin, { recursive: true })
 
@@ -94,7 +146,7 @@ try {
   const publishEnvironment = {
     ...process.env,
     PATH: `${fakeBin}:${process.env.PATH}`,
-    PLUXX_TEST_RELEASE_ROOT: releaseRoot,
+    PLUXX_TEST_RELEASE_ROOT: remoteReleaseRoot,
   }
   const publish = run(
     pluxxBin,
@@ -104,15 +156,84 @@ try {
   const publishResult = JSON.parse(publish.stdout)
   assert(publishResult.ok, 'Pluxx must report a verified generated GitHub release asset set.')
 
-  const manifest = JSON.parse(readFileSync(join(releaseRoot, 'release-manifest.json'), 'utf8'))
-  const builtPlatforms = [...new Set(manifest.assets.archives.map((archive) => archive.platform))].sort()
+  run(fakeGhPath, ['release', 'download', `v${sourceVersion}`, '--dir', releaseRoot], {
+    cwd: root,
+    environment: publishEnvironment,
+  })
+
+  const manifestPath = join(releaseRoot, 'release-manifest.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const archivePlatforms = manifest.assets.archives.map((archive) => archive.platform)
+  const builtPlatforms = [...new Set(archivePlatforms)].sort()
   assert(
     JSON.stringify(builtPlatforms) === JSON.stringify(['claude-code', 'codex', 'cursor', 'opencode']),
     `Release manifest must include every supported host bundle; got ${builtPlatforms.join(', ')}.`,
   )
-
   const packageManifest = JSON.parse(readFileSync(join(root, 'dist/opencode/package.json'), 'utf8'))
   assert(manifest.plugin.version === packageManifest.version, 'Release and OpenCode package versions must match.')
+
+  manifest.assets.archives.push({ ...manifest.assets.archives[0] })
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+
+  const generatedChecksums = parseChecksums(join(releaseRoot, 'SHA256SUMS.txt'))
+  const generatedInstallChecksum = generatedChecksums.get('install.sh')
+  const stagedInstallPath = join(releaseRoot, 'install.sh')
+  const stagedInstall = `${readFileSync(join(root, 'scripts/install.sh'), 'utf8')}\n# checksum refresh fixture\n`
+  writeFileSync(stagedInstallPath, stagedInstall)
+  for (const target of [
+    'aarch64-apple-darwin',
+    'x86_64-apple-darwin',
+    'x86_64-unknown-linux-gnu',
+  ]) {
+    writeFileSync(join(releaseRoot, `mdp-${target}`), `mdp ${target}\n`)
+  }
+  run('bash', [join(root, 'scripts/finalize-release-assets.sh'), releaseRoot], { cwd: root })
+  const finalizedManifest = JSON.parse(
+    readFileSync(join(releaseRoot, 'release-manifest.json'), 'utf8'),
+  )
+  const finalizedPlatforms = finalizedManifest.assets.archives.map((archive) => archive.platform)
+  assert(
+    JSON.stringify(finalizedPlatforms) ===
+      JSON.stringify(['claude-code', 'cursor', 'codex', 'opencode']) &&
+      new Set(finalizedPlatforms).size === finalizedPlatforms.length,
+    `Finalized release manifest must list each host archive once; got ${finalizedPlatforms.join(', ')}.`,
+  )
+  const finalizedChecksums = parseChecksums(join(releaseRoot, 'SHA256SUMS.txt'))
+  assert(
+    finalizedChecksums.get('install.sh') === sha256(stagedInstallPath) &&
+      finalizedChecksums.get('install.sh') !== generatedInstallChecksum,
+    'Finalized plugin checksums must independently match the replaced install.sh.',
+  )
+  const cliChecksums = parseChecksums(join(releaseRoot, 'MDP_CLI_SHA256SUMS.txt'))
+  const expectedCliAssets = [
+    'mdp-aarch64-apple-darwin',
+    'mdp-x86_64-apple-darwin',
+    'mdp-x86_64-unknown-linux-gnu',
+  ]
+  assert(
+    JSON.stringify([...cliChecksums.keys()].sort()) === JSON.stringify(expectedCliAssets) &&
+      [...cliChecksums].every(
+        ([asset, digest]) => !asset.includes('/') && digest === sha256(join(releaseRoot, asset)),
+      ),
+    'Published CLI checksums must contain exact portable basenames and matching digests.',
+  )
+
+  const conflictingManifestPath = join(tempRoot, 'conflicting-release-manifest.json')
+  const conflictingManifest = structuredClone(finalizedManifest)
+  conflictingManifest.assets.archives.push({
+    ...conflictingManifest.assets.archives[0],
+    latestAsset: 'conflicting-latest.tar.gz',
+  })
+  writeFileSync(conflictingManifestPath, `${JSON.stringify(conflictingManifest, null, 2)}\n`)
+  const conflictResult = spawnSync(
+    process.execPath,
+    [join(root, 'scripts/finalize-release-manifest.mjs'), conflictingManifestPath],
+    { cwd: root, encoding: 'utf8' },
+  )
+  assert(
+    conflictResult.status !== 0 && conflictResult.stderr.includes('conflicting claude-code archives'),
+    'Manifest finalization must reject conflicting duplicate platform metadata.',
+  )
 
   const installRoot = join(tempRoot, 'installed', 'plugins')
   const installedPluginRoot = join(installRoot, 'message-decision-packs')

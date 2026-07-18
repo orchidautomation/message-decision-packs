@@ -53,7 +53,8 @@ validate-llms:
 	@grep -q 'https://mdp.orchidlabs.dev/llms.txt' llms-full.txt
 
 validate-installers:
-	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh
+	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/finalize-release-assets.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh
+	node --check scripts/finalize-release-manifest.mjs
 	scripts/test-install.sh
 
 install-cli:

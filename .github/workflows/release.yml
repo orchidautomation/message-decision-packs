@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-cli:
     name: Build mdp CLI (${{ matrix.target }})
@@ -59,7 +63,13 @@ jobs:
         with:
           node-version: 24
       - name: Install Pluxx
-        run: npm install -g @orchid-labs/pluxx@0.1.36
+        run: |
+          expected='sha512-23lcYezDYXG0FM5Ys9Nrw7oBvp6pX5StkeWeoDcBm7HZ/V3z3djA9y3p3KVXAGzhkubIEUUaC1kD7evKqBB1DQ=='
+          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.36 --pack-destination "$RUNNER_TEMP" --silent)"
+          pluxx_tarball_path="$RUNNER_TEMP/$pluxx_tarball"
+          actual="$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`)' "$pluxx_tarball_path")"
+          test "$actual" = "$expected"
+          npm install -g "$pluxx_tarball_path"
       - name: Download CLI binary artifacts
         uses: actions/download-artifact@v4
         with:
@@ -99,16 +109,16 @@ jobs:
           key="${{ github[format('to{0}en','k')] }}"
           export "GH_$(printf '%s%s' TO KEN)=$key"
           version="${{ steps.version.outputs.version }}"
-          pluxx publish --github-release --dry-run --allow-dirty --version "$version"
           pluxx publish --github-release --allow-dirty --version "$version"
+          gh release download "v$version" --dir release-assets
           chmod +x release-assets/mdp-*
-          shasum -a 256 release-assets/mdp-* > release-assets/MDP_CLI_SHA256SUMS.txt
           cp scripts/install.sh release-assets/install.sh
           cp scripts/bootstrap-runtime.sh release-assets/install-cli.sh
           cp llms.txt release-assets/llms.txt
           cp llms-full.txt release-assets/llms-full.txt
           chmod +x release-assets/install.sh release-assets/install-cli.sh
-          gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/install.sh release-assets/install-cli.sh release-assets/llms.txt release-assets/llms-full.txt --clobber
+          scripts/finalize-release-assets.sh release-assets
+          gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/SHA256SUMS.txt release-assets/release-manifest.json release-assets/install.sh release-assets/install-cli.sh release-assets/llms.txt release-assets/llms-full.txt --clobber
       - name: Install and smoke-test the published release
         shell: bash
         run: |
