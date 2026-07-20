@@ -24,7 +24,7 @@ pub(crate) use init::{
     TargetInitOptions, init_pack, init_pack_dry_run, init_pack_targeted, init_pack_targeted_dry_run,
 };
 pub(crate) use pack::pack;
-pub(crate) use prompt_output::validate_prompt_output_file;
+pub(crate) use prompt_output::validate_prompt_output_file_with_source_audit;
 pub(crate) use proof_output::{
     verify_output_file, verify_output_readable_file, verify_output_value,
 };

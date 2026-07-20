@@ -44,6 +44,14 @@ mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file O
 
 For `normalize-opportunity`, keep `normalized_prospect` as the required compatibility object. If `normalized_opportunity` is present, treat it as a proposal-readable alias that must match exactly, not as a separate opportunity schema. `source_summary.inputs_used` names declared prompt inputs only; source locators and proof notes belong in `signals[].source`, provenance, gaps, and normalization trace.
 
+If PDF/doc extraction produced a bounded `mdp.source-audit.v0` ledger, include it:
+
+```bash
+mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON --source-audit SOURCE_AUDIT_JSON
+```
+
+Treat missing source-audit refs or snippet mismatches as blockers for confident proposal review; keep the issue in gaps or reviewer questions instead of smoothing it into a sourced fact.
+
 ## Review Loop
 
 1. Load only the selected reference:

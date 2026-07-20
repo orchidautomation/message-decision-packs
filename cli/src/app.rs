@@ -4,7 +4,7 @@ use crate::commands::{
     eval_pack, explain, fit, gaps, init_pack_targeted, init_pack_targeted_dry_run, pack,
     prospect_brief_with_context, render_human_brief_file, render_human_brief_markdown,
     render_readable_prospect_brief, route_scoped, sample_leads, schema, skills, validate_pack,
-    validate_prompt_output_file, verify_output_file, verify_output_readable_file,
+    validate_prompt_output_file_with_source_audit, verify_output_file, verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -76,12 +76,19 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Commands::ValidatePromptOutput {
             dir,
             file,
+            source_audit,
             prompt,
             prompt_id,
             strict,
         } => {
             let data = apply_strict(
-                validate_prompt_output_file(&dir, &file, prompt.as_deref(), prompt_id.as_deref())?,
+                validate_prompt_output_file_with_source_audit(
+                    &dir,
+                    &file,
+                    prompt.as_deref(),
+                    prompt_id.as_deref(),
+                    source_audit.as_deref(),
+                )?,
                 strict,
                 StrictWarningSource::Issues,
             );

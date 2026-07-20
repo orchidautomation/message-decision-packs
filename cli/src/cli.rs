@@ -90,6 +90,11 @@ pub(crate) enum Commands {
         dir: PathBuf,
         #[arg(long)]
         file: PathBuf,
+        #[arg(
+            long,
+            help = "Optional mdp.source-audit.v0 JSON file for deterministic source-ref/snippet checks"
+        )]
+        source_audit: Option<PathBuf>,
         #[arg(long, help = "Prompt file path to validate against")]
         prompt: Option<PathBuf>,
         #[arg(long, help = "Prompt id to validate against")]

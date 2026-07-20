@@ -24,7 +24,7 @@ Check selected cards, excluded cards, gaps, portfolio scope, and entry-level evi
 
 ## Prompt And Output Gates
 
-Use `validate-prompt-output` for valid and adversarial normalization results. Use `check-claims` for supplied claim-bearing text and `verify-output` for proof-carrying artifacts.
+Use `validate-prompt-output` for valid and adversarial normalization results, including `source_audit` fixtures for proposal PDF/doc extraction refs when applicable. Use `check-claims` for supplied claim-bearing text and `verify-output` for proof-carrying artifacts.
 
 ## Fixture Quality
 

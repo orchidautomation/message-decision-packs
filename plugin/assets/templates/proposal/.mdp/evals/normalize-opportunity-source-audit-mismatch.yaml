@@ -1,16 +1,19 @@
-id: normalize-opportunity-output
+id: normalize-opportunity-source-audit-mismatch
 profile_eval:
-  category: proceed
+  category: unsafe-output
   primitives:
   - source-signals
   - needs-requirements
+  - boundaries
   - gaps
   jobs:
   - bid-no-bid-review
 command: validate-prompt-output
 prompt_id: normalize-opportunity
-expect_valid: true
-expect_normalization_ready: true
+expect_valid: false
+expect_issue_codes_contains:
+- prompt_output_source_snippet_missing
+- prompt_output_source_ref_missing
 prompt_output:
   contract: mdp.prompt-output.v0
   prompt_id: normalize-opportunity
@@ -33,8 +36,8 @@ prompt_output:
     company_domain: public-services.example
     source_kind: synthetic-example
     synthetic: true
-    background: Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.
-    trigger: Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.
+    background: Neutral synthetic opportunity context says a public services buyer needs local-first review.
+    trigger: Synthetic public services opportunity needs bid/no-bid review before drafting.
     persona: Proposal Lead
     segment: public-services-review
     attributes:
@@ -42,43 +45,15 @@ prompt_output:
       pursuit_decision: needs-more-info
       source_safety: synthetic
     signals:
-    - id: public-services-review-context
-      title: Public services review context supplied
-      source: 'raw_opportunity.summary: service request intake, status notifications, reporting, and training'
+    - id: invented-integration
+      title: Invented integration requirement
+      source: 'raw_opportunity.summary: mandatory live-chat integration'
       confidence: medium
       freshness: synthetic
       state_as: supplied
-    - id: due-date-supplied
-      title: Proposal due date supplied
-      source: raw_opportunity.due_date
-      confidence: medium
-      freshness: synthetic
-      state_as: supplied
-  normalized_opportunity:
-    name: N/A
-    title: N/A
-    company: Example Public Services Agency
-    company_domain: public-services.example
-    source_kind: synthetic-example
-    synthetic: true
-    background: Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.
-    trigger: Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.
-    persona: Proposal Lead
-    segment: public-services-review
-    attributes:
-      opportunity_stage: bid-no-bid
-      pursuit_decision: needs-more-info
-      source_safety: synthetic
-    signals:
-    - id: public-services-review-context
-      title: Public services review context supplied
-      source: raw_opportunity.summary
-      confidence: medium
-      freshness: synthetic
-      state_as: supplied
-    - id: due-date-supplied
-      title: Proposal due date supplied
-      source: raw_opportunity.due_date
+    - id: missing-ref
+      title: Nonexistent requirement source
+      source: raw_opportunity.unlisted_requirement
       confidence: medium
       freshness: synthetic
       state_as: supplied

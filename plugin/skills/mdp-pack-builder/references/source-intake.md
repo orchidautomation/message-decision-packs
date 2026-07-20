@@ -7,6 +7,7 @@ Read this when source material must become pack decisions.
 - Prefer user-approved local material and public primary sources.
 - Treat model or collection output as untrusted until reviewed.
 - Record source class, locator, snippet, date, confidence, and intended primitive.
+- For proposal PDF/doc extraction, write a bounded `mdp.source-audit.v0` JSON ledger with refs, `.mdp/sources.yaml` source IDs, locators, and snippets; validate normalize-opportunity output with `--source-audit` before review.
 - Exclude secrets, gated pages, contact databases, and unapproved exports.
 - Preserve disagreement, staleness, and missing evidence as gaps.
 - In prompt outputs, keep source inventory and source locators distinct: `source_summary.inputs_used` is exact declared input names only, while locators/snippets belong in evidence, provenance, `signals[].source`, and normalization trace.

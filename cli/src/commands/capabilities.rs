@@ -1,6 +1,6 @@
 use crate::constants::{
     DEFAULT_DIR, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
-    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, SOURCE_AUDIT_CONTRACT,
 };
 use serde_json::{Value, json};
 
@@ -22,6 +22,7 @@ pub(crate) fn capabilities() -> Value {
         "prompt_contracts": {
             "prompt_format": PROMPT_FORMAT_VERSION,
             "prompt_output": PROMPT_OUTPUT_CONTRACT,
+            "source_audit": SOURCE_AUDIT_CONTRACT,
             "card_patch_schema_ref": PROMPT_CARD_PATCH_SCHEMA_REF,
             "prospect_normalization_schema_ref": PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
         },
@@ -44,7 +45,7 @@ pub(crate) fn capabilities() -> Value {
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
-            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--prompt", "--prompt-id", "--strict"]),
+            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--prompt", "--prompt-id", "--strict"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
             command("render-brief", "mdp.human-brief.v0", "writes-files-with-out", false, true, true, &["--dir", "--file", "--template", "--format", "--out", "--strict"]),
             command("explain", "mdp.explain.v0", "read-only", false, false, false, &["--dir", "--persona"]),
