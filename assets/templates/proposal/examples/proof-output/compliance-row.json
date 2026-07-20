@@ -1,0 +1,147 @@
+{
+  "contract": "mdp.proof-output.v0",
+  "coverage": {
+    "material_policy": "bound-or-gap",
+    "mode": "full-segmentation"
+  },
+  "output": {
+    "format": "markdown",
+    "kind": "proposal-review-section",
+    "text": "Requirement: Online intake.\nStatus: Supported by supplied requirement context. Proof: The synthetic sample may discuss phased rollout planning and training readiness. Gap: the sample pack has no approved certification proof."
+  },
+  "pack": {
+    "id": "proposal-mdp-sample",
+    "profile_id": "proposal"
+  },
+  "route": {
+    "job": "compliance review",
+    "persona": "Proposal Lead"
+  },
+  "segments": [
+    {
+      "id": "seg-001",
+      "kind": "template_text",
+      "refs": [
+        {
+          "card_id": "review-outputs",
+          "entry_id": "compliance-matrix",
+          "kind": "copy-patterns",
+          "primitive": "output-contracts",
+          "role": "renders",
+          "type": "card_entry"
+        }
+      ],
+      "text": "Requirement: "
+    },
+    {
+      "id": "seg-002",
+      "kind": "requirement_status",
+      "refs": [
+        {
+          "card_id": "requirement-signals",
+          "entry_id": "online-intake-requirement",
+          "kind": "signals",
+          "primitive": "needs-requirements",
+          "role": "requires",
+          "type": "card_entry"
+        }
+      ],
+      "text": "Online intake.\n"
+    },
+    {
+      "id": "seg-003",
+      "kind": "template_text",
+      "refs": [
+        {
+          "card_id": "review-outputs",
+          "entry_id": "compliance-matrix",
+          "kind": "copy-patterns",
+          "primitive": "output-contracts",
+          "role": "renders",
+          "type": "card_entry"
+        }
+      ],
+      "text": "Status: "
+    },
+    {
+      "id": "seg-004",
+      "kind": "requirement_status",
+      "refs": [
+        {
+          "card_id": "requirements-matrix",
+          "entry_id": "must-answer-sections",
+          "kind": "pains",
+          "primitive": "needs-requirements",
+          "role": "requires",
+          "type": "card_entry"
+        }
+      ],
+      "text": "Supported by supplied requirement context. "
+    },
+    {
+      "id": "seg-005",
+      "kind": "template_text",
+      "refs": [
+        {
+          "card_id": "review-outputs",
+          "entry_id": "compliance-matrix",
+          "kind": "copy-patterns",
+          "primitive": "output-contracts",
+          "role": "renders",
+          "type": "card_entry"
+        }
+      ],
+      "text": "Proof: "
+    },
+    {
+      "id": "seg-006",
+      "kind": "claim",
+      "refs": [
+        {
+          "card_id": "proof-library",
+          "entry_id": "approved-synthetic-proof",
+          "kind": "claims",
+          "primitive": "evidence-proof",
+          "role": "supports",
+          "type": "card_entry"
+        },
+        {
+          "role": "supports",
+          "source_id": "synthetic-proof-inventory",
+          "type": "source"
+        }
+      ],
+      "text": "The synthetic sample may discuss phased rollout planning and training readiness."
+    },
+    {
+      "id": "seg-007",
+      "kind": "connective",
+      "material": false,
+      "text": " "
+    },
+    {
+      "gap": {
+        "code": "missing-approved-proof",
+        "reason": "Certification proof is not present in the synthetic proof library."
+      },
+      "id": "seg-008",
+      "kind": "gap",
+      "refs": [
+        {
+          "card_id": "proof-library",
+          "entry_id": "unsupported-certifications",
+          "kind": "claims",
+          "primitive": "boundaries",
+          "role": "constrains",
+          "type": "card_entry"
+        },
+        {
+          "role": "supports-gap",
+          "source_id": "synthetic-proof-inventory",
+          "type": "source"
+        }
+      ],
+      "text": "Gap: the sample pack has no approved certification proof."
+    }
+  ]
+}

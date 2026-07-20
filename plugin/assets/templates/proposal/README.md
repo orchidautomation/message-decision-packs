@@ -27,6 +27,7 @@ cargo run --manifest-path cli/Cargo.toml -- --json eval --dir plugin/assets/temp
 cargo run --manifest-path cli/Cargo.toml -- --json validate-prompt-output --dir plugin/assets/templates/proposal --prompt-id normalize-opportunity --file <prompt-output.json>
 cargo run --manifest-path cli/Cargo.toml -- --json validate-prompt-output --dir plugin/assets/templates/proposal --prompt-id normalize-opportunity --file <prompt-output.json> --source-audit <source-audit.json>
 cargo run --manifest-path cli/Cargo.toml -- --json verify-output --dir plugin/assets/templates/proposal --file plugin/assets/templates/proposal/examples/proof-output/valid-binding.json
+cargo run --manifest-path cli/Cargo.toml -- --json author-proof-output --dir plugin/assets/templates/proposal --draft plugin/assets/templates/proposal/examples/proof-output-drafts/compliance-row.draft.json --out /tmp/mdp-proof-output.json
 cargo run --manifest-path cli/Cargo.toml -- verify-output --readable --dir plugin/assets/templates/proposal --file plugin/assets/templates/proposal/examples/proof-output/valid-binding.json
 cargo run --manifest-path cli/Cargo.toml -- --json route --entries --dir plugin/assets/templates/proposal --persona "Proposal Lead" --job "bid no bid review"
 cargo run --manifest-path cli/Cargo.toml -- --json gaps --dir plugin/assets/templates/proposal
@@ -47,6 +48,8 @@ The eval fixtures cover:
 When proposal PDF/doc extraction feeds `normalize-opportunity`, use a bounded `mdp.source-audit.v0` JSON ledger instead of committing source documents. `validate-prompt-output --source-audit` checks that raw opportunity refs and ref-plus-snippet citations resolve to audited refs whose `source_id` appears in `.mdp/sources.yaml`.
 
 The files under `examples/proof-output/` are synthetic `mdp.proof-output.v0` artifacts. A source ID written by a model is not proof by itself; run `mdp --json verify-output --dir <pack> --file <proof-output.json>` and only treat the generated text as proof-bound when the verifier returns `valid: true`.
+
+For drafting safer artifacts without hand-writing the brittle outer JSON, start from `examples/proof-output-drafts/*.draft.json` and run `mdp --json author-proof-output --dir <pack> --draft <draft.json> --out <proof-output.json>`. The helper fills pack identity, joins ordered segment text into `output.text`, runs `verify-output`, and writes only verified proof-output JSON. The examples `examples/proof-output/compliance-row.json` and `examples/proof-output/missing-proof-gap.json` are compiled synthetic artifacts that demonstrate a supported compliance row and an explicit missing-proof gap.
 
 For human review, run `mdp verify-output --readable --dir <pack> --file <proof-output.json>`. The readable artifact is Markdown with top-of-file YAML frontmatter and proposal review sections for requirement status, proof receipts, unsupported claims, gaps, verification status, and next actions. The Markdown is a review layer only; the proof-output JSON and verifier result remain the machine source of truth.
 

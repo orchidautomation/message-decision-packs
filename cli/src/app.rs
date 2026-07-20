@@ -1,10 +1,11 @@
 use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat};
 use crate::commands::{
-    TargetInitOptions, capabilities, check_claims_scoped, demo_copy, doctor, emit_brief_scoped,
-    eval_pack, explain, fit, gaps, init_pack_targeted, init_pack_targeted_dry_run, pack,
-    prospect_brief_with_context, render_human_brief_file, render_human_brief_markdown,
-    render_readable_prospect_brief, route_scoped, sample_leads, schema, skills, validate_pack,
-    validate_prompt_output_file_with_source_audit, verify_output_file, verify_output_readable_file,
+    TargetInitOptions, author_proof_output_file, capabilities, check_claims_scoped, demo_copy,
+    doctor, emit_brief_scoped, eval_pack, explain, fit, gaps, init_pack_targeted,
+    init_pack_targeted_dry_run, pack, prospect_brief_with_context, render_human_brief_file,
+    render_human_brief_markdown, render_readable_prospect_brief, route_scoped, sample_leads,
+    schema, skills, validate_pack, validate_prompt_output_file_with_source_audit,
+    verify_output_file, verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -111,6 +112,35 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 let data = verify_output_file(&dir, &file)?;
                 print_checked(json_mode, summary_mode, "verify-output", data)
             }
+        }
+        Commands::AuthorProofOutput {
+            dir,
+            draft,
+            out,
+            dry_run,
+        } => {
+            let mut data = author_proof_output_file(&dir, &draft)?;
+            data = attach_input_artifact(data, "proof-output-draft", &draft);
+            if let Some(path) = out {
+                if data["valid"].as_bool() == Some(true) {
+                    if dry_run {
+                        data = attach_dry_run_artifact(data, &path);
+                    } else {
+                        write_json_file(&path, &data["proof_output"])?;
+                        data = attach_artifact(data, &path);
+                    }
+                } else {
+                    let reason = if data["checked"]["verification_ran"].as_bool() == Some(true) {
+                        "verification-failed"
+                    } else {
+                        "draft-invalid"
+                    };
+                    data = attach_skipped_artifact(data, &path, reason);
+                }
+            } else {
+                data = attach_stdout_artifact(data);
+            }
+            print_checked(json_mode, summary_mode, "author-proof-output", data)
         }
         Commands::RenderBrief {
             dir,
@@ -452,6 +482,21 @@ fn attach_markdown_artifact(mut data: Value, path: &Path) -> Value {
                 "kind": "markdown-file",
                 "path": path.display().to_string(),
                 "stdout": "also-emitted"
+            }),
+        );
+    }
+    data
+}
+
+fn attach_skipped_artifact(mut data: Value, path: &Path, reason: &str) -> Value {
+    if let Some(object) = data.as_object_mut() {
+        object.insert(
+            "artifact".to_string(),
+            json!({
+                "status": "skipped",
+                "kind": "json-file",
+                "path": path.display().to_string(),
+                "reason": reason
             }),
         );
     }

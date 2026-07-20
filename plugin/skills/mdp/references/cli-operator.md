@@ -31,6 +31,7 @@ Prefer CLI output to direct YAML inference. Read pack files only when authoring 
 - `fit`: decide fit, insufficient context, or disqualification for supplied GTM prospect JSON.
 - `brief --context`: build bounded GTM decision context after fit permits it.
 - `check-claims`: test supplied claim-bearing text and output constraints.
+- `author-proof-output`: compile proof-output drafts into verified proof-output JSON; writes only after verifier success.
 - `verify-output`: verify proof-carrying output against loaded pack IDs.
 - `eval`: run committed pack fixtures.
 
@@ -45,6 +46,7 @@ mdp --json init --template gtm --name PACK_NAME --target-name TARGET_NAME --targ
 mdp --json brief --context --dir PACK_ROOT --prospect PROSPECT_JSON --out BRIEF_JSON --dry-run
 mdp --json emit-brief --dir PACK_ROOT --persona PERSONA --out BRIEF_JSON --dry-run
 mdp --json pack --dir PACK_ROOT --out PACK_JSON --dry-run
+mdp --json author-proof-output --dir PACK_ROOT --draft PROOF_OUTPUT_DRAFT_JSON --out PROOF_OUTPUT_JSON --dry-run
 ```
 
 For a named GTM pack, pass `--target-name` explicitly. Repeat `--target-alias` and `--exclude-term` when needed; never force-retarget an existing pack directory.

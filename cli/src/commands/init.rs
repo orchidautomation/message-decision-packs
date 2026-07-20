@@ -193,6 +193,18 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/evals/proof-output-compliance-row.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-compliance-row.yaml"
+        ),
+    ),
+    (
+        ".mdp/evals/proof-output-missing-proof-gap.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-missing-proof-gap.yaml"
+        ),
+    ),
+    (
         ".mdp/evals/proof-output-connective-text.yaml",
         include_str!(
             "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-connective-text.yaml"
@@ -279,6 +291,18 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        "examples/proof-output/compliance-row.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/compliance-row.json"
+        ),
+    ),
+    (
+        "examples/proof-output/missing-proof-gap.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output/missing-proof-gap.json"
+        ),
+    ),
+    (
         "examples/proof-output/connective-text.json",
         include_str!(
             "../../../plugin/assets/templates/proposal/examples/proof-output/connective-text.json"
@@ -336,6 +360,18 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         "examples/proof-output/valid-binding.json",
         include_str!(
             "../../../plugin/assets/templates/proposal/examples/proof-output/valid-binding.json"
+        ),
+    ),
+    (
+        "examples/proof-output-drafts/compliance-row.draft.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output-drafts/compliance-row.draft.json"
+        ),
+    ),
+    (
+        "examples/proof-output-drafts/missing-proof-gap.draft.json",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/examples/proof-output-drafts/missing-proof-gap.draft.json"
         ),
     ),
 ];
@@ -755,6 +791,7 @@ fn proposal_template_dirs(root: &Path) -> Vec<PathBuf> {
         pack_dir.join("evals"),
         pack_dir.join("prompts"),
         root.join("examples").join("proof-output"),
+        root.join("examples").join("proof-output-drafts"),
     ]
 }
 

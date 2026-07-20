@@ -63,6 +63,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         }
         SchemaTarget::Prompt => prompt_schema(card_kinds),
         SchemaTarget::ProofOutput => proof_output_schema(),
+        SchemaTarget::ProofOutputDraft => proof_output_draft_schema(),
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
@@ -121,6 +122,48 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
     }
 }
 
+fn proof_output_draft_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Proof Output Draft v0",
+        "type": "object",
+        "required": ["contract", "output", "segments"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": "mdp.proof-output-draft.v0"},
+            "route": {
+                "type": "object",
+                "required": ["persona", "job"],
+                "additionalProperties": false,
+                "properties": {
+                    "persona": non_blank_string_schema(),
+                    "job": non_blank_string_schema()
+                }
+            },
+            "output": {
+                "type": "object",
+                "required": ["kind", "format"],
+                "additionalProperties": false,
+                "properties": {
+                    "kind": {"type": "string"},
+                    "format": {"type": "string"}
+                }
+            },
+            "coverage": {
+                "type": "object",
+                "required": ["mode", "material_policy"],
+                "additionalProperties": false,
+                "properties": {
+                    "mode": {"const": "full-segmentation"},
+                    "material_policy": {"const": "bound-or-gap"}
+                },
+                "description": "Optional. author-proof-output defaults this to full-segmentation / bound-or-gap when omitted."
+            },
+            "segments": proof_segments_schema()
+        }
+    })
+}
+
 fn proof_output_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -168,39 +211,43 @@ fn proof_output_schema() -> Value {
                     "material_policy": {"const": "bound-or-gap"}
                 }
             },
-            "segments": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
+            "segments": proof_segments_schema()
+        }
+    })
+}
+
+fn proof_segments_schema() -> Value {
+    json!({
+        "type": "array",
+        "minItems": 1,
+        "items": {
+            "type": "object",
+            "required": ["id", "kind", "text"],
+            "additionalProperties": false,
+            "properties": {
+                "id": {"type": "string"},
+                "kind": {"enum": ["claim", "requirement_status", "template_text", "gap", "connective", "formatting"]},
+                "text": {"type": "string"},
+                "material": {"type": "boolean", "description": "Set false for connective or formatting-only text that carries no proof binding."},
+                "gap": {
                     "type": "object",
-                    "required": ["id", "kind", "text"],
+                    "required": ["code", "reason"],
                     "additionalProperties": false,
                     "properties": {
-                        "id": {"type": "string"},
-                        "kind": {"enum": ["claim", "requirement_status", "template_text", "gap", "connective", "formatting"]},
-                        "text": {"type": "string"},
-                        "material": {"type": "boolean", "description": "Set false for connective or formatting-only text that carries no proof binding."},
-                        "gap": {
-                            "type": "object",
-                            "required": ["code", "reason"],
-                            "additionalProperties": false,
-                            "properties": {
-                                "code": {"type": "string"},
-                                "reason": {"type": "string"}
-                            }
-                        },
-                        "refs": {
-                            "type": "array",
-                            "items": {
-                                "oneOf": [
-                                    proof_card_entry_ref_schema(),
-                                    proof_source_ref_schema(),
-                                    proof_prompt_input_ref_schema(),
-                                    proof_input_contract_ref_schema(),
-                                    proof_route_ref_schema()
-                                ]
-                            }
-                        }
+                        "code": {"type": "string"},
+                        "reason": {"type": "string"}
+                    }
+                },
+                "refs": {
+                    "type": "array",
+                    "items": {
+                        "oneOf": [
+                            proof_card_entry_ref_schema(),
+                            proof_source_ref_schema(),
+                            proof_prompt_input_ref_schema(),
+                            proof_input_contract_ref_schema(),
+                            proof_route_ref_schema()
+                        ]
                     }
                 }
             }

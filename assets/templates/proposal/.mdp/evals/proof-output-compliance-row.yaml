@@ -1,0 +1,5 @@
+id: proof-output-compliance-row
+command: verify-output
+proof_output_file: examples/proof-output/compliance-row.json
+expect_valid: true
+expect_decision: proof-safe

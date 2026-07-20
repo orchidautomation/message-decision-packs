@@ -72,13 +72,21 @@ mdp --json --summary route --entries --dir PACK_ROOT --persona PERSONA --job JOB
 mdp --json check-claims --dir PACK_ROOT --file REVIEW_TEXT --persona PERSONA --job JOB
 ```
 
-5. Verify any generated proof-carrying artifact before treating its bindings as valid:
+5. When producing proof-carrying output, prefer the draft helper over hand-writing the final artifact:
+
+```bash
+mdp --json author-proof-output --dir PACK_ROOT --draft PROOF_OUTPUT_DRAFT_JSON --out PROOF_OUTPUT_JSON
+```
+
+The draft helper only fills pack identity, joins ordered segment text, and runs verification. It does not source-audit, approve proof, or bypass the verifier.
+
+6. Verify any generated proof-carrying artifact before treating its bindings as valid:
 
 ```bash
 mdp --json verify-output --dir PACK_ROOT --file PROOF_OUTPUT_JSON
 ```
 
-Use `--readable` only when the user wants the human-readable review artifact.
+Use `--readable` only when the user wants the human-readable review artifact. Read [references/proof-output-drafting.md](references/proof-output-drafting.md) before creating or repairing proof-output drafts.
 
 ## Boundaries
 
