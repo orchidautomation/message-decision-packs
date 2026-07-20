@@ -72,7 +72,7 @@ prompt_output:
     signals:
     - id: public-services-review-context
       title: Public services review context supplied
-      source: raw_opportunity.summary
+      source: 'raw_opportunity.summary: service request intake, status notifications, reporting, and training'
       confidence: medium
       freshness: synthetic
       state_as: supplied
