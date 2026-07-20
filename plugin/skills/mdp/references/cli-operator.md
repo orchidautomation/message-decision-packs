@@ -27,7 +27,7 @@ Prefer CLI output to direct YAML inference. Read pack files only when authoring 
 
 ## Deterministic Gates
 
-- `validate-prompt-output`: validate model-produced normalization output.
+- `validate-prompt-output`: validate model-produced normalization output; pass `--source-audit` for proposal PDF/doc extraction ledgers when raw-field/snippet citations must resolve.
 - `fit`: decide fit, insufficient context, or disqualification for supplied GTM prospect JSON.
 - `brief --context`: build bounded GTM decision context after fit permits it.
 - `check-claims`: test supplied claim-bearing text and output constraints.

@@ -7,6 +7,7 @@ Read this when source material must become pack decisions.
 - Prefer user-approved local material and public primary sources.
 - Treat model or collection output as untrusted until reviewed.
 - Record source class, locator, snippet, date, confidence, and intended primitive.
+- For proposal PDF/doc extraction, write a bounded `mdp.source-audit.v0` JSON ledger with refs, `.mdp/sources.yaml` source IDs, locators, and snippets; validate normalize-opportunity output with `--source-audit` before review.
 - Exclude secrets, gated pages, contact databases, and unapproved exports.
 - Preserve disagreement, staleness, and missing evidence as gaps.
 - For targeted GTM packs, cite the target identity in `target.source_ids`. Treat additional `target.external_terms` as supported only when a listed source contains the term in a direct claim; otherwise keep the term as a gap.

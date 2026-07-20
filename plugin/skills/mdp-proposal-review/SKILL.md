@@ -42,6 +42,14 @@ mdp --json gaps --dir PACK_ROOT
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
 ```
 
+If PDF/doc extraction produced a bounded `mdp.source-audit.v0` ledger, include it:
+
+```bash
+mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON --source-audit SOURCE_AUDIT_JSON
+```
+
+Treat missing source-audit refs or snippet mismatches as blockers for confident proposal review; keep the issue in gaps or reviewer questions instead of smoothing it into a sourced fact.
+
 ## Review Loop
 
 1. Load only the selected reference:

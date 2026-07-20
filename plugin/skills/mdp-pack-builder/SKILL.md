@@ -64,6 +64,12 @@ Do not read every reference by default.
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
 ```
 
+For proposal PDF/doc extraction, keep the source-audit ledger bounded and local/customer-controlled, then validate raw-field and snippet refs before using normalized opportunity facts:
+
+```bash
+mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id normalize-opportunity --file OUTPUT_JSON --source-audit SOURCE_AUDIT_JSON
+```
+
 6. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
 7. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target.
 8. Validate, fix, and repeat:

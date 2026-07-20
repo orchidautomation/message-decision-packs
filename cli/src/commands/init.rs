@@ -181,6 +181,12 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/evals/normalize-opportunity-source-audit-mismatch.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/evals/normalize-opportunity-source-audit-mismatch.yaml"
+        ),
+    ),
+    (
         ".mdp/evals/proof-output-claim-source-ref-missing.yaml",
         include_str!(
             "../../../plugin/assets/templates/proposal/.mdp/evals/proof-output-claim-source-ref-missing.yaml"

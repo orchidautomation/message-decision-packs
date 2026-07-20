@@ -17,13 +17,19 @@ inputs:
   missing_behavior: Do not infer deadlines, submission windows, fiscal years, protest periods, or customer calendars from missing runtime context.
   name: runtime_context
   required: false
+- default: N/A
+  description: Optional mdp.source-audit.v0 JSON produced from approved PDF/doc extraction. It lists allowed raw_opportunity/source_kind refs, .mdp/sources.yaml source IDs, locators, and bounded snippets.
+  missing_behavior: Preserve source refs from raw_opportunity when available, but tell the operator to run validate-prompt-output with --source-audit before downstream proposal review.
+  name: source_audit
+  required: false
 - default: synthetic-example
   description: Pack-owned source marker such as user-provided-opportunity, private-scratch-opportunity, public-source, sanitized-example, or synthetic-example.
   missing_behavior: Use synthetic-example for template fixtures; production users should pass the reviewed source classification.
   name: source_kind
   required: false
 instructions:
-- Use only raw_opportunity, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape portals, enrich records, submit proposals, update CRM/opportunity systems, manage approvals, or call external systems from this normalization prompt contract.
+- Use only raw_opportunity, existing_pack_context, runtime_context, source_audit, and source_kind. Do not browse, scrape portals, enrich records, submit proposals, update CRM/opportunity systems, manage approvals, or call external systems from this normalization prompt contract.
+- 'When source_audit is supplied, cite only refs present in source_audit.refs for raw_opportunity/source_kind-backed signals, preserved_raw_fields, missing_required paths, and rejected claim sources. Use exact refs such as raw_opportunity.summary, or ref-plus-snippet citations such as raw_opportunity.summary: status notifications when the normalized fact depends on a specific snippet.'
 - Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
 - Emit the existing validated normalized_prospect object as a local compatibility bridge. Use name and title only when a real supplied review owner or contact is present; otherwise set name and title to N/A. Do not invent a person.
 - Set company to the supplied customer, agency, buyer organization, or account name when present. Set company_domain only from an explicit supplied domain-like value. Do not infer domains from organization names.
@@ -108,6 +114,7 @@ output_contract:
       inputs_used:
       - raw_opportunity
       - existing_pack_context
+      - source_audit
       - source_kind
       person_name: N/A
       person_title: N/A
