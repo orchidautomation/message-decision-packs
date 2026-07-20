@@ -3474,15 +3474,10 @@ mod tests {
     fn validate_accepts_matching_proposal_opportunity_alias() {
         let root = temp_pack_with_template("proposal-opportunity-alias", "proposal");
         let output = proposal_opportunity_alias_output();
-        let path = write_json_output(
-            &root,
-            "normalize-opportunity-output.json",
-            &output,
-        );
+        let path = write_json_output(&root, "normalize-opportunity-output.json", &output);
 
-        let result =
-            validate_prompt_output_file(&root, &path, None, Some("normalize-opportunity"))
-                .expect("validation should return diagnostics");
+        let result = validate_prompt_output_file(&root, &path, None, Some("normalize-opportunity"))
+            .expect("validation should return diagnostics");
 
         assert_eq!(result["valid"], true);
 
@@ -3494,15 +3489,10 @@ mod tests {
         let root = temp_pack_with_template("proposal-opportunity-alias-mismatch", "proposal");
         let mut output = proposal_opportunity_alias_output();
         output["normalized_opportunity"]["company"] = Value::String("Different Agency".into());
-        let path = write_json_output(
-            &root,
-            "normalize-opportunity-output.json",
-            &output,
-        );
+        let path = write_json_output(&root, "normalize-opportunity-output.json", &output);
 
-        let result =
-            validate_prompt_output_file(&root, &path, None, Some("normalize-opportunity"))
-                .expect("validation should return diagnostics");
+        let result = validate_prompt_output_file(&root, &path, None, Some("normalize-opportunity"))
+            .expect("validation should return diagnostics");
 
         assert_eq!(result["valid"], false);
         assert!(
