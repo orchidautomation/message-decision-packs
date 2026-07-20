@@ -41,7 +41,7 @@ The eval fixtures cover:
 - proof-output verification for valid bindings, fake IDs, missing bindings, malformed text coverage, safe gaps, connective text, and unsupported full-text claims
 - insufficient-context and policy-bypass fit outcomes
 
-`prompts/normalize-opportunity.yaml` also includes a neutral `output_contract.example` fixture. Treat that as a JSON contract example, not as the active demo scenario; when retargeting the template, update eval IDs, titles, jobs, and scenario examples together or explicitly mark examples as contract-only fixtures.
+`prompts/normalize-opportunity.yaml` also includes a neutral `output_contract.example` fixture. It keeps `normalized_prospect` as the required compatibility object and includes `normalized_opportunity` only as an exact proposal-readable alias. Treat that as a JSON contract example, not as the active demo scenario; when retargeting the template, update eval IDs, titles, jobs, and scenario examples together or explicitly mark examples as contract-only fixtures.
 
 The files under `examples/proof-output/` are synthetic `mdp.proof-output.v0` artifacts. A source ID written by a model is not proof by itself; run `mdp --json verify-output --dir <pack> --file <proof-output.json>` and only treat the generated text as proof-bound when the verifier returns `valid: true`.
 

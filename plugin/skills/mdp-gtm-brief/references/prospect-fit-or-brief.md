@@ -12,6 +12,8 @@ mdp --json schema prospect
 
 Signals carry observed evidence and provenance. Attributes carry bounded reviewed row metadata. Do not use attributes as invented evidence.
 
+When using a normalization prompt, `source_summary.inputs_used` should name exact declared inputs such as `raw_row` or `existing_pack_context`. Field paths, URLs, snippets, and other source locators belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
+
 ## Workflow
 
 1. Normalize supplied source material into a prospect JSON file using the pack prompt when present.

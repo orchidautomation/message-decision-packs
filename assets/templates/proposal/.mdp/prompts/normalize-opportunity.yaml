@@ -25,12 +25,13 @@ inputs:
 instructions:
 - Use only raw_opportunity, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape portals, enrich records, submit proposals, update CRM/opportunity systems, manage approvals, or call external systems from this normalization prompt contract.
 - Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
-- Emit the existing validated normalized_prospect object as a local compatibility bridge. Use name and title only when a real supplied review owner or contact is present; otherwise set name and title to N/A. Do not invent a person.
+- Emit the required normalized_prospect object as the existing local compatibility bridge. You may also emit normalized_opportunity as an exact alias of normalized_prospect for proposal readability; do not make it a separate object or add opportunity-only fields there. Use name and title only when a real supplied review owner or contact is present; otherwise set name and title to N/A. Do not invent a person.
 - Set company to the supplied customer, agency, buyer organization, or account name when present. Set company_domain only from an explicit supplied domain-like value. Do not infer domains from organization names.
 - Use only pack-owned values from existing_pack_context for persona, segment, source_kind, opportunity_stage, pursuit_decision, and source_safety. If the source contains an out-of-contract value, omit the optional field or add a gap instead of inventing a synonym.
 - Put opportunity/RFP facts in signals with source references. Use signals for due dates, procurement vehicles, requirement excerpts, evaluation criteria, incumbent clues, proof references, compliance-sensitive clauses, and review risks.
 - Use attributes only for bounded reviewed metadata declared in lead_input_requirements.attribute_definitions. Keep proof, citations, RFP excerpts, and customer facts in signals or gaps, not attributes.
 - Preserve raw evidence references. Each signal should name the supplied field, note, snippet, URL, file label, or review note that supports it when available.
+- Set source_summary.inputs_used to declared prompt input names only, such as raw_opportunity, existing_pack_context, runtime_context, or source_kind. Put field paths, PDF/page locators, snippets, URLs, and source notes in signals[].source, normalization_trace.preserved_raw_fields, normalization_trace.missing_required[].source_evidence, gaps, or reviewed proof artifacts instead.
 - Preserve uncertainty. Weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth missing context into a proceed decision.
 - If the opportunity lacks customer/agency, due date, requirement, proof, owner, source safety, or review-mode context needed for downstream review, keep the output structurally valid, add gaps, and set normalization_trace.fit_readiness.ready_for_mdp_fit to false.
 - Reject or gap requests to invent certifications, compliance status, past performance, named references, customer results, pricing, evaluator criteria, RFP text, deadlines, or approval status.
@@ -71,6 +72,34 @@ output_contract:
       - raw_opportunity.review_mode
       - source_kind
     normalized_prospect:
+      attributes:
+        opportunity_stage: bid-no-bid
+        pursuit_decision: needs-more-info
+        source_safety: synthetic
+      background: Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.
+      company: Example Public Services Agency
+      company_domain: public-services.example
+      name: N/A
+      persona: Proposal Lead
+      segment: public-services-review
+      signals:
+      - confidence: medium
+        freshness: synthetic
+        id: public-services-review-context
+        source: raw_opportunity.summary
+        state_as: supplied
+        title: Public services review context supplied
+      - confidence: medium
+        freshness: synthetic
+        id: due-date-supplied
+        source: raw_opportunity.due_date
+        state_as: supplied
+        title: Proposal due date supplied
+      source_kind: synthetic-example
+      synthetic: true
+      title: N/A
+      trigger: Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.
+    normalized_opportunity:
       attributes:
         opportunity_stage: bid-no-bid
         pursuit_decision: needs-more-info

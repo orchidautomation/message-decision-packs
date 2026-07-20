@@ -37,7 +37,7 @@ Each release contains:
 - checksums and release metadata;
 - released `llms.txt` and `llms-full.txt` files.
 
-`plugin/` is the canonical plugin source, and `plugin/skills/` is the only authored skill tree. Pluxx packages that tree for each supported host. Root-level, example-vendored, and hand-edited host skill copies are forbidden. Pluxx does not replace the Rust CLI, and the plugin does not hide a separate hosted runtime.
+The full repository is the product/plugin source contract: CLI behavior, docs, canonical templates/assets, authored skills, install/release assets, and Pluxx config stay in lockstep. `plugin/skills/` is the only authored skill tree. Pluxx packages canonical source for each supported host. Root-level, example-vendored, and hand-edited host skill copies are forbidden. Pluxx does not replace the Rust CLI, and the plugin does not hide a separate hosted runtime.
 
 The tag, `cli/Cargo.toml`, `pluxx.config.ts`, and plugin manifests must use the same semantic version.
 

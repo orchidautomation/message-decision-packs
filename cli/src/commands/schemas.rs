@@ -1025,7 +1025,7 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     "contract": {"const": PROMPT_OUTPUT_CONTRACT},
                     "output_kind": {
                         "enum": ["card-patches", "prospect-normalization"],
-                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs MDP prospect JSON for mdp fit/brief."
+                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs MDP prospect JSON for mdp fit/brief; proposal packs may also include normalized_opportunity as an exact alias."
                     },
                     "strict_json_only": {"const": true},
                     "required_top_level": {
@@ -1037,6 +1037,7 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 "source_summary",
                                 "runtime_context",
                                 "normalized_prospect",
+                                "normalized_opportunity",
                                 "normalization_trace",
                                 "card_patches",
                                 "gaps",
@@ -1117,7 +1118,11 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                     "person_name": {"type": "string"},
                     "person_title": {"type": "string"},
                     "account_name": {"type": "string"},
-                    "inputs_used": string_array(),
+                    "inputs_used": {
+                        "type": "array",
+                        "description": "Exact declared prompt input names used to create this output; source locators belong in evidence/provenance fields, signals[].source, or normalization_trace.",
+                        "items": {"type": "string"}
+                    },
                     "confidence": {"type": "string"}
                 }
             },
@@ -1170,6 +1175,7 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                 }
             },
             "normalized_prospect": prospect_schema(),
+            "normalized_opportunity": prospect_schema(),
             "normalization_trace": {
                 "type": "object",
                 "properties": {
@@ -1471,6 +1477,11 @@ mod tests {
             required_fields
                 .iter()
                 .any(|field| field == "normalized_prospect")
+        );
+        assert!(
+            required_fields
+                .iter()
+                .any(|field| field == "normalized_opportunity")
         );
         assert!(
             required_fields

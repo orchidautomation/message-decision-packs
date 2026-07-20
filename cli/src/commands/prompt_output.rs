@@ -289,6 +289,13 @@ fn validate_output_against_prompt(
             &format!("{path}#/normalized_prospect"),
             issues,
         );
+        validate_normalized_opportunity_alias(
+            manifest,
+            output.get("normalized_prospect"),
+            output.get("normalized_opportunity"),
+            &format!("{path}#/normalized_opportunity"),
+            issues,
+        );
         validate_normalization_trace(
             output.get("normalization_trace"),
             &format!("{path}#/normalization_trace"),
@@ -411,7 +418,7 @@ fn validate_source_summary(
                 "prompt_output_inputs_used_undeclared",
                 "error",
                 format!("{path}/inputs_used/{index}"),
-                format!("source_summary.inputs_used references undeclared input {input_name}"),
+                format!("source_summary.inputs_used must use declared prompt input names only; {input_name} is not declared"),
             ));
             continue;
         }
@@ -793,6 +800,53 @@ fn validate_normalized_prospect(
             "error",
             violation.path,
             violation.reason,
+        ));
+    }
+}
+
+fn validate_normalized_opportunity_alias(
+    manifest: &Manifest,
+    normalized_prospect: Option<&Value>,
+    normalized_opportunity: Option<&Value>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(alias) = normalized_opportunity else {
+        return;
+    };
+
+    if !manifest
+        .profile
+        .as_ref()
+        .is_some_and(|profile| profile.id == "proposal")
+    {
+        issues.push(issue(
+            "prompt_output_normalized_opportunity_profile",
+            "error",
+            path,
+            "normalized_opportunity is a proposal-profile alias; use normalized_prospect for non-proposal normalization outputs",
+        ));
+    }
+
+    if !alias.is_object() {
+        issues.push(issue(
+            "prompt_output_normalized_opportunity_type",
+            "error",
+            path,
+            "normalized_opportunity must be an object when provided",
+        ));
+        return;
+    }
+
+    let Some(prospect) = normalized_prospect else {
+        return;
+    };
+    if alias != prospect {
+        issues.push(issue(
+            "prompt_output_normalized_opportunity_mismatch",
+            "error",
+            path,
+            "normalized_opportunity must exactly match normalized_prospect; it is a proposal-readable alias, not a separate core opportunity object",
         ));
     }
 }
@@ -1280,7 +1334,7 @@ fn validate_string_array(
                 code,
                 "error",
                 format!("{path}/{index}"),
-                format!("reference {reference} does not match a declared prompt input"),
+                format!("reference {reference} must start with a declared prompt input name"),
             ));
         }
     }
@@ -1337,6 +1391,7 @@ fn allowed_top_level_fields(output_kind: &str) -> Vec<&'static str> {
     ];
     if output_kind == "prospect-normalization" {
         fields.push("normalized_prospect");
+        fields.push("normalized_opportunity");
         fields.push("normalization_trace");
     }
     fields
@@ -1390,21 +1445,94 @@ mod tests {
     use crate::commands::init::init_pack;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn temp_pack(name: &str) -> PathBuf {
+    fn temp_pack_with_template(name: &str, template: &str) -> PathBuf {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-prompt-output-{name}-{nonce}"));
-        init_pack(&root, "Example Message Pack", "gtm", true, false)
+        init_pack(&root, "Example Message Pack", template, true, false)
             .expect("starter pack should initialize");
         root
+    }
+
+    fn temp_pack(name: &str) -> PathBuf {
+        temp_pack_with_template(name, "gtm")
     }
 
     fn write_output(root: &Path, name: &str, body: &str) -> PathBuf {
         let path = root.join(name);
         std::fs::write(&path, body).expect("output fixture should be writable");
         path
+    }
+
+    fn write_json_output(root: &Path, name: &str, body: &Value) -> PathBuf {
+        write_output(
+            root,
+            name,
+            &serde_json::to_string_pretty(body).expect("output fixture should serialize"),
+        )
+    }
+
+    fn proposal_opportunity_alias_output() -> Value {
+        let normalized = json!({
+            "name": "N/A",
+            "title": "N/A",
+            "company": "Example Public Services Agency",
+            "company_domain": "public-services.example",
+            "source_kind": "synthetic-example",
+            "synthetic": true,
+            "background": "Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.",
+            "trigger": "Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.",
+            "persona": "Proposal Lead",
+            "segment": "public-services-review",
+            "attributes": {
+                "opportunity_stage": "bid-no-bid",
+                "pursuit_decision": "needs-more-info",
+                "source_safety": "synthetic"
+            },
+            "signals": [
+                {
+                    "id": "public-services-review-context",
+                    "title": "Public services review context supplied",
+                    "source": "raw_opportunity.summary",
+                    "confidence": "medium",
+                    "freshness": "synthetic",
+                    "state_as": "supplied"
+                }
+            ]
+        });
+        json!({
+            "contract": "mdp.prompt-output.v0",
+            "prompt_id": "normalize-opportunity",
+            "source_summary": {
+                "company_domain": "public-services.example",
+                "company_name": "Example Public Services Agency",
+                "person_name": "N/A",
+                "person_title": "N/A",
+                "account_name": "Neutral proposal contract fixture",
+                "inputs_used": ["raw_opportunity", "existing_pack_context", "source_kind"],
+                "confidence": "medium"
+            },
+            "normalized_prospect": normalized.clone(),
+            "normalized_opportunity": normalized,
+            "normalization_trace": {
+                "persona": {
+                    "source": "existing_pack_context.personas",
+                    "matched_keywords": ["bid/no-bid"],
+                    "confidence": "high",
+                    "needs_review": false
+                },
+                "fit_readiness": {
+                    "ready_for_mdp_fit": true
+                },
+                "preserved_raw_fields": ["raw_opportunity.summary", "source_kind"],
+                "missing_required": []
+            },
+            "card_patches": [],
+            "gaps": [],
+            "rejected_claims": []
+        })
     }
 
     #[test]
@@ -2553,6 +2681,52 @@ mod tests {
                 "expected issue code {code}"
             );
         }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_accepts_matching_proposal_opportunity_alias() {
+        let root = temp_pack_with_template("proposal-opportunity-alias", "proposal");
+        let output = proposal_opportunity_alias_output();
+        let path = write_json_output(
+            &root,
+            "normalize-opportunity-output.json",
+            &output,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-opportunity"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], true);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_mismatched_proposal_opportunity_alias() {
+        let root = temp_pack_with_template("proposal-opportunity-alias-mismatch", "proposal");
+        let mut output = proposal_opportunity_alias_output();
+        output["normalized_opportunity"]["company"] = Value::String("Different Agency".into());
+        let path = write_json_output(
+            &root,
+            "normalize-opportunity-output.json",
+            &output,
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("normalize-opportunity"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "prompt_output_normalized_opportunity_mismatch")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

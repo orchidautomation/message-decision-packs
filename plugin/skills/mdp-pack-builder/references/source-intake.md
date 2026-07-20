@@ -9,6 +9,7 @@ Read this when source material must become pack decisions.
 - Record source class, locator, snippet, date, confidence, and intended primitive.
 - Exclude secrets, gated pages, contact databases, and unapproved exports.
 - Preserve disagreement, staleness, and missing evidence as gaps.
+- In prompt outputs, keep source inventory and source locators distinct: `source_summary.inputs_used` is exact declared input names only, while locators/snippets belong in evidence, provenance, `signals[].source`, and normalization trace.
 - For targeted GTM packs, cite the target identity in `target.source_ids`. Treat additional `target.external_terms` as supported only when a listed source contains the term in a direct claim; otherwise keep the term as a gap.
 
 ## Workflow

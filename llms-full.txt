@@ -28,7 +28,7 @@ Sending, CRM mutation, enrichment, scraping, sequencing, proposal submission, le
 ```text
 message-decision-packs/
   cli/      # Rust `mdp` CLI
-  plugin/   # canonical plugin source
+  plugin/   # Pluxx plugin package source: skills, assets, hooks, scripts
   docs/     # current user and maintainer docs
   examples/ # one canonical runnable Eve example
 ```
@@ -162,11 +162,13 @@ Prompt files use `format: mdp.prompt.v0` and return `contract: mdp.prompt-output
 - normalization prompts turn messy supplied rows into validated prospect or opportunity context;
 - extraction prompts propose reviewable card patches, gaps, rejected claims, confidence, and provenance.
 
+`source_summary.inputs_used` names exact declared prompt inputs only, such as `raw_row`, `raw_opportunity`, `existing_pack_context`, or `source_kind`. Field paths, snippets, URLs, PDF/page locators, and review notes belong in source/provenance locators such as `signals[].source`, entry `evidence`/`provenance`, and normalization trace. Proposal normalization keeps `normalized_prospect` for compatibility and may include `normalized_opportunity` only as an exact alias.
+
 Prompt contracts do not browse or execute. Source-strategy artifacts plan approved source targets, queries, evidence rules, exclusions, receipts, budgets, review gates, and downstream handoff instructions. External scouts may execute an approved strategy, but MDP remains the local scoring and routing authority.
 
 ## Plugin And Pluxx
 
-`plugin/` is the canonical plugin source. Pluxx packages it into release bundles for Claude Code, Cursor, Codex, and OpenCode. The MDP installer combines those bundles with the Rust CLI; Pluxx is not the MDP runtime or a hosted service.
+The full repository is the product/plugin source contract: CLI, docs, canonical templates/assets, authored skills under `plugin/skills`, install/release assets, and Pluxx config move together. Pluxx packages canonical source into release bundles for Claude Code, Cursor, Codex, and OpenCode. The MDP installer combines those bundles with the Rust CLI; Pluxx is not the MDP runtime or a hosted service.
 
 MDP ships exactly five skills:
 

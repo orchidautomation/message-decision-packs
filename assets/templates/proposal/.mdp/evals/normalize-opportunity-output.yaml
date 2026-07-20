@@ -53,6 +53,34 @@ prompt_output:
       confidence: medium
       freshness: synthetic
       state_as: supplied
+  normalized_opportunity:
+    name: N/A
+    title: N/A
+    company: Example Public Services Agency
+    company_domain: public-services.example
+    source_kind: synthetic-example
+    synthetic: true
+    background: Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.
+    trigger: Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.
+    persona: Proposal Lead
+    segment: public-services-review
+    attributes:
+      opportunity_stage: bid-no-bid
+      pursuit_decision: needs-more-info
+      source_safety: synthetic
+    signals:
+    - id: public-services-review-context
+      title: Public services review context supplied
+      source: raw_opportunity.summary
+      confidence: medium
+      freshness: synthetic
+      state_as: supplied
+    - id: due-date-supplied
+      title: Proposal due date supplied
+      source: raw_opportunity.due_date
+      confidence: medium
+      freshness: synthetic
+      state_as: supplied
   normalization_trace:
     persona:
       source: existing_pack_context.personas

@@ -145,6 +145,8 @@ mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normaliz
 
 If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, keep the missing context in gaps and structured `normalization_trace.missing_required` entries. Do not invent proof, certifications, compliance status, deadlines, RFP text, past performance, pricing, evaluator criteria, approval status, or person context.
 
+For all prompt outputs, `source_summary.inputs_used` names declared prompt inputs only, such as `raw_row`, `raw_opportunity`, `existing_pack_context`, or `source_kind`. Put field paths, source snippets, PDF/page locators, URLs, and review notes in source/provenance fields such as `signals[].source`, candidate-entry `evidence`/`provenance`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. Proposal normalization must keep `normalized_prospect` for compatibility; it may also include `normalized_opportunity` as an exact alias so proposal readers do not have to interpret the compatibility name.
+
 Minimum parser admission is still `name`, `title`, and `company`, but the starter pack's fit-ready requirements are stricter:
 
 ```yaml

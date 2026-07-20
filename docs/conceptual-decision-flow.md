@@ -172,6 +172,8 @@ New packs include `.mdp/prompts/normalize-prospect.yaml`. This prompt contract i
 - `gaps`: missing or weak data that should not be invented.
 - empty `card_patches`: runtime normalization does not edit pack cards.
 
+`source_summary.inputs_used` is an exact list of declared prompt inputs used, not a source-locator ledger. Put field paths, snippets, URLs, PDF/page references, and review notes in `signals[].source`, candidate `evidence`/`provenance`, or normalization trace. Proposal normalization keeps `normalized_prospect` for compatibility and may include `normalized_opportunity` only as an exact alias; opportunity-specific meaning stays in profile-owned signals, attributes, trace, requirements, proof, and gaps.
+
 That makes the boundary explicit:
 
 ```text

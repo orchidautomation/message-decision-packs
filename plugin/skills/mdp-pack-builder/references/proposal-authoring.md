@@ -8,6 +8,8 @@ Use supplied or approved RFP files, amendments, Q&A, instructions, evaluation cr
 
 Map opportunity facts and requirement snippets to `source-signals`, must-answer requirements to `needs-requirements`, bid/no-bid and evaluation gates to `decision-criteria`, approved proof to `evidence-proof`, and missing proof or context to `gaps`.
 
+`normalize-opportunity` still emits `normalized_prospect` because the CLI compatibility contract ingests prospect-shaped normalization output. Proposal packs may also include `normalized_opportunity` as an exact alias for readability, but opportunity-specific fields belong in signals, attributes, trace, gaps, requirements, and proof—not in a new core object.
+
 ## Closed Job Bindings
 
 ```yaml
