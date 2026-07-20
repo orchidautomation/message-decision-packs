@@ -5,7 +5,7 @@ use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
 use crate::routing::select_cards;
 use crate::utils::{resolve_persona_label, routable_persona};
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,13 +14,15 @@ use std::fs;
 use std::path::Path;
 
 const PROOF_OUTPUT_CONTRACT: &str = "mdp.proof-output.v0";
+const PROOF_OUTPUT_DRAFT_CONTRACT: &str = "mdp.proof-output-draft.v0";
+const AUTHOR_PROOF_OUTPUT_CONTRACT: &str = "mdp.author-proof-output.v0";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ProofOutputArtifact {
     contract: String,
     pack: ProofPack,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     route: Option<ProofRoute>,
     output: ProofOutput,
     coverage: ProofCoverage,
@@ -28,17 +30,17 @@ struct ProofOutputArtifact {
     segments: Vec<ProofSegment>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ProofPack {
     id: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     profile_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pack_hash: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ProofRoute {
     #[serde(default)]
@@ -47,7 +49,7 @@ struct ProofRoute {
     job: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ProofOutput {
     kind: String,
@@ -55,28 +57,48 @@ struct ProofOutput {
     text: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ProofOutputDraftArtifact {
+    contract: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    route: Option<ProofRoute>,
+    output: ProofOutputDraft,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    coverage: Option<ProofCoverage>,
+    #[serde(default)]
+    segments: Vec<ProofSegment>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ProofOutputDraft {
+    kind: String,
+    format: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ProofCoverage {
     mode: String,
     material_policy: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ProofSegment {
     id: String,
     kind: SegmentKind,
     text: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     material: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     refs: Vec<ProofRef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     gap: Option<ProofGap>,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 enum SegmentKind {
     Claim,
@@ -87,14 +109,14 @@ enum SegmentKind {
     Formatting,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ProofGap {
     code: String,
     reason: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum ProofRef {
     CardEntry {
@@ -205,6 +227,84 @@ pub(crate) fn verify_output_value(
 ) -> Result<Value> {
     let raw = serde_json::to_string(value)?;
     verify_output_raw(root, &raw, artifact_path)
+}
+
+pub(crate) fn author_proof_output_file(root: &Path, file: &Path) -> Result<Value> {
+    let raw = fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+    author_proof_output_raw(root, &raw, &file.display().to_string())
+}
+
+fn author_proof_output_raw(root: &Path, raw: &str, draft_path: &str) -> Result<Value> {
+    let mut issues = Vec::new();
+    let draft: ProofOutputDraftArtifact = match serde_json::from_str(raw) {
+        Ok(draft) => draft,
+        Err(err) => {
+            issues.push(issue(
+                "proof_output_draft_malformed",
+                "error",
+                draft_path,
+                format!(
+                    "proof-output draft must be valid {PROOF_OUTPUT_DRAFT_CONTRACT} JSON: {err}"
+                ),
+            ));
+            return Ok(author_result(false, issues, Value::Null, Value::Null));
+        }
+    };
+
+    if draft.contract != PROOF_OUTPUT_DRAFT_CONTRACT {
+        issues.push(issue(
+            "proof_output_draft_contract_unknown",
+            "error",
+            format!("{draft_path}#/contract"),
+            format!(
+                "contract must be {PROOF_OUTPUT_DRAFT_CONTRACT}, found {}",
+                draft.contract
+            ),
+        ));
+        return Ok(author_result(false, issues, Value::Null, Value::Null));
+    }
+
+    let inventory = load_inventory(root)?;
+    let proof_output = proof_output_from_draft(draft, &inventory)?;
+    let verification = verify_output_value(root, &proof_output, draft_path)?;
+    let valid = verification["valid"].as_bool() == Some(true);
+    Ok(author_result(valid, issues, proof_output, verification))
+}
+
+fn proof_output_from_draft(
+    draft: ProofOutputDraftArtifact,
+    inventory: &PackInventory,
+) -> Result<Value> {
+    let text = draft
+        .segments
+        .iter()
+        .map(|segment| segment.text.as_str())
+        .collect::<String>();
+    let profile_id = inventory
+        .manifest
+        .profile
+        .as_ref()
+        .map(|profile| profile.id.clone());
+    let artifact = ProofOutputArtifact {
+        contract: PROOF_OUTPUT_CONTRACT.to_string(),
+        pack: ProofPack {
+            id: inventory.manifest.id.clone(),
+            profile_id,
+            pack_hash: None,
+        },
+        route: draft.route,
+        output: ProofOutput {
+            kind: draft.output.kind,
+            format: draft.output.format,
+            text,
+        },
+        coverage: draft.coverage.unwrap_or_else(|| ProofCoverage {
+            mode: "full-segmentation".to_string(),
+            material_policy: "bound-or-gap".to_string(),
+        }),
+        segments: draft.segments,
+    };
+    serde_json::to_value(artifact).context("serializing proof-output artifact")
 }
 
 fn verify_output_raw(root: &Path, raw: &str, artifact_path: &str) -> Result<Value> {
@@ -1972,6 +2072,44 @@ fn result(
     })
 }
 
+fn author_result(
+    valid: bool,
+    issues: Vec<Value>,
+    proof_output: Value,
+    verification: Value,
+) -> Value {
+    let author_error_count = issues
+        .iter()
+        .filter(|issue| issue["severity"].as_str() == Some("error"))
+        .count();
+    let author_warning_count = issues
+        .iter()
+        .filter(|issue| issue["severity"].as_str() == Some("warning"))
+        .count();
+    let verification_error_count = verification["error_count"].as_u64().unwrap_or(0) as usize;
+    let verification_warning_count = verification["warning_count"].as_u64().unwrap_or(0) as usize;
+    let verification_ran = !verification.is_null();
+    let verification_valid = verification["valid"].as_bool();
+    json!({
+        "contract": AUTHOR_PROOF_OUTPUT_CONTRACT,
+        "draft_contract": PROOF_OUTPUT_DRAFT_CONTRACT,
+        "proof_contract": PROOF_OUTPUT_CONTRACT,
+        "valid": valid,
+        "error_count": author_error_count + verification_error_count,
+        "warning_count": author_warning_count + verification_warning_count,
+        "author_error_count": author_error_count,
+        "author_warning_count": author_warning_count,
+        "issues": issues,
+        "checked": {
+            "verification_ran": verification_ran,
+            "verification_valid": verification_valid,
+            "segments": proof_output["segments"].as_array().map(Vec::len).unwrap_or(0)
+        },
+        "proof_output": proof_output,
+        "verification": verification
+    })
+}
+
 fn unique_values(values: Vec<Value>) -> Vec<Value> {
     let mut seen = BTreeSet::new();
     let mut unique = Vec::new();
@@ -2145,6 +2283,46 @@ mod tests {
         assert_eq!(result["valid"], true, "{result}");
         assert_eq!(result["decision"], "proof-safe");
         assert_eq!(result["checked"]["segments"], 4);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn author_proof_output_compiles_draft_and_runs_verifier() {
+        let root = temp_proposal_pack("author-valid");
+        let draft = valid_authoring_draft();
+        let raw = serde_json::to_string(&draft).expect("draft should serialize");
+
+        let result = author_proof_output_raw(&root, &raw, "inline").expect("authoring should run");
+
+        assert_eq!(result["valid"], true, "{result}");
+        assert_eq!(result["proof_output"]["contract"], "mdp.proof-output.v0");
+        assert_eq!(result["proof_output"]["pack"]["id"], "proposal-mdp-sample");
+        assert_eq!(
+            result["proof_output"]["output"]["text"],
+            "Requirement status: Source-backed. The synthetic sample may discuss phased rollout planning and training readiness. Gap: the sample pack has no approved certification proof."
+        );
+        assert_eq!(result["verification"]["valid"], true);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn author_proof_output_fails_when_compiled_artifact_fails_verifier() {
+        let root = temp_proposal_pack("author-invalid");
+        let mut draft = valid_authoring_draft();
+        draft["segments"][2]["refs"] = json!([]);
+        let raw = serde_json::to_string(&draft).expect("draft should serialize");
+
+        let result = author_proof_output_raw(&root, &raw, "inline").expect("authoring should run");
+
+        assert_eq!(result["valid"], false);
+        assert_eq!(result["checked"]["verification_ran"], true);
+        assert_eq!(result["author_error_count"], 0);
+        assert!(result["error_count"].as_u64().unwrap_or(0) > 0);
+        assert!(
+            issue_codes(&result["verification"]).contains(&"proof_output_insufficient_binding")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -2587,6 +2765,18 @@ mod tests {
                     ]
                 }
             ]
+        })
+    }
+
+    fn valid_authoring_draft() -> Value {
+        json!({
+            "contract": "mdp.proof-output-draft.v0",
+            "route": {"persona": "Proposal Lead", "job": "compliance review"},
+            "output": {
+                "kind": "proposal-review-section",
+                "format": "markdown"
+            },
+            "segments": valid_artifact()["segments"].clone()
         })
     }
 

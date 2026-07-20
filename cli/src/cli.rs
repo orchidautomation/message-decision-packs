@@ -106,6 +106,17 @@ pub(crate) enum Commands {
         #[arg(long, help = "Emit a human-readable Markdown proposal review artifact")]
         readable: bool,
     },
+    #[command(about = "Compile a proof-output draft into verified mdp.proof-output.v0 JSON")]
+    AuthorProofOutput {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long, help = "mdp.proof-output-draft.v0 JSON to compile")]
+        draft: PathBuf,
+        #[arg(long, help = "Write the verified proof-output JSON artifact")]
+        out: Option<PathBuf>,
+        #[arg(long, help = "Show the output artifact write without writing it")]
+        dry_run: bool,
+    },
     #[command(about = "Render a compact human brief from an existing MDP artifact")]
     RenderBrief {
         #[arg(long, default_value = ".")]
@@ -283,6 +294,7 @@ pub(crate) enum SchemaTarget {
     Card,
     Prompt,
     ProofOutput,
+    ProofOutputDraft,
     Brief,
     HumanBrief,
     RuntimeContext,

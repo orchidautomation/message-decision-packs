@@ -75,9 +75,12 @@ mdp --json validate --dir ./mdp-proposal-demo
 mdp --json eval --dir ./mdp-proposal-demo
 mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
 mdp --json verify-output --dir ./mdp-proposal-demo --file ./mdp-proposal-demo/examples/proof-output/valid-binding.json
+mdp --json author-proof-output --dir ./mdp-proposal-demo --draft ./mdp-proposal-demo/examples/proof-output-drafts/compliance-row.draft.json --out /tmp/mdp-proof-output.json
 mdp --json route --entries --dir ./mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
 mdp --json gaps --dir ./mdp-proposal-demo
 ```
+
+The proposal starter also includes proof-output draft examples under `examples/proof-output-drafts/`. Use `mdp author-proof-output` to compile a draft into verified `mdp.proof-output.v0` JSON, then keep `mdp verify-output`/the embedded `check-claims` result as the machine source of truth. See [Proof-Output Drafting](proof-output-drafting.md).
 
 The proposal starter does not create prospect rows or outbound fixtures. It is a synthetic proposal review profile for bid/no-bid, compliance, proof, red-team, and executive review workflows. Its `normalize-opportunity` prompt normalizes messy proposal/RFP context into bounded profile vocabulary for local validation; `verify-output` checks proof-carrying generated text against real pack IDs before the text is trusted. Neither command submits, scrapes, enriches, certifies, or manages proposal work.
 

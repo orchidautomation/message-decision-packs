@@ -6,6 +6,7 @@ These are the current public docs:
 - [Conceptual Decision Flow](conceptual-decision-flow.md): pack layers, routing, fit, briefs, and drafting boundaries.
 - [Portfolio-Aware GTM Scope](portfolio-scope.md): scope existing primitives by product, capability, solution, or segment within one pack.
 - [Prompt Contracts](prompt-extraction-contract.md): normalization and extraction schemas.
+- [Proof-Output Drafting](proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
 - [Agent Hook Guidance](agent-hook-guidance.md): safe activation and validation hooks.
 - [Distribution](distribution.md): Pluxx bundles, release assets, installers, and updates.
 - [Skill Evals](skill-evals.md): skill trigger and output-eval fixtures.

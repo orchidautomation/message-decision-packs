@@ -222,7 +222,7 @@ When a question mixes templates, profiles, readiness, routing, and drafting, kee
 | Cards | Reviewed decisions, rules, claims, proof, gaps, output boundaries, and profile-owned domain vocabulary | Raw messy rows or unreviewed prompt guesses |
 | Prompts | Translating supplied messy context into strict prompt-output JSON | Final fit, route, card mutation, or final draft approval |
 | Prompt-output validation | Checking schema, prompt id, provenance references, value contracts, attributes, and enum/type/date validity | Deciding commercial readiness |
-| Proof-output verification | Checking `mdp.proof-output.v0` generated text segmentation, real pack ID bindings, safe gaps, connective text, and full-text claim guardrails | Proving a model-selected source ID is true without deterministic validation |
+| Proof-output verification | Checking `mdp.proof-output.v0` generated text segmentation, real pack ID bindings, safe gaps, connective text, and full-text claim guardrails; `author-proof-output` only compiles drafts into that verifier | Proving a model-selected source ID is true without deterministic validation |
 | Input readiness policy | The user-facing meaning of `lead_input_requirements`: which fields, signals, attributes, and values must exist before fit/brief work proceeds | Whether the account is a good market opportunity |
 | Evals | Regression fixtures for routes, prompt outputs, profile categories, and safety cases | Manual proof that a real prospect is worth contacting |
 | Fit | Deterministic pass/insufficient/disqualified decision from normalized row plus pack rules | Writing copy |

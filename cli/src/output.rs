@@ -80,6 +80,26 @@ fn summarize(command: &str, data: &Value) -> Value {
             "issue_count": array_len(&data["issues"]),
             "issues": data["issues"]
         }),
+        "author-proof-output" => json!({
+            "valid": data["valid"],
+            "verification_decision": data["verification"]["decision"],
+            "verification_valid": data["checked"]["verification_valid"],
+            "error_count": data["error_count"],
+            "warning_count": data["warning_count"],
+            "author_error_count": data["author_error_count"],
+            "author_warning_count": data["author_warning_count"],
+            "verification_error_count": data["verification"]["error_count"],
+            "verification_warning_count": data["verification"]["warning_count"],
+            "checked": data["checked"],
+            "issue_count": array_len(&data["issues"]),
+            "verification_issue_count": array_len(&data["verification"]["issues"]),
+            "issues": data["issues"],
+            "verification_issues": data["verification"]["issues"],
+            "input_artifact": data["input_artifact"],
+            "artifact": data["artifact"],
+            "dry_run": data["dry_run"],
+            "write_plan": data["write_plan"]
+        }),
         "render-brief" => json!({
             "artifact_type": data["artifact_type"],
             "template_id": data["template_id"],
@@ -357,7 +377,9 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                 }
             }
         }
-        "brief" | "emit-brief" | "pack" if data["dry_run"].as_bool() == Some(true) => {
+        "brief" | "emit-brief" | "pack" | "author-proof-output"
+            if data["dry_run"].as_bool() == Some(true) =>
+        {
             println!("{command}: dry run");
             print_write_plan(data);
         }

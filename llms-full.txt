@@ -144,6 +144,7 @@ mdp --json --summary brief --context --dir . --prospect <prospect.json> --channe
 mdp render-brief --dir . --file <brief.json> --template gtm-prospect
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "linkedin outbound copy"
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "portfolio scope example" --scope product=local-cli
+mdp --json author-proof-output --dir . --draft <proof-output-draft.json> --out <proof-output.json>
 mdp --json verify-output --dir . --file <proof-output.json>
 mdp --json gaps --dir .
 mdp --json eval --dir .
@@ -151,7 +152,7 @@ mdp --json eval --dir .
 
 Use `brief --context` and draft from `data.context.entries`. Open `data.context.full_card_required` paths only when present. Human-readable renderers are review layers, not machine sources of truth or permission to use blocked output.
 
-`check-claims` handles plain text against claims, avoid-rules, output-rules, and constraints. When generated output cites source, card, proof, requirement, or template IDs, require a `mdp.proof-output.v0` artifact and run `verify-output`; model-written IDs alone are not proof.
+`check-claims` handles plain text against claims, avoid-rules, output-rules, and constraints. When generated output cites source, card, proof, requirement, or template IDs, require a `mdp.proof-output.v0` artifact and run `verify-output`; model-written IDs alone are not proof. Use `author-proof-output` to compile `mdp.proof-output-draft.v0` segments into that artifact, but do not treat it as a source audit or verifier bypass.
 
 Generated starter rows carry `source_kind: synthetic-example` and `synthetic: true`. Rows created by `sample-leads` additionally carry `do_not_contact: true`. Never enrich, upload, sequence, contact, or present either kind as a real prospect.
 

@@ -20,7 +20,7 @@ Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--op
 4. Run `mdp --json validate --dir <pack>`.
 5. Use `skills`, `route --entries`, `fit`, and `brief --context` to load only eligible context. Let pack-owned `qualification_gates` decide required person and source-backed signal coverage.
 6. Stop on `disqualified`, `insufficient-context`, proof gaps, or blocked review states.
-7. Run `check-claims` or `verify-output` before approving claim-bearing output.
+7. Run `check-claims`, `author-proof-output`, or `verify-output` before approving claim-bearing output; `author-proof-output` still runs `verify-output`.
 8. Run `gaps` and `eval` when the pack changes.
 
 ```bash
@@ -35,6 +35,7 @@ mdp --json fit --dir . --prospect <prospect.json>
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel linkedin
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "linkedin outbound copy"
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "portfolio scope example" --scope product=local-cli
+mdp --json author-proof-output --dir . --draft <proof-output-draft.json> --out <proof-output.json>
 mdp --json verify-output --dir . --file <proof-output.json>
 mdp --json gaps --dir .
 mdp --json eval --dir .
@@ -78,6 +79,7 @@ MDP ships exactly five skills: `mdp`, `mdp-pack-builder`, `mdp-pack-review`, `md
 - [Conceptual Decision Flow](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/conceptual-decision-flow.md)
 - [Portfolio-Aware GTM Scope](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/portfolio-scope.md)
 - [Prompt Contracts](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md)
+- [Proof Output Drafting](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/proof-output-drafting.md)
 - [Agent Hook Guidance](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/agent-hook-guidance.md)
 - [Distribution](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md)
 - [CLI Usage](https://github.com/orchidautomation/message-decision-packs/blob/main/cli/USAGE.md)

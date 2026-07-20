@@ -26,7 +26,7 @@ pub(crate) use init::{
 pub(crate) use pack::pack;
 pub(crate) use prompt_output::validate_prompt_output_file;
 pub(crate) use proof_output::{
-    verify_output_file, verify_output_readable_file, verify_output_value,
+    author_proof_output_file, verify_output_file, verify_output_readable_file, verify_output_value,
 };
 pub(crate) use routing::{check_claims_scoped, fit, route_scoped};
 pub(crate) use sample_leads::sample_leads;
