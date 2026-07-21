@@ -10,6 +10,7 @@ The receipt records:
 
 - whether the host runner reports a fresh/stateless model call (`--isolation isolated`);
 - whether the host runner confirms only prompt-declared payload fields crossed into that model call (`--declared-inputs-only`);
+- optional `mdp.runner-audit.v0` evidence from a native API, Codex headless, Claude headless, Cursor headless, OpenCode headless, or custom headless runner;
 - hashes and byte counts for the pack manifest, prompt output, validation result, source audit, and any extra artifacts;
 - whether `validate-prompt-output` succeeded;
 - whether the proposal source audit was present and used by validation.
@@ -37,6 +38,8 @@ mdp --json run-receipt \
   --prompt-output <normalize-opportunity-output.json> \
   --validation <validate-prompt-output-result.json> \
   --source-audit <source-audit.json> \
+  --runner-audit <runner-audit.json> \
+  --require-runner-audit \
   --out <run-receipt.json>
 ```
 
@@ -64,6 +67,25 @@ The validation result may be either the raw `data` object from `validate-prompt-
 
 Validation-style CLI behavior applies: a non-`audit-grade` receipt prints the JSON result and exits nonzero.
 
+## Runner Audit
+
+`mdp.runner-audit.v0` is the host-owned artifact that makes the isolation claim reviewable. Get its schema with:
+
+```bash
+mdp --json schema runner-audit
+```
+
+For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the supported isolated modes:
+
+- `native-api`: a direct stateless API request with no prior messages and no tools.
+- `codex-exec`: `codex exec` in a sterile working directory with ephemeral output, read-only sandboxing, no resume, prompt-input audit, and zero observed tool events.
+- `claude-print`: `claude --bare -p` with no session persistence, no resume/continue, structured output, disabled tools, and zero observed tool events.
+- `cursor-print`: `cursor-agent -p` only when a wrapper proves no resume, no `--force`, sterile input, disabled/externally denied tools, and zero observed tool events.
+- `opencode-run`: `opencode run` only when a wrapper proves no resume/session attach, `--pure`, disabled default/plugin discovery, a no-tool agent, and zero observed tool events.
+- `custom-headless`: a host-owned runner that proves the common no-resume/no-tools/no-persistence boundary.
+
+If no runner audit is supplied and `--require-runner-audit` is omitted, the receipt can still be `audit-grade` from assertion flags, but `runner.assurance` is `asserted`. For production proposal review, use `headless-verified` or `stateless-api-verified`.
+
 ## One-Thread UX, Two Planes
 
 A ChatGPT, Codex, Claude Code, Cursor, or Copilot user should not have to manually reason about model context. The polished workflow can still appear as one thread, but implementation should keep two planes:
@@ -75,6 +97,8 @@ Evidence plane: local source files, source audit, prompt output, validation, fit
 
 For production proposal flows, same-conversation normalization should be labeled advisory unless a runner/MCP can create a fresh model invocation with only the prompt-declared payload.
 
+See [Headless Normalization Runners](headless-normalization-runners.md) for Codex and Claude recipes.
+
 ## Runner/MCP Direction
 
 `run-receipt` is the first deterministic receipt contract. A host-neutral runner or MCP should wrap the CLI with tools that:
@@ -83,8 +107,9 @@ For production proposal flows, same-conversation normalization should be labeled
 2. extract bounded text and create `mdp.source-audit.v0`;
 3. load `.mdp/prompts/normalize-opportunity.yaml`;
 4. call the model in a fresh/stateless invocation with only declared inputs;
-5. run `mdp validate-prompt-output --source-audit`;
-6. call `mdp run-receipt`;
-7. continue to `fit`, `route`, `author-proof-output`, `verify-output`, or `render-brief` as needed.
+5. emit `mdp.runner-audit.v0` for the headless/stateless boundary;
+6. run `mdp validate-prompt-output --source-audit`;
+7. call `mdp run-receipt --require-runner-audit`;
+8. continue to `fit`, `route`, `author-proof-output`, `verify-output`, or `render-brief` as needed.
 
 Pluxx continues to package skills and hooks for supported hosts. The runner/MCP owns runtime isolation, while the CLI owns deterministic artifact checks.

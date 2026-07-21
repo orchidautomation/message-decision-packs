@@ -1,7 +1,7 @@
 use crate::cli::SchemaTarget;
 use crate::constants::{
     FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, RUNNER_AUDIT_CONTRACT,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -65,6 +65,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::ProofOutput => proof_output_schema(),
         SchemaTarget::ProofOutputDraft => proof_output_draft_schema(),
         SchemaTarget::RunReceipt => run_receipt_schema(),
+        SchemaTarget::RunnerAudit => runner_audit_schema(),
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
@@ -128,7 +129,7 @@ fn run_receipt_schema() -> Value {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "MDP Run Receipt v0",
         "type": "object",
-        "required": ["contract", "valid", "decision", "workflow", "boundary", "prompt", "artifacts", "issues"],
+        "required": ["contract", "valid", "decision", "workflow", "boundary", "runner", "prompt", "artifacts", "issues"],
         "additionalProperties": true,
         "properties": {
             "contract": {"const": "mdp.run-receipt.v0"},
@@ -156,6 +157,17 @@ fn run_receipt_schema() -> Value {
                     "isolation": {"enum": ["isolated", "ambient", "unknown"]},
                     "conversation_context_used": {"type": ["boolean", "null"]},
                     "declared_inputs_only": {"type": "boolean"}
+                }
+            },
+            "runner": {
+                "type": "object",
+                "required": ["runner_audit_required", "assurance"],
+                "additionalProperties": true,
+                "properties": {
+                    "runner_audit": {"type": ["string", "null"]},
+                    "runner_audit_required": {"type": "boolean"},
+                    "assurance": {"enum": ["headless-verified", "stateless-api-verified", "asserted", "missing", "invalid"]},
+                    "summary": {"type": "object"}
                 }
             },
             "prompt": {
@@ -202,6 +214,51 @@ fn run_receipt_schema() -> Value {
             },
             "error_count": {"type": "integer", "minimum": 0},
             "warning_count": {"type": "integer", "minimum": 0}
+        }
+    })
+}
+
+fn runner_audit_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Runner Audit v0",
+        "type": "object",
+        "required": [
+            "contract",
+            "runner",
+            "isolated_invocation",
+            "conversation_resume",
+            "declared_inputs_only",
+            "output_schema_used"
+        ],
+        "additionalProperties": true,
+        "properties": {
+            "contract": {"const": RUNNER_AUDIT_CONTRACT},
+            "runner": {"enum": ["native-api", "codex-exec", "claude-print", "cursor-print", "opencode-run", "custom-headless"]},
+            "model": {"type": ["string", "null"]},
+            "isolated_invocation": {"type": "boolean"},
+            "conversation_resume": {"type": "boolean"},
+            "declared_inputs_only": {"type": "boolean"},
+            "output_schema_used": {"type": "boolean"},
+            "prompt_input_audited": {"type": "boolean"},
+            "session_persistence": {"type": "boolean"},
+            "config_discovery_disabled": {"type": "boolean"},
+            "instructions_discovery_disabled": {"type": "boolean"},
+            "tools_disabled": {"type": "boolean"},
+            "tool_invocations_observed": {"type": "integer", "minimum": 0},
+            "full_tool_access": {"type": "boolean"},
+            "force_enabled": {"type": "boolean"},
+            "pure": {"type": "boolean"},
+            "default_plugins_disabled": {"type": "boolean"},
+            "claude_code_discovery_disabled": {"type": "boolean"},
+            "project_rules_discovery_disabled": {"type": "boolean"},
+            "sterile_workdir": {"type": "boolean"},
+            "ephemeral": {"type": "boolean"},
+            "bare": {"type": "boolean"},
+            "sandbox": {"enum": ["read-only", "workspace-write", "danger-full-access", "unknown"]},
+            "stateless_request": {"type": "boolean"},
+            "prior_messages_included": {"type": "boolean"},
+            "notes": {"type": "array", "items": {"type": "string"}}
         }
     })
 }
@@ -1572,8 +1629,47 @@ mod tests {
             json!(["isolated", "ambient", "unknown"])
         );
         assert_eq!(
+            result["properties"]["runner"]["properties"]["assurance"]["enum"],
+            json!([
+                "headless-verified",
+                "stateless-api-verified",
+                "asserted",
+                "missing",
+                "invalid"
+            ])
+        );
+        assert_eq!(
             result["properties"]["artifacts"]["items"]["required"][5],
             "sha256"
+        );
+    }
+
+    #[test]
+    fn runner_audit_schema_exposes_headless_runner_contract() {
+        let result = schema(SchemaTarget::RunnerAudit);
+
+        assert_eq!(result["title"], "MDP Runner Audit v0");
+        assert_eq!(
+            result["properties"]["contract"]["const"],
+            RUNNER_AUDIT_CONTRACT
+        );
+        assert_eq!(
+            result["properties"]["runner"]["enum"],
+            json!([
+                "native-api",
+                "codex-exec",
+                "claude-print",
+                "cursor-print",
+                "opencode-run",
+                "custom-headless"
+            ])
+        );
+        assert!(
+            result["required"]
+                .as_array()
+                .expect("required")
+                .iter()
+                .any(|field| field == "output_schema_used")
         );
     }
 

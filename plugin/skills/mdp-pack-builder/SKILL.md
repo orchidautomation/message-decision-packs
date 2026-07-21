@@ -75,8 +75,10 @@ mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id normalize-opportun
 If this pack-build flow is also proving a sample proposal-review run, create a receipt from a fresh/stateless normalization call. Same-conversation normalization can inform authoring, but it is not audit-grade:
 
 ```bash
-mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON
+mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON --runner-audit RUNNER_AUDIT_JSON --require-runner-audit
 ```
+
+Use `mdp --json schema runner-audit` for the host-owned native/headless runner evidence. Pluxx-packaged skills can route users toward the runner, but pack authoring alone does not prove the model context boundary.
 
 6. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
 7. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target.

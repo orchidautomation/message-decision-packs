@@ -190,10 +190,11 @@ For audit-grade proposal/document normalization, add a runner receipt boundary:
 fresh/stateless model call + declared inputs only
   -> prompt output
   -> validate-prompt-output --source-audit
-  -> run-receipt
+  -> runner-audit
+  -> run-receipt --require-runner-audit
 ```
 
-`mdp run-receipt` records source-audit, prompt-output, validation, and downstream artifact hashes, but the host runner still owns the fresh-context guarantee. Same-conversation normalization is useful for drafts and debugging; without an audit-grade receipt it should be labeled advisory.
+`mdp run-receipt` records source-audit, prompt-output, validation, runner-audit, and downstream artifact hashes, but the host runner still owns the fresh-context guarantee. Same-conversation normalization is useful for drafts and debugging; without an audit-grade receipt it should be labeled advisory.
 
 Do not use normalization prompts to smooth over disqualifying language. If a row says "scrape contacts" or "auto-send a sequence", preserve that wording in the normalized context or trace so the fit gate can apply avoid-rules and disqualifiers.
 

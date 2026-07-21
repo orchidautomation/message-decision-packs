@@ -53,10 +53,10 @@ mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file O
 For audit-grade review, require a runner receipt after validation:
 
 ```bash
-mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON
+mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON --runner-audit RUNNER_AUDIT_JSON --require-runner-audit
 ```
 
-`run-receipt` is audit-grade only when the host runner reports a fresh/stateless model call and declared-input-only payload. If normalization happened in the current conversation, treat the review as advisory even when validation passes. Treat missing source-audit refs, snippet mismatches, or a non-audit-grade receipt as blockers for confident proposal review; keep the issue in gaps or reviewer questions instead of smoothing it into a sourced fact.
+`run-receipt` is audit-grade only when the host runner reports a fresh/stateless model call and declared-input-only payload. For paid pilots, require `mdp.runner-audit.v0` from a native API runner or a hardened headless runner such as Claude `--bare -p`, Codex `exec`, Cursor `-p` with tools externally denied, or OpenCode `run` with `--pure` and a no-tool agent. If normalization happened in the current conversation, treat the review as advisory even when validation passes. Treat missing source-audit refs, snippet mismatches, missing/invalid runner audit, or a non-audit-grade receipt as blockers for confident proposal review; keep the issue in gaps or reviewer questions instead of smoothing it into a sourced fact.
 
 ## Review Loop
 

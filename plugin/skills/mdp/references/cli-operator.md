@@ -28,7 +28,7 @@ Prefer CLI output to direct YAML inference. Read pack files only when authoring 
 ## Deterministic Gates
 
 - `validate-prompt-output`: validate model-produced normalization output; pass `--source-audit` for proposal PDF/doc extraction ledgers when raw-field/snippet citations must resolve.
-- `run-receipt`: record and gate the host-owned context boundary plus artifact hashes; audit-grade proposal review requires `--isolation isolated`, `--declared-inputs-only`, successful validation, and source audit when documents/PDFs were normalized.
+- `run-receipt`: record and gate the host-owned context boundary plus artifact hashes; audit-grade proposal review requires `--isolation isolated`, `--declared-inputs-only`, successful validation, source audit when documents/PDFs were normalized, and for production pilots `--runner-audit ... --require-runner-audit`.
 - `fit`: decide fit, insufficient context, or disqualification for supplied GTM prospect JSON.
 - `brief --context`: build bounded GTM decision context after fit permits it.
 - `check-claims`: test supplied claim-bearing text and output constraints.
@@ -48,7 +48,7 @@ mdp --json brief --context --dir PACK_ROOT --prospect PROSPECT_JSON --out BRIEF_
 mdp --json emit-brief --dir PACK_ROOT --persona PERSONA --out BRIEF_JSON --dry-run
 mdp --json pack --dir PACK_ROOT --out PACK_JSON --dry-run
 mdp --json author-proof-output --dir PACK_ROOT --draft PROOF_OUTPUT_DRAFT_JSON --out PROOF_OUTPUT_JSON --dry-run
-mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON --out RUN_RECEIPT_JSON --dry-run
+mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON --runner-audit RUNNER_AUDIT_JSON --require-runner-audit --out RUN_RECEIPT_JSON --dry-run
 ```
 
 For a named GTM pack, pass `--target-name` explicitly. Repeat `--target-alias` and `--exclude-term` when needed; never force-retarget an existing pack directory.

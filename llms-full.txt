@@ -130,7 +130,7 @@ approved opportunity, requirement, and proof sources
   -> surface gaps and human sign-off needs
 ```
 
-Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership. Same-conversation normalization is advisory unless `mdp run-receipt` records an isolated, declared-input-only run.
+Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership. Same-conversation normalization is advisory unless `mdp run-receipt` records an isolated, declared-input-only run with required runner-audit evidence.
 
 ## CLI Contract
 
@@ -148,7 +148,7 @@ mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "lin
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "portfolio scope example" --scope product=local-cli
 mdp --json author-proof-output --dir . --draft <proof-output-draft.json> --out <proof-output.json>
 mdp --json verify-output --dir . --file <proof-output.json>
-mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json>
+mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit
 mdp --json gaps --dir .
 mdp --json eval --dir .
 ```

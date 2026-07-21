@@ -124,6 +124,16 @@ pub(crate) enum Commands {
         #[arg(long, help = "mdp.source-audit.v0 JSON ledger used by validation")]
         source_audit: Option<PathBuf>,
         #[arg(
+            long,
+            help = "Optional mdp.runner-audit.v0 JSON proving the headless/stateless runner boundary"
+        )]
+        runner_audit: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Block unless --runner-audit proves a supported isolated runner mode"
+        )]
+        require_runner_audit: bool,
+        #[arg(
             long = "artifact",
             value_name = "KIND=PATH",
             help = "Additional local artifact to hash into the receipt"
@@ -333,6 +343,7 @@ pub(crate) enum SchemaTarget {
     ProofOutput,
     ProofOutputDraft,
     RunReceipt,
+    RunnerAudit,
     Brief,
     HumanBrief,
     RuntimeContext,
@@ -471,6 +482,9 @@ mod tests {
             "/tmp/validation.json",
             "--source-audit",
             "/tmp/source-audit.json",
+            "--runner-audit",
+            "/tmp/runner-audit.json",
+            "--require-runner-audit",
         ])
         .expect("run-receipt should parse");
 
@@ -480,6 +494,7 @@ mod tests {
                 workflow: RunReceiptWorkflow::ProposalReview,
                 isolation: RunIsolation::Isolated,
                 declared_inputs_only: true,
+                require_runner_audit: true,
                 ..
             }
         ));

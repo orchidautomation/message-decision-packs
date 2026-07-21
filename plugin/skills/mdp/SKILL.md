@@ -20,7 +20,7 @@ mdp --json skills --dir <pack-root>
 3. Treat `packaged_skill_ids` as released inventory, `eligibility` as pack policy, and `host_discovery.status: unobserved` as literal. Never claim MDP hid or exposed a host-discovered skill.
 4. Use JSON output for decisions. Use `--summary` only for a concise human status.
 
-For audit-grade proposal/document normalization, require `mdp run-receipt` after prompt-output validation. A skill running inside the current conversation cannot by itself guarantee model context isolation; the host runner must report `--isolation isolated` and `--declared-inputs-only`.
+For audit-grade proposal/document normalization, require `mdp run-receipt` after prompt-output validation. A skill running inside the current conversation cannot by itself guarantee model context isolation; the host runner must report `--isolation isolated`, `--declared-inputs-only`, and for production proposal pilots a valid `--runner-audit ... --require-runner-audit` from a native/headless runner.
 
 If the command is missing, run `command -v mdp` and `mdp --version`. Report the missing runtime and point to the documented installer; do not emulate CLI validation in prose.
 

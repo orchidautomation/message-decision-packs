@@ -104,6 +104,8 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             prompt_output,
             validation,
             source_audit,
+            runner_audit,
+            require_runner_audit,
             artifacts,
             out,
             dry_run,
@@ -117,6 +119,8 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 prompt_output: prompt_output.as_deref(),
                 validation: validation.as_deref(),
                 source_audit: source_audit.as_deref(),
+                runner_audit: runner_audit.as_deref(),
+                require_runner_audit,
                 artifacts: &artifacts,
             })?;
             if let Some(path) = out {
