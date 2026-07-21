@@ -1,11 +1,11 @@
 use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat};
 use crate::commands::{
-    TargetInitOptions, author_proof_output_file, capabilities, check_claims_scoped, demo_copy,
-    doctor, emit_brief_scoped, eval_pack, explain, fit, gaps, init_pack_targeted,
-    init_pack_targeted_dry_run, pack, prospect_brief_with_context, render_human_brief_file,
-    render_human_brief_markdown, render_readable_prospect_brief, route_scoped, sample_leads,
-    schema, skills, validate_pack, validate_prompt_output_file_with_source_audit,
-    verify_output_file, verify_output_readable_file,
+    RunReceiptOptions, TargetInitOptions, author_proof_output_file, capabilities,
+    check_claims_scoped, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, fit, gaps,
+    init_pack_targeted, init_pack_targeted_dry_run, pack, prospect_brief_with_context,
+    render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief,
+    route_scoped, run_receipt, sample_leads, schema, skills, validate_pack,
+    validate_prompt_output_file_with_source_audit, verify_output_file, verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -94,6 +94,42 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 StrictWarningSource::Issues,
             );
             print_checked(json_mode, summary_mode, "validate-prompt-output", data)
+        }
+        Commands::RunReceipt {
+            dir,
+            workflow,
+            isolation,
+            declared_inputs_only,
+            prompt_id,
+            prompt_output,
+            validation,
+            source_audit,
+            artifacts,
+            out,
+            dry_run,
+        } => {
+            let mut data = run_receipt(RunReceiptOptions {
+                root: &dir,
+                workflow,
+                isolation,
+                declared_inputs_only,
+                prompt_id: prompt_id.as_deref(),
+                prompt_output: prompt_output.as_deref(),
+                validation: validation.as_deref(),
+                source_audit: source_audit.as_deref(),
+                artifacts: &artifacts,
+            })?;
+            if let Some(path) = out {
+                if dry_run {
+                    data = attach_dry_run_artifact(data, &path);
+                } else {
+                    data = attach_artifact(data, &path);
+                    write_json_file(&path, &data)?;
+                }
+            } else {
+                data = attach_stdout_artifact(data);
+            }
+            print_checked(json_mode, summary_mode, "run-receipt", data)
         }
         Commands::VerifyOutput {
             dir,

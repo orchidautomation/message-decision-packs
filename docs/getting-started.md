@@ -75,6 +75,7 @@ mdp --json validate --dir ./mdp-proposal-demo
 mdp --json eval --dir ./mdp-proposal-demo
 mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
 mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json> --source-audit <source-audit.json>
+mdp --json run-receipt --dir ./mdp-proposal-demo --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json>
 mdp --json verify-output --dir ./mdp-proposal-demo --file ./mdp-proposal-demo/examples/proof-output/valid-binding.json
 mdp --json author-proof-output --dir ./mdp-proposal-demo --draft ./mdp-proposal-demo/examples/proof-output-drafts/compliance-row.draft.json --out /tmp/mdp-proof-output.json
 mdp --json route --entries --dir ./mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
@@ -146,7 +147,10 @@ For proposal packs, use `.mdp/prompts/normalize-opportunity.yaml` the same way f
 ```bash
 mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
 mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json> --source-audit <source-audit.json>
+mdp --json run-receipt --dir ./mdp-proposal-demo --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json>
 ```
+
+`run-receipt` is the audit-grade boundary check. It returns `decision: audit-grade` only when the runner reports a fresh/stateless model call, confirms declared-input-only payloads, and supplies hashable local artifacts. If normalization happened in the current conversation, use `--isolation ambient`; the receipt will be advisory instead of audit-grade.
 
 If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, keep the missing context in gaps and structured `normalization_trace.missing_required` entries. Do not invent proof, certifications, compliance status, deadlines, RFP text, past performance, pricing, evaluator criteria, approval status, or person context.
 

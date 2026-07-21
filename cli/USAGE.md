@@ -62,6 +62,7 @@ mdp --json validate --dir /tmp/mdp-proposal-demo
 mdp --json eval --dir /tmp/mdp-proposal-demo
 mdp --json validate-prompt-output --dir /tmp/mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
 mdp --json validate-prompt-output --dir /tmp/mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json> --source-audit <source-audit.json>
+mdp --json run-receipt --dir /tmp/mdp-proposal-demo --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json>
 mdp --json route --entries --dir /tmp/mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
 mdp --json author-proof-output --dir /tmp/mdp-proposal-demo --draft /tmp/mdp-proposal-demo/examples/proof-output-drafts/compliance-row.draft.json --out /tmp/mdp-proof-output.json
 mdp --json verify-output --dir /tmp/mdp-proposal-demo --file /tmp/mdp-proof-output.json
@@ -75,6 +76,14 @@ The proposal starter does not write a prospect row or fake lead fixtures. It is 
 Use `brief` for production GTM prospect handoff. Add `--out <path>` when the machine brief should be saved; otherwise the artifact is stdout-only. Use `render-brief` when an existing artifact needs a compact human layer. `gtm-prospect` renders `mdp.message-brief.v0`; `proposal-review` and `proof-report` render `mdp.proof-output.v0` through the proof verifier. `--format json` emits the structured `mdp.human-brief.v0` object; Markdown is generated from that object by default. Failed gates remain failed: no-draft prospect briefs and proof gaps do not become send-ready or reusable draft text. Use `copy` only for local demos. Source inventory lives in `.mdp/sources.yaml`, reusable extraction prompts live in `.mdp/prompts/*.yaml`, CTA guidance lives in `cards/ctas.yaml`, channel rules live in `cards/channel-policies.yaml`, approved claims live in `cards/claims.yaml`, global style and structure rules live in `cards/output-rules.yaml`, and durable unknowns live in `cards/gaps.yaml`. Entries can use `avoid` for blocked literals, `exact_paragraphs` for fixed paragraph counts, and `constraints` for deterministic output limits. Draft-text constraints such as word count, subject word count, subject avoid literals, max questions, and forbidden links, attachments, images, HTML, or tracking are enforced by `check-claims`; proof-output constraints under `constraints.proof_output` are enforced by `verify-output`.
 
 Use `author-proof-output` when an agent needs to compile ordered proof-output segments without hand-writing pack identity or `output.text`. The input is a smaller `mdp.proof-output-draft.v0` file with `route`, `output.kind`, `output.format`, and ordered `segments`. The command fills loaded pack identity, joins segment text, runs `verify-output` including the embedded full-text `check-claims` layer, and writes `--out` only when the proof-output artifact is valid. Use `mdp --json schema proof-output-draft` for the draft contract.
+
+Use `run-receipt` when a runner or agent host normalized proposal/doc material before deterministic MDP checks ran. For audit-grade proposal review, the host must create a fresh/stateless model call, pass only prompt-declared inputs, save the prompt output and validation result, and include the `mdp.source-audit.v0` ledger:
+
+```bash
+mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --out <run-receipt.json>
+```
+
+A receipt returns `decision: advisory` when normalization used the ambient conversation or when declared-input-only cannot be confirmed. It returns `decision: blocked` when required artifacts are missing, malformed, or failed validation. Use `mdp --json schema run-receipt` for the receipt contract.
 
 Layer 1 rules are card body guidance an agent must read and follow. Layer 2 rules are structured constraints the CLI can enforce. For proposal `mdp.proof-output.v0` artifacts, packs can declare:
 
@@ -103,6 +112,7 @@ mdp --json brief --context --dir . --prospect <prospect.json> --channel linkedin
 mdp --json emit-brief --dir . --persona "PMM" --job "linkedin outbound copy" --out .mdp/briefs/route.json --dry-run
 mdp --json pack --dir . --out /tmp/mdp-pack.json --dry-run
 mdp --json author-proof-output --dir . --draft examples/proof-output-drafts/compliance-row.draft.json --out /tmp/proof-output.json --dry-run
+mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --out <run-receipt.json> --dry-run
 ```
 
 Use `--strict` on validation/checking flows when warnings should fail an agent or CI gate:

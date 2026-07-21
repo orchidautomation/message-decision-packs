@@ -17,7 +17,8 @@ Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--op
 1. Load `.mdp/manifest.yaml` first.
 2. Preserve facts, interpretations, and gaps in `.mdp/sources.yaml`.
 3. Use optional prompt contracts to normalize supplied rows or extract reviewable card patches.
-4. Run `mdp --json validate --dir <pack>`.
+4. For audit-grade proposal/document normalization, use a runner that makes a fresh/stateless model call and records `mdp run-receipt`.
+5. Run `mdp --json validate --dir <pack>`.
 5. Use `skills`, `route --entries`, `fit`, and `brief --context` to load only eligible context. Let pack-owned `qualification_gates` decide required person and source-backed signal coverage.
 6. Stop on `disqualified`, `insufficient-context`, proof gaps, or blocked review states.
 7. Run `check-claims`, `author-proof-output`, or `verify-output` before approving claim-bearing output; `author-proof-output` still runs `verify-output`.
@@ -37,6 +38,7 @@ mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "lin
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "portfolio scope example" --scope product=local-cli
 mdp --json author-proof-output --dir . --draft <proof-output-draft.json> --out <proof-output.json>
 mdp --json verify-output --dir . --file <proof-output.json>
+mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json>
 mdp --json gaps --dir .
 mdp --json eval --dir .
 ```

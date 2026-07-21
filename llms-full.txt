@@ -1,6 +1,6 @@
 # Message Decision Packs - Full Agent Context
 
-Last updated: 2026-07-12
+Last updated: 2026-07-21
 
 Message Decision Packs (MDP) is a local/offline file standard, Rust CLI, and agent plugin for making decision context explicit and testable.
 
@@ -120,7 +120,9 @@ Proposal profiles use the same primitives without manufacturing prospect rows:
 
 ```text
 approved opportunity, requirement, and proof sources
-  -> source ledger
+  -> source ledger and optional source audit
+  -> fresh/stateless normalization with declared inputs only
+  -> validate prompt output and create run receipt
   -> proposal roles, criteria, requirements, proof, and boundaries
   -> validate
   -> route the review job
@@ -128,7 +130,7 @@ approved opportunity, requirement, and proof sources
   -> surface gaps and human sign-off needs
 ```
 
-Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership.
+Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership. Same-conversation normalization is advisory unless `mdp run-receipt` records an isolated, declared-input-only run.
 
 ## CLI Contract
 
@@ -146,6 +148,7 @@ mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "lin
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "portfolio scope example" --scope product=local-cli
 mdp --json author-proof-output --dir . --draft <proof-output-draft.json> --out <proof-output.json>
 mdp --json verify-output --dir . --file <proof-output.json>
+mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json>
 mdp --json gaps --dir .
 mdp --json eval --dir .
 ```

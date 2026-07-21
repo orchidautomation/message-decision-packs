@@ -64,6 +64,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::Prompt => prompt_schema(card_kinds),
         SchemaTarget::ProofOutput => proof_output_schema(),
         SchemaTarget::ProofOutputDraft => proof_output_draft_schema(),
+        SchemaTarget::RunReceipt => run_receipt_schema(),
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
@@ -120,6 +121,89 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         }
         SchemaTarget::Skills => skills_schema(),
     }
+}
+
+fn run_receipt_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Run Receipt v0",
+        "type": "object",
+        "required": ["contract", "valid", "decision", "workflow", "boundary", "prompt", "artifacts", "issues"],
+        "additionalProperties": true,
+        "properties": {
+            "contract": {"const": "mdp.run-receipt.v0"},
+            "valid": {"type": "boolean", "description": "True only when the receipt is audit-grade."},
+            "decision": {"enum": ["audit-grade", "advisory", "blocked"]},
+            "workflow": {"enum": ["proposal-review", "gtm-prospect", "pack-build", "custom"]},
+            "pack": {
+                "type": "object",
+                "required": ["dir", "manifest"],
+                "additionalProperties": true,
+                "properties": {
+                    "dir": {"type": "string"},
+                    "manifest": {"type": "string"},
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "version": {"type": "string"},
+                    "profile_id": {"type": "string"}
+                }
+            },
+            "boundary": {
+                "type": "object",
+                "required": ["isolation", "conversation_context_used", "declared_inputs_only"],
+                "additionalProperties": true,
+                "properties": {
+                    "isolation": {"enum": ["isolated", "ambient", "unknown"]},
+                    "conversation_context_used": {"type": ["boolean", "null"]},
+                    "declared_inputs_only": {"type": "boolean"}
+                }
+            },
+            "prompt": {
+                "type": "object",
+                "required": ["source_audit_required"],
+                "additionalProperties": true,
+                "properties": {
+                    "id": {"type": ["string", "null"]},
+                    "prompt_output": {"type": ["string", "null"]},
+                    "validation": {"type": ["string", "null"]},
+                    "source_audit": {"type": ["string", "null"]},
+                    "source_audit_required": {"type": "boolean"}
+                }
+            },
+            "artifacts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["kind", "path", "required", "exists", "bytes", "sha256"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {"type": "string"},
+                        "path": {"type": "string"},
+                        "required": {"type": "boolean"},
+                        "exists": {"type": "boolean"},
+                        "bytes": {"type": ["integer", "null"], "minimum": 0},
+                        "sha256": {"type": ["string", "null"]}
+                    }
+                }
+            },
+            "issues": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["code", "severity", "path", "message"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "code": {"type": "string"},
+                        "severity": {"enum": ["error", "warning"]},
+                        "path": {"type": "string"},
+                        "message": {"type": "string"}
+                    }
+                }
+            },
+            "error_count": {"type": "integer", "minimum": 0},
+            "warning_count": {"type": "integer", "minimum": 0}
+        }
+    })
 }
 
 fn proof_output_draft_schema() -> Value {
@@ -1467,6 +1551,29 @@ mod tests {
         assert_eq!(
             result["properties"]["sections"]["items"]["properties"]["refs"]["items"]["type"],
             "string"
+        );
+    }
+
+    #[test]
+    fn run_receipt_schema_exposes_context_boundary_contract() {
+        let result = schema(SchemaTarget::RunReceipt);
+
+        assert_eq!(result["title"], "MDP Run Receipt v0");
+        assert_eq!(
+            result["properties"]["contract"]["const"],
+            "mdp.run-receipt.v0"
+        );
+        assert_eq!(
+            result["properties"]["decision"]["enum"],
+            json!(["audit-grade", "advisory", "blocked"])
+        );
+        assert_eq!(
+            result["properties"]["boundary"]["properties"]["isolation"]["enum"],
+            json!(["isolated", "ambient", "unknown"])
+        );
+        assert_eq!(
+            result["properties"]["artifacts"]["items"]["required"][5],
+            "sha256"
         );
     }
 

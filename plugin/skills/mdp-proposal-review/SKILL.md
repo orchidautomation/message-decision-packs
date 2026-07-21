@@ -50,7 +50,13 @@ If PDF/doc extraction produced a bounded `mdp.source-audit.v0` ledger, include i
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON --source-audit SOURCE_AUDIT_JSON
 ```
 
-Treat missing source-audit refs or snippet mismatches as blockers for confident proposal review; keep the issue in gaps or reviewer questions instead of smoothing it into a sourced fact.
+For audit-grade review, require a runner receipt after validation:
+
+```bash
+mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON
+```
+
+`run-receipt` is audit-grade only when the host runner reports a fresh/stateless model call and declared-input-only payload. If normalization happened in the current conversation, treat the review as advisory even when validation passes. Treat missing source-audit refs, snippet mismatches, or a non-audit-grade receipt as blockers for confident proposal review; keep the issue in gaps or reviewer questions instead of smoothing it into a sourced fact.
 
 ## Review Loop
 

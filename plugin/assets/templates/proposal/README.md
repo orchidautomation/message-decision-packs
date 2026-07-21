@@ -26,6 +26,7 @@ cargo run --manifest-path cli/Cargo.toml -- --json validate --dir plugin/assets/
 cargo run --manifest-path cli/Cargo.toml -- --json eval --dir plugin/assets/templates/proposal
 cargo run --manifest-path cli/Cargo.toml -- --json validate-prompt-output --dir plugin/assets/templates/proposal --prompt-id normalize-opportunity --file <prompt-output.json>
 cargo run --manifest-path cli/Cargo.toml -- --json validate-prompt-output --dir plugin/assets/templates/proposal --prompt-id normalize-opportunity --file <prompt-output.json> --source-audit <source-audit.json>
+cargo run --manifest-path cli/Cargo.toml -- --json run-receipt --dir plugin/assets/templates/proposal --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json>
 cargo run --manifest-path cli/Cargo.toml -- --json verify-output --dir plugin/assets/templates/proposal --file plugin/assets/templates/proposal/examples/proof-output/valid-binding.json
 cargo run --manifest-path cli/Cargo.toml -- --json author-proof-output --dir plugin/assets/templates/proposal --draft plugin/assets/templates/proposal/examples/proof-output-drafts/compliance-row.draft.json --out /tmp/mdp-proof-output.json
 cargo run --manifest-path cli/Cargo.toml -- verify-output --readable --dir plugin/assets/templates/proposal --file plugin/assets/templates/proposal/examples/proof-output/valid-binding.json
@@ -45,7 +46,7 @@ The eval fixtures cover:
 
 `prompts/normalize-opportunity.yaml` also includes a neutral `output_contract.example` fixture. It keeps `normalized_prospect` as the required compatibility object and includes `normalized_opportunity` only as an exact proposal-readable alias. Treat that as a JSON contract example, not as the active demo scenario; when retargeting the template, update eval IDs, titles, jobs, and scenario examples together or explicitly mark examples as contract-only fixtures.
 
-When proposal PDF/doc extraction feeds `normalize-opportunity`, use a bounded `mdp.source-audit.v0` JSON ledger instead of committing source documents. `validate-prompt-output --source-audit` checks that raw opportunity refs and ref-plus-snippet citations resolve to audited refs whose `source_id` appears in `.mdp/sources.yaml`.
+When proposal PDF/doc extraction feeds `normalize-opportunity`, use a bounded `mdp.source-audit.v0` JSON ledger instead of committing source documents. `validate-prompt-output --source-audit` checks that raw opportunity refs and ref-plus-snippet citations resolve to audited refs whose `source_id` appears in `.mdp/sources.yaml`. For audit-grade review, the host runner must make a fresh/stateless model call with only declared inputs and then create an `mdp.run-receipt.v0` via `mdp run-receipt`; same-conversation normalization is advisory.
 
 The files under `examples/proof-output/` are synthetic `mdp.proof-output.v0` artifacts. A source ID written by a model is not proof by itself; run `mdp --json verify-output --dir <pack> --file <proof-output.json>` and only treat the generated text as proof-bound when the verifier returns `valid: true`.
 

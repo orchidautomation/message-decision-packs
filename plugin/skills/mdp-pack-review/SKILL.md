@@ -46,7 +46,8 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
 - When `manifest.target` exists, verify target kind/name, source IDs, aliases, supported external terms, exclusions, and internal vocabulary boundaries. Treat target contamination as a high-severity wrong-product risk.
 - Distinguish structural validity from commercial readiness or human approval.
 - Sample representative routes and deterministic claim/output gates when the pack changed those decisions.
-- Exercise generated surfaces such as sample leads, prompt output, JSON/readable briefs, and eval payloads; required contracts and CLI receipts are implementation metadata, while their prospect-facing content must remain target-aware or neutral.
+- Exercise generated surfaces such as sample leads, prompt output, JSON/readable briefs, run receipts, and eval payloads; required contracts and CLI receipts are implementation metadata, while their prospect-facing content must remain target-aware or neutral.
+- For proposal/document normalization QA, require `mdp run-receipt` before calling the flow audit-grade; ambient or unknown context isolation is an advisory finding even when prompt-output validation passes.
 - Keep evaluation output and temporary packs outside committed source paths.
 
 ## Findings

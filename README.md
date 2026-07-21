@@ -88,6 +88,16 @@ mdp --json author-proof-output \
 mdp --json verify-output \
   --dir /tmp/mdp-proposal \
   --file /tmp/mdp-proof-output.json
+mdp --json run-receipt \
+  --dir /tmp/mdp-proposal \
+  --workflow proposal-review \
+  --isolation isolated \
+  --declared-inputs-only \
+  --prompt-id normalize-opportunity \
+  --prompt-output /tmp/normalize-opportunity-output.json \
+  --validation /tmp/normalize-opportunity-validation.json \
+  --source-audit /tmp/source-audit.json \
+  --out /tmp/mdp-proposal-run-receipt.json
 ```
 
 The proposal profile supports review and gap surfacing. It does not replace compliance, legal, procurement, proposal management, or human approval.
@@ -122,6 +132,8 @@ A pack is a local folder:
 
 Agents should load the manifest first, preserve source provenance, and use routed entries instead of reading every card. For prompt outputs, `source_summary.inputs_used` names declared prompt inputs only; field paths, snippets, URLs, PDF/page locators, and review notes belong in evidence/provenance fields such as `signals[].source`, entry `provenance`, and normalization trace. For GTM rows, normalize supplied data before running the deterministic fit gate. Proposal normalization keeps `normalized_prospect` for compatibility and may include `normalized_opportunity` only as an exact alias. Draft only from `brief --context` output, then run `check-claims`. For source-bound generated output, use `author-proof-output` to compile draft segments when helpful, then use `mdp.proof-output.v0` and `verify-output` before treating cited IDs as proof.
 
+For audit-grade proposal normalization, the runner or host must make a fresh/stateless model call and pass only prompt-declared inputs. `mdp run-receipt` records that host-owned boundary plus local artifact hashes for the source audit, prompt output, validation result, and downstream files. Same-conversation normalization without that receipt is advisory even when the JSON validates.
+
 Profiles express domain language over ten universal primitives:
 
 | Primitive | GTM examples | Proposal examples |
@@ -153,6 +165,7 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Portfolio-Aware GTM Scope](docs/portfolio-scope.md): product, capability, solution, and segment scoping inside one pack.
 - [Conceptual Decision Flow](docs/conceptual-decision-flow.md): layer ownership and deterministic decision boundaries.
 - [Prompt Contracts](docs/prompt-extraction-contract.md): normalization and extraction schemas.
+- [Runner Receipts](docs/run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
 - [Proof-Output Drafting](docs/proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
 - [Agent Hook Guidance](docs/agent-hook-guidance.md): safe activation and post-edit validation.
 - [Distribution](docs/distribution.md): releases, Pluxx bundles, installers, and updates.

@@ -71,6 +71,23 @@ fn summarize(command: &str, data: &Value) -> Value {
             "issue_count": array_len(&data["issues"]),
             "issues": data["issues"]
         }),
+        "run-receipt" => json!({
+            "valid": data["valid"],
+            "decision": data["decision"],
+            "workflow": data["workflow"],
+            "isolation": data["boundary"]["isolation"],
+            "conversation_context_used": data["boundary"]["conversation_context_used"],
+            "declared_inputs_only": data["boundary"]["declared_inputs_only"],
+            "source_audit_required": data["prompt"]["source_audit_required"],
+            "artifact_count": array_len(&data["artifacts"]),
+            "error_count": data["error_count"],
+            "warning_count": data["warning_count"],
+            "issue_count": array_len(&data["issues"]),
+            "issues": data["issues"],
+            "artifact": data["artifact"],
+            "dry_run": data["dry_run"],
+            "write_plan": data["write_plan"]
+        }),
         "verify-output" => json!({
             "valid": data["valid"],
             "decision": data["decision"],
@@ -302,6 +319,7 @@ fn classify_error(message: &str, details: &[String]) -> &'static str {
         || lower.contains("pass at most one of --prompt and --prompt-id")
         || lower.contains("unsupported template")
         || lower.contains("--count must")
+        || lower.contains("--artifact must use")
         || lower.contains("invalid --scope")
     {
         "invalid_argument"
@@ -598,6 +616,10 @@ mod tests {
         );
         assert_eq!(
             classify_error("invalid --scope \"product\"; expected dimension=value", &[]),
+            "invalid_argument"
+        );
+        assert_eq!(
+            classify_error("--artifact must use KIND=PATH", &[]),
             "invalid_argument"
         );
     }
