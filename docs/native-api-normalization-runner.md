@@ -39,11 +39,8 @@ The host/plugin/MCP creates a request JSON file after it has staged source files
   "model": "<openai-model-id>",
   "prompt_id": "normalize-opportunity",
   "declared_inputs_only": true,
+  "instructions": "You normalize supplied proposal material into the MDP prompt output contract. Return strict JSON only.",
   "input": [
-    {
-      "role": "system",
-      "content": "You normalize supplied proposal material into the MDP prompt output contract. Return strict JSON only."
-    },
     {
       "role": "user",
       "content": "{\"raw_opportunity\":{...},\"existing_pack_context\":{...},\"source_kind\":\"pdf-extraction\"}"
@@ -61,6 +58,7 @@ The host/plugin/MCP creates a request JSON file after it has staged source files
 Rules:
 
 - `input` must include only prompt-declared payload fields.
+- `input` must be either a single string payload or an array with exactly one plain `user` message; put system/developer guidance in `instructions`.
 - Do not include prior chat messages, notes, brainstorms, or desired outcomes.
 - Do not include `previous_response_id`, `conversation`, or tools.
 - Keep private source documents outside the public repo; pass only the bounded extracted payload and local source-audit refs needed for validation.

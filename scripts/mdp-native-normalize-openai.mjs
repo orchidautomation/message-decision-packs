@@ -101,6 +101,26 @@ const requireString = (value, label) => {
   if (typeof value !== 'string' || value.trim() === '') fail(`${label} must be a non-empty string`)
 }
 
+const validateInputPayload = (input) => {
+  if (typeof input === 'string') {
+    if (input.trim() === '') fail('request.input must be a non-empty string')
+    return
+  }
+
+  if (!Array.isArray(input)) fail('request.input must be a Responses API input string or single user message array')
+  if (input.length !== 1) {
+    fail('request.input array must contain exactly one user message; put system/developer guidance in request.instructions')
+  }
+
+  const [message] = input
+  requireObject(message, 'request.input[0]')
+  if (message.role !== 'user') fail('request.input[0].role must be user')
+  if (!('content' in message)) fail('request.input[0].content is required')
+  if ('id' in message || 'status' in message || 'type' in message) {
+    fail('request.input[0] must be a plain user message without prior response metadata')
+  }
+}
+
 const validateRequest = (request) => {
   requireObject(request, 'request')
   if (request.contract !== REQUEST_CONTRACT) fail(`request.contract must be ${REQUEST_CONTRACT}`)
@@ -109,9 +129,7 @@ const validateRequest = (request) => {
   requireString(request.prompt_id, 'request.prompt_id')
   if (request.declared_inputs_only !== true) fail('request.declared_inputs_only must be true')
   requireObject(request.prompt_output_schema, 'request.prompt_output_schema')
-  if (!Array.isArray(request.input) && typeof request.input !== 'string') {
-    fail('request.input must be a Responses API input string or array')
-  }
+  validateInputPayload(request.input)
   if ('previous_response_id' in request) fail('request must not include previous_response_id')
   if ('conversation' in request) fail('request must not include conversation')
   if ('tools' in request && (!Array.isArray(request.tools) || request.tools.length > 0)) {
