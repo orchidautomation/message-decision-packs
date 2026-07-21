@@ -8,6 +8,7 @@ These are the current public docs:
 - [Prompt Contracts](prompt-extraction-contract.md): normalization and extraction schemas.
 - [Runner Receipts](run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
 - [Headless Normalization Runners](headless-normalization-runners.md): native/headless runner recipes for Codex, Claude Code, Cursor, OpenCode, and future MCP wrappers.
+- [Native API Normalization Runner](native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.
 - [Proof-Output Drafting](proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
 - [Agent Hook Guidance](agent-hook-guidance.md): safe activation and validation hooks.
 - [Distribution](distribution.md): Pluxx bundles, release assets, installers, and updates.

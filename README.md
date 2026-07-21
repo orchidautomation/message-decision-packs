@@ -155,7 +155,7 @@ Profile vocabulary belongs in the manifest, cards, prompts, input contracts, job
 
 ## Plugin Distribution
 
-The full repository is the product/plugin contract: CLI behavior, docs, canonical templates/assets, authored skills, install/release assets, and Pluxx config stay in lockstep. Authored skills live under `plugin/skills`, and [Pluxx](https://pluxx.dev) packages canonical source into release bundles for Claude Code, Cursor, Codex, and OpenCode. The public MDP installer combines those bundles with the matching Rust CLI binary; Pluxx is the packaging layer, not the CLI runtime or a hosted MDP service.
+The full repository is the product/plugin contract: CLI behavior, docs, canonical templates/assets, authored skills, install/release assets, repo scripts, and Pluxx config stay in lockstep. Authored skills live under `plugin/skills`, and [Pluxx](https://pluxx.dev) packages canonical source into release bundles for Claude Code, Cursor, Codex, and OpenCode. The public MDP installer combines those bundles with the matching Rust CLI binary; Pluxx is the packaging layer, not the CLI runtime or a hosted MDP service.
 
 MDP ships five job-shaped skills: `mdp` for explicit CLI/operator and mixed work, `mdp-pack-builder` for pack authoring, `mdp-pack-review` for the pack artifact itself, `mdp-gtm-brief` for the three GTM fit/brief/copy-review jobs, and `mdp-proposal-review` for the four proposal review jobs. `mdp --json skills --dir <pack> --job <job-id>` validates pack eligibility and the exact job route; host discovery remains separate and host-managed.
 
@@ -169,6 +169,7 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Prompt Contracts](docs/prompt-extraction-contract.md): normalization and extraction schemas.
 - [Runner Receipts](docs/run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
 - [Headless Normalization Runners](docs/headless-normalization-runners.md): native/headless runner recipes for Codex, Claude Code, Cursor, OpenCode, and future MCP wrappers.
+- [Native API Normalization Runner](docs/native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.
 - [Proof-Output Drafting](docs/proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
 - [Agent Hook Guidance](docs/agent-hook-guidance.md): safe activation and post-edit validation.
 - [Distribution](docs/distribution.md): releases, Pluxx bundles, installers, and updates.

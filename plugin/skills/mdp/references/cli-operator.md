@@ -29,6 +29,7 @@ Prefer CLI output to direct YAML inference. Read pack files only when authoring 
 
 - `validate-prompt-output`: validate model-produced normalization output; pass `--source-audit` for proposal PDF/doc extraction ledgers when raw-field/snippet citations must resolve.
 - `run-receipt`: record and gate the host-owned context boundary plus artifact hashes; audit-grade proposal review requires `--isolation isolated`, `--declared-inputs-only`, successful validation, source audit when documents/PDFs were normalized, and for production pilots `--runner-audit ... --require-runner-audit`.
+- `scripts/mdp-native-normalize-openai.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed bundles): optional BYOK reference runner for OpenAI Responses API normalization. Use `--dry-run` or `--mock-response` for offline validation without a key; real native calls require `OPENAI_API_KEY` and still must be followed by `validate-prompt-output` and `run-receipt`.
 - `fit`: decide fit, insufficient context, or disqualification for supplied GTM prospect JSON.
 - `brief --context`: build bounded GTM decision context after fit permits it.
 - `check-claims`: test supplied claim-bearing text and output constraints.

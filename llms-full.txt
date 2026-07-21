@@ -130,7 +130,7 @@ approved opportunity, requirement, and proof sources
   -> surface gaps and human sign-off needs
 ```
 
-Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership. Same-conversation normalization is advisory unless `mdp run-receipt` records an isolated, declared-input-only run with required runner-audit evidence.
+Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership. Same-conversation normalization is advisory unless `mdp run-receipt` records an isolated, declared-input-only run with required runner-audit evidence. MDP includes optional BYOK native runner `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed bundles; dry-run/mock validation needs no API key, while a real native model call requires the operator's secure `OPENAI_API_KEY`.
 
 ## CLI Contract
 
@@ -218,6 +218,9 @@ The example:
 - Conceptual Decision Flow: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/conceptual-decision-flow.md>
 - Portfolio-Aware GTM Scope: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/portfolio-scope.md>
 - Prompt Contracts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md>
+- Runner Receipts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/run-receipts.md>
+- Headless Normalization Runners: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md>
+- Native API Normalization Runner: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/native-api-normalization-runner.md>
 - Agent Hook Guidance: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/agent-hook-guidance.md>
 - Distribution: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md>
 - CLI Usage: <https://github.com/orchidautomation/message-decision-packs/blob/main/cli/USAGE.md>

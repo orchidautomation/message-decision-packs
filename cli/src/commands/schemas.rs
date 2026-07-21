@@ -219,6 +219,91 @@ fn run_receipt_schema() -> Value {
 }
 
 fn runner_audit_schema() -> Value {
+    let mut properties = serde_json::Map::new();
+    properties.insert(
+        "contract".to_string(),
+        json!({"const": RUNNER_AUDIT_CONTRACT}),
+    );
+    properties.insert(
+        "runner".to_string(),
+        json!({"enum": ["native-api", "codex-exec", "claude-print", "cursor-print", "opencode-run", "custom-headless"]}),
+    );
+    properties.insert("model".to_string(), json!({"type": ["string", "null"]}));
+    properties.insert(
+        "isolated_invocation".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "conversation_resume".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "declared_inputs_only".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert("output_schema_used".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "prompt_input_audited".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "session_persistence".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "config_discovery_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "instructions_discovery_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert("tools_disabled".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "tool_invocations_observed".to_string(),
+        json!({"type": "integer", "minimum": 0}),
+    );
+    properties.insert("full_tool_access".to_string(), json!({"type": "boolean"}));
+    properties.insert("force_enabled".to_string(), json!({"type": "boolean"}));
+    properties.insert("pure".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "default_plugins_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "claude_code_discovery_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "project_rules_discovery_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert("sterile_workdir".to_string(), json!({"type": "boolean"}));
+    properties.insert("ephemeral".to_string(), json!({"type": "boolean"}));
+    properties.insert("bare".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "sandbox".to_string(),
+        json!({"enum": ["read-only", "workspace-write", "danger-full-access", "unknown"]}),
+    );
+    properties.insert("stateless_request".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "prior_messages_included".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert("endpoint".to_string(), json!({"type": "string"}));
+    properties.insert("store".to_string(), json!({"type": "boolean"}));
+    properties.insert("prompt_id".to_string(), json!({"type": "string"}));
+    properties.insert("request_sha256".to_string(), json!({"type": "string"}));
+    properties.insert(
+        "response_id".to_string(),
+        json!({"type": ["string", "null"]}),
+    );
+    properties.insert("mock_response".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "notes".to_string(),
+        json!({"type": "array", "items": {"type": "string"}}),
+    );
+
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "MDP Runner Audit v0",
@@ -232,34 +317,7 @@ fn runner_audit_schema() -> Value {
             "output_schema_used"
         ],
         "additionalProperties": true,
-        "properties": {
-            "contract": {"const": RUNNER_AUDIT_CONTRACT},
-            "runner": {"enum": ["native-api", "codex-exec", "claude-print", "cursor-print", "opencode-run", "custom-headless"]},
-            "model": {"type": ["string", "null"]},
-            "isolated_invocation": {"type": "boolean"},
-            "conversation_resume": {"type": "boolean"},
-            "declared_inputs_only": {"type": "boolean"},
-            "output_schema_used": {"type": "boolean"},
-            "prompt_input_audited": {"type": "boolean"},
-            "session_persistence": {"type": "boolean"},
-            "config_discovery_disabled": {"type": "boolean"},
-            "instructions_discovery_disabled": {"type": "boolean"},
-            "tools_disabled": {"type": "boolean"},
-            "tool_invocations_observed": {"type": "integer", "minimum": 0},
-            "full_tool_access": {"type": "boolean"},
-            "force_enabled": {"type": "boolean"},
-            "pure": {"type": "boolean"},
-            "default_plugins_disabled": {"type": "boolean"},
-            "claude_code_discovery_disabled": {"type": "boolean"},
-            "project_rules_discovery_disabled": {"type": "boolean"},
-            "sterile_workdir": {"type": "boolean"},
-            "ephemeral": {"type": "boolean"},
-            "bare": {"type": "boolean"},
-            "sandbox": {"enum": ["read-only", "workspace-write", "danger-full-access", "unknown"]},
-            "stateless_request": {"type": "boolean"},
-            "prior_messages_included": {"type": "boolean"},
-            "notes": {"type": "array", "items": {"type": "string"}}
-        }
+        "properties": properties
     })
 }
 
@@ -1671,6 +1729,10 @@ mod tests {
                 .iter()
                 .any(|field| field == "output_schema_used")
         );
+        assert_eq!(result["properties"]["endpoint"]["type"], "string");
+        assert_eq!(result["properties"]["store"]["type"], "boolean");
+        assert_eq!(result["properties"]["request_sha256"]["type"], "string");
+        assert_eq!(result["properties"]["mock_response"]["type"], "boolean");
     }
 
     #[test]

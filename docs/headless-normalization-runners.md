@@ -2,6 +2,8 @@
 
 MDP is intentionally not the model runner. The plugin teaches the agent what to do, and the CLI validates/hash-gates the artifacts it receives. For production proposal or document review, the model call that turns messy source material into `mdp.prompt-output.v0` should run in a headless/stateless boundary, not inside the operator's current chat context.
 
+The strongest default boundary is a native stateless API call. This repo includes an optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs`, and Pluxx packages it into installed bundles under `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; see [Native API Normalization Runner](native-api-normalization-runner.md). Headless Codex, Claude Code, Cursor, and OpenCode recipes are fallback/adapter paths for hosts that need to use their own non-interactive agent runner.
+
 This lets the user keep a one-thread workshop UX while the implementation keeps two separate planes:
 
 ```text
@@ -150,9 +152,14 @@ Minimal native API audit:
   "stateless_request": true,
   "prior_messages_included": false,
   "tools_disabled": true,
-  "tool_invocations_observed": 0
+  "tool_invocations_observed": 0,
+  "endpoint": "/v1/responses",
+  "store": false,
+  "prompt_id": "normalize-opportunity"
 }
 ```
+
+For the bundled OpenAI reference runner, dry-run and offline mock tests do not require an API key. A real model call requires `OPENAI_API_KEY` from the operator's secure local environment. Mock responses intentionally write `mock_response: true`, `isolated_invocation: false`, and `stateless_request: false` so they cannot be confused with production audit evidence.
 
 ## Claude Code Headless Recipe
 
@@ -272,7 +279,8 @@ Runner requirements:
 For the product, the clean path is one installable MDP plugin bundle plus a runner/MCP layer that the plugin can call:
 
 - Pluxx continues to package the authored skills, hooks, and assets from this repo for each host.
-- The runner/MCP owns PDF/doc ingestion, prompt-package construction, native/headless model invocation, artifact persistence, and runner-audit emission.
+- The optional `scripts/mdp-native-normalize-openai.mjs` runner is the first local reference for the native API path, and ships inside installed Pluxx bundles as `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`. It validates a `mdp.native-normalize-request.v0` file, calls the OpenAI Responses API with Structured Outputs and `store: false`, writes `mdp.prompt-output.v0`, and emits `mdp.runner-audit.v0`.
+- The future runner/MCP owns PDF/doc ingestion, prompt-package construction, native/headless model invocation, artifact persistence, and runner-audit emission.
 - Pluxx may generate host-specific install/config shims that point Cursor, OpenCode, Claude, Codex, or Copilot toward the same runner contract, but Pluxx should not be the only place that defines or enforces audit-grade isolation.
 - The `mdp` CLI owns deterministic validation, source-audit checks, fit/proof/routing checks, and run-receipt gating.
 - The chat agent owns user guidance, questions, and final explanation, but it should not normalize proposal facts in its ambient conversation when audit-grade output is required.
@@ -288,3 +296,5 @@ Same-conversation normalization is still useful for drafting, debugging, and wor
 - Cursor headless CLI: <https://cursor.com/docs/cli/headless>
 - Cursor CLI output formats: <https://docs.cursor.com/en/cli/reference/output-format>
 - OpenCode CLI: <https://opencode.ai/docs/cli/>
+- OpenAI Structured Outputs: <https://developers.openai.com/api/docs/guides/structured-outputs>
+- OpenAI Responses API: <https://developers.openai.com/api/reference/responses/create>

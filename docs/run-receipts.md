@@ -77,7 +77,7 @@ mdp --json schema runner-audit
 
 For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the supported isolated modes:
 
-- `native-api`: a direct stateless API request with no prior messages and no tools.
+- `native-api`: a direct stateless API request with no prior messages and no tools. The bundled optional reference is `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles; see [Native API Normalization Runner](native-api-normalization-runner.md).
 - `codex-exec`: `codex exec` in a sterile working directory with ephemeral output, read-only sandboxing, no resume, prompt-input audit, and zero observed tool events.
 - `claude-print`: `claude --bare -p` with no session persistence, no resume/continue, structured output, disabled tools, and zero observed tool events.
 - `cursor-print`: `cursor-agent -p` only when a wrapper proves no resume, no `--force`, sterile input, disabled/externally denied tools, and zero observed tool events.
@@ -97,7 +97,7 @@ Evidence plane: local source files, source audit, prompt output, validation, fit
 
 For production proposal flows, same-conversation normalization should be labeled advisory unless a runner/MCP can create a fresh model invocation with only the prompt-declared payload.
 
-See [Headless Normalization Runners](headless-normalization-runners.md) for Codex and Claude recipes.
+See [Native API Normalization Runner](native-api-normalization-runner.md) for the BYOK OpenAI reference runner and [Headless Normalization Runners](headless-normalization-runners.md) for Codex, Claude Code, Cursor, and OpenCode recipes.
 
 ## Runner/MCP Direction
 

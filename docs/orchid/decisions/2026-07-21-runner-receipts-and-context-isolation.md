@@ -58,12 +58,14 @@ It records hashes and byte counts for each artifact, reports boundary/validation
 
 This is not a full MCP server yet. It is the deterministic receipt contract that the local MCP/runner should call once it owns the model invocation.
 
+The next slice adds `scripts/mdp-native-normalize-openai.mjs` as an optional BYOK OpenAI reference runner. Pluxx packages repo scripts, so installed bundles can call the same file at `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`. It does not make the core `mdp` CLI a model runner and it does not create/manage API keys. It accepts a `mdp.native-normalize-request.v0` file, rejects conversation resume fields and tools, calls the Responses API with Structured Outputs and `store: false`, writes the strict prompt output, and emits `mdp.runner-audit.v0` with `runner: "native-api"`. Dry-run and mock-response test modes require no key; real calls require the operator's `OPENAI_API_KEY`.
+
 ## Ownership Split
 
 | Layer | Owns | Does not own |
 | --- | --- | --- |
 | Pluxx/plugin | Ship skills, hooks, templates, assets, host-specific bundles, and adapter shims that call the runner contract | Model invocation context isolation as a packaging-only concern |
-| Host runner / future MCP | Fresh stateless normalization call, declared-input payload, local artifact staging, runner-audit emission, run receipt inputs | Pack fit/routing/proof logic |
+| Host runner / future MCP | Fresh stateless normalization call, declared-input payload, local artifact staging, runner-audit emission, run receipt inputs | Pack fit/routing/proof logic or API-key management |
 | MDP CLI | Validate pack/prompt/proof artifacts, validate runner-audit shape, compute hashes, gate receipt status, run deterministic fit/route/checks | Semantic truth beyond supplied artifacts or host context isolation |
 | Agent skill | Explain and orchestrate the workflow for non-programmer operators | Invent proof or claim an audit-grade boundary without a receipt |
 
