@@ -43,7 +43,7 @@ mdp --json run-receipt \
   --out <run-receipt.json>
 ```
 
-The validation result may be either the raw `data` object from `validate-prompt-output` or the full CLI wrapper:
+The validation result may be either the raw `data` object from `validate-prompt-output` or the full CLI wrapper. For an audit-grade receipt, the validation result must include artifact hashes for the exact prompt output and source audit that `run-receipt` is hashing:
 
 ```json
 {
@@ -51,8 +51,19 @@ The validation result may be either the raw `data` object from `validate-prompt-
   "command": "validate-prompt-output",
   "data": {
     "valid": true,
+    "file": "normalize-opportunity-output.json",
     "prompt": {"id": "normalize-opportunity"},
-    "source_audit": {"contract": "mdp.source-audit.v0"}
+    "source_audit": {"contract": "mdp.source-audit.v0"},
+    "artifacts": {
+      "prompt_output": {
+        "path": "normalize-opportunity-output.json",
+        "sha256": "<prompt-output-sha256>"
+      },
+      "source_audit": {
+        "path": "source-audit.json",
+        "sha256": "<source-audit-sha256>"
+      }
+    }
   }
 }
 ```
@@ -63,7 +74,7 @@ The validation result may be either the raw `data` object from `validate-prompt-
 | --- | --- | --- |
 | `audit-grade` | `true` | Required artifacts exist, validation passed, source audit is present when required, and the runner confirmed an isolated declared-input-only model call. |
 | `advisory` | `false` | Artifacts can be checked, but the model boundary was ambient or unknown, or declared-input-only was not confirmed. Treat review output as useful but not audit-grade. |
-| `blocked` | `false` | Required artifacts are missing, malformed, failed validation, or source-audit use cannot be proven. Do not rely on the review until fixed. |
+| `blocked` | `false` | Required artifacts are missing, malformed, failed validation, validation hashes do not match the supplied artifacts, or source-audit use cannot be proven. Do not rely on the review until fixed. |
 
 Validation-style CLI behavior applies: a non-`audit-grade` receipt prints the JSON result and exits nonzero.
 

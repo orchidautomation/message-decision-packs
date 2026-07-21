@@ -133,7 +133,7 @@ mdp --json run-receipt \
   --out <run-receipt.json>
 ```
 
-A valid native runner audit gives the receipt `runner.assurance: "stateless-api-verified"`.
+The validation result records artifact hashes for the prompt output and source audit. `run-receipt` compares those hashes to the supplied files, so substituting either artifact after validation blocks audit-grade status. A valid native runner audit gives the receipt `runner.assurance: "stateless-api-verified"`.
 
 ## Test Mode
 

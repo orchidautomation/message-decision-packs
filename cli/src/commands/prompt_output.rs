@@ -6,6 +6,7 @@ use crate::utils::{normalize_supplied_company_domain, resolve_pack_persona_label
 use crate::value_contracts::normalized_prospect_contract_violations;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,11 +34,14 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
 
     let prompt = resolve_prompt(root, prompt_path, prompt_id)?;
     let artifact_path = display_path(file);
-    let raw = fs::read_to_string(file)?;
+    let raw_bytes = fs::read(file)?;
+    let prompt_output_sha256 = sha256_hex(&raw_bytes);
+    let raw = std::str::from_utf8(&raw_bytes)
+        .map_err(|err| anyhow!("prompt output file must be valid UTF-8: {err}"))?;
     let mut issues = Vec::new();
     let source_audit = match source_audit_path {
-        Some(path) => match read_source_audit_file(path) {
-            Ok(value) => Some((value, display_path(path))),
+        Some(path) => match read_source_audit_file_with_hash(path) {
+            Ok((value, sha256)) => Some((value, display_path(path), sha256)),
             Err(err) => {
                 issues.push(issue(
                     "source_audit_parse_failed",
@@ -63,6 +67,12 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
                 "valid": false,
                 "file": artifact_path,
                 "prompt": prompt_summary(&prompt, root),
+                "artifacts": validation_artifacts_summary(
+                    &artifact_path,
+                    Some(prompt_output_sha256.as_str()),
+                    source_audit.as_ref().map(|(_, path, _)| path.as_str()),
+                    source_audit.as_ref().map(|(_, _, sha256)| sha256.as_str())
+                ),
                 "issues": issues
             }));
         }
@@ -82,10 +92,11 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
         &prompt,
         &output,
         &artifact_path,
+        Some(prompt_output_sha256.as_str()),
         issues,
         source_audit
             .as_ref()
-            .map(|(value, path)| (value, path.as_str())),
+            .map(|(value, path, sha256)| (value, path.as_str(), Some(sha256.as_str()))),
     )
 }
 
@@ -127,8 +138,9 @@ pub(crate) fn validate_prompt_output_value_with_source_audit(
         &prompt,
         output,
         artifact_path,
+        None,
         Vec::new(),
-        source_audit.map(|value| (value, source_audit_path.unwrap_or("source_audit"))),
+        source_audit.map(|value| (value, source_audit_path.unwrap_or("source_audit"), None)),
     )
 }
 
@@ -137,14 +149,15 @@ fn validate_prompt_output_parsed(
     prompt: &PromptFile,
     output: &Value,
     artifact_path: &str,
+    prompt_output_sha256: Option<&str>,
     mut issues: Vec<Value>,
-    source_audit: Option<(&Value, &str)>,
+    source_audit: Option<(&Value, &str, Option<&str>)>,
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
     validate_output_against_prompt(&manifest, prompt, output, artifact_path, &mut issues);
     validate_card_collisions(root, prompt, output, artifact_path, &mut issues)?;
     let source_audit = match source_audit {
-        Some((value, source_audit_path)) => validate_source_audit(
+        Some((value, source_audit_path, source_audit_sha256)) => validate_source_audit(
             root,
             prompt,
             value,
@@ -152,7 +165,8 @@ fn validate_prompt_output_parsed(
             output,
             artifact_path,
             &mut issues,
-        )?,
+        )?
+        .map(|index| (index, source_audit_path, source_audit_sha256)),
         None => None,
     };
 
@@ -160,9 +174,15 @@ fn validate_prompt_output_parsed(
         "valid": issues.is_empty(),
         "file": artifact_path,
         "prompt": prompt_summary(prompt, root),
+        "artifacts": validation_artifacts_summary(
+            artifact_path,
+            prompt_output_sha256,
+            source_audit.as_ref().map(|(_, path, _)| *path),
+            source_audit.as_ref().and_then(|(_, _, sha256)| *sha256)
+        ),
         "issues": issues
     });
-    if let Some(source_audit) = source_audit {
+    if let Some((source_audit, _, _)) = source_audit {
         if let Some(object) = result.as_object_mut() {
             object.insert("source_audit".to_string(), source_audit.summary());
         }
@@ -281,10 +301,47 @@ struct PromptSourceRef {
     reference: String,
 }
 
-fn read_source_audit_file(path: &Path) -> Result<Value> {
-    let raw = fs::read_to_string(path)?;
-    serde_json::from_str::<Value>(&raw)
-        .map_err(|_| anyhow!("source audit file must contain valid JSON"))
+fn read_source_audit_file_with_hash(path: &Path) -> Result<(Value, String)> {
+    let raw = fs::read(path)?;
+    let sha256 = sha256_hex(&raw);
+    let text = std::str::from_utf8(&raw)
+        .map_err(|err| anyhow!("source audit file must be valid UTF-8: {err}"))?;
+    Ok((
+        serde_json::from_str::<Value>(text)
+            .map_err(|_| anyhow!("source audit file must contain valid JSON"))?,
+        sha256,
+    ))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let hash = Sha256::digest(bytes);
+    format!("{hash:x}")
+}
+
+fn validation_artifacts_summary(
+    prompt_output_path: &str,
+    prompt_output_sha256: Option<&str>,
+    source_audit_path: Option<&str>,
+    source_audit_sha256: Option<&str>,
+) -> Value {
+    let mut artifacts = serde_json::Map::new();
+    artifacts.insert(
+        "prompt_output".to_string(),
+        json!({
+            "path": prompt_output_path,
+            "sha256": prompt_output_sha256
+        }),
+    );
+    if source_audit_path.is_some() || source_audit_sha256.is_some() {
+        artifacts.insert(
+            "source_audit".to_string(),
+            json!({
+                "path": source_audit_path,
+                "sha256": source_audit_sha256
+            }),
+        );
+    }
+    Value::Object(artifacts)
 }
 
 fn validate_source_audit(
@@ -2177,6 +2234,28 @@ mod tests {
         .expect("validation should return diagnostics");
 
         assert_eq!(result["valid"], true);
+        assert_eq!(
+            result["artifacts"]["prompt_output"]["path"],
+            output_path.display().to_string()
+        );
+        assert_eq!(
+            result["artifacts"]["prompt_output"]["sha256"]
+                .as_str()
+                .expect("prompt output hash")
+                .len(),
+            64
+        );
+        assert_eq!(
+            result["artifacts"]["source_audit"]["path"],
+            audit_path.display().to_string()
+        );
+        assert_eq!(
+            result["artifacts"]["source_audit"]["sha256"]
+                .as_str()
+                .expect("source audit hash")
+                .len(),
+            64
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

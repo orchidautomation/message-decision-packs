@@ -18,7 +18,7 @@ A production proposal normalization runner should create or preserve these local
 1. `mdp.source-audit.v0` — bounded extraction ledger for the supplied PDF/doc/text material.
 2. Prompt package — the selected `.mdp/prompts/normalize-opportunity.yaml` plus only its declared inputs (`raw_opportunity`, `existing_pack_context`, optional `runtime_context`, `source_kind`, and source-audit references as needed).
 3. `mdp.prompt-output.v0` — strict JSON model output.
-4. `mdp.validate-prompt-output.v0` result — from `mdp --json validate-prompt-output --source-audit`.
+4. `mdp.validate-prompt-output.v0` result — from `mdp --json validate-prompt-output --source-audit`, including the prompt-output and source-audit artifact hashes.
 5. `mdp.runner-audit.v0` — host-owned evidence that the model call was isolated/headless/stateless.
 6. `mdp.run-receipt.v0` — CLI-owned hash gate tying the artifacts together.
 

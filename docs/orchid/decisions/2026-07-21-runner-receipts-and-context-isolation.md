@@ -46,7 +46,7 @@ Therefore, production proposal workflows need a runner-owned boundary that can s
 - `--isolation isolated`
 - `--declared-inputs-only`
 - `--prompt-output <mdp.prompt-output.v0.json>`
-- `--validation <validate-prompt-output result.json>` with `valid: true`
+- `--validation <validate-prompt-output result.json>` with `valid: true` and artifact hashes matching the supplied prompt-output/source-audit files
 - `--source-audit <mdp.source-audit.v0.json>` that was also surfaced in the validation result
 - optionally `--runner-audit <mdp.runner-audit.v0.json>`; for paid proposal pilots use `--require-runner-audit`
 

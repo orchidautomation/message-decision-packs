@@ -74,6 +74,7 @@ pub(crate) fn run_receipt(options: RunReceiptOptions<'_>) -> Result<Value> {
     if let Some(value) = prompt_output_value.as_ref() {
         validate_prompt_output_summary(value, options.prompt_id, &mut issues, &mut blocked);
     }
+    let prompt_output_hash = options.prompt_output.and_then(artifact_sha256);
 
     let validation_value = required_json_artifact(
         "validation",
@@ -83,12 +84,15 @@ pub(crate) fn run_receipt(options: RunReceiptOptions<'_>) -> Result<Value> {
         &mut blocked,
     )?;
     let validation_data = validation_value.as_ref().map(validation_payload);
+    let source_audit_hash = options.source_audit.and_then(artifact_sha256);
     if let Some(value) = validation_data.as_ref() {
         validate_validation_summary(
             value,
             options.prompt_id,
             options.workflow.requires_source_audit(),
             options.source_audit.is_some(),
+            prompt_output_hash.as_deref(),
+            source_audit_hash.as_deref(),
             &mut issues,
             &mut blocked,
         );
@@ -353,6 +357,13 @@ fn artifact_record(
     }
 }
 
+fn artifact_sha256(path: &Path) -> Option<String> {
+    fs::read(path).ok().map(|bytes| {
+        let hash = Sha256::digest(&bytes);
+        format!("{hash:x}")
+    })
+}
+
 fn issue_code_kind(kind: &str) -> String {
     kind.replace('-', "_")
 }
@@ -391,6 +402,8 @@ fn validate_validation_summary(
     prompt_id: Option<&str>,
     source_audit_required: bool,
     source_audit_provided: bool,
+    prompt_output_sha256: Option<&str>,
+    source_audit_sha256: Option<&str>,
     issues: &mut Vec<Value>,
     blocked: &mut bool,
 ) {
@@ -415,6 +428,33 @@ fn validate_validation_summary(
             ));
         }
     }
+    match (
+        value["artifacts"]["prompt_output"]["sha256"].as_str(),
+        prompt_output_sha256,
+    ) {
+        (Some(validation_hash), Some(receipt_hash)) if validation_hash == receipt_hash => {}
+        (Some(validation_hash), Some(receipt_hash)) => {
+            *blocked = true;
+            issues.push(issue(
+                "validation_prompt_output_hash_mismatch",
+                "error",
+                "validation.artifacts.prompt_output.sha256",
+                format!(
+                    "validation result was produced for a different prompt-output artifact: validation hash {validation_hash}, receipt hash {receipt_hash}"
+                ),
+            ));
+        }
+        (None, Some(_)) => {
+            *blocked = true;
+            issues.push(issue(
+                "validation_prompt_output_hash_missing",
+                "error",
+                "validation.artifacts.prompt_output.sha256",
+                "validation result must include the prompt-output sha256 so run-receipt can bind validation to the exact artifact",
+            ));
+        }
+        _ => {}
+    }
     if source_audit_required {
         if !source_audit_provided {
             *blocked = true;
@@ -433,6 +473,33 @@ fn validate_validation_summary(
                 "validation.source_audit.contract",
                 "validation result must include a source_audit summary, proving validate-prompt-output ran with --source-audit",
             ));
+        }
+        match (
+            value["artifacts"]["source_audit"]["sha256"].as_str(),
+            source_audit_sha256,
+        ) {
+            (Some(validation_hash), Some(receipt_hash)) if validation_hash == receipt_hash => {}
+            (Some(validation_hash), Some(receipt_hash)) => {
+                *blocked = true;
+                issues.push(issue(
+                    "validation_source_audit_hash_mismatch",
+                    "error",
+                    "validation.artifacts.source_audit.sha256",
+                    format!(
+                        "validation result was produced with a different source-audit artifact: validation hash {validation_hash}, receipt hash {receipt_hash}"
+                    ),
+                ));
+            }
+            (None, Some(_)) => {
+                *blocked = true;
+                issues.push(issue(
+                    "validation_source_audit_hash_missing",
+                    "error",
+                    "validation.artifacts.source_audit.sha256",
+                    "validation result must include the source-audit sha256 so run-receipt can bind validation to the exact artifact",
+                ));
+            }
+            _ => {}
         }
     }
 }
@@ -1058,11 +1125,7 @@ mod tests {
         let validation = write_json(
             &root,
             "validation.json",
-            json!({
-                "valid": true,
-                "prompt": {"id": "normalize-opportunity"},
-                "source_audit": {"contract": "mdp.source-audit.v0"}
-            }),
+            validation_summary(&prompt_output, Some(&source_audit)),
         );
 
         let receipt = run_receipt(RunReceiptOptions {
@@ -1111,7 +1174,7 @@ mod tests {
         let validation = write_json(
             &root,
             "validation.json",
-            json!({"valid": true, "prompt": {"id": "normalize-opportunity"}, "source_audit": {"contract": "mdp.source-audit.v0"}}),
+            validation_summary(&prompt_output, Some(&source_audit)),
         );
 
         let receipt = run_receipt(RunReceiptOptions {
@@ -1197,11 +1260,7 @@ mod tests {
             json!({
                 "ok": true,
                 "command": "validate-prompt-output",
-                "data": {
-                    "valid": true,
-                    "prompt": {"id": "normalize-opportunity"},
-                    "source_audit": {"contract": "mdp.source-audit.v0"}
-                }
+                "data": validation_summary(&prompt_output, Some(&source_audit))
             }),
         );
 
@@ -1227,6 +1286,110 @@ mod tests {
     }
 
     #[test]
+    fn validation_prompt_output_hash_mismatch_blocks_receipt() {
+        let root = test_pack("receipt-prompt-output-hash-mismatch");
+        let prompt_output = write_json(
+            &root,
+            "prompt-output.json",
+            json!({"contract": "mdp.prompt-output.v0", "prompt_id": "normalize-opportunity"}),
+        );
+        let other_prompt_output = write_json(
+            &root,
+            "other-prompt-output.json",
+            json!({"contract": "mdp.prompt-output.v0", "prompt_id": "normalize-opportunity", "gaps": ["other"]}),
+        );
+        let source_audit = write_json(
+            &root,
+            "source-audit.json",
+            json!({"contract": "mdp.source-audit.v0", "refs": []}),
+        );
+        let validation = write_json(
+            &root,
+            "validation.json",
+            validation_summary(&other_prompt_output, Some(&source_audit)),
+        );
+
+        let receipt = run_receipt(RunReceiptOptions {
+            root: &root,
+            workflow: RunReceiptWorkflow::ProposalReview,
+            isolation: RunIsolation::Isolated,
+            declared_inputs_only: true,
+            prompt_id: Some("normalize-opportunity"),
+            prompt_output: Some(&prompt_output),
+            validation: Some(&validation),
+            source_audit: Some(&source_audit),
+            runner_audit: None,
+            require_runner_audit: false,
+            artifacts: &[],
+        })
+        .expect("receipt should build");
+
+        assert_eq!(receipt["valid"], false);
+        assert_eq!(receipt["decision"], "blocked");
+        assert!(
+            receipt["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "validation_prompt_output_hash_mismatch")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validation_source_audit_hash_mismatch_blocks_receipt() {
+        let root = test_pack("receipt-source-audit-hash-mismatch");
+        let prompt_output = write_json(
+            &root,
+            "prompt-output.json",
+            json!({"contract": "mdp.prompt-output.v0", "prompt_id": "normalize-opportunity"}),
+        );
+        let source_audit = write_json(
+            &root,
+            "source-audit.json",
+            json!({"contract": "mdp.source-audit.v0", "refs": []}),
+        );
+        let other_source_audit = write_json(
+            &root,
+            "other-source-audit.json",
+            json!({"contract": "mdp.source-audit.v0", "refs": [{"ref": "raw_opportunity.text", "source_id": "sample-rfp", "snippet": "different", "confidence": "high"}]}),
+        );
+        let validation = write_json(
+            &root,
+            "validation.json",
+            validation_summary(&prompt_output, Some(&other_source_audit)),
+        );
+
+        let receipt = run_receipt(RunReceiptOptions {
+            root: &root,
+            workflow: RunReceiptWorkflow::ProposalReview,
+            isolation: RunIsolation::Isolated,
+            declared_inputs_only: true,
+            prompt_id: Some("normalize-opportunity"),
+            prompt_output: Some(&prompt_output),
+            validation: Some(&validation),
+            source_audit: Some(&source_audit),
+            runner_audit: None,
+            require_runner_audit: false,
+            artifacts: &[],
+        })
+        .expect("receipt should build");
+
+        assert_eq!(receipt["valid"], false);
+        assert_eq!(receipt["decision"], "blocked");
+        assert!(
+            receipt["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "validation_source_audit_hash_mismatch")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn required_claude_bare_runner_audit_is_headless_verified() {
         let root = test_pack("receipt-claude-runner-audit");
         let prompt_output = write_json(
@@ -1242,7 +1405,7 @@ mod tests {
         let validation = write_json(
             &root,
             "validation.json",
-            json!({"valid": true, "prompt": {"id": "normalize-opportunity"}, "source_audit": {"contract": "mdp.source-audit.v0"}}),
+            validation_summary(&prompt_output, Some(&source_audit)),
         );
         let runner_audit = write_json(
             &root,
@@ -1541,6 +1704,40 @@ mod tests {
         let path = root.join(name);
         fs::write(&path, serde_json::to_string_pretty(&value).expect("json")).expect("write json");
         path
+    }
+
+    fn validation_summary(prompt_output: &Path, source_audit: Option<&Path>) -> Value {
+        let mut artifacts = serde_json::Map::new();
+        artifacts.insert(
+            "prompt_output".to_string(),
+            json!({
+                "path": prompt_output.display().to_string(),
+                "sha256": file_sha256(prompt_output)
+            }),
+        );
+        if let Some(source_audit) = source_audit {
+            artifacts.insert(
+                "source_audit".to_string(),
+                json!({
+                    "path": source_audit.display().to_string(),
+                    "sha256": file_sha256(source_audit)
+                }),
+            );
+        }
+        let mut summary = json!({
+            "valid": true,
+            "file": prompt_output.display().to_string(),
+            "prompt": {"id": "normalize-opportunity"},
+            "artifacts": Value::Object(artifacts)
+        });
+        if source_audit.is_some() {
+            summary["source_audit"] = json!({"contract": "mdp.source-audit.v0"});
+        }
+        summary
+    }
+
+    fn file_sha256(path: &Path) -> String {
+        artifact_sha256(path).expect("test artifact should be readable")
     }
 
     fn nonce() -> u128 {
