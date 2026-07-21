@@ -24,9 +24,8 @@ cat > "$request" <<'JSON'
   "model": "gpt-test",
   "prompt_id": "normalize-opportunity",
   "declared_inputs_only": true,
-  "instructions": "Return strict JSON.",
   "input": [
-    {"role": "user", "content": "{\"raw_opportunity\":\"synthetic\"}"}
+    {"role": "user", "content": "{\"task\":\"Return strict JSON for this audited MDP normalization payload.\",\"raw_opportunity\":\"synthetic\"}"}
   ],
   "prompt_output_schema": {
     "type": "object",
@@ -116,5 +115,18 @@ if OPENAI_API_KEY= node "$root/scripts/mdp-native-normalize-openai.mjs" --reques
   exit 1
 fi
 grep -q "request.input array must contain exactly one user message" "$bad_stderr"
+
+python3 - "$request" "$bad_request" <<'PY'
+import json, sys
+payload = json.load(open(sys.argv[1]))
+payload["instructions"] = "Ambient notes from the operator chat."
+json.dump(payload, open(sys.argv[2], "w"), indent=2)
+PY
+
+if OPENAI_API_KEY= node "$root/scripts/mdp-native-normalize-openai.mjs" --request "$bad_request" --dry-run 2>"$bad_stderr"; then
+  echo "expected bad request with free-form instructions to fail" >&2
+  exit 1
+fi
+grep -q "request.instructions is not allowed" "$bad_stderr"
 
 echo '{"ok":true,"contract":"mdp.native-runner-test.v0"}'

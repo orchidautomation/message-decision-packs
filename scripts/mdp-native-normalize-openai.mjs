@@ -109,7 +109,7 @@ const validateInputPayload = (input) => {
 
   if (!Array.isArray(input)) fail('request.input must be a Responses API input string or single user message array')
   if (input.length !== 1) {
-    fail('request.input array must contain exactly one user message; put system/developer guidance in request.instructions')
+    fail('request.input array must contain exactly one user message; include all prompt guidance in that audited payload')
   }
 
   const [message] = input
@@ -130,6 +130,7 @@ const validateRequest = (request) => {
   if (request.declared_inputs_only !== true) fail('request.declared_inputs_only must be true')
   requireObject(request.prompt_output_schema, 'request.prompt_output_schema')
   validateInputPayload(request.input)
+  if ('instructions' in request) fail('request.instructions is not allowed; include all model-visible prompt guidance in the audited request.input payload')
   if ('previous_response_id' in request) fail('request must not include previous_response_id')
   if ('conversation' in request) fail('request must not include conversation')
   if ('tools' in request && (!Array.isArray(request.tools) || request.tools.length > 0)) {
@@ -157,7 +158,6 @@ const buildResponsesBody = (request) => {
     tool_choice: 'none',
   }
 
-  if (request.instructions) body.instructions = request.instructions
   if (request.max_output_tokens) body.max_output_tokens = request.max_output_tokens
   if (request.reasoning) body.reasoning = request.reasoning
   if (request.metadata) body.metadata = request.metadata

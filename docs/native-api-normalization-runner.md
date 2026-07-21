@@ -39,11 +39,10 @@ The host/plugin/MCP creates a request JSON file after it has staged source files
   "model": "<openai-model-id>",
   "prompt_id": "normalize-opportunity",
   "declared_inputs_only": true,
-  "instructions": "You normalize supplied proposal material into the MDP prompt output contract. Return strict JSON only.",
   "input": [
     {
       "role": "user",
-      "content": "{\"raw_opportunity\":{...},\"existing_pack_context\":{...},\"source_kind\":\"pdf-extraction\"}"
+      "content": "{\"prompt_instructions\":\"You normalize supplied proposal material into the MDP prompt output contract. Return strict JSON only.\",\"raw_opportunity\":{...},\"existing_pack_context\":{...},\"source_kind\":\"pdf-extraction\"}"
     }
   ],
   "prompt_output_schema": {
@@ -58,7 +57,8 @@ The host/plugin/MCP creates a request JSON file after it has staged source files
 Rules:
 
 - `input` must include only prompt-declared payload fields.
-- `input` must be either a single string payload or an array with exactly one plain `user` message; put system/developer guidance in `instructions`.
+- `input` must be either a single string payload or an array with exactly one plain `user` message.
+- Do not use free-form `instructions`; the runner rejects `request.instructions` so ambient notes cannot cross the model boundary while the audit claims declared-input-only. Put all model-visible prompt guidance inside the audited single `input` payload generated from the selected MDP prompt contract.
 - Do not include prior chat messages, notes, brainstorms, or desired outcomes.
 - Do not include `previous_response_id`, `conversation`, or tools.
 - Keep private source documents outside the public repo; pass only the bounded extracted payload and local source-audit refs needed for validation.
