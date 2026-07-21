@@ -223,7 +223,7 @@ const callOpenAI = async (body) => {
   return payload
 }
 
-const runnerAudit = ({ request, requestPath, response, mock }) => ({
+const runnerAudit = ({ request, requestPath, promptOutputPath, response, mock }) => ({
   contract: RUNNER_CONTRACT,
   runner: 'native-api',
   model: request.model,
@@ -238,6 +238,7 @@ const runnerAudit = ({ request, requestPath, response, mock }) => ({
   endpoint: '/v1/responses',
   store: false,
   prompt_id: request.prompt_id,
+  prompt_output_sha256: sha256File(promptOutputPath),
   request_sha256: sha256File(requestPath),
   response_id: response?.id || null,
   mock_response: mock,
@@ -284,6 +285,7 @@ const main = async () => {
   writeJson(args.runnerAudit, runnerAudit({
     request,
     requestPath: args.request,
+    promptOutputPath: args.out,
     response,
     mock: Boolean(args.mockResponse),
   }))

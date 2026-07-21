@@ -100,6 +100,8 @@ The runner writes `runner-audit.json` similar to:
   "prior_messages_included": false,
   "tools_disabled": true,
   "tool_invocations_observed": 0,
+  "prompt_id": "normalize-opportunity",
+  "prompt_output_sha256": "<prompt-output-sha256>",
   "endpoint": "/v1/responses",
   "store": false
 }
@@ -131,7 +133,7 @@ mdp --json run-receipt \
   --out <run-receipt.json>
 ```
 
-The validation result records artifact hashes for the prompt output and source audit. `run-receipt` compares those hashes to the supplied files, so substituting either artifact after validation blocks audit-grade status. A valid native runner audit gives the receipt `runner.assurance: "stateless-api-verified"`.
+The validation result records artifact hashes for the prompt output and source audit. `run-receipt` compares those hashes to the supplied files, and also compares `runner-audit.prompt_output_sha256` to the supplied prompt output, so substituting the prompt output, source audit, or runner audit after the native run blocks audit-grade status. A valid native runner audit gives the receipt `runner.assurance: "stateless-api-verified"`.
 
 ## Test Mode
 

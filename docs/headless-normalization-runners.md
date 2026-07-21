@@ -67,6 +67,8 @@ Minimal Claude Code headless audit:
   "conversation_resume": false,
   "declared_inputs_only": true,
   "output_schema_used": true,
+  "prompt_id": "normalize-opportunity",
+  "prompt_output_sha256": "<prompt-output-sha256>",
   "bare": true,
   "session_persistence": false,
   "tools_disabled": true,
@@ -85,6 +87,8 @@ Minimal Codex headless audit:
   "conversation_resume": false,
   "declared_inputs_only": true,
   "output_schema_used": true,
+  "prompt_id": "normalize-opportunity",
+  "prompt_output_sha256": "<prompt-output-sha256>",
   "ephemeral": true,
   "session_persistence": false,
   "sterile_workdir": true,
@@ -108,6 +112,8 @@ Minimal Cursor headless audit:
   "conversation_resume": false,
   "declared_inputs_only": true,
   "output_schema_used": true,
+  "prompt_id": "normalize-opportunity",
+  "prompt_output_sha256": "<prompt-output-sha256>",
   "session_persistence": false,
   "force_enabled": false,
   "sterile_workdir": true,
@@ -128,6 +134,8 @@ Minimal OpenCode headless audit:
   "conversation_resume": false,
   "declared_inputs_only": true,
   "output_schema_used": true,
+  "prompt_id": "normalize-opportunity",
+  "prompt_output_sha256": "<prompt-output-sha256>",
   "session_persistence": false,
   "pure": true,
   "default_plugins_disabled": true,
@@ -149,13 +157,14 @@ Minimal native API audit:
   "conversation_resume": false,
   "declared_inputs_only": true,
   "output_schema_used": true,
+  "prompt_id": "normalize-opportunity",
+  "prompt_output_sha256": "<prompt-output-sha256>",
   "stateless_request": true,
   "prior_messages_included": false,
   "tools_disabled": true,
   "tool_invocations_observed": 0,
   "endpoint": "/v1/responses",
-  "store": false,
-  "prompt_id": "normalize-opportunity"
+  "store": false
 }
 ```
 
@@ -182,7 +191,7 @@ Runner requirements:
 - Do not use `--continue` or `--resume`.
 - Do not load MDP plugin skills into the normalization model call; the prompt package already contains the needed contract.
 - Extract `.structured_output` as the prompt output artifact.
-- Record `runner: "claude-print"`, `bare: true`, `session_persistence: false`, `tools_disabled: true`, and `tool_invocations_observed: 0` in `mdp.runner-audit.v0`.
+- Record `runner: "claude-print"`, `bare: true`, `session_persistence: false`, `tools_disabled: true`, `tool_invocations_observed: 0`, and the exact `prompt_output_sha256` in `mdp.runner-audit.v0`.
 - Keep piped payloads under the documented stdin cap, or chunk/stage source text before building the prompt package.
 
 ## Codex Headless Recipe
@@ -215,7 +224,7 @@ Runner requirements:
 - Use a temporary/minimal `CODEX_HOME` so global `AGENTS.md` and normal config do not enter the model context. `--ignore-user-config` prevents config loading, but it does not by itself prove instruction discovery is sterile.
 - Use `codex debug prompt-input` or equivalent host inspection to confirm the model-visible prompt input list contains only the intended prompt package.
 - Parse the JSONL event log and require zero command executions, file changes, MCP calls, web searches, or other tool events during normalization.
-- Record `runner: "codex-exec"`, `ephemeral: true`, `sterile_workdir: true`, `prompt_input_audited: true`, `config_discovery_disabled: true`, `instructions_discovery_disabled: true`, `sandbox: "read-only"`, and `tool_invocations_observed: 0` in `mdp.runner-audit.v0`.
+- Record `runner: "codex-exec"`, `ephemeral: true`, `sterile_workdir: true`, `prompt_input_audited: true`, `config_discovery_disabled: true`, `instructions_discovery_disabled: true`, `sandbox: "read-only"`, `tool_invocations_observed: 0`, and the exact `prompt_output_sha256` in `mdp.runner-audit.v0`.
 
 
 ## Cursor Headless Recipe
@@ -241,7 +250,7 @@ Runner requirements:
 - Run from a sterile directory and pass the prompt package explicitly.
 - Use host policy, container sandboxing, or a dedicated wrapper to deny write/shell/tool use.
 - Parse stream JSON and require zero tool calls.
-- Record `runner: "cursor-print"`, `force_enabled: false`, `sterile_workdir: true`, `prompt_input_audited: true`, `tools_disabled: true`, and `tool_invocations_observed: 0` in `mdp.runner-audit.v0`.
+- Record `runner: "cursor-print"`, `force_enabled: false`, `sterile_workdir: true`, `prompt_input_audited: true`, `tools_disabled: true`, `tool_invocations_observed: 0`, and the exact `prompt_output_sha256` in `mdp.runner-audit.v0`.
 
 ## OpenCode Headless Recipe
 
@@ -272,7 +281,7 @@ Runner requirements:
 - Use a no-tool/no-permission agent configuration.
 - Run from a sterile directory and pass the prompt package explicitly.
 - Parse JSON events and require zero tool calls.
-- Record `runner: "opencode-run"`, `pure: true`, `default_plugins_disabled: true`, `claude_code_discovery_disabled: true`, `sterile_workdir: true`, `tools_disabled: true`, and `tool_invocations_observed: 0` in `mdp.runner-audit.v0`.
+- Record `runner: "opencode-run"`, `pure: true`, `default_plugins_disabled: true`, `claude_code_discovery_disabled: true`, `sterile_workdir: true`, `tools_disabled: true`, `tool_invocations_observed: 0`, and the exact `prompt_output_sha256` in `mdp.runner-audit.v0`.
 
 ## Recommended Architecture
 

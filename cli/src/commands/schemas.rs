@@ -293,6 +293,10 @@ fn runner_audit_schema() -> Value {
     properties.insert("endpoint".to_string(), json!({"type": "string"}));
     properties.insert("store".to_string(), json!({"type": "boolean"}));
     properties.insert("prompt_id".to_string(), json!({"type": "string"}));
+    properties.insert(
+        "prompt_output_sha256".to_string(),
+        json!({"type": "string"}),
+    );
     properties.insert("request_sha256".to_string(), json!({"type": "string"}));
     properties.insert(
         "response_id".to_string(),
@@ -314,7 +318,10 @@ fn runner_audit_schema() -> Value {
             "isolated_invocation",
             "conversation_resume",
             "declared_inputs_only",
-            "output_schema_used"
+            "output_schema_used",
+            "prompt_id",
+            "prompt_output_sha256",
+            "tool_invocations_observed"
         ],
         "additionalProperties": true,
         "properties": properties
@@ -1729,8 +1736,26 @@ mod tests {
                 .iter()
                 .any(|field| field == "output_schema_used")
         );
+        assert!(
+            result["required"]
+                .as_array()
+                .expect("required")
+                .iter()
+                .any(|field| field == "prompt_output_sha256")
+        );
+        assert!(
+            result["required"]
+                .as_array()
+                .expect("required")
+                .iter()
+                .any(|field| field == "tool_invocations_observed")
+        );
         assert_eq!(result["properties"]["endpoint"]["type"], "string");
         assert_eq!(result["properties"]["store"]["type"], "boolean");
+        assert_eq!(
+            result["properties"]["prompt_output_sha256"]["type"],
+            "string"
+        );
         assert_eq!(result["properties"]["request_sha256"]["type"], "string");
         assert_eq!(result["properties"]["mock_response"]["type"], "boolean");
     }

@@ -73,15 +73,19 @@ OPENAI_API_KEY= node "$root/scripts/mdp-native-normalize-openai.mjs" \
   --runner-audit "$runner_audit" > "$result"
 
 python3 - "$output" "$runner_audit" <<'PY'
-import json, sys
-output = json.load(open(sys.argv[1]))
-audit = json.load(open(sys.argv[2]))
+import hashlib, json, sys
+output_path, audit_path = sys.argv[1], sys.argv[2]
+output = json.load(open(output_path))
+audit = json.load(open(audit_path))
 assert output["contract"] == "mdp.prompt-output.v0"
 assert audit["contract"] == "mdp.runner-audit.v0"
 assert audit["runner"] == "native-api"
 assert audit["mock_response"] is True
 assert audit["isolated_invocation"] is False
 assert audit["stateless_request"] is False
+assert audit["prompt_id"] == "normalize-opportunity"
+assert audit["tool_invocations_observed"] == 0
+assert audit["prompt_output_sha256"] == hashlib.sha256(open(output_path, "rb").read()).hexdigest()
 PY
 
 python3 - "$request" "$bad_request" <<'PY'

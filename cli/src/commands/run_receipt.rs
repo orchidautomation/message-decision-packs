@@ -141,6 +141,8 @@ pub(crate) fn run_receipt(options: RunReceiptOptions<'_>) -> Result<Value> {
         options.runner_audit,
         options.require_runner_audit,
         options.declared_inputs_only,
+        options.prompt_id,
+        prompt_output_hash.as_deref(),
         &mut issues,
         &mut blocked,
     );
@@ -521,6 +523,8 @@ fn validate_runner_audit_summary(
     runner_audit_path: Option<&Path>,
     require_runner_audit: bool,
     declared_inputs_only: bool,
+    prompt_id: Option<&str>,
+    prompt_output_sha256: Option<&str>,
     issues: &mut Vec<Value>,
     blocked: &mut bool,
 ) -> Value {
@@ -617,6 +621,32 @@ fn validate_runner_audit_summary(
         blocked,
         &mut valid,
     );
+    if let Some(expected_prompt_id) = prompt_id {
+        validate_runner_required_string(
+            value,
+            "prompt_id",
+            expected_prompt_id,
+            "runner_audit_prompt_id_mismatch",
+            "runner_audit.prompt_id",
+            issues,
+            blocked,
+            &mut valid,
+        );
+    } else if value["prompt_id"]
+        .as_str()
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
+    {
+        valid = false;
+        *blocked = true;
+        issues.push(issue(
+            "runner_audit_prompt_id_missing",
+            "error",
+            "runner_audit.prompt_id",
+            "runner-audit must include the prompt_id used for the normalization request",
+        ));
+    }
 
     if !declared_inputs_only && value["declared_inputs_only"].as_bool() == Some(true) {
         valid = false;
@@ -640,17 +670,41 @@ fn validate_runner_audit_summary(
         ));
     }
 
-    if let Some(count) = value["tool_invocations_observed"].as_u64() {
-        if count != 0 {
+    require_zero_u64(
+        value,
+        "tool_invocations_observed",
+        "runner_audit_tool_invocations_observed",
+        "runner_audit.tool_invocations_observed",
+        "normalization runner audit-grade mode must report exactly zero tool invocations during the model run",
+        issues,
+        blocked,
+        &mut valid,
+    );
+    match (value["prompt_output_sha256"].as_str(), prompt_output_sha256) {
+        (Some(runner_hash), Some(receipt_hash)) if runner_hash == receipt_hash => {}
+        (Some(runner_hash), Some(receipt_hash)) => {
             valid = false;
             *blocked = true;
             issues.push(issue(
-                "runner_audit_tool_invocations_observed",
+                "runner_audit_prompt_output_hash_mismatch",
                 "error",
-                "runner_audit.tool_invocations_observed",
-                "normalization runner audit-grade mode must observe zero tool invocations during the model run",
+                "runner_audit.prompt_output_sha256",
+                format!(
+                    "runner-audit was produced for a different prompt-output artifact: runner hash {runner_hash}, receipt hash {receipt_hash}"
+                ),
             ));
         }
+        (None, Some(_)) => {
+            valid = false;
+            *blocked = true;
+            issues.push(issue(
+                "runner_audit_prompt_output_hash_missing",
+                "error",
+                "runner_audit.prompt_output_sha256",
+                "runner-audit must include the exact prompt-output sha256 emitted by that runner invocation",
+            ));
+        }
+        _ => {}
     }
 
     match runner {
@@ -683,6 +737,8 @@ fn validate_runner_audit_summary(
             "conversation_resume": value["conversation_resume"].clone(),
             "declared_inputs_only": value["declared_inputs_only"].clone(),
             "output_schema_used": value["output_schema_used"].clone(),
+            "prompt_id": value.get("prompt_id").cloned().unwrap_or(Value::Null),
+            "prompt_output_sha256": value.get("prompt_output_sha256").cloned().unwrap_or(Value::Null),
             "tool_invocations_observed": value.get("tool_invocations_observed").cloned().unwrap_or(Value::Null)
         }
     })
@@ -1033,6 +1089,23 @@ fn require_bool(
     valid: &mut bool,
 ) {
     if value[field].as_bool() != Some(expected) {
+        *valid = false;
+        *blocked = true;
+        issues.push(issue(code, "error", path, message));
+    }
+}
+
+fn require_zero_u64(
+    value: &Value,
+    field: &str,
+    code: &'static str,
+    path: &'static str,
+    message: &'static str,
+    issues: &mut Vec<Value>,
+    blocked: &mut bool,
+    valid: &mut bool,
+) {
+    if value[field].as_u64() != Some(0) {
         *valid = false;
         *blocked = true;
         issues.push(issue(code, "error", path, message));
@@ -1418,6 +1491,8 @@ mod tests {
                 "conversation_resume": false,
                 "declared_inputs_only": true,
                 "output_schema_used": true,
+                "prompt_id": "normalize-opportunity",
+                "prompt_output_sha256": file_sha256(&prompt_output),
                 "bare": true,
                 "session_persistence": false,
                 "tools_disabled": true,
@@ -1443,6 +1518,142 @@ mod tests {
         assert_eq!(receipt["valid"], true);
         assert_eq!(receipt["decision"], "audit-grade");
         assert_eq!(receipt["runner"]["assurance"], "headless-verified");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runner_audit_missing_tool_invocations_blocks_receipt() {
+        let root = test_pack("receipt-runner-audit-missing-tools-count");
+        let prompt_output = write_json(
+            &root,
+            "prompt-output.json",
+            json!({"contract": "mdp.prompt-output.v0", "prompt_id": "normalize-opportunity"}),
+        );
+        let source_audit = write_json(
+            &root,
+            "source-audit.json",
+            json!({"contract": "mdp.source-audit.v0", "refs": []}),
+        );
+        let validation = write_json(
+            &root,
+            "validation.json",
+            validation_summary(&prompt_output, Some(&source_audit)),
+        );
+        let runner_audit = write_json(
+            &root,
+            "runner-audit.json",
+            json!({
+                "contract": "mdp.runner-audit.v0",
+                "runner": "claude-print",
+                "isolated_invocation": true,
+                "conversation_resume": false,
+                "declared_inputs_only": true,
+                "output_schema_used": true,
+                "prompt_id": "normalize-opportunity",
+                "prompt_output_sha256": file_sha256(&prompt_output),
+                "bare": true,
+                "session_persistence": false,
+                "tools_disabled": true
+            }),
+        );
+
+        let receipt = run_receipt(RunReceiptOptions {
+            root: &root,
+            workflow: RunReceiptWorkflow::ProposalReview,
+            isolation: RunIsolation::Isolated,
+            declared_inputs_only: true,
+            prompt_id: Some("normalize-opportunity"),
+            prompt_output: Some(&prompt_output),
+            validation: Some(&validation),
+            source_audit: Some(&source_audit),
+            runner_audit: Some(&runner_audit),
+            require_runner_audit: true,
+            artifacts: &[],
+        })
+        .expect("receipt should build");
+
+        assert_eq!(receipt["valid"], false);
+        assert_eq!(receipt["decision"], "blocked");
+        assert_eq!(receipt["runner"]["assurance"], "invalid");
+        assert!(
+            receipt["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "runner_audit_tool_invocations_observed")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runner_audit_prompt_output_hash_mismatch_blocks_receipt() {
+        let root = test_pack("receipt-runner-output-hash-mismatch");
+        let prompt_output = write_json(
+            &root,
+            "prompt-output.json",
+            json!({"contract": "mdp.prompt-output.v0", "prompt_id": "normalize-opportunity"}),
+        );
+        let other_prompt_output = write_json(
+            &root,
+            "other-prompt-output.json",
+            json!({"contract": "mdp.prompt-output.v0", "prompt_id": "normalize-opportunity", "note": "different runner output"}),
+        );
+        let source_audit = write_json(
+            &root,
+            "source-audit.json",
+            json!({"contract": "mdp.source-audit.v0", "refs": []}),
+        );
+        let validation = write_json(
+            &root,
+            "validation.json",
+            validation_summary(&prompt_output, Some(&source_audit)),
+        );
+        let runner_audit = write_json(
+            &root,
+            "runner-audit.json",
+            json!({
+                "contract": "mdp.runner-audit.v0",
+                "runner": "claude-print",
+                "isolated_invocation": true,
+                "conversation_resume": false,
+                "declared_inputs_only": true,
+                "output_schema_used": true,
+                "prompt_id": "normalize-opportunity",
+                "prompt_output_sha256": file_sha256(&other_prompt_output),
+                "bare": true,
+                "session_persistence": false,
+                "tools_disabled": true,
+                "tool_invocations_observed": 0
+            }),
+        );
+
+        let receipt = run_receipt(RunReceiptOptions {
+            root: &root,
+            workflow: RunReceiptWorkflow::ProposalReview,
+            isolation: RunIsolation::Isolated,
+            declared_inputs_only: true,
+            prompt_id: Some("normalize-opportunity"),
+            prompt_output: Some(&prompt_output),
+            validation: Some(&validation),
+            source_audit: Some(&source_audit),
+            runner_audit: Some(&runner_audit),
+            require_runner_audit: true,
+            artifacts: &[],
+        })
+        .expect("receipt should build");
+
+        assert_eq!(receipt["valid"], false);
+        assert_eq!(receipt["decision"], "blocked");
+        assert_eq!(receipt["runner"]["assurance"], "invalid");
+        assert!(
+            receipt["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "runner_audit_prompt_output_hash_mismatch")
+        );
 
         let _ = fs::remove_dir_all(root);
     }

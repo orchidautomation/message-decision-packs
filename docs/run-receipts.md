@@ -74,7 +74,7 @@ The validation result may be either the raw `data` object from `validate-prompt-
 | --- | --- | --- |
 | `audit-grade` | `true` | Required artifacts exist, validation passed, source audit is present when required, and the runner confirmed an isolated declared-input-only model call. |
 | `advisory` | `false` | Artifacts can be checked, but the model boundary was ambient or unknown, or declared-input-only was not confirmed. Treat review output as useful but not audit-grade. |
-| `blocked` | `false` | Required artifacts are missing, malformed, failed validation, validation hashes do not match the supplied artifacts, or source-audit use cannot be proven. Do not rely on the review until fixed. |
+| `blocked` | `false` | Required artifacts are missing, malformed, failed validation, validation hashes do not match the supplied artifacts, runner-audit prompt-output hashes do not match, or source-audit use cannot be proven. Do not rely on the review until fixed. |
 
 Validation-style CLI behavior applies: a non-`audit-grade` receipt prints the JSON result and exits nonzero.
 
@@ -86,7 +86,7 @@ Validation-style CLI behavior applies: a non-`audit-grade` receipt prints the JS
 mdp --json schema runner-audit
 ```
 
-For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the supported isolated modes:
+For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the supported isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`:
 
 - `native-api`: a direct stateless API request with no prior messages and no tools. The bundled optional reference is `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles; see [Native API Normalization Runner](native-api-normalization-runner.md).
 - `codex-exec`: `codex exec` in a sterile working directory with ephemeral output, read-only sandboxing, no resume, prompt-input audit, and zero observed tool events.
@@ -118,7 +118,7 @@ See [Native API Normalization Runner](native-api-normalization-runner.md) for th
 2. extract bounded text and create `mdp.source-audit.v0`;
 3. load `.mdp/prompts/normalize-opportunity.yaml`;
 4. call the model in a fresh/stateless invocation with only declared inputs;
-5. emit `mdp.runner-audit.v0` for the headless/stateless boundary;
+5. emit `mdp.runner-audit.v0` for the headless/stateless boundary, including the exact prompt-output hash produced by that invocation;
 6. run `mdp validate-prompt-output --source-audit`;
 7. call `mdp run-receipt --require-runner-audit`;
 8. continue to `fit`, `route`, `author-proof-output`, `verify-output`, or `render-brief` as needed.

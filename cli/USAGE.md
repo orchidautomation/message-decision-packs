@@ -77,13 +77,13 @@ Use `brief` for production GTM prospect handoff. Add `--out <path>` when the mac
 
 Use `author-proof-output` when an agent needs to compile ordered proof-output segments without hand-writing pack identity or `output.text`. The input is a smaller `mdp.proof-output-draft.v0` file with `route`, `output.kind`, `output.format`, and ordered `segments`. The command fills loaded pack identity, joins segment text, runs `verify-output` including the embedded full-text `check-claims` layer, and writes `--out` only when the proof-output artifact is valid. Use `mdp --json schema proof-output-draft` for the draft contract.
 
-Use `run-receipt` when a runner or agent host normalized proposal/doc material before deterministic MDP checks ran. For audit-grade proposal review, the host must create a fresh/stateless model call, pass only prompt-declared inputs, save the prompt output and validation result, and include the `mdp.source-audit.v0` ledger. The validation result must come from the same prompt-output and source-audit artifacts because `run-receipt` compares their `sha256` values before allowing `audit-grade`:
+Use `run-receipt` when a runner or agent host normalized proposal/doc material before deterministic MDP checks ran. For audit-grade proposal review, the host must create a fresh/stateless model call, pass only prompt-declared inputs, save the prompt output and validation result, and include the `mdp.source-audit.v0` ledger. The validation result and runner audit must come from the same run because `run-receipt` compares validation `sha256` values for prompt-output/source-audit and compares runner-audit `prompt_output_sha256` before allowing `audit-grade`:
 
 ```bash
-mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --out <run-receipt.json>
+mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit --out <run-receipt.json>
 ```
 
-A receipt returns `decision: advisory` when normalization used the ambient conversation or when declared-input-only cannot be confirmed. It returns `decision: blocked` when required artifacts are missing, malformed, failed validation, or do not match the artifact hashes recorded by `validate-prompt-output`. Use `mdp --json schema run-receipt` for the receipt contract.
+A receipt returns `decision: advisory` when normalization used the ambient conversation or when declared-input-only cannot be confirmed. It returns `decision: blocked` when required artifacts are missing, malformed, failed validation, or do not match the artifact hashes recorded by `validate-prompt-output` or the prompt-output hash recorded by `runner-audit`. Use `mdp --json schema run-receipt` for the receipt contract.
 
 Layer 1 rules are card body guidance an agent must read and follow. Layer 2 rules are structured constraints the CLI can enforce. For proposal `mdp.proof-output.v0` artifacts, packs can declare:
 

@@ -35,7 +35,7 @@ Therefore, production proposal workflows need a runner-owned boundary that can s
 
 - the normalizer ran in a fresh/stateless model invocation;
 - only the prompt-declared payload fields crossed into that invocation;
-- a native/headless runner produced a reviewable `mdp.runner-audit.v0` artifact;
+- a native/headless runner produced a reviewable `mdp.runner-audit.v0` artifact bound to the exact prompt-output hash;
 - the source audit, prompt output, validation result, and downstream artifacts were persisted locally and hashed;
 - the CLI gates ran on those artifacts.
 
@@ -54,11 +54,11 @@ It records hashes and byte counts for each artifact, reports boundary/validation
 
 - `decision: audit-grade` and `valid: true` only when the boundary and artifacts satisfy the policy;
 - `decision: advisory` when the artifacts validate but context isolation or declared-input confirmation is missing;
-- `decision: blocked` when required artifacts are missing, malformed, failed validation, or a required runner audit is missing/invalid.
+- `decision: blocked` when required artifacts are missing, malformed, failed validation, validation/runner hashes do not bind to the supplied artifacts, or a required runner audit is missing/invalid.
 
 This is not a full MCP server yet. It is the deterministic receipt contract that the local MCP/runner should call once it owns the model invocation.
 
-The next slice adds `scripts/mdp-native-normalize-openai.mjs` as an optional BYOK OpenAI reference runner. Pluxx packages repo scripts, so installed bundles can call the same file at `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`. It does not make the core `mdp` CLI a model runner and it does not create/manage API keys. It accepts a `mdp.native-normalize-request.v0` file, rejects conversation resume fields and tools, calls the Responses API with Structured Outputs and `store: false`, writes the strict prompt output, and emits `mdp.runner-audit.v0` with `runner: "native-api"`. Dry-run and mock-response test modes require no key; real calls require the operator's `OPENAI_API_KEY`.
+The next slice adds `scripts/mdp-native-normalize-openai.mjs` as an optional BYOK OpenAI reference runner. Pluxx packages repo scripts, so installed bundles can call the same file at `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`. It does not make the core `mdp` CLI a model runner and it does not create/manage API keys. It accepts a `mdp.native-normalize-request.v0` file, rejects conversation resume fields and tools, calls the Responses API with Structured Outputs and `store: false`, writes the strict prompt output, and emits `mdp.runner-audit.v0` with `runner: "native-api"`, `prompt_output_sha256`, and `tool_invocations_observed: 0`. Dry-run and mock-response test modes require no key; real calls require the operator's `OPENAI_API_KEY`.
 
 ## Ownership Split
 
