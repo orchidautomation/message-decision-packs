@@ -71,6 +71,23 @@ fn summarize(command: &str, data: &Value) -> Value {
             "issue_count": array_len(&data["issues"]),
             "issues": data["issues"]
         }),
+        "run-receipt" => json!({
+            "valid": data["valid"],
+            "decision": data["decision"],
+            "workflow": data["workflow"],
+            "isolation": data["boundary"]["isolation"],
+            "conversation_context_used": data["boundary"]["conversation_context_used"],
+            "declared_inputs_only": data["boundary"]["declared_inputs_only"],
+            "source_audit_required": data["prompt"]["source_audit_required"],
+            "artifact_count": array_len(&data["artifacts"]),
+            "error_count": data["error_count"],
+            "warning_count": data["warning_count"],
+            "issue_count": array_len(&data["issues"]),
+            "issues": data["issues"],
+            "artifact": data["artifact"],
+            "dry_run": data["dry_run"],
+            "write_plan": data["write_plan"]
+        }),
         "verify-output" => json!({
             "valid": data["valid"],
             "decision": data["decision"],
@@ -79,6 +96,26 @@ fn summarize(command: &str, data: &Value) -> Value {
             "checked": data["checked"],
             "issue_count": array_len(&data["issues"]),
             "issues": data["issues"]
+        }),
+        "author-proof-output" => json!({
+            "valid": data["valid"],
+            "verification_decision": data["verification"]["decision"],
+            "verification_valid": data["checked"]["verification_valid"],
+            "error_count": data["error_count"],
+            "warning_count": data["warning_count"],
+            "author_error_count": data["author_error_count"],
+            "author_warning_count": data["author_warning_count"],
+            "verification_error_count": data["verification"]["error_count"],
+            "verification_warning_count": data["verification"]["warning_count"],
+            "checked": data["checked"],
+            "issue_count": array_len(&data["issues"]),
+            "verification_issue_count": array_len(&data["verification"]["issues"]),
+            "issues": data["issues"],
+            "verification_issues": data["verification"]["issues"],
+            "input_artifact": data["input_artifact"],
+            "artifact": data["artifact"],
+            "dry_run": data["dry_run"],
+            "write_plan": data["write_plan"]
         }),
         "render-brief" => json!({
             "artifact_type": data["artifact_type"],
@@ -282,6 +319,7 @@ fn classify_error(message: &str, details: &[String]) -> &'static str {
         || lower.contains("pass at most one of --prompt and --prompt-id")
         || lower.contains("unsupported template")
         || lower.contains("--count must")
+        || lower.contains("--artifact must use")
         || lower.contains("invalid --scope")
     {
         "invalid_argument"
@@ -357,7 +395,9 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                 }
             }
         }
-        "brief" | "emit-brief" | "pack" if data["dry_run"].as_bool() == Some(true) => {
+        "brief" | "emit-brief" | "pack" | "author-proof-output"
+            if data["dry_run"].as_bool() == Some(true) =>
+        {
             println!("{command}: dry run");
             print_write_plan(data);
         }
@@ -576,6 +616,10 @@ mod tests {
         );
         assert_eq!(
             classify_error("invalid --scope \"product\"; expected dimension=value", &[]),
+            "invalid_argument"
+        );
+        assert_eq!(
+            classify_error("--artifact must use KIND=PATH", &[]),
             "invalid_argument"
         );
     }

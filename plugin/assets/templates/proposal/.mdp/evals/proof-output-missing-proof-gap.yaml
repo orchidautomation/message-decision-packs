@@ -1,0 +1,5 @@
+id: proof-output-missing-proof-gap
+command: verify-output
+proof_output_file: examples/proof-output/missing-proof-gap.json
+expect_valid: true
+expect_decision: proof-safe

@@ -166,6 +166,7 @@ primitive_map:
     - normalize-opportunity-invalid-source-kind
     - normalize-opportunity-missing-required-signal
     - normalize-opportunity-output
+    - normalize-opportunity-source-audit-mismatch
     - proof-review-route
     - proposal-gaps
     - red-team-route

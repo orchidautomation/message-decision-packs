@@ -25,7 +25,10 @@ Use the route and eval commands to inspect the sample:
 cargo run --manifest-path cli/Cargo.toml -- --json validate --dir plugin/assets/templates/proposal
 cargo run --manifest-path cli/Cargo.toml -- --json eval --dir plugin/assets/templates/proposal
 cargo run --manifest-path cli/Cargo.toml -- --json validate-prompt-output --dir plugin/assets/templates/proposal --prompt-id normalize-opportunity --file <prompt-output.json>
+cargo run --manifest-path cli/Cargo.toml -- --json validate-prompt-output --dir plugin/assets/templates/proposal --prompt-id normalize-opportunity --file <prompt-output.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit
+cargo run --manifest-path cli/Cargo.toml -- --json run-receipt --dir plugin/assets/templates/proposal --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit
 cargo run --manifest-path cli/Cargo.toml -- --json verify-output --dir plugin/assets/templates/proposal --file plugin/assets/templates/proposal/examples/proof-output/valid-binding.json
+cargo run --manifest-path cli/Cargo.toml -- --json author-proof-output --dir plugin/assets/templates/proposal --draft plugin/assets/templates/proposal/examples/proof-output-drafts/compliance-row.draft.json --out /tmp/mdp-proof-output.json
 cargo run --manifest-path cli/Cargo.toml -- verify-output --readable --dir plugin/assets/templates/proposal --file plugin/assets/templates/proposal/examples/proof-output/valid-binding.json
 cargo run --manifest-path cli/Cargo.toml -- --json route --entries --dir plugin/assets/templates/proposal --persona "Proposal Lead" --job "bid no bid review"
 cargo run --manifest-path cli/Cargo.toml -- --json gaps --dir plugin/assets/templates/proposal
@@ -34,16 +37,20 @@ cargo run --manifest-path cli/Cargo.toml -- --json check-claims --dir plugin/ass
 
 The eval fixtures cover:
 
-- prompt-output validation for `normalize-opportunity`, including insufficient context and invalid enum values
+- prompt-output validation for `normalize-opportunity`, including insufficient context, invalid enum values, and source-audit ref/snippet mismatches
 - route behavior for bid/no-bid, compliance, proof, and red-team review jobs
 - durable gap surfacing for missing RFP text, missing proof, and public-safety gaps
 - unsupported compliance/security claims and invented proof guardrails
 - proof-output verification for valid bindings, fake IDs, missing bindings, malformed text coverage, safe gaps, connective text, and unsupported full-text claims
 - insufficient-context and policy-bypass fit outcomes
 
-`prompts/normalize-opportunity.yaml` also includes a neutral `output_contract.example` fixture. Treat that as a JSON contract example, not as the active demo scenario; when retargeting the template, update eval IDs, titles, jobs, and scenario examples together or explicitly mark examples as contract-only fixtures.
+`prompts/normalize-opportunity.yaml` also includes a neutral `output_contract.example` fixture. It keeps `normalized_prospect` as the required compatibility object and includes `normalized_opportunity` only as an exact proposal-readable alias. Treat that as a JSON contract example, not as the active demo scenario; when retargeting the template, update eval IDs, titles, jobs, and scenario examples together or explicitly mark examples as contract-only fixtures.
+
+When proposal PDF/doc extraction feeds `normalize-opportunity`, use a bounded `mdp.source-audit.v0` JSON ledger instead of committing source documents. `validate-prompt-output --source-audit` checks that raw opportunity refs and ref-plus-snippet citations resolve to audited refs whose `source_id` appears in `.mdp/sources.yaml`. For audit-grade review, the host runner must make a fresh/stateless model call with only declared inputs and then create an `mdp.run-receipt.v0` via `mdp run-receipt`; same-conversation normalization is advisory.
 
 The files under `examples/proof-output/` are synthetic `mdp.proof-output.v0` artifacts. A source ID written by a model is not proof by itself; run `mdp --json verify-output --dir <pack> --file <proof-output.json>` and only treat the generated text as proof-bound when the verifier returns `valid: true`.
+
+For drafting safer artifacts without hand-writing the brittle outer JSON, start from `examples/proof-output-drafts/*.draft.json` and run `mdp --json author-proof-output --dir <pack> --draft <draft.json> --out <proof-output.json>`. The helper fills pack identity, joins ordered segment text into `output.text`, runs `verify-output`, and writes only verified proof-output JSON. The examples `examples/proof-output/compliance-row.json` and `examples/proof-output/missing-proof-gap.json` are compiled synthetic artifacts that demonstrate a supported compliance row and an explicit missing-proof gap.
 
 For human review, run `mdp verify-output --readable --dir <pack> --file <proof-output.json>`. The readable artifact is Markdown with top-of-file YAML frontmatter and proposal review sections for requirement status, proof receipts, unsupported claims, gaps, verification status, and next actions. The Markdown is a review layer only; the proof-output JSON and verifier result remain the machine source of truth.
 

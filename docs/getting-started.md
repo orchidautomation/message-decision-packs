@@ -74,10 +74,15 @@ mdp --json init --template proposal --dir ./mdp-proposal-demo --force
 mdp --json validate --dir ./mdp-proposal-demo
 mdp --json eval --dir ./mdp-proposal-demo
 mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
+mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json> --source-audit <source-audit.json>
+mdp --json run-receipt --dir ./mdp-proposal-demo --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit
 mdp --json verify-output --dir ./mdp-proposal-demo --file ./mdp-proposal-demo/examples/proof-output/valid-binding.json
+mdp --json author-proof-output --dir ./mdp-proposal-demo --draft ./mdp-proposal-demo/examples/proof-output-drafts/compliance-row.draft.json --out /tmp/mdp-proof-output.json
 mdp --json route --entries --dir ./mdp-proposal-demo --persona "Proposal Lead" --job "bid no bid review"
 mdp --json gaps --dir ./mdp-proposal-demo
 ```
+
+The proposal starter also includes proof-output draft examples under `examples/proof-output-drafts/`. Use `mdp author-proof-output` to compile a draft into verified `mdp.proof-output.v0` JSON, then keep `mdp verify-output`/the embedded `check-claims` result as the machine source of truth. See [Proof-Output Drafting](proof-output-drafting.md).
 
 The proposal starter does not create prospect rows or outbound fixtures. It is a synthetic proposal review profile for bid/no-bid, compliance, proof, red-team, and executive review workflows. Its `normalize-opportunity` prompt normalizes messy proposal/RFP context into bounded profile vocabulary for local validation; `verify-output` checks proof-carrying generated text against real pack IDs before the text is trusted. Neither command submits, scrapes, enriches, certifies, or manages proposal work.
 
@@ -137,13 +142,19 @@ That prompt asks an upstream agent to return strict JSON with `normalized_prospe
 mdp --json validate-prompt-output --dir ./mdp-demo --prompt-id normalize-prospect-row --file ./mdp-demo/scratch/normalize-output.json
 ```
 
-For proposal packs, use `.mdp/prompts/normalize-opportunity.yaml` the same way for messy opportunity, RFP, capture, requirement, compliance-matrix, proof, or bid/no-bid context. Include proposal personas, value contracts, attribute definitions, source policy, proposal cards, and review jobs in `existing_pack_context`, then run:
+For proposal packs, use `.mdp/prompts/normalize-opportunity.yaml` the same way for messy opportunity, RFP, capture, requirement, compliance-matrix, proof, or bid/no-bid context. Include proposal personas, value contracts, attribute definitions, source policy, proposal cards, and review jobs in `existing_pack_context`. When PDF/doc extraction produced a bounded `mdp.source-audit.v0` ledger, pass it to validation so cited raw fields and snippets must exist:
 
 ```bash
 mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json>
+mdp --json validate-prompt-output --dir ./mdp-proposal-demo --prompt-id normalize-opportunity --file <prompt-output.json> --source-audit <source-audit.json>
+mdp --json run-receipt --dir ./mdp-proposal-demo --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit
 ```
 
+`run-receipt` is the audit-grade boundary check. It returns `decision: audit-grade` only when the runner reports a fresh/stateless model call, confirms declared-input-only payloads, and supplies hashable local artifacts. For production proposal pilots, include `--runner-audit` and `--require-runner-audit` so the CLI blocks when the native/headless runner boundary is missing. If normalization happened in the current conversation, use `--isolation ambient`; the receipt will be advisory instead of audit-grade. See [Native API Normalization Runner](native-api-normalization-runner.md) for the optional BYOK OpenAI reference runner and [Headless Normalization Runners](headless-normalization-runners.md) for host-specific recipes.
+
 If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, keep the missing context in gaps and structured `normalization_trace.missing_required` entries. Do not invent proof, certifications, compliance status, deadlines, RFP text, past performance, pricing, evaluator criteria, approval status, or person context.
+
+For all prompt outputs, `source_summary.inputs_used` names declared prompt inputs only, such as `raw_row`, `raw_opportunity`, `existing_pack_context`, or `source_kind`. Put field paths, source snippets, PDF/page locators, URLs, and review notes in source/provenance fields such as `signals[].source`, candidate-entry `evidence`/`provenance`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. Proposal normalization must keep `normalized_prospect` for compatibility; it may also include `normalized_opportunity` as an exact alias so proposal readers do not have to interpret the compatibility name.
 
 Minimum parser admission is still `name`, `title`, and `company`, but the starter pack's fit-ready requirements are stricter:
 

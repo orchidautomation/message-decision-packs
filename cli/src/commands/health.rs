@@ -3336,7 +3336,7 @@ fn validate_prompt_example_input_references(
                 "prompt_example_inputs_used_undeclared",
                 "error",
                 format!("{path}#/output_contract/example/source_summary/inputs_used/{index}"),
-                format!("prompt example inputs_used references undeclared input {input}"),
+                format!("prompt example source_summary.inputs_used must use declared prompt input names only; {input} is not declared"),
             ));
         }
     }
@@ -3405,7 +3405,7 @@ fn validate_prompt_example_references(
                 "error",
                 format!("{path}/{index}"),
                 format!(
-                    "prompt example reference {reference} does not match a declared prompt input"
+                    "prompt example reference {reference} must start with a declared prompt input name"
                 ),
             ));
         }
@@ -3434,6 +3434,23 @@ fn validate_prompt_normalization_example(prompt: &PromptFile, path: &str, issues
                 "error",
                 format!("{path}#/output_contract/example/normalized_prospect/{field}"),
                 format!("normalized_prospect must include non-empty {field}"),
+            ));
+        }
+    }
+    if let Some(alias) = example.get("normalized_opportunity") {
+        if !alias.is_object() {
+            issues.push(issue(
+                "prompt_normalized_opportunity_type",
+                "error",
+                format!("{path}#/output_contract/example/normalized_opportunity"),
+                "normalized_opportunity must be an object when provided",
+            ));
+        } else if alias != &example["normalized_prospect"] {
+            issues.push(issue(
+                "prompt_normalized_opportunity_mismatch",
+                "error",
+                format!("{path}#/output_contract/example/normalized_opportunity"),
+                "normalized_opportunity must exactly match normalized_prospect; it is a proposal-readable alias, not a separate core opportunity object",
             ));
         }
     }

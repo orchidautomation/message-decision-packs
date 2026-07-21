@@ -1,4 +1,4 @@
-use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT};
+use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, SOURCE_AUDIT_CONTRACT};
 use crate::models::{CardKind, Manifest, PromptFile};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
 use crate::runtime_context::validate_runtime_context;
@@ -6,15 +6,27 @@ use crate::utils::{normalize_supplied_company_domain, resolve_pack_persona_label
 use crate::value_contracts::normalized_prospect_contract_violations;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
 pub(crate) fn validate_prompt_output_file(
     root: &Path,
     file: &Path,
     prompt_path: Option<&Path>,
     prompt_id: Option<&str>,
+) -> Result<Value> {
+    validate_prompt_output_file_with_source_audit(root, file, prompt_path, prompt_id, None)
+}
+
+pub(crate) fn validate_prompt_output_file_with_source_audit(
+    root: &Path,
+    file: &Path,
+    prompt_path: Option<&Path>,
+    prompt_id: Option<&str>,
+    source_audit_path: Option<&Path>,
 ) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of --prompt and --prompt-id"));
@@ -22,8 +34,26 @@ pub(crate) fn validate_prompt_output_file(
 
     let prompt = resolve_prompt(root, prompt_path, prompt_id)?;
     let artifact_path = display_path(file);
-    let raw = fs::read_to_string(file)?;
+    let raw_bytes = fs::read(file)?;
+    let prompt_output_sha256 = sha256_hex(&raw_bytes);
+    let raw = std::str::from_utf8(&raw_bytes)
+        .map_err(|err| anyhow!("prompt output file must be valid UTF-8: {err}"))?;
     let mut issues = Vec::new();
+    let source_audit = match source_audit_path {
+        Some(path) => match read_source_audit_file_with_hash(path) {
+            Ok((value, sha256)) => Some((value, display_path(path), sha256)),
+            Err(err) => {
+                issues.push(issue(
+                    "source_audit_parse_failed",
+                    "error",
+                    display_path(path),
+                    err.to_string(),
+                ));
+                None
+            }
+        },
+        None => None,
+    };
     let (output, markdown_wrapped) = match parse_prompt_output(&raw) {
         Ok(parsed) => parsed,
         Err(err) => {
@@ -37,6 +67,12 @@ pub(crate) fn validate_prompt_output_file(
                 "valid": false,
                 "file": artifact_path,
                 "prompt": prompt_summary(&prompt, root),
+                "artifacts": validation_artifacts_summary(
+                    &artifact_path,
+                    Some(prompt_output_sha256.as_str()),
+                    source_audit.as_ref().map(|(_, path, _)| path.as_str()),
+                    source_audit.as_ref().map(|(_, _, sha256)| sha256.as_str())
+                ),
                 "issues": issues
             }));
         }
@@ -51,9 +87,20 @@ pub(crate) fn validate_prompt_output_file(
         ));
     }
 
-    validate_prompt_output_parsed(root, &prompt, &output, &artifact_path, issues)
+    validate_prompt_output_parsed(
+        root,
+        &prompt,
+        &output,
+        &artifact_path,
+        Some(prompt_output_sha256.as_str()),
+        issues,
+        source_audit
+            .as_ref()
+            .map(|(value, path, sha256)| (value, path.as_str(), Some(sha256.as_str()))),
+    )
 }
 
+#[allow(dead_code)]
 pub(crate) fn validate_prompt_output_value(
     root: &Path,
     output: &Value,
@@ -61,12 +108,40 @@ pub(crate) fn validate_prompt_output_value(
     prompt_path: Option<&Path>,
     prompt_id: Option<&str>,
 ) -> Result<Value> {
+    validate_prompt_output_value_with_source_audit(
+        root,
+        output,
+        artifact_path,
+        prompt_path,
+        prompt_id,
+        None,
+        None,
+    )
+}
+
+pub(crate) fn validate_prompt_output_value_with_source_audit(
+    root: &Path,
+    output: &Value,
+    artifact_path: &str,
+    prompt_path: Option<&Path>,
+    prompt_id: Option<&str>,
+    source_audit: Option<&Value>,
+    source_audit_path: Option<&str>,
+) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of prompt or prompt_id"));
     }
 
     let prompt = resolve_prompt(root, prompt_path, prompt_id)?;
-    validate_prompt_output_parsed(root, &prompt, output, artifact_path, Vec::new())
+    validate_prompt_output_parsed(
+        root,
+        &prompt,
+        output,
+        artifact_path,
+        None,
+        Vec::new(),
+        source_audit.map(|value| (value, source_audit_path.unwrap_or("source_audit"), None)),
+    )
 }
 
 fn validate_prompt_output_parsed(
@@ -74,18 +149,45 @@ fn validate_prompt_output_parsed(
     prompt: &PromptFile,
     output: &Value,
     artifact_path: &str,
+    prompt_output_sha256: Option<&str>,
     mut issues: Vec<Value>,
+    source_audit: Option<(&Value, &str, Option<&str>)>,
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
     validate_output_against_prompt(&manifest, prompt, output, artifact_path, &mut issues);
     validate_card_collisions(root, prompt, output, artifact_path, &mut issues)?;
+    let source_audit = match source_audit {
+        Some((value, source_audit_path, source_audit_sha256)) => validate_source_audit(
+            root,
+            prompt,
+            value,
+            source_audit_path,
+            output,
+            artifact_path,
+            &mut issues,
+        )?
+        .map(|index| (index, source_audit_path, source_audit_sha256)),
+        None => None,
+    };
 
-    Ok(json!({
+    let mut result = json!({
         "valid": issues.is_empty(),
         "file": artifact_path,
         "prompt": prompt_summary(prompt, root),
+        "artifacts": validation_artifacts_summary(
+            artifact_path,
+            prompt_output_sha256,
+            source_audit.as_ref().map(|(_, path, _)| *path),
+            source_audit.as_ref().and_then(|(_, _, sha256)| *sha256)
+        ),
         "issues": issues
-    }))
+    });
+    if let Some((source_audit, _, _)) = source_audit {
+        if let Some(object) = result.as_object_mut() {
+            object.insert("source_audit".to_string(), source_audit.summary());
+        }
+    }
+    Ok(result)
 }
 
 fn resolve_prompt(
@@ -167,6 +269,471 @@ fn parse_prompt_output(raw: &str) -> Result<(Value, bool)> {
     let value = serde_json::from_str::<Value>(&inner)
         .map_err(|_| anyhow!("prompt output file must contain valid JSON"))?;
     Ok((value, true))
+}
+
+const MAX_SOURCE_AUDIT_SNIPPET_CHARS: usize = 1000;
+
+#[derive(Debug)]
+struct SourceAuditIndex {
+    refs: BTreeMap<String, SourceAuditRef>,
+    audited_inputs: BTreeSet<String>,
+}
+
+impl SourceAuditIndex {
+    fn summary(&self) -> Value {
+        json!({
+            "contract": SOURCE_AUDIT_CONTRACT,
+            "ref_count": self.refs.len(),
+            "audited_inputs": self.audited_inputs.iter().cloned().collect::<Vec<_>>()
+        })
+    }
+}
+
+#[derive(Debug)]
+struct SourceAuditRef {
+    source_id: String,
+    snippet: String,
+}
+
+#[derive(Debug)]
+struct PromptSourceRef {
+    path: String,
+    reference: String,
+}
+
+fn read_source_audit_file_with_hash(path: &Path) -> Result<(Value, String)> {
+    let raw = fs::read(path)?;
+    let sha256 = sha256_hex(&raw);
+    let text = std::str::from_utf8(&raw)
+        .map_err(|err| anyhow!("source audit file must be valid UTF-8: {err}"))?;
+    Ok((
+        serde_json::from_str::<Value>(text)
+            .map_err(|_| anyhow!("source audit file must contain valid JSON"))?,
+        sha256,
+    ))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let hash = Sha256::digest(bytes);
+    format!("{hash:x}")
+}
+
+fn validation_artifacts_summary(
+    prompt_output_path: &str,
+    prompt_output_sha256: Option<&str>,
+    source_audit_path: Option<&str>,
+    source_audit_sha256: Option<&str>,
+) -> Value {
+    let mut artifacts = serde_json::Map::new();
+    artifacts.insert(
+        "prompt_output".to_string(),
+        json!({
+            "path": prompt_output_path,
+            "sha256": prompt_output_sha256
+        }),
+    );
+    if source_audit_path.is_some() || source_audit_sha256.is_some() {
+        artifacts.insert(
+            "source_audit".to_string(),
+            json!({
+                "path": source_audit_path,
+                "sha256": source_audit_sha256
+            }),
+        );
+    }
+    Value::Object(artifacts)
+}
+
+fn validate_source_audit(
+    root: &Path,
+    prompt: &PromptFile,
+    value: &Value,
+    source_audit_path: &str,
+    output: &Value,
+    output_path: &str,
+    issues: &mut Vec<Value>,
+) -> Result<Option<SourceAuditIndex>> {
+    let Some(audit) = value.as_object() else {
+        issues.push(issue(
+            "source_audit_type",
+            "error",
+            source_audit_path,
+            "source_audit must be a JSON object",
+        ));
+        return Ok(None);
+    };
+
+    validate_json_object_keys(
+        audit,
+        &["contract", "refs"],
+        source_audit_path,
+        "source_audit_unknown_field",
+        issues,
+    );
+
+    if value["contract"].as_str() != Some(SOURCE_AUDIT_CONTRACT) {
+        issues.push(issue(
+            "source_audit_contract_mismatch",
+            "error",
+            format!("{source_audit_path}#/contract"),
+            format!("source_audit contract must be {SOURCE_AUDIT_CONTRACT}"),
+        ));
+    }
+
+    let declared_inputs = prompt
+        .inputs
+        .iter()
+        .map(|input| input.name.clone())
+        .collect::<BTreeSet<_>>();
+    let source_ids = match read_source_ledger_ids(root) {
+        Ok(source_ids) => Some(source_ids),
+        Err(err) => {
+            issues.push(issue(
+                "source_audit_sources_read_failed",
+                "error",
+                root.join(DEFAULT_DIR)
+                    .join("sources.yaml")
+                    .display()
+                    .to_string(),
+                err.to_string(),
+            ));
+            None
+        }
+    };
+
+    let Some(refs) = value["refs"].as_array() else {
+        issues.push(issue(
+            "source_audit_refs_type",
+            "error",
+            format!("{source_audit_path}#/refs"),
+            "source_audit.refs must be an array",
+        ));
+        return Ok(None);
+    };
+    if refs.is_empty() {
+        issues.push(issue(
+            "source_audit_refs_empty",
+            "error",
+            format!("{source_audit_path}#/refs"),
+            "source_audit.refs must include at least one audited source reference",
+        ));
+    }
+
+    let mut index = SourceAuditIndex {
+        refs: BTreeMap::new(),
+        audited_inputs: BTreeSet::new(),
+    };
+
+    for (ref_index, audit_ref) in refs.iter().enumerate() {
+        let ref_path = format!("{source_audit_path}#/refs/{ref_index}");
+        let Some(audit_ref) = audit_ref.as_object() else {
+            issues.push(issue(
+                "source_audit_ref_type",
+                "error",
+                &ref_path,
+                "source_audit refs must be objects",
+            ));
+            continue;
+        };
+        validate_json_object_keys(
+            audit_ref,
+            &["ref", "source_id", "locator", "snippet", "confidence"],
+            &ref_path,
+            "source_audit_ref_unknown_field",
+            issues,
+        );
+
+        let source_ref = audit_ref
+            .get("ref")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let source_id = audit_ref
+            .get("source_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let snippet = audit_ref
+            .get("snippet")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        for (field, field_value) in [
+            ("ref", source_ref),
+            ("source_id", source_id),
+            ("snippet", snippet),
+        ] {
+            if field_value.is_empty() {
+                issues.push(issue(
+                    "source_audit_ref_field_missing",
+                    "error",
+                    format!("{ref_path}/{field}"),
+                    format!("source_audit refs must include non-empty {field}"),
+                ));
+            }
+        }
+        if source_ref.is_empty() {
+            continue;
+        }
+        if !references_declared_input(source_ref, &declared_inputs) {
+            issues.push(issue(
+                "source_audit_ref_undeclared",
+                "error",
+                format!("{ref_path}/ref"),
+                format!("source_audit ref {source_ref} does not match a declared prompt input"),
+            ));
+        }
+        if let Some(source_ids) = &source_ids {
+            if !source_id.is_empty() && !source_ids.contains(source_id) {
+                issues.push(issue(
+                    "source_audit_source_id_missing",
+                    "error",
+                    format!("{ref_path}/source_id"),
+                    format!(
+                        "source_audit source_id {source_id} does not exist in .mdp/sources.yaml"
+                    ),
+                ));
+            }
+        }
+        if snippet.chars().count() > MAX_SOURCE_AUDIT_SNIPPET_CHARS {
+            issues.push(issue(
+                "source_audit_snippet_too_long",
+                "error",
+                format!("{ref_path}/snippet"),
+                format!(
+                    "source_audit snippets must be at most {MAX_SOURCE_AUDIT_SNIPPET_CHARS} characters"
+                ),
+            ));
+        }
+        if index
+            .refs
+            .insert(
+                source_ref.to_string(),
+                SourceAuditRef {
+                    source_id: source_id.to_string(),
+                    snippet: snippet.to_string(),
+                },
+            )
+            .is_some()
+        {
+            issues.push(issue(
+                "source_audit_ref_duplicate",
+                "error",
+                format!("{ref_path}/ref"),
+                format!("duplicate source_audit ref {source_ref}"),
+            ));
+        }
+        index
+            .audited_inputs
+            .insert(reference_input_root(source_ref).to_string());
+    }
+
+    validate_prompt_output_refs_against_source_audit(
+        output,
+        output_path,
+        &index,
+        &declared_inputs,
+        issues,
+    );
+    Ok(Some(index))
+}
+
+fn read_source_ledger_ids(root: &Path) -> Result<BTreeSet<String>> {
+    let path = root.join(DEFAULT_DIR).join("sources.yaml");
+    let raw = fs::read_to_string(&path)?;
+    let value: Value = serde_yaml::from_str(&raw)?;
+    Ok(value["sources"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|source| source["id"].as_str().map(str::to_string))
+        .collect())
+}
+
+fn validate_prompt_output_refs_against_source_audit(
+    output: &Value,
+    output_path: &str,
+    audit: &SourceAuditIndex,
+    declared_inputs: &BTreeSet<String>,
+    issues: &mut Vec<Value>,
+) {
+    for source_ref in collect_prompt_output_source_refs(output, output_path) {
+        let (base_ref, snippet_ref) = split_source_reference(&source_ref.reference);
+        if base_ref.is_empty() {
+            continue;
+        }
+        let input_root = reference_input_root(&base_ref);
+        if !declared_inputs.contains(input_root) || source_audit_exempt_input(input_root) {
+            continue;
+        }
+        let Some(audit_ref) = audit.refs.get(&base_ref) else {
+            issues.push(issue(
+                "prompt_output_source_ref_missing",
+                "error",
+                source_ref.path,
+                format!("source reference {base_ref} is not present in source_audit.refs"),
+            ));
+            continue;
+        };
+        if let Some(snippet_ref) = snippet_ref {
+            if !contains_normalized_snippet(&audit_ref.snippet, &snippet_ref) {
+                issues.push(issue(
+                    "prompt_output_source_snippet_missing",
+                    "error",
+                    source_ref.path,
+                    format!(
+                        "source reference {base_ref} cites a snippet that is not present in source_audit ref from source_id {}",
+                        audit_ref.source_id
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn source_audit_exempt_input(input_root: &str) -> bool {
+    matches!(
+        input_root,
+        "existing_pack_context" | "runtime_context" | "source_audit"
+    )
+}
+
+fn collect_prompt_output_source_refs(output: &Value, output_path: &str) -> Vec<PromptSourceRef> {
+    let mut refs = Vec::new();
+    if let Some(card_patches) = output.get("card_patches").and_then(Value::as_array) {
+        for (patch_index, patch) in card_patches.iter().enumerate() {
+            if let Some(entries) = patch.get("entries").and_then(Value::as_array) {
+                for (entry_index, entry) in entries.iter().enumerate() {
+                    collect_source_ref_array(
+                        entry.get("evidence"),
+                        &format!(
+                            "{output_path}#/card_patches/{patch_index}/entries/{entry_index}/evidence"
+                        ),
+                        &mut refs,
+                    );
+                    collect_source_ref_array(
+                        entry.get("provenance"),
+                        &format!(
+                            "{output_path}#/card_patches/{patch_index}/entries/{entry_index}/provenance"
+                        ),
+                        &mut refs,
+                    );
+                }
+            }
+        }
+    }
+    if let Some(signals) = output
+        .pointer("/normalized_prospect/signals")
+        .and_then(Value::as_array)
+    {
+        for (index, signal) in signals.iter().enumerate() {
+            if let Some(reference) = signal.get("source").and_then(Value::as_str) {
+                refs.push(PromptSourceRef {
+                    path: format!("{output_path}#/normalized_prospect/signals/{index}/source"),
+                    reference: reference.to_string(),
+                });
+            }
+        }
+    }
+    if let Some(reference) = output
+        .pointer("/normalization_trace/persona/source")
+        .and_then(Value::as_str)
+    {
+        refs.push(PromptSourceRef {
+            path: format!("{output_path}#/normalization_trace/persona/source"),
+            reference: reference.to_string(),
+        });
+    }
+    collect_source_ref_array(
+        output.pointer("/normalization_trace/preserved_raw_fields"),
+        &format!("{output_path}#/normalization_trace/preserved_raw_fields"),
+        &mut refs,
+    );
+    if let Some(missing_required) = output
+        .pointer("/normalization_trace/missing_required")
+        .and_then(Value::as_array)
+    {
+        for (index, item) in missing_required.iter().enumerate() {
+            let Some(item) = item.as_object() else {
+                continue;
+            };
+            for field in ["path", "source_evidence"] {
+                if let Some(reference) = item.get(field).and_then(Value::as_str) {
+                    refs.push(PromptSourceRef {
+                        path: format!(
+                            "{output_path}#/normalization_trace/missing_required/{index}/{field}"
+                        ),
+                        reference: reference.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    if let Some(rejected_claims) = output.get("rejected_claims").and_then(Value::as_array) {
+        for (index, claim) in rejected_claims.iter().enumerate() {
+            if let Some(reference) = claim.get("source").and_then(Value::as_str) {
+                refs.push(PromptSourceRef {
+                    path: format!("{output_path}#/rejected_claims/{index}/source"),
+                    reference: reference.to_string(),
+                });
+            }
+        }
+    }
+    refs
+}
+
+fn collect_source_ref_array(value: Option<&Value>, path: &str, refs: &mut Vec<PromptSourceRef>) {
+    let Some(items) = value.and_then(Value::as_array) else {
+        return;
+    };
+    for (index, item) in items.iter().enumerate() {
+        if let Some(reference) = item.as_str() {
+            refs.push(PromptSourceRef {
+                path: format!("{path}/{index}"),
+                reference: reference.to_string(),
+            });
+        }
+    }
+}
+
+fn split_source_reference(reference: &str) -> (String, Option<String>) {
+    let reference = reference.trim();
+    let Some((base, snippet)) = reference.split_once(':') else {
+        return (reference.to_string(), None);
+    };
+    let base = base.trim();
+    let snippet = snippet.trim();
+    if base.is_empty() || snippet.is_empty() {
+        return (reference.to_string(), None);
+    }
+    (base.to_string(), Some(snippet.to_string()))
+}
+
+fn reference_input_root(reference: &str) -> &str {
+    let reference = reference.trim();
+    let end = reference
+        .char_indices()
+        .find_map(|(index, character)| {
+            if character == '.' || character == '[' || character == ':' {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(reference.len());
+    &reference[..end]
+}
+
+fn contains_normalized_snippet(source: &str, expected: &str) -> bool {
+    normalize_snippet(source).contains(&normalize_snippet(expected))
+}
+
+fn normalize_snippet(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
 }
 
 fn validate_output_against_prompt(
@@ -287,6 +854,13 @@ fn validate_output_against_prompt(
             manifest,
             output.get("normalized_prospect"),
             &format!("{path}#/normalized_prospect"),
+            issues,
+        );
+        validate_normalized_opportunity_alias(
+            manifest,
+            output.get("normalized_prospect"),
+            output.get("normalized_opportunity"),
+            &format!("{path}#/normalized_opportunity"),
             issues,
         );
         validate_normalization_trace(
@@ -411,7 +985,7 @@ fn validate_source_summary(
                 "prompt_output_inputs_used_undeclared",
                 "error",
                 format!("{path}/inputs_used/{index}"),
-                format!("source_summary.inputs_used references undeclared input {input_name}"),
+                format!("source_summary.inputs_used must use declared prompt input names only; {input_name} is not declared"),
             ));
             continue;
         }
@@ -793,6 +1367,53 @@ fn validate_normalized_prospect(
             "error",
             violation.path,
             violation.reason,
+        ));
+    }
+}
+
+fn validate_normalized_opportunity_alias(
+    manifest: &Manifest,
+    normalized_prospect: Option<&Value>,
+    normalized_opportunity: Option<&Value>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(alias) = normalized_opportunity else {
+        return;
+    };
+
+    if !manifest
+        .profile
+        .as_ref()
+        .is_some_and(|profile| profile.id == "proposal")
+    {
+        issues.push(issue(
+            "prompt_output_normalized_opportunity_profile",
+            "error",
+            path,
+            "normalized_opportunity is a proposal-profile alias; use normalized_prospect for non-proposal normalization outputs",
+        ));
+    }
+
+    if !alias.is_object() {
+        issues.push(issue(
+            "prompt_output_normalized_opportunity_type",
+            "error",
+            path,
+            "normalized_opportunity must be an object when provided",
+        ));
+        return;
+    }
+
+    let Some(prospect) = normalized_prospect else {
+        return;
+    };
+    if alias != prospect {
+        issues.push(issue(
+            "prompt_output_normalized_opportunity_mismatch",
+            "error",
+            path,
+            "normalized_opportunity must exactly match normalized_prospect; it is a proposal-readable alias, not a separate core opportunity object",
         ));
     }
 }
@@ -1280,7 +1901,7 @@ fn validate_string_array(
                 code,
                 "error",
                 format!("{path}/{index}"),
-                format!("reference {reference} does not match a declared prompt input"),
+                format!("reference {reference} must start with a declared prompt input name"),
             ));
         }
     }
@@ -1337,6 +1958,7 @@ fn allowed_top_level_fields(output_kind: &str) -> Vec<&'static str> {
     ];
     if output_kind == "prospect-normalization" {
         fields.push("normalized_prospect");
+        fields.push("normalized_opportunity");
         fields.push("normalization_trace");
     }
     fields
@@ -1390,21 +2012,391 @@ mod tests {
     use crate::commands::init::init_pack;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn temp_pack(name: &str) -> PathBuf {
+    fn temp_pack_with_template(name: &str, template: &str) -> PathBuf {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-prompt-output-{name}-{nonce}"));
-        init_pack(&root, "Example Message Pack", "gtm", true, false)
+        init_pack(&root, "Example Message Pack", template, true, false)
             .expect("starter pack should initialize");
         root
+    }
+
+    fn temp_pack(name: &str) -> PathBuf {
+        temp_pack_with_template(name, "gtm")
     }
 
     fn write_output(root: &Path, name: &str, body: &str) -> PathBuf {
         let path = root.join(name);
         std::fs::write(&path, body).expect("output fixture should be writable");
         path
+    }
+
+    fn write_json_output(root: &Path, name: &str, body: &Value) -> PathBuf {
+        write_output(
+            root,
+            name,
+            &serde_json::to_string_pretty(body).expect("output fixture should serialize"),
+        )
+    }
+
+    fn proposal_opportunity_alias_output() -> Value {
+        let normalized = json!({
+            "name": "N/A",
+            "title": "N/A",
+            "company": "Example Public Services Agency",
+            "company_domain": "public-services.example",
+            "source_kind": "synthetic-example",
+            "synthetic": true,
+            "background": "Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.",
+            "trigger": "Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.",
+            "persona": "Proposal Lead",
+            "segment": "public-services-review",
+            "attributes": {
+                "opportunity_stage": "bid-no-bid",
+                "pursuit_decision": "needs-more-info",
+                "source_safety": "synthetic"
+            },
+            "signals": [
+                {
+                    "id": "public-services-review-context",
+                    "title": "Public services review context supplied",
+                    "source": "raw_opportunity.summary",
+                    "confidence": "medium",
+                    "freshness": "synthetic",
+                    "state_as": "supplied"
+                }
+            ]
+        });
+        json!({
+            "contract": "mdp.prompt-output.v0",
+            "prompt_id": "normalize-opportunity",
+            "source_summary": {
+                "company_domain": "public-services.example",
+                "company_name": "Example Public Services Agency",
+                "person_name": "N/A",
+                "person_title": "N/A",
+                "account_name": "Neutral proposal contract fixture",
+                "inputs_used": ["raw_opportunity", "existing_pack_context", "source_kind"],
+                "confidence": "medium"
+            },
+            "normalized_prospect": normalized.clone(),
+            "normalized_opportunity": normalized,
+            "normalization_trace": {
+                "persona": {
+                    "source": "existing_pack_context.personas",
+                    "matched_keywords": ["bid/no-bid"],
+                    "confidence": "high",
+                    "needs_review": false
+                },
+                "fit_readiness": {
+                    "ready_for_mdp_fit": true
+                },
+                "preserved_raw_fields": ["raw_opportunity.summary", "source_kind"],
+                "missing_required": []
+            },
+            "card_patches": [],
+            "gaps": [],
+            "rejected_claims": []
+        })
+    }
+
+    #[test]
+    fn validate_accepts_proposal_source_audit_refs() {
+        let root = temp_pack_with_template("proposal-source-audit-valid", "proposal");
+        let output_path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-opportunity",
+  "source_summary": {
+    "company_domain": "public-services.example",
+    "company_name": "Example Public Services Agency",
+    "person_name": "N/A",
+    "person_title": "N/A",
+    "account_name": "Neutral proposal contract fixture",
+    "inputs_used": ["raw_opportunity", "existing_pack_context", "source_kind", "source_audit"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "N/A",
+    "title": "N/A",
+    "company": "Example Public Services Agency",
+    "company_domain": "public-services.example",
+    "source_kind": "synthetic-example",
+    "synthetic": true,
+    "background": "Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.",
+    "trigger": "Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.",
+    "persona": "Proposal Lead",
+    "segment": "public-services-review",
+    "attributes": {
+      "opportunity_stage": "bid-no-bid",
+      "pursuit_decision": "needs-more-info",
+      "source_safety": "synthetic"
+    },
+    "signals": [
+      {
+        "id": "public-services-review-context",
+        "title": "Public services review context supplied",
+        "source": "raw_opportunity.summary: service request intake, status notifications, reporting, and training",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
+      },
+      {
+        "id": "due-date-supplied",
+        "title": "Proposal due date supplied",
+        "source": "raw_opportunity.due_date",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
+      }
+    ]
+  },
+  "normalization_trace": {
+    "persona": {
+      "source": "existing_pack_context.personas",
+      "matched_keywords": ["bid/no-bid"],
+      "confidence": "high",
+      "needs_review": false
+    },
+    "fit_readiness": {
+      "has_customer_or_agency": true,
+      "has_due_date": true,
+      "has_requirement_signal": true,
+      "has_review_mode": true,
+      "has_signal_source": true,
+      "ready_for_mdp_fit": true
+    },
+    "preserved_raw_fields": [
+      "raw_opportunity.customer",
+      "raw_opportunity.summary",
+      "raw_opportunity.due_date",
+      "raw_opportunity.review_mode",
+      "source_kind"
+    ],
+    "missing_required": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+        let audit_path = write_output(
+            &root,
+            "source-audit.json",
+            r#"{
+  "contract": "mdp.source-audit.v0",
+  "refs": [
+    {
+      "ref": "raw_opportunity.customer",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#customer",
+      "snippet": "Example Public Services Agency issued a fictional public services modernization RFP."
+    },
+    {
+      "ref": "raw_opportunity.summary",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#summary",
+      "snippet": "The fictional RFP asks for service request intake, status notifications, reporting, and training."
+    },
+    {
+      "ref": "raw_opportunity.due_date",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#due-date",
+      "snippet": "The response is due in six weeks in the synthetic scenario."
+    },
+    {
+      "ref": "raw_opportunity.review_mode",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#review-mode",
+      "snippet": "The supplied synthetic review mode is bid/no-bid."
+    },
+    {
+      "ref": "source_kind",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#source-kind",
+      "snippet": "synthetic-example"
+    }
+  ]
+}"#,
+        );
+
+        let result = validate_prompt_output_file_with_source_audit(
+            &root,
+            &output_path,
+            None,
+            Some("normalize-opportunity"),
+            Some(&audit_path),
+        )
+        .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(
+            result["artifacts"]["prompt_output"]["path"],
+            output_path.display().to_string()
+        );
+        assert_eq!(
+            result["artifacts"]["prompt_output"]["sha256"]
+                .as_str()
+                .expect("prompt output hash")
+                .len(),
+            64
+        );
+        assert_eq!(
+            result["artifacts"]["source_audit"]["path"],
+            audit_path.display().to_string()
+        );
+        assert_eq!(
+            result["artifacts"]["source_audit"]["sha256"]
+                .as_str()
+                .expect("source audit hash")
+                .len(),
+            64
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_proposal_source_audit_missing_ref_and_snippet_mismatch() {
+        let root = temp_pack_with_template("proposal-source-audit-invalid", "proposal");
+        let output_path = write_output(
+            &root,
+            "normalize-output.json",
+            r#"{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-opportunity",
+  "source_summary": {
+    "company_domain": "public-services.example",
+    "company_name": "Example Public Services Agency",
+    "person_name": "N/A",
+    "person_title": "N/A",
+    "account_name": "Neutral proposal contract fixture",
+    "inputs_used": ["raw_opportunity", "existing_pack_context", "source_kind", "source_audit"],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "N/A",
+    "title": "N/A",
+    "company": "Example Public Services Agency",
+    "company_domain": "public-services.example",
+    "source_kind": "synthetic-example",
+    "synthetic": true,
+    "background": "Neutral synthetic opportunity context says a public services buyer needs local-first review.",
+    "trigger": "Synthetic public services opportunity needs bid/no-bid review before drafting.",
+    "persona": "Proposal Lead",
+    "segment": "public-services-review",
+    "attributes": {
+      "opportunity_stage": "bid-no-bid",
+      "pursuit_decision": "needs-more-info",
+      "source_safety": "synthetic"
+    },
+    "signals": [
+      {
+        "id": "invented-integration",
+        "title": "Invented integration requirement",
+        "source": "raw_opportunity.summary: mandatory live-chat integration",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
+      },
+      {
+        "id": "missing-ref",
+        "title": "Nonexistent requirement source",
+        "source": "raw_opportunity.unlisted_requirement",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
+      }
+    ]
+  },
+  "normalization_trace": {
+    "persona": {
+      "source": "existing_pack_context.personas",
+      "matched_keywords": ["bid/no-bid"],
+      "confidence": "high",
+      "needs_review": false
+    },
+    "fit_readiness": {
+      "ready_for_mdp_fit": true
+    },
+    "preserved_raw_fields": [
+      "raw_opportunity.customer",
+      "raw_opportunity.summary",
+      "raw_opportunity.due_date",
+      "raw_opportunity.review_mode",
+      "source_kind"
+    ],
+    "missing_required": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}"#,
+        );
+        let audit_path = write_output(
+            &root,
+            "source-audit.json",
+            r#"{
+  "contract": "mdp.source-audit.v0",
+  "refs": [
+    {
+      "ref": "raw_opportunity.customer",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#customer",
+      "snippet": "Example Public Services Agency issued a fictional public services modernization RFP."
+    },
+    {
+      "ref": "raw_opportunity.summary",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#summary",
+      "snippet": "The fictional RFP asks for service request intake, status notifications, reporting, and training."
+    },
+    {
+      "ref": "raw_opportunity.due_date",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#due-date",
+      "snippet": "The response is due in six weeks in the synthetic scenario."
+    },
+    {
+      "ref": "raw_opportunity.review_mode",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#review-mode",
+      "snippet": "The supplied synthetic review mode is bid/no-bid."
+    },
+    {
+      "ref": "source_kind",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#source-kind",
+      "snippet": "synthetic-example"
+    }
+  ]
+}"#,
+        );
+
+        let result = validate_prompt_output_file_with_source_audit(
+            &root,
+            &output_path,
+            None,
+            Some("normalize-opportunity"),
+            Some(&audit_path),
+        )
+        .expect("validation should return diagnostics");
+        let codes: Vec<&str> = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect();
+
+        assert_eq!(result["valid"], false);
+        assert!(codes.contains(&"prompt_output_source_snippet_missing"));
+        assert!(codes.contains(&"prompt_output_source_ref_missing"));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -2553,6 +3545,42 @@ mod tests {
                 "expected issue code {code}"
             );
         }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_accepts_matching_proposal_opportunity_alias() {
+        let root = temp_pack_with_template("proposal-opportunity-alias", "proposal");
+        let output = proposal_opportunity_alias_output();
+        let path = write_json_output(&root, "normalize-opportunity-output.json", &output);
+
+        let result = validate_prompt_output_file(&root, &path, None, Some("normalize-opportunity"))
+            .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], true);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validate_rejects_mismatched_proposal_opportunity_alias() {
+        let root = temp_pack_with_template("proposal-opportunity-alias-mismatch", "proposal");
+        let mut output = proposal_opportunity_alias_output();
+        output["normalized_opportunity"]["company"] = Value::String("Different Agency".into());
+        let path = write_json_output(&root, "normalize-opportunity-output.json", &output);
+
+        let result = validate_prompt_output_file(&root, &path, None, Some("normalize-opportunity"))
+            .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| issue["code"] == "prompt_output_normalized_opportunity_mismatch")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

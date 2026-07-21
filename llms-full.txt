@@ -1,6 +1,6 @@
 # Message Decision Packs - Full Agent Context
 
-Last updated: 2026-07-12
+Last updated: 2026-07-21
 
 Message Decision Packs (MDP) is a local/offline file standard, Rust CLI, and agent plugin for making decision context explicit and testable.
 
@@ -28,7 +28,7 @@ Sending, CRM mutation, enrichment, scraping, sequencing, proposal submission, le
 ```text
 message-decision-packs/
   cli/      # Rust `mdp` CLI
-  plugin/   # canonical plugin source
+  plugin/   # Pluxx plugin package source: skills, assets, hooks, scripts
   docs/     # current user and maintainer docs
   examples/ # one canonical runnable Eve example
 ```
@@ -120,7 +120,9 @@ Proposal profiles use the same primitives without manufacturing prospect rows:
 
 ```text
 approved opportunity, requirement, and proof sources
-  -> source ledger
+  -> source ledger and optional source audit
+  -> fresh/stateless normalization with declared inputs only
+  -> validate prompt output and create run receipt
   -> proposal roles, criteria, requirements, proof, and boundaries
   -> validate
   -> route the review job
@@ -128,7 +130,7 @@ approved opportunity, requirement, and proof sources
   -> surface gaps and human sign-off needs
 ```
 
-Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership.
+Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership. Same-conversation normalization is advisory unless `mdp run-receipt` records an isolated, declared-input-only run with required runner-audit evidence. MDP includes optional BYOK native runner `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed bundles; dry-run/mock validation needs no API key, while a real native model call requires the operator's secure `OPENAI_API_KEY`.
 
 ## CLI Contract
 
@@ -144,14 +146,16 @@ mdp --json --summary brief --context --dir . --prospect <prospect.json> --channe
 mdp render-brief --dir . --file <brief.json> --template gtm-prospect
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "linkedin outbound copy"
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "portfolio scope example" --scope product=local-cli
+mdp --json author-proof-output --dir . --draft <proof-output-draft.json> --out <proof-output.json>
 mdp --json verify-output --dir . --file <proof-output.json>
+mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit
 mdp --json gaps --dir .
 mdp --json eval --dir .
 ```
 
 Use `brief --context` and draft from `data.context.entries`. Open `data.context.full_card_required` paths only when present. Human-readable renderers are review layers, not machine sources of truth or permission to use blocked output.
 
-`check-claims` handles plain text against claims, avoid-rules, output-rules, and constraints. When generated output cites source, card, proof, requirement, or template IDs, require a `mdp.proof-output.v0` artifact and run `verify-output`; model-written IDs alone are not proof.
+`check-claims` handles plain text against claims, avoid-rules, output-rules, and constraints. When generated output cites source, card, proof, requirement, or template IDs, require a `mdp.proof-output.v0` artifact and run `verify-output`; model-written IDs alone are not proof. Use `author-proof-output` to compile `mdp.proof-output-draft.v0` segments into that artifact, but do not treat it as a source audit or verifier bypass.
 
 Generated starter rows carry `source_kind: synthetic-example` and `synthetic: true`. Rows created by `sample-leads` additionally carry `do_not_contact: true`. Never enrich, upload, sequence, contact, or present either kind as a real prospect.
 
@@ -162,11 +166,13 @@ Prompt files use `format: mdp.prompt.v0` and return `contract: mdp.prompt-output
 - normalization prompts turn messy supplied rows into validated prospect or opportunity context;
 - extraction prompts propose reviewable card patches, gaps, rejected claims, confidence, and provenance.
 
+`source_summary.inputs_used` names exact declared prompt inputs only, such as `raw_row`, `raw_opportunity`, `existing_pack_context`, or `source_kind`. Field paths, snippets, URLs, PDF/page locators, and review notes belong in source/provenance locators such as `signals[].source`, entry `evidence`/`provenance`, and normalization trace. Proposal normalization keeps `normalized_prospect` for compatibility and may include `normalized_opportunity` only as an exact alias.
+
 Prompt contracts do not browse or execute. Source-strategy artifacts plan approved source targets, queries, evidence rules, exclusions, receipts, budgets, review gates, and downstream handoff instructions. External scouts may execute an approved strategy, but MDP remains the local scoring and routing authority.
 
 ## Plugin And Pluxx
 
-`plugin/` is the canonical plugin source. Pluxx packages it into release bundles for Claude Code, Cursor, Codex, and OpenCode. The MDP installer combines those bundles with the Rust CLI; Pluxx is not the MDP runtime or a hosted service.
+The full repository is the product/plugin source contract: CLI, docs, canonical templates/assets, authored skills under `plugin/skills`, install/release assets, and Pluxx config move together. Pluxx packages canonical source into release bundles for Claude Code, Cursor, Codex, and OpenCode. The MDP installer combines those bundles with the Rust CLI; Pluxx is not the MDP runtime or a hosted service.
 
 MDP ships exactly five skills:
 
@@ -212,6 +218,9 @@ The example:
 - Conceptual Decision Flow: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/conceptual-decision-flow.md>
 - Portfolio-Aware GTM Scope: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/portfolio-scope.md>
 - Prompt Contracts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md>
+- Runner Receipts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/run-receipts.md>
+- Headless Normalization Runners: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md>
+- Native API Normalization Runner: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/native-api-normalization-runner.md>
 - Agent Hook Guidance: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/agent-hook-guidance.md>
 - Distribution: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md>
 - CLI Usage: <https://github.com/orchidautomation/message-decision-packs/blob/main/cli/USAGE.md>

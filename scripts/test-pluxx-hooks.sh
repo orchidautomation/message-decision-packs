@@ -20,10 +20,13 @@ python3 scripts/validate-skill-packaging.py --require-bundles >/tmp/mdp-skill-pa
 
 workspace_fixture="$(mktemp -d)"
 plugin_fixture="$(mktemp -d)"
-trap 'rm -rf "$workspace_fixture" "$plugin_fixture"' EXIT
-mkdir -p "$workspace_fixture/.mdp" "$plugin_fixture/.mdp"
+proposal_fixture="$(mktemp -d)"
+trap 'rm -rf "$workspace_fixture" "$plugin_fixture" "$proposal_fixture"' EXIT
+mkdir -p "$workspace_fixture/.mdp" "$plugin_fixture/.mdp" "$proposal_fixture/.mdp/prompts"
 printf 'name: hook-workspace-fixture\nversion: 0.1.0\n' >"$workspace_fixture/.mdp/manifest.yaml"
 printf 'name: plugin-root-should-not-activate\nversion: 0.1.0\n' >"$plugin_fixture/.mdp/manifest.yaml"
+printf 'name: proposal-hook-fixture\nversion: 0.1.0\nprofile: proposal\n' >"$proposal_fixture/.mdp/manifest.yaml"
+printf 'id: normalize-opportunity\n' >"$proposal_fixture/.mdp/prompts/normalize-opportunity.yaml"
 
 activation_output="$(
   cd "$plugin_fixture"
@@ -43,9 +46,43 @@ if [ -n "$plugin_root_output" ]; then
   exit 1
 fi
 
+proposal_output="$(
+  cd "$plugin_fixture"
+  PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$proposal_fixture" OPENAI_API_KEY= bash "$ROOT/scripts/mdp-activate.sh"
+)"
+if ! printf '%s\n' "$proposal_output" | grep -F "MDP proposal audit readiness:" >/dev/null; then
+  echo "MDP activation must print proposal audit readiness for proposal packs." >&2
+  printf '%s\n' "$proposal_output" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$proposal_output" | grep -F "OPENAI_API_KEY: not detected; only required for an optional real native OpenAI runner call." >/dev/null; then
+  echo "MDP activation must explain that missing OPENAI_API_KEY only affects optional native runs." >&2
+  printf '%s\n' "$proposal_output" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$proposal_output" | grep -F "No OpenAI key is required for MDP install, validation, receipts, fit/review, dry-runs, mocks, or hardened headless runner audits." >/dev/null; then
+  echo "MDP activation must preserve non-OpenAI audit runner guidance." >&2
+  printf '%s\n' "$proposal_output" >&2
+  exit 1
+fi
+
+key_output="$(
+  cd "$plugin_fixture"
+  PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$proposal_fixture" OPENAI_API_KEY="sk-test-do-not-print" bash "$ROOT/scripts/mdp-activate.sh"
+)"
+if ! printf '%s\n' "$key_output" | grep -F "OPENAI_API_KEY: detected for optional real native API normalization (value not printed)." >/dev/null; then
+  echo "MDP activation must report key presence without printing the key." >&2
+  printf '%s\n' "$key_output" >&2
+  exit 1
+fi
+if printf '%s\n' "$key_output" | grep -F "sk-test-do-not-print" >/dev/null; then
+  echo "MDP activation must never print OPENAI_API_KEY values." >&2
+  exit 1
+fi
+
 if command -v cargo >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
   root_fallback_fixture="$(mktemp -d)"
-  trap 'rm -rf "$workspace_fixture" "$plugin_fixture" "$root_fallback_fixture"' EXIT
+  trap 'rm -rf "$workspace_fixture" "$plugin_fixture" "$proposal_fixture" "$root_fallback_fixture"' EXIT
   cp -R "$ROOT/plugin/assets/templates/basic/.mdp" "$root_fallback_fixture/.mdp"
   ln -s "$ROOT/cli" "$root_fallback_fixture/cli"
   git -C "$root_fallback_fixture" init -q

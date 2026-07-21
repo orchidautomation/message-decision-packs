@@ -7,7 +7,7 @@ MDP is a decision/context layer. It is not an AI SDR, CRM, sequencer, enrichment
 ```text
 message-decision-packs/
   cli/      # Rust `mdp` CLI
-  plugin/   # Canonical plugin source
+  plugin/   # Pluxx plugin package source: skills, assets, hooks, scripts
   docs/     # Current user and maintainer documentation
   examples/ # One canonical runnable example: Eve on Vercel
 ```
@@ -81,9 +81,25 @@ mdp --json route --entries \
   --dir /tmp/mdp-proposal \
   --persona "Proposal Lead" \
   --job "bid no bid review"
+mdp --json author-proof-output \
+  --dir /tmp/mdp-proposal \
+  --draft /tmp/mdp-proposal/examples/proof-output-drafts/compliance-row.draft.json \
+  --out /tmp/mdp-proof-output.json
 mdp --json verify-output \
   --dir /tmp/mdp-proposal \
-  --file /tmp/mdp-proposal/examples/proof-output/valid-binding.json
+  --file /tmp/mdp-proof-output.json
+mdp --json run-receipt \
+  --dir /tmp/mdp-proposal \
+  --workflow proposal-review \
+  --isolation isolated \
+  --declared-inputs-only \
+  --prompt-id normalize-opportunity \
+  --prompt-output /tmp/normalize-opportunity-output.json \
+  --validation /tmp/normalize-opportunity-validation.json \
+  --source-audit /tmp/source-audit.json \
+  --runner-audit /tmp/runner-audit.json \
+  --require-runner-audit \
+  --out /tmp/mdp-proposal-run-receipt.json
 ```
 
 The proposal profile supports review and gap surfacing. It does not replace compliance, legal, procurement, proposal management, or human approval.
@@ -116,7 +132,9 @@ A pack is a local folder:
   evals/*.yaml
 ```
 
-Agents should load the manifest first, preserve source provenance, and use routed entries instead of reading every card. For GTM rows, normalize supplied data before running the deterministic fit gate. Draft only from `brief --context` output, then run `check-claims`. For source-bound generated output, use `mdp.proof-output.v0` and `verify-output` before treating cited IDs as proof.
+Agents should load the manifest first, preserve source provenance, and use routed entries instead of reading every card. For prompt outputs, `source_summary.inputs_used` names declared prompt inputs only; field paths, snippets, URLs, PDF/page locators, and review notes belong in evidence/provenance fields such as `signals[].source`, entry `provenance`, and normalization trace. For GTM rows, normalize supplied data before running the deterministic fit gate. Proposal normalization keeps `normalized_prospect` for compatibility and may include `normalized_opportunity` only as an exact alias. Draft only from `brief --context` output, then run `check-claims`. For source-bound generated output, use `author-proof-output` to compile draft segments when helpful, then use `mdp.proof-output.v0` and `verify-output` before treating cited IDs as proof.
+
+For audit-grade proposal normalization, the runner or host must make a fresh/stateless model call and pass only prompt-declared inputs. `mdp run-receipt` records that host-owned boundary plus local artifact hashes for the source audit, prompt output, validation result, runner audit, and downstream files, and blocks if the validation-result hashes do not match the supplied prompt-output/source-audit artifacts or if the runner-audit prompt-output hash does not match the supplied prompt output. Same-conversation normalization without a required runner-audit receipt is advisory even when the JSON validates.
 
 Profiles express domain language over ten universal primitives:
 
@@ -137,7 +155,7 @@ Profile vocabulary belongs in the manifest, cards, prompts, input contracts, job
 
 ## Plugin Distribution
 
-`plugin/` is the canonical plugin source. [Pluxx](https://pluxx.dev) packages it into release bundles for Claude Code, Cursor, Codex, and OpenCode. The public MDP installer combines those bundles with the matching Rust CLI binary; Pluxx is the packaging layer, not the CLI runtime or a hosted MDP service.
+The full repository is the product/plugin contract: CLI behavior, docs, canonical templates/assets, authored skills, install/release assets, repo scripts, and Pluxx config stay in lockstep. Authored skills live under `plugin/skills`, and [Pluxx](https://pluxx.dev) packages canonical source into release bundles for Claude Code, Cursor, Codex, and OpenCode. The public MDP installer combines those bundles with the matching Rust CLI binary; Pluxx is the packaging layer, not the CLI runtime or a hosted MDP service.
 
 MDP ships five job-shaped skills: `mdp` for explicit CLI/operator and mixed work, `mdp-pack-builder` for pack authoring, `mdp-pack-review` for the pack artifact itself, `mdp-gtm-brief` for the three GTM fit/brief/copy-review jobs, and `mdp-proposal-review` for the four proposal review jobs. `mdp --json skills --dir <pack> --job <job-id>` validates pack eligibility and the exact job route; host discovery remains separate and host-managed.
 
@@ -149,6 +167,10 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Portfolio-Aware GTM Scope](docs/portfolio-scope.md): product, capability, solution, and segment scoping inside one pack.
 - [Conceptual Decision Flow](docs/conceptual-decision-flow.md): layer ownership and deterministic decision boundaries.
 - [Prompt Contracts](docs/prompt-extraction-contract.md): normalization and extraction schemas.
+- [Runner Receipts](docs/run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
+- [Headless Normalization Runners](docs/headless-normalization-runners.md): native/headless runner recipes for Codex, Claude Code, Cursor, OpenCode, and future MCP wrappers.
+- [Native API Normalization Runner](docs/native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.
+- [Proof-Output Drafting](docs/proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
 - [Agent Hook Guidance](docs/agent-hook-guidance.md): safe activation and post-edit validation.
 - [Distribution](docs/distribution.md): releases, Pluxx bundles, installers, and updates.
 - [Skill Evals](docs/skill-evals.md): trigger and output-eval fixtures.

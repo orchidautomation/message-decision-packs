@@ -1,0 +1,106 @@
+id: normalize-opportunity-source-audit-mismatch
+profile_eval:
+  category: unsafe-output
+  primitives:
+  - source-signals
+  - needs-requirements
+  - boundaries
+  - gaps
+  jobs:
+  - bid-no-bid-review
+command: validate-prompt-output
+prompt_id: normalize-opportunity
+expect_valid: false
+expect_issue_codes_contains:
+- prompt_output_source_snippet_missing
+- prompt_output_source_ref_missing
+prompt_output:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-opportunity
+  source_summary:
+    company_domain: public-services.example
+    company_name: Example Public Services Agency
+    person_name: N/A
+    person_title: N/A
+    account_name: Neutral proposal contract fixture
+    inputs_used:
+    - raw_opportunity
+    - existing_pack_context
+    - source_audit
+    - source_kind
+    confidence: medium
+  normalized_prospect:
+    name: N/A
+    title: N/A
+    company: Example Public Services Agency
+    company_domain: public-services.example
+    source_kind: synthetic-example
+    synthetic: true
+    background: Neutral synthetic opportunity context says a public services buyer needs local-first review.
+    trigger: Synthetic public services opportunity needs bid/no-bid review before drafting.
+    persona: Proposal Lead
+    segment: public-services-review
+    attributes:
+      opportunity_stage: bid-no-bid
+      pursuit_decision: needs-more-info
+      source_safety: synthetic
+    signals:
+    - id: invented-integration
+      title: Invented integration requirement
+      source: 'raw_opportunity.summary: mandatory live-chat integration'
+      confidence: medium
+      freshness: synthetic
+      state_as: supplied
+    - id: missing-ref
+      title: Nonexistent requirement source
+      source: raw_opportunity.unlisted_requirement
+      confidence: medium
+      freshness: synthetic
+      state_as: supplied
+  normalization_trace:
+    persona:
+      source: existing_pack_context.personas
+      matched_keywords:
+      - bid/no-bid
+      confidence: high
+      needs_review: false
+    fit_readiness:
+      has_customer_or_agency: true
+      has_due_date: true
+      has_requirement_signal: true
+      has_review_mode: true
+      has_signal_source: true
+      ready_for_mdp_fit: true
+    preserved_raw_fields:
+    - raw_opportunity.customer
+    - raw_opportunity.summary
+    - raw_opportunity.due_date
+    - raw_opportunity.review_mode
+    - source_kind
+    missing_required: []
+  card_patches: []
+  gaps: []
+  rejected_claims: []
+source_audit:
+  contract: mdp.source-audit.v0
+  refs:
+  - ref: raw_opportunity.customer
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#customer
+    snippet: Example Public Services Agency issued a fictional public services modernization RFP.
+  - ref: raw_opportunity.summary
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#summary
+    snippet: The fictional RFP asks for service request intake, status notifications, reporting, and training.
+  - ref: raw_opportunity.due_date
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#due-date
+    snippet: The response is due in six weeks in the synthetic scenario.
+  - ref: raw_opportunity.review_mode
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#review-mode
+    snippet: The supplied synthetic review mode is bid/no-bid.
+  - ref: source_kind
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#source-kind
+    snippet: synthetic-example

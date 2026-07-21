@@ -18,7 +18,28 @@ Each prompt file declares:
 - `instructions`: model-facing rules for using only supplied input.
 - `output_contract`: strict JSON output requirements, a compact schema reference, optional inline JSON Schema, and a safe example.
 
-Every prompt-output reference must resolve back to a declared prompt input. `source_summary.inputs_used`, candidate-entry `evidence`, and candidate-entry `provenance` should use declared input names directly or field-qualified forms such as `raw_row.company` or `source_notes: supplied note`.
+Keep prompt inputs separate from source/provenance locators:
+
+- `source_summary.inputs_used` is an inventory of declared prompt inputs used to produce the artifact. Use exact input names from the prompt, such as `raw_row`, `raw_opportunity`, `existing_pack_context`, `runtime_context`, or `source_kind`. Do not put field paths, PDF/page locators, URLs, snippets, or file names here.
+- Candidate-entry `evidence` and `provenance`, normalization `signals[].source`, `normalization_trace.preserved_raw_fields`, and `normalization_trace.missing_required[].source_evidence` are source/provenance locators. Anchor those references to declared inputs with field-qualified or note-qualified forms such as `raw_row.company`, `raw_opportunity.section_l_2`, or `source_notes: supplied note`.
+
+When PDF/doc extraction feeds a proposal normalization prompt, keep the raw document outside the public pack and pass a bounded source-audit file to validation. The source audit is a local JSON artifact with `contract: "mdp.source-audit.v0"` and `refs` entries:
+
+```json
+{
+  "contract": "mdp.source-audit.v0",
+  "refs": [
+    {
+      "ref": "raw_opportunity.summary",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "synthetic-rfp-summary#summary",
+      "snippet": "The fictional RFP asks for service request intake, status notifications, reporting, and training."
+    }
+  ]
+}
+```
+
+Each `source_id` must exist in `.mdp/sources.yaml`. Each `ref` should name a declared prompt input or field such as `raw_opportunity.summary` or `source_kind`. Prompt outputs may cite exact refs or ref-plus-snippet forms such as `raw_opportunity.summary: status notifications`; `validate-prompt-output --source-audit` rejects nonexistent refs and snippet text that does not occur in the audited snippet. Public fixtures must stay synthetic or sanitized; real proposal source-audit files belong in non-public/customer-controlled workspace paths unless explicitly approved for publication.
 
 `output_contract.schema_ref` names the authoritative response contract. Starter prompt files keep that reference compact by default. Use `mdp init --include-output-schemas` when an agent host or model API needs a literal JSON Schema object in each prompt file under `output_contract.schema`. `output_contract.example` is still useful as a model-friendly reference, but it does not replace the schema contract.
 
@@ -36,7 +57,7 @@ Runtime normalization prompts set `output_contract.output_kind: prospect-normali
 - `normalized_prospect`: the exact JSON shape accepted by `mdp --json schema prospect`.
 - `normalization_trace`: persona mapping, fit-readiness, missing fields, and raw-field preservation notes.
 
-For normalization prompts, `card_patches` should stay empty. The prompt prepares runtime input; it does not edit cards, mutate the pack, decide final fit, or produce final copy. Proposal packs use this same validated normalization artifact shape for `.mdp/prompts/normalize-opportunity.yaml`; opportunity, requirements, compliance gaps, proof, and win themes stay profile-owned vocabulary in signals, attributes, trace, and gaps, not new core MDP objects.
+For normalization prompts, `card_patches` should stay empty. The prompt prepares runtime input; it does not edit cards, mutate the pack, decide final fit, or produce final copy. Proposal packs use this same validated normalization artifact shape for `.mdp/prompts/normalize-opportunity.yaml`; opportunity, requirements, compliance gaps, proof, and win themes stay profile-owned vocabulary in signals, attributes, trace, and gaps, not new core MDP objects. Proposal prompt outputs may include optional `normalized_opportunity` as a readability alias, but it must exactly match `normalized_prospect`; existing consumers should continue to read `normalized_prospect`.
 
 Candidate entries carry normal MDP entry fields:
 
@@ -91,7 +112,13 @@ Use safe defaults instead of inventing facts:
 
 Validation rejects prompt files that do not require strict JSON output, omit both `schema_ref` and an inline response schema, use the wrong schema reference for the prompt output kind, let an inline response root accept extra keys, omit provenance/confidence fields, or include non-gap example entries with a real body and no evidence or provenance.
 
-Treat prompt output as reviewable artifact data, not automatic pack truth. Run `mdp --json validate-prompt-output --prompt-id <id> --file <output.json>` before applying reviewed card entries or promoting normalization output into the runtime CLI flow. For normalization prompts, validation also checks that `normalization_trace.fit_readiness.ready_for_mdp_fit` is a boolean and does not claim readiness while manifest-required prospect fields, signal fields, or attributes are missing. This is a contract/readiness consistency check; `mdp fit` remains the final fit decision.
+Treat prompt output as reviewable artifact data, not automatic pack truth. Run `mdp --json validate-prompt-output --prompt-id <id> --file <output.json>` before applying reviewed card entries or promoting normalization output into the runtime CLI flow. When a proposal normalization output was generated from PDF/doc extraction, also pass `--source-audit <source-audit.json>` so raw-field and snippet citations are checked against the bounded extraction ledger. The validation result includes prompt-output and source-audit artifact hashes; `run-receipt` compares those hashes to the supplied files and also requires runner-audit `prompt_output_sha256` to match before allowing audit-grade status. Then create a run receipt when the host can prove isolation:
+
+```bash
+mdp --json run-receipt --dir <pack> --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit
+```
+
+The receipt is audit-grade only when the runner used a fresh/stateless model call and passed only prompt-declared inputs. For production proposal pilots, use `--runner-audit` plus `--require-runner-audit` so the headless/native runner boundary is a reviewable artifact bound to the exact prompt output it produced, with `tool_invocations_observed: 0`. The source repo includes an optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs`; real native calls require the operator's `OPENAI_API_KEY`, but dry-run/mock checks do not. Same-conversation normalization may still be useful, but it should be treated as advisory. For normalization prompts, validation also checks that `normalization_trace.fit_readiness.ready_for_mdp_fit` is a boolean and does not claim readiness while manifest-required prospect fields, signal fields, or attributes are missing. This is a contract/readiness consistency check; `mdp fit` remains the final fit decision.
 
 ## Starter Prompt Contracts
 
@@ -139,7 +166,7 @@ messy source -> normalize -> validate prompt output -> fit/readiness -> route/br
 
 `lead_input_requirements` is the manifest wire key for the user-facing input readiness policy. It says what fields, signals, bounded attributes, and value domains must be present before the fit/brief path should continue. It does not prove that a prospect or opportunity is commercially ready.
 
-For proposal packs, load `.mdp/prompts/normalize-opportunity.yaml`, pass messy proposal/RFP context as `raw_opportunity`, include proposal value contracts and attribute definitions in `existing_pack_context`, then run `mdp --json validate-prompt-output --dir <pack> --prompt-id normalize-opportunity --file <output.json>`. If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, stop at gaps or reviewer questions instead of creating confident proposal review output.
+For proposal packs, load `.mdp/prompts/normalize-opportunity.yaml`, pass messy proposal/RFP context as `raw_opportunity`, include proposal value contracts and attribute definitions in `existing_pack_context`, and pass `source_audit` when PDF/doc extraction produced one. Then run `mdp --json validate-prompt-output --dir <pack> --prompt-id normalize-opportunity --file <output.json> --source-audit <source-audit.json>` when an audit exists. If the host runner used a fresh/stateless model call with only declared inputs, run `mdp --json run-receipt --dir <pack> --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit` before calling the review audit-grade. The output must keep `normalized_prospect` for compatibility and may also include `normalized_opportunity` as an exact alias for proposal readers. If `normalization_trace.fit_readiness.ready_for_mdp_fit` is false, stop at gaps or reviewer questions instead of creating confident proposal review output.
 
 ## Card Extraction Loop
 

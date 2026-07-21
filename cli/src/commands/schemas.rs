@@ -1,7 +1,7 @@
 use crate::cli::SchemaTarget;
 use crate::constants::{
     FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, RUNNER_AUDIT_CONTRACT,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -63,6 +63,9 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         }
         SchemaTarget::Prompt => prompt_schema(card_kinds),
         SchemaTarget::ProofOutput => proof_output_schema(),
+        SchemaTarget::ProofOutputDraft => proof_output_draft_schema(),
+        SchemaTarget::RunReceipt => run_receipt_schema(),
+        SchemaTarget::RunnerAudit => runner_audit_schema(),
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
@@ -121,6 +124,252 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
     }
 }
 
+fn run_receipt_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Run Receipt v0",
+        "type": "object",
+        "required": ["contract", "valid", "decision", "workflow", "boundary", "runner", "prompt", "artifacts", "issues"],
+        "additionalProperties": true,
+        "properties": {
+            "contract": {"const": "mdp.run-receipt.v0"},
+            "valid": {"type": "boolean", "description": "True only when the receipt is audit-grade."},
+            "decision": {"enum": ["audit-grade", "advisory", "blocked"]},
+            "workflow": {"enum": ["proposal-review", "gtm-prospect", "pack-build", "custom"]},
+            "pack": {
+                "type": "object",
+                "required": ["dir", "manifest"],
+                "additionalProperties": true,
+                "properties": {
+                    "dir": {"type": "string"},
+                    "manifest": {"type": "string"},
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "version": {"type": "string"},
+                    "profile_id": {"type": "string"}
+                }
+            },
+            "boundary": {
+                "type": "object",
+                "required": ["isolation", "conversation_context_used", "declared_inputs_only"],
+                "additionalProperties": true,
+                "properties": {
+                    "isolation": {"enum": ["isolated", "ambient", "unknown"]},
+                    "conversation_context_used": {"type": ["boolean", "null"]},
+                    "declared_inputs_only": {"type": "boolean"}
+                }
+            },
+            "runner": {
+                "type": "object",
+                "required": ["runner_audit_required", "assurance"],
+                "additionalProperties": true,
+                "properties": {
+                    "runner_audit": {"type": ["string", "null"]},
+                    "runner_audit_required": {"type": "boolean"},
+                    "assurance": {"enum": ["headless-verified", "stateless-api-verified", "asserted", "missing", "invalid"]},
+                    "summary": {"type": "object"}
+                }
+            },
+            "prompt": {
+                "type": "object",
+                "required": ["source_audit_required"],
+                "additionalProperties": true,
+                "properties": {
+                    "id": {"type": ["string", "null"]},
+                    "prompt_output": {"type": ["string", "null"]},
+                    "validation": {"type": ["string", "null"]},
+                    "source_audit": {"type": ["string", "null"]},
+                    "source_audit_required": {"type": "boolean"}
+                }
+            },
+            "artifacts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["kind", "path", "required", "exists", "bytes", "sha256"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {"type": "string"},
+                        "path": {"type": "string"},
+                        "required": {"type": "boolean"},
+                        "exists": {"type": "boolean"},
+                        "bytes": {"type": ["integer", "null"], "minimum": 0},
+                        "sha256": {"type": ["string", "null"]}
+                    }
+                }
+            },
+            "issues": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["code", "severity", "path", "message"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "code": {"type": "string"},
+                        "severity": {"enum": ["error", "warning"]},
+                        "path": {"type": "string"},
+                        "message": {"type": "string"}
+                    }
+                }
+            },
+            "error_count": {"type": "integer", "minimum": 0},
+            "warning_count": {"type": "integer", "minimum": 0}
+        }
+    })
+}
+
+fn runner_audit_schema() -> Value {
+    let mut properties = serde_json::Map::new();
+    properties.insert(
+        "contract".to_string(),
+        json!({"const": RUNNER_AUDIT_CONTRACT}),
+    );
+    properties.insert(
+        "runner".to_string(),
+        json!({"enum": ["native-api", "codex-exec", "claude-print", "cursor-print", "opencode-run", "custom-headless"]}),
+    );
+    properties.insert("model".to_string(), json!({"type": ["string", "null"]}));
+    properties.insert(
+        "isolated_invocation".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "conversation_resume".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "declared_inputs_only".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert("output_schema_used".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "prompt_input_audited".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "session_persistence".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "config_discovery_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "instructions_discovery_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert("tools_disabled".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "tool_invocations_observed".to_string(),
+        json!({"type": "integer", "minimum": 0}),
+    );
+    properties.insert("full_tool_access".to_string(), json!({"type": "boolean"}));
+    properties.insert("force_enabled".to_string(), json!({"type": "boolean"}));
+    properties.insert("pure".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "default_plugins_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "claude_code_discovery_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert(
+        "project_rules_discovery_disabled".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert("sterile_workdir".to_string(), json!({"type": "boolean"}));
+    properties.insert("ephemeral".to_string(), json!({"type": "boolean"}));
+    properties.insert("bare".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "sandbox".to_string(),
+        json!({"enum": ["read-only", "workspace-write", "danger-full-access", "unknown"]}),
+    );
+    properties.insert("stateless_request".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "prior_messages_included".to_string(),
+        json!({"type": "boolean"}),
+    );
+    properties.insert("endpoint".to_string(), json!({"type": "string"}));
+    properties.insert("store".to_string(), json!({"type": "boolean"}));
+    properties.insert("prompt_id".to_string(), json!({"type": "string"}));
+    properties.insert(
+        "prompt_output_sha256".to_string(),
+        json!({"type": "string"}),
+    );
+    properties.insert("request_sha256".to_string(), json!({"type": "string"}));
+    properties.insert(
+        "response_id".to_string(),
+        json!({"type": ["string", "null"]}),
+    );
+    properties.insert("mock_response".to_string(), json!({"type": "boolean"}));
+    properties.insert(
+        "notes".to_string(),
+        json!({"type": "array", "items": {"type": "string"}}),
+    );
+
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Runner Audit v0",
+        "type": "object",
+        "required": [
+            "contract",
+            "runner",
+            "isolated_invocation",
+            "conversation_resume",
+            "declared_inputs_only",
+            "output_schema_used",
+            "prompt_id",
+            "prompt_output_sha256",
+            "tool_invocations_observed"
+        ],
+        "additionalProperties": true,
+        "properties": properties
+    })
+}
+
+fn proof_output_draft_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Proof Output Draft v0",
+        "type": "object",
+        "required": ["contract", "output", "segments"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": "mdp.proof-output-draft.v0"},
+            "route": {
+                "type": "object",
+                "required": ["persona", "job"],
+                "additionalProperties": false,
+                "properties": {
+                    "persona": non_blank_string_schema(),
+                    "job": non_blank_string_schema()
+                }
+            },
+            "output": {
+                "type": "object",
+                "required": ["kind", "format"],
+                "additionalProperties": false,
+                "properties": {
+                    "kind": {"type": "string"},
+                    "format": {"type": "string"}
+                }
+            },
+            "coverage": {
+                "type": "object",
+                "required": ["mode", "material_policy"],
+                "additionalProperties": false,
+                "properties": {
+                    "mode": {"const": "full-segmentation"},
+                    "material_policy": {"const": "bound-or-gap"}
+                },
+                "description": "Optional. author-proof-output defaults this to full-segmentation / bound-or-gap when omitted."
+            },
+            "segments": proof_segments_schema()
+        }
+    })
+}
+
 fn proof_output_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -168,39 +417,43 @@ fn proof_output_schema() -> Value {
                     "material_policy": {"const": "bound-or-gap"}
                 }
             },
-            "segments": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
+            "segments": proof_segments_schema()
+        }
+    })
+}
+
+fn proof_segments_schema() -> Value {
+    json!({
+        "type": "array",
+        "minItems": 1,
+        "items": {
+            "type": "object",
+            "required": ["id", "kind", "text"],
+            "additionalProperties": false,
+            "properties": {
+                "id": {"type": "string"},
+                "kind": {"enum": ["claim", "requirement_status", "template_text", "gap", "connective", "formatting"]},
+                "text": {"type": "string"},
+                "material": {"type": "boolean", "description": "Set false for connective or formatting-only text that carries no proof binding."},
+                "gap": {
                     "type": "object",
-                    "required": ["id", "kind", "text"],
+                    "required": ["code", "reason"],
                     "additionalProperties": false,
                     "properties": {
-                        "id": {"type": "string"},
-                        "kind": {"enum": ["claim", "requirement_status", "template_text", "gap", "connective", "formatting"]},
-                        "text": {"type": "string"},
-                        "material": {"type": "boolean", "description": "Set false for connective or formatting-only text that carries no proof binding."},
-                        "gap": {
-                            "type": "object",
-                            "required": ["code", "reason"],
-                            "additionalProperties": false,
-                            "properties": {
-                                "code": {"type": "string"},
-                                "reason": {"type": "string"}
-                            }
-                        },
-                        "refs": {
-                            "type": "array",
-                            "items": {
-                                "oneOf": [
-                                    proof_card_entry_ref_schema(),
-                                    proof_source_ref_schema(),
-                                    proof_prompt_input_ref_schema(),
-                                    proof_input_contract_ref_schema(),
-                                    proof_route_ref_schema()
-                                ]
-                            }
-                        }
+                        "code": {"type": "string"},
+                        "reason": {"type": "string"}
+                    }
+                },
+                "refs": {
+                    "type": "array",
+                    "items": {
+                        "oneOf": [
+                            proof_card_entry_ref_schema(),
+                            proof_source_ref_schema(),
+                            proof_prompt_input_ref_schema(),
+                            proof_input_contract_ref_schema(),
+                            proof_route_ref_schema()
+                        ]
                     }
                 }
             }
@@ -1025,7 +1278,7 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     "contract": {"const": PROMPT_OUTPUT_CONTRACT},
                     "output_kind": {
                         "enum": ["card-patches", "prospect-normalization"],
-                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs MDP prospect JSON for mdp fit/brief."
+                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs MDP prospect JSON for mdp fit/brief; proposal packs may also include normalized_opportunity as an exact alias."
                     },
                     "strict_json_only": {"const": true},
                     "required_top_level": {
@@ -1037,6 +1290,7 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 "source_summary",
                                 "runtime_context",
                                 "normalized_prospect",
+                                "normalized_opportunity",
                                 "normalization_trace",
                                 "card_patches",
                                 "gaps",
@@ -1117,7 +1371,11 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                     "person_name": {"type": "string"},
                     "person_title": {"type": "string"},
                     "account_name": {"type": "string"},
-                    "inputs_used": string_array(),
+                    "inputs_used": {
+                        "type": "array",
+                        "description": "Exact declared prompt input names used to create this output; source locators belong in evidence/provenance fields, signals[].source, or normalization_trace.",
+                        "items": {"type": "string"}
+                    },
                     "confidence": {"type": "string"}
                 }
             },
@@ -1170,6 +1428,7 @@ fn prompt_output_schema(card_kinds: [&str; 15]) -> Value {
                 }
             },
             "normalized_prospect": prospect_schema(),
+            "normalized_opportunity": prospect_schema(),
             "normalization_trace": {
                 "type": "object",
                 "properties": {
@@ -1418,6 +1677,90 @@ mod tests {
     }
 
     #[test]
+    fn run_receipt_schema_exposes_context_boundary_contract() {
+        let result = schema(SchemaTarget::RunReceipt);
+
+        assert_eq!(result["title"], "MDP Run Receipt v0");
+        assert_eq!(
+            result["properties"]["contract"]["const"],
+            "mdp.run-receipt.v0"
+        );
+        assert_eq!(
+            result["properties"]["decision"]["enum"],
+            json!(["audit-grade", "advisory", "blocked"])
+        );
+        assert_eq!(
+            result["properties"]["boundary"]["properties"]["isolation"]["enum"],
+            json!(["isolated", "ambient", "unknown"])
+        );
+        assert_eq!(
+            result["properties"]["runner"]["properties"]["assurance"]["enum"],
+            json!([
+                "headless-verified",
+                "stateless-api-verified",
+                "asserted",
+                "missing",
+                "invalid"
+            ])
+        );
+        assert_eq!(
+            result["properties"]["artifacts"]["items"]["required"][5],
+            "sha256"
+        );
+    }
+
+    #[test]
+    fn runner_audit_schema_exposes_headless_runner_contract() {
+        let result = schema(SchemaTarget::RunnerAudit);
+
+        assert_eq!(result["title"], "MDP Runner Audit v0");
+        assert_eq!(
+            result["properties"]["contract"]["const"],
+            RUNNER_AUDIT_CONTRACT
+        );
+        assert_eq!(
+            result["properties"]["runner"]["enum"],
+            json!([
+                "native-api",
+                "codex-exec",
+                "claude-print",
+                "cursor-print",
+                "opencode-run",
+                "custom-headless"
+            ])
+        );
+        assert!(
+            result["required"]
+                .as_array()
+                .expect("required")
+                .iter()
+                .any(|field| field == "output_schema_used")
+        );
+        assert!(
+            result["required"]
+                .as_array()
+                .expect("required")
+                .iter()
+                .any(|field| field == "prompt_output_sha256")
+        );
+        assert!(
+            result["required"]
+                .as_array()
+                .expect("required")
+                .iter()
+                .any(|field| field == "tool_invocations_observed")
+        );
+        assert_eq!(result["properties"]["endpoint"]["type"], "string");
+        assert_eq!(result["properties"]["store"]["type"], "boolean");
+        assert_eq!(
+            result["properties"]["prompt_output_sha256"]["type"],
+            "string"
+        );
+        assert_eq!(result["properties"]["request_sha256"]["type"], "string");
+        assert_eq!(result["properties"]["mock_response"]["type"], "boolean");
+    }
+
+    #[test]
     fn runtime_context_schema_is_machine_readable() {
         let result = schema(SchemaTarget::RuntimeContext);
 
@@ -1471,6 +1814,11 @@ mod tests {
             required_fields
                 .iter()
                 .any(|field| field == "normalized_prospect")
+        );
+        assert!(
+            required_fields
+                .iter()
+                .any(|field| field == "normalized_opportunity")
         );
         assert!(
             required_fields

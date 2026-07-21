@@ -2124,6 +2124,7 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "When existing_pack_context includes lead_input_requirements.attribute_definitions, emit only declared attributes when allow_undeclared_attributes is false, and match declared type, enum, date, or date-time formats. Invalid or unreviewed metadata belongs in gaps or normalization_trace, not attributes.",
             "Preserve uncertainty: weak inferences belong in signal state_as as hypothesis, low confidence, gaps, or normalization_trace.needs_review. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.",
             "Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.",
+            "Set source_summary.inputs_used to declared prompt input names only, such as raw_row, company_domain, existing_pack_context, runtime_context, or source_kind. Put field paths, source snippets, URLs, and row fragments in signals[].source, normalization_trace.preserved_raw_fields, normalization_trace.missing_required[].source_evidence, or gaps instead.",
             "For non-synthetic rows, use a meaningful source_kind, keep material signals source-backed, and set confidence/freshness from supplied evidence. If source_kind, signal source, confidence, or freshness is vague or inconsistent, mark the row not ready for a draft and emit gaps.",
             "If the input is account-only and lacks person name or title, do not invent a contact. Keep compatibility fields as N/A where the prospect schema requires them, add structured normalization_trace.missing_required entries with field, reason, and source_evidence, add a human-readable gap, and set normalization_trace.fit_readiness.ready_for_mdp_fit and ready_for_brief to false.",
             "Missing-field example: if the row has company but no person title, do not fabricate a title; add {\"field\":\"title\",\"reason\":\"not_available_in_source\",\"source_evidence\":\"Raw row contained no person title.\"} to normalization_trace.missing_required and set ready_for_mdp_fit false.",
@@ -2300,7 +2301,7 @@ fn prompt_contract(
             "Use runtime_context.now_utc and runtime_context.date_utc only to state when this extraction ran or to compare against explicitly supplied timing metadata. Do not hardcode fiscal year or infer customer-specific calendars from the current date.",
             "For source_summary.company_domain, use the supplied company_domain or an explicit supplied URL/domain only. Do not infer a domain from company name.",
             "Each card_patches entry must contain candidate MDP entry fields: id, title, body, applies_to, evidence, and avoid. Use constraints for deterministic output limits such as word counts, subject word counts, max questions, or forbidden links/html/tracking when the source explicitly calls for them. Use metadata only for advisory custom annotations that should be preserved for agents but not enforced by the CLI.",
-            "Keep source evidence in evidence and provenance. Do not put prospect facts, proof, citations, or raw source excerpts only in metadata.",
+            "Set source_summary.inputs_used to exact declared prompt input names only. Keep source paths, snippets, URLs, and field-level provenance in evidence and provenance. Do not put prospect facts, proof, citations, or raw source excerpts only in metadata.",
             "Each candidate entry must also include confidence, provenance, and status so a reviewer can decide whether it may become a card entry.",
             "Use body N/A, empty arrays, confidence unknown, and status gap when data is missing or weak.",
             "Put unsupported, quantified, customer, integration, compliance, or execution claims in rejected_claims instead of card_patches.",
@@ -2452,7 +2453,7 @@ fn source_summary_output_schema() -> Value {
                 "type": "string",
                 "description": "Supplied account name, or N/A when absent."
             },
-            "inputs_used": string_array_output_schema("Input fields used to create this output."),
+            "inputs_used": string_array_output_schema("Exact declared prompt input names used to create this output. Do not put field paths, URLs, source snippets, or page locators here; use evidence/provenance, signals[].source, or normalization_trace for source locators."),
             "confidence": {
                 "enum": ["high", "medium", "low", "unknown"],
                 "description": "Overall confidence in the source summary."

@@ -27,10 +27,13 @@ Prefer CLI output to direct YAML inference. Read pack files only when authoring 
 
 ## Deterministic Gates
 
-- `validate-prompt-output`: validate model-produced normalization output.
+- `validate-prompt-output`: validate model-produced normalization output; pass `--source-audit` for proposal PDF/doc extraction ledgers when raw-field/snippet citations must resolve.
+- `run-receipt`: record and gate the host-owned context boundary plus artifact hashes; audit-grade proposal review requires `--isolation isolated`, `--declared-inputs-only`, successful validation whose artifact hashes match the supplied prompt-output and source-audit files, a runner audit whose prompt-output hash matches the supplied prompt output and reports `tool_invocations_observed: 0`, source audit when documents/PDFs were normalized, and for production pilots `--runner-audit ... --require-runner-audit`.
+- `scripts/mdp-native-normalize-openai.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed bundles): optional BYOK reference runner for OpenAI Responses API normalization. Use `--dry-run` or `--mock-response` for offline validation without a key; real native calls require `OPENAI_API_KEY` and still must be followed by `validate-prompt-output` and `run-receipt`.
 - `fit`: decide fit, insufficient context, or disqualification for supplied GTM prospect JSON.
 - `brief --context`: build bounded GTM decision context after fit permits it.
 - `check-claims`: test supplied claim-bearing text and output constraints.
+- `author-proof-output`: compile proof-output drafts into verified proof-output JSON; writes only after verifier success.
 - `verify-output`: verify proof-carrying output against loaded pack IDs.
 - `eval`: run committed pack fixtures.
 
@@ -45,6 +48,8 @@ mdp --json init --template gtm --name PACK_NAME --target-name TARGET_NAME --targ
 mdp --json brief --context --dir PACK_ROOT --prospect PROSPECT_JSON --out BRIEF_JSON --dry-run
 mdp --json emit-brief --dir PACK_ROOT --persona PERSONA --out BRIEF_JSON --dry-run
 mdp --json pack --dir PACK_ROOT --out PACK_JSON --dry-run
+mdp --json author-proof-output --dir PACK_ROOT --draft PROOF_OUTPUT_DRAFT_JSON --out PROOF_OUTPUT_JSON --dry-run
+mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON --runner-audit RUNNER_AUDIT_JSON --require-runner-audit --out RUN_RECEIPT_JSON --dry-run
 ```
 
 For a named GTM pack, pass `--target-name` explicitly. Repeat `--target-alias` and `--exclude-term` when needed; never force-retarget an existing pack directory.

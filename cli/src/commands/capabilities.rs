@@ -1,6 +1,7 @@
 use crate::constants::{
     DEFAULT_DIR, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
-    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, RUNNER_AUDIT_CONTRACT,
+    SOURCE_AUDIT_CONTRACT,
 };
 use serde_json::{Value, json};
 
@@ -22,6 +23,8 @@ pub(crate) fn capabilities() -> Value {
         "prompt_contracts": {
             "prompt_format": PROMPT_FORMAT_VERSION,
             "prompt_output": PROMPT_OUTPUT_CONTRACT,
+            "source_audit": SOURCE_AUDIT_CONTRACT,
+            "runner_audit": RUNNER_AUDIT_CONTRACT,
             "card_patch_schema_ref": PROMPT_CARD_PATCH_SCHEMA_REF,
             "prospect_normalization_schema_ref": PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
         },
@@ -44,8 +47,10 @@ pub(crate) fn capabilities() -> Value {
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
-            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--prompt", "--prompt-id", "--strict"]),
+            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--prompt", "--prompt-id", "--strict"]),
+            command("run-receipt", "mdp.run-receipt.v0", "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
+            command("author-proof-output", "mdp.author-proof-output.v0", "writes-files-with-out", true, true, false, &["--dir", "--draft", "--out", "--dry-run"]),
             command("render-brief", "mdp.human-brief.v0", "writes-files-with-out", false, true, true, &["--dir", "--file", "--template", "--format", "--out", "--strict"]),
             command("explain", "mdp.explain.v0", "read-only", false, false, false, &["--dir", "--persona"]),
             command("route", "mdp.route.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--scope", "--entries", "--eval-fixture"]),
@@ -133,6 +138,14 @@ mod tests {
                 .expect("commands array")
                 .iter()
                 .any(|command| command["name"] == "skills")
+        );
+        assert!(
+            result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .any(|command| command["name"] == "run-receipt"
+                    && command["output_contract"] == "mdp.run-receipt.v0")
         );
         assert!(
             result["stable_error_codes"]

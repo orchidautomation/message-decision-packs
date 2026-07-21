@@ -23,6 +23,7 @@ prompt_output:
     inputs_used:
     - raw_opportunity
     - existing_pack_context
+    - source_audit
     - source_kind
     confidence: medium
   normalized_prospect:
@@ -43,7 +44,35 @@ prompt_output:
     signals:
     - id: public-services-review-context
       title: Public services review context supplied
-      source: raw_opportunity.summary
+      source: 'raw_opportunity.summary: service request intake, status notifications, reporting, and training'
+      confidence: medium
+      freshness: synthetic
+      state_as: supplied
+    - id: due-date-supplied
+      title: Proposal due date supplied
+      source: raw_opportunity.due_date
+      confidence: medium
+      freshness: synthetic
+      state_as: supplied
+  normalized_opportunity:
+    name: N/A
+    title: N/A
+    company: Example Public Services Agency
+    company_domain: public-services.example
+    source_kind: synthetic-example
+    synthetic: true
+    background: Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.
+    trigger: Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.
+    persona: Proposal Lead
+    segment: public-services-review
+    attributes:
+      opportunity_stage: bid-no-bid
+      pursuit_decision: needs-more-info
+      source_safety: synthetic
+    signals:
+    - id: public-services-review-context
+      title: Public services review context supplied
+      source: 'raw_opportunity.summary: service request intake, status notifications, reporting, and training'
       confidence: medium
       freshness: synthetic
       state_as: supplied
@@ -77,3 +106,26 @@ prompt_output:
   card_patches: []
   gaps: []
   rejected_claims: []
+source_audit:
+  contract: mdp.source-audit.v0
+  refs:
+  - ref: raw_opportunity.customer
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#customer
+    snippet: Example Public Services Agency issued a fictional public services modernization RFP.
+  - ref: raw_opportunity.summary
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#summary
+    snippet: The fictional RFP asks for service request intake, status notifications, reporting, and training.
+  - ref: raw_opportunity.due_date
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#due-date
+    snippet: The response is due in six weeks in the synthetic scenario.
+  - ref: raw_opportunity.review_mode
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#review-mode
+    snippet: The supplied synthetic review mode is bid/no-bid.
+  - ref: source_kind
+    source_id: synthetic-rfp-summary
+    locator: synthetic-rfp-summary#source-kind
+    snippet: synthetic-example

@@ -1,6 +1,6 @@
 use crate::commands::briefs::prospect_brief_from_value;
 use crate::commands::health::{KNOWN_PRIMITIVES, KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
-use crate::commands::prompt_output::validate_prompt_output_value;
+use crate::commands::prompt_output::validate_prompt_output_value_with_source_audit;
 use crate::commands::routing::{check_claims_scoped, fit_prospect, route_scoped};
 use crate::commands::{verify_output_file, verify_output_value};
 use crate::constants::DEFAULT_DIR;
@@ -30,6 +30,7 @@ struct EvalFixture {
     prompt: Option<std::path::PathBuf>,
     prompt_id: Option<String>,
     prompt_output: Option<Value>,
+    source_audit: Option<Value>,
     proof_output: Option<Value>,
     proof_output_file: Option<std::path::PathBuf>,
     text: Option<String>,
@@ -374,12 +375,14 @@ fn validate_prompt_output_fixture(
         .prompt_output
         .as_ref()
         .context("validated prompt_output")?;
-    let mut result = validate_prompt_output_value(
+    let mut result = validate_prompt_output_value_with_source_audit(
         root,
         prompt_output,
         &format!("{}#/prompt_output", path.display()),
         fixture.prompt.as_deref(),
         fixture.prompt_id.as_deref(),
+        fixture.source_audit.as_ref(),
+        Some(&format!("{}#/source_audit", path.display())),
     );
 
     if let Ok(value) = result.as_mut() {
