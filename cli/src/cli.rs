@@ -102,6 +102,48 @@ pub(crate) enum Commands {
         #[arg(long, help = "Fail validation-style flows on warnings where supported")]
         strict: bool,
     },
+    #[command(about = "Create an audit-grade runner receipt from local workflow artifacts")]
+    RunReceipt {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long, value_enum, default_value_t = RunReceiptWorkflow::ProposalReview)]
+        workflow: RunReceiptWorkflow,
+        #[arg(long, value_enum, default_value_t = RunIsolation::Unknown)]
+        isolation: RunIsolation,
+        #[arg(
+            long,
+            help = "Confirm the model call received only the prompt-declared payload inputs"
+        )]
+        declared_inputs_only: bool,
+        #[arg(long, help = "Prompt id used for the model artifact and validation")]
+        prompt_id: Option<String>,
+        #[arg(long, help = "Model-produced mdp.prompt-output.v0 JSON artifact")]
+        prompt_output: Option<PathBuf>,
+        #[arg(long, help = "mdp validate-prompt-output JSON result")]
+        validation: Option<PathBuf>,
+        #[arg(long, help = "mdp.source-audit.v0 JSON ledger used by validation")]
+        source_audit: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Optional mdp.runner-audit.v0 JSON proving the headless/stateless runner boundary"
+        )]
+        runner_audit: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Block unless --runner-audit proves a supported isolated runner mode"
+        )]
+        require_runner_audit: bool,
+        #[arg(
+            long = "artifact",
+            value_name = "KIND=PATH",
+            help = "Additional local artifact to hash into the receipt"
+        )]
+        artifacts: Vec<String>,
+        #[arg(long, help = "Write the receipt JSON artifact")]
+        out: Option<PathBuf>,
+        #[arg(long, help = "Show the receipt artifact write without writing it")]
+        dry_run: bool,
+    },
     #[command(about = "Verify proof-carrying generated output against loaded pack IDs")]
     VerifyOutput {
         #[arg(long, default_value = ".")]
@@ -300,6 +342,8 @@ pub(crate) enum SchemaTarget {
     Prompt,
     ProofOutput,
     ProofOutputDraft,
+    RunReceipt,
+    RunnerAudit,
     Brief,
     HumanBrief,
     RuntimeContext,
@@ -318,6 +362,54 @@ pub(crate) enum SampleLeadsFormat {
 pub(crate) enum HumanBriefFormat {
     Markdown,
     Json,
+}
+
+#[derive(Clone, ValueEnum, PartialEq, Eq)]
+pub(crate) enum RunReceiptWorkflow {
+    ProposalReview,
+    GtmProspect,
+    PackBuild,
+    Custom,
+}
+
+impl RunReceiptWorkflow {
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::ProposalReview => "proposal-review",
+            Self::GtmProspect => "gtm-prospect",
+            Self::PackBuild => "pack-build",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub(crate) fn requires_source_audit(&self) -> bool {
+        matches!(self, Self::ProposalReview)
+    }
+}
+
+#[derive(Clone, ValueEnum, PartialEq, Eq)]
+pub(crate) enum RunIsolation {
+    Isolated,
+    Ambient,
+    Unknown,
+}
+
+impl RunIsolation {
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Isolated => "isolated",
+            Self::Ambient => "ambient",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    pub(crate) fn conversation_context_used(&self) -> Option<bool> {
+        match self {
+            Self::Isolated => Some(false),
+            Self::Ambient => Some(true),
+            Self::Unknown => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -368,5 +460,43 @@ mod tests {
     fn skills_requires_dir_for_job_and_removed_agent_surface_is_unknown() {
         assert!(Cli::try_parse_from(["mdp", "skills", "--job", "prospect-fit-or-brief"]).is_err());
         assert!(Cli::try_parse_from(["mdp", "agent-surface"]).is_err());
+    }
+
+    #[test]
+    fn run_receipt_parses_audit_boundary_flags() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "run-receipt",
+            "--dir",
+            ".",
+            "--workflow",
+            "proposal-review",
+            "--isolation",
+            "isolated",
+            "--declared-inputs-only",
+            "--prompt-id",
+            "normalize-opportunity",
+            "--prompt-output",
+            "/tmp/prompt-output.json",
+            "--validation",
+            "/tmp/validation.json",
+            "--source-audit",
+            "/tmp/source-audit.json",
+            "--runner-audit",
+            "/tmp/runner-audit.json",
+            "--require-runner-audit",
+        ])
+        .expect("run-receipt should parse");
+
+        assert!(matches!(
+            parsed.command,
+            Commands::RunReceipt {
+                workflow: RunReceiptWorkflow::ProposalReview,
+                isolation: RunIsolation::Isolated,
+                declared_inputs_only: true,
+                require_runner_audit: true,
+                ..
+            }
+        ));
     }
 }

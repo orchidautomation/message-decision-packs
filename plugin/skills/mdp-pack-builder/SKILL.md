@@ -72,6 +72,14 @@ For proposal PDF/doc extraction, keep the source-audit ledger bounded and local/
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id normalize-opportunity --file OUTPUT_JSON --source-audit SOURCE_AUDIT_JSON
 ```
 
+If this pack-build flow is also proving a sample proposal-review run, create a receipt from a fresh/stateless normalization call. Same-conversation normalization can inform authoring, but it is not audit-grade:
+
+```bash
+mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON --runner-audit RUNNER_AUDIT_JSON --require-runner-audit
+```
+
+Use `mdp --json schema runner-audit` for the host-owned native/headless runner evidence. Prefer the optional BYOK native reference runner at `scripts/mdp-native-normalize-openai.mjs` in source checkouts or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles; its dry-run/mock checks require no API key, while a real model call requires the operator's secure `OPENAI_API_KEY`. Pluxx-packaged skills can route users toward the runner, but pack authoring alone does not prove the model context boundary.
+
 6. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
 7. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target.
 8. Validate, fix, and repeat:

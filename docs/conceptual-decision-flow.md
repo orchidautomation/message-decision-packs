@@ -184,6 +184,18 @@ MDP CLI handles consistency:
   normalized_prospect -> fit -> route -> brief -> claim checks
 ```
 
+For audit-grade proposal/document normalization, add a runner receipt boundary:
+
+```text
+fresh/stateless model call + declared inputs only
+  -> prompt output
+  -> validate-prompt-output --source-audit
+  -> runner-audit
+  -> run-receipt --require-runner-audit
+```
+
+`mdp run-receipt` records source-audit, prompt-output, validation, runner-audit, and downstream artifact hashes, but the host runner still owns the fresh-context guarantee. Same-conversation normalization is useful for drafts and debugging; without an audit-grade receipt it should be labeled advisory.
+
 Do not use normalization prompts to smooth over disqualifying language. If a row says "scrape contacts" or "auto-send a sequence", preserve that wording in the normalized context or trace so the fit gate can apply avoid-rules and disqualifiers.
 
 ## Pack Entries
@@ -223,7 +235,8 @@ When a question mixes templates, profiles, readiness, routing, and drafting, kee
 | Manifest | Pack index, supported channels, prompt/value contracts, `lead_input_requirements`, profile metadata, required primitives, and eval categories | Source evidence or draft copy |
 | Cards | Reviewed decisions, rules, claims, proof, gaps, output boundaries, and profile-owned domain vocabulary | Raw messy rows or unreviewed prompt guesses |
 | Prompts | Translating supplied messy context into strict prompt-output JSON | Final fit, route, card mutation, or final draft approval |
-| Prompt-output validation | Checking schema, prompt id, provenance references, value contracts, attributes, and enum/type/date validity | Deciding commercial readiness |
+| Prompt-output validation | Checking schema, prompt id, provenance references, value contracts, attributes, and enum/type/date validity | Deciding commercial readiness or proving model context isolation |
+| Run receipts | Hashing workflow artifacts and gating the host-reported fresh/stateless, declared-input-only boundary | Creating isolation itself or proving semantic truth beyond supplied artifacts |
 | Proof-output verification | Checking `mdp.proof-output.v0` generated text segmentation, real pack ID bindings, safe gaps, connective text, and full-text claim guardrails; `author-proof-output` only compiles drafts into that verifier | Proving a model-selected source ID is true without deterministic validation |
 | Input readiness policy | The user-facing meaning of `lead_input_requirements`: which fields, signals, attributes, and values must exist before fit/brief work proceeds | Whether the account is a good market opportunity |
 | Evals | Regression fixtures for routes, prompt outputs, profile categories, and safety cases | Manual proof that a real prospect is worth contacting |

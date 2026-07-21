@@ -1,6 +1,6 @@
 # Message Decision Packs - Full Agent Context
 
-Last updated: 2026-07-12
+Last updated: 2026-07-21
 
 Message Decision Packs (MDP) is a local/offline file standard, Rust CLI, and agent plugin for making decision context explicit and testable.
 
@@ -120,7 +120,9 @@ Proposal profiles use the same primitives without manufacturing prospect rows:
 
 ```text
 approved opportunity, requirement, and proof sources
-  -> source ledger
+  -> source ledger and optional source audit
+  -> fresh/stateless normalization with declared inputs only
+  -> validate prompt output and create run receipt
   -> proposal roles, criteria, requirements, proof, and boundaries
   -> validate
   -> route the review job
@@ -128,7 +130,7 @@ approved opportunity, requirement, and proof sources
   -> surface gaps and human sign-off needs
 ```
 
-Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership.
+Public artifacts must remain generic, synthetic, or explicitly sanitized. Never invent certifications, compliance status, past performance, or proof. MDP supports review and gap detection; it does not replace compliance, legal, procurement, proposal management, or approval ownership. Same-conversation normalization is advisory unless `mdp run-receipt` records an isolated, declared-input-only run with required runner-audit evidence. MDP includes optional BYOK native runner `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed bundles; dry-run/mock validation needs no API key, while a real native model call requires the operator's secure `OPENAI_API_KEY`.
 
 ## CLI Contract
 
@@ -146,6 +148,7 @@ mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "lin
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "portfolio scope example" --scope product=local-cli
 mdp --json author-proof-output --dir . --draft <proof-output-draft.json> --out <proof-output.json>
 mdp --json verify-output --dir . --file <proof-output.json>
+mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit
 mdp --json gaps --dir .
 mdp --json eval --dir .
 ```
@@ -215,6 +218,9 @@ The example:
 - Conceptual Decision Flow: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/conceptual-decision-flow.md>
 - Portfolio-Aware GTM Scope: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/portfolio-scope.md>
 - Prompt Contracts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md>
+- Runner Receipts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/run-receipts.md>
+- Headless Normalization Runners: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md>
+- Native API Normalization Runner: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/native-api-normalization-runner.md>
 - Agent Hook Guidance: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/agent-hook-guidance.md>
 - Distribution: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/distribution.md>
 - CLI Usage: <https://github.com/orchidautomation/message-decision-packs/blob/main/cli/USAGE.md>

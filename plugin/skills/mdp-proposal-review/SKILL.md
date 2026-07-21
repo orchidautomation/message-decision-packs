@@ -50,7 +50,13 @@ If PDF/doc extraction produced a bounded `mdp.source-audit.v0` ledger, include i
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON --source-audit SOURCE_AUDIT_JSON
 ```
 
-Treat missing source-audit refs or snippet mismatches as blockers for confident proposal review; keep the issue in gaps or reviewer questions instead of smoothing it into a sourced fact.
+For audit-grade review, require a runner receipt after validation:
+
+```bash
+mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON --runner-audit RUNNER_AUDIT_JSON --require-runner-audit
+```
+
+`run-receipt` is audit-grade only when the host runner reports a fresh/stateless model call and declared-input-only payload. It also compares validation-result artifact hashes to the supplied prompt-output and source-audit files and compares the runner-audit `prompt_output_sha256` to the supplied prompt output, so a validation result or runner audit from a different run must block review. Prefer the optional BYOK native API runner (`scripts/mdp-native-normalize-openai.mjs` in source checkouts, `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles) when available because it calls the model outside the current chat with Structured Outputs, no tools, no conversation resume, and `store: false`. Do not ask for or create an API key unless the operator explicitly chooses a real native run; installs, dry-runs, mock tests, validation, fit, and receipts without a real model call do not need one. Activation hooks may report OpenAI key presence as a convenience, but they do not establish audit-grade status and must not print the key. For paid pilots, require `mdp.runner-audit.v0` from a native API runner or a hardened headless runner such as Claude `--bare -p`, Codex `exec`, Cursor `-p` with tools externally denied, or OpenCode `run` with `--pure` and a no-tool agent. If normalization happened in the current conversation, treat the review as advisory even when validation passes. Treat missing source-audit refs, snippet mismatches, missing/invalid runner audit, missing/nonzero tool invocation counts, mismatched validation or runner-audit hashes, or a non-audit-grade receipt as blockers for confident proposal review; keep the issue in gaps or reviewer questions instead of smoothing it into a sourced fact.
 
 ## Review Loop
 

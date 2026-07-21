@@ -91,6 +91,44 @@ if [ ! -f "$MANIFEST" ]; then
   exit 0
 fi
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+native_runner_available() {
+  local candidate
+  for candidate in \
+    "${PLUGIN_ROOT:-}/scripts/mdp-native-normalize-openai.mjs" \
+    "$SCRIPT_DIR/mdp-native-normalize-openai.mjs"; do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+print_proposal_audit_readiness() {
+  if [ ! -f "$TARGET_DIR/.mdp/prompts/normalize-opportunity.yaml" ]; then
+    return 0
+  fi
+
+  echo
+  echo "MDP proposal audit readiness:"
+  if native_runner_available; then
+    echo "  Native OpenAI runner: available in the plugin/source bundle."
+  else
+    echo "  Native OpenAI runner: not found in the plugin/source bundle."
+  fi
+
+  if [ -n "${OPENAI_API_KEY:-}" ]; then
+    echo "  OPENAI_API_KEY: detected for optional real native API normalization (value not printed)."
+  else
+    echo "  OPENAI_API_KEY: not detected; only required for an optional real native OpenAI runner call."
+  fi
+
+  echo "  No OpenAI key is required for MDP install, validation, receipts, fit/review, dry-runs, mocks, or hardened headless runner audits."
+  echo "  Audit-grade proposal reviews still need: mdp run-receipt --runner-audit ... --require-runner-audit."
+  echo "  Hooks report readiness only; the CLI receipt is the blocking gate."
+}
+
 echo "MDP activation: .mdp/manifest.yaml detected in $TARGET_DIR."
 echo "Use MDP as visible context and validation, not as hidden execution infrastructure."
 echo "Read-only commands to run before meaningful pack work:"
@@ -99,6 +137,8 @@ echo "  mdp --json doctor --dir \"$TARGET_DIR\""
 echo "  mdp --json validate --dir \"$TARGET_DIR\""
 echo "Deliberate commands for later use: mdp fit, mdp brief --context, mdp check-claims, mdp gaps, mdp eval."
 echo "Do not enrich, scrape, send outreach, update a CRM, or auto-generate full briefs from hook activation."
+
+print_proposal_audit_readiness
 
 if ! command -v mdp >/dev/null 2>&1; then
   echo "MDP activation warning: mdp CLI is not installed on PATH."

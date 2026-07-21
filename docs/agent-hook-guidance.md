@@ -7,6 +7,7 @@ Packaged default:
 ```text
 Prompt starts in a workspace.
 If .mdp/ exists, add model-visible MDP guidance.
+If the pack has `normalize-opportunity`, report proposal audit-runner readiness, including whether the optional native OpenAI runner is available and whether `OPENAI_API_KEY` is present without printing its value.
 If pack, prompt, schema, docs, or skill files change, run focused validation.
 If validation fails, show the failure to the agent.
 The agent edits files explicitly and reruns validation.
@@ -21,6 +22,7 @@ Do not hook automatic full brief generation as the default. Briefs depend on the
 The generated Codex bundle includes `hooks/hooks.json` with command hooks for two visible behaviors:
 
 - Startup or prompt activation: when the active workspace has `.mdp/manifest.yaml`, print MDP boundary guidance and the core commands the agent should run before meaningful pack work.
+- Proposal audit readiness: when `.mdp/prompts/normalize-opportunity.yaml` exists, print a non-blocking reminder that `OPENAI_API_KEY` is required only for the optional native OpenAI model call; install, validation, run receipts, dry-runs, mocks, fit/review, and hardened headless runner audits do not need an OpenAI key.
 - Post-tool validation: after tool use, detect changed pack, prompt, skill, docs, template, script, or CLI schema files and run the focused validation commands that match the edit.
 
 Codex-compatible post-edit validation uses `postToolUse`, not `afterFileEdit`, because Pluxx maps `afterFileEdit` to an event Codex does not support today. The script self-gates to relevant edit paths. Hook scripts run from the installed plugin bundle, so Pluxx 0.1.25+ exposes the active project directory as `PLUXX_HOOK_WORKSPACE_ROOT` when the host provides a reliable workspace signal. MDP uses that value for `.mdp/manifest.yaml` checks and keeps conservative fallbacks for direct script tests or hosts that pass workspace data through common env vars or JSON hook payload fields.
