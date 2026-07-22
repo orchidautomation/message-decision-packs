@@ -2,11 +2,11 @@
 
 This is a public-safe, synthetic walkthrough for the proposal-review flow Brandon can record with a client.
 
-It starts with intentionally messy source files, creates a fresh proposal `.mdp/` pack, stages the source-audit and normalization artifacts a runner/MCP would produce, then uses the `mdp` CLI to prove the artifacts before producing a bounded proposal-review artifact.
+It starts with intentionally messy source files, creates a fresh proposal `.mdp/` pack, stages the source-audit and normalization artifacts a runner/MCP would produce, then uses the `mdp` CLI to prove the artifacts before producing a bounded proposal-review artifact. This directory also includes a Remotion motion-graphics video project under `video/` so the walkthrough can be rendered as an actual MP4.
 
 > Scope note: the fixture runner audit in this demo is synthetic so the whole walkthrough can run offline. It demonstrates the exact `mdp.runner-audit.v0` contract the runner/MCP must emit and how the CLI binds hashes. For a paid pilot or real client review, replace `artifacts/runner-audit.demo-mcp.json` with the native/headless runner or MCP-produced audit artifact.
 
-## Run it
+## Run the CLI walkthrough
 
 From the repository root:
 
@@ -19,6 +19,25 @@ The script writes a clean run under `/tmp/mdp-proposal-flow-video` by default an
 ```bash
 MDP_BIN=mdp bash examples/proposal-flow-video/scripts/run-demo.sh
 ```
+
+
+## Render the Remotion video
+
+The Remotion source lives in `examples/proposal-flow-video/video/`. To render the actual MP4 from the repository root:
+
+```bash
+bash examples/proposal-flow-video/scripts/render-video.sh
+```
+
+Or run it directly:
+
+```bash
+cd examples/proposal-flow-video/video
+npm ci
+npm run render
+```
+
+The MP4 is written to `examples/proposal-flow-video/video/out/proposal-flow-video.mp4`. The `out/` directory is intentionally gitignored so the source stays small while the video remains reproducible.
 
 ## What the video shows
 
@@ -63,6 +82,7 @@ After a run, inspect:
 - `/tmp/mdp-proposal-flow-video/artifacts/route-compliance-review.json` — selected pack entries for compliance review.
 - `/tmp/mdp-proposal-flow-video/artifacts/proof-output.json` — verified machine proof-output artifact.
 - `/tmp/mdp-proposal-flow-video/artifacts/proposal-review.md` — human-readable review layer for the video.
+- `examples/proposal-flow-video/video/out/proposal-flow-video.mp4` — rendered Remotion MP4 after `render-video.sh`.
 
 ## Production replacement points
 

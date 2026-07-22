@@ -106,7 +106,7 @@ The proposal profile supports review and gap surfacing. It does not replace comp
 
 ## Proposal Video Walkthrough
 
-[Proposal Flow Video Demo](examples/proposal-flow-video/README.md) is a synthetic, public-safe walkthrough for messy proposal sources → `mdp init --template proposal` → source-audit/prompt-output artifacts → runner-audit/run-receipt proof gates → verified human-readable proposal review output. The included runner-audit fixture is demo-only; real pilots should replace it with the native/headless runner or MCP-produced `mdp.runner-audit.v0` artifact before calling a review audit-grade.
+[Proposal Flow Video Demo](examples/proposal-flow-video/README.md) is a synthetic, public-safe walkthrough for messy proposal sources → `mdp init --template proposal` → source-audit/prompt-output artifacts → runner-audit/run-receipt proof gates → verified human-readable proposal review output, plus a Remotion project that renders the walkthrough as an MP4. The included runner-audit fixture is demo-only; real pilots should replace it with the native/headless runner or MCP-produced `mdp.runner-audit.v0` artifact before calling a review audit-grade.
 
 ## Canonical GTM Runtime Example: Eve on Vercel
 
