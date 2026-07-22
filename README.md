@@ -104,9 +104,13 @@ mdp --json run-receipt \
 
 The proposal profile supports review and gap surfacing. It does not replace compliance, legal, procurement, proposal management, or human approval.
 
-## Canonical Example: Eve on Vercel
+## Proposal Video Walkthrough
 
-[AI SDR Eve on Vercel](examples/ai-sdr-eve-vercel/README.md) is the only canonical runnable example. It shows how an Eve runtime can:
+[Proposal Flow Video Demo](examples/proposal-flow-video/README.md) is a synthetic, public-safe walkthrough for messy proposal sources → `mdp init --template proposal` → source-audit/prompt-output artifacts → runner-audit/run-receipt proof gates → verified human-readable proposal review output. The included runner-audit fixture is demo-only; real pilots should replace it with the native/headless runner or MCP-produced `mdp.runner-audit.v0` artifact before calling a review audit-grade.
+
+## Canonical GTM Runtime Example: Eve on Vercel
+
+[AI SDR Eve on Vercel](examples/ai-sdr-eve-vercel/README.md) shows how an Eve runtime can:
 
 - load an MDP pack and source strategy;
 - gather bounded public-source evidence through approved provider tools;

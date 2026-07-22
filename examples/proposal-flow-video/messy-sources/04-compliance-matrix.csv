@@ -1,0 +1,6 @@
+row,rough_requirement,source_note,current_status,owner_question
+1,Online intake,OCR excerpt says service request intake must support online intake,source-backed,Confirm mandatory wording
+2,Status notifications,OCR excerpt says status notifications should be available,source-backed,Confirm channel and frequency
+3,Reporting,OCR excerpt says reporting should summarize request volume and training readiness,source-backed,Confirm reporting format
+4,Integration,OCR excerpt says integration details are not fully supplied,gap,Ask solution owner for source text
+5,Certification proof,No approved certification proof in synthetic proof inventory,gap,Ask reviewer whether certification proof exists
