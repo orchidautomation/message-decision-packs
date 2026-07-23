@@ -15,7 +15,14 @@ else
 fi
 
 "${PLUXX_CMD[@]}" lint --json >/tmp/mdp-pluxx-lint.json
+find "$ROOT/scripts" -type d -name __pycache__ -prune -exec rm -rf {} +
+find "$ROOT/dist" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 "${PLUXX_CMD[@]}" build --json >/tmp/mdp-pluxx-build.json
+if find "$ROOT/dist" -type d -name __pycache__ | grep -q .; then
+  echo "Generated Pluxx bundles must not include Python __pycache__ directories." >&2
+  find "$ROOT/dist" -type d -name __pycache__ >&2
+  exit 1
+fi
 python3 scripts/validate-skill-packaging.py --require-bundles >/tmp/mdp-skill-packaging.json
 
 workspace_fixture="$(mktemp -d)"
