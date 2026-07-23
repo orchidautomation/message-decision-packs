@@ -1,0 +1,18 @@
+SYNTHETIC / PUBLIC-SAFE OCR EXPORT
+Source label: synthetic-rfp-summary#ocr
+
+EXAMPLE PUBLIC SERVICES AGENCY
+Public Services Modernization RFP -- draft text export
+Domain in source: public-services.example
+
+Due date: response due in six weeks from the workshop date.
+Review mode requested by capture: bid/no-bid, then compliance review.
+
+Scope excerpts, as captured from an intentionally messy PDF/OCR pass:
+- Serivce request intake must support online intake for resident questions and service requests.
+- Status notificatons should be available for resident-visible updates.
+- Reporting should summarize request volume and training readiness.
+- Training and adoption plan requested for agency staff.
+- Integration details are not fully supplied in this excerpt.
+
+Do not infer pricing, certification status, procurement eligibility, incumbent facts, or past performance from this synthetic file.

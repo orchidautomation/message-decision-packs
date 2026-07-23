@@ -1,0 +1,117 @@
+{
+  "contract": "mdp.prompt-output.v0",
+  "prompt_id": "normalize-opportunity",
+  "source_summary": {
+    "company_domain": "public-services.example",
+    "company_name": "Example Public Services Agency",
+    "person_name": "N/A",
+    "person_title": "N/A",
+    "account_name": "Neutral proposal contract fixture",
+    "inputs_used": [
+      "raw_opportunity",
+      "existing_pack_context",
+      "source_audit",
+      "source_kind"
+    ],
+    "confidence": "medium"
+  },
+  "normalized_prospect": {
+    "name": "N/A",
+    "title": "N/A",
+    "company": "Example Public Services Agency",
+    "company_domain": "public-services.example",
+    "source_kind": "synthetic-example",
+    "synthetic": true,
+    "background": "Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.",
+    "trigger": "Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.",
+    "persona": "Proposal Lead",
+    "segment": "public-services-review",
+    "attributes": {
+      "opportunity_stage": "bid-no-bid",
+      "pursuit_decision": "needs-more-info",
+      "source_safety": "synthetic"
+    },
+    "signals": [
+      {
+        "id": "public-services-review-context",
+        "title": "Public services review context supplied",
+        "source": "raw_opportunity.summary: service request intake, status notifications, reporting, and training",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
+      },
+      {
+        "id": "due-date-supplied",
+        "title": "Proposal due date supplied",
+        "source": "raw_opportunity.due_date",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
+      }
+    ]
+  },
+  "normalized_opportunity": {
+    "name": "N/A",
+    "title": "N/A",
+    "company": "Example Public Services Agency",
+    "company_domain": "public-services.example",
+    "source_kind": "synthetic-example",
+    "synthetic": true,
+    "background": "Neutral synthetic opportunity context says a public services buyer needs local-first review of supplied requirements, proof gaps, and bid/no-bid risks.",
+    "trigger": "Synthetic public services opportunity needs bid/no-bid and compliance review before proposal drafting.",
+    "persona": "Proposal Lead",
+    "segment": "public-services-review",
+    "attributes": {
+      "opportunity_stage": "bid-no-bid",
+      "pursuit_decision": "needs-more-info",
+      "source_safety": "synthetic"
+    },
+    "signals": [
+      {
+        "id": "public-services-review-context",
+        "title": "Public services review context supplied",
+        "source": "raw_opportunity.summary: service request intake, status notifications, reporting, and training",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
+      },
+      {
+        "id": "due-date-supplied",
+        "title": "Proposal due date supplied",
+        "source": "raw_opportunity.due_date",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
+      }
+    ]
+  },
+  "normalization_trace": {
+    "persona": {
+      "source": "existing_pack_context.personas",
+      "matched_keywords": [
+        "bid/no-bid"
+      ],
+      "confidence": "high",
+      "needs_review": false
+    },
+    "fit_readiness": {
+      "has_customer_or_agency": true,
+      "has_due_date": true,
+      "has_requirement_signal": true,
+      "has_review_mode": true,
+      "has_signal_source": true,
+      "ready_for_mdp_fit": true
+    },
+    "preserved_raw_fields": [
+      "raw_opportunity.customer",
+      "raw_opportunity.summary",
+      "raw_opportunity.due_date",
+      "raw_opportunity.review_mode",
+      "source_kind"
+    ],
+    "missing_required": []
+  },
+  "card_patches": [],
+  "gaps": [],
+  "rejected_claims": []
+}

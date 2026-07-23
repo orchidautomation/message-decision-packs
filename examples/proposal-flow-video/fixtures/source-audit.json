@@ -1,0 +1,35 @@
+{
+  "contract": "mdp.source-audit.v0",
+  "refs": [
+    {
+      "ref": "raw_opportunity.customer",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "messy-sources/01-rfp-ocr.txt#agency",
+      "snippet": "Example Public Services Agency issued a fictional public services modernization RFP."
+    },
+    {
+      "ref": "raw_opportunity.summary",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "messy-sources/01-rfp-ocr.txt#scope-excerpts",
+      "snippet": "The fictional RFP asks for service request intake, status notifications, reporting, and training."
+    },
+    {
+      "ref": "raw_opportunity.due_date",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "messy-sources/01-rfp-ocr.txt#due-date",
+      "snippet": "The response is due in six weeks in the synthetic scenario."
+    },
+    {
+      "ref": "raw_opportunity.review_mode",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "messy-sources/02-capture-notes.md#pursuit-stage",
+      "snippet": "The supplied synthetic review mode is bid/no-bid."
+    },
+    {
+      "ref": "source_kind",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "messy-sources/01-rfp-ocr.txt#source-label",
+      "snippet": "synthetic-example"
+    }
+  ]
+}
