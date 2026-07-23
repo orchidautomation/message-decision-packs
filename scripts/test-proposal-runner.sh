@@ -103,6 +103,12 @@ assert len(request["input"]) == 1
 assert request["input"][0]["role"] == "user"
 assert sorted(payload.keys()) == ["existing_pack_context", "raw_opportunity", "source_audit", "source_kind"]
 assert_openai_strict_schema(request["prompt_output_schema"])
+top_level_required = request["prompt_output_schema"]["required"]
+top_level_properties = request["prompt_output_schema"]["properties"]
+assert "normalized_prospect" in top_level_required
+assert "normalized_prospect" in top_level_properties
+assert "normalized_opportunity" not in top_level_required
+assert "normalized_opportunity" not in top_level_properties
 missing_schema = request["prompt_output_schema"]["properties"]["normalization_trace"]["properties"]["missing_required"]
 any_of = missing_schema["items"]["anyOf"]
 object_shapes = [shape for shape in any_of if shape.get("type") == "object"]

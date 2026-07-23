@@ -488,7 +488,6 @@ const promptOutputSchema = () => {
       'prompt_id',
       'source_summary',
       'normalized_prospect',
-      'normalized_opportunity',
       'normalization_trace',
       'card_patches',
       'gaps',
@@ -531,7 +530,6 @@ const promptOutputSchema = () => {
         },
       },
       normalized_prospect: normalizedEntity,
-      normalized_opportunity: normalizedEntity,
       normalization_trace: {
         type: 'object',
         additionalProperties: false,
@@ -608,6 +606,7 @@ const packContext = (packRoot, promptPath) => ({
     'Do not browse, enrich, scrape, call tools, submit proposals, certify compliance, invent proof, or infer missing deadlines.',
     'Cite source_audit refs for raw_opportunity/source_kind-backed facts.',
     'Return strict JSON only.',
+    'Return normalized_prospect as the CLI-compatible normalized entity; do not include the optional normalized_opportunity readability alias in native strict-runner output.',
   ],
 })
 
@@ -640,7 +639,7 @@ const buildRequest = ({ args, packRoot, promptPath, sourceAudit, stagedSources }
       'Do not use ambient chat context, hidden memory, browsing, tools, external systems, or prior messages.',
       'Do not invent RFP text, certifications, compliance status, past performance, pricing, named references, deadlines, evaluator criteria, or approvals.',
       'When evidence is missing, produce gaps or missing_required entries instead of smoothing uncertainty into a proceed decision.',
-      'Keep normalized_opportunity exactly equal to normalized_prospect if you include it.',
+      'Return normalized_prospect only; normalized_opportunity is an optional downstream readability alias and is intentionally omitted from this native strict-runner schema.',
     ],
   }
 
