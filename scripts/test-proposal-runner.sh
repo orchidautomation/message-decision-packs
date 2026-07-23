@@ -12,6 +12,7 @@ trap cleanup EXIT
 pack="$tmp_dir/pack"
 tools_json="$tmp_dir/tools.json"
 mock_response="$tmp_dir/mock-response.json"
+minimal_attrs_output="$tmp_dir/minimal-attrs-output.json"
 dry_result="$tmp_dir/dry-result.json"
 mock_result="$tmp_dir/mock-result.json"
 demo_stdout="$tmp_dir/demo.stdout"
@@ -22,8 +23,8 @@ helper_receipt_stdout="$tmp_dir/helper-receipt.stdout.json"
 
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- init --template proposal --dir "$pack" > "$tmp_dir/init.json"
 
-python3 - "$root/examples/proposal-flow-video/fixtures/normalize-opportunity-output.json" "$mock_response" <<'PY'
-import json, sys
+python3 - "$root/examples/proposal-flow-video/fixtures/normalize-opportunity-output.json" "$mock_response" "$minimal_attrs_output" <<'PY'
+import copy, json, sys
 fixture = json.load(open(sys.argv[1]))
 payload = {
     "id": "resp_mock_proposal_runner",
@@ -41,6 +42,13 @@ payload = {
 }
 json.dump(payload, open(sys.argv[2], "w"), indent=2)
 open(sys.argv[2], "a").write("\n")
+minimal = copy.deepcopy(fixture)
+for key in ["normalized_prospect", "normalized_opportunity"]:
+    attrs = minimal[key]["attributes"]
+    attrs.pop("opportunity_stage", None)
+    attrs.pop("pursuit_decision", None)
+json.dump(minimal, open(sys.argv[3], "w"), indent=2)
+open(sys.argv[3], "a").write("\n")
 PY
 
 node "$root/scripts/mdp-proposal-runner.mjs" tools > "$tools_json"
@@ -109,6 +117,9 @@ assert "normalized_prospect" in top_level_required
 assert "normalized_prospect" in top_level_properties
 assert "normalized_opportunity" not in top_level_required
 assert "normalized_opportunity" not in top_level_properties
+attributes_schema = top_level_properties["normalized_prospect"]["properties"]["attributes"]
+assert attributes_schema["required"] == ["source_safety"]
+assert sorted(attributes_schema["properties"].keys()) == ["source_safety"]
 missing_schema = request["prompt_output_schema"]["properties"]["normalization_trace"]["properties"]["missing_required"]
 any_of = missing_schema["items"]["anyOf"]
 object_shapes = [shape for shape in any_of if shape.get("type") == "object"]
@@ -121,6 +132,18 @@ assert sorted(missing_object["properties"].keys()) == ["field", "path", "reason"
 assert source_audit["contract"] == "mdp.source-audit.v0"
 assert source_audit["refs"][0]["ref"] == "raw_opportunity.sources[0]"
 assert source_audit["refs"][0]["source_id"] == "synthetic-rfp-summary"
+PY
+
+cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json validate-prompt-output \
+  --dir "$pack" \
+  --prompt-id normalize-opportunity \
+  --file "$minimal_attrs_output" \
+  --source-audit "$root/examples/proposal-flow-video/fixtures/source-audit.json" > "$tmp_dir/minimal-attrs-validation.json"
+
+python3 - "$tmp_dir/minimal-attrs-validation.json" <<'PY'
+import json, sys
+payload = json.load(open(sys.argv[1]))["data"]
+assert payload["valid"] is True
 PY
 
 node "$root/scripts/mdp-proposal-runner.mjs" run \

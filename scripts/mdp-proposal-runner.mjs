@@ -452,12 +452,8 @@ const promptOutputSchema = () => {
       attributes: {
         type: 'object',
         additionalProperties: false,
-        required: ['opportunity_stage', 'pursuit_decision', 'source_safety'],
+        required: ['source_safety'],
         properties: {
-          opportunity_stage: {
-            enum: ['early-review', 'bid-no-bid', 'compliance-review', 'proof-review', 'red-team-review'],
-          },
-          pursuit_decision: { enum: ['proceed', 'pause', 'decline', 'needs-more-info'] },
           source_safety: { enum: ['synthetic', 'sanitized', 'private-scratch', 'public-source', 'user-approved-local'] },
         },
       },
