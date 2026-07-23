@@ -18,6 +18,8 @@ The release is still the pinned source because the original request was to inspe
 
 Companion artifact: [`2026-07-23-compound-engineering-plugin-special-moves-index.md`](./2026-07-23-compound-engineering-plugin-special-moves-index.md) breaks out the plugin's unique patterns skill-by-skill and layer-by-layer.
 
+Second-pass audit note: after the first whole-plugin pass, I re-scanned `CONCEPTS.md`, `AGENTS.md`, checkout-local configuration docs, host-specific installers, target specs, skill-design solution docs, and the mechanical test suite. The companion index now includes the less-obvious patterns from that pass: local config as a cross-harness control plane, evidence dossiers, load stubs, detached job lifecycle, model identity receipts, confidence anchors, shell-neutral context gathering, skill self-containment tests, source-persona contracts, OpenCode/Cline install quirks, Antigravity/Pi entry points, and feedback-as-untrusted-input handling.
+
 ## Scope and sources
 
 Evaluated public snapshot:

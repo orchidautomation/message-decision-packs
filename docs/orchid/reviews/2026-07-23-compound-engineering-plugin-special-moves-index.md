@@ -31,6 +31,27 @@ Use this as a field guide for studying them and deciding what is worth adapting 
 | Testing | Mechanical contracts in CI | Stable strings, schemas, path safety, manifests, and helper scripts are tested deterministically. |
 | Learning | `docs/solutions/` | Solved problems become reusable knowledge that future skills read. |
 
+## Second-pass additions: easy-to-miss special moves
+
+These were underweighted in the first pass because they are less flashy than PR babysitting or cross-model execution, but they are a big part of why the plugin feels mature.
+
+| Missed/underweighted move | Where it shows up | Why it matters |
+|---|---|---|
+| Checkout-local config as a shared control plane | `.compound-engineering/config.local.example.yaml`, `docs/skills/configuration.md`, `ce-setup` | Local preferences such as output format, model elevation, cross-model peer, work engine, PR teaching, auto-babysit, pulse sources, and feedback sources work across harnesses without becoming committed team policy. |
+| Internal vocabulary as architecture | `CONCEPTS.md` | They name primitives such as evidence dossier, load stub, detached job, model identity receipt, confidence anchor, pattern doc, and beta skill. Naming these makes them reusable design objects. |
+| Evidence dossiers instead of giant inline context | `CONCEPTS.md`, research/review skills | Scouts write quote/file-pointer bundles to scratch; orchestrators carry gists and read detail on demand. This is a token and synthesis-control pattern. |
+| Load stubs | `CONCEPTS.md`, skill references | A skill keeps a tiny inline instruction that makes loading a reference structurally necessary, without summarizing enough to let agents skip it. |
+| Pattern docs distinct from single learnings | `CONCEPTS.md`, `docs/solutions/` | They distinguish one solved incident from generalized guidance, and recognize pattern docs are higher leverage but higher staleness risk. |
+| Reviewer confidence anchors | `CONCEPTS.md`, review schemas | Confidence is anchored to behavioral criteria rather than vague percentages. This improves finding triage. |
+| Instruction-file portability rule | `AGENTS.md` | Skills avoid telling agents to read specific files like `AGENTS.md`/`CLAUDE.md` on the read path; they refer to active project instructions already in context, reducing harness brittleness and prompt-injection smell. |
+| Shell-neutral context gathering | `tests/skill-shell-safety.test.ts`, `ce-commit`, `ce-commit-push-pr` | They ban load-time shell pre-resolution and compound shell snippets in sensitive context gathering; runtime context is gathered as single argv-style commands that can fail as data. |
+| Skill self-containment as a CI contract | `tests/skill-conventions.test.ts` | Skill references must stay inside the owning skill directory, referenced files must exist, frontmatter has limits, and platform variables need safe fallbacks. |
+| Per-harness native install quirks encoded in scripts | `.cline/scripts/install-skills.sh`, `.opencode/plugins/compound-engineering.js`, `scripts/codex-dev.ts` | They do not only document platform differences; they encode safe behavior like manual-only omission, non-clobbering command registration, and local-dev shadow removal. |
+| Human-facing artifact output modes | `ce-ideate`, `ce-brainstorm`, `ce-plan`, `.compound-engineering/config.local.example.yaml` | They treat HTML/Markdown as product surfaces and force markdown in pipeline/manual-only contexts. |
+| Beta-skill lifecycle concept | `CONCEPTS.md`, solution docs | They have vocabulary for testing parallel skill versions, promotion, stale cleanup, and avoiding hidden caller drift. |
+| Source personas over a deterministic core | `ce-sweep/references/sources`, `tests/skills/ce-sweep-source-contract.test.ts` | New feedback source types are mostly markdown persona files, while cursor/state/ack correctness remains pinned in deterministic scripts and exact contract tests. |
+| Native plugin surface as its own concept | `CONCEPTS.md`, `plugin.json`, `.agy/`, `.pi/`, `.opencode/` | They distinguish platforms that can consume a native plugin bundle from platforms that need converter/writer output, preventing unnecessary conversion machinery. |
+
 ## 1. Product-level special moves
 
 ### 1.1 The compounding workflow loop
@@ -131,6 +152,64 @@ They account for different invocation syntax across hosts (`/skill`, `$skill`, p
 
 **Why it matters:** cross-harness polish requires small details like this.
 
+### 2.8 Project-instruction references without hardcoded filenames
+
+**Where:** `AGENTS.md`, runtime skill authoring rules
+
+They tell skill authors not to hardcode “read `AGENTS.md`” / “read `CLAUDE.md`” on the normal read path. Instead, skills refer to the project’s active instructions and conventions already in context, naming concrete files only when writing back or auditing all instruction files is itself the task.
+
+**Why it matters:** this is both a portability move and a prompt-injection hygiene move. Different harnesses load different instruction filenames; asking an agent to go re-read instruction dotfiles is redundant on most hosts and suspicious on some.
+
+### 2.9 Local config is not instructions
+
+**Where:** `.compound-engineering/config.local.example.yaml`, `docs/skills/configuration.md`, `ce-setup`
+
+They use a gitignored per-checkout config file for local defaults such as output formats, model elevation, cross-model peer, work-engine preferences, PR teaching/archive settings, auto-babysit, pulse data sources, and feedback sweep sources.
+
+**Why it matters:** it gives users cross-harness local preferences without turning those preferences into committed team policy or durable agent instructions.
+
+### 2.10 Internal vocabulary as an engineering tool
+
+**Where:** `CONCEPTS.md`
+
+They name recurring plugin-design primitives: native plugin surface, converter, writer, bundle, model tier, evidence dossier, load stub, detached job, cross-model pass, model identity receipt, reviewer persona, confidence anchor, session-settled decision, settlement test, feedback source, and beta skill.
+
+**Why it matters:** once a primitive is named, it can be reused, tested, discussed in plans, and improved without re-explaining the whole pattern.
+
+### 2.11 Skill authoring rules are regression-tested
+
+**Where:** `AGENTS.md`, `tests/skill-conventions.test.ts`, `tests/frontmatter.test.ts`, `tests/skill-shell-safety.test.ts`
+
+They do not leave skill-authoring discipline as tribal knowledge. Tests enforce self-containment, local reference integrity, frontmatter budgets, manual-only skill inventory, model-invoked callee inventory, user-facing invocation rendering, and shell-safety rules.
+
+**Why it matters:** prompt repositories usually rot because style rules are unenforced. CE turns the most brittle authoring rules into deterministic checks.
+
+### 2.12 Runtime context beats load-time shell interpolation
+
+**Where:** `tests/skill-shell-safety.test.ts`, `docs/solutions/skill-design/no-load-time-pre-resolution-for-fallible-context.md`, `ce-commit`, `ce-commit-push-pr`
+
+They ban `!` load-time command pre-resolution inside skills. Git and GitHub context can fail for normal reasons: no PR, no remote, unborn repo, detached branch, or missing auth. Load-time interpolation can abort the whole skill before the agent can reason about the failure. Their replacement is runtime context gathering through single-program commands whose exit statuses become data.
+
+**Why it matters:** this is a deep cross-harness portability lesson. Shell tricks that work in one host can be inert, unsafe, or parse-breaking elsewhere.
+
+### 2.13 Skill-design solution docs are their R&D notebook
+
+**Where:** `docs/solutions/skill-design/`
+
+The skill-design solution library captures hard-won authoring lessons, not just product docs. Underweighted examples include:
+
+| Solution theme | What they learned |
+|---|---|
+| `script-first-skill-architecture` | Put parsing/state/validation in scripts; let the model present and decide. |
+| `pass-paths-not-content-to-subagents` | Give workers file paths when possible so the parent context does not become a giant relay buffer. |
+| `research-agent-pipeline-separation` | Research belongs to the pipeline stage that consumes it, not one global prefetch blob. |
+| `bundled-script-path-resolution-across-harnesses` | Read references relatively, but execute bundled scripts through a stable skill-directory anchor. |
+| `dispatch-script-failure-degrade-outcome-not-boundary` | If a deterministic dispatch helper fails, report degraded evidence; do not weaken the safety boundary it enforced. |
+| `strong-models-mask-defensive-skill-fixes` | A very capable model can pass despite weak instructions, so evals must test the failure mode directly. |
+| `watch-loops-need-a-blocked-external-terminal-state` | Watchers need an explicit blocked terminal state, not only success/failure/spin. |
+
+**Why it matters:** the plugin improves because failures become reusable design guidance instead of one-off fixes.
+
 ## 3. Artifact-system special moves
 
 ### 3.1 Requirements-only plan before implementation plan
@@ -190,6 +269,38 @@ PR bodies scale with review decision cost and can teach newly introduced concept
 Solved problems become structured solution docs with metadata and discoverability checks.
 
 **Why it matters:** future agents can find and reuse prior decisions/patterns.
+
+### 3.8 Evidence dossiers
+
+**Where:** `CONCEPTS.md`, `ce-ideate`, `ce-plan`, `ce-pov`, review skills
+
+They use scout agents to gather bulk evidence into scratch files, then return only a gist and a path. The orchestrator reads the full dossier only when needed.
+
+**Why it matters:** this prevents the main reasoning context from being flooded with search output while preserving auditability through quotes and file pointers.
+
+### 3.9 Pattern docs vs incident learnings
+
+**Where:** `CONCEPTS.md`, `docs/solutions/`
+
+They distinguish a single learning from a generalized pattern doc. A pattern doc is more reusable, but also more dangerous when stale because future agents treat it as broadly applicable.
+
+**Why it matters:** this is knowledge-management maturity. Not every solved problem deserves to become a general rule.
+
+### 3.10 Human-facing artifact format control
+
+**Where:** `.compound-engineering/config.local.example.yaml`, `ce-ideate`, `ce-brainstorm`, `ce-plan`
+
+They let users choose HTML vs Markdown outputs for human-facing artifacts while forcing Markdown in pipeline/manual-only contexts.
+
+**Why it matters:** the same workflow can produce readable artifacts for humans and stable text artifacts for downstream automation.
+
+### 3.11 Frontmatter and YAML footguns are treated as product bugs
+
+**Where:** `ce-compound/scripts/validate-frontmatter.py`, `ce-compound-refresh/scripts/validate-frontmatter.py`, `tests/frontmatter-validator.test.ts`
+
+They validate solution-document frontmatter for subtle YAML hazards such as unquoted ` #`, unquoted `: `, malformed delimiters, and unterminated frontmatter.
+
+**Why it matters:** learning docs are only useful if future tools can parse them. CE protects compounding memory from tiny metadata mistakes.
 
 ## 4. Planning and discovery special moves
 
@@ -347,6 +458,22 @@ A preference against a settled decision is treated differently from a real defec
 
 **Why it matters:** avoids review agents undoing user-approved choices while still surfacing bugs.
 
+### 5.10 Confidence anchors instead of fuzzy scores
+
+**Where:** `CONCEPTS.md`, `ce-code-review`, `ce-doc-review`, `docs/solutions/skill-design/confidence-anchored-scoring.md`
+
+They define confidence levels with behavioral criteria and use confidence to gate/rank findings. Corroboration can promote a finding, but confidence is not a fake-precise percentage.
+
+**Why it matters:** review quality improves when findings are ranked by evidence behavior rather than model certainty vibes.
+
+### 5.11 Reviewer personas as single-lens workers
+
+**Where:** `CONCEPTS.md`, `ce-code-review/references/personas`, `ce-doc-review/references/personas`
+
+Reviewer personas are scoped to one lens such as correctness, testing, security, product, design, feasibility, or adversarial critique. The orchestrator owns synthesis.
+
+**Why it matters:** this avoids a single generic reviewer blending concerns and makes disagreement easier to reason about.
+
 ## 6. Execution and autonomy special moves
 
 ### 6.1 Plan-aware execution
@@ -453,6 +580,22 @@ Base-branch movement is treated as its own attention stream, and conflicts are r
 
 **Why it matters:** it shows how individual skills compose into an autonomous workflow while preserving stage responsibilities.
 
+### 6.14 Detached jobs as a named lifecycle primitive
+
+**Where:** `CONCEPTS.md`, `ce-work/scripts/peer-job-runner.py`, `ce-code-review/scripts/peer-job-runner.py`, `ce-doc-review/scripts/peer-job-runner.py`, `ce-pov/scripts/peer-job-runner.py`
+
+They name and implement a delegated job lifecycle: start, status, wait, result, reap, durable log/result directory, hard/idle caps, atomic terminal records, and no input prompts.
+
+**Why it matters:** this is the substrate that lets delegated work outlive a single harness tool call without becoming an invisible background process.
+
+### 6.15 Runner scripts copied per owning skill
+
+**Where:** multiple `skills/*/scripts/peer-job-runner.py`
+
+They keep runner behavior near the skill that owns it, with parity tests where contracts must match, rather than assuming one global daemon.
+
+**Why it matters:** it preserves plugin portability and lets skills evolve route-specific behavior while still testing shared invariants.
+
 ## 7. Cross-model special moves
 
 ### 7.1 Model elevation for reasoning-heavy stages
@@ -503,6 +646,22 @@ If a peer route fails, the skill reports degradation instead of pretending the p
 
 **Why it matters:** missing peer evidence should lower confidence visibly.
 
+### 7.7 Peer passes are additive, not authority transfers
+
+**Where:** `ce-code-review/references/cross-model-review.md`, `ce-doc-review/references/cross-model-review.md`, `ce-pov/references/cross-model-panel.md`
+
+Cross-model passes add independent evidence to the host synthesis. They do not replace the host workflow, silently choose a new recipient, or become the final authority.
+
+**Why it matters:** this lets CE benefit from model diversity without giving away control of the task.
+
+### 7.8 Independence is verified before agreement is promoted
+
+**Where:** `CONCEPTS.md`, `docs/solutions/skill-design/requested-vs-verified-model-identity.md`, cross-model receipt tests
+
+Agreement from a peer only gets special weight when the system can verify the serving model family. Requested model names alone are not enough.
+
+**Why it matters:** another-model agreement is only meaningful if another model actually ran.
+
 ## 8. Packaging and platform special moves
 
 ### 8.1 Root-native plugin layout
@@ -528,6 +687,8 @@ They keep platform-specific manifests while preserving one canonical authored sk
 They document what each harness actually accepts, sometimes based on CLI probing.
 
 **Why it matters:** agent platform docs are often incomplete or changing.
+
+Second-pass note: the specs cover not only the obvious plugin surfaces, but also target-specific discovery like `docs/specs/antigravity.md`, `docs/specs/copilot.md`, `docs/specs/kiro.md`, `docs/specs/opencode.md`, `docs/specs/cline.md`, `docs/specs/devin.md`, `docs/specs/kimi.md`, and `docs/specs/cursor.md`.
 
 ### 8.4 Converter/writer architecture
 
@@ -560,6 +721,46 @@ User-managed symlinks and non-owned paths are preserved on install/update.
 They provide a workflow to link a worktree’s live skills into Codex for development while removing shadowing plugin installs.
 
 **Why it matters:** plugin caching makes skill iteration tricky; they built tooling for it.
+
+### 8.8 Native plugin surface is distinct from conversion output
+
+**Where:** `CONCEPTS.md`, `plugin.json`, `.codex-plugin/plugin.json`, `.grok-plugin/plugin.json`, `.kimi-plugin/plugin.json`, `.devin-plugin/plugin.json`
+
+They explicitly distinguish native plugin surfaces from converter/writer-generated bundles. If a platform can consume the canonical root bundle, support can live in manifest metadata and validation instead of another generated target writer.
+
+**Why it matters:** this prevents over-engineering target support and keeps platform-specific code where it is actually needed.
+
+### 8.9 OpenCode command registration is safe by construction
+
+**Where:** `.opencode/plugins/compound-engineering.js`, `tests/opencode-plugin-commands.test.ts`
+
+The OpenCode plugin reads only the leading YAML frontmatter of each `SKILL.md`, ignores non-invocable skills, adds the canonical skills path, and registers commands only when the user has not already defined that command.
+
+**Why it matters:** it turns skill files into native commands without clobbering user config or accidentally parsing examples inside the skill body as command metadata.
+
+### 8.10 Cline install acknowledges a missing manual-only gate
+
+**Where:** `.cline/scripts/install-skills.sh`, `tests/cline-install-skills.test.ts`
+
+The Cline installer symlinks canonical skill directories, preserves user-managed symlinks and non-symlink dirs, and omits manual-only skills by default because Cline lacks the same manual invocation gate. `--include-manual` exists, but warns that those skills may auto-activate.
+
+**Why it matters:** this is exactly the kind of practical adapter behavior that separates real plugin portability from installs that only work on one setup.
+
+### 8.11 Antigravity and Pi get explicit entry points
+
+**Where:** `.agy/INSTALL.md`, `.pi/extensions/compound-engineering.ts`, `docs/specs/antigravity.md`
+
+They do not assume every host consumes the package the same way. Antigravity has a compatibility entry point for local bundle installs; Pi has an extension entry point.
+
+**Why it matters:** explicit host entry points reduce user setup ambiguity and create a place to document validation commands.
+
+### 8.12 Marketplace metadata is part of the product
+
+**Where:** `.claude-plugin/marketplace.json`, `.cursor-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, `CHANGELOG.md`, `PRIVACY.md`, `SECURITY.md`
+
+They maintain marketplace catalogs and user-trust docs alongside runtime behavior.
+
+**Why it matters:** installability and operator confidence are product surfaces. A plugin at this maturity cannot treat them as afterthoughts.
 
 ## 9. Testing/eval special moves
 
@@ -603,6 +804,30 @@ They use targeted eval patterns to prove a skill prose change actually changed b
 
 **Why it matters:** skill edits should be validated against the failure they claim to fix.
 
+### 9.6 Skill prose contracts are tested mechanically where possible
+
+**Where:** `tests/skill-conventions.test.ts`, `tests/skills/task-visibility-contract.test.ts`, `tests/skills/user-facing-skill-invocation-rendering.test.ts`
+
+They test things that sound prompt-ish but are actually greppable contracts: task-tracking surfaces, invocation syntax guidance, model-invoked vs manual-only inventory, and reference boundaries.
+
+**Why it matters:** the repo treats agent instruction text as production code.
+
+### 9.7 Platform folklore is challenged with tests
+
+**Where:** `tests/real-plugin-conversion.test.ts`, `tests/skill-conventions.test.ts`, target writer tests
+
+They encode hard-won platform facts — actual skill body loading behavior, manifest path safety, flattening behavior, and harness variable fallbacks — instead of relying on vague ecosystem lore.
+
+**Why it matters:** fast-moving agent platforms accumulate myths. CE converts observed behavior into tests.
+
+### 9.8 Source-persona contracts are pinned with exact strings
+
+**Where:** `tests/skills/ce-sweep-source-contract.test.ts`
+
+`ce-sweep` source personas must expose exact headings and exact degrade/skip sentences. They also must not mutate cursors or send/reply at the source.
+
+**Why it matters:** persona files can be flexible, but branch signals in orchestration must remain stable.
+
 ## 10. Release and maintenance special moves
 
 ### 10.1 Release Please multi-component setup
@@ -644,6 +869,22 @@ Removed/renamed generated artifacts are tracked so upgrades can clean stale copi
 Repo instructions encode lessons about authoring, release, testing, scratch, plugin validation, and skill changes.
 
 **Why it matters:** the project teaches future agents how to work on the project.
+
+### 10.6 Config template parity is a release surface
+
+**Where:** `.compound-engineering/config.local.example.yaml`, `skills/ce-setup/references/config-template.yaml`, `docs/skills/configuration.md`, `AGENTS.md`
+
+Config option changes must update the setup template, committed example, centralized docs, and consumer skill docs together.
+
+**Why it matters:** local config becomes dangerous if the setup wizard, docs, and runtime consumers disagree.
+
+### 10.7 Release preview and metadata sync scripts reduce manual drift
+
+**Where:** `scripts/release/preview.ts`, `scripts/release/sync-metadata.ts`, `scripts/release/validate.ts`
+
+They use scripts to preview release output, sync marketplace metadata, and validate release-owned fields instead of hand-editing every manifest/changelog surface.
+
+**Why it matters:** multi-platform plugin releases have too many small fields for manual discipline alone.
 
 ## 11. Safety and authority special moves
 
@@ -694,6 +935,30 @@ Some skills explicitly analyze without mutating.
 Promotion copy is drafted but not posted.
 
 **Why it matters:** external communication stays human-owned.
+
+### 11.7 Feedback content is untrusted input
+
+**Where:** `ce-sweep`, `docs/skills/ce-sweep.md`, source persona contract tests
+
+Feedback messages, issue bodies, transcripts, and recordings are treated as data, never instructions. Emitted plans structurally mark customer text as untrusted so downstream consumers inherit the same posture.
+
+**Why it matters:** customer feedback pipelines are prompt-injection surfaces unless this is made explicit.
+
+### 11.8 Source-side writes are narrow and degradable
+
+**Where:** `ce-sweep`, `.compound-engineering/config.local.example.yaml`, `tests/skills/ce-sweep-source-contract.test.ts`
+
+`ce-sweep` can acknowledge or close out through preconfigured actions, but it does not post freeform replies. Missing write capability degrades to read-only ingest instead of blocking all analysis.
+
+**Why it matters:** external side effects are bounded while useful work can continue.
+
+### 11.9 Local config refuses private values and commands
+
+**Where:** `.compound-engineering/config.local.example.yaml`, `docs/skills/configuration.md`
+
+The config file is for optional local defaults, not private values, CLI commands, harness flags, or durable team policy.
+
+**Why it matters:** a shared cross-harness config plane needs strict boundaries or it becomes a hidden instruction store.
 
 ## 12. Per-skill special index
 
@@ -1051,7 +1316,7 @@ This section indexes each released skill’s distinctive mechanics. The descript
 1. Software implementation execution as a product surface.
 2. PR babysitting or CI repair workflows.
 3. Generic coding-agent review loops unless scoped to MDP pack/docs changes.
-4. Any behavior that makes MDP look like a sequencer, CRM, scraper, enrichment provider, or generic automation system.
+4. Any behavior that expands MDP beyond local/offline messaging decision context, pack contracts, and routing boundaries.
 
 ## Closing read
 
