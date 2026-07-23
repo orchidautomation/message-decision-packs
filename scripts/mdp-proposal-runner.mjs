@@ -385,6 +385,33 @@ const runProcess = ({ command, args, stdoutPath, stderrPath, allowNonZero = fals
   }
 }
 
+const missingRequiredTraceSchema = () => ({
+  type: 'array',
+  items: {
+    oneOf: [
+      { type: 'string' },
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['field', 'reason'],
+        properties: {
+          field: { type: 'string' },
+          path: { type: 'string' },
+          reason: {
+            type: 'string',
+            description:
+              'Why the field is absent, such as not_available_in_source, not_extractable_from_source, not_extractable_without_person, or invalid_out_of_contract.',
+          },
+          source_evidence: {
+            type: 'string',
+            description: 'Short source-backed explanation of what was missing or why it could not be extracted.',
+          },
+        },
+      },
+    ],
+  },
+})
+
 const promptOutputSchema = () => {
   const normalizedEntity = {
     type: 'object',
@@ -542,10 +569,7 @@ const promptOutputSchema = () => {
             },
           },
           preserved_raw_fields: { type: 'array', items: { type: 'string' } },
-          missing_required: {
-            type: 'array',
-            items: { type: 'string' },
-          },
+          missing_required: missingRequiredTraceSchema(),
         },
       },
       card_patches: {

@@ -87,6 +87,15 @@ assert "conversation" not in request
 assert len(request["input"]) == 1
 assert request["input"][0]["role"] == "user"
 assert sorted(payload.keys()) == ["existing_pack_context", "raw_opportunity", "source_audit", "source_kind"]
+missing_schema = request["prompt_output_schema"]["properties"]["normalization_trace"]["properties"]["missing_required"]
+one_of = missing_schema["items"]["oneOf"]
+object_shapes = [shape for shape in one_of if shape.get("type") == "object"]
+assert any(shape.get("type") == "string" for shape in one_of)
+assert len(object_shapes) == 1
+missing_object = object_shapes[0]
+assert missing_object["additionalProperties"] is False
+assert missing_object["required"] == ["field", "reason"]
+assert sorted(missing_object["properties"].keys()) == ["field", "path", "reason", "source_evidence"]
 assert source_audit["contract"] == "mdp.source-audit.v0"
 assert source_audit["refs"][0]["ref"] == "raw_opportunity.sources[0]"
 assert source_audit["refs"][0]["source_id"] == "synthetic-rfp-summary"
