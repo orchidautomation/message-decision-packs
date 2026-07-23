@@ -50,10 +50,26 @@ cleanup() {
 trap cleanup EXIT
 
 install_dir="$install_home/.local/bin"
+codex_home="$install_home/.codex"
+codex_plugin_root="$codex_home/plugins/message-decision-packs"
+cursor_plugin_root="$install_home/.cursor/plugins/local/message-decision-packs"
+opencode_plugin_root="$install_home/.config/opencode/plugins/message-decision-packs"
 # shellcheck disable=SC2206
 install_args=(${MDP_RELEASE_INSTALL_ARGS:---agents -y})
 
-HOME="$install_home" MDP_INSTALL_DIR="$install_dir" \
+HOME="$install_home" \
+CODEX_HOME="$codex_home" \
+MDP_INSTALL_DIR="$install_dir" \
+PLUXX_CODEX_CONFIG_PATH="$codex_home/config.toml" \
+PLUXX_CODEX_INSTALL_DIR="$codex_plugin_root" \
+PLUXX_CODEX_MARKETPLACE_PATH="$install_home/.agents/plugins/marketplace.json" \
+PLUXX_CURSOR_INSTALL_DIR="$cursor_plugin_root" \
+PLUXX_OPENCODE_PLUGIN_ROOT_DIR="$install_home/.config/opencode/plugins" \
+PLUXX_OPENCODE_INSTALL_DIR="$opencode_plugin_root" \
+PLUXX_OPENCODE_ENTRY_PATH="$install_home/.config/opencode/plugins/message-decision-packs.ts" \
+PLUXX_OPENCODE_SKILLS_ROOT="$install_home/.config/opencode/skills" \
+PLUXX_INSTALL_LOCK_ROOT="$install_home/.pluxx/install-locks" \
+PLUXX_RUNTIME_STORE_ROOT="$install_home/.pluxx/runtimes" \
   bash "$installer" --version "$version" "${install_args[@]}"
 
 mdp_bin="$install_dir/mdp"
@@ -63,7 +79,6 @@ if [ ! -x "$mdp_bin" ]; then
 fi
 "$mdp_bin" --version
 
-codex_plugin_root="$install_home/.codex/plugins/message-decision-packs"
 if [ ! -d "$codex_plugin_root" ]; then
   echo "Installed Codex plugin root not found: $codex_plugin_root" >&2
   exit 1
@@ -104,6 +119,8 @@ trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
 "$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
 
 activation_output="$(
+  HOME="$install_home" \
+  CODEX_HOME="$codex_home" \
   PATH="$install_dir:$PATH" \
   PLUGIN_ROOT="$codex_plugin_root" \
   PLUXX_HOOK_WORKSPACE_ROOT="$proposal_fixture" \
