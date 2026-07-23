@@ -30,23 +30,30 @@ const sha256File = (path) => createHash('sha256').update(readFileSync(path)).dig
 const audit = {
   contract: 'mdp.runner-audit.v0',
   runner: 'custom-headless',
-  model: 'synthetic-mcp-fixture',
-  isolated_invocation: true,
+  model: 'synthetic-demo-fixture-blocked',
+  isolated_invocation: false,
   conversation_resume: false,
-  declared_inputs_only: true,
+  declared_inputs_only: false,
   output_schema_used: true,
   prompt_id: 'normalize-opportunity',
   prompt_output_sha256: sha256File(args.promptOutput),
   tool_invocations_observed: 0,
   session_persistence: false,
   tools_disabled: true,
+  mock_response: true,
   demo_fixture: true,
   notes: [
-    'Synthetic video fixture that emulates the runner/MCP audit contract for public demo data.',
-    'Do not use this hand-authored fixture as production model-isolation evidence; replace it with a native/headless runner or MCP-produced mdp.runner-audit.v0 artifact.'
+    'Synthetic video fixture retained only for backwards-compatible workshop demos.',
+    'This helper intentionally emits non-isolated mock evidence so mdp run-receipt --require-runner-audit blocks it.',
+    'Do not use this hand-authored fixture as production model-isolation evidence; replace it with native/headless runner-produced mdp.runner-audit.v0.'
   ]
 }
 
 mkdirSync(dirname(resolve(args.out)), { recursive: true })
 writeFileSync(args.out, `${JSON.stringify(audit, null, 2)}\n`)
-console.log(JSON.stringify({ ok: true, runner_audit: args.out, prompt_output_sha256: audit.prompt_output_sha256 }, null, 2))
+console.log(JSON.stringify({
+  ok: true,
+  runner_audit: args.out,
+  prompt_output_sha256: audit.prompt_output_sha256,
+  audit_grade_eligible: false
+}, null, 2))

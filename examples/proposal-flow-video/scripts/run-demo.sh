@@ -29,6 +29,14 @@ run_mdp() {
   fi
 }
 
+run_proposal_runner() {
+  if [[ -n "${MDP_BIN:-}" ]]; then
+    node "$repo_root/scripts/mdp-proposal-runner.mjs" "$@" --mdp-bin "$MDP_BIN"
+  else
+    node "$repo_root/scripts/mdp-proposal-runner.mjs" "$@"
+  fi
+}
+
 copy_fixture() {
   local name="$1"
   cp "$example_root/fixtures/$name" "$artifacts/$name"
@@ -50,58 +58,87 @@ run_mdp --json eval --dir "$pack_root" > "$artifacts/04-eval.json"
 
 printf '   pack: %s/.mdp\n' "$pack_root"
 
-printf '\n3) Stage runner/MCP-like source and normalization artifacts\n'
+printf '\n3) Run the local proposal runner surface\n'
 copy_fixture source-audit.json
-copy_fixture normalize-opportunity-output.json
-node "$example_root/scripts/write-demo-runner-audit.mjs" \
-  --prompt-output "$artifacts/normalize-opportunity-output.json" \
-  --out "$artifacts/runner-audit.demo-mcp.json" \
-  > "$artifacts/runner-audit.demo-mcp.stdout.json"
+runner_mode="${DEMO_RUNNER_MODE:-mock}"
+runner_workdir="$workdir/runner"
+mock_response="$artifacts/native-runner-mock-response.json"
 
-python3 - "$artifacts/normalize-opportunity-output.json" "$artifacts/normalized-opportunity.json" <<'PY'
+if [[ "$runner_mode" == "mock" ]]; then
+  python3 - "$example_root/fixtures/normalize-opportunity-output.json" "$mock_response" <<'PY'
 import json, sys
-payload = json.load(open(sys.argv[1]))
-json.dump(payload["normalized_prospect"], open(sys.argv[2], "w"), indent=2)
+fixture = json.load(open(sys.argv[1]))
+payload = {
+    "id": "resp_mock_proposal_flow_video",
+    "output": [
+        {
+            "type": "message",
+            "content": [
+                {
+                    "type": "output_text",
+                    "text": json.dumps(fixture, separators=(",", ":")),
+                }
+            ],
+        }
+    ],
+}
+json.dump(payload, open(sys.argv[2], "w"), indent=2)
 open(sys.argv[2], "a").write("\n")
 PY
+fi
+
+runner_args=(
+  run
+  --pack "$pack_root"
+  --workdir "$runner_workdir"
+  --source-audit "$artifacts/source-audit.json"
+  --source "$workdir/messy-sources/01-rfp-ocr.txt"
+  --source "$workdir/messy-sources/02-capture-notes.md"
+  --source "$workdir/messy-sources/03-proof-inventory.md"
+  --source "$workdir/messy-sources/04-compliance-matrix.csv"
+  --source-kind synthetic-example
+)
+
+case "$runner_mode" in
+  mock)
+    runner_args+=(--model gpt-test --mock-response "$mock_response")
+    ;;
+  native)
+    if [[ -z "${DEMO_OPENAI_MODEL:-}" ]]; then
+      echo "DEMO_RUNNER_MODE=native requires DEMO_OPENAI_MODEL." >&2
+      exit 1
+    fi
+    runner_args+=(--model "$DEMO_OPENAI_MODEL")
+    if [[ "${DEMO_REQUIRE_AUDIT_GRADE:-0}" == "1" ]]; then
+      runner_args+=(--require-audit-grade)
+    fi
+    ;;
+  *)
+    echo "Unsupported DEMO_RUNNER_MODE: $runner_mode (expected mock or native)" >&2
+    exit 1
+    ;;
+esac
+
+run_proposal_runner "${runner_args[@]}" > "$artifacts/proposal-runner-result.json"
+
+runner_artifacts="$runner_workdir/artifacts"
+cp "$runner_artifacts/source-audit.json" "$artifacts/source-audit.json"
+cp "$runner_artifacts/native-normalize-request.json" "$artifacts/native-normalize-request.json"
+cp "$runner_artifacts/normalize-opportunity-output.json" "$artifacts/normalize-opportunity-output.json"
+cp "$runner_artifacts/runner-audit.json" "$artifacts/runner-audit.json"
+cp "$runner_artifacts/normalize-opportunity-validation.json" "$artifacts/normalize-opportunity-validation.json"
+cp "$runner_artifacts/run-receipt.json" "$artifacts/run-receipt.json"
+cp "$runner_artifacts/run-receipt.stdout.json" "$artifacts/run-receipt.stdout.json"
+cp "$runner_artifacts/normalized-opportunity.json" "$artifacts/normalized-opportunity.json"
+cp "$runner_artifacts/fit-normalized-opportunity.json" "$artifacts/fit-normalized-opportunity.json"
+cp "$runner_artifacts/route-bid-no-bid-review.json" "$artifacts/route-bid-no-bid-review.json"
 
 printf '   source audit:  %s\n' "$artifacts/source-audit.json"
 printf '   prompt output: %s\n' "$artifacts/normalize-opportunity-output.json"
-printf '   runner audit:  %s\n' "$artifacts/runner-audit.demo-mcp.json"
+printf '   runner audit:  %s\n' "$artifacts/runner-audit.json"
+printf '   runner result: %s\n' "$artifacts/proposal-runner-result.json"
 
-printf '\n4) Prove normalization, readiness, and receipt boundaries with the CLI\n'
-run_mdp --json validate-prompt-output \
-  --dir "$pack_root" \
-  --prompt-id normalize-opportunity \
-  --file "$artifacts/normalize-opportunity-output.json" \
-  --source-audit "$artifacts/source-audit.json" \
-  > "$artifacts/normalize-opportunity-validation.json"
-
-run_mdp --json fit \
-  --dir "$pack_root" \
-  --prospect "$artifacts/normalized-opportunity.json" \
-  > "$artifacts/fit-normalized-opportunity.json"
-
-run_mdp --json run-receipt \
-  --dir "$pack_root" \
-  --workflow proposal-review \
-  --isolation isolated \
-  --declared-inputs-only \
-  --prompt-id normalize-opportunity \
-  --prompt-output "$artifacts/normalize-opportunity-output.json" \
-  --validation "$artifacts/normalize-opportunity-validation.json" \
-  --source-audit "$artifacts/source-audit.json" \
-  --runner-audit "$artifacts/runner-audit.demo-mcp.json" \
-  --require-runner-audit \
-  --out "$artifacts/run-receipt.json" \
-  > "$artifacts/run-receipt.stdout.json"
-
-run_mdp --json --summary route \
-  --entries \
-  --dir "$pack_root" \
-  --persona "Proposal Lead" \
-  --job "bid no bid review" \
-  > "$artifacts/route-bid-no-bid-review.json"
+printf '\n4) Use CLI route gates after the runner receipt\n'
 
 run_mdp --json --summary route \
   --entries \
@@ -158,12 +195,14 @@ receipt = load('run-receipt.json')
 fit = load('fit-normalized-opportunity.json')
 proof = load('proof-output-verify.json')
 claim = load('check-claims-unsupported.json')
-runner = load('runner-audit.demo-mcp.json')
+runner = load('runner-audit.json')
+runner_result = load('proposal-runner-result.json')
 print('\n== Demo summary ==')
+print(f"runner mode:         {runner_result['mode']} / audit eligible: {runner_result['audit_grade_eligible']}")
 print(f"prompt output valid: {validation['data']['valid']}")
 print(f"fit status:          {fit['data']['status']} ({fit['data']['decision']})")
 print(f"receipt decision:    {receipt['decision']} / runner assurance: {receipt['runner']['assurance']}")
-print(f"runner fixture:      {runner.get('demo_fixture', False)} (replace with real MCP/native runner audit for production)")
+print(f"mock response:       {runner.get('mock_response', False)} (production needs real native/headless evidence)")
 print(f"proof decision:      {proof['data']['decision']} / valid: {proof['data']['valid']}")
 print(f"unsafe claim valid:  {claim['data']['valid']} / guardrails: {len(claim['data']['guardrail_hits'])}")
 print(f"\nOpen: {root / 'proposal-review.md'}")

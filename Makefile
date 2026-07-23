@@ -48,6 +48,8 @@ validate-native-runner:
 
 validate-proposal-runner:
 	node --check scripts/mdp-proposal-runner.mjs
+	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
+	bash -n examples/proposal-flow-video/scripts/run-demo.sh
 	bash -n scripts/test-proposal-runner.sh
 	bash scripts/test-proposal-runner.sh
 
@@ -67,6 +69,7 @@ validate-installers:
 	node --check scripts/finalize-release-manifest.mjs
 	node --check scripts/mdp-native-normalize-openai.mjs
 	node --check scripts/mdp-proposal-runner.mjs
+	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
 	scripts/test-install.sh
 
 install-cli:

@@ -2,9 +2,9 @@
 
 This is a public-safe, synthetic walkthrough for the proposal-review flow Brandon can record with a client.
 
-It starts with intentionally messy source files, creates a fresh proposal `.mdp/` pack, stages the source-audit and normalization artifacts a runner/MCP would produce, then uses the `mdp` CLI to prove the artifacts before producing a bounded proposal-review artifact. This directory also includes a Remotion motion-graphics video project under `video/` so the walkthrough can be rendered as an actual MP4.
+It starts with intentionally messy source files, creates a fresh proposal `.mdp/` pack, runs the local proposal runner surface, then uses the `mdp` CLI gates before producing a bounded proposal-review artifact. This directory also includes a Remotion motion-graphics video project under `video/` so the walkthrough can be rendered as an actual MP4.
 
-> Scope note: the fixture runner audit in this demo is synthetic so the whole walkthrough can run offline. It demonstrates the exact `mdp.runner-audit.v0` contract the runner/MCP must emit and how the CLI binds hashes. For a paid pilot or real client review, replace `artifacts/runner-audit.demo-mcp.json` with the native/headless runner or MCP-produced audit artifact.
+> Scope note: the default demo runs in offline mock mode, so it should produce a blocked/non-audit-grade receipt while still showing the full artifact chain. For a paid pilot or real client review, switch to a real native/headless runner and require an audit-grade receipt before calling the review isolated.
 
 ## Run the CLI walkthrough
 
@@ -51,15 +51,15 @@ The MP4 is written to `examples/proposal-flow-video/video/out/proposal-flow-vide
    - `mdp init --template proposal --dir /tmp/mdp-proposal-flow-video/pack`
    - `mdp skills`, `mdp validate`, and `mdp eval` prove the generated `.mdp/` is a valid proposal reference profile.
 
-3. **Runner/MCP staging**
+3. **Local runner staging**
    - `fixtures/source-audit.json` is the bounded source ledger that maps raw refs to approved snippets and `.mdp/sources.yaml` source IDs.
-   - `fixtures/normalize-opportunity-output.json` is the strict `mdp.prompt-output.v0` normalization result.
-   - `scripts/write-demo-runner-audit.mjs` writes a synthetic `mdp.runner-audit.v0` fixture bound to the prompt-output SHA.
+   - `scripts/mdp-proposal-runner.mjs` stages source text, builds `mdp.native-normalize-request.v0`, invokes the native runner, validates prompt output, creates the run receipt, and runs review probes.
+   - Default mock mode wraps `fixtures/normalize-opportunity-output.json` as an offline provider response, then writes `mock_response: true` runner evidence that must not be audit-grade.
 
 4. **CLI proof gates**
    - `mdp validate-prompt-output --source-audit` checks the model output shape and source refs.
    - `mdp fit` shows readiness/insufficient-context posture for the normalized opportunity compatibility object.
-   - `mdp run-receipt --require-runner-audit` hashes and binds pack manifest, prompt output, validation result, source audit, and runner audit.
+   - `mdp run-receipt --require-runner-audit` hashes and binds pack manifest, prompt output, validation result, source audit, and runner audit. In default mock mode the receipt is blocked, which is the safe demo outcome.
    - `mdp route --entries` shows the cards a proposal review job should load.
    - `mdp author-proof-output` compiles a proof-output draft only if verification passes.
    - `mdp verify-output --readable` renders a human review layer without treating it as final proposal prose.
@@ -68,8 +68,9 @@ The MP4 is written to `examples/proposal-flow-video/video/out/proposal-flow-vide
 
 - “MDP is local decision context, not a proposal writer or submission system.”
 - “The source audit is the bridge from messy PDFs/docs into bounded refs the CLI can check.”
-- “The runner/MCP owns the fresh stateless model call and emits runner-audit evidence.”
+- “The local runner surface owns the source staging, fresh stateless model-call boundary, validation, and receipt chain.”
 - “The CLI owns deterministic checks: pack validity, prompt-output refs, receipt hashes, route selection, proof bindings, and claim guardrails.”
+- “The offline demo is intentionally not audit-grade; production needs a real native/headless runner receipt.”
 - “If proof, certification, compliance status, deadline, or past performance is missing, the workflow surfaces a gap instead of smoothing it into confident copy.”
 
 ## Output map
@@ -77,6 +78,8 @@ The MP4 is written to `examples/proposal-flow-video/video/out/proposal-flow-vide
 After a run, inspect:
 
 - `/tmp/mdp-proposal-flow-video/pack/.mdp/` — generated proposal pack.
+- `/tmp/mdp-proposal-flow-video/artifacts/proposal-runner-result.json` — local runner result and audit-grade eligibility flag.
+- `/tmp/mdp-proposal-flow-video/artifacts/native-normalize-request.json` — declared-input-only native request package.
 - `/tmp/mdp-proposal-flow-video/artifacts/normalize-opportunity-validation.json` — prompt-output/source-audit validation.
 - `/tmp/mdp-proposal-flow-video/artifacts/run-receipt.json` — hash-bound run receipt.
 - `/tmp/mdp-proposal-flow-video/artifacts/route-compliance-review.json` — selected pack entries for compliance review.
@@ -86,10 +89,19 @@ After a run, inspect:
 
 ## Production replacement points
 
-For a real client run, keep raw proposal material in customer-controlled scratch, not in this repo. The runner/MCP should create these artifacts from the approved source package:
+For a real client run, keep raw proposal material in customer-controlled scratch, not in this repo. The local runner or future MCP wrapper should create these artifacts from the approved source package:
 
 1. `source-audit.json`
 2. `normalize-opportunity-output.json`
 3. `runner-audit.json`
 
-Then run the same CLI gates from the script. Do not call a review audit-grade unless `mdp run-receipt --require-runner-audit` returns `decision: audit-grade` using the real runner/MCP audit artifact.
+To test the real native path from the source checkout:
+
+```bash
+DEMO_RUNNER_MODE=native \
+DEMO_OPENAI_MODEL=<model-id> \
+DEMO_REQUIRE_AUDIT_GRADE=1 \
+bash examples/proposal-flow-video/scripts/run-demo.sh
+```
+
+Then run the same CLI gates from the script as needed. Do not call a review audit-grade unless `mdp run-receipt --require-runner-audit` returns `decision: audit-grade` using the real runner audit artifact.
