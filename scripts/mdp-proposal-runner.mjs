@@ -388,12 +388,12 @@ const runProcess = ({ command, args, stdoutPath, stderrPath, allowNonZero = fals
 const missingRequiredTraceSchema = () => ({
   type: 'array',
   items: {
-    oneOf: [
+    anyOf: [
       { type: 'string' },
       {
         type: 'object',
         additionalProperties: false,
-        required: ['field', 'reason'],
+        required: ['field', 'path', 'reason', 'source_evidence'],
         properties: {
           field: { type: 'string' },
           path: { type: 'string' },

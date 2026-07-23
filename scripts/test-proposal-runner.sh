@@ -74,6 +74,21 @@ result = json.load(open(sys.argv[1]))
 request = json.load(open(sys.argv[2]))
 source_audit = json.load(open(sys.argv[3]))
 payload = json.loads(request["input"][0]["content"])
+
+def assert_openai_strict_schema(schema, path="#"):
+    assert "oneOf" not in schema, f"{path} must use OpenAI-supported anyOf, not oneOf"
+    if schema.get("type") == "object":
+        properties = schema.get("properties", {})
+        assert schema.get("additionalProperties") is False, f"{path} object must set additionalProperties false"
+        assert sorted(schema.get("required", [])) == sorted(properties.keys()), f"{path} object required must include every property"
+        for key, value in properties.items():
+            assert_openai_strict_schema(value, f"{path}/properties/{key}")
+    if "items" in schema:
+        assert_openai_strict_schema(schema["items"], f"{path}/items")
+    for keyword in ["anyOf"]:
+        for index, value in enumerate(schema.get(keyword, [])):
+            assert_openai_strict_schema(value, f"{path}/{keyword}/{index}")
+
 assert result["contract"] == "mdp.proposal-runner-result.v0"
 assert result["mode"] == "dry-run"
 assert result["audit_grade_eligible"] is False
@@ -87,14 +102,15 @@ assert "conversation" not in request
 assert len(request["input"]) == 1
 assert request["input"][0]["role"] == "user"
 assert sorted(payload.keys()) == ["existing_pack_context", "raw_opportunity", "source_audit", "source_kind"]
+assert_openai_strict_schema(request["prompt_output_schema"])
 missing_schema = request["prompt_output_schema"]["properties"]["normalization_trace"]["properties"]["missing_required"]
-one_of = missing_schema["items"]["oneOf"]
-object_shapes = [shape for shape in one_of if shape.get("type") == "object"]
-assert any(shape.get("type") == "string" for shape in one_of)
+any_of = missing_schema["items"]["anyOf"]
+object_shapes = [shape for shape in any_of if shape.get("type") == "object"]
+assert any(shape.get("type") == "string" for shape in any_of)
 assert len(object_shapes) == 1
 missing_object = object_shapes[0]
 assert missing_object["additionalProperties"] is False
-assert missing_object["required"] == ["field", "reason"]
+assert missing_object["required"] == ["field", "path", "reason", "source_evidence"]
 assert sorted(missing_object["properties"].keys()) == ["field", "path", "reason", "source_evidence"]
 assert source_audit["contract"] == "mdp.source-audit.v0"
 assert source_audit["refs"][0]["ref"] == "raw_opportunity.sources[0]"
