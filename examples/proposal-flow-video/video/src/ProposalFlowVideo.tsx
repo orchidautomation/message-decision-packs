@@ -68,7 +68,7 @@ const scenes: Scene[] = [
   {
     eyebrow: "client video talk track",
     title: "MDP stores decision context. The CLI proves it.",
-    subtitle: "Use mock mode for workshops. Require a real native/headless receipt before calling a pilot audit-grade.",
+    subtitle: "Use mock mode for workshops; the CLI blocks it from audit-grade. Require real native/headless evidence before calling a pilot audit-grade.",
     accent: "messy files → .mdp → local runner → CLI receipt → review artifact",
     duration: 135,
     visual: "closing",
@@ -306,7 +306,7 @@ const RunnerBoundary: React.FC = () => {
         ))}
       </div>
       <div style={{ marginTop: 30, padding: "20px 22px", borderRadius: 20, background: "rgba(255,209,102,0.12)", color: colors.amber, fontSize: 25, lineHeight: 1.28 }}>
-        Demo mock mode is non-audit-grade. Production needs real native/headless runner evidence.
+        Demo mock mode is blocked from audit-grade. Production needs real native/headless runner evidence.
       </div>
     </Panel>
   );

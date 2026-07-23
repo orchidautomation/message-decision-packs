@@ -95,6 +95,8 @@ For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt un
 - `opencode-run`: `opencode run` only when a wrapper proves no resume/session attach, `--pure`, disabled default/plugin discovery, a no-tool agent, and zero observed tool events.
 - `custom-headless`: a host-owned runner that proves the common no-resume/no-tools/no-persistence boundary.
 
+Runner audits marked as fixtures are intentionally not production evidence. If a runner audit includes `demo_fixture: true`, `fixture: true`, `mock_response: true`, or a model name that looks synthetic/mock/demo/fixture-only, `mdp run-receipt` blocks instead of returning `audit-grade`. Use those artifacts only for offline walkthroughs and tests.
+
 If no runner audit is supplied and `--require-runner-audit` is omitted, the receipt can still be `audit-grade` from assertion flags, but `runner.assurance` is `asserted`. For production proposal review, use `headless-verified` or `stateless-api-verified`.
 
 ## One-Thread UX, Two Planes

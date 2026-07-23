@@ -139,6 +139,18 @@ printf '   runner audit:  %s\n' "$artifacts/runner-audit.json"
 printf '   runner result: %s\n' "$artifacts/proposal-runner-result.json"
 
 printf '\n4) Use CLI route gates after the runner receipt\n'
+if [[ "$runner_mode" == "mock" ]]; then
+  python3 - "$artifacts/run-receipt.json" "$artifacts/runner-audit.json" <<'PY'
+import json, sys
+receipt = json.load(open(sys.argv[1]))
+runner = json.load(open(sys.argv[2]))
+issues = {issue.get("code") for issue in receipt.get("issues", [])}
+if receipt.get("decision") != "blocked" or "runner_audit_mock_response" not in issues:
+    raise SystemExit("Expected mock runner evidence to produce a blocked receipt with runner_audit_mock_response")
+if runner.get("mock_response") is not True:
+    raise SystemExit("Expected default demo runner audit to be marked mock_response=true")
+PY
+fi
 
 run_mdp --json --summary route \
   --entries \
@@ -202,7 +214,7 @@ print(f"runner mode:         {runner_result['mode']} / audit eligible: {runner_r
 print(f"prompt output valid: {validation['data']['valid']}")
 print(f"fit status:          {fit['data']['status']} ({fit['data']['decision']})")
 print(f"receipt decision:    {receipt['decision']} / runner assurance: {receipt['runner']['assurance']}")
-print(f"mock response:       {runner.get('mock_response', False)} (production needs real native/headless evidence)")
+print(f"mock response:       {runner.get('mock_response', False)} (CLI blocks mock/fixture evidence; production needs real native/headless runner evidence)")
 print(f"proof decision:      {proof['data']['decision']} / valid: {proof['data']['valid']}")
 print(f"unsafe claim valid:  {claim['data']['valid']} / guardrails: {len(claim['data']['guardrail_hits'])}")
 print(f"\nOpen: {root / 'proposal-review.md'}")

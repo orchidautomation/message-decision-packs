@@ -48,6 +48,8 @@ mdp --json run-receipt \
 
 Without `--require-runner-audit`, `run-receipt` can still record a host assertion. For paid pilots, use `--require-runner-audit` so the flow blocks when the headless boundary is missing or malformed. The local proposal runner always uses `--require-runner-audit`; its dry-run and mock modes are for request/fixture validation only and are never audit-grade.
 
+Demo, fixture, mock, or synthetic runner-audit artifacts are not audit-grade evidence. `run-receipt` blocks runner audits marked with `demo_fixture: true`, `fixture: true`, `mock_response: true`, or synthetic/mock/demo/fixture-only model names.
+
 ## Runner Audit Contract
 
 Get the schema with:
