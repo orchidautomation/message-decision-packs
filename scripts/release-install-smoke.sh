@@ -88,26 +88,20 @@ if find "$codex_plugin_root" -type d -name __pycache__ | grep -q .; then
 fi
 
 tools_json="$(node "$codex_plugin_root/scripts/mdp-proposal-runner.mjs" tools)"
-case "$tools_json" in
-  *'mdp_run_receipt'*'not currently a hosted MCP implementation'*) ;;
-  *)
-    echo "Installed proposal runner tools output is missing MCP/non-hosted guardrail text." >&2
+for expected in \
+  "mdp_run_receipt" \
+  "not currently a hosted MCP implementation"; do
+  if ! printf '%s\n' "$tools_json" | grep -F "$expected" >/dev/null; then
+    echo "Installed proposal runner tools output is missing MCP/non-hosted guardrail text: $expected" >&2
     printf '%s\n' "$tools_json" >&2
     exit 1
-    ;;
-esac
+  fi
+done
 
 proposal_fixture="$(mktemp -d)"
 trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
-mkdir -p "$proposal_fixture/.mdp/prompts"
-cat > "$proposal_fixture/.mdp/manifest.yaml" <<'YAML'
-name: release-install-smoke-proposal
-version: 0.0.0
-profile: proposal
-YAML
-cat > "$proposal_fixture/.mdp/prompts/normalize-opportunity.yaml" <<'YAML'
-id: normalize-opportunity
-YAML
+"$mdp_bin" --json init --template proposal --dir "$proposal_fixture" >/tmp/mdp-release-install-init.json
+"$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
 
 activation_output="$(
   PATH="$install_dir:$PATH" \

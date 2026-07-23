@@ -68,12 +68,13 @@ validate-llms:
 
 validate-installers:
 	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/finalize-release-assets.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh scripts/test-native-runner.sh scripts/test-proposal-runner.sh
-	bash -n scripts/release-install-smoke.sh
+	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh
 	node --check scripts/finalize-release-manifest.mjs
 	node --check scripts/mdp-native-normalize-openai.mjs
 	node --check scripts/mdp-proposal-runner.mjs
 	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
 	scripts/test-install.sh
+	scripts/test-release-install-smoke.sh
 
 install-cli:
 	$(MAKE) -C cli install-local
