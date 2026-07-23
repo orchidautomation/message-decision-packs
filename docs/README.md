@@ -7,6 +7,7 @@ These are the current public docs:
 - [Portfolio-Aware GTM Scope](portfolio-scope.md): scope existing primitives by product, capability, solution, or segment within one pack.
 - [Prompt Contracts](prompt-extraction-contract.md): normalization and extraction schemas.
 - [Runner Receipts](run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
+- [Local Proposal Runner Surface](proposal-runner.md): host-neutral local command surface for staged source audit, native/headless normalization, validation, receipts, and review probes.
 - [Headless Normalization Runners](headless-normalization-runners.md): native/headless runner recipes for Codex, Claude Code, Cursor, OpenCode, and future MCP wrappers.
 - [Native API Normalization Runner](native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.
 - [Proof-Output Drafting](proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
