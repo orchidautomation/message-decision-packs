@@ -82,6 +82,7 @@ run_mdp --json fit \
   --prospect "$artifacts/normalized-opportunity.json" \
   > "$artifacts/fit-normalized-opportunity.json"
 
+set +e
 run_mdp --json run-receipt \
   --dir "$pack_root" \
   --workflow proposal-review \
@@ -95,6 +96,22 @@ run_mdp --json run-receipt \
   --require-runner-audit \
   --out "$artifacts/run-receipt.json" \
   > "$artifacts/run-receipt.stdout.json"
+receipt_status=$?
+set -e
+if [[ "$receipt_status" -eq 0 ]]; then
+  echo "Expected the synthetic demo runner-audit fixture to be blocked, but it was accepted as audit-grade." >&2
+  exit 1
+fi
+python3 - "$artifacts/run-receipt.json" <<'PY'
+import json, sys
+receipt = json.load(open(sys.argv[1]))
+issues = {issue.get("code") for issue in receipt.get("issues", [])}
+expected = {"runner_audit_demo_fixture", "runner_audit_synthetic_model"}
+if receipt.get("decision") != "blocked" or not expected.issubset(issues):
+    raise SystemExit(
+        "Expected synthetic demo runner-audit fixture to produce a blocked receipt with fixture issue codes"
+    )
+PY
 
 run_mdp --json --summary route \
   --entries \
@@ -163,7 +180,7 @@ print('\n== Demo summary ==')
 print(f"prompt output valid: {validation['data']['valid']}")
 print(f"fit status:          {fit['data']['status']} ({fit['data']['decision']})")
 print(f"receipt decision:    {receipt['decision']} / runner assurance: {receipt['runner']['assurance']}")
-print(f"runner fixture:      {runner.get('demo_fixture', False)} (replace with real MCP/native runner audit for production)")
+print(f"runner fixture:      {runner.get('demo_fixture', False)} (CLI blocks this fixture from audit-grade; replace with real MCP/native runner audit for production)")
 print(f"proof decision:      {proof['data']['decision']} / valid: {proof['data']['valid']}")
 print(f"unsafe claim valid:  {claim['data']['valid']} / guardrails: {len(claim['data']['guardrail_hits'])}")
 print(f"\nOpen: {root / 'proposal-review.md'}")

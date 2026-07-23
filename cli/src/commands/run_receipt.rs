@@ -576,6 +576,7 @@ fn validate_runner_audit_summary(
             "runner-audit runner must be one of native-api, codex-exec, claude-print, cursor-print, opencode-run, or custom-headless",
         ));
     }
+    validate_runner_fixture_markers(value, issues, blocked, &mut valid);
 
     require_bool(
         value,
@@ -739,9 +740,68 @@ fn validate_runner_audit_summary(
             "output_schema_used": value["output_schema_used"].clone(),
             "prompt_id": value.get("prompt_id").cloned().unwrap_or(Value::Null),
             "prompt_output_sha256": value.get("prompt_output_sha256").cloned().unwrap_or(Value::Null),
-            "tool_invocations_observed": value.get("tool_invocations_observed").cloned().unwrap_or(Value::Null)
+            "tool_invocations_observed": value.get("tool_invocations_observed").cloned().unwrap_or(Value::Null),
+            "demo_fixture": value.get("demo_fixture").cloned().unwrap_or(Value::Null),
+            "fixture": value.get("fixture").cloned().unwrap_or(Value::Null),
+            "mock_response": value.get("mock_response").cloned().unwrap_or(Value::Null)
         }
     })
+}
+
+fn validate_runner_fixture_markers(
+    value: &Value,
+    issues: &mut Vec<Value>,
+    blocked: &mut bool,
+    valid: &mut bool,
+) {
+    for (field, code, message) in [
+        (
+            "demo_fixture",
+            "runner_audit_demo_fixture",
+            "demo runner-audit fixtures cannot be used as audit-grade model-isolation evidence",
+        ),
+        (
+            "fixture",
+            "runner_audit_fixture",
+            "runner-audit fixtures cannot be used as audit-grade model-isolation evidence",
+        ),
+        (
+            "mock_response",
+            "runner_audit_mock_response",
+            "mock runner responses cannot be used as audit-grade model-isolation evidence",
+        ),
+    ] {
+        if value[field].as_bool() == Some(true) {
+            *valid = false;
+            *blocked = true;
+            issues.push(issue(
+                code,
+                "error",
+                format!("runner_audit.{field}"),
+                message,
+            ));
+        }
+    }
+
+    if let Some(model) = value["model"].as_str()
+        && looks_like_fixture_model(model)
+    {
+        *valid = false;
+        *blocked = true;
+        issues.push(issue(
+            "runner_audit_synthetic_model",
+            "error",
+            "runner_audit.model",
+            "runner-audit model names that look synthetic, mock, demo, or fixture-only cannot be used as audit-grade evidence",
+        ));
+    }
+}
+
+fn looks_like_fixture_model(model: &str) -> bool {
+    let normalized = model.to_ascii_lowercase();
+    ["synthetic", "fixture", "mock", "demo"]
+        .iter()
+        .any(|marker| normalized.contains(marker))
 }
 
 fn validate_native_api_runner(
@@ -1518,6 +1578,80 @@ mod tests {
         assert_eq!(receipt["valid"], true);
         assert_eq!(receipt["decision"], "audit-grade");
         assert_eq!(receipt["runner"]["assurance"], "headless-verified");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn demo_fixture_runner_audit_blocks_receipt() {
+        let root = test_pack("receipt-demo-runner-audit");
+        let prompt_output = write_json(
+            &root,
+            "prompt-output.json",
+            json!({"contract": "mdp.prompt-output.v0", "prompt_id": "normalize-opportunity"}),
+        );
+        let source_audit = write_json(
+            &root,
+            "source-audit.json",
+            json!({"contract": "mdp.source-audit.v0", "refs": []}),
+        );
+        let validation = write_json(
+            &root,
+            "validation.json",
+            validation_summary(&prompt_output, Some(&source_audit)),
+        );
+        let runner_audit = write_json(
+            &root,
+            "runner-audit.json",
+            json!({
+                "contract": "mdp.runner-audit.v0",
+                "runner": "custom-headless",
+                "model": "synthetic-mcp-fixture",
+                "isolated_invocation": true,
+                "conversation_resume": false,
+                "declared_inputs_only": true,
+                "output_schema_used": true,
+                "prompt_id": "normalize-opportunity",
+                "prompt_output_sha256": file_sha256(&prompt_output),
+                "tool_invocations_observed": 0,
+                "session_persistence": false,
+                "tools_disabled": true,
+                "demo_fixture": true,
+                "fixture": true,
+                "mock_response": true
+            }),
+        );
+
+        let receipt = run_receipt(RunReceiptOptions {
+            root: &root,
+            workflow: RunReceiptWorkflow::ProposalReview,
+            isolation: RunIsolation::Isolated,
+            declared_inputs_only: true,
+            prompt_id: Some("normalize-opportunity"),
+            prompt_output: Some(&prompt_output),
+            validation: Some(&validation),
+            source_audit: Some(&source_audit),
+            runner_audit: Some(&runner_audit),
+            require_runner_audit: true,
+            artifacts: &[],
+        })
+        .expect("receipt should build");
+
+        assert_eq!(receipt["valid"], false);
+        assert_eq!(receipt["decision"], "blocked");
+        assert_eq!(receipt["runner"]["assurance"], "invalid");
+        let issues = receipt["issues"].as_array().expect("issues");
+        for code in [
+            "runner_audit_demo_fixture",
+            "runner_audit_fixture",
+            "runner_audit_mock_response",
+            "runner_audit_synthetic_model",
+        ] {
+            assert!(
+                issues.iter().any(|issue| issue["code"] == code),
+                "missing issue code {code}"
+            );
+        }
 
         let _ = fs::remove_dir_all(root);
     }
