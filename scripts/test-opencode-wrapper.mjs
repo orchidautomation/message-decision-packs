@@ -88,6 +88,19 @@ assert(
     releaseWorkflow.includes('release-assets/release-manifest.json'),
   `Release workflow must publish, download, stage, finalize, and upload in order; got ${releaseSequenceIndexes.join(', ')}.`,
 )
+assert(
+  releaseWorkflow.includes('MDP_RELEASE_INSTALLER="release-assets/install.sh" scripts/release-install-smoke.sh "$version"'),
+  'Release workflow must smoke-test the staged release installer with the documented agents path.',
+)
+const releaseInstallSmoke = readFileSync(join(root, 'scripts/release-install-smoke.sh'), 'utf8')
+assert(
+  releaseInstallSmoke.includes('MDP_RELEASE_INSTALL_ARGS:---agents -y') &&
+    releaseInstallSmoke.includes('mdp-proposal-runner.mjs') &&
+    releaseInstallSmoke.includes('mdp-native-normalize-openai.mjs') &&
+    releaseInstallSmoke.includes('The local proposal runner is not a hosted MCP server') &&
+    releaseInstallSmoke.includes('Hooks report readiness only; the CLI receipt is the blocking gate.'),
+  'Release install smoke must exercise the documented --agents installer path and installed runner guardrails.',
+)
 const tempRoot = mkdtempSync(join(tmpdir(), 'mdp-opencode-wrapper-'))
 const remoteReleaseRoot = join(tempRoot, 'remote-release')
 const releaseRoot = join(tempRoot, 'release')
@@ -141,6 +154,14 @@ process.exit(1)
 `,
 )
 chmodSync(fakeGhPath, 0o755)
+const fakeMdpPath = join(fakeBin, 'mdp')
+writeFileSync(
+  fakeMdpPath,
+  `#!/usr/bin/env bash
+echo "mdp 0.0.0-pluxx-installer-test"
+`,
+)
+chmodSync(fakeMdpPath, 0o755)
 
 try {
   const publishEnvironment = {
@@ -234,6 +255,62 @@ try {
     conflictResult.status !== 0 && conflictResult.stderr.includes('conflicting claude-code archives'),
     'Manifest finalization must reject conflicting duplicate platform metadata.',
   )
+
+  const codexHome = join(tempRoot, 'installed', 'codex-home')
+  const codexConfigPath = join(codexHome, '.codex/config.toml')
+  const codexPluginRoot = join(codexHome, '.codex/plugins/message-decision-packs')
+  run('bash', [join(releaseRoot, 'install-codex.sh')], {
+    cwd: root,
+    environment: {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      HOME: codexHome,
+      CODEX_HOME: join(codexHome, '.codex'),
+      MDP_SKIP_CLI_UPDATE: '1',
+      PLUXX_CODEX_BUNDLE_PATH: join(
+        releaseRoot,
+        'message-decision-packs-codex-latest.tar.gz',
+      ),
+      PLUXX_CODEX_CONFIG_PATH: codexConfigPath,
+      PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
+      PLUXX_CODEX_INSTALL_DIR: codexPluginRoot,
+      PLUXX_CODEX_MARKETPLACE_PATH: join(codexHome, '.agents/plugins/marketplace.json'),
+      PLUXX_INSTALL_LOCK_ROOT: join(codexHome, '.pluxx/install-locks'),
+      PLUXX_RUNTIME_STORE_ROOT: join(codexHome, '.pluxx/runtimes'),
+    },
+  })
+
+  assert(
+    existsSync(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')),
+    'Generated Codex installer must install the local proposal runner.',
+  )
+  assert(
+    existsSync(join(codexPluginRoot, 'scripts/mdp-native-normalize-openai.mjs')),
+    'Generated Codex installer must install the native normalization runner.',
+  )
+  assert(
+    readFileSync(codexConfigPath, 'utf8').includes('hooks = true'),
+    'Generated Codex installer must enable hooks in the isolated Codex config path.',
+  )
+  const codexTools = run('node', [join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs'), 'tools'], {
+    cwd: root,
+  }).stdout
+  assert(
+    codexTools.includes('mdp_run_receipt') &&
+      codexTools.includes('not currently a hosted MCP implementation'),
+    'Installed Codex runner tools must preserve receipt and non-hosted MCP guardrails.',
+  )
+  const codexPycache = spawnSync(
+    'bash',
+    ['-lc', `find "${codexPluginRoot}" -type d -name __pycache__ -print -quit`],
+    { cwd: root, encoding: 'utf8' },
+  )
+  assert(codexPycache.status === 0, 'Generated Codex installed bundle pycache scan must run.')
+  assert(
+    codexPycache.stdout.trim() === '',
+    'Generated Codex installed bundle must not contain Python __pycache__ directories.',
+  )
+  console.log(`Generated Codex installer proof passed: codexHome=${codexHome}`)
 
   const installRoot = join(tempRoot, 'installed', 'plugins')
   const installedPluginRoot = join(installRoot, 'message-decision-packs')

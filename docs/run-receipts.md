@@ -114,7 +114,7 @@ See [Native API Normalization Runner](native-api-normalization-runner.md) for th
 
 ## Runner/MCP Direction
 
-`run-receipt` is the first deterministic receipt contract. A host-neutral runner or MCP should wrap the CLI with tools that:
+`run-receipt` is the deterministic receipt contract. This repo also ships a host-neutral local proposal runner at `scripts/mdp-proposal-runner.mjs` that wraps the native runner and CLI gates with MCP-shaped local steps. It is not a hosted MCP server, but a future MCP server can wrap the same tool boundaries:
 
 1. stage supplied source files in customer-controlled storage;
 2. extract bounded text and create `mdp.source-audit.v0`;
@@ -125,4 +125,10 @@ See [Native API Normalization Runner](native-api-normalization-runner.md) for th
 7. call `mdp run-receipt --require-runner-audit`;
 8. continue to `fit`, `route`, `author-proof-output`, `verify-output`, or `render-brief` as needed.
 
-Pluxx continues to package skills and hooks for supported hosts. The runner/MCP owns runtime isolation, while the CLI owns deterministic artifact checks.
+Inspect the local surface with:
+
+```bash
+node scripts/mdp-proposal-runner.mjs tools
+```
+
+Pluxx continues to package skills, hooks, assets, and scripts for supported hosts. The runner/MCP owns runtime isolation, while the CLI owns deterministic artifact checks. Dry-run/mock runner modes are valid for CI and demo fixtures only; they must block or remain non-audit-grade when `--require-runner-audit` is used.

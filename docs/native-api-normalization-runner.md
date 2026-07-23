@@ -14,6 +14,15 @@ It is optional and BYOK. Installing MDP, validating packs, running evals, and us
 
 The script requires Node.js 18+ for the built-in `fetch` API.
 
+For proposal workflows, prefer the higher-level local surface first:
+
+```bash
+node scripts/mdp-proposal-runner.mjs tools
+node scripts/mdp-proposal-runner.mjs run --pack <pack-root> --workdir <run-dir> ...
+```
+
+That wrapper stages sources, writes or preserves source audit, builds this native runner's request, invokes this script, validates the output, and creates the receipt. This native runner remains the lower-level stateless model-call boundary.
+
 ## What The Runner Owns
 
 The native runner owns:
@@ -30,7 +39,7 @@ The runner does not create or manage API keys, parse private PDFs, build source 
 
 ## Request Contract
 
-The host/plugin/MCP creates a request JSON file after it has staged source files, extracted bounded text, and loaded the selected MDP prompt contract.
+The host/plugin/runner creates a request JSON file after it has staged source files, extracted bounded text, and loaded the selected MDP prompt contract. In proposal flows, `mdp-proposal-runner.mjs` does this with a single user message whose JSON payload contains only the prompt-declared input fields: `raw_opportunity`, `existing_pack_context`, `source_audit`, and `source_kind`.
 
 ```json
 {

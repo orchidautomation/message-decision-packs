@@ -35,16 +35,16 @@ const scenes: Scene[] = [
   },
   {
     eyebrow: "03 / runner boundary",
-    title: "The runner or MCP isolates normalization",
-    subtitle: "Only declared prompt inputs cross the model boundary, then the runner emits prompt-output and runner-audit artifacts.",
-    accent: "mdp.runner-audit.v0",
+    title: "The local runner stages normalization",
+    subtitle: "Default mock mode proves the artifact chain without claiming model isolation. Real pilots need native/headless evidence.",
+    accent: "mdp-proposal-runner.mjs",
     duration: 150,
     visual: "runner",
   },
   {
     eyebrow: "04 / CLI proof gates",
     title: "The CLI proves the local artifacts",
-    subtitle: "Prompt output, source audit, validation, runner audit, and pack manifest are hash-bound into a run receipt.",
+    subtitle: "Prompt output, source audit, validation, runner audit, and pack manifest are hash-bound into a receipt. Mock evidence blocks audit-grade.",
     accent: "mdp run-receipt --require-runner-audit",
     duration: 165,
     visual: "gates",
@@ -68,8 +68,8 @@ const scenes: Scene[] = [
   {
     eyebrow: "client video talk track",
     title: "MDP stores decision context. The CLI proves it.",
-    subtitle: "Use the demo fixture for workshops, but the CLI blocks it from audit-grade. Replace it with real MCP/native runner evidence for a pilot.",
-    accent: "messy files → .mdp → runner/MCP → CLI proof → review artifact",
+    subtitle: "Use mock mode for workshops; the CLI blocks it from audit-grade. Require real native/headless evidence before calling a pilot audit-grade.",
+    accent: "messy files → .mdp → local runner → CLI receipt → review artifact",
     duration: 135,
     visual: "closing",
   },
@@ -306,7 +306,7 @@ const RunnerBoundary: React.FC = () => {
         ))}
       </div>
       <div style={{ marginTop: 30, padding: "20px 22px", borderRadius: 20, background: "rgba(255,209,102,0.12)", color: colors.amber, fontSize: 25, lineHeight: 1.28 }}>
-        Demo fixture is blocked from audit-grade. Production uses MCP/native runner evidence.
+        Demo mock mode is blocked from audit-grade. Production needs real native/headless runner evidence.
       </div>
     </Panel>
   );
@@ -316,7 +316,7 @@ const CliGates: React.FC = () => {
   const gates = [
     ["validate-prompt-output", "refs resolve"],
     ["fit", "insufficient-context visible"],
-    ["run-receipt", "hash-bound audit"],
+    ["run-receipt", "blocked unless verified"],
     ["route", "load the right cards"],
   ];
   return (
@@ -372,7 +372,7 @@ const Guardrail: React.FC = () => {
 };
 
 const ClosingFlow: React.FC = () => {
-  const items = ["messy files", ".mdp", "runner/MCP", "CLI proof", "review artifact"];
+  const items = ["messy files", ".mdp", "local runner", "CLI receipt", "review artifact"];
   return (
     <Panel style={{ padding: 38 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, alignItems: "center" }}>

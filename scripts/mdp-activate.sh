@@ -105,6 +105,18 @@ native_runner_available() {
   return 1
 }
 
+proposal_runner_available() {
+  local candidate
+  for candidate in \
+    "${PLUGIN_ROOT:-}/scripts/mdp-proposal-runner.mjs" \
+    "$SCRIPT_DIR/mdp-proposal-runner.mjs"; do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 print_proposal_audit_readiness() {
   if [ ! -f "$TARGET_DIR/.mdp/prompts/normalize-opportunity.yaml" ]; then
     return 0
@@ -112,8 +124,14 @@ print_proposal_audit_readiness() {
 
   echo
   echo "MDP proposal audit readiness:"
+  if proposal_runner_available; then
+    echo "  Local proposal runner: available in the plugin/source bundle."
+    echo "  Inspect local runner steps with: node \"\${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs\" tools"
+  else
+    echo "  Local proposal runner: not found in the plugin/source bundle."
+  fi
   if native_runner_available; then
-    echo "  Native OpenAI runner: available in the plugin/source bundle."
+    echo "  Native OpenAI runner: available as the lower-level BYOK stateless API boundary."
   else
     echo "  Native OpenAI runner: not found in the plugin/source bundle."
   fi
@@ -125,6 +143,7 @@ print_proposal_audit_readiness() {
   fi
 
   echo "  No OpenAI key is required for MDP install, validation, receipts, fit/review, dry-runs, mocks, or hardened headless runner audits."
+  echo "  The local proposal runner is not a hosted MCP server; it is a local command surface for source staging, native/headless normalization, validation, receipts, and review probes."
   echo "  Audit-grade proposal reviews still need: mdp run-receipt --runner-audit ... --require-runner-audit."
   echo "  Hooks report readiness only; the CLI receipt is the blocking gate."
 }

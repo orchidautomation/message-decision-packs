@@ -2,7 +2,7 @@
 
 MDP is intentionally not the model runner. The plugin teaches the agent what to do, and the CLI validates/hash-gates the artifacts it receives. For production proposal or document review, the model call that turns messy source material into `mdp.prompt-output.v0` should run in a headless/stateless boundary, not inside the operator's current chat context.
 
-The strongest default boundary is a native stateless API call. This repo includes an optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs`, and Pluxx packages it into installed bundles under `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; see [Native API Normalization Runner](native-api-normalization-runner.md). Headless Codex, Claude Code, Cursor, and OpenCode recipes are fallback/adapter paths for hosts that need to use their own non-interactive agent runner.
+The strongest default boundary is a native stateless API call. This repo includes an optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs`, and Pluxx packages it into installed bundles under `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; see [Native API Normalization Runner](native-api-normalization-runner.md). For the proposal flow, `scripts/mdp-proposal-runner.mjs` is the local orchestration surface that stages sources, builds the native request, calls the runner, validates prompt output, creates the receipt, and runs review probes; see [Local Proposal Runner Surface](proposal-runner.md). Headless Codex, Claude Code, Cursor, and OpenCode recipes are fallback/adapter paths for hosts that need to use their own non-interactive agent runner.
 
 This lets the user keep a one-thread workshop UX while the implementation keeps two separate planes:
 
@@ -46,7 +46,7 @@ mdp --json run-receipt \
   --out <run-receipt.json>
 ```
 
-Without `--require-runner-audit`, `run-receipt` can still record a host assertion. For paid pilots, use `--require-runner-audit` so the flow blocks when the headless boundary is missing or malformed.
+Without `--require-runner-audit`, `run-receipt` can still record a host assertion. For paid pilots, use `--require-runner-audit` so the flow blocks when the headless boundary is missing or malformed. The local proposal runner always uses `--require-runner-audit`; its dry-run and mock modes are for request/fixture validation only and are never audit-grade.
 
 Demo, fixture, mock, or synthetic runner-audit artifacts are not audit-grade evidence. `run-receipt` blocks runner audits marked with `demo_fixture: true`, `fixture: true`, `mock_response: true`, or synthetic/mock/demo/fixture-only model names.
 

@@ -30,4 +30,4 @@ The output directory is gitignored. Commit the Remotion source, not rendered bin
 
 ## Notes
 
-This video uses only synthetic/public-safe MDP proposal-flow content. It repeats the same boundary as the CLI demo: the included runner-audit fixture is for workshop/video demonstration only, the CLI blocks it from `audit-grade`, and production pilots should replace it with a real MCP/native runner audit.
+This video uses only synthetic/public-safe MDP proposal-flow content. It repeats the same boundary as the CLI demo: the default walkthrough uses the local proposal runner in offline mock mode, so the receipt is blocked/non-audit-grade by design. The CLI blocks mock/fixture/synthetic runner evidence from `audit-grade`; production pilots need a real native/headless runner audit, or a future MCP wrapper that emits real runner evidence, plus an audit-grade `mdp run-receipt` result before claiming model-context isolation.

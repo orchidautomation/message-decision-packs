@@ -2,10 +2,12 @@ CARGO ?= cargo
 PYTHON ?= $(shell if [ -x "$(HOME)/.pyenv/versions/3.13.5/bin/python3" ]; then echo "$(HOME)/.pyenv/versions/3.13.5/bin/python3"; else command -v python3; fi)
 SKILL_VALIDATOR ?= $(HOME)/.codex/skills/.system/skill-creator/scripts/quick_validate.py
 PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py
+PYTHONDONTWRITEBYTECODE ?= 1
+export PYTHONDONTWRITEBYTECODE
 
-.PHONY: validate validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-pluxx-hooks validate-installers validate-llms install-cli demo
+.PHONY: validate validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-pluxx-hooks validate-installers validate-llms install-cli demo
 
-validate: validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-pluxx-hooks validate-installers validate-llms
+validate: validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-pluxx-hooks validate-installers validate-llms
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
@@ -46,6 +48,13 @@ validate-native-runner:
 	bash -n scripts/test-native-runner.sh
 	scripts/test-native-runner.sh
 
+validate-proposal-runner:
+	node --check scripts/mdp-proposal-runner.mjs
+	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
+	bash -n examples/proposal-flow-video/scripts/run-demo.sh
+	bash -n scripts/test-proposal-runner.sh
+	bash scripts/test-proposal-runner.sh
+
 validate-pluxx-hooks:
 	bash scripts/test-pluxx-hooks.sh
 
@@ -58,10 +67,14 @@ validate-llms:
 	@grep -q 'https://mdp.orchidlabs.dev/llms.txt' llms-full.txt
 
 validate-installers:
-	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/finalize-release-assets.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh scripts/test-native-runner.sh
+	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/finalize-release-assets.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh scripts/test-native-runner.sh scripts/test-proposal-runner.sh
+	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh
 	node --check scripts/finalize-release-manifest.mjs
 	node --check scripts/mdp-native-normalize-openai.mjs
+	node --check scripts/mdp-proposal-runner.mjs
+	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
 	scripts/test-install.sh
+	scripts/test-release-install-smoke.sh
 
 install-cli:
 	$(MAKE) -C cli install-local
