@@ -123,11 +123,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          install_home="$(mktemp -d)"
           version="${{ steps.version.outputs.version }}"
-          HOME="$install_home" MDP_INSTALL_DIR="$install_home/.local/bin" \
-            bash scripts/install.sh --version "$version" --cli --codex -y
-          "$install_home/.local/bin/mdp" --version
-          python3 scripts/skill-eval-harness.py \
-            --mdp-bin "$install_home/.local/bin/mdp" \
-            --installed-skills-root "$install_home/.codex/plugins/message-decision-packs/skills"
+          MDP_RELEASE_INSTALLER="release-assets/install.sh" scripts/release-install-smoke.sh "$version"

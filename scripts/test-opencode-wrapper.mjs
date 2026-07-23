@@ -88,6 +88,19 @@ assert(
     releaseWorkflow.includes('release-assets/release-manifest.json'),
   `Release workflow must publish, download, stage, finalize, and upload in order; got ${releaseSequenceIndexes.join(', ')}.`,
 )
+assert(
+  releaseWorkflow.includes('MDP_RELEASE_INSTALLER="release-assets/install.sh" scripts/release-install-smoke.sh "$version"'),
+  'Release workflow must smoke-test the staged release installer with the documented agents path.',
+)
+const releaseInstallSmoke = readFileSync(join(root, 'scripts/release-install-smoke.sh'), 'utf8')
+assert(
+  releaseInstallSmoke.includes('MDP_RELEASE_INSTALL_ARGS:---agents -y') &&
+    releaseInstallSmoke.includes('mdp-proposal-runner.mjs') &&
+    releaseInstallSmoke.includes('mdp-native-normalize-openai.mjs') &&
+    releaseInstallSmoke.includes('The local proposal runner is not a hosted MCP server') &&
+    releaseInstallSmoke.includes('Hooks report readiness only; the CLI receipt is the blocking gate.'),
+  'Release install smoke must exercise the documented --agents installer path and installed runner guardrails.',
+)
 const tempRoot = mkdtempSync(join(tmpdir(), 'mdp-opencode-wrapper-'))
 const remoteReleaseRoot = join(tempRoot, 'remote-release')
 const releaseRoot = join(tempRoot, 'release')
