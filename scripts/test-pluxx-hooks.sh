@@ -55,6 +55,16 @@ if ! printf '%s\n' "$proposal_output" | grep -F "MDP proposal audit readiness:" 
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
+if ! printf '%s\n' "$proposal_output" | grep -F "Local proposal runner: available in the plugin/source bundle." >/dev/null; then
+  echo "MDP activation must report local proposal runner availability for proposal packs." >&2
+  printf '%s\n' "$proposal_output" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$proposal_output" | grep -F "The local proposal runner is not a hosted MCP server" >/dev/null; then
+  echo "MDP activation must avoid implying a hosted MCP server exists." >&2
+  printf '%s\n' "$proposal_output" >&2
+  exit 1
+fi
 if ! printf '%s\n' "$proposal_output" | grep -F "OPENAI_API_KEY: not detected; only required for an optional real native OpenAI runner call." >/dev/null; then
   echo "MDP activation must explain that missing OPENAI_API_KEY only affects optional native runs." >&2
   printf '%s\n' "$proposal_output" >&2
