@@ -86,7 +86,7 @@ The proposal starter also includes proof-output draft examples under `examples/p
 
 The proposal starter does not create prospect rows or outbound fixtures. It is a synthetic proposal review profile for bid/no-bid, compliance, proof, red-team, and executive review workflows. Its `normalize-opportunity` prompt normalizes messy proposal/RFP context into bounded profile vocabulary for local validation; `verify-output` checks proof-carrying generated text against real pack IDs before the text is trusted. Neither command submits, scrapes, enriches, certifies, or manages proposal work.
 
-For a video-ready end-to-end walkthrough with messy synthetic source files, a generated proposal `.mdp/`, source-audit and prompt-output fixtures, run-receipt proof gates, route checks, proof-output verification, and a readable review layer, run `bash examples/proposal-flow-video/scripts/run-demo.sh` from the repository root. The demo's runner-audit fixture is synthetic; production runs should replace it with a native/headless runner or MCP-produced audit artifact.
+For a video-ready end-to-end walkthrough with messy synthetic source files, a generated proposal `.mdp/`, source-audit and prompt-output fixtures, run-receipt proof gates, route checks, proof-output verification, and a readable review layer, run `bash examples/proposal-flow-video/scripts/run-demo.sh` from the repository root. The demo's runner-audit fixture is synthetic and the CLI blocks it from `audit-grade`; production runs should replace it with a native/headless runner or MCP-produced audit artifact.
 
 The starter creates:
 

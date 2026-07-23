@@ -303,6 +303,8 @@ fn runner_audit_schema() -> Value {
         json!({"type": ["string", "null"]}),
     );
     properties.insert("mock_response".to_string(), json!({"type": "boolean"}));
+    properties.insert("demo_fixture".to_string(), json!({"type": "boolean"}));
+    properties.insert("fixture".to_string(), json!({"type": "boolean"}));
     properties.insert(
         "notes".to_string(),
         json!({"type": "array", "items": {"type": "string"}}),

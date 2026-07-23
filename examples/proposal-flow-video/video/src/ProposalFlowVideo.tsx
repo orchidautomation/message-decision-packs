@@ -68,7 +68,7 @@ const scenes: Scene[] = [
   {
     eyebrow: "client video talk track",
     title: "MDP stores decision context. The CLI proves it.",
-    subtitle: "Use the demo fixture for workshops. Replace the runner-audit fixture with a real MCP/native runner audit before calling a pilot audit-grade.",
+    subtitle: "Use the demo fixture for workshops, but the CLI blocks it from audit-grade. Replace it with real MCP/native runner evidence for a pilot.",
     accent: "messy files → .mdp → runner/MCP → CLI proof → review artifact",
     duration: 135,
     visual: "closing",
@@ -306,7 +306,7 @@ const RunnerBoundary: React.FC = () => {
         ))}
       </div>
       <div style={{ marginTop: 30, padding: "20px 22px", borderRadius: 20, background: "rgba(255,209,102,0.12)", color: colors.amber, fontSize: 25, lineHeight: 1.28 }}>
-        Demo uses a synthetic runner-audit fixture. Production uses MCP/native runner evidence.
+        Demo fixture is blocked from audit-grade. Production uses MCP/native runner evidence.
       </div>
     </Panel>
   );
