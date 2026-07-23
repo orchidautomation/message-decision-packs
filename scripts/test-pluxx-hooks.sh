@@ -67,8 +67,18 @@ if ! printf '%s\n' "$proposal_output" | grep -F "Local proposal runner: availabl
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "The local proposal runner is not a hosted MCP server" >/dev/null; then
-  echo "MDP activation must avoid implying a hosted MCP server exists." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "Local stdio MCP wrapper: available" >/dev/null; then
+  echo "MDP activation must report local stdio MCP wrapper availability for proposal packs." >&2
+  printf '%s\n' "$proposal_output" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$proposal_output" | grep -F "The bundled MCP is local stdio only, not a hosted or remote MCP service." >/dev/null; then
+  echo "MDP activation must avoid implying a hosted/remote MCP service exists." >&2
+  printf '%s\n' "$proposal_output" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$proposal_output" | grep -F "MCP transport alone is not audit-grade" >/dev/null; then
+  echo "MDP activation must explain MCP transport alone is not audit-grade." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi

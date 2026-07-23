@@ -117,6 +117,18 @@ proposal_runner_available() {
   return 1
 }
 
+proposal_mcp_available() {
+  local candidate
+  for candidate in \
+    "${PLUGIN_ROOT:-}/scripts/mdp-proposal-mcp-server.mjs" \
+    "$SCRIPT_DIR/mdp-proposal-mcp-server.mjs"; do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 print_proposal_audit_readiness() {
   if [ ! -f "$TARGET_DIR/.mdp/prompts/normalize-opportunity.yaml" ]; then
     return 0
@@ -129,6 +141,12 @@ print_proposal_audit_readiness() {
     echo "  Inspect local runner steps with: node \"\${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs\" tools"
   else
     echo "  Local proposal runner: not found in the plugin/source bundle."
+  fi
+  if proposal_mcp_available; then
+    echo "  Local stdio MCP wrapper: available as node \"${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs\"."
+    echo "  MCP tools: mdp_proposal_tools and mdp_proposal_run; both require explicit local file paths, not ambient chat text."
+  else
+    echo "  Local stdio MCP wrapper: not found in the plugin/source bundle."
   fi
   if native_runner_available; then
     echo "  Native OpenAI runner: available as the lower-level BYOK stateless API boundary."
@@ -143,8 +161,8 @@ print_proposal_audit_readiness() {
   fi
 
   echo "  No OpenAI key is required for MDP install, validation, receipts, fit/review, dry-runs, mocks, or hardened headless runner audits."
-  echo "  The local proposal runner is not a hosted MCP server; it is a local command surface for source staging, native/headless normalization, validation, receipts, and review probes."
-  echo "  Audit-grade proposal reviews still need: mdp run-receipt --runner-audit ... --require-runner-audit."
+  echo "  The bundled MCP is local stdio only, not a hosted or remote MCP service."
+  echo "  MCP transport alone is not audit-grade; audit-grade proposal reviews still need: mdp run-receipt --runner-audit ... --require-runner-audit."
   echo "  Hooks report readiness only; the CLI receipt is the blocking gate."
 }
 

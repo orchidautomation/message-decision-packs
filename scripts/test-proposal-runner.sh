@@ -65,7 +65,8 @@ for expected in [
     "mdp_review_proposal",
 ]:
     assert expected in names
-assert "not currently a hosted MCP implementation" in payload["note"]
+assert "bundled local stdio MCP wrapper" in payload["note"]
+assert "hosted or remote MCP" in payload["note"]
 PY
 
 node "$root/scripts/mdp-proposal-runner.mjs" run \

@@ -12,19 +12,27 @@ local sources
   -> optional fit/route review-support probes
 ```
 
-This is not a hosted MCP server. It exposes MCP-shaped local steps that a future MCP server can wrap:
+This runner is also wrapped by a bundled local stdio MCP server. It is not a hosted or remote MCP service.
 
 ```bash
 node scripts/mdp-proposal-runner.mjs tools
+node scripts/mdp-proposal-mcp-server.mjs
 ```
 
-The tool names are:
+The runner step names are:
 
 - `mdp_intake_sources`
 - `mdp_normalize_opportunity`
 - `mdp_validate_normalization`
 - `mdp_run_receipt`
 - `mdp_review_proposal`
+
+The stdio MCP server exposes two callable MCP tools:
+
+- `mdp_proposal_tools` — read-only inspection of the runner boundary contract.
+- `mdp_proposal_run` — file/path-only wrapper around `mdp-proposal-runner.mjs run`.
+
+`mdp_proposal_run` intentionally accepts local source file paths and source-audit paths, not raw chat text. MCP transport is only the call boundary; audit-grade status still comes from a valid runner audit plus `mdp run-receipt --require-runner-audit`.
 
 ## What It Does
 
@@ -77,6 +85,7 @@ Validate the local surface with:
 
 ```bash
 make validate-proposal-runner
+make validate-proposal-mcp
 ```
 
 ## Real Native Run
@@ -116,6 +125,7 @@ Installed Pluxx bundles package repo scripts, so hosts can use:
 
 ```bash
 node "${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs" ...
+node "${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs"
 ```
 
 The documented installer still installs release assets, not the current `main` branch:

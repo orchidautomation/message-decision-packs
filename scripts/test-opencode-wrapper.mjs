@@ -97,7 +97,8 @@ assert(
   releaseInstallSmoke.includes('MDP_RELEASE_INSTALL_ARGS:---agents -y') &&
     releaseInstallSmoke.includes('mdp-proposal-runner.mjs') &&
     releaseInstallSmoke.includes('mdp-native-normalize-openai.mjs') &&
-    releaseInstallSmoke.includes('The local proposal runner is not a hosted MCP server') &&
+    releaseInstallSmoke.includes('mdp-proposal-mcp-server.mjs') &&
+    releaseInstallSmoke.includes('The bundled MCP is local stdio only, not a hosted or remote MCP service') &&
     releaseInstallSmoke.includes('Hooks report readiness only; the CLI receipt is the blocking gate.'),
   'Release install smoke must exercise the documented --agents installer path and installed runner guardrails.',
 )
@@ -297,8 +298,9 @@ try {
   }).stdout
   assert(
     codexTools.includes('mdp_run_receipt') &&
-      codexTools.includes('not currently a hosted MCP implementation'),
-    'Installed Codex runner tools must preserve receipt and non-hosted MCP guardrails.',
+      codexTools.includes('bundled local stdio MCP wrapper') &&
+      codexTools.includes('hosted or remote MCP'),
+    'Installed Codex runner tools must preserve receipt and local/hosted MCP guardrails.',
   )
   const codexPycache = spawnSync(
     'bash',

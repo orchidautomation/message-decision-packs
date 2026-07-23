@@ -72,10 +72,10 @@ Relevant results:
 - Codex hook manifest generation, OpenCode plugin-root separation, and `PLUXX_HOOK_WORKSPACE_ROOT` propagation are covered by `scripts/test-pluxx-hooks.sh` and pass with `0.1.36`.
 - The hook fixture now builds real release assets, installs the generated top-level OpenCode wrapper into an isolated location, launches it from a parent directory, selects a different MDP workspace, and proves activation preserves both the installed plugin root and selected workspace root.
 - Pluxx's generic semantic rubric is retained as a warning gate (`warningThreshold: 60`, `failureThreshold: 40`) because MDP is a migrated/manual plugin with repo-owned skill evals in `plugin/skill-evals/`.
-- Migrated scaffold hook metadata now uses the current `safe` mode values. MDP is a plugin-migrated project with a placeholder MCP source, so `pluxx sync` is not a supported maintenance path unless MDP later adopts a real MCP source.
+- Migrated scaffold hook metadata now uses the current `safe` mode values. MDP is a plugin-migrated project; the repo ships its own local stdio MCP script, but does not use Pluxx as the source of truth for generated MCP tools, so `pluxx sync` is not a supported maintenance path unless MDP later adopts a Pluxx-managed MCP source.
 - New Claude Code description-length diagnostics identified five skills whose discovery descriptions exceeded the 250-character display limit; the root and `plugin/skills/` copies were shortened together.
 - CI now runs the MDP-specific Pluxx hook fixture, rejects future skill-description truncation, and checks that eval fixtures with `description_under_test` stay aligned with their skill frontmatter.
-- Codex cache secret scanning, stdio MCP runtime launchers, MCP workspace-root preservation, and custom-agent registration require no MDP-specific config because this plugin declares no MCP servers, install-time secrets, or custom agents.
+- Codex cache secret scanning, stdio MCP runtime launcher registration, MCP workspace-root preservation, and custom-agent registration require no MDP-specific Pluxx config because this plugin declares no auto-registered MCP servers, install-time secrets, or custom agents. The local proposal MCP wrapper is packaged as a repo script.
 - MDP keeps its top-level installer because it coordinates the Rust CLI and multiple Pluxx host bundles. Pluxx-generated host installers and release assets remain part of the release workflow.
 
 Validation commands for this refresh:
