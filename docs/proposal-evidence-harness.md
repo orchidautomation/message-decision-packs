@@ -21,6 +21,10 @@ The harness writes a bounded report under
 | `hash-mismatch` | `blocked` | Validation and runner-audit substitution are detected by exact hashes. |
 | `prompt-injection` | `blocked` | Injected text without a matching audited snippet fails prompt-output validation. |
 | `unsupported-proof` | `blocked` | An unaudited compliance assertion fails source validation and deterministic claim checking. |
+| `source-audit-citation-mismatch` | `blocked` | A cited ref whose audited locator/snippet was replaced cannot support otherwise valid-looking output. |
+| `ambient-chat-fact` | `blocked` | A fact copied from surrounding chat but absent from approved source refs remains untrusted. |
+| `ocr-summary-mismatch` | `blocked` | A normalized OCR summary must match approved audited bytes; semantic plausibility is insufficient. |
+| `missing-evidence-as-gap` | fixture-only contract acceptance | Absent evidence stays in `missing_required` and human-readable gaps, makes fit readiness false, and never becomes a sourced signal. |
 
 ## Critical Interpretation
 
@@ -43,7 +47,19 @@ The JSON report includes:
 - `provider_calls: 0`;
 - hashes for the schemas and each case artifact;
 - exact validation/receipt decisions and issue codes;
+- a machine-readable threat-to-case coverage map;
 - the explicit contract-only caveat.
+
+The adjacent runner and MCP suites cover boundaries intentionally outside this
+fixture harness: the runner rejects a caller-supplied source audit whose refs
+do not bind to staged source bytes, while the MCP adapter rejects raw
+`source_text` and accepts explicit local paths only. Run all three gates:
+
+```bash
+make validate-proposal-evidence-harness
+make validate-proposal-runner
+make validate-proposal-mcp
+```
 
 All committed fixtures are synthetic/public-safe. Extend this harness rather
 than adding customer documents, raw transcripts, private RFPs, or hand-waved

@@ -563,7 +563,22 @@ fn validate_prompt_output_refs_against_source_audit(
             continue;
         }
         let input_root = reference_input_root(&base_ref);
-        if !declared_inputs.contains(input_root) || source_audit_exempt_input(input_root) {
+        if !declared_inputs.contains(input_root) {
+            if source_ref.path.contains("/normalized_prospect/signals/")
+                || source_ref.path.contains("/rejected_claims/")
+            {
+                issues.push(issue(
+                    "prompt_output_source_input_undeclared",
+                    "error",
+                    source_ref.path,
+                    format!(
+                        "source reference {base_ref} uses input {input_root}, which is not declared by the prompt"
+                    ),
+                ));
+            }
+            continue;
+        }
+        if source_audit_exempt_input(input_root) {
             continue;
         }
         let Some(audit_ref) = audit.refs.get(&base_ref) else {
@@ -2310,6 +2325,14 @@ mod tests {
         "confidence": "medium",
         "freshness": "synthetic",
         "state_as": "supplied"
+      },
+      {
+        "id": "ambient-chat-fact",
+        "title": "Fact copied from undeclared ambient chat",
+        "source": "conversation.customer_fact: unsupported evaluator requirement",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
       }
     ]
   },
@@ -2395,6 +2418,7 @@ mod tests {
         assert_eq!(result["valid"], false);
         assert!(codes.contains(&"prompt_output_source_snippet_missing"));
         assert!(codes.contains(&"prompt_output_source_ref_missing"));
+        assert!(codes.contains(&"prompt_output_source_input_undeclared"));
 
         let _ = std::fs::remove_dir_all(root);
     }

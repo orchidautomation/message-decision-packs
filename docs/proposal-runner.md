@@ -180,8 +180,9 @@ make validate-proposal-mcp
 ```
 
 The [deterministic proposal evidence harness](proposal-evidence-harness.md)
-exercises positive contract acceptance and negative ambient/mock/hash/injection/
-unsupported-proof cases without a provider call. Its positive receipt is
+exercises positive contract acceptance plus negative ambient/raw-chat,
+mock/hash, injection, citation-tamper, OCR-summary, unsupported-proof, and
+missing-evidence cases without a provider call. Its positive receipts are
 fixture-only contract proof, never production invocation evidence.
 
 ## Real Native Run
