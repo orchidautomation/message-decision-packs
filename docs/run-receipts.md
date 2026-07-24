@@ -6,6 +6,11 @@ Use it when the operator wants an audit-grade proposal or document-review flow, 
 
 A receipt assurance value describes one invocation; it is not a public integration-support claim. Consult the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix) before describing a runner as verified. All currently documented named runners are recipe-only, while `custom-headless` is unsupported and mock/demo evidence is fixture/mock-only.
 
+For public demos, apply the
+[Proposal Demo Go/No-Go Gate](proposal-demo-go-no-go.md) before recording or
+presenting a receipt. A mock run is safe to show only when its blocked decision
+and synthetic status are explicit.
+
 ## What It Proves
 
 The receipt records:

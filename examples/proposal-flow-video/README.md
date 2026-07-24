@@ -6,6 +6,10 @@ It starts with intentionally messy source files, creates a fresh proposal `.mdp/
 
 > Scope note: the default demo runs in offline mock mode, so it should produce a blocked/non-audit-grade receipt while still showing the full artifact chain. It demonstrates the exact `mdp.runner-audit.v0` contract that the local runner or future MCP wrapper must emit and how the CLI binds hashes, but the CLI intentionally blocks demo/fixture/mock/synthetic evidence from `audit-grade`. For a paid pilot or real client review, switch to a real native/headless runner, or a future MCP wrapper that emits real runner evidence, and require an audit-grade receipt before calling the review isolated.
 
+Before recording or presenting it, complete the
+[Proposal Demo Go/No-Go Gate](../../docs/proposal-demo-go-no-go.md). The final
+client-video decision is human-owned even when the technical checks pass.
+
 ## Run the CLI walkthrough
 
 From the repository root:
@@ -67,6 +71,9 @@ The MP4 is written to `examples/proposal-flow-video/video/out/proposal-flow-vide
 
 ## Talk track
 
+- Use the exact safe narration in the
+  [Proposal Demo Go/No-Go Gate](../../docs/proposal-demo-go-no-go.md) for the
+  current mock walkthrough.
 - “MDP is local decision context, not a proposal writer or submission system.”
 - “The source audit is the bridge from messy PDFs/docs into bounded refs the CLI can check.”
 - “The local runner surface owns source staging, the fresh stateless model-call boundary, validation, and the receipt chain; a future MCP wrapper should emit the same runner-audit evidence.”

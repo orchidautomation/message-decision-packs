@@ -44,7 +44,13 @@ copy_fixture() {
 
 printf '\n== Proposal flow video demo ==\n'
 printf 'workdir: %s\n' "$workdir"
-printf 'repo:    %s\n\n' "$repo_root"
+if [[ -n "${MDP_BIN:-}" ]]; then
+  printf 'CLI:     installed/explicit binary override\n'
+else
+  printf 'CLI:     source-tree checkout\n'
+fi
+printf 'sources: synthetic fixtures only\n'
+printf 'gate:    docs/proposal-demo-go-no-go.md\n\n'
 
 printf '1) Messy sources staged\n'
 find "$workdir/messy-sources" -maxdepth 1 -type f | sort | sed 's#^#   - #'
@@ -217,5 +223,9 @@ print(f"receipt decision:    {receipt['decision']} / runner assurance: {receipt[
 print(f"mock response:       {runner.get('mock_response', False)} (CLI blocks mock/fixture evidence; production needs real native/headless runner evidence)")
 print(f"proof decision:      {proof['data']['decision']} / valid: {proof['data']['valid']}")
 print(f"unsafe claim valid:  {claim['data']['valid']} / guardrails: {len(claim['data']['guardrail_hits'])}")
+if runner_result['mode'] == 'mock' and receipt['decision'] == 'blocked' and runner.get('mock_response') is True:
+    print("presentation gate:   GREEN — safe synthetic demo; use the required mock narration")
+else:
+    print("presentation gate:   YELLOW/RED — stop for human go/no-go review")
 print(f"\nOpen: {root / 'proposal-review.md'}")
 PY

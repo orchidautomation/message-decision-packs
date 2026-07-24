@@ -91,6 +91,11 @@ Mock mode intentionally writes native-runner audit evidence with `mock_response:
 
 The default public video uses this synthetic mock path. Label it mock/non-audit-grade. Replace that label only for a real invocation whose own required runner-audit receipt is audit-grade; do not reuse fixture artifacts as proof.
 
+Before recording or sharing that walkthrough, use the
+[Proposal Demo Go/No-Go Gate](proposal-demo-go-no-go.md). It defines the
+red/yellow/green evidence states, exact safe narration for the mock path,
+screen-recording redactions, and the human-owned final go/no-go decision.
+
 Validate the local surface with:
 
 ```bash
