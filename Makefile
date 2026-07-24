@@ -55,6 +55,7 @@ validate-native-runner:
 validate-proposal-runner:
 	node --check scripts/mdp-proposal-runner.mjs
 	node --test scripts/test-proposal-runner-modules.mjs
+	node --test scripts/test-proposal-readiness-report.mjs
 	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
 	bash -n examples/proposal-flow-video/scripts/run-demo.sh
 	bash -n scripts/test-proposal-runner.sh

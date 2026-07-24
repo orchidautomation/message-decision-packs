@@ -52,6 +52,7 @@ import {
   writeJsonAtomic,
   writeText,
 } from './lib/proposal-runner-runtime.mjs'
+import { buildProposalReadinessReport } from './lib/proposal-readiness-report.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
@@ -772,6 +773,28 @@ const parseCliData = (path) => {
   return value.data || value
 }
 
+const persistRunnerResult = ({
+  paths,
+  result,
+  validation = null,
+  receipt = null,
+  runnerAudit = null,
+  sourceIntake,
+}) => {
+  result.readiness_report = paths.readinessReport
+  writeJson(paths.result, result)
+  const report = buildProposalReadinessReport({
+    result,
+    validation,
+    receipt,
+    runnerAudit,
+    sourceIntake,
+    paths,
+  })
+  writeJson(paths.readinessReport, report)
+  return report
+}
+
 const run = (args) => {
   if (!args.pack) fail(`Missing --pack\n\n${usage()}`)
   if (!args.workdir) fail(`Missing --workdir\n\n${usage()}`)
@@ -831,6 +854,7 @@ const run = (args) => {
     routeBidNoBid: join(artifactsDir, 'route-bid-no-bid-review.json'),
     routeBidNoBidStderr: join(artifactsDir, 'route-bid-no-bid-review.stderr'),
     result: join(artifactsDir, 'proposal-runner-result.json'),
+    readinessReport: join(artifactsDir, 'proposal-readiness-report.json'),
   }
 
   const stagedSources = stageSources(args.sources, workdir, args.maxSourceBytes)
@@ -952,7 +976,7 @@ const run = (args) => {
         'Generated source-intake entries remain candidate state; only an explicitly supplied operator-approved ledger may authorize a real native run.',
       ],
     }
-    writeJson(paths.result, result)
+    persistRunnerResult({ paths, result, sourceIntake })
     finalizeRunManifest({ status: 'completed', decision: result.decision })
     console.log(JSON.stringify(result, null, 2))
     return
@@ -1150,7 +1174,14 @@ const run = (args) => {
       'The current surface is a host-neutral local runner command set also exposed by the bundled local stdio MCP wrapper; it is not a hosted or remote MCP service.',
     ],
   }
-  writeJson(paths.result, result)
+  persistRunnerResult({
+    paths,
+    result,
+    validation: validationData,
+    receipt: receiptData,
+    runnerAudit: maybeReadJson(paths.runnerAudit),
+    sourceIntake,
+  })
   finalizeRunManifest({ status: 'completed', decision })
   console.log(JSON.stringify(result, null, 2))
   if (args.requireAuditGrade && decision !== 'audit-grade') {

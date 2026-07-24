@@ -28,6 +28,7 @@ mdp --json schema runner-audit
 mdp --json schema run-receipt
 mdp --json schema proposal-run-manifest
 mdp --json schema proposal-runner-result
+mdp --json schema proposal-readiness-report
 mdp --json schema proposal-mcp-run-result
 ```
 
@@ -126,8 +127,16 @@ The runner:
 - runs `mdp validate-prompt-output --source-audit`;
 - runs `mdp run-receipt --runner-audit ... --require-runner-audit`;
 - optionally runs local `fit` and `route` probes for review support.
+- writes `artifacts/proposal-readiness-report.json` with deterministic blockers,
+  warnings, and SHA-256 evidence anchors.
 
 It does not parse PDFs, prove OCR quality, browse, enrich, scrape, read `.env` files, create API keys, write proposals, submit proposals, approve compliance, or prove semantic truth beyond the supplied artifacts.
+
+The readiness report is a machine-readable review queue, not a truth score.
+`confidence.level` describes how completely findings are anchored to persisted
+artifacts. It does not estimate whether a proposal claim is true. The
+`run-receipt` decision remains the audit-grade gate; readiness never overrides
+a blocked or advisory receipt.
 
 ## Offline Dry Run
 

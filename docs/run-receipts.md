@@ -101,6 +101,7 @@ mdp --json schema source-audit
 mdp --json schema native-normalize-request
 mdp --json schema prompt-output
 mdp --json schema proposal-runner-result
+mdp --json schema proposal-readiness-report
 mdp --json schema proposal-mcp-run-result
 ```
 
@@ -117,6 +118,11 @@ The surrounding workdir lifecycle is recorded separately in
 `.mdp-proposal-run.json` (`mdp --json schema proposal-run-manifest`). It binds
 the files produced by the invocation and blocks partial/concurrent reuse, but it
 does not replace the semantic assurance decision in `mdp.run-receipt.v0`.
+
+The runner also writes `artifacts/proposal-readiness-report.json`. Its
+structured findings and hash anchors make blockers easier to review, but its
+confidence field measures evidence anchoring—not claim truth, compliance, or
+submission approval. It cannot upgrade the receipt decision.
 
 For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the schema-accepted isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`. Schema acceptance does not make a runner a maintained or verified MDP integration:
 

@@ -87,12 +87,19 @@ mdp --json schema runner-audit
 mdp --json schema run-receipt
 mdp --json schema proposal-run-manifest
 mdp --json schema proposal-runner-result
+mdp --json schema proposal-readiness-report
 mdp --json schema proposal-mcp-run-result
 ```
 
 Schema validity proves shape only. It does not approve a source, prove a model
 call occurred, upgrade fixture/mock/demo evidence, or make MCP transport
 audit-grade.
+
+When the runner emits `artifacts/proposal-readiness-report.json`, use its
+structured findings as the review queue and verify referenced anchor hashes.
+Treat `confidence` only as evidence-anchoring strength, never as a probability
+that a claim is true. The report cannot override a blocked/advisory
+`run-receipt`, certify compliance, or approve submission.
 
 The repository's deterministic proposal evidence harness may emit a positive
 `audit-grade` receipt solely to test contract acceptance. Its report is marked

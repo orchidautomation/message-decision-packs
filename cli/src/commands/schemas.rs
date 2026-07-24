@@ -2,9 +2,9 @@ use crate::cli::SchemaTarget;
 use crate::constants::{
     FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF,
     PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
-    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
-    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
+    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
+    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -83,6 +83,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         }
         SchemaTarget::ProposalRunManifest => proposal_run_manifest_schema(),
         SchemaTarget::ProposalRunnerResult => proposal_runner_result_schema(),
+        SchemaTarget::ProposalReadinessReport => proposal_readiness_report_schema(),
         SchemaTarget::ProposalMcpRunResult => proposal_mcp_run_result_schema(),
         SchemaTarget::RunReceipt => run_receipt_schema(),
         SchemaTarget::RunnerAudit => runner_audit_schema(),
@@ -500,6 +501,7 @@ fn proposal_runner_result_schema() -> Value {
             "runner_assurance",
             "run_id",
             "run_manifest",
+            "readiness_report",
             "workdir",
             "artifacts",
             "steps",
@@ -529,6 +531,7 @@ fn proposal_runner_result_schema() -> Value {
             },
             "run_id": {"type": "string", "pattern": "\\S"},
             "run_manifest": {"type": "string", "pattern": "\\S"},
+            "readiness_report": {"type": "string", "pattern": "\\S"},
             "workdir": {"type": "string"},
             "artifacts": {"type": "object", "additionalProperties": {"type": "string"}},
             "steps": {
@@ -547,6 +550,98 @@ fn proposal_runner_result_schema() -> Value {
                 "type": "array",
                 "minItems": 1,
                 "items": {"type": "string"}
+            }
+        }
+    })
+}
+
+fn proposal_readiness_report_schema() -> Value {
+    let confidence = json!({
+        "type": "object",
+        "required": ["level", "basis", "anchor_ids"],
+        "additionalProperties": false,
+        "properties": {
+            "level": {"enum": ["low", "medium", "high"]},
+            "basis": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "Explains artifact anchoring only; this is not a probability that a claim is true."
+            },
+            "anchor_ids": {
+                "type": "array",
+                "items": {"type": "string", "pattern": "\\S"},
+                "uniqueItems": true
+            }
+        }
+    });
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Proposal Readiness Report v0",
+        "description": "Deterministic proposal artifact-state summary. It does not certify semantic truth, compliance, legal approval, or submission readiness.",
+        "type": "object",
+        "required": ["contract", "readiness", "summary", "confidence", "anchors", "findings", "caveats"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": PROPOSAL_READINESS_REPORT_CONTRACT},
+            "readiness": {
+                "type": "object",
+                "required": ["status", "audit_grade", "decision", "runner_assurance"],
+                "additionalProperties": false,
+                "properties": {
+                    "status": {"enum": ["ready", "blocked", "advisory"]},
+                    "audit_grade": {"type": "boolean"},
+                    "decision": {"enum": ["not-run", "audit-grade", "advisory", "blocked"]},
+                    "runner_assurance": {"type": "string", "pattern": "\\S"}
+                }
+            },
+            "summary": {
+                "type": "object",
+                "required": ["blocker_count", "warning_count", "finding_count", "anchor_count"],
+                "additionalProperties": false,
+                "properties": {
+                    "blocker_count": {"type": "integer", "minimum": 0},
+                    "warning_count": {"type": "integer", "minimum": 0},
+                    "finding_count": {"type": "integer", "minimum": 0},
+                    "anchor_count": {"type": "integer", "minimum": 0}
+                }
+            },
+            "confidence": confidence.clone(),
+            "anchors": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["id", "kind", "path", "sha256"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": {"type": "string", "pattern": "\\S"},
+                        "kind": {"type": "string", "pattern": "\\S"},
+                        "path": {"type": "string", "pattern": "\\S"},
+                        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                    }
+                }
+            },
+            "findings": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["id", "code", "category", "severity", "status", "summary", "source_path", "confidence"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": {"type": "string", "pattern": "\\S"},
+                        "code": {"type": "string", "pattern": "\\S"},
+                        "category": {"enum": ["evidence", "runner-boundary", "review-readiness", "validation"]},
+                        "severity": {"enum": ["blocker", "warning"]},
+                        "status": {"const": "open"},
+                        "summary": {"type": "string", "pattern": "\\S"},
+                        "source_path": {"type": ["string", "null"]},
+                        "confidence": confidence
+                    }
+                }
+            },
+            "caveats": {
+                "type": "array",
+                "minItems": 2,
+                "items": {"type": "string", "pattern": "\\S"}
             }
         }
     })
@@ -2258,6 +2353,22 @@ mod tests {
 
     #[test]
     fn proposal_evidence_schemas_expose_versioned_contracts_and_caveats() {
+        let readiness = schema(SchemaTarget::ProposalReadinessReport);
+        assert_eq!(
+            readiness["properties"]["contract"]["const"],
+            PROPOSAL_READINESS_REPORT_CONTRACT
+        );
+        assert_eq!(
+            readiness["properties"]["findings"]["items"]["properties"]["confidence"]["required"],
+            json!(["level", "basis", "anchor_ids"])
+        );
+        assert!(
+            readiness["description"]
+                .as_str()
+                .unwrap()
+                .contains("does not certify")
+        );
+
         let source_intake = schema(SchemaTarget::SourceIntake);
         assert_eq!(
             source_intake["properties"]["contract"]["const"],

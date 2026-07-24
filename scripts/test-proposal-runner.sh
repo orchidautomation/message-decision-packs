@@ -683,4 +683,17 @@ assert receipt["decision"] == "blocked"
 assert receipt["runner"]["assurance"] == "invalid"
 PY
 
+python3 - "$tmp_dir/dry-run/artifacts/proposal-runner-result.json" "$tmp_dir/dry-run/artifacts/proposal-readiness-report.json" "$tmp_dir/demo/artifacts/proposal-readiness-report.json" <<'PY'
+import json, pathlib, sys
+result = json.load(open(sys.argv[1]))
+dry = json.load(open(sys.argv[2]))
+demo = json.load(open(sys.argv[3]))
+assert pathlib.Path(result["readiness_report"]) == pathlib.Path(sys.argv[2])
+assert dry["contract"] == "mdp.proposal-readiness-report.v0"
+assert dry["readiness"]["status"] == "blocked"
+assert "non_native_evidence" in [finding["code"] for finding in dry["findings"]]
+assert demo["readiness"]["status"] == "blocked"
+assert all(len(anchor["sha256"]) == 64 for anchor in demo["anchors"])
+PY
+
 echo '{"ok":true,"contract":"mdp.proposal-runner-test.v0"}'
