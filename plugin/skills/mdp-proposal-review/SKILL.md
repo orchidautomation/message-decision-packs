@@ -52,6 +52,24 @@ If PDF/doc extraction produced a bounded `mdp.source-audit.v0` ledger, include i
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON --source-audit SOURCE_AUDIT_JSON
 ```
 
+Before creating, repairing, or accepting proposal evidence JSON, inspect the
+CLI-owned contracts rather than copying a fixture shape:
+
+```bash
+mdp --json schema source-intake
+mdp --json schema source-audit
+mdp --json schema native-normalize-request
+mdp --json schema prompt-output
+mdp --json schema runner-audit
+mdp --json schema run-receipt
+mdp --json schema proposal-runner-result
+mdp --json schema proposal-mcp-run-result
+```
+
+Schema validity proves shape only. It does not approve a source, prove a model
+call occurred, upgrade fixture/mock/demo evidence, or make MCP transport
+audit-grade.
+
 For audit-grade review, require a runner receipt after validation:
 
 ```bash

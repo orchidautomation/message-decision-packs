@@ -16,6 +16,24 @@ This runner is also wrapped by a bundled local stdio MCP server. It is not a hos
 
 The native runner path is currently `recipe-only`. The MCP wrapper is transport, not verification. See the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix); do not infer a verified integration from tool availability, a runner identifier, or schema-valid audit JSON.
 
+Inspect the versioned proposal evidence contracts directly:
+
+```bash
+mdp --json schema source-intake
+mdp --json schema source-audit
+mdp --json schema native-normalize-request
+mdp --json schema prompt-output
+mdp --json schema runner-audit
+mdp --json schema run-receipt
+mdp --json schema proposal-runner-result
+mdp --json schema proposal-mcp-run-result
+```
+
+`mdp --json capabilities` lists the same targets under
+`proposal_evidence_contracts`, including the required-artifact purpose and
+fixture/transport caveats. Scripts and MCP clients should consume these
+contracts instead of inferring shapes from examples.
+
 ```bash
 node scripts/mdp-proposal-runner.mjs tools
 node scripts/mdp-proposal-mcp-server.mjs
@@ -40,7 +58,11 @@ The stdio MCP server exposes two callable MCP tools:
 
 A path is not approval. Under the [proposal source import and approval contract](orchid/decisions/2026-07-24-proposal-source-import-and-approval-contract.md), chat, pasted text, email/Drive exports, PDFs, OCR, and importer output begin as unblessed input. A maintained importer may create a bounded local candidate, but only a human operator may approve its exact hash, pack source ID, privacy class, and review purpose. A `mdp.source-audit.v0` remains a citation ledger rather than an approval record.
 
-The current runner predates the first-class `mdp.source-intake.v0` ledger and receipt binding planned in MDP-124/MDP-126. Synthetic mock/dry-run use remains valid when labeled non-audit-grade, and real synthetic runner proof remains separate. Do not describe a current path-only real client-source run as proving source approval.
+The CLI now publishes the first-class `mdp.source-intake.v0` schema, but the
+current runner and receipt do not yet create or bind that ledger. Synthetic
+mock/dry-run use remains valid when labeled non-audit-grade, and real synthetic
+runner proof remains separate. Do not describe a current path-only real
+client-source run as proving source approval.
 
 ## What It Does
 

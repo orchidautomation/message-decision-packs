@@ -20,8 +20,18 @@ helper_audit="$tmp_dir/helper-runner-audit.json"
 helper_stdout="$tmp_dir/helper.stdout.json"
 helper_receipt="$tmp_dir/helper-receipt.json"
 helper_receipt_stdout="$tmp_dir/helper-receipt.stdout.json"
+source_intake_schema="$tmp_dir/source-intake.schema.json"
+source_audit_schema="$tmp_dir/source-audit.schema.json"
+native_request_schema="$tmp_dir/native-normalize-request.schema.json"
+prompt_output_schema="$tmp_dir/prompt-output.schema.json"
+runner_result_schema="$tmp_dir/proposal-runner-result.schema.json"
 
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- init --template proposal --dir "$pack" > "$tmp_dir/init.json"
+cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema source-intake > "$source_intake_schema"
+cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema source-audit > "$source_audit_schema"
+cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema native-normalize-request > "$native_request_schema"
+cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema prompt-output > "$prompt_output_schema"
+cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema proposal-runner-result > "$runner_result_schema"
 
 python3 - "$root/examples/proposal-flow-video/fixtures/normalize-opportunity-output.json" "$mock_response" "$minimal_attrs_output" <<'PY'
 import copy, json, sys
@@ -77,12 +87,21 @@ node "$root/scripts/mdp-proposal-runner.mjs" run \
   --source-kind synthetic-example \
   --dry-run > "$dry_result"
 
-python3 - "$dry_result" "$tmp_dir/dry-run/artifacts/native-normalize-request.json" "$tmp_dir/dry-run/artifacts/source-audit.json" <<'PY'
+python3 - "$dry_result" "$tmp_dir/dry-run/artifacts/native-normalize-request.json" "$tmp_dir/dry-run/artifacts/source-audit.json" "$source_intake_schema" "$source_audit_schema" "$native_request_schema" "$prompt_output_schema" "$runner_result_schema" <<'PY'
 import json, sys
 result = json.load(open(sys.argv[1]))
 request = json.load(open(sys.argv[2]))
 source_audit = json.load(open(sys.argv[3]))
+source_intake_schema = json.load(open(sys.argv[4]))["data"]
+source_audit_schema = json.load(open(sys.argv[5]))["data"]
+native_request_schema = json.load(open(sys.argv[6]))["data"]
+prompt_output_schema = json.load(open(sys.argv[7]))["data"]
+runner_result_schema = json.load(open(sys.argv[8]))["data"]
 payload = json.loads(request["input"][0]["content"])
+
+def assert_required_keys(value, schema):
+    missing = sorted(set(schema["required"]) - set(value))
+    assert not missing, f"{schema.get('title')} missing required keys: {missing}"
 
 def assert_openai_strict_schema(schema, path="#"):
     assert "oneOf" not in schema, f"{path} must use OpenAI-supported anyOf, not oneOf"
@@ -133,6 +152,19 @@ assert sorted(missing_object["properties"].keys()) == ["field", "path", "reason"
 assert source_audit["contract"] == "mdp.source-audit.v0"
 assert source_audit["refs"][0]["ref"] == "raw_opportunity.sources[0]"
 assert source_audit["refs"][0]["source_id"] == "synthetic-rfp-summary"
+assert source_audit["contract"] == source_audit_schema["properties"]["contract"]["const"]
+assert request["contract"] == native_request_schema["properties"]["contract"]["const"]
+assert result["contract"] == runner_result_schema["properties"]["contract"]["const"]
+assert prompt_output_schema["properties"]["contract"]["const"] == "mdp.prompt-output.v0"
+assert source_intake_schema["properties"]["contract"]["const"] == "mdp.source-intake.v0"
+assert "Only a human operator" in source_intake_schema["description"]
+for value, schema in [
+    (source_audit, source_audit_schema),
+    (request, native_request_schema),
+    (result, runner_result_schema),
+]:
+    assert_required_keys(value, schema)
+assert "cannot be audit-grade" in runner_result_schema["properties"]["mode"]["description"]
 PY
 
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json validate-prompt-output \

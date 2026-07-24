@@ -1,7 +1,9 @@
 use crate::cli::SchemaTarget;
 use crate::constants::{
-    FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, RUNNER_AUDIT_CONTRACT,
+    FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF,
+    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
+    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -64,6 +66,22 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::Prompt => prompt_schema(card_kinds),
         SchemaTarget::ProofOutput => proof_output_schema(),
         SchemaTarget::ProofOutputDraft => proof_output_draft_schema(),
+        SchemaTarget::SourceIntake => source_intake_schema(),
+        SchemaTarget::SourceAudit => source_audit_schema(),
+        SchemaTarget::NativeNormalizeRequest => native_normalize_request_schema(),
+        SchemaTarget::PromptOutput => {
+            let mut value = prompt_output_schema(card_kinds);
+            if let Some(object) = value.as_object_mut() {
+                object.insert(
+                    "$schema".to_string(),
+                    json!("https://json-schema.org/draft/2020-12/schema"),
+                );
+                object.insert("title".to_string(), json!("MDP Prompt Output v0"));
+            }
+            value
+        }
+        SchemaTarget::ProposalRunnerResult => proposal_runner_result_schema(),
+        SchemaTarget::ProposalMcpRunResult => proposal_mcp_run_result_schema(),
         SchemaTarget::RunReceipt => run_receipt_schema(),
         SchemaTarget::RunnerAudit => runner_audit_schema(),
         SchemaTarget::Brief => brief_schema(),
@@ -124,6 +142,321 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
     }
 }
 
+fn source_intake_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Source Intake v0",
+        "description": "Local candidate, approval, and derivation state for exact source bytes. Only a human operator may create an approved state. This contract is not compliance or regulated-data authorization.",
+        "type": "object",
+        "required": ["contract", "entries"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": SOURCE_INTAKE_CONTRACT},
+            "entries": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "candidate_id",
+                        "state",
+                        "artifact",
+                        "origin",
+                        "privacy_class",
+                        "derivation",
+                        "truncated",
+                        "warnings"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "candidate_id": {"type": "string", "pattern": "\\S"},
+                        "state": {
+                            "enum": ["candidate", "approved", "rejected", "revoked", "superseded"],
+                            "description": "Agents/importers may create candidate state only. Approval, rejection, revocation, and supersession are human-governed transitions."
+                        },
+                        "source_id": {
+                            "type": "string",
+                            "pattern": "\\S",
+                            "description": "Pack source ID. Required before approved bytes may feed proposal normalization."
+                        },
+                        "artifact": {
+                            "type": "object",
+                            "required": ["path", "sha256", "byte_count", "media_type"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "path": {
+                                    "type": "string",
+                                    "pattern": "^[^/\\\\]",
+                                    "description": "Portable path relative to the owned intake/run root; path safety requires a separate filesystem check."
+                                },
+                                "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                                "byte_count": {"type": "integer", "minimum": 0},
+                                "media_type": {"type": "string", "pattern": "\\S"}
+                            }
+                        },
+                        "origin": {
+                            "type": "object",
+                            "required": ["kind", "locator", "importer", "importer_version", "imported_at"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "kind": {"type": "string", "pattern": "\\S"},
+                                "locator": {
+                                    "type": "string",
+                                    "description": "Bounded, public-safe origin label; do not embed raw proposal body or credentials."
+                                },
+                                "importer": {"type": "string", "pattern": "\\S"},
+                                "importer_version": {"type": "string", "pattern": "\\S"},
+                                "imported_at": {"type": "string", "format": "date-time"}
+                            }
+                        },
+                        "privacy_class": {
+                            "enum": [
+                                "synthetic-public",
+                                "sanitized-public",
+                                "private-customer",
+                                "restricted-local"
+                            ]
+                        },
+                        "approval": {
+                            "type": "object",
+                            "required": [
+                                "decision",
+                                "operator",
+                                "decided_at",
+                                "purpose",
+                                "artifact_sha256"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                                "decision": {"enum": ["approved", "rejected", "revoked", "superseded"]},
+                                "operator": {
+                                    "type": "string",
+                                    "pattern": "\\S",
+                                    "description": "Human-readable local operator label; an agent/model identity is not sufficient."
+                                },
+                                "decided_at": {"type": "string", "format": "date-time"},
+                                "purpose": {"const": "proposal-review"},
+                                "artifact_sha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$",
+                                    "description": "Must equal artifact.sha256; equality is enforced by the consuming validator."
+                                }
+                            }
+                        },
+                        "derivation": {
+                            "type": "object",
+                            "required": ["parent_candidate_ids", "method"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "parent_candidate_ids": {
+                                    "type": "array",
+                                    "items": {"type": "string", "pattern": "\\S"},
+                                    "uniqueItems": true
+                                },
+                                "method": {"type": "string", "pattern": "\\S"}
+                            }
+                        },
+                        "truncated": {"type": "boolean"},
+                        "warnings": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        }
+                    },
+                    "allOf": [
+                        {
+                            "if": {"properties": {"state": {"const": "approved"}}},
+                            "then": {
+                                "required": ["source_id", "approval"],
+                                "properties": {
+                                    "approval": {
+                                        "properties": {"decision": {"const": "approved"}}
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    })
+}
+
+fn source_audit_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Source Audit v0",
+        "description": "Citation ledger for bounded source snippets. This artifact does not by itself prove source approval, privacy classification, or model isolation.",
+        "type": "object",
+        "required": ["contract", "refs"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": SOURCE_AUDIT_CONTRACT},
+            "refs": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": ["ref", "source_id", "snippet"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "ref": {"type": "string", "pattern": "\\S"},
+                        "source_id": {"type": "string", "pattern": "\\S"},
+                        "locator": {"type": "string"},
+                        "snippet": {"type": "string", "pattern": "\\S", "maxLength": 1000},
+                        "confidence": {"type": "string"}
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn native_normalize_request_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Native Normalize Request v0",
+        "description": "Declared-input request envelope for an optional native provider runner. Schema validity does not prove that the provider invocation occurred.",
+        "type": "object",
+        "required": [
+            "contract",
+            "provider",
+            "model",
+            "prompt_id",
+            "declared_inputs_only",
+            "input",
+            "prompt_output_schema"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": NATIVE_NORMALIZE_REQUEST_CONTRACT},
+            "provider": {"type": "string"},
+            "model": {"type": "string", "pattern": "\\S"},
+            "prompt_id": {"type": "string", "pattern": "\\S"},
+            "declared_inputs_only": {"const": true},
+            "input": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": ["role", "content"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "role": {"enum": ["user"]},
+                        "content": {
+                            "type": "string",
+                            "description": "Serialized declared-input payload. It must not rely on ambient conversation context."
+                        }
+                    }
+                }
+            },
+            "prompt_output_schema": prompt_response_schema_contract()
+        }
+    })
+}
+
+fn proposal_runner_result_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Proposal Runner Result v0",
+        "description": "Summary for one local proposal-runner execution. Mock and dry-run modes are never audit-grade.",
+        "type": "object",
+        "required": [
+            "contract",
+            "runner_contract",
+            "mode",
+            "ok",
+            "audit_grade_eligible",
+            "decision",
+            "runner_assurance",
+            "workdir",
+            "artifacts",
+            "steps",
+            "caveats"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": PROPOSAL_RUNNER_RESULT_CONTRACT},
+            "runner_contract": {"type": "string"},
+            "mode": {
+                "enum": ["dry-run", "mock", "native"],
+                "description": "dry-run and mock are fixture/preview modes and cannot be audit-grade."
+            },
+            "ok": {"type": "boolean"},
+            "audit_grade_eligible": {"type": "boolean"},
+            "decision": {"enum": ["not-run", "audit-grade", "advisory", "blocked"]},
+            "runner_assurance": {
+                "enum": [
+                    "not-run",
+                    "headless-verified",
+                    "stateless-api-verified",
+                    "asserted",
+                    "missing",
+                    "invalid",
+                    "unknown"
+                ]
+            },
+            "workdir": {"type": "string"},
+            "artifacts": {"type": "object", "additionalProperties": {"type": "string"}},
+            "steps": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["name", "status"],
+                    "additionalProperties": true,
+                    "properties": {
+                        "name": {"type": "string"},
+                        "status": {"type": "string"}
+                    }
+                }
+            },
+            "caveats": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"}
+            }
+        }
+    })
+}
+
+fn proposal_mcp_run_result_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Proposal MCP Run Result v0",
+        "description": "Local stdio MCP transport envelope. MCP transport alone does not prove model isolation or audit-grade execution.",
+        "type": "object",
+        "required": [
+            "ok",
+            "contract",
+            "mcp_transport",
+            "hosted_or_remote_mcp",
+            "runner_exit_status",
+            "runner_result",
+            "stderr",
+            "guardrails"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "ok": {"type": "boolean"},
+            "contract": {"const": PROPOSAL_MCP_RUN_RESULT_CONTRACT},
+            "mcp_transport": {"const": "stdio"},
+            "hosted_or_remote_mcp": {"const": false},
+            "runner_exit_status": {"type": "integer"},
+            "runner_result": {
+                "anyOf": [
+                    proposal_runner_result_schema(),
+                    {"type": "null"}
+                ]
+            },
+            "stderr": {"type": "string"},
+            "guardrails": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"}
+            }
+        }
+    })
+}
+
 fn run_receipt_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -132,7 +465,7 @@ fn run_receipt_schema() -> Value {
         "required": ["contract", "valid", "decision", "workflow", "boundary", "runner", "prompt", "artifacts", "issues"],
         "additionalProperties": true,
         "properties": {
-            "contract": {"const": "mdp.run-receipt.v0"},
+            "contract": {"const": RUN_RECEIPT_CONTRACT},
             "valid": {"type": "boolean", "description": "True only when the receipt is audit-grade."},
             "decision": {"enum": ["audit-grade", "advisory", "blocked"]},
             "workflow": {"enum": ["proposal-review", "gtm-prospect", "pack-build", "custom"]},
@@ -1685,7 +2018,7 @@ mod tests {
         assert_eq!(result["title"], "MDP Run Receipt v0");
         assert_eq!(
             result["properties"]["contract"]["const"],
-            "mdp.run-receipt.v0"
+            RUN_RECEIPT_CONTRACT
         );
         assert_eq!(
             result["properties"]["decision"]["enum"],
@@ -1760,6 +2093,96 @@ mod tests {
         );
         assert_eq!(result["properties"]["request_sha256"]["type"], "string");
         assert_eq!(result["properties"]["mock_response"]["type"], "boolean");
+    }
+
+    #[test]
+    fn proposal_evidence_schemas_expose_versioned_contracts_and_caveats() {
+        let source_intake = schema(SchemaTarget::SourceIntake);
+        assert_eq!(
+            source_intake["properties"]["contract"]["const"],
+            SOURCE_INTAKE_CONTRACT
+        );
+        assert_eq!(
+            source_intake["properties"]["entries"]["items"]["properties"]["privacy_class"]["enum"],
+            json!([
+                "synthetic-public",
+                "sanitized-public",
+                "private-customer",
+                "restricted-local"
+            ])
+        );
+        assert_eq!(
+            source_intake["properties"]["entries"]["items"]["allOf"][0]["then"]["required"],
+            json!(["source_id", "approval"])
+        );
+        assert!(
+            source_intake["description"]
+                .as_str()
+                .expect("source intake description")
+                .contains("Only a human operator")
+        );
+
+        let source_audit = schema(SchemaTarget::SourceAudit);
+        assert_eq!(
+            source_audit["properties"]["contract"]["const"],
+            SOURCE_AUDIT_CONTRACT
+        );
+        assert_eq!(
+            source_audit["properties"]["refs"]["items"]["properties"]["snippet"]["maxLength"],
+            1000
+        );
+        assert!(
+            source_audit["description"]
+                .as_str()
+                .expect("source audit description")
+                .contains("does not by itself prove source approval")
+        );
+
+        let request = schema(SchemaTarget::NativeNormalizeRequest);
+        assert_eq!(
+            request["properties"]["contract"]["const"],
+            NATIVE_NORMALIZE_REQUEST_CONTRACT
+        );
+        assert_eq!(request["properties"]["declared_inputs_only"]["const"], true);
+
+        let prompt_output = schema(SchemaTarget::PromptOutput);
+        assert_eq!(prompt_output["title"], "MDP Prompt Output v0");
+        assert_eq!(
+            prompt_output["properties"]["contract"]["const"],
+            PROMPT_OUTPUT_CONTRACT
+        );
+
+        let runner_result = schema(SchemaTarget::ProposalRunnerResult);
+        assert_eq!(
+            runner_result["properties"]["contract"]["const"],
+            PROPOSAL_RUNNER_RESULT_CONTRACT
+        );
+        assert_eq!(
+            runner_result["properties"]["mode"]["enum"],
+            json!(["dry-run", "mock", "native"])
+        );
+        assert!(
+            runner_result["properties"]["mode"]["description"]
+                .as_str()
+                .expect("mode description")
+                .contains("cannot be audit-grade")
+        );
+
+        let mcp_result = schema(SchemaTarget::ProposalMcpRunResult);
+        assert_eq!(
+            mcp_result["properties"]["contract"]["const"],
+            PROPOSAL_MCP_RUN_RESULT_CONTRACT
+        );
+        assert_eq!(
+            mcp_result["properties"]["hosted_or_remote_mcp"]["const"],
+            false
+        );
+        assert!(
+            mcp_result["description"]
+                .as_str()
+                .expect("MCP description")
+                .contains("does not prove model isolation")
+        );
     }
 
     #[test]
