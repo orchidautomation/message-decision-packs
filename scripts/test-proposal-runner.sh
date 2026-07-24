@@ -90,7 +90,7 @@ node "$root/scripts/mdp-proposal-runner.mjs" run \
   --dry-run > "$dry_result"
 
 python3 - "$dry_result" "$tmp_dir/dry-run/artifacts/native-normalize-request.json" "$tmp_dir/dry-run/artifacts/source-audit.json" "$tmp_dir/dry-run/artifacts/source-intake.json" "$tmp_dir/dry-run/.mdp-proposal-workdir.json" "$tmp_dir/dry-run/.mdp-proposal-run.json" "$source_intake_schema" "$source_audit_schema" "$native_request_schema" "$prompt_output_schema" "$runner_result_schema" "$run_manifest_schema" <<'PY'
-import json, pathlib, sys
+import copy, json, pathlib, re, sys
 result = json.load(open(sys.argv[1]))
 request = json.load(open(sys.argv[2]))
 source_audit = json.load(open(sys.argv[3]))
@@ -105,9 +105,67 @@ runner_result_schema = json.load(open(sys.argv[11]))["data"]
 run_manifest_schema = json.load(open(sys.argv[12]))["data"]
 payload = json.loads(request["input"][0]["content"])
 
-def assert_required_keys(value, schema):
-    missing = sorted(set(schema["required"]) - set(value))
-    assert not missing, f"{schema.get('title')} missing required keys: {missing}"
+def schema_errors(value, schema, path="#"):
+    errors = []
+    if "anyOf" in schema:
+        branches = [schema_errors(value, branch, path) for branch in schema["anyOf"]]
+        if not any(not branch for branch in branches):
+            errors.append(f"{path} did not match anyOf: {branches}")
+        return errors
+    if "const" in schema and value != schema["const"]:
+        errors.append(f"{path} expected const {schema['const']!r}, got {value!r}")
+    if "enum" in schema and value not in schema["enum"]:
+        errors.append(f"{path} expected one of {schema['enum']!r}, got {value!r}")
+    expected_type = schema.get("type")
+    if expected_type:
+        expected_types = expected_type if isinstance(expected_type, list) else [expected_type]
+        checks = {
+            "object": lambda item: isinstance(item, dict),
+            "array": lambda item: isinstance(item, list),
+            "string": lambda item: isinstance(item, str),
+            "integer": lambda item: isinstance(item, int) and not isinstance(item, bool),
+            "boolean": lambda item: isinstance(item, bool),
+            "null": lambda item: item is None,
+        }
+        if not any(checks[kind](value) for kind in expected_types):
+            errors.append(f"{path} expected type {expected_types!r}, got {type(value).__name__}")
+            return errors
+    if isinstance(value, dict):
+        missing = sorted(set(schema.get("required", [])) - set(value))
+        if missing:
+            errors.append(f"{path} missing required keys: {missing}")
+        properties = schema.get("properties", {})
+        if schema.get("additionalProperties") is False:
+            unknown = sorted(set(value) - set(properties))
+            if unknown:
+                errors.append(f"{path} contains unsupported keys: {unknown}")
+        for key, child in value.items():
+            if key in properties:
+                errors.extend(schema_errors(child, properties[key], f"{path}/{key}"))
+    if isinstance(value, list):
+        if len(value) < schema.get("minItems", 0):
+            errors.append(f"{path} has too few items")
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            errors.append(f"{path} has too many items")
+        if schema.get("uniqueItems") and len({json.dumps(item, sort_keys=True) for item in value}) != len(value):
+            errors.append(f"{path} contains duplicate items")
+        if "items" in schema:
+            for index, child in enumerate(value):
+                errors.extend(schema_errors(child, schema["items"], f"{path}/{index}"))
+    if isinstance(value, str) and "pattern" in schema and re.search(schema["pattern"], value) is None:
+        errors.append(f"{path} does not match {schema['pattern']!r}")
+    if isinstance(value, int) and not isinstance(value, bool) and "minimum" in schema and value < schema["minimum"]:
+        errors.append(f"{path} is below minimum {schema['minimum']}")
+    return errors
+
+def assert_schema_valid(value, schema):
+    errors = schema_errors(value, schema)
+    assert not errors, "\n".join(errors)
+
+def assert_schema_invalid(value, schema, expected_fragment):
+    errors = schema_errors(value, schema)
+    assert errors, f"expected schema rejection containing {expected_fragment!r}"
+    assert expected_fragment in "\n".join(errors), errors
 
 def assert_openai_strict_schema(schema, path="#"):
     assert "oneOf" not in schema, f"{path} must use OpenAI-supported anyOf, not oneOf"
@@ -189,7 +247,48 @@ for value, schema in [
     (request, native_request_schema),
     (result, runner_result_schema),
 ]:
-    assert_required_keys(value, schema)
+    assert_schema_valid(value, schema)
+
+string_input = copy.deepcopy(request)
+string_input["input"] = "single declared-input payload"
+assert_schema_valid(string_input, native_request_schema)
+
+supported_optional = copy.deepcopy(request)
+supported_optional.update({
+    "schema_name": "mdp_prompt_output",
+    "max_output_tokens": 2048,
+    "reasoning": {"effort": "low"},
+    "metadata": {"fixture": "synthetic"},
+    "tools": [],
+    "tool_choice": "none",
+})
+assert_schema_valid(supported_optional, native_request_schema)
+
+invalid_provider = copy.deepcopy(request)
+invalid_provider["provider"] = "other"
+assert_schema_invalid(invalid_provider, native_request_schema, "expected const 'openai'")
+
+prior_messages = copy.deepcopy(request)
+prior_messages["input"].append(copy.deepcopy(prior_messages["input"][0]))
+assert_schema_invalid(prior_messages, native_request_schema, "has too many items")
+
+for forbidden_field, forbidden_value in [
+    ("instructions", "ambient instructions"),
+    ("previous_response_id", "resp_prior"),
+    ("conversation", "conv_prior"),
+    ("unknown_field", True),
+]:
+    invalid = copy.deepcopy(request)
+    invalid[forbidden_field] = forbidden_value
+    assert_schema_invalid(invalid, native_request_schema, "contains unsupported keys")
+
+nonempty_tools = copy.deepcopy(request)
+nonempty_tools["tools"] = [{"type": "web_search"}]
+assert_schema_invalid(nonempty_tools, native_request_schema, "has too many items")
+
+wrong_tool_choice = copy.deepcopy(request)
+wrong_tool_choice["tool_choice"] = "auto"
+assert_schema_invalid(wrong_tool_choice, native_request_schema, "expected const 'none'")
 assert "cannot be audit-grade" in runner_result_schema["properties"]["mode"]["description"]
 PY
 
@@ -228,6 +327,8 @@ assert entry["approval"]["artifact_sha256"] == entry["artifact"]["sha256"]
 PY
 
 workdir_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workdir_id"])' "$tmp_dir/dry-run/.mdp-proposal-workdir.json")"
+printf '{"stale":true}\n' > "$tmp_dir/dry-run/artifacts/stale-prior.json"
+printf 'stale prior source\n' > "$tmp_dir/dry-run/sources/stale-prior.txt"
 node "$root/scripts/mdp-proposal-runner.mjs" run \
   --pack "$pack" \
   --workdir "$tmp_dir/dry-run" \
@@ -236,6 +337,17 @@ node "$root/scripts/mdp-proposal-runner.mjs" run \
   --source-id synthetic-rfp-summary \
   --source-kind synthetic-example \
   --dry-run > "$tmp_dir/reused-dry-result.json"
+
+python3 - "$tmp_dir/dry-run/.mdp-proposal-run.json" "$tmp_dir/dry-run" <<'PY'
+import json, pathlib, sys
+manifest = json.load(open(sys.argv[1]))
+workdir = pathlib.Path(sys.argv[2])
+assert not (workdir / "artifacts/stale-prior.json").exists()
+assert not (workdir / "sources/stale-prior.txt").exists()
+paths = {item["path"] for item in manifest["artifacts"]}
+assert "artifacts/stale-prior.json" not in paths
+assert "sources/stale-prior.txt" not in paths
+PY
 
 cat > "$tmp_dir/slow-native-runner.mjs" <<'JS'
 setTimeout(() => {
@@ -357,6 +469,62 @@ expect_fail "Workdir must not be a symlink" \
     --source-kind synthetic-example \
     --dry-run
 
+node "$root/scripts/mdp-proposal-runner.mjs" run \
+  --pack "$pack" \
+  --workdir "$tmp_dir/managed-symlink-workdir" \
+  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+  --source-id synthetic-rfp-summary \
+  --source-kind synthetic-example \
+  --dry-run > "$tmp_dir/managed-symlink-first.json"
+managed_workdir_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workdir_id"])' "$tmp_dir/managed-symlink-workdir/.mdp-proposal-workdir.json")"
+mv "$tmp_dir/managed-symlink-workdir/artifacts" "$tmp_dir/managed-symlink-artifacts-old"
+mkdir -m 700 "$tmp_dir/managed-symlink-outside"
+ln -s "$tmp_dir/managed-symlink-outside" "$tmp_dir/managed-symlink-workdir/artifacts"
+expect_fail "Managed proposal directory must not be a symlink" \
+  node "$root/scripts/mdp-proposal-runner.mjs" run \
+    --pack "$pack" \
+    --workdir "$tmp_dir/managed-symlink-workdir" \
+    --reuse-workdir-id "$managed_workdir_id" \
+    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source-id synthetic-rfp-summary \
+    --source-kind synthetic-example \
+    --dry-run
+test -z "$(find "$tmp_dir/managed-symlink-outside" -mindepth 1 -print -quit)"
+
+cp -a "$pack" "$tmp_dir/symlink-pack"
+rm "$tmp_dir/symlink-pack/.mdp/prompts/normalize-opportunity.yaml"
+ln -s "$pack/.mdp/prompts/normalize-opportunity.yaml" "$tmp_dir/symlink-pack/.mdp/prompts/normalize-opportunity.yaml"
+expect_fail "Pack content must not be a symlink" \
+  node "$root/scripts/mdp-proposal-runner.mjs" run \
+    --pack "$tmp_dir/symlink-pack" \
+    --workdir "$tmp_dir/symlink-pack-workdir" \
+    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source-id synthetic-rfp-summary \
+    --source-kind synthetic-example \
+    --dry-run
+
+cp -a "$pack" "$tmp_dir/invalid-pack"
+python3 - "$tmp_dir/invalid-pack/.mdp/manifest.yaml" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+path.write_text(path.read_text().replace("format: mdp.v0", "format: invalid", 1))
+PY
+cat > "$tmp_dir/should-not-run.mjs" <<'JS'
+import { writeFileSync } from "node:fs"
+writeFileSync(new URL("./native-ran", import.meta.url), "unexpected")
+console.log("{}")
+JS
+expect_fail "Pack validation failed before model invocation" \
+  node "$root/scripts/mdp-proposal-runner.mjs" run \
+    --pack "$tmp_dir/invalid-pack" \
+    --workdir "$tmp_dir/invalid-pack-workdir" \
+    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source-id synthetic-rfp-summary \
+    --source-kind synthetic-example \
+    --native-runner "$tmp_dir/should-not-run.mjs" \
+    --dry-run
+test ! -e "$tmp_dir/native-ran"
+
 python3 - "$tmp_dir/malicious-source-audit.json" <<'PY'
 import json, sys
 json.dump({
@@ -429,8 +597,6 @@ validation = json.load(open(artifacts / "normalize-opportunity-validation.json")
 receipt = json.load(open(artifacts / "run-receipt.json"))
 source_intake = json.load(open(artifacts / "source-intake.json"))
 runner_audit = json.load(open(artifacts / "runner-audit.json"))
-fit = json.load(open(artifacts / "fit-normalized-opportunity.json"))["data"]
-route = json.load(open(artifacts / "route-bid-no-bid-review.json"))["summary"]
 
 assert result["mode"] == "mock"
 assert result["ok"] is False
@@ -453,11 +619,11 @@ assert runner_audit["isolated_invocation"] is False
 assert runner_audit["stateless_request"] is False
 assert runner_audit["tool_invocations_observed"] == 0
 assert sorted(request_payload.keys()) == ["existing_pack_context", "raw_opportunity", "source_audit", "source_kind"]
-assert fit["status"] in {"fit", "insufficient-context", "disqualified"}
-assert fit["decision"]
-assert route["job"] == "bid no bid review"
-assert route["persona"] == "Proposal Lead"
-assert route["card_count"] > 0
+assert not (artifacts / "fit-normalized-opportunity.json").exists()
+assert not (artifacts / "route-bid-no-bid-review.json").exists()
+review = next(step for step in result["steps"] if step["name"] == "mdp_review_proposal")
+assert review["status"] == "skipped"
+assert "receipt decision blocked" in review["reason"]
 PY
 
 DEMO_WORKDIR="$tmp_dir/demo" bash "$root/examples/proposal-flow-video/scripts/run-demo.sh" > "$demo_stdout"

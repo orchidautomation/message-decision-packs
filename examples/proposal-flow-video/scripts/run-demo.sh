@@ -136,8 +136,6 @@ cp "$runner_artifacts/normalize-opportunity-validation.json" "$artifacts/normali
 cp "$runner_artifacts/run-receipt.json" "$artifacts/run-receipt.json"
 cp "$runner_artifacts/run-receipt.stdout.json" "$artifacts/run-receipt.stdout.json"
 cp "$runner_artifacts/normalized-opportunity.json" "$artifacts/normalized-opportunity.json"
-cp "$runner_artifacts/fit-normalized-opportunity.json" "$artifacts/fit-normalized-opportunity.json"
-cp "$runner_artifacts/route-bid-no-bid-review.json" "$artifacts/route-bid-no-bid-review.json"
 
 printf '   source audit:  %s\n' "$artifacts/source-audit.json"
 printf '   prompt output: %s\n' "$artifacts/normalize-opportunity-output.json"
@@ -157,6 +155,21 @@ if runner.get("mock_response") is not True:
     raise SystemExit("Expected default demo runner audit to be marked mock_response=true")
 PY
 fi
+
+# The runner intentionally skips downstream review probes when its receipt is
+# blocked. The synthetic mock walkthrough runs these CLI checks separately and
+# keeps them advisory; they never upgrade the blocked receipt.
+run_mdp --json fit \
+  --dir "$pack_root" \
+  --prospect "$artifacts/normalized-opportunity.json" \
+  > "$artifacts/fit-normalized-opportunity.json"
+
+run_mdp --json --summary route \
+  --entries \
+  --dir "$pack_root" \
+  --persona "Proposal Lead" \
+  --job "bid no bid review" \
+  > "$artifacts/route-bid-no-bid-review.json"
 
 run_mdp --json --summary route \
   --entries \

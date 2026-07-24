@@ -4,7 +4,6 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   chmodSync,
   closeSync,
-  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -13,11 +12,12 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, dirname, extname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const RUNNER_CONTRACT = 'mdp.proposal-runner.v0'
@@ -297,7 +297,40 @@ const readTextExcerpt = (path, maxChars = MAX_CONTEXT_CHARS) => {
 
 const assertFile = (path, label) => {
   if (!existsSync(path)) fail(`${label} not found: ${path}`)
+  if (lstatSync(path).isSymbolicLink()) fail(`${label} must not be a symlink: ${path}`)
   if (!statSync(path).isFile()) fail(`${label} must be a file: ${path}`)
+}
+
+const isWithin = (root, candidate) => {
+  const path = relative(root, candidate)
+  return path === '' || (!path.startsWith('..') && !isAbsolute(path))
+}
+
+const assertSafePackRoot = (value) => {
+  const requested = resolve(value)
+  if (!existsSync(requested)) fail(`Pack root not found: ${requested}`)
+  if (lstatSync(requested).isSymbolicLink()) fail(`Pack root must not be a symlink: ${requested}`)
+  const root = realpathSync(requested)
+  if (!statSync(root).isDirectory()) fail(`Pack root must be a directory: ${root}`)
+  const mdpRoot = join(root, '.mdp')
+  if (!existsSync(mdpRoot) || lstatSync(mdpRoot).isSymbolicLink() || !statSync(mdpRoot).isDirectory()) {
+    fail(`Pack root must contain a real .mdp directory: ${root}`)
+  }
+  const canonicalMdpRoot = realpathSync(mdpRoot)
+  if (!isWithin(root, canonicalMdpRoot)) fail(`Pack .mdp directory escapes the pack root: ${mdpRoot}`)
+  const visit = (directory) => {
+    for (const name of readdirSync(directory)) {
+      const path = join(directory, name)
+      const stats = lstatSync(path)
+      if (stats.isSymbolicLink()) fail(`Pack content must not be a symlink: ${path}`)
+      const canonical = realpathSync(path)
+      if (!isWithin(canonicalMdpRoot, canonical)) fail(`Pack content escapes .mdp/: ${path}`)
+      if (stats.isDirectory()) visit(path)
+      else if (!stats.isFile()) fail(`Pack content must be a regular file or directory: ${path}`)
+    }
+  }
+  visit(canonicalMdpRoot)
+  return root
 }
 
 const assertSafeSourceFile = (value) => {
@@ -400,9 +433,27 @@ const prepareWorkdir = (workdir, reuseWorkdirId) => {
     }
     writeJson(manifestPath, manifest)
   }
-  mkdirSync(join(resolved, 'artifacts'), { recursive: true, mode: 0o700 })
-  mkdirSync(join(resolved, 'sources'), { recursive: true, mode: 0o700 })
   return { root: resolved, manifest }
+}
+
+const validateManagedDirectory = (workdir, name) => {
+  const path = join(workdir, name)
+  if (!existsSync(path)) return
+  const stats = lstatSync(path)
+  if (stats.isSymbolicLink()) fail(`Managed proposal directory must not be a symlink: ${path}`)
+  if (!stats.isDirectory()) fail(`Managed proposal path must be a directory: ${path}`)
+  const canonical = realpathSync(path)
+  if (!isWithin(workdir, canonical)) fail(`Managed proposal directory escapes the workdir: ${path}`)
+}
+
+const resetManagedDirectory = (workdir, name, clear) => {
+  const path = join(workdir, name)
+  validateManagedDirectory(workdir, name)
+  if (clear && existsSync(path)) rmSync(path, { recursive: true, force: true })
+  if (!existsSync(path)) mkdirSync(path, { mode: 0o700 })
+  const canonical = realpathSync(path)
+  if (!isWithin(workdir, canonical)) fail(`Managed proposal directory escapes the workdir: ${path}`)
+  chmodSync(canonical, 0o700)
 }
 
 let activeRun = null
@@ -455,6 +506,16 @@ const startRunManifest = ({ workdir, ownership, reuseWorkdirId, args }) => {
     fail(`Proposal workdir is locked by another or interrupted run: ${error.code || error.message}`)
   } finally {
     if (lockFd !== undefined) closeSync(lockFd)
+  }
+
+  try {
+    validateManagedDirectory(workdir, 'artifacts')
+    validateManagedDirectory(workdir, 'sources')
+    resetManagedDirectory(workdir, 'artifacts', Boolean(reuseWorkdirId))
+    resetManagedDirectory(workdir, 'sources', Boolean(reuseWorkdirId))
+  } catch (error) {
+    unlinkSync(lockPath)
+    throw error
   }
 
   const runId = randomUUID()
@@ -525,7 +586,10 @@ const stageSources = (sources, workdir, maxSourceBytes) => {
     const bytes = readFileSync(absolute)
     const stagedName = `${String(index + 1).padStart(2, '0')}-${safeBasename(absolute)}`
     const stagedPath = join(sourcesDir, stagedName)
-    copyFileSync(absolute, stagedPath)
+    writeFileSync(stagedPath, bytes, { flag: 'wx', mode: 0o600 })
+    const sourceHash = sha256Buffer(bytes)
+    const stagedHash = sha256File(stagedPath)
+    if (stagedHash !== sourceHash) fail(`Staged source hash mismatch: ${absolute}`)
     const excerptBytes = bytes.subarray(0, maxSourceBytes)
     const text = excerptBytes.toString('utf8')
     staged.push({
@@ -533,7 +597,7 @@ const stageSources = (sources, workdir, maxSourceBytes) => {
       original_path: absolute,
       filename: basename(absolute),
       staged_path: relative(workdir, stagedPath),
-      sha256: sha256Buffer(bytes),
+      sha256: sourceHash,
       byte_count: bytes.length,
       truncated: bytes.length > maxSourceBytes,
       text,
@@ -731,10 +795,24 @@ const resolveMdpCommand = (mdpBin) => {
   return ['mdp']
 }
 
-const runProcess = ({ command, args, stdoutPath, stderrPath, allowNonZero = false }) => {
+const nonProviderEnvironment = () =>
+  Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !/(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)/i.test(key),
+    ),
+  )
+
+const runProcess = ({
+  command,
+  args,
+  stdoutPath,
+  stderrPath,
+  allowNonZero = false,
+  environment = nonProviderEnvironment(),
+}) => {
   const result = spawnSync(command[0], [...command.slice(1), ...args], {
     encoding: 'utf8',
-    env: process.env,
+    env: environment,
     maxBuffer: 20 * 1024 * 1024,
   })
   if (stdoutPath) writeText(stdoutPath, result.stdout || '')
@@ -1049,8 +1127,7 @@ const run = (args) => {
   if (args.promptId !== DEFAULT_PROMPT_ID) {
     fail(`This proposal runner currently supports only --prompt-id ${DEFAULT_PROMPT_ID}`)
   }
-  const packRoot = resolve(args.pack)
-  if (!existsSync(join(packRoot, '.mdp'))) fail(`Pack root must contain .mdp/: ${packRoot}`)
+  const packRoot = assertSafePackRoot(args.pack)
   const promptPath = join(packRoot, '.mdp', 'prompts', `${args.promptId}.yaml`)
   assertFile(promptPath, 'prompt contract')
   if (args.sources.length === 0) fail('Pass at least one --source text file so source intake can bind exact staged bytes.')
@@ -1088,6 +1165,8 @@ const run = (args) => {
     nativeDryRun: join(artifactsDir, 'native-normalize-dry-run.json'),
     nativeResult: join(artifactsDir, 'native-normalize-result.json'),
     nativeStderr: join(artifactsDir, 'native-normalize.stderr'),
+    packValidation: join(artifactsDir, 'pack-validation.json'),
+    packValidationStderr: join(artifactsDir, 'pack-validation.stderr'),
     promptOutput: join(artifactsDir, 'normalize-opportunity-output.json'),
     runnerAudit: join(artifactsDir, 'runner-audit.json'),
     validation: join(artifactsDir, 'normalize-opportunity-validation.json'),
@@ -1171,6 +1250,25 @@ const run = (args) => {
     },
   ]
 
+  const mdpCommand = resolveMdpCommand(args.mdpBin)
+  const packValidation = runProcess({
+    command: mdpCommand,
+    args: ['--json', 'validate', '--dir', packRoot, '--strict'],
+    stdoutPath: paths.packValidation,
+    stderrPath: paths.packValidationStderr,
+    allowNonZero: true,
+  })
+  const packValidationData = parseCliData(paths.packValidation)
+  steps.push({
+    name: 'mdp_validate_pack',
+    status: packValidation.status === 0 && packValidationData?.valid === true ? 'ok' : 'blocked',
+    artifacts: { validation: paths.packValidation },
+    exit_status: packValidation.status,
+  })
+  if (packValidation.status !== 0 || packValidationData?.valid !== true) {
+    fail(`Pack validation failed before model invocation. See ${paths.packValidation} and ${paths.packValidationStderr}`)
+  }
+
   const nativeArgs = ['--request', paths.request]
   if (args.dryRun) {
     const dryRun = runProcess({
@@ -1222,6 +1320,7 @@ const run = (args) => {
     args: normalizeArgs,
     stdoutPath: paths.nativeResult,
     stderrPath: paths.nativeStderr,
+    environment: args.mockResponse ? nonProviderEnvironment() : process.env,
   })
   steps.push({
     name: 'mdp_normalize_opportunity',
@@ -1235,7 +1334,6 @@ const run = (args) => {
     mode: args.mockResponse ? 'mock' : 'native',
   })
 
-  const mdpCommand = resolveMdpCommand(args.mdpBin)
   const validation = runProcess({
     command: mdpCommand,
     args: [
@@ -1308,10 +1406,17 @@ const run = (args) => {
     runner_assurance: receiptData?.runner?.assurance ?? null,
   })
 
-  if (!args.skipReview) {
-    const promptOutput = maybeReadJson(paths.promptOutput)
+  const promptOutput = maybeReadJson(paths.promptOutput)
+  if (validationData?.valid === true && promptOutput?.normalized_prospect) {
+    writeJson(paths.normalized, promptOutput.normalized_prospect)
+  }
+
+  if (
+    !args.skipReview &&
+    validationData?.valid === true &&
+    receiptData?.decision === 'audit-grade'
+  ) {
     if (promptOutput?.normalized_prospect) {
-      writeJson(paths.normalized, promptOutput.normalized_prospect)
       const fit = runProcess({
         command: mdpCommand,
         args: ['--json', 'fit', '--dir', packRoot, '--prospect', paths.normalized],
@@ -1356,6 +1461,15 @@ const run = (args) => {
         reason: 'prompt output did not include normalized_prospect',
       })
     }
+  } else if (!args.skipReview) {
+    steps.push({
+      name: 'mdp_review_proposal',
+      status: 'skipped',
+      reason:
+        validationData?.valid !== true
+          ? 'prompt-output validation did not succeed'
+          : `run receipt decision ${receiptData?.decision ?? 'missing'} is not acceptable for review probes`,
+    })
   }
 
   const decision = receiptData?.decision ?? 'blocked'

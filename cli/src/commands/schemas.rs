@@ -365,27 +365,43 @@ fn native_normalize_request_schema() -> Value {
         "additionalProperties": false,
         "properties": {
             "contract": {"const": NATIVE_NORMALIZE_REQUEST_CONTRACT},
-            "provider": {"type": "string"},
+            "provider": {"const": "openai"},
             "model": {"type": "string", "pattern": "\\S"},
             "prompt_id": {"type": "string", "pattern": "\\S"},
             "declared_inputs_only": {"const": true},
             "input": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                    "type": "object",
-                    "required": ["role", "content"],
-                    "additionalProperties": false,
-                    "properties": {
-                        "role": {"enum": ["user"]},
-                        "content": {
-                            "type": "string",
-                            "description": "Serialized declared-input payload. It must not rely on ambient conversation context."
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "pattern": "\\S"
+                    },
+                    {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "required": ["role", "content"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "role": {"const": "user"},
+                                "content": {
+                                    "type": "string",
+                                    "pattern": "\\S",
+                                    "description": "Serialized declared-input payload. It must not rely on ambient conversation context."
+                                }
+                            }
                         }
                     }
-                }
+                ]
             },
-            "prompt_output_schema": prompt_response_schema_contract()
+            "prompt_output_schema": prompt_response_schema_contract(),
+            "schema_name": {"type": "string", "pattern": "\\S"},
+            "max_output_tokens": {"type": "integer", "minimum": 1},
+            "reasoning": {"type": "object"},
+            "metadata": {"type": "object"},
+            "tools": {"type": "array", "maxItems": 0},
+            "tool_choice": {"const": "none"}
         }
     })
 }

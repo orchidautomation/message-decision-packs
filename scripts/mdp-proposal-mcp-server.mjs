@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,8 +8,14 @@ const MCP_PROTOCOL_VERSION = '2025-06-18'
 const SERVER_NAME = 'message-decision-packs-proposal'
 const MAX_OUTPUT_CHARS = 80_000
 const MAX_CHILD_BUFFER_BYTES = 1_000_000
+const MAX_JSON_RPC_LINE_BYTES = 1_000_000
+const MAX_SOURCE_COUNT = 16
+const MAX_SOURCE_BYTES = 100_000
+const MAX_SOURCE_FILE_BYTES = 5_000_000
+const MAX_TOTAL_SOURCE_BYTES = 20_000_000
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 300_000
+const TERMINATION_GRACE_MS = 250
 const CHILD_ENV_KEYS = [
   'PATH',
   'HOME',
@@ -161,12 +167,6 @@ const canonicalWorkdir = (value) => {
   return requested
 }
 
-const canonicalExecutable = (value, label) => {
-  const path = canonicalExistingPath(value, label, 'file')
-  if ((statSync(path).mode & 0o111) === 0) throw new Error(`${label} must be executable: ${path}`)
-  return path
-}
-
 const assertNoUnsupportedArgs = (args, allowed) => {
   const unsupported = Object.keys(args).filter((key) => !allowed.has(key))
   if (unsupported.length > 0) {
@@ -180,37 +180,90 @@ const toolResult = ({ text, structuredContent, isError = false }) => ({
   isError,
 })
 
-const runNode = (script, args, timeoutMs = DEFAULT_TIMEOUT_MS) => {
-  const environment = childEnvironment()
-  const result = spawnSync('node', [script, ...args], {
-    cwd: bundleRoot,
-    encoding: 'utf8',
-    env: environment,
-    maxBuffer: MAX_CHILD_BUFFER_BYTES,
-    timeout: timeoutMs,
-    killSignal: 'SIGTERM',
-  })
-  const timedOut = result.error?.code === 'ETIMEDOUT'
-  const stdout = redact(result.stdout || '', environment)
-  const stderr = redact(`${result.stderr || ''}${result.error && !timedOut ? result.error.message : ''}`, environment)
-  if (result.error) {
-    return {
-      status: timedOut ? 124 : 1,
-      stdout,
-      stderr: timedOut ? `proposal runner timed out after ${timeoutMs}ms` : stderr,
-      timedOut,
-      signal: result.signal || (timedOut ? 'SIGTERM' : null),
-      environmentKeys: Object.keys(environment).sort(),
+const terminateProcessTree = (child, signal) => {
+  if (!child.pid) return
+  try {
+    if (process.platform === 'win32') child.kill(signal)
+    else process.kill(-child.pid, signal)
+  } catch (error) {
+    if (error?.code !== 'ESRCH') {
+      try {
+        child.kill(signal)
+      } catch {
+        // The child already exited.
+      }
     }
   }
-  return {
-    status: result.status ?? 1,
-    stdout,
-    stderr,
-    timedOut: false,
-    signal: result.signal || null,
-    environmentKeys: Object.keys(environment).sort(),
-  }
+}
+
+const runNode = (script, args, timeoutMs = DEFAULT_TIMEOUT_MS, includeProviderCredential = false) => {
+  const environment = childEnvironment()
+  if (!includeProviderCredential) delete environment.OPENAI_API_KEY
+  return new Promise((resolveResult) => {
+    const stdoutChunks = []
+    const stderrChunks = []
+    let stdoutBytes = 0
+    let stderrBytes = 0
+    let timedOut = false
+    let overflowed = false
+    let spawnError = null
+    let finished = false
+    let killTimer = null
+
+    const child = spawn(process.execPath, [script, ...args], {
+      cwd: bundleRoot,
+      detached: process.platform !== 'win32',
+      env: environment,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    const collect = (chunks, chunk, stream) => {
+      const nextBytes = stream === 'stdout' ? stdoutBytes + chunk.length : stderrBytes + chunk.length
+      if (nextBytes > MAX_CHILD_BUFFER_BYTES) {
+        overflowed = true
+        terminateProcessTree(child, 'SIGTERM')
+        killTimer ||= setTimeout(() => terminateProcessTree(child, 'SIGKILL'), TERMINATION_GRACE_MS)
+        return
+      }
+      chunks.push(chunk)
+      if (stream === 'stdout') stdoutBytes = nextBytes
+      else stderrBytes = nextBytes
+    }
+    child.stdout.on('data', (chunk) => collect(stdoutChunks, chunk, 'stdout'))
+    child.stderr.on('data', (chunk) => collect(stderrChunks, chunk, 'stderr'))
+    child.on('error', (error) => {
+      spawnError = error
+    })
+
+    const timeout = setTimeout(() => {
+      timedOut = true
+      terminateProcessTree(child, 'SIGTERM')
+      killTimer = setTimeout(() => terminateProcessTree(child, 'SIGKILL'), TERMINATION_GRACE_MS)
+    }, timeoutMs)
+
+    child.on('close', (code, signal) => {
+      if (finished) return
+      finished = true
+      clearTimeout(timeout)
+      if (killTimer) clearTimeout(killTimer)
+      const stdout = redact(Buffer.concat(stdoutChunks).toString('utf8'), environment)
+      const rawStderr = Buffer.concat(stderrChunks).toString('utf8')
+      const errorText = spawnError && !timedOut ? spawnError.message : ''
+      const stderr = redact(`${rawStderr}${errorText}`, environment)
+      resolveResult({
+        status: timedOut ? 124 : overflowed || spawnError ? 1 : (code ?? 1),
+        stdout,
+        stderr: timedOut
+          ? `proposal runner timed out after ${timeoutMs}ms`
+          : overflowed
+            ? `proposal runner exceeded ${MAX_CHILD_BUFFER_BYTES} bytes of buffered output`
+            : stderr,
+        timedOut,
+        signal: timedOut ? 'SIGTERM' : signal,
+        environmentKeys: Object.keys(environment).sort(),
+      })
+    })
+  })
 }
 
 const parseRunnerJson = (stdout) => {
@@ -243,6 +296,7 @@ const proposalRunSchema = {
     source_paths: {
       type: 'array',
       items: { type: 'string' },
+      maxItems: MAX_SOURCE_COUNT,
       description: 'Local text/Markdown/CSV/JSON/YAML source files supplied by the operator. Raw chat text is intentionally not accepted.',
     },
     source_intake_path: {
@@ -279,14 +333,6 @@ const proposalRunSchema = {
       type: 'boolean',
       description: 'Validate request shape only; no model output, receipt, fit, or route.',
     },
-    mdp_bin: {
-      type: 'string',
-      description: 'Optional mdp executable path. Must be a path, not a shell command.',
-    },
-    native_runner: {
-      type: 'string',
-      description: 'Optional native runner script path. Defaults to bundled mdp-native-normalize-openai.mjs.',
-    },
     prompt_id: {
       type: 'string',
       description: 'Prompt id. Current runner supports normalize-opportunity.',
@@ -306,6 +352,7 @@ const proposalRunSchema = {
     max_source_bytes: {
       type: 'integer',
       minimum: 1000,
+      maximum: MAX_SOURCE_BYTES,
       description: 'Per-source bounded text bytes to include in the prompt payload.',
     },
     timeout_ms: {
@@ -387,10 +434,10 @@ const tools = [
   },
 ]
 
-const callProposalTools = (args) => {
+const callProposalTools = async (args) => {
   const parsedArgs = asObject(args || {}, 'arguments')
   assertNoUnsupportedArgs(parsedArgs, new Set())
-  const result = runNode(runnerPath, ['tools'])
+  const result = await runNode(runnerPath, ['tools'])
   if (result.status !== 0) {
     return toolResult({
       isError: true,
@@ -422,7 +469,7 @@ const callProposalTools = (args) => {
   return toolResult({ text: JSON.stringify(structuredContent, null, 2), structuredContent })
 }
 
-const callProposalRun = (args) => {
+const callProposalRun = async (args) => {
   const parsedArgs = asObject(args || {}, 'arguments')
   const allowed = new Set([
     'pack',
@@ -436,8 +483,6 @@ const callProposalRun = (args) => {
     'model',
     'mock_response_path',
     'dry_run',
-    'mdp_bin',
-    'native_runner',
     'prompt_id',
     'reuse_workdir_id',
     'skip_review',
@@ -457,6 +502,20 @@ const callProposalRun = (args) => {
   const sourcePaths = optionalStringArray(parsedArgs, 'source_paths').map((path, index) =>
     canonicalExistingPath(path, `source_paths[${index}]`, 'file'),
   )
+  if (sourcePaths.length > MAX_SOURCE_COUNT) {
+    throw new Error(`source_paths must contain at most ${MAX_SOURCE_COUNT} files`)
+  }
+  let totalSourceBytes = 0
+  for (const [index, path] of sourcePaths.entries()) {
+    const sourceBytes = statSync(path).size
+    if (sourceBytes > MAX_SOURCE_FILE_BYTES) {
+      throw new Error(`source_paths[${index}] exceeds the ${MAX_SOURCE_FILE_BYTES} byte file limit`)
+    }
+    totalSourceBytes += sourceBytes
+  }
+  if (totalSourceBytes > MAX_TOTAL_SOURCE_BYTES) {
+    throw new Error(`source_paths exceed the ${MAX_TOTAL_SOURCE_BYTES} byte total limit`)
+  }
   const sourceIntakeArg = optionalString(parsedArgs, 'source_intake_path')
   const sourceAuditArg = optionalString(parsedArgs, 'source_audit_path')
   const sourceIntakePath = sourceIntakeArg
@@ -470,17 +529,14 @@ const callProposalRun = (args) => {
   const privacyClass = optionalString(parsedArgs, 'privacy_class')
   const model = optionalString(parsedArgs, 'model')
   const mockResponseArg = optionalString(parsedArgs, 'mock_response_path')
-  const mdpBinArg = optionalString(parsedArgs, 'mdp_bin')
-  const nativeRunnerArg = optionalString(parsedArgs, 'native_runner')
   const mockResponsePath = mockResponseArg
     ? canonicalExistingPath(mockResponseArg, 'mock_response_path', 'file')
     : null
-  const mdpBin = mdpBinArg ? canonicalExecutable(mdpBinArg, 'mdp_bin') : null
-  const nativeRunner = nativeRunnerArg
-    ? canonicalExistingPath(nativeRunnerArg, 'native_runner', 'file')
-    : null
   const promptId = optionalString(parsedArgs, 'prompt_id')
   const maxSourceBytes = optionalInteger(parsedArgs, 'max_source_bytes')
+  if (maxSourceBytes !== null && (maxSourceBytes < 1000 || maxSourceBytes > MAX_SOURCE_BYTES)) {
+    throw new Error(`max_source_bytes must be between 1000 and ${MAX_SOURCE_BYTES}`)
+  }
   const dryRun = optionalBoolean(parsedArgs, 'dry_run')
   const reuseWorkdirId = optionalString(parsedArgs, 'reuse_workdir_id')
   const skipReview = optionalBoolean(parsedArgs, 'skip_review')
@@ -504,15 +560,13 @@ const callProposalRun = (args) => {
   if (model) runnerArgs.push('--model', model)
   if (mockResponsePath) runnerArgs.push('--mock-response', mockResponsePath)
   if (dryRun) runnerArgs.push('--dry-run')
-  if (mdpBin) runnerArgs.push('--mdp-bin', mdpBin)
-  if (nativeRunner) runnerArgs.push('--native-runner', nativeRunner)
   if (promptId) runnerArgs.push('--prompt-id', promptId)
   if (reuseWorkdirId) runnerArgs.push('--reuse-workdir-id', reuseWorkdirId)
   if (skipReview) runnerArgs.push('--skip-review')
   if (requireAuditGrade) runnerArgs.push('--require-audit-grade')
   if (maxSourceBytes !== null) runnerArgs.push('--max-source-bytes', String(maxSourceBytes))
 
-  const result = runNode(runnerPath, runnerArgs, timeoutMs)
+  const result = await runNode(runnerPath, runnerArgs, timeoutMs, !dryRun && !mockResponsePath)
   let parsed = null
   try {
     parsed = parseRunnerJson(result.stdout)
@@ -566,21 +620,21 @@ const callProposalRun = (args) => {
   return toolResult({ text: JSON.stringify(structuredContent, null, 2), structuredContent })
 }
 
-const handleToolCall = (params) => {
+const handleToolCall = async (params) => {
   const call = asObject(params || {}, 'params')
   if (typeof call.name !== 'string' || call.name.trim() === '') throw new Error('params.name must be a non-empty string')
   const args = call.arguments || {}
   switch (call.name) {
     case 'mdp_proposal_tools':
-      return callProposalTools(args)
+      return await callProposalTools(args)
     case 'mdp_proposal_run':
-      return callProposalRun(args)
+      return await callProposalRun(args)
     default:
       throw Object.assign(new Error(`Unknown tool: ${call.name}`), { code: JSON_RPC_METHOD_NOT_FOUND })
   }
 }
 
-const handleRequest = (message) => {
+const handleRequest = async (message) => {
   if (!message || typeof message !== 'object' || Array.isArray(message)) {
     return errorResponse(null, JSON_RPC_INVALID_REQUEST, 'Invalid JSON-RPC message')
   }
@@ -621,7 +675,7 @@ const handleRequest = (message) => {
         return response(id, { tools })
       case 'tools/call':
         if (isNotification) return null
-        return response(id, handleToolCall(params))
+        return response(id, await handleToolCall(params))
       default:
         if (isNotification) return null
         return errorResponse(id, JSON_RPC_METHOD_NOT_FOUND, `Method not found: ${method}`)
@@ -633,7 +687,13 @@ const handleRequest = (message) => {
   }
 }
 
-const handleLine = (line) => {
+const handleLine = async (line) => {
+  if (Buffer.byteLength(line, 'utf8') > MAX_JSON_RPC_LINE_BYTES) {
+    writeMessage(
+      errorResponse(null, JSON_RPC_INVALID_REQUEST, `JSON-RPC message exceeds ${MAX_JSON_RPC_LINE_BYTES} bytes`),
+    )
+    return
+  }
   const trimmed = line.trim()
   if (!trimmed) return
   let message
@@ -647,33 +707,51 @@ const handleLine = (line) => {
   if (Array.isArray(message)) {
     const responses = []
     for (const item of message) {
-      const itemResponse = handleRequest(item)
+      const itemResponse = await handleRequest(item)
       if (itemResponse) responses.push(itemResponse)
     }
     if (responses.length > 0) writeMessage(responses)
     return
   }
 
-  const messageResponse = handleRequest(message)
+  const messageResponse = await handleRequest(message)
   if (messageResponse) writeMessage(messageResponse)
 }
 
 let buffer = ''
+let discardingOversizedLine = false
+let inputQueue = Promise.resolve()
+const enqueueLine = (line) => {
+  inputQueue = inputQueue.then(() => handleLine(line))
+}
 process.stdin.setEncoding('utf8')
 process.stdin.resume()
 process.stdin.on('data', (chunk) => {
+  if (discardingOversizedLine) {
+    const newlineIndex = chunk.indexOf('\n')
+    if (newlineIndex < 0) return
+    discardingOversizedLine = false
+    chunk = chunk.slice(newlineIndex + 1)
+  }
   buffer += chunk
   let newlineIndex
   while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
     const line = buffer.slice(0, newlineIndex)
     buffer = buffer.slice(newlineIndex + 1)
-    handleLine(line)
+    enqueueLine(line)
+  }
+  if (Buffer.byteLength(buffer, 'utf8') > MAX_JSON_RPC_LINE_BYTES) {
+    writeMessage(
+      errorResponse(null, JSON_RPC_INVALID_REQUEST, `JSON-RPC message exceeds ${MAX_JSON_RPC_LINE_BYTES} bytes`),
+    )
+    buffer = ''
+    discardingOversizedLine = true
   }
 })
 
 process.stdin.on('end', () => {
   const remaining = buffer.trim()
-  if (remaining) handleLine(remaining)
+  if (remaining && !discardingOversizedLine) enqueueLine(remaining)
 })
 
 process.on('uncaughtException', (error) => {
