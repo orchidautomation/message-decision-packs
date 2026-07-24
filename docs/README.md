@@ -17,6 +17,8 @@ These are the current public docs:
 - [Distribution](distribution.md): Pluxx bundles, release assets, installers, and updates.
 - [Skill Evals](skill-evals.md): skill trigger and output-eval fixtures.
 - [CLI Usage](../cli/USAGE.md): detailed commands; `mdp --json capabilities` is the machine-readable source of truth.
+- [Concepts](../CONCEPTS.md): canonical product, evidence, assurance, and public-safety vocabulary.
+- [Solution Notes](solutions/README.md): sanitized post-fix learning loop for reusable engineering lessons.
 
 The root [README](../README.md) is the product overview. [llms.txt](../llms.txt) and [llms-full.txt](../llms-full.txt) are the curated agent briefings.
 
