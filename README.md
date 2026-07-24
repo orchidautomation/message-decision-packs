@@ -173,6 +173,7 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Prompt Contracts](docs/prompt-extraction-contract.md): normalization and extraction schemas.
 - [Runner Receipts](docs/run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
 - [Local Proposal Runner Surface](docs/proposal-runner.md): host-neutral local command surface for source audit, native/headless normalization, validation, receipts, and review probes.
+- [Deterministic Proposal Evidence Harness](docs/proposal-evidence-harness.md): synthetic CI proof for positive contract acceptance and fail-closed ambient/mock/hash/injection/unsupported-proof cases.
 - [Headless Normalization Runners](docs/headless-normalization-runners.md): native/headless runner recipes for Codex, Claude Code, Cursor, OpenCode, and the bundled local stdio MCP wrapper.
 - [Native API Normalization Runner](docs/native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.
 - [Proof-Output Drafting](docs/proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
