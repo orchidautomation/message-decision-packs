@@ -93,6 +93,21 @@ Validation-style CLI behavior applies: a non-`audit-grade` receipt prints the JS
 mdp --json schema runner-audit
 ```
 
+The rest of the proposal evidence chain is also inspectable:
+
+```bash
+mdp --json schema source-intake
+mdp --json schema source-audit
+mdp --json schema native-normalize-request
+mdp --json schema prompt-output
+mdp --json schema proposal-runner-result
+mdp --json schema proposal-mcp-run-result
+```
+
+These schemas describe artifact shape and contract version. They do not upgrade
+mock/demo evidence, prove that a provider call occurred, approve source
+material, or turn MCP transport into model-isolation evidence.
+
 For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the schema-accepted isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`. Schema acceptance does not make a runner a maintained or verified MDP integration:
 
 - `native-api`: a direct stateless API request with no prior messages and no tools. The bundled optional reference is `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles; see [Native API Normalization Runner](native-api-normalization-runner.md).

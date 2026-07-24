@@ -13,6 +13,9 @@ workdir="$tmp_dir/dry-run"
 transcript="$tmp_dir/transcript.ndjson"
 stdout_jsonl="$tmp_dir/stdout.jsonl"
 stderr_log="$tmp_dir/stderr.log"
+mcp_result_schema="$tmp_dir/proposal-mcp-run-result.schema.json"
+
+cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema proposal-mcp-run-result > "$mcp_result_schema"
 
 python3 - "$root" "$pack" "$workdir" "$transcript" <<'PY'
 import json, pathlib, sys
@@ -78,10 +81,11 @@ if [ -s "$stderr_log" ]; then
   exit 1
 fi
 
-python3 - "$stdout_jsonl" "$workdir/artifacts/native-normalize-request.json" <<'PY'
+python3 - "$stdout_jsonl" "$workdir/artifacts/native-normalize-request.json" "$mcp_result_schema" <<'PY'
 import json, pathlib, sys
 stdout_path = pathlib.Path(sys.argv[1])
 request_path = pathlib.Path(sys.argv[2])
+mcp_result_schema = json.load(open(sys.argv[3]))["data"]
 lines = [line for line in stdout_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 assert len(lines) == 5, f"expected 5 JSON-RPC responses, got {len(lines)}: {stdout_path.read_text()}"
 messages = [json.loads(line) for line in lines]
@@ -114,7 +118,11 @@ run_call = result(4, "tools/call mdp_proposal_run dry-run")
 assert run_call["isError"] is False, run_call["content"][0]["text"]
 run_content = run_call["structuredContent"]
 assert run_content["contract"] == "mdp.proposal-mcp-run-result.v0"
+assert run_content["contract"] == mcp_result_schema["properties"]["contract"]["const"]
+assert not (set(mcp_result_schema["required"]) - set(run_content))
 assert run_content["hosted_or_remote_mcp"] is False
+assert mcp_result_schema["properties"]["hosted_or_remote_mcp"]["const"] is False
+assert "does not prove model isolation" in mcp_result_schema["description"]
 assert run_content["runner_result"]["mode"] == "dry-run"
 assert run_content["runner_result"]["audit_grade_eligible"] is False
 assert request_path.exists(), "dry-run did not create native-normalize-request.json"

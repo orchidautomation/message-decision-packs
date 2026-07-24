@@ -1,6 +1,7 @@
 use crate::cli::{RunIsolation, RunReceiptWorkflow};
 use crate::constants::{
-    DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT,
+    DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
+    SOURCE_AUDIT_CONTRACT,
 };
 use crate::pack_io::read_manifest;
 use anyhow::{Context, Result, anyhow};
@@ -203,7 +204,7 @@ pub(crate) fn run_receipt(options: RunReceiptOptions<'_>) -> Result<Value> {
         .count();
 
     Ok(json!({
-        "contract": "mdp.run-receipt.v0",
+        "contract": RUN_RECEIPT_CONTRACT,
         "valid": valid,
         "decision": decision,
         "workflow": options.workflow.as_str(),
