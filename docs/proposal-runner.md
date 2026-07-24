@@ -26,6 +26,7 @@ mdp --json schema native-normalize-request
 mdp --json schema prompt-output
 mdp --json schema runner-audit
 mdp --json schema run-receipt
+mdp --json schema proposal-run-manifest
 mdp --json schema proposal-runner-result
 mdp --json schema proposal-mcp-run-result
 ```
@@ -74,6 +75,7 @@ The runner:
 - stages supplied text, Markdown, CSV, JSON, or YAML source files in a local run directory;
 - rejects source symlinks, unsafe source IDs, unsafe workdir ownership/modes, and stale workdirs without an exact ownership manifest;
 - creates `artifacts/source-intake.json` and binds every staged source to matching source-audit snippet bytes;
+- atomically writes `.mdp-proposal-run.json`, refuses concurrent/partial reuse, and read-backs terminal artifact hashes before reporting;
 - preserves a supplied `mdp.source-audit.v0` or creates a bounded source-audit ledger for staged text;
 - builds a single-user-message `mdp.native-normalize-request.v0` with only the prompt-declared payload fields: `raw_opportunity`, `existing_pack_context`, `source_audit`, and `source_kind`;
 - calls `scripts/mdp-native-normalize-openai.mjs`;
@@ -98,6 +100,15 @@ node scripts/mdp-proposal-runner.mjs run \
 ```
 
 Dry-run writes a request and native-runner preview, but it does not produce prompt output, runner audit, validation, receipt, or review artifacts. It is never audit-grade. It also writes candidate-only `source-intake.json` and `.mdp-proposal-workdir.json`. To reuse that directory, pass the manifest's exact `workdir_id` with `--reuse-workdir-id`; there is no generic allow-existing mode.
+
+Every invocation also owns `.mdp-proposal-run.json` under an exclusive
+`.mdp-proposal-run.lock`. The run manifest starts as `in-progress`, ends as
+`completed` or `blocked`, and records the run ID, owner/workdir ID, bounded
+command summary, timestamps, decision, and hashes for files under `artifacts/`
+and `sources/`. Both start and terminal writes are atomic and read back before
+the runner reports. Reuse requires both the ownership manifest and a matching
+terminal run manifest. An in-progress manifest, stale lock, unknown manifest,
+or interrupted run fails closed; the runner never deletes those states.
 
 To approve real input, inspect the candidate preview and hashes, have a human
 change each accepted entry to `state: "approved"` and

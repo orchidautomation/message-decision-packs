@@ -113,6 +113,11 @@ The local proposal runner supplies its checked `mdp.source-intake.v0` ledger to
 that exact file. This binds the ledger to the run but does not replace the
 human approval recorded inside approved entries.
 
+The surrounding workdir lifecycle is recorded separately in
+`.mdp-proposal-run.json` (`mdp --json schema proposal-run-manifest`). It binds
+the files produced by the invocation and blocks partial/concurrent reuse, but it
+does not replace the semantic assurance decision in `mdp.run-receipt.v0`.
+
 For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the schema-accepted isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`. Schema acceptance does not make a runner a maintained or verified MDP integration:
 
 - `native-api`: a direct stateless API request with no prior messages and no tools. The bundled optional reference is `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles; see [Native API Normalization Runner](native-api-normalization-runner.md).

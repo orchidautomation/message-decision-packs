@@ -25,6 +25,7 @@ source_audit_schema="$tmp_dir/source-audit.schema.json"
 native_request_schema="$tmp_dir/native-normalize-request.schema.json"
 prompt_output_schema="$tmp_dir/prompt-output.schema.json"
 runner_result_schema="$tmp_dir/proposal-runner-result.schema.json"
+run_manifest_schema="$tmp_dir/proposal-run-manifest.schema.json"
 
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- init --template proposal --dir "$pack" > "$tmp_dir/init.json"
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema source-intake > "$source_intake_schema"
@@ -32,6 +33,7 @@ cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema source
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema native-normalize-request > "$native_request_schema"
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema prompt-output > "$prompt_output_schema"
 cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema proposal-runner-result > "$runner_result_schema"
+cargo run --quiet --manifest-path "$root/cli/Cargo.toml" -- --json schema proposal-run-manifest > "$run_manifest_schema"
 
 python3 - "$root/examples/proposal-flow-video/fixtures/normalize-opportunity-output.json" "$mock_response" "$minimal_attrs_output" <<'PY'
 import copy, json, sys
@@ -87,18 +89,20 @@ node "$root/scripts/mdp-proposal-runner.mjs" run \
   --source-kind synthetic-example \
   --dry-run > "$dry_result"
 
-python3 - "$dry_result" "$tmp_dir/dry-run/artifacts/native-normalize-request.json" "$tmp_dir/dry-run/artifacts/source-audit.json" "$tmp_dir/dry-run/artifacts/source-intake.json" "$tmp_dir/dry-run/.mdp-proposal-workdir.json" "$source_intake_schema" "$source_audit_schema" "$native_request_schema" "$prompt_output_schema" "$runner_result_schema" <<'PY'
-import json, sys
+python3 - "$dry_result" "$tmp_dir/dry-run/artifacts/native-normalize-request.json" "$tmp_dir/dry-run/artifacts/source-audit.json" "$tmp_dir/dry-run/artifacts/source-intake.json" "$tmp_dir/dry-run/.mdp-proposal-workdir.json" "$tmp_dir/dry-run/.mdp-proposal-run.json" "$source_intake_schema" "$source_audit_schema" "$native_request_schema" "$prompt_output_schema" "$runner_result_schema" "$run_manifest_schema" <<'PY'
+import json, pathlib, sys
 result = json.load(open(sys.argv[1]))
 request = json.load(open(sys.argv[2]))
 source_audit = json.load(open(sys.argv[3]))
 source_intake = json.load(open(sys.argv[4]))
 workdir_manifest = json.load(open(sys.argv[5]))
-source_intake_schema = json.load(open(sys.argv[6]))["data"]
-source_audit_schema = json.load(open(sys.argv[7]))["data"]
-native_request_schema = json.load(open(sys.argv[8]))["data"]
-prompt_output_schema = json.load(open(sys.argv[9]))["data"]
-runner_result_schema = json.load(open(sys.argv[10]))["data"]
+run_manifest = json.load(open(sys.argv[6]))
+source_intake_schema = json.load(open(sys.argv[7]))["data"]
+source_audit_schema = json.load(open(sys.argv[8]))["data"]
+native_request_schema = json.load(open(sys.argv[9]))["data"]
+prompt_output_schema = json.load(open(sys.argv[10]))["data"]
+runner_result_schema = json.load(open(sys.argv[11]))["data"]
+run_manifest_schema = json.load(open(sys.argv[12]))["data"]
 payload = json.loads(request["input"][0]["content"])
 
 def assert_required_keys(value, schema):
@@ -166,11 +170,18 @@ assert payload["raw_opportunity"]["source_intake"]["sha256"]
 assert intake_entry["audit_refs"] == ["raw_opportunity.sources[0]"]
 assert workdir_manifest["contract"] == "mdp.proposal-workdir.v0"
 assert workdir_manifest["workdir_id"]
+assert run_manifest["contract"] == "mdp.proposal-run-manifest.v0"
+assert run_manifest["run_id"] == result["run_id"]
+assert run_manifest["status"] == "completed"
+assert run_manifest["ended_at"]
+assert not pathlib.Path(result["workdir"], ".mdp-proposal-run.lock").exists()
+assert any(item["path"] == "artifacts/proposal-runner-result.json" for item in run_manifest["artifacts"])
 assert source_audit["contract"] == source_audit_schema["properties"]["contract"]["const"]
 assert request["contract"] == native_request_schema["properties"]["contract"]["const"]
 assert result["contract"] == runner_result_schema["properties"]["contract"]["const"]
 assert prompt_output_schema["properties"]["contract"]["const"] == "mdp.prompt-output.v0"
 assert source_intake_schema["properties"]["contract"]["const"] == "mdp.source-intake.v0"
+assert run_manifest_schema["properties"]["contract"]["const"] == "mdp.proposal-run-manifest.v0"
 assert "Only a human operator" in source_intake_schema["description"]
 for value, schema in [
     (source_intake, source_intake_schema),
@@ -226,6 +237,27 @@ node "$root/scripts/mdp-proposal-runner.mjs" run \
   --source-kind synthetic-example \
   --dry-run > "$tmp_dir/reused-dry-result.json"
 
+cat > "$tmp_dir/slow-native-runner.mjs" <<'JS'
+setTimeout(() => {
+  console.log(JSON.stringify({ contract: "mdp.native-normalize-dry-run.v0", ok: true }))
+}, 1500)
+JS
+
+node "$root/scripts/mdp-proposal-runner.mjs" run \
+  --pack "$pack" \
+  --workdir "$tmp_dir/concurrent-workdir" \
+  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+  --source-id synthetic-rfp-summary \
+  --source-kind synthetic-example \
+  --native-runner "$tmp_dir/slow-native-runner.mjs" \
+  --dry-run > "$tmp_dir/concurrent-first.json" 2> "$tmp_dir/concurrent-first.stderr" &
+first_pid=$!
+for _ in $(seq 1 50); do
+  if test -f "$tmp_dir/concurrent-workdir/.mdp-proposal-run.json"; then break; fi
+  sleep 0.05
+done
+concurrent_workdir_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workdir_id"])' "$tmp_dir/concurrent-workdir/.mdp-proposal-workdir.json")"
+
 expect_fail() {
   local expected="$1"
   shift
@@ -236,6 +268,17 @@ expect_fail() {
   fi
   grep -F "$expected" "$stderr" >/dev/null
 }
+
+expect_fail "partial or unknown runs fail closed" \
+  node "$root/scripts/mdp-proposal-runner.mjs" run \
+    --pack "$pack" \
+    --workdir "$tmp_dir/concurrent-workdir" \
+    --reuse-workdir-id "$concurrent_workdir_id" \
+    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source-id synthetic-rfp-summary \
+    --source-kind synthetic-example \
+    --dry-run
+wait "$first_pid"
 
 expect_fail "source-id must be lowercase safe ID" \
   node "$root/scripts/mdp-proposal-runner.mjs" run \
@@ -262,6 +305,16 @@ expect_fail "does not exist in .mdp/sources.yaml" \
     --source-id nonexistent-source \
     --source-kind synthetic-example \
     --dry-run
+
+python3 - "$tmp_dir/unknown-source-id/.mdp-proposal-run.json" <<'PY'
+import json, pathlib, sys
+manifest = json.load(open(sys.argv[1]))
+assert manifest["status"] == "blocked"
+assert manifest["decision"] == "blocked"
+assert manifest["ended_at"]
+assert manifest["error"]["code"] == "runner-failed"
+assert not pathlib.Path(sys.argv[1]).with_name(".mdp-proposal-run.lock").exists()
+PY
 
 ln -s "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" "$tmp_dir/source-link.txt"
 expect_fail "source must not be a symlink" \

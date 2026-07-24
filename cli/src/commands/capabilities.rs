@@ -1,8 +1,9 @@
 use crate::constants::{
     DEFAULT_DIR, FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF,
     PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
-    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
+    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
+    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use serde_json::{Value, json};
 
@@ -33,8 +34,8 @@ pub(crate) fn capabilities() -> Value {
             "source_intake": {
                 "contract": SOURCE_INTAKE_CONTRACT,
                 "schema_target": "source-intake",
-                "required_for": ["future real client-source approval and receipt binding"],
-                "caveat": "Only a human may approve exact bytes for proposal-review; current runner/receipt binding is not yet implemented."
+                "required_for": ["real client-source approval and proposal runner receipt binding"],
+                "caveat": "Only a human may approve exact bytes for proposal-review; the local runner verifies and receipt-binds the ledger but never self-approves it."
             },
             "source_audit": {
                 "contract": SOURCE_AUDIT_CONTRACT,
@@ -63,6 +64,12 @@ pub(crate) fn capabilities() -> Value {
                 "contract": RUN_RECEIPT_CONTRACT,
                 "schema_target": "run-receipt",
                 "required_for": ["per-invocation proposal assurance decision"]
+            },
+            "proposal_run_manifest": {
+                "contract": PROPOSAL_RUN_MANIFEST_CONTRACT,
+                "schema_target": "proposal-run-manifest",
+                "required_for": ["proposal workdir ownership, concurrency refusal, and terminal run state"],
+                "caveat": "In-progress and blocked manifests are not audit-grade evidence."
             },
             "proposal_runner_result": {
                 "contract": PROPOSAL_RUNNER_RESULT_CONTRACT,
@@ -190,6 +197,10 @@ mod tests {
         assert_eq!(
             result["proposal_evidence_contracts"]["proposal_mcp_run_result"]["contract"],
             PROPOSAL_MCP_RUN_RESULT_CONTRACT
+        );
+        assert_eq!(
+            result["proposal_evidence_contracts"]["proposal_run_manifest"]["contract"],
+            PROPOSAL_RUN_MANIFEST_CONTRACT
         );
         assert_eq!(result["target_contracts"]["kinds"][0], "company");
         assert!(
