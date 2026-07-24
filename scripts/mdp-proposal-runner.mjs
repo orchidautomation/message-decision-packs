@@ -3,14 +3,18 @@ import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   chmodSync,
+  closeSync,
   copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
@@ -22,6 +26,7 @@ const TOOLS_CONTRACT = 'mdp.proposal-runner-tools.v0'
 const SOURCE_INTAKE_CONTRACT = 'mdp.source-intake.v0'
 const SOURCE_AUDIT_CONTRACT = 'mdp.source-audit.v0'
 const WORKDIR_CONTRACT = 'mdp.proposal-workdir.v0'
+const RUN_MANIFEST_CONTRACT = 'mdp.proposal-run-manifest.v0'
 const REQUEST_CONTRACT = 'mdp.native-normalize-request.v0'
 const PROMPT_OUTPUT_CONTRACT = 'mdp.prompt-output.v0'
 const DEFAULT_PROMPT_ID = 'normalize-opportunity'
@@ -72,9 +77,15 @@ Options:
   --max-source-bytes N     Per-source bounded text bytes to include in prompt payload.
 `.trim()
 
+class RunnerError extends Error {
+  constructor(message, code = 1) {
+    super(message)
+    this.exitCode = code
+  }
+}
+
 const fail = (message, code = 1) => {
-  console.error(message)
-  process.exit(code)
+  throw new RunnerError(message, code)
 }
 
 const parseArgs = (argv) => {
@@ -260,6 +271,13 @@ const writeJson = (path, value) => {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
 }
 
+const writeJsonAtomic = (path, value) => {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`
+  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
+  renameSync(temporary, path)
+}
+
 const writeText = (path, value) => {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, value)
@@ -385,6 +403,117 @@ const prepareWorkdir = (workdir, reuseWorkdirId) => {
   mkdirSync(join(resolved, 'artifacts'), { recursive: true, mode: 0o700 })
   mkdirSync(join(resolved, 'sources'), { recursive: true, mode: 0o700 })
   return { root: resolved, manifest }
+}
+
+let activeRun = null
+
+const collectRunArtifacts = (workdir) => {
+  const files = []
+  const visit = (root) => {
+    if (!existsSync(root)) return
+    for (const name of readdirSync(root).sort()) {
+      const path = join(root, name)
+      const stats = lstatSync(path)
+      if (stats.isSymbolicLink()) fail(`Run artifact must not be a symlink: ${path}`)
+      if (stats.isDirectory()) visit(path)
+      else if (stats.isFile()) {
+        files.push({
+          path: relative(workdir, path),
+          sha256: sha256File(path),
+          byte_count: stats.size,
+        })
+      }
+    }
+  }
+  visit(join(workdir, 'artifacts'))
+  visit(join(workdir, 'sources'))
+  return files
+}
+
+const startRunManifest = ({ workdir, ownership, reuseWorkdirId, args }) => {
+  const manifestPath = join(workdir, '.mdp-proposal-run.json')
+  const lockPath = join(workdir, '.mdp-proposal-run.lock')
+  if (reuseWorkdirId) {
+    const previous = maybeReadJson(manifestPath)
+    if (
+      !previous ||
+      previous.contract !== RUN_MANIFEST_CONTRACT ||
+      previous.owner?.workdir_id !== ownership.workdir_id ||
+      !['completed', 'blocked'].includes(previous.status)
+    ) {
+      fail('Workdir reuse requires a matching terminal proposal run manifest; partial or unknown runs fail closed.')
+    }
+  } else if (existsSync(manifestPath) || existsSync(lockPath)) {
+    fail('Workdir contains proposal run state but reuse was not explicitly authorized.')
+  }
+
+  let lockFd
+  try {
+    lockFd = openSync(lockPath, 'wx', 0o600)
+    writeFileSync(lockFd, `${JSON.stringify({ contract: RUN_MANIFEST_CONTRACT, pid: process.pid })}\n`)
+  } catch (error) {
+    fail(`Proposal workdir is locked by another or interrupted run: ${error.code || error.message}`)
+  } finally {
+    if (lockFd !== undefined) closeSync(lockFd)
+  }
+
+  const runId = randomUUID()
+  const mode = args.dryRun ? 'dry-run' : args.mockResponse ? 'mock' : 'native'
+  const manifest = {
+    contract: RUN_MANIFEST_CONTRACT,
+    run_id: runId,
+    owner: {
+      workdir_id: ownership.workdir_id,
+      uid: typeof process.getuid === 'function' ? process.getuid() : null,
+    },
+    runner: {
+      contract: RUNNER_CONTRACT,
+      version: 'v0',
+      pid: process.pid,
+    },
+    command: {
+      mode,
+      prompt_id: args.promptId,
+      source_count: args.sources.length,
+      reuse: Boolean(reuseWorkdirId),
+    },
+    started_at: new Date().toISOString(),
+    ended_at: null,
+    status: 'in-progress',
+    decision: null,
+    artifacts: [],
+  }
+  writeJsonAtomic(manifestPath, manifest)
+  const readback = readJson(manifestPath)
+  if (readback.run_id !== runId || readback.status !== 'in-progress') {
+    fail('Proposal run manifest failed atomic start readback.')
+  }
+  activeRun = { workdir, manifestPath, lockPath, manifest }
+  return activeRun
+}
+
+const finalizeRunManifest = ({ status, decision = 'blocked', error = null }) => {
+  if (!activeRun) return null
+  const terminal = {
+    ...activeRun.manifest,
+    ended_at: new Date().toISOString(),
+    status,
+    decision,
+    artifacts: collectRunArtifacts(activeRun.workdir),
+    ...(error ? { error } : {}),
+  }
+  writeJsonAtomic(activeRun.manifestPath, terminal)
+  const readback = readJson(activeRun.manifestPath)
+  if (
+    readback.run_id !== terminal.run_id ||
+    readback.status !== status ||
+    readback.artifacts.length !== terminal.artifacts.length
+  ) {
+    fail('Proposal run manifest failed terminal readback.')
+  }
+  unlinkSync(activeRun.lockPath)
+  activeRun = null
+  return readback
 }
 
 const stageSources = (sources, workdir, maxSourceBytes) => {
@@ -944,8 +1073,15 @@ const run = (args) => {
 
   const preparedWorkdir = prepareWorkdir(args.workdir, args.reuseWorkdirId)
   const workdir = preparedWorkdir.root
+  const runState = startRunManifest({
+    workdir,
+    ownership: preparedWorkdir.manifest,
+    reuseWorkdirId: args.reuseWorkdirId,
+    args,
+  })
   const artifactsDir = join(workdir, 'artifacts')
   const paths = {
+    runManifest: runState.manifestPath,
     sourceIntake: join(artifactsDir, 'source-intake.json'),
     sourceAudit: join(artifactsDir, 'source-audit.json'),
     request: join(artifactsDir, 'native-normalize-request.json'),
@@ -1057,6 +1193,8 @@ const run = (args) => {
       audit_grade_eligible: false,
       decision: 'not-run',
       runner_assurance: 'not-run',
+      run_id: runState.manifest.run_id,
+      run_manifest: runState.manifestPath,
       workdir,
       artifacts: paths,
       steps,
@@ -1066,6 +1204,7 @@ const run = (args) => {
       ],
     }
     writeJson(paths.result, result)
+    finalizeRunManifest({ status: 'completed', decision: result.decision })
     console.log(JSON.stringify(result, null, 2))
     return
   }
@@ -1230,6 +1369,8 @@ const run = (args) => {
     audit_grade_eligible: mode === 'native' && decision === 'audit-grade',
     decision,
     runner_assurance: runnerAssurance,
+    run_id: runState.manifest.run_id,
+    run_manifest: runState.manifestPath,
     workdir,
     artifacts: paths,
     steps,
@@ -1245,23 +1386,44 @@ const run = (args) => {
     ],
   }
   writeJson(paths.result, result)
+  finalizeRunManifest({ status: 'completed', decision })
   console.log(JSON.stringify(result, null, 2))
   if (args.requireAuditGrade && decision !== 'audit-grade') {
-    process.exit(2)
+    process.exitCode = 2
   }
 }
 
 const main = () => {
-  const args = parseArgs(process.argv.slice(2))
-  if (args.command === 'help') {
-    console.log(usage())
-    return
+  try {
+    const args = parseArgs(process.argv.slice(2))
+    if (args.command === 'help') {
+      console.log(usage())
+      return
+    }
+    if (args.command === 'tools') {
+      console.log(JSON.stringify(toolEnvelope(), null, 2))
+      return
+    }
+    run(args)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (activeRun) {
+      try {
+        finalizeRunManifest({
+          status: 'blocked',
+          decision: 'blocked',
+          error: {
+            code: 'runner-failed',
+            message: message.split(/\r?\n/, 1)[0].slice(0, 500),
+          },
+        })
+      } catch (manifestError) {
+        console.error(`Failed to finalize blocked run manifest: ${manifestError.message}`)
+      }
+    }
+    console.error(message)
+    process.exitCode = error?.exitCode || 1
   }
-  if (args.command === 'tools') {
-    console.log(JSON.stringify(toolEnvelope(), null, 2))
-    return
-  }
-  run(args)
 }
 
 main()

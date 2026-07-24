@@ -346,6 +346,7 @@ pub(crate) enum SchemaTarget {
     SourceAudit,
     NativeNormalizeRequest,
     PromptOutput,
+    ProposalRunManifest,
     ProposalRunnerResult,
     ProposalMcpRunResult,
     RunReceipt,

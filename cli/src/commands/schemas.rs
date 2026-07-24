@@ -2,8 +2,9 @@ use crate::cli::SchemaTarget;
 use crate::constants::{
     FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF,
     PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
-    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
+    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
+    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -80,6 +81,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
             }
             value
         }
+        SchemaTarget::ProposalRunManifest => proposal_run_manifest_schema(),
         SchemaTarget::ProposalRunnerResult => proposal_runner_result_schema(),
         SchemaTarget::ProposalMcpRunResult => proposal_mcp_run_result_schema(),
         SchemaTarget::RunReceipt => run_receipt_schema(),
@@ -388,6 +390,84 @@ fn native_normalize_request_schema() -> Value {
     })
 }
 
+fn proposal_run_manifest_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Proposal Run Manifest v0",
+        "description": "Atomic local ownership and terminal-state record for one proposal runner invocation. An in-progress or blocked manifest is not audit-grade evidence.",
+        "type": "object",
+        "required": [
+            "contract", "run_id", "owner", "runner", "command", "started_at",
+            "ended_at", "status", "decision", "artifacts"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": PROPOSAL_RUN_MANIFEST_CONTRACT},
+            "run_id": {"type": "string", "pattern": "\\S"},
+            "owner": {
+                "type": "object",
+                "required": ["workdir_id", "uid"],
+                "additionalProperties": false,
+                "properties": {
+                    "workdir_id": {"type": "string", "pattern": "\\S"},
+                    "uid": {"type": ["integer", "null"], "minimum": 0}
+                }
+            },
+            "runner": {
+                "type": "object",
+                "required": ["contract", "version", "pid"],
+                "additionalProperties": false,
+                "properties": {
+                    "contract": {"type": "string", "pattern": "\\S"},
+                    "version": {"type": "string", "pattern": "\\S"},
+                    "pid": {"type": "integer", "minimum": 1}
+                }
+            },
+            "command": {
+                "type": "object",
+                "required": ["mode", "prompt_id", "source_count", "reuse"],
+                "additionalProperties": false,
+                "properties": {
+                    "mode": {"enum": ["dry-run", "mock", "native"]},
+                    "prompt_id": {"type": "string", "pattern": "\\S"},
+                    "source_count": {"type": "integer", "minimum": 1},
+                    "reuse": {"type": "boolean"}
+                }
+            },
+            "started_at": {"type": "string", "format": "date-time"},
+            "ended_at": {"type": ["string", "null"], "format": "date-time"},
+            "status": {"enum": ["in-progress", "completed", "blocked"]},
+            "decision": {"type": ["string", "null"]},
+            "artifacts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["path", "sha256", "byte_count"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+                        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "byte_count": {"type": "integer", "minimum": 0}
+                    }
+                }
+            },
+            "error": {
+                "type": "object",
+                "required": ["code", "message"],
+                "additionalProperties": false,
+                "properties": {
+                    "code": {"type": "string", "pattern": "\\S"},
+                    "message": {"type": "string"}
+                }
+            }
+        },
+        "allOf": [{
+            "if": {"properties": {"status": {"enum": ["completed", "blocked"]}}},
+            "then": {"properties": {"ended_at": {"type": "string", "format": "date-time"}}}
+        }]
+    })
+}
+
 fn proposal_runner_result_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -402,6 +482,8 @@ fn proposal_runner_result_schema() -> Value {
             "audit_grade_eligible",
             "decision",
             "runner_assurance",
+            "run_id",
+            "run_manifest",
             "workdir",
             "artifacts",
             "steps",
@@ -429,6 +511,8 @@ fn proposal_runner_result_schema() -> Value {
                     "unknown"
                 ]
             },
+            "run_id": {"type": "string", "pattern": "\\S"},
+            "run_manifest": {"type": "string", "pattern": "\\S"},
             "workdir": {"type": "string"},
             "artifacts": {"type": "object", "additionalProperties": {"type": "string"}},
             "steps": {
@@ -2210,6 +2294,20 @@ mod tests {
                 .as_str()
                 .expect("mode description")
                 .contains("cannot be audit-grade")
+        );
+        assert_eq!(
+            runner_result["properties"]["run_manifest"]["type"],
+            "string"
+        );
+
+        let run_manifest = schema(SchemaTarget::ProposalRunManifest);
+        assert_eq!(
+            run_manifest["properties"]["contract"]["const"],
+            PROPOSAL_RUN_MANIFEST_CONTRACT
+        );
+        assert_eq!(
+            run_manifest["properties"]["status"]["enum"],
+            json!(["in-progress", "completed", "blocked"])
         );
 
         let mcp_result = schema(SchemaTarget::ProposalMcpRunResult);
