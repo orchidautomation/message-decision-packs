@@ -2,7 +2,7 @@
 
 MDP is intentionally not the model runner. The plugin teaches the agent what to do, and the CLI validates/hash-gates the artifacts it receives. For production proposal or document review, the model call that turns messy source material into `mdp.prompt-output.v0` should run in a headless/stateless boundary, not inside the operator's current chat context.
 
-The strongest default boundary is a native stateless API call. This repo includes an optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs`, and Pluxx packages it into installed bundles under `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; see [Native API Normalization Runner](native-api-normalization-runner.md). For the proposal flow, `scripts/mdp-proposal-runner.mjs` is the local orchestration surface that stages sources, builds the native request, calls the runner, validates prompt output, creates the receipt, and runs review probes; see [Local Proposal Runner Surface](proposal-runner.md). Headless Codex, Claude Code, Cursor, and OpenCode recipes are fallback/adapter paths for hosts that need to use their own non-interactive agent runner.
+The strongest default boundary is a native stateless API call. This repo includes an optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs`, and Pluxx packages it into installed bundles under `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; see [Native API Normalization Runner](native-api-normalization-runner.md). For the proposal flow, `scripts/mdp-proposal-runner.mjs` is the local orchestration surface that stages sources, builds the native request, calls the runner, validates prompt output, creates the receipt, and runs review probes; see [Local Proposal Runner Surface](proposal-runner.md). Headless Codex, Claude Code, Cursor, and OpenCode entries below are recipe-only adapter paths, not verified MDP integrations.
 
 This lets the user keep a one-thread workshop UX while the implementation keeps two separate planes:
 
@@ -10,6 +10,33 @@ This lets the user keep a one-thread workshop UX while the implementation keeps 
 Control plane:  ChatGPT/Codex/Claude/Copilot conversation, status, questions, final explanation
 Evidence plane: local source files -> source audit -> prompt package -> model output -> validation -> run receipt -> fit/proof checks
 ```
+
+## Canonical Runner Support Matrix
+
+This table is the canonical public support-state record. The four states are:
+
+- `verified`: a maintained invocation completed the full artifact chain with machine-observed runner evidence, matching hashes, and an audit-grade `mdp.run-receipt.v0`.
+- `recipe-only`: MDP documents or validates the runner contract, but has no recorded end-to-end verification. Schema acceptance is not integration verification.
+- `unsupported`: there is no maintained named adapter and no recorded end-to-end proof.
+- `fixture/mock-only`: the mode intentionally uses synthetic, demo, fixture, or mock evidence and must not produce an audit-grade receipt.
+
+No runner is currently `verified`. A row can move to `verified` only after one real invocation produces prompt output, runner audit, successful prompt-output validation, and `mdp run-receipt --require-runner-audit` with matching hashes. The proof must be machine-observed and sanitized; a command recipe, installed CLI, MCP transport, structurally valid audit JSON, dry-run, or mock result cannot upgrade a row.
+
+| Candidate | Current state | Required isolation evidence | Current repository evidence | Missing proof / exact upgrade condition |
+| --- | --- | --- | --- | --- |
+| `native-api` | `recipe-only` | Stateless request; no prior messages, conversation attachment, or tools; structured output; `store: false`; zero tool calls; exact output hash. | Maintained OpenAI Responses request builder and audit emitter; offline dry-run/mock coverage; receipt validator. | Run one explicit real request with synthetic source material, validate its output, and produce an audit-grade receipt with matching hashes. Commit only sanitized evidence. Tracked in MDP-149. |
+| `codex-exec` | `recipe-only` | Ephemeral/no-resume run; no session persistence; sterile workdir and instruction/config discovery; audited prompt input; read-only sandbox; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained wrapper that isolates home/workdir, audits model-visible input, parses events, and completes the full receipt chain in a machine-observed run. |
+| `claude-print` | `recipe-only` | Bare print mode; no resume or persistence; structured output; tools disabled; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained wrapper and complete the full receipt chain in a machine-observed run. |
+| `cursor-print` | `recipe-only` | No resume or `--force`; sterile workdir and audited input; external tool denial; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained wrapper/external sandbox that denies tools and completes the full receipt chain in a machine-observed run. |
+| `opencode-run` | `recipe-only` | No resumed/shared session; pure mode; plugin and instruction discovery disabled; sterile workdir; no-tool agent; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained pinned wrapper/configuration and complete the full receipt chain in a machine-observed run. |
+| `custom-headless` | `unsupported` | Common isolated/no-resume/declared-input-only/structured-output boundary; no persistence or tools; zero tool events; exact output hash. | Generic schema and receipt-validation branch only. | Create a named, owned, maintained adapter and record its machine-observed event evidence plus full audit-grade receipt chain. |
+| Native dry-run/mock and public video fixtures | `fixture/mock-only` | Fixture markers must remain present and isolation claims must remain false where no real invocation occurred. | Offline request tests and a synthetic public walkthrough that intentionally produces a blocked receipt. | Never upgrade these artifacts. Perform a separate real invocation instead. |
+
+`headless-verified` and `stateless-api-verified` are assurance values for an individual accepted receipt. They do not mean the corresponding integration is maintained or `verified` in this matrix.
+
+### Client-video decision
+
+The default public proposal walkthrough remains synthetic and must be described as mock/non-audit-grade. A client-facing run may be called real and audit-grade only when that invocation itself ends with `decision: "audit-grade"` and a valid runner assurance from `--require-runner-audit`. Until a real run also satisfies the matrix upgrade rule, do not describe MDP as having a verified runner integration.
 
 ## Required Artifact Chain
 

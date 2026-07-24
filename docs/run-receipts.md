@@ -4,6 +4,8 @@
 
 Use it when the operator wants an audit-grade proposal or document-review flow, especially when a PDF/doc extraction step produced a `mdp.source-audit.v0` ledger.
 
+A receipt assurance value describes one invocation; it is not a public integration-support claim. Consult the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix) before describing a runner as verified. All currently documented named runners are recipe-only, while `custom-headless` is unsupported and mock/demo evidence is fixture/mock-only.
+
 ## What It Proves
 
 The receipt records:
@@ -86,7 +88,7 @@ Validation-style CLI behavior applies: a non-`audit-grade` receipt prints the JS
 mdp --json schema runner-audit
 ```
 
-For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the supported isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`:
+For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the schema-accepted isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`. Schema acceptance does not make a runner a maintained or verified MDP integration:
 
 - `native-api`: a direct stateless API request with no prior messages and no tools. The bundled optional reference is `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles; see [Native API Normalization Runner](native-api-normalization-runner.md).
 - `codex-exec`: `codex exec` in a sterile working directory with ephemeral output, read-only sandboxing, no resume, prompt-input audit, and zero observed tool events.
@@ -97,7 +99,7 @@ For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt un
 
 Runner audits marked as fixtures are intentionally not production evidence. If a runner audit includes `demo_fixture: true`, `fixture: true`, `mock_response: true`, or a model name that looks synthetic/mock/demo/fixture-only, `mdp run-receipt` blocks instead of returning `audit-grade`. Use those artifacts only for offline walkthroughs and tests.
 
-If no runner audit is supplied and `--require-runner-audit` is omitted, the receipt can still be `audit-grade` from assertion flags, but `runner.assurance` is `asserted`. For production proposal review, use `headless-verified` or `stateless-api-verified`.
+If no runner audit is supplied and `--require-runner-audit` is omitted, the receipt can still be `audit-grade` from assertion flags, but `runner.assurance` is `asserted`. Do not use an asserted receipt as proof of verified model isolation. For production proposal review, require `headless-verified` or `stateless-api-verified` for the current invocation, then separately report the integration state from the canonical matrix.
 
 ## One-Thread UX, Two Planes
 
