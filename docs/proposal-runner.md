@@ -36,6 +36,12 @@ The stdio MCP server exposes two callable MCP tools:
 
 `mdp_proposal_run` intentionally accepts local source file paths and source-audit paths, not raw chat text. MCP transport is only the call boundary; audit-grade status still comes from a valid runner audit plus `mdp run-receipt --require-runner-audit`.
 
+## Source Approval Precondition
+
+A path is not approval. Under the [proposal source import and approval contract](orchid/decisions/2026-07-24-proposal-source-import-and-approval-contract.md), chat, pasted text, email/Drive exports, PDFs, OCR, and importer output begin as unblessed input. A maintained importer may create a bounded local candidate, but only a human operator may approve its exact hash, pack source ID, privacy class, and review purpose. A `mdp.source-audit.v0` remains a citation ledger rather than an approval record.
+
+The current runner predates the first-class `mdp.source-intake.v0` ledger and receipt binding planned in MDP-124/MDP-126. Synthetic mock/dry-run use remains valid when labeled non-audit-grade, and real synthetic runner proof remains separate. Do not describe a current path-only real client-source run as proving source approval.
+
 ## What It Does
 
 The runner:
