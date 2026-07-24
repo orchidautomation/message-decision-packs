@@ -52,6 +52,36 @@ const fakeRunner = () => {
     output.normalized_prospect.signals[0].source =
       'raw_opportunity.certification: The sample team is CMMC compliant.'
   }
+  if (caseId === 'ambient-chat-fact') {
+    output.normalized_prospect.signals[0].title = 'Unapproved fact copied from ambient chat'
+    output.normalized_prospect.signals[0].source =
+      'conversation.customer_fact: The evaluator requires FedRAMP authorization.'
+  }
+  if (caseId === 'ocr-summary-mismatch') {
+    output.normalized_prospect.signals[0].title = 'OCR summary not present in the approved extract'
+    output.normalized_prospect.signals[0].source =
+      'raw_opportunity.summary: The agency requires a certified zero-trust implementation.'
+  }
+  if (caseId === 'missing-evidence-as-gap') {
+    output.normalized_prospect.signals = output.normalized_prospect.signals.slice(1)
+    output.normalization_trace.fit_readiness.has_requirement_signal = false
+    output.normalization_trace.fit_readiness.ready_for_mdp_fit = false
+    output.normalization_trace.missing_required = [
+      {
+        field: 'requirement_signal',
+        path: 'normalized_prospect.signals',
+        reason: 'not_available_in_approved_source',
+        source_evidence: 'The approved source contains no additional requirement evidence.',
+      },
+    ]
+    output.gaps = [
+      ...output.gaps,
+      'Additional requirement evidence is absent from the approved source and requires human follow-up.',
+    ]
+  }
+  if (output.normalized_opportunity) {
+    output.normalized_opportunity = structuredClone(output.normalized_prospect)
+  }
   writeJson(outputPath, output)
 
   const audit = {
@@ -169,6 +199,35 @@ const orchestrate = () => {
       expectedValidationCode: 'prompt_output_source_ref_missing',
       checkUnsupportedClaim: true,
     },
+    {
+      id: 'source-audit-citation-mismatch',
+      expectedDecision: 'blocked',
+      expectedAssurance: 'stateless-api-verified',
+      expectedCodes: ['prompt_output_validation_failed'],
+      expectedValidationCode: 'prompt_output_source_snippet_missing',
+      tamperSourceAudit: true,
+    },
+    {
+      id: 'ambient-chat-fact',
+      expectedDecision: 'blocked',
+      expectedAssurance: 'stateless-api-verified',
+      expectedCodes: ['prompt_output_validation_failed'],
+      expectedValidationCode: 'prompt_output_source_input_undeclared',
+    },
+    {
+      id: 'ocr-summary-mismatch',
+      expectedDecision: 'blocked',
+      expectedAssurance: 'stateless-api-verified',
+      expectedCodes: ['prompt_output_validation_failed'],
+      expectedValidationCode: 'prompt_output_source_snippet_missing',
+    },
+    {
+      id: 'missing-evidence-as-gap',
+      expectedDecision: 'audit-grade',
+      expectedAssurance: 'stateless-api-verified',
+      expectedCodes: [],
+      expectMissingRequiredGap: true,
+    },
   ]
 
   const results = []
@@ -188,6 +247,13 @@ const orchestrate = () => {
       harness_case: definition.id,
     })
     copyFileSync(sourceAuditFixture, sourceAuditPath)
+    if (definition.tamperSourceAudit) {
+      const sourceAudit = readJson(sourceAuditPath)
+      const summaryRef = sourceAudit.refs.find((entry) => entry.ref === 'raw_opportunity.summary')
+      summaryRef.locator = 'messy-sources/01-rfp-ocr.txt#unrelated-section'
+      summaryRef.snippet = 'This unrelated synthetic sentence does not support the normalized requirement.'
+      writeJson(sourceAuditPath, sourceAudit)
+    }
     run(
       'node',
       [fileURLToPath(import.meta.url), '--request', requestPath, '--out', promptOutputPath, '--runner-audit', runnerAuditPath],
@@ -263,6 +329,25 @@ const orchestrate = () => {
     if (definition.expectedValidationCode) {
       requireCodes(definition.id, issueCodes(validationData), [definition.expectedValidationCode])
     }
+    if (definition.expectMissingRequiredGap) {
+      const promptOutput = readJson(promptOutputPath)
+      if (!validationData.valid) {
+        throw new Error(`${definition.id}: a bounded missing-required gap should remain schema-valid`)
+      }
+      if (promptOutput.normalization_trace.fit_readiness.ready_for_mdp_fit !== false) {
+        throw new Error(`${definition.id}: missing evidence must make fit readiness false`)
+      }
+      if (promptOutput.normalization_trace.missing_required.length !== 1 || promptOutput.gaps.length === 0) {
+        throw new Error(`${definition.id}: missing evidence must be represented in trace and human-readable gaps`)
+      }
+      if (
+        promptOutput.normalized_prospect.signals.some((signal) =>
+          /zero.trust|fedramp|certif|past.performance/i.test(`${signal.title} ${signal.source}`),
+        )
+      ) {
+        throw new Error(`${definition.id}: absent evidence was smoothed into a proposal signal`)
+      }
+    }
 
     let unsupportedClaim = null
     if (definition.checkUnsupportedClaim) {
@@ -319,6 +404,15 @@ const orchestrate = () => {
     provider_calls: 0,
     caveat:
       'The clean case proves deterministic contract acceptance only. It is not evidence that a provider invocation occurred and must never be presented as production audit-grade proof.',
+    threat_coverage: [
+      { threat: 'ambient_or_raw_text_crosses_the_evidence_boundary', cases: ['ambient-contamination', 'ambient-chat-fact'] },
+      { threat: 'source_content_prompt_injection_is_treated_as_instruction', cases: ['prompt-injection'] },
+      { threat: 'missing_or_mismatched_source_citation_is_accepted', cases: ['source-audit-citation-mismatch', 'ocr-summary-mismatch'] },
+      { threat: 'validation_or_runner_artifact_substitution', cases: ['hash-mismatch'] },
+      { threat: 'fixture_or_demo_evidence_is_upgraded', cases: ['mock-demo'] },
+      { threat: 'unsupported_compliance_or_proof_is_stated_as_fact', cases: ['unsupported-proof'] },
+      { threat: 'missing_evidence_is_smoothed_into_a_fact', cases: ['missing-evidence-as-gap'] },
+    ],
     schemas,
     cases: results,
   }
