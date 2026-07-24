@@ -70,6 +70,23 @@ returns `decision: "audit-grade"` and `audit_grade_eligible: true`; dry-run,
 mock, advisory, blocked, malformed, timed-out, and failed runner results return
 an MCP tool error.
 
+## Skill Routing Decision
+
+Proposal-facing agents use the decision tree packaged at
+`plugin/skills/mdp-proposal-review/references/evidence-path.md`:
+
+1. require explicit local source files and human approval of their exact hashes;
+2. if audit-grade is requested, require a callable local runner/MCP plus a
+   schema-accepted native/headless boundary;
+3. never silently replace a missing evidence path with same-chat normalization;
+4. call the result audit-grade only from the current receipt and runner
+   assurance; otherwise return advisory or blocked; and
+5. report the smallest exact source-checkout or installed-plugin command needed
+   to cross the missing gate.
+
+This preserves a usable ambient review path when the operator explicitly accepts
+advisory assurance, while keeping “is this audit-grade?” a receipt-based answer.
+
 ## Source Approval Precondition
 
 A path is not approval. Under the [proposal source import and approval contract](orchid/decisions/2026-07-24-proposal-source-import-and-approval-contract.md), chat, pasted text, email/Drive exports, PDFs, OCR, and importer output begin as unblessed input. A maintained importer may create a bounded local candidate, but only a human operator may approve its exact hash, pack source ID, privacy class, and review purpose. A `mdp.source-audit.v0` remains a citation ledger rather than an approval record.
