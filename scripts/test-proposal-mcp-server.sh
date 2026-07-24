@@ -81,11 +81,13 @@ if [ -s "$stderr_log" ]; then
   exit 1
 fi
 
-python3 - "$stdout_jsonl" "$workdir/artifacts/native-normalize-request.json" "$mcp_result_schema" <<'PY'
+python3 - "$stdout_jsonl" "$workdir/artifacts/native-normalize-request.json" "$workdir/artifacts/source-intake.json" "$workdir/.mdp-proposal-workdir.json" "$mcp_result_schema" <<'PY'
 import json, pathlib, sys
 stdout_path = pathlib.Path(sys.argv[1])
 request_path = pathlib.Path(sys.argv[2])
-mcp_result_schema = json.load(open(sys.argv[3]))["data"]
+source_intake_path = pathlib.Path(sys.argv[3])
+workdir_manifest_path = pathlib.Path(sys.argv[4])
+mcp_result_schema = json.load(open(sys.argv[5]))["data"]
 lines = [line for line in stdout_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 assert len(lines) == 5, f"expected 5 JSON-RPC responses, got {len(lines)}: {stdout_path.read_text()}"
 messages = [json.loads(line) for line in lines]
@@ -108,6 +110,9 @@ assert {"mdp_proposal_tools", "mdp_proposal_run"}.issubset(names)
 run_tool = next(tool for tool in tools if tool["name"] == "mdp_proposal_run")
 assert run_tool["inputSchema"]["additionalProperties"] is False
 assert "source_text" not in run_tool["inputSchema"]["properties"]
+assert "source_intake_path" in run_tool["inputSchema"]["properties"]
+assert "reuse_workdir_id" in run_tool["inputSchema"]["properties"]
+assert "allow_existing" not in run_tool["inputSchema"]["properties"]
 
 tools_call = result(3, "tools/call mdp_proposal_tools")
 assert tools_call["isError"] is False
@@ -126,12 +131,20 @@ assert "does not prove model isolation" in mcp_result_schema["description"]
 assert run_content["runner_result"]["mode"] == "dry-run"
 assert run_content["runner_result"]["audit_grade_eligible"] is False
 assert request_path.exists(), "dry-run did not create native-normalize-request.json"
+assert source_intake_path.exists(), "dry-run did not create source-intake.json"
+assert workdir_manifest_path.exists(), "dry-run did not create workdir ownership manifest"
 request = json.loads(request_path.read_text(encoding="utf-8"))
+source_intake = json.loads(source_intake_path.read_text(encoding="utf-8"))
+workdir_manifest = json.loads(workdir_manifest_path.read_text(encoding="utf-8"))
 payload = json.loads(request["input"][0]["content"])
 assert request["declared_inputs_only"] is True
 for forbidden in ["instructions", "tools", "previous_response_id", "conversation"]:
     assert forbidden not in request, f"request contains forbidden {forbidden}"
 assert sorted(payload) == ["existing_pack_context", "raw_opportunity", "source_audit", "source_kind"]
+assert source_intake["contract"] == "mdp.source-intake.v0"
+assert source_intake["entries"][0]["state"] == "candidate"
+assert source_intake["entries"][0]["artifact"]["sha256"] == payload["raw_opportunity"]["sources"][0]["sha256"]
+assert workdir_manifest["contract"] == "mdp.proposal-workdir.v0"
 
 raw_text_response = responses[5]
 assert "error" in raw_text_response, "raw source_text argument must return a JSON-RPC invalid-params error"

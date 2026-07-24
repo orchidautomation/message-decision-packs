@@ -106,10 +106,10 @@ All of the following must be true for the exact invocation shown:
 6. A human has reviewed the sources, output, redactions, receipt, and narration
    and has approved the video for its intended audience.
 
-Until the source-intake ledger and receipt binding, machine-observed runner
-evidence, work-directory controls, and MCP allowlist/error-redaction hardening
-required by the CE hardening project are implemented and validated, use only
-synthetic sources in public recordings.
+The local runner now emits and receipt-binds source-intake ledgers and enforces
+owned work-directory reuse. Public recordings must still use synthetic sources
+until the remaining machine-observed runner and MCP allowlist/error-redaction
+gates are implemented, validated, and explicitly cleared by a human reviewer.
 
 ## Current demo verification
 

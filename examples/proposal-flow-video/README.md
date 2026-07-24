@@ -57,14 +57,14 @@ The MP4 is written to `examples/proposal-flow-video/video/out/proposal-flow-vide
 
 3. **Local runner staging**
    - `fixtures/source-audit.json` is the bounded source ledger that maps raw refs to approved snippets and `.mdp/sources.yaml` source IDs.
-   - `scripts/mdp-proposal-runner.mjs` stages source text, builds `mdp.native-normalize-request.v0`, invokes the native runner, validates prompt output, creates the run receipt, and runs review probes.
+   - `scripts/mdp-proposal-runner.mjs` stages source text, writes candidate-only `mdp.source-intake.v0` plus a workdir ownership manifest, binds each audit ref to matching staged snippet bytes, builds `mdp.native-normalize-request.v0`, invokes the native runner, validates prompt output, creates the run receipt, and runs review probes.
    - Default mock mode wraps `fixtures/normalize-opportunity-output.json` as an offline provider response, then writes `mock_response: true` runner evidence that must not be audit-grade.
    - `scripts/write-demo-runner-audit.mjs` remains as a legacy fixture helper, but it also writes non-isolated mock/fixture evidence that the CLI blocks from production audit-grade evidence.
 
 4. **CLI proof gates**
    - `mdp validate-prompt-output --source-audit` checks the model output shape and source refs.
    - `mdp fit` shows readiness/insufficient-context posture for the normalized opportunity compatibility object.
-   - `mdp run-receipt --require-runner-audit` hashes and binds pack manifest, prompt output, validation result, source audit, and runner audit. In default mock mode the receipt is blocked because mock/fixture/synthetic evidence is not real runner evidence, which is the safe demo outcome.
+   - `mdp run-receipt --require-runner-audit` hashes and binds pack manifest, prompt output, validation result, source audit, source-intake ledger, and runner audit. In default mock mode the receipt is blocked because candidate intake and mock/fixture/synthetic runner evidence are not production approval/isolation evidence, which is the safe demo outcome.
    - `mdp route --entries` shows the cards a proposal review job should load.
    - `mdp author-proof-output` compiles a proof-output draft only if verification passes.
    - `mdp verify-output --readable` renders a human review layer without treating it as final proposal prose.
