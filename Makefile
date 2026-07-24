@@ -5,9 +5,9 @@ PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validat
 PYTHONDONTWRITEBYTECODE ?= 1
 export PYTHONDONTWRITEBYTECODE
 
-.PHONY: validate validate-cli validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-pluxx-hooks validate-installers validate-llms install-cli demo
+.PHONY: validate validate-cli validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms install-cli demo
 
-validate: validate-cli validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-pluxx-hooks validate-installers validate-llms
+validate: validate-cli validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
@@ -70,6 +70,10 @@ validate-proposal-mcp:
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	bash -n scripts/test-proposal-mcp-server.sh
 	bash scripts/test-proposal-mcp-server.sh
+
+validate-public-artifacts:
+	$(PYTHON) -m unittest scripts/test_public_artifact_lint.py
+	$(PYTHON) scripts/lint-public-artifacts.py
 
 validate-pluxx-hooks:
 	bash scripts/test-pluxx-hooks.sh
