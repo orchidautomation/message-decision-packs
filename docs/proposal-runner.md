@@ -36,6 +36,19 @@ mdp --json schema proposal-mcp-run-result
 fixture/transport caveats. Scripts and MCP clients should consume these
 contracts instead of inferring shapes from examples.
 
+The proposal runner entrypoint orchestrates two stable internal modules under
+`scripts/lib/`:
+
+- `proposal-runner-contracts.mjs` owns runner contract identifiers, the
+  host-neutral tool inventory, and the native prompt-output schema.
+- `proposal-runner-runtime.mjs` owns JSON/hash helpers, secret-stripped
+  subprocess environments, and the shared process wrapper.
+
+Both modules ship with installed bundles and are covered by
+`scripts/test-proposal-runner-modules.mjs`. They remain internal APIs;
+downstream hosts should invoke the runner or MCP surface rather than treating
+the modules as a separately versioned JavaScript package.
+
 ```bash
 node scripts/mdp-proposal-runner.mjs tools
 node scripts/mdp-proposal-mcp-server.mjs

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   chmodSync,
   closeSync,
@@ -11,7 +10,6 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
-  renameSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -20,23 +18,40 @@ import {
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const RUNNER_CONTRACT = 'mdp.proposal-runner.v0'
-const RESULT_CONTRACT = 'mdp.proposal-runner-result.v0'
-const TOOLS_CONTRACT = 'mdp.proposal-runner-tools.v0'
-const SOURCE_INTAKE_CONTRACT = 'mdp.source-intake.v0'
-const SOURCE_AUDIT_CONTRACT = 'mdp.source-audit.v0'
-const WORKDIR_CONTRACT = 'mdp.proposal-workdir.v0'
-const RUN_MANIFEST_CONTRACT = 'mdp.proposal-run-manifest.v0'
-const REQUEST_CONTRACT = 'mdp.native-normalize-request.v0'
-const PROMPT_OUTPUT_CONTRACT = 'mdp.prompt-output.v0'
-const DEFAULT_PROMPT_ID = 'normalize-opportunity'
-const DEFAULT_SOURCE_KIND = 'private-scratch-opportunity'
-const DEFAULT_MAX_SOURCE_BYTES = 12000
-const MAX_CONTEXT_CHARS = 20000
-const MAX_SNIPPET_CHARS = 500
-const SAFE_SOURCE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/
-const PRIVACY_CLASSES = new Set(['synthetic-public', 'sanitized-public', 'private-customer', 'restricted-local'])
-const TEXT_EXTENSIONS = new Set(['.txt', '.md', '.markdown', '.csv', '.json', '.yaml', '.yml'])
+import {
+  DEFAULT_MAX_SOURCE_BYTES,
+  DEFAULT_PROMPT_ID,
+  DEFAULT_SOURCE_KIND,
+  MAX_SNIPPET_CHARS,
+  PRIVACY_CLASSES,
+  REQUEST_CONTRACT,
+  RESULT_CONTRACT,
+  RUNNER_CONTRACT,
+  RUN_MANIFEST_CONTRACT,
+  SAFE_SOURCE_ID,
+  SOURCE_AUDIT_CONTRACT,
+  SOURCE_INTAKE_CONTRACT,
+  TEXT_EXTENSIONS,
+  WORKDIR_CONTRACT,
+  promptOutputSchema,
+  toolEnvelope,
+} from './lib/proposal-runner-contracts.mjs'
+import {
+  RunnerError,
+  assertFile,
+  fail,
+  maybeReadJson,
+  nonProviderEnvironment,
+  readJson,
+  readTextExcerpt,
+  resolveMdpCommand,
+  runProcess,
+  sha256Buffer,
+  sha256File,
+  writeJson,
+  writeJsonAtomic,
+  writeText,
+} from './lib/proposal-runner-runtime.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
@@ -76,17 +91,6 @@ Options:
   --require-audit-grade    Exit nonzero unless run-receipt returns decision audit-grade.
   --max-source-bytes N     Per-source bounded text bytes to include in prompt payload.
 `.trim()
-
-class RunnerError extends Error {
-  constructor(message, code = 1) {
-    super(message)
-    this.exitCode = code
-  }
-}
-
-const fail = (message, code = 1) => {
-  throw new RunnerError(message, code)
-}
 
 const parseArgs = (argv) => {
   const command = argv[0] || 'help'
@@ -206,99 +210,6 @@ const parseArgs = (argv) => {
   }
 
   return args
-}
-
-const toolEnvelope = () => ({
-  contract: TOOLS_CONTRACT,
-  runner_contract: RUNNER_CONTRACT,
-  note: 'These are host-neutral local runner steps exposed by the bundled local stdio MCP wrapper. This is not a hosted or remote MCP implementation.',
-  tools: [
-    {
-      name: 'mdp_intake_sources',
-      mode: 'local-files',
-      boundary: 'customer-controlled workdir',
-      purpose: 'Stage supplied text/csv/markdown/json/yaml files and preserve or create mdp.source-audit.v0 refs.',
-    },
-    {
-      name: 'mdp_normalize_opportunity',
-      mode: 'native-api',
-      boundary: 'fresh/stateless model request with declared prompt inputs only',
-      purpose: 'Build mdp.native-normalize-request.v0 and call the optional BYOK native runner.',
-    },
-    {
-      name: 'mdp_validate_normalization',
-      mode: 'cli',
-      boundary: 'deterministic local validation',
-      purpose: 'Run mdp validate-prompt-output --source-audit and retain artifact hashes.',
-    },
-    {
-      name: 'mdp_run_receipt',
-      mode: 'cli',
-      boundary: 'deterministic local receipt gate',
-      purpose: 'Run mdp run-receipt --require-runner-audit to bind prompt output, validation, source audit, and runner audit.',
-    },
-    {
-      name: 'mdp_review_proposal',
-      mode: 'cli',
-      boundary: 'review support only',
-      purpose: 'Optionally run fit/route probes after the receipt; does not write, certify, approve, or submit proposals.',
-    },
-  ],
-})
-
-const sha256Buffer = (bytes) => createHash('sha256').update(bytes).digest('hex')
-const sha256File = (path) => sha256Buffer(readFileSync(path))
-
-const readJson = (path) => {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'))
-  } catch (error) {
-    fail(`${path} must contain valid JSON: ${error.message}`)
-  }
-}
-
-const maybeReadJson = (path) => {
-  if (!existsSync(path)) return null
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-const writeJson = (path, value) => {
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
-}
-
-const writeJsonAtomic = (path, value) => {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
-  renameSync(temporary, path)
-}
-
-const writeText = (path, value) => {
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, value)
-}
-
-const readTextExcerpt = (path, maxChars = MAX_CONTEXT_CHARS) => {
-  if (!existsSync(path)) return null
-  const raw = readFileSync(path, 'utf8')
-  return {
-    path,
-    sha256: sha256File(path),
-    char_count: [...raw].length,
-    truncated: [...raw].length > maxChars,
-    text: [...raw].slice(0, maxChars).join(''),
-  }
-}
-
-const assertFile = (path, label) => {
-  if (!existsSync(path)) fail(`${label} not found: ${path}`)
-  if (lstatSync(path).isSymbolicLink()) fail(`${label} must not be a symlink: ${path}`)
-  if (!statSync(path).isFile()) fail(`${label} must be a file: ${path}`)
 }
 
 const isWithin = (root, candidate) => {
@@ -779,266 +690,6 @@ const generatedSourceAudit = ({ stagedSources: sources, sourceId, sourceKind }) 
   }
 }
 
-const resolveMdpCommand = (mdpBin) => {
-  const fromArg = mdpBin || process.env.MDP_BIN
-  if (fromArg) {
-    if (/\s/.test(fromArg)) {
-      fail('MDP_BIN/--mdp-bin must be an executable path without spaces; use a wrapper script for multi-argument commands.')
-    }
-    return [fromArg]
-  }
-
-  const cargoManifest = join(bundleRoot, 'cli', 'Cargo.toml')
-  if (existsSync(cargoManifest)) {
-    return ['cargo', 'run', '--quiet', '--manifest-path', cargoManifest, '--']
-  }
-  return ['mdp']
-}
-
-const nonProviderEnvironment = () =>
-  Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([key]) => !/(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)/i.test(key),
-    ),
-  )
-
-const runProcess = ({
-  command,
-  args,
-  stdoutPath,
-  stderrPath,
-  allowNonZero = false,
-  environment = nonProviderEnvironment(),
-}) => {
-  const result = spawnSync(command[0], [...command.slice(1), ...args], {
-    encoding: 'utf8',
-    env: environment,
-    maxBuffer: 20 * 1024 * 1024,
-  })
-  if (stdoutPath) writeText(stdoutPath, result.stdout || '')
-  if (stderrPath) writeText(stderrPath, result.stderr || '')
-  const status = result.status ?? 1
-  if (result.error) {
-    fail(`Failed to run ${command[0]}: ${result.error.message}`)
-  }
-  if (status !== 0 && !allowNonZero) {
-    fail(`Command failed (${status}): ${[...command, ...args].join(' ')}\n${result.stderr || result.stdout}`)
-  }
-  return {
-    status,
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
-  }
-}
-
-const missingRequiredTraceSchema = () => ({
-  type: 'array',
-  items: {
-    anyOf: [
-      { type: 'string' },
-      {
-        type: 'object',
-        additionalProperties: false,
-        required: ['field', 'path', 'reason', 'source_evidence'],
-        properties: {
-          field: { type: 'string' },
-          path: { type: 'string' },
-          reason: {
-            type: 'string',
-            description:
-              'Why the field is absent, such as not_available_in_source, not_extractable_from_source, not_extractable_without_person, or invalid_out_of_contract.',
-          },
-          source_evidence: {
-            type: 'string',
-            description: 'Short source-backed explanation of what was missing or why it could not be extracted.',
-          },
-        },
-      },
-    ],
-  },
-})
-
-const promptOutputSchema = () => {
-  const normalizedEntity = {
-    type: 'object',
-    additionalProperties: false,
-    required: [
-      'name',
-      'title',
-      'company',
-      'company_domain',
-      'source_kind',
-      'synthetic',
-      'background',
-      'trigger',
-      'persona',
-      'segment',
-      'attributes',
-      'signals',
-    ],
-    properties: {
-      name: { type: 'string' },
-      title: { type: 'string' },
-      company: { type: 'string' },
-      company_domain: { type: 'string' },
-      source_kind: {
-        enum: [
-          'user-provided-opportunity',
-          'private-scratch-opportunity',
-          'public-source',
-          'sanitized-example',
-          'synthetic-example',
-        ],
-      },
-      synthetic: { type: 'boolean' },
-      background: { type: 'string' },
-      trigger: { type: 'string' },
-      persona: { type: 'string' },
-      segment: { enum: ['municipal-modernization', 'public-services-review'] },
-      attributes: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['source_safety'],
-        properties: {
-          source_safety: { enum: ['synthetic', 'sanitized', 'private-scratch', 'public-source', 'user-approved-local'] },
-        },
-      },
-      signals: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['id', 'title', 'source', 'confidence', 'freshness', 'state_as'],
-          properties: {
-            id: { type: 'string' },
-            title: { type: 'string' },
-            source: { type: 'string' },
-            confidence: { enum: ['high', 'medium', 'low', 'unknown'] },
-            freshness: { type: 'string' },
-            state_as: { enum: ['observed', 'supplied', 'hypothesis', 'gap', 'unknown'] },
-          },
-        },
-      },
-    },
-  }
-
-  return {
-    type: 'object',
-    additionalProperties: false,
-    required: [
-      'contract',
-      'prompt_id',
-      'source_summary',
-      'normalized_prospect',
-      'normalization_trace',
-      'card_patches',
-      'gaps',
-      'rejected_claims',
-    ],
-    properties: {
-      contract: { enum: [PROMPT_OUTPUT_CONTRACT] },
-      prompt_id: { enum: [DEFAULT_PROMPT_ID] },
-      source_summary: {
-        type: 'object',
-        additionalProperties: false,
-        required: [
-          'company_domain',
-          'company_name',
-          'person_name',
-          'person_title',
-          'account_name',
-          'inputs_used',
-          'confidence',
-        ],
-        properties: {
-          company_domain: { type: 'string' },
-          company_name: { type: 'string' },
-          person_name: { type: 'string' },
-          person_title: { type: 'string' },
-          account_name: { type: 'string' },
-          inputs_used: {
-            type: 'array',
-            items: {
-              enum: [
-                'raw_opportunity',
-                'existing_pack_context',
-                'runtime_context',
-                'source_audit',
-                'source_kind',
-              ],
-            },
-          },
-          confidence: { enum: ['high', 'medium', 'low', 'unknown'] },
-        },
-      },
-      normalized_prospect: normalizedEntity,
-      normalization_trace: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['persona', 'fit_readiness', 'preserved_raw_fields', 'missing_required'],
-        properties: {
-          persona: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['source', 'matched_keywords', 'confidence', 'needs_review'],
-            properties: {
-              source: { type: 'string' },
-              matched_keywords: { type: 'array', items: { type: 'string' } },
-              confidence: { enum: ['high', 'medium', 'low', 'unknown'] },
-              needs_review: { type: 'boolean' },
-            },
-          },
-          fit_readiness: {
-            type: 'object',
-            additionalProperties: false,
-            required: [
-              'has_customer_or_agency',
-              'has_due_date',
-              'has_requirement_signal',
-              'has_review_mode',
-              'has_signal_source',
-              'ready_for_mdp_fit',
-            ],
-            properties: {
-              has_customer_or_agency: { type: 'boolean' },
-              has_due_date: { type: 'boolean' },
-              has_requirement_signal: { type: 'boolean' },
-              has_review_mode: { type: 'boolean' },
-              has_signal_source: { type: 'boolean' },
-              ready_for_mdp_fit: { type: 'boolean' },
-            },
-          },
-          preserved_raw_fields: { type: 'array', items: { type: 'string' } },
-          missing_required: missingRequiredTraceSchema(),
-        },
-      },
-      card_patches: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: [],
-          properties: {},
-        },
-      },
-      gaps: { type: 'array', items: { type: 'string' } },
-      rejected_claims: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['claim', 'source', 'reason'],
-          properties: {
-            claim: { type: 'string' },
-            source: { type: 'string' },
-            reason: { type: 'string' },
-          },
-        },
-      },
-    },
-  }
-}
-
 const packContext = (packRoot, promptPath) => ({
   prompt_contract: readTextExcerpt(promptPath),
   manifest: readTextExcerpt(join(packRoot, '.mdp', 'manifest.yaml')),
@@ -1250,7 +901,7 @@ const run = (args) => {
     },
   ]
 
-  const mdpCommand = resolveMdpCommand(args.mdpBin)
+  const mdpCommand = resolveMdpCommand(args.mdpBin, bundleRoot)
   const packValidation = runProcess({
     command: mdpCommand,
     args: ['--json', 'validate', '--dir', packRoot, '--strict'],
