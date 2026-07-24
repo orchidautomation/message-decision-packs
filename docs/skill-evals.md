@@ -29,6 +29,20 @@ human review.
 
 ## Deterministic Gate
 
+Canonical skill prose and path contracts are checked separately before the
+behavior corpus. The contract validator enforces bounded frontmatter,
+skill-local links, the single authored `plugin/skills/` source, safe load-time
+instructions, current runner script names, and a small exact allowlist of
+high-risk proposal refusal language:
+
+```bash
+make validate-skill-contracts
+```
+
+Its unit suite creates deliberately invalid temporary skills for every
+proposal guardrail. Exact-string checks are reserved for those safety-critical
+phrases; ordinary instructional prose remains free to evolve.
+
 ```bash
 python3 scripts/skill-eval-harness.py \
   --plugin-skills plugin/skills \
