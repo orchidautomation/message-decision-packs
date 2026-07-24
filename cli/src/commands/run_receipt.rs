@@ -2039,6 +2039,208 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn every_runner_identifier_fails_closed_when_specific_evidence_is_missing() {
+        let cases = [
+            (
+                "native-api",
+                vec![
+                    ("stateless_request", "runner_audit_native_api_not_stateless"),
+                    (
+                        "prior_messages_included",
+                        "runner_audit_native_api_prior_messages",
+                    ),
+                    ("tools_disabled", "runner_audit_native_api_tools_enabled"),
+                ],
+            ),
+            (
+                "codex-exec",
+                vec![
+                    ("ephemeral", "runner_audit_codex_not_ephemeral"),
+                    (
+                        "session_persistence",
+                        "runner_audit_codex_session_persistence",
+                    ),
+                    ("sterile_workdir", "runner_audit_codex_workdir_not_sterile"),
+                    (
+                        "prompt_input_audited",
+                        "runner_audit_codex_prompt_input_not_audited",
+                    ),
+                    (
+                        "config_discovery_disabled",
+                        "runner_audit_codex_config_discovery_enabled",
+                    ),
+                    (
+                        "instructions_discovery_disabled",
+                        "runner_audit_codex_instructions_discovery_enabled",
+                    ),
+                    ("sandbox", "runner_audit_codex_sandbox_not_read_only"),
+                ],
+            ),
+            (
+                "claude-print",
+                vec![
+                    ("bare", "runner_audit_claude_not_bare"),
+                    (
+                        "session_persistence",
+                        "runner_audit_claude_session_persistence",
+                    ),
+                    ("tools_disabled", "runner_audit_claude_tools_enabled"),
+                ],
+            ),
+            (
+                "cursor-print",
+                vec![
+                    (
+                        "session_persistence",
+                        "runner_audit_cursor_session_persistence",
+                    ),
+                    ("force_enabled", "runner_audit_cursor_force_enabled"),
+                    ("sterile_workdir", "runner_audit_cursor_workdir_not_sterile"),
+                    (
+                        "prompt_input_audited",
+                        "runner_audit_cursor_prompt_input_not_audited",
+                    ),
+                    ("tools_disabled", "runner_audit_cursor_tools_enabled"),
+                ],
+            ),
+            (
+                "opencode-run",
+                vec![
+                    (
+                        "session_persistence",
+                        "runner_audit_opencode_session_persistence",
+                    ),
+                    ("pure", "runner_audit_opencode_not_pure"),
+                    (
+                        "default_plugins_disabled",
+                        "runner_audit_opencode_default_plugins_enabled",
+                    ),
+                    (
+                        "claude_code_discovery_disabled",
+                        "runner_audit_opencode_claude_code_discovery_enabled",
+                    ),
+                    (
+                        "sterile_workdir",
+                        "runner_audit_opencode_workdir_not_sterile",
+                    ),
+                    ("tools_disabled", "runner_audit_opencode_tools_enabled"),
+                ],
+            ),
+            (
+                "custom-headless",
+                vec![
+                    (
+                        "session_persistence",
+                        "runner_audit_custom_session_persistence",
+                    ),
+                    ("tools_disabled", "runner_audit_custom_tools_enabled"),
+                ],
+            ),
+        ];
+
+        for (runner, required_fields) in cases {
+            let complete = complete_runner_evidence(runner);
+            let mut complete_issues = Vec::new();
+            let mut complete_blocked = false;
+            let complete_summary = validate_runner_audit_summary(
+                Some(&complete),
+                None,
+                true,
+                true,
+                Some("normalize-opportunity"),
+                Some("output-hash"),
+                &mut complete_issues,
+                &mut complete_blocked,
+            );
+            assert!(
+                !complete_blocked,
+                "complete {runner} evidence should remain schema-accepted: {complete_issues:?}"
+            );
+            assert_ne!(complete_summary["assurance"], "invalid");
+
+            for (field, expected_code) in required_fields {
+                let mut value = complete_runner_evidence(runner);
+                value
+                    .as_object_mut()
+                    .expect("runner evidence object")
+                    .remove(field);
+                let mut issues = Vec::new();
+                let mut blocked = false;
+
+                let summary = validate_runner_audit_summary(
+                    Some(&value),
+                    None,
+                    true,
+                    true,
+                    Some("normalize-opportunity"),
+                    Some("output-hash"),
+                    &mut issues,
+                    &mut blocked,
+                );
+
+                assert!(blocked, "{runner} without {field} must fail closed");
+                assert_eq!(summary["assurance"], "invalid");
+                assert!(
+                    issues.iter().any(|issue| issue["code"] == expected_code),
+                    "{runner} without {field} should report {expected_code}"
+                );
+            }
+        }
+    }
+
+    fn complete_runner_evidence(runner: &str) -> Value {
+        let mut value = json!({
+            "contract": "mdp.runner-audit.v0",
+            "runner": runner,
+            "model": "provider-model",
+            "isolated_invocation": true,
+            "conversation_resume": false,
+            "declared_inputs_only": true,
+            "output_schema_used": true,
+            "prompt_id": "normalize-opportunity",
+            "prompt_output_sha256": "output-hash",
+            "tool_invocations_observed": 0,
+            "session_persistence": false,
+            "sterile_workdir": true
+        });
+        let fields = value.as_object_mut().expect("runner evidence object");
+        match runner {
+            "native-api" => {
+                fields.insert("stateless_request".into(), json!(true));
+                fields.insert("prior_messages_included".into(), json!(false));
+                fields.insert("tools_disabled".into(), json!(true));
+            }
+            "codex-exec" => {
+                fields.insert("ephemeral".into(), json!(true));
+                fields.insert("prompt_input_audited".into(), json!(true));
+                fields.insert("config_discovery_disabled".into(), json!(true));
+                fields.insert("instructions_discovery_disabled".into(), json!(true));
+                fields.insert("sandbox".into(), json!("read-only"));
+            }
+            "claude-print" => {
+                fields.insert("bare".into(), json!(true));
+                fields.insert("tools_disabled".into(), json!(true));
+            }
+            "cursor-print" => {
+                fields.insert("force_enabled".into(), json!(false));
+                fields.insert("prompt_input_audited".into(), json!(true));
+                fields.insert("tools_disabled".into(), json!(true));
+            }
+            "opencode-run" => {
+                fields.insert("pure".into(), json!(true));
+                fields.insert("default_plugins_disabled".into(), json!(true));
+                fields.insert("claude_code_discovery_disabled".into(), json!(true));
+                fields.insert("tools_disabled".into(), json!(true));
+            }
+            "custom-headless" => {
+                fields.insert("tools_disabled".into(), json!(true));
+            }
+            _ => panic!("unexpected runner"),
+        }
+        value
+    }
+
     fn test_pack(label: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("{label}-{}", nonce()));
         init_pack(&root, "Receipt Pack", "proposal", true, false).expect("pack should init");

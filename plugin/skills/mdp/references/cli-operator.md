@@ -27,6 +27,8 @@ Prefer CLI output to direct YAML inference. Read pack files only when authoring 
 
 ## Deterministic Gates
 
+Use `docs/headless-normalization-runners.md#canonical-runner-support-matrix` for integration state. The only states are `verified`, `recipe-only`, `unsupported`, and `fixture/mock-only`; schema acceptance, a recipe, MCP availability, or one valid receipt does not promote a row.
+
 - `validate-prompt-output`: validate model-produced normalization output; pass `--source-audit` for proposal PDF/doc extraction ledgers when raw-field/snippet citations must resolve.
 - `run-receipt`: record and gate the host-owned context boundary plus artifact hashes; audit-grade proposal review requires `--isolation isolated`, `--declared-inputs-only`, successful validation whose artifact hashes match the supplied prompt-output and source-audit files, a runner audit whose prompt-output hash matches the supplied prompt output and reports `tool_invocations_observed: 0`, source audit when documents/PDFs were normalized, and for production pilots `--runner-audit ... --require-runner-audit`.
 - `scripts/mdp-proposal-runner.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed bundles): host-neutral local proposal runner surface. Use `tools` to inspect local runner steps. Use `run --dry-run` for request hygiene, `run --mock-response` for fixture safety, and real `run --model ...` only when the operator chose a real native call.

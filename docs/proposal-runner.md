@@ -14,6 +14,8 @@ local sources
 
 This runner is also wrapped by a bundled local stdio MCP server. It is not a hosted or remote MCP service.
 
+The native runner path is currently `recipe-only`. The MCP wrapper is transport, not verification. See the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix); do not infer a verified integration from tool availability, a runner identifier, or schema-valid audit JSON.
+
 ```bash
 node scripts/mdp-proposal-runner.mjs tools
 node scripts/mdp-proposal-mcp-server.mjs
@@ -81,6 +83,8 @@ node scripts/mdp-proposal-runner.mjs run \
 
 Mock mode intentionally writes native-runner audit evidence with `mock_response: true`, `isolated_invocation: false`, and `stateless_request: false`. `mdp run-receipt --require-runner-audit` must block this path. Treat that blocked receipt as success for fixture safety and failure for production assurance.
 
+The default public video uses this synthetic mock path. Label it mock/non-audit-grade. Replace that label only for a real invocation whose own required runner-audit receipt is audit-grade; do not reuse fixture artifacts as proof.
+
 Validate the local surface with:
 
 ```bash
@@ -109,7 +113,7 @@ Only call the result audit-grade when the final `proposal-runner-result.json` re
 - `mode: "native"`;
 - `decision: "audit-grade"`;
 - `audit_grade_eligible: true`;
-- `runner_assurance: "stateless-api-verified"` or another supported headless-verified mode.
+- `runner_assurance: "stateless-api-verified"` or another schema-accepted headless-verified mode.
 
 If the receipt is `blocked` or `advisory`, keep the proposal review in gaps/questions and do not present it as isolated or audit-grade.
 
