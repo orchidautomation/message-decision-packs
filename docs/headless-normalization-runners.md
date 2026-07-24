@@ -291,7 +291,7 @@ For the product, the clean path is one installable MDP plugin bundle plus a runn
 
 - Pluxx continues to package the authored skills, hooks, and assets from this repo for each host.
 - The optional `scripts/mdp-native-normalize-openai.mjs` runner is the first local reference for the native API path, and ships inside installed Pluxx bundles as `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`. It validates a `mdp.native-normalize-request.v0` file, calls the OpenAI Responses API with Structured Outputs and `store: false`, writes `mdp.prompt-output.v0`, and emits `mdp.runner-audit.v0`.
-- The future runner/MCP owns PDF/doc ingestion, prompt-package construction, native/headless model invocation, artifact persistence, and runner-audit emission.
+- The bundled local runner/MCP layer owns source staging, prompt-package construction, native/headless model invocation, artifact persistence, and runner-audit emission. PDF/doc ingestion remains a future adapter around that boundary unless the operator supplies an approved text export/source audit.
 - Pluxx may generate host-specific install/config shims that point Cursor, OpenCode, Claude, Codex, or Copilot toward the same runner contract, but Pluxx should not be the only place that defines or enforces audit-grade isolation.
 - The `mdp` CLI owns deterministic validation, source-audit checks, fit/proof/routing checks, and run-receipt gating.
 - The chat agent owns user guidance, questions, and final explanation, but it should not normalize proposal facts in its ambient conversation when audit-grade output is required.

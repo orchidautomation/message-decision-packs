@@ -86,6 +86,7 @@ fi
 
 for required in \
   "$codex_plugin_root/scripts/mdp-proposal-runner.mjs" \
+  "$codex_plugin_root/scripts/mdp-proposal-mcp-server.mjs" \
   "$codex_plugin_root/scripts/mdp-native-normalize-openai.mjs" \
   "$codex_plugin_root/scripts/mdp-activate.sh" \
   "$codex_plugin_root/skills/mdp/SKILL.md" \
@@ -105,10 +106,29 @@ fi
 tools_json="$(node "$codex_plugin_root/scripts/mdp-proposal-runner.mjs" tools)"
 for expected in \
   "mdp_run_receipt" \
-  "not currently a hosted MCP implementation"; do
+  "bundled local stdio MCP wrapper" \
+  "hosted or remote MCP"; do
   if ! printf '%s\n' "$tools_json" | grep -F "$expected" >/dev/null; then
-    echo "Installed proposal runner tools output is missing MCP/non-hosted guardrail text: $expected" >&2
+    echo "Installed proposal runner tools output is missing MCP/local guardrail text: $expected" >&2
     printf '%s\n' "$tools_json" >&2
+    exit 1
+  fi
+done
+
+mcp_list_stdout="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"release-install-smoke","version":"0.0.0"},"capabilities":{}}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' |
+    node "$codex_plugin_root/scripts/mdp-proposal-mcp-server.mjs"
+)"
+for expected in \
+  "message-decision-packs-proposal" \
+  "mdp_proposal_tools" \
+  "mdp_proposal_run" \
+  "Raw chat text is intentionally not accepted"; do
+  if ! printf '%s\n' "$mcp_list_stdout" | grep -F "$expected" >/dev/null; then
+    echo "Installed proposal MCP server list output missing expected text: $expected" >&2
+    printf '%s\n' "$mcp_list_stdout" >&2
     exit 1
   fi
 done
@@ -131,8 +151,10 @@ for expected in \
   "Local proposal runner: available in the plugin/source bundle." \
   "Native OpenAI runner: available as the lower-level BYOK stateless API boundary." \
   "OPENAI_API_KEY: not detected; only required for an optional real native OpenAI runner call." \
-  "The local proposal runner is not a hosted MCP server" \
-  "Audit-grade proposal reviews still need: mdp run-receipt --runner-audit ... --require-runner-audit." \
+  "Local stdio MCP wrapper: available" \
+  "MCP tools: mdp_proposal_tools and mdp_proposal_run" \
+  "The bundled MCP is local stdio only, not a hosted or remote MCP service." \
+  "MCP transport alone is not audit-grade; audit-grade proposal reviews still need: mdp run-receipt --runner-audit ... --require-runner-audit." \
   "Hooks report readiness only; the CLI receipt is the blocking gate."; do
   if ! printf '%s\n' "$activation_output" | grep -F "$expected" >/dev/null; then
     echo "Installed activation output missing expected guardrail: $expected" >&2

@@ -5,9 +5,9 @@ PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validat
 PYTHONDONTWRITEBYTECODE ?= 1
 export PYTHONDONTWRITEBYTECODE
 
-.PHONY: validate validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-pluxx-hooks validate-installers validate-llms install-cli demo
+.PHONY: validate validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-mcp validate-pluxx-hooks validate-installers validate-llms install-cli demo
 
-validate: validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-pluxx-hooks validate-installers validate-llms
+validate: validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-mcp validate-pluxx-hooks validate-installers validate-llms
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
@@ -55,6 +55,11 @@ validate-proposal-runner:
 	bash -n scripts/test-proposal-runner.sh
 	bash scripts/test-proposal-runner.sh
 
+validate-proposal-mcp:
+	node --check scripts/mdp-proposal-mcp-server.mjs
+	bash -n scripts/test-proposal-mcp-server.sh
+	bash scripts/test-proposal-mcp-server.sh
+
 validate-pluxx-hooks:
 	bash scripts/test-pluxx-hooks.sh
 
@@ -68,10 +73,11 @@ validate-llms:
 
 validate-installers:
 	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/finalize-release-assets.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh scripts/test-native-runner.sh scripts/test-proposal-runner.sh
-	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh
+	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh scripts/test-proposal-mcp-server.sh
 	node --check scripts/finalize-release-manifest.mjs
 	node --check scripts/mdp-native-normalize-openai.mjs
 	node --check scripts/mdp-proposal-runner.mjs
+	node --check scripts/mdp-proposal-mcp-server.mjs
 	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
 	scripts/test-install.sh
 	scripts/test-release-install-smoke.sh

@@ -40,9 +40,9 @@ Purpose:
   Host-neutral local runner surface for proposal normalization. It stages local
   sources, writes or preserves source-audit evidence, builds a declared-input-only
   native normalization request, invokes the BYOK native runner, then runs
-  validate-prompt-output and run-receipt. It is not a hosted MCP server and does
-  not parse PDFs, read .env files, create API keys, submit proposals, or approve
-  compliance.
+  validate-prompt-output and run-receipt. It can be wrapped by the bundled local
+  stdio MCP server, but it is not a hosted/remote MCP service and does not parse
+  PDFs, read .env files, create API keys, submit proposals, or approve compliance.
 
 Options:
   --pack PATH              Proposal MDP pack root. Required.
@@ -180,7 +180,7 @@ const parseArgs = (argv) => {
 const toolEnvelope = () => ({
   contract: TOOLS_CONTRACT,
   runner_contract: RUNNER_CONTRACT,
-  note: 'These are host-neutral local runner steps that a future MCP server can wrap. They are not currently a hosted MCP implementation.',
+  note: 'These are host-neutral local runner steps exposed by the bundled local stdio MCP wrapper. This is not a hosted or remote MCP implementation.',
   tools: [
     {
       name: 'mdp_intake_sources',
@@ -954,7 +954,7 @@ const run = (args) => {
         ? 'Mock mode is offline-only and must not be described as audit-grade model isolation.'
         : 'Native mode is audit-grade only when run-receipt returns decision audit-grade with stateless-api-verified or headless-verified assurance.',
       'This runner stages bounded local text and source-audit artifacts; it does not prove PDF/OCR quality, semantic truth beyond supplied artifacts, compliance status, legal approval, or proposal submission readiness.',
-      'The current surface is a host-neutral local runner command set that a future MCP server can wrap; it is not itself a hosted MCP server.',
+      'The current surface is a host-neutral local runner command set also exposed by the bundled local stdio MCP wrapper; it is not a hosted or remote MCP service.',
     ],
   }
   writeJson(paths.result, result)
