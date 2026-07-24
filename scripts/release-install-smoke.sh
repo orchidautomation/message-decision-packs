@@ -88,11 +88,32 @@ for required in \
   "$codex_plugin_root/scripts/mdp-proposal-runner.mjs" \
   "$codex_plugin_root/scripts/mdp-proposal-mcp-server.mjs" \
   "$codex_plugin_root/scripts/mdp-native-normalize-openai.mjs" \
+  "$codex_plugin_root/scripts/lib/proposal-runner-contracts.mjs" \
+  "$codex_plugin_root/scripts/lib/proposal-runner-runtime.mjs" \
+  "$codex_plugin_root/scripts/lib/proposal-readiness-report.mjs" \
   "$codex_plugin_root/scripts/mdp-activate.sh" \
   "$codex_plugin_root/skills/mdp/SKILL.md" \
   "$codex_plugin_root/skills/mdp-proposal-review/SKILL.md"; do
   if [ ! -f "$required" ]; then
     echo "Installed plugin is missing required file: $required" >&2
+    exit 1
+  fi
+done
+
+for schema_target in \
+  source-intake \
+  source-audit \
+  native-normalize-request \
+  prompt-output \
+  runner-audit \
+  run-receipt \
+  proposal-run-manifest \
+  proposal-runner-result \
+  proposal-readiness-report \
+  proposal-mcp-run-result; do
+  schema="$("$mdp_bin" --json schema "$schema_target")"
+  if ! printf '%s\n' "$schema" | grep -F '"$schema"' >/dev/null; then
+    echo "Installed CLI schema failed: $schema_target" >&2
     exit 1
   fi
 done

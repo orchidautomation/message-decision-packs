@@ -50,6 +50,11 @@ Both modules ship with installed bundles and are covered by
 downstream hosts should invoke the runner or MCP surface rather than treating
 the modules as a separately versioned JavaScript package.
 
+Published-release smoke tests verify the installed CLI schemas, all three
+runner modules (including readiness reports), proposal skills, local runner
+tool inventory, MCP tool schema, activation guardrails, and a freshly
+initialized proposal pack. Source-tree tests alone are not release proof.
+
 ```bash
 node scripts/mdp-proposal-runner.mjs tools
 node scripts/mdp-proposal-mcp-server.mjs
