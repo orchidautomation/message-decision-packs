@@ -48,7 +48,7 @@ The eval fixtures cover:
 
 When proposal PDF/doc extraction feeds `normalize-opportunity`, use a bounded `mdp.source-audit.v0` JSON ledger instead of committing source documents. `validate-prompt-output --source-audit` checks that raw opportunity refs and ref-plus-snippet citations resolve to audited refs whose `source_id` appears in `.mdp/sources.yaml`. For audit-grade review, the host runner must make a fresh/stateless model call with only declared inputs and then create an `mdp.run-receipt.v0` via `mdp run-receipt`; same-conversation normalization is advisory.
 
-Before describing an integration as verified, consult `docs/headless-normalization-runners.md#canonical-runner-support-matrix`. Use only `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only`; this synthetic template and its mock/demo artifacts are fixture/mock-only.
+Before describing an integration as verified, consult [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix). Use only `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only`; this synthetic template and its mock/demo artifacts are fixture/mock-only.
 
 The files under `examples/proof-output/` are synthetic `mdp.proof-output.v0` artifacts. A source ID written by a model is not proof by itself; run `mdp --json verify-output --dir <pack> --file <proof-output.json>` and only treat the generated text as proof-bound when the verifier returns `valid: true`.
 
