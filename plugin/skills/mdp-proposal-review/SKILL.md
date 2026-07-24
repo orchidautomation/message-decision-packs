@@ -60,6 +60,8 @@ mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation is
 
 ## Review Loop
 
+Report the current invocation's receipt assurance separately from integration support. For integration support, consult `docs/headless-normalization-runners.md#canonical-runner-support-matrix` and use only `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only`. A runner identifier, installed command, documented recipe, MCP tool, or schema-valid audit never proves a verified integration.
+
 1. Load only the selected reference:
    - [references/bid-no-bid.md](references/bid-no-bid.md)
    - [references/compliance.md](references/compliance.md)
