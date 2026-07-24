@@ -136,11 +136,13 @@ cp "$runner_artifacts/normalize-opportunity-validation.json" "$artifacts/normali
 cp "$runner_artifacts/run-receipt.json" "$artifacts/run-receipt.json"
 cp "$runner_artifacts/run-receipt.stdout.json" "$artifacts/run-receipt.stdout.json"
 cp "$runner_artifacts/normalized-opportunity.json" "$artifacts/normalized-opportunity.json"
+cp "$runner_artifacts/proposal-readiness-report.json" "$artifacts/proposal-readiness-report.json"
 
 printf '   source audit:  %s\n' "$artifacts/source-audit.json"
 printf '   prompt output: %s\n' "$artifacts/normalize-opportunity-output.json"
 printf '   runner audit:  %s\n' "$artifacts/runner-audit.json"
 printf '   runner result: %s\n' "$artifacts/proposal-runner-result.json"
+printf '   readiness:     %s\n' "$artifacts/proposal-readiness-report.json"
 
 printf '\n4) Use CLI route gates after the runner receipt\n'
 if [[ "$runner_mode" == "mock" ]]; then
