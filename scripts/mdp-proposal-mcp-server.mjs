@@ -1,12 +1,36 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const MCP_PROTOCOL_VERSION = '2025-06-18'
 const SERVER_NAME = 'message-decision-packs-proposal'
 const MAX_OUTPUT_CHARS = 80_000
+const MAX_CHILD_BUFFER_BYTES = 1_000_000
+const DEFAULT_TIMEOUT_MS = 120_000
+const MAX_TIMEOUT_MS = 300_000
+const CHILD_ENV_KEYS = [
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'CARGO_HOME',
+  'CARGO_TARGET_DIR',
+  'RUSTUP_HOME',
+  'SSL_CERT_FILE',
+  'SSL_CERT_DIR',
+  'NODE_EXTRA_CA_CERTS',
+  'OPENAI_API_KEY',
+]
+const SECRET_ENV_KEYS = /(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)/i
 const JSON_RPC_PARSE_ERROR = -32700
 const JSON_RPC_INVALID_REQUEST = -32600
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -40,6 +64,23 @@ const compact = (value, limit = MAX_OUTPUT_CHARS) => {
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
   if (text.length <= limit) return text
   return `${text.slice(0, limit)}\n... [truncated ${text.length - limit} chars]`
+}
+
+const childEnvironment = () =>
+  Object.fromEntries(
+    CHILD_ENV_KEYS.filter((key) => typeof process.env[key] === 'string').map((key) => [key, process.env[key]]),
+  )
+
+const redact = (value, environment = childEnvironment()) => {
+  let text = String(value || '')
+  for (const [key, secret] of Object.entries(environment)) {
+    if (!SECRET_ENV_KEYS.test(key) || !secret) continue
+    text = text.split(secret).join(`[REDACTED:${key}]`)
+  }
+  return text
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, '[REDACTED:API_KEY]')
+    .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/-]+=*/gi, '$1 [REDACTED]')
+    .replace(/((?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)[A-Z0-9_]*\s*[=:]\s*)[^\s,;]+/gi, '$1[REDACTED]')
 }
 
 const writeMessage = (message) => {
@@ -86,6 +127,46 @@ const optionalStringArray = (args, key) => {
   return args[key]
 }
 
+const assertNoNul = (value, label) => {
+  if (value.includes('\0')) throw new Error(`${label} must not contain NUL bytes`)
+}
+
+const canonicalExistingPath = (value, label, kind = 'file') => {
+  assertNoNul(value, label)
+  const requested = resolve(value)
+  if (!existsSync(requested)) throw new Error(`${label} not found: ${requested}`)
+  if (lstatSync(requested).isSymbolicLink()) throw new Error(`${label} must not be a symlink: ${requested}`)
+  const canonical = realpathSync(requested)
+  const stats = statSync(canonical)
+  if (kind === 'file' && !stats.isFile()) throw new Error(`${label} must be a regular file: ${requested}`)
+  if (kind === 'directory' && !stats.isDirectory()) throw new Error(`${label} must be a directory: ${requested}`)
+  return canonical
+}
+
+const canonicalPack = (value) => {
+  const pack = canonicalExistingPath(value, 'pack', 'directory')
+  const mdp = join(pack, '.mdp')
+  if (!existsSync(mdp) || lstatSync(mdp).isSymbolicLink() || !statSync(mdp).isDirectory()) {
+    throw new Error(`pack must contain a real .mdp directory: ${pack}`)
+  }
+  return pack
+}
+
+const canonicalWorkdir = (value) => {
+  assertNoNul(value, 'workdir')
+  const requested = resolve(value)
+  if (existsSync(requested)) return canonicalExistingPath(requested, 'workdir', 'directory')
+  const parent = dirname(requested)
+  canonicalExistingPath(parent, 'workdir parent', 'directory')
+  return requested
+}
+
+const canonicalExecutable = (value, label) => {
+  const path = canonicalExistingPath(value, label, 'file')
+  if ((statSync(path).mode & 0o111) === 0) throw new Error(`${label} must be executable: ${path}`)
+  return path
+}
+
 const assertNoUnsupportedArgs = (args, allowed) => {
   const unsupported = Object.keys(args).filter((key) => !allowed.has(key))
   if (unsupported.length > 0) {
@@ -99,24 +180,36 @@ const toolResult = ({ text, structuredContent, isError = false }) => ({
   isError,
 })
 
-const runNode = (script, args) => {
+const runNode = (script, args, timeoutMs = DEFAULT_TIMEOUT_MS) => {
+  const environment = childEnvironment()
   const result = spawnSync('node', [script, ...args], {
     cwd: bundleRoot,
     encoding: 'utf8',
-    env: process.env,
-    maxBuffer: 30 * 1024 * 1024,
+    env: environment,
+    maxBuffer: MAX_CHILD_BUFFER_BYTES,
+    timeout: timeoutMs,
+    killSignal: 'SIGTERM',
   })
+  const timedOut = result.error?.code === 'ETIMEDOUT'
+  const stdout = redact(result.stdout || '', environment)
+  const stderr = redact(`${result.stderr || ''}${result.error && !timedOut ? result.error.message : ''}`, environment)
   if (result.error) {
     return {
-      status: 1,
-      stdout: result.stdout || '',
-      stderr: `${result.stderr || ''}${result.error.message}`,
+      status: timedOut ? 124 : 1,
+      stdout,
+      stderr: timedOut ? `proposal runner timed out after ${timeoutMs}ms` : stderr,
+      timedOut,
+      signal: result.signal || (timedOut ? 'SIGTERM' : null),
+      environmentKeys: Object.keys(environment).sort(),
     }
   }
   return {
     status: result.status ?? 1,
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
+    stdout,
+    stderr,
+    timedOut: false,
+    signal: result.signal || null,
+    environmentKeys: Object.keys(environment).sort(),
   }
 }
 
@@ -145,7 +238,7 @@ const proposalRunSchema = {
     },
     workdir: {
       type: 'string',
-      description: 'Customer-controlled local scratch directory for runner artifacts. Must be empty unless allow_existing is true.',
+      description: 'Customer-controlled local scratch directory for runner artifacts. Reuse requires the exact ownership/run manifests.',
     },
     source_paths: {
       type: 'array',
@@ -215,6 +308,64 @@ const proposalRunSchema = {
       minimum: 1000,
       description: 'Per-source bounded text bytes to include in the prompt payload.',
     },
+    timeout_ms: {
+      type: 'integer',
+      minimum: 100,
+      maximum: MAX_TIMEOUT_MS,
+      description: `Child-process deadline in milliseconds. Defaults to ${DEFAULT_TIMEOUT_MS}.`,
+    },
+  },
+}
+
+const proposalRunOutputSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'ok',
+    'contract',
+    'mcp_transport',
+    'hosted_or_remote_mcp',
+    'runner_exit_status',
+    'runner_result',
+    'mode',
+    'decision',
+    'audit_grade_eligible',
+    'runner_assurance',
+    'timed_out',
+    'termination_signal',
+    'timeout_ms',
+    'stdout',
+    'stderr',
+    'environment',
+    'guardrails',
+  ],
+  properties: {
+    ok: { type: 'boolean' },
+    contract: { const: 'mdp.proposal-mcp-run-result.v0' },
+    mcp_transport: { const: 'stdio' },
+    hosted_or_remote_mcp: { const: false },
+    runner_exit_status: { type: 'integer' },
+    runner_result: { type: ['object', 'null'] },
+    mode: { type: ['string', 'null'] },
+    decision: { enum: ['not-run', 'audit-grade', 'advisory', 'blocked'] },
+    audit_grade_eligible: { type: 'boolean' },
+    runner_assurance: { type: 'string' },
+    timed_out: { type: 'boolean' },
+    termination_signal: { type: ['string', 'null'] },
+    timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
+    stdout: { type: 'string' },
+    stderr: { type: 'string' },
+    environment: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['policy', 'keys', 'secret_values_reported'],
+      properties: {
+        policy: { const: 'allowlist' },
+        keys: { type: 'array', items: { type: 'string' }, uniqueItems: true },
+        secret_values_reported: { const: false },
+      },
+    },
+    guardrails: { type: 'array', items: { type: 'string' }, minItems: 1 },
   },
 }
 
@@ -232,6 +383,7 @@ const tools = [
     description:
       'Run the local proposal runner from explicit local file paths only. It stages supplied sources, builds a declared-input-only native request, optionally invokes the native runner, validates prompt output, creates a run receipt, and runs review probes. Dry-run/mock modes are never audit-grade; real audit-grade still requires valid runner-audit evidence and mdp run-receipt --require-runner-audit.',
     inputSchema: proposalRunSchema,
+    outputSchema: proposalRunOutputSchema,
   },
 ]
 
@@ -291,33 +443,55 @@ const callProposalRun = (args) => {
     'skip_review',
     'require_audit_grade',
     'max_source_bytes',
+    'timeout_ms',
   ])
   assertNoUnsupportedArgs(parsedArgs, allowed)
 
-  const pack = optionalString(parsedArgs, 'pack')
-  const workdir = optionalString(parsedArgs, 'workdir')
-  if (!pack) throw new Error('pack is required')
-  if (!workdir) throw new Error('workdir is required')
+  const packArg = optionalString(parsedArgs, 'pack')
+  const workdirArg = optionalString(parsedArgs, 'workdir')
+  if (!packArg) throw new Error('pack is required')
+  if (!workdirArg) throw new Error('workdir is required')
+  const pack = canonicalPack(packArg)
+  const workdir = canonicalWorkdir(workdirArg)
 
-  const sourcePaths = optionalStringArray(parsedArgs, 'source_paths')
-  const sourceIntakePath = optionalString(parsedArgs, 'source_intake_path')
-  const sourceAuditPath = optionalString(parsedArgs, 'source_audit_path')
+  const sourcePaths = optionalStringArray(parsedArgs, 'source_paths').map((path, index) =>
+    canonicalExistingPath(path, `source_paths[${index}]`, 'file'),
+  )
+  const sourceIntakeArg = optionalString(parsedArgs, 'source_intake_path')
+  const sourceAuditArg = optionalString(parsedArgs, 'source_audit_path')
+  const sourceIntakePath = sourceIntakeArg
+    ? canonicalExistingPath(sourceIntakeArg, 'source_intake_path', 'file')
+    : null
+  const sourceAuditPath = sourceAuditArg
+    ? canonicalExistingPath(sourceAuditArg, 'source_audit_path', 'file')
+    : null
   const sourceId = optionalString(parsedArgs, 'source_id')
   const sourceKind = optionalString(parsedArgs, 'source_kind')
   const privacyClass = optionalString(parsedArgs, 'privacy_class')
   const model = optionalString(parsedArgs, 'model')
-  const mockResponsePath = optionalString(parsedArgs, 'mock_response_path')
-  const mdpBin = optionalString(parsedArgs, 'mdp_bin')
-  const nativeRunner = optionalString(parsedArgs, 'native_runner')
+  const mockResponseArg = optionalString(parsedArgs, 'mock_response_path')
+  const mdpBinArg = optionalString(parsedArgs, 'mdp_bin')
+  const nativeRunnerArg = optionalString(parsedArgs, 'native_runner')
+  const mockResponsePath = mockResponseArg
+    ? canonicalExistingPath(mockResponseArg, 'mock_response_path', 'file')
+    : null
+  const mdpBin = mdpBinArg ? canonicalExecutable(mdpBinArg, 'mdp_bin') : null
+  const nativeRunner = nativeRunnerArg
+    ? canonicalExistingPath(nativeRunnerArg, 'native_runner', 'file')
+    : null
   const promptId = optionalString(parsedArgs, 'prompt_id')
   const maxSourceBytes = optionalInteger(parsedArgs, 'max_source_bytes')
   const dryRun = optionalBoolean(parsedArgs, 'dry_run')
   const reuseWorkdirId = optionalString(parsedArgs, 'reuse_workdir_id')
   const skipReview = optionalBoolean(parsedArgs, 'skip_review')
   const requireAuditGrade = optionalBoolean(parsedArgs, 'require_audit_grade')
+  const timeoutMs = optionalInteger(parsedArgs, 'timeout_ms') ?? DEFAULT_TIMEOUT_MS
+  if (timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
+    throw new Error(`timeout_ms must be between 100 and ${MAX_TIMEOUT_MS}`)
+  }
 
-  if (!sourceAuditPath && sourcePaths.length === 0) {
-    throw new Error('Pass source_paths and source_id, or pass source_audit_path. Ambient chat/source text is intentionally not accepted.')
+  if (sourcePaths.length === 0) {
+    throw new Error('Pass at least one source_paths file. Ambient chat/source text and audit-only runs are intentionally not accepted.')
   }
 
   const runnerArgs = ['run', '--pack', pack, '--workdir', workdir]
@@ -338,7 +512,7 @@ const callProposalRun = (args) => {
   if (requireAuditGrade) runnerArgs.push('--require-audit-grade')
   if (maxSourceBytes !== null) runnerArgs.push('--max-source-bytes', String(maxSourceBytes))
 
-  const result = runNode(runnerPath, runnerArgs)
+  const result = runNode(runnerPath, runnerArgs, timeoutMs)
   let parsed = null
   try {
     parsed = parseRunnerJson(result.stdout)
@@ -346,23 +520,42 @@ const callProposalRun = (args) => {
     if (result.status === 0) throw error
   }
 
-  const ok = result.status === 0 && parsed && parsed.ok !== false
+  const auditGradeRejected =
+    requireAuditGrade &&
+    (!parsed || parsed.decision !== 'audit-grade' || parsed.audit_grade_eligible !== true)
+  const ok = result.status === 0 && parsed && parsed.ok !== false && !auditGradeRejected
   const structuredContent = {
     ok,
     contract: 'mdp.proposal-mcp-run-result.v0',
     mcp_transport: 'stdio',
     hosted_or_remote_mcp: false,
-    runner_exit_status: result.status,
+    runner_exit_status: auditGradeRejected && result.status === 0 ? 2 : result.status,
     runner_result: parsed,
+    mode: parsed?.mode ?? null,
+    decision: parsed?.decision ?? 'blocked',
+    audit_grade_eligible: parsed?.audit_grade_eligible === true,
+    runner_assurance: parsed?.runner_assurance ?? 'unknown',
+    timed_out: result.timedOut,
+    termination_signal: result.signal,
+    timeout_ms: timeoutMs,
+    stdout: parsed ? '' : compact(result.stdout, 12_000),
     stderr: result.stderr ? compact(result.stderr, 12_000) : '',
+    environment: {
+      policy: 'allowlist',
+      keys: result.environmentKeys,
+      secret_values_reported: false,
+    },
     guardrails: [
       'This MCP tool passed only explicit local file/path arguments to the proposal runner.',
+      'All local paths were canonicalized and checked for expected file/directory type and final-component symlinks.',
+      'The child received an explicit environment allowlist; secret values are never returned in MCP diagnostics.',
+      `The runner was bounded by a ${timeoutMs}ms deadline and bounded stdout/stderr buffers.`,
       'The model isolation claim comes from the runner-audit plus mdp run-receipt, not from MCP transport alone.',
       'Dry-run/mock/demo/fixture/synthetic evidence remains non-audit-grade.',
     ],
   }
 
-  if (result.status !== 0) {
+  if (result.status !== 0 || auditGradeRejected) {
     return toolResult({
       isError: true,
       text: compact(JSON.stringify(structuredContent, null, 2)),
@@ -436,7 +629,7 @@ const handleRequest = (message) => {
   } catch (error) {
     const code = Number.isInteger(error.code) ? error.code : JSON_RPC_INVALID_PARAMS
     if (isNotification) return null
-    return errorResponse(id, code, error.message || 'Tool call failed')
+    return errorResponse(id, code, redact(error.message || 'Tool call failed'))
   }
 }
 
@@ -447,7 +640,7 @@ const handleLine = (line) => {
   try {
     message = JSON.parse(trimmed)
   } catch (error) {
-    writeMessage(errorResponse(null, JSON_RPC_PARSE_ERROR, `Parse error: ${error.message}`))
+    writeMessage(errorResponse(null, JSON_RPC_PARSE_ERROR, redact(`Parse error: ${error.message}`)))
     return
   }
 
@@ -484,6 +677,6 @@ process.stdin.on('end', () => {
 })
 
 process.on('uncaughtException', (error) => {
-  process.stderr.write(`mdp proposal MCP server fatal error: ${error.stack || error.message}\n`)
+  process.stderr.write(`mdp proposal MCP server fatal error: ${redact(error.stack || error.message)}\n`)
   process.exit(1)
 })
