@@ -880,6 +880,10 @@ fn runner_audit_schema() -> Value {
         json!({"type": "boolean"}),
     );
     properties.insert("endpoint".to_string(), json!({"type": "string"}));
+    properties.insert(
+        "endpoint_policy".to_string(),
+        json!({"enum": ["official-default", "custom-explicit"]}),
+    );
     properties.insert("store".to_string(), json!({"type": "boolean"}));
     properties.insert("prompt_id".to_string(), json!({"type": "string"}));
     properties.insert(

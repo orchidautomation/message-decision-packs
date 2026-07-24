@@ -15,7 +15,8 @@ Usage:
 
 Environment for real runs:
   OPENAI_API_KEY     Required only when neither --dry-run nor --mock-response is used.
-  OPENAI_BASE_URL    Optional. Defaults to ${DEFAULT_BASE_URL}.
+  OPENAI_BASE_URL    Optional. Defaults to ${DEFAULT_BASE_URL}. Custom origins require
+                     MDP_ALLOW_CUSTOM_OPENAI_BASE_URL=1 and HTTPS.
 
 This script is an optional BYOK/native runner reference. It does not create API keys,
 read .env files, parse PDFs, or mutate packs. The host must build REQUEST.json from
@@ -194,6 +195,29 @@ const buildResponsesBody = (request) => {
   return body
 }
 
+const resolveEndpoint = () => {
+  const configured = process.env.OPENAI_BASE_URL || DEFAULT_BASE_URL
+  let url
+  try {
+    url = new URL(configured)
+  } catch {
+    fail('OPENAI_BASE_URL must be a valid absolute URL')
+  }
+  if (url.protocol !== 'https:') fail('OPENAI_BASE_URL must use HTTPS')
+  if (url.username || url.password || url.search || url.hash) {
+    fail('OPENAI_BASE_URL must not contain credentials, query parameters, or a fragment')
+  }
+  const normalized = `${url.origin}${url.pathname.replace(/\/+$/, '')}`
+  const custom = normalized !== DEFAULT_BASE_URL
+  if (custom && process.env.MDP_ALLOW_CUSTOM_OPENAI_BASE_URL !== '1') {
+    fail('Custom OPENAI_BASE_URL is blocked by default; set MDP_ALLOW_CUSTOM_OPENAI_BASE_URL=1 only after reviewing the credential and data destination')
+  }
+  return {
+    baseUrl: normalized,
+    policy: custom ? 'custom-explicit' : 'official-default',
+  }
+}
+
 const extractOutputText = (response) => {
   if (typeof response.output_text === 'string' && response.output_text.trim()) return response.output_text
 
@@ -223,14 +247,13 @@ const parsePromptOutput = (response) => {
   }
 }
 
-const callOpenAI = async (body) => {
+const callOpenAI = async (body, endpointConfig) => {
   if (typeof fetch !== 'function') {
     fail('This runner requires Node.js 18+ for the built-in fetch API.')
   }
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) fail('OPENAI_API_KEY is required for a real native run. Use --dry-run or --mock-response for offline validation.')
-  const baseUrl = (process.env.OPENAI_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '')
-  const response = await fetch(`${baseUrl}/responses`, {
+  const response = await fetch(`${endpointConfig.baseUrl}/responses`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -252,7 +275,7 @@ const callOpenAI = async (body) => {
   return payload
 }
 
-const runnerAudit = ({ request, requestPath, promptOutputPath, response, mock }) => ({
+const runnerAudit = ({ request, requestPath, promptOutputPath, response, mock, endpointConfig }) => ({
   contract: RUNNER_CONTRACT,
   runner: 'native-api',
   model: request.model,
@@ -265,6 +288,7 @@ const runnerAudit = ({ request, requestPath, promptOutputPath, response, mock })
   tools_disabled: true,
   tool_invocations_observed: 0,
   endpoint: '/v1/responses',
+  endpoint_policy: endpointConfig.policy,
   store: false,
   prompt_id: request.prompt_id,
   prompt_output_sha256: sha256File(promptOutputPath),
@@ -279,6 +303,7 @@ const main = async () => {
   const request = readJson(args.request)
   validateRequest(request)
   const body = buildResponsesBody(request)
+  const endpointConfig = resolveEndpoint()
 
   if (args.dryRun) {
     console.log(JSON.stringify({
@@ -286,6 +311,7 @@ const main = async () => {
       contract: 'mdp.native-normalize-dry-run.v0',
       provider: 'openai',
       endpoint: '/v1/responses',
+      endpoint_policy: endpointConfig.policy,
       model: request.model,
       prompt_id: request.prompt_id,
       declared_inputs_only: true,
@@ -307,7 +333,7 @@ const main = async () => {
     return
   }
 
-  const response = args.mockResponse ? readJson(args.mockResponse) : await callOpenAI(body)
+  const response = args.mockResponse ? readJson(args.mockResponse) : await callOpenAI(body, endpointConfig)
   if (args.response) writeJson(args.response, response)
   const promptOutput = parsePromptOutput(response)
   writeJson(args.out, promptOutput)
@@ -317,6 +343,7 @@ const main = async () => {
     promptOutputPath: args.out,
     response,
     mock: Boolean(args.mockResponse),
+    endpointConfig,
   }))
   console.log(JSON.stringify({
     ok: true,

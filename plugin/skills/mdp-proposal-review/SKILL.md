@@ -101,6 +101,12 @@ Treat `confidence` only as evidence-anchoring strength, never as a probability
 that a claim is true. The report cannot override a blocked/advisory
 `run-receipt`, certify compliance, or approve submission.
 
+Keep provider configuration fail-closed. Prefer the official endpoint default.
+Never set `MDP_ALLOW_CUSTOM_OPENAI_BASE_URL=1` on the operator's behalf; a
+human must review and explicitly approve the credential/data destination.
+Reject HTTP endpoints or URLs containing credentials, query parameters, or
+fragments, and do not copy private endpoint hostnames into public artifacts.
+
 The repository's deterministic proposal evidence harness may emit a positive
 `audit-grade` receipt solely to test contract acceptance. Its report is marked
 `fixture_only: true`, `provider_calls: 0`, and must never be used as proof that
