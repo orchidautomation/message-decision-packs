@@ -108,6 +108,11 @@ These schemas describe artifact shape and contract version. They do not upgrade
 mock/demo evidence, prove that a provider call occurred, approve source
 material, or turn MCP transport into model-isolation evidence.
 
+The local proposal runner supplies its checked `mdp.source-intake.v0` ledger to
+`run-receipt` as an extra artifact with kind `source-intake`. The receipt hashes
+that exact file. This binds the ledger to the run but does not replace the
+human approval recorded inside approved entries.
+
 For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the schema-accepted isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`. Schema acceptance does not make a runner a maintained or verified MDP integration:
 
 - `native-api`: a direct stateless API request with no prior messages and no tools. The bundled optional reference is `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles; see [Native API Normalization Runner](native-api-normalization-runner.md).

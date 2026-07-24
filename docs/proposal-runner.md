@@ -4,6 +4,7 @@
 
 ```text
 local sources
+  -> mdp.source-intake.v0
   -> mdp.source-audit.v0
   -> mdp.native-normalize-request.v0
   -> mdp.prompt-output.v0 + mdp.runner-audit.v0
@@ -58,17 +59,21 @@ The stdio MCP server exposes two callable MCP tools:
 
 A path is not approval. Under the [proposal source import and approval contract](orchid/decisions/2026-07-24-proposal-source-import-and-approval-contract.md), chat, pasted text, email/Drive exports, PDFs, OCR, and importer output begin as unblessed input. A maintained importer may create a bounded local candidate, but only a human operator may approve its exact hash, pack source ID, privacy class, and review purpose. A `mdp.source-audit.v0` remains a citation ledger rather than an approval record.
 
-The CLI now publishes the first-class `mdp.source-intake.v0` schema, but the
-current runner and receipt do not yet create or bind that ledger. Synthetic
-mock/dry-run use remains valid when labeled non-audit-grade, and real synthetic
-runner proof remains separate. Do not describe a current path-only real
-client-source run as proving source approval.
+The runner always writes `artifacts/source-intake.json`. A first dry run creates
+candidate entries with the exact staged hash, source ID, source kind, privacy
+class, origin, truncation state, and bound source-audit refs. A human may approve
+those exact candidates outside the runner. A real native run requires that
+approved ledger through `--source-intake`; the runner rechecks every binding and
+the receipt hashes the ledger as a `source-intake` artifact. Agents and
+importers never self-approve candidates.
 
 ## What It Does
 
 The runner:
 
 - stages supplied text, Markdown, CSV, JSON, or YAML source files in a local run directory;
+- rejects source symlinks, unsafe source IDs, unsafe workdir ownership/modes, and stale workdirs without an exact ownership manifest;
+- creates `artifacts/source-intake.json` and binds every staged source to matching source-audit snippet bytes;
 - preserves a supplied `mdp.source-audit.v0` or creates a bounded source-audit ledger for staged text;
 - builds a single-user-message `mdp.native-normalize-request.v0` with only the prompt-declared payload fields: `raw_opportunity`, `existing_pack_context`, `source_audit`, and `source_kind`;
 - calls `scripts/mdp-native-normalize-openai.mjs`;
@@ -92,7 +97,13 @@ node scripts/mdp-proposal-runner.mjs run \
   --dry-run
 ```
 
-Dry-run writes a request and native-runner preview, but it does not produce prompt output, runner audit, validation, receipt, or review artifacts. It is never audit-grade.
+Dry-run writes a request and native-runner preview, but it does not produce prompt output, runner audit, validation, receipt, or review artifacts. It is never audit-grade. It also writes candidate-only `source-intake.json` and `.mdp-proposal-workdir.json`. To reuse that directory, pass the manifest's exact `workdir_id` with `--reuse-workdir-id`; there is no generic allow-existing mode.
+
+To approve real input, inspect the candidate preview and hashes, have a human
+change each accepted entry to `state: "approved"` and
+`approval_class: "operator-approved"`, and add an `approval` object whose
+`artifact_sha256`, purpose, operator, decision, and timestamp bind that exact
+candidate. Then pass the resulting file with `--source-intake`.
 
 ## Offline Mock Test
 
@@ -135,6 +146,7 @@ node scripts/mdp-proposal-runner.mjs run \
   --pack <pack-root> \
   --workdir <customer-controlled-run-dir> \
   --source <approved-text-export.txt> \
+  --source-intake <operator-approved-source-intake.json> \
   --source-id <id-from-pack-.mdp-sources-yaml> \
   --source-kind private-scratch-opportunity \
   --model <openai-model-id> \

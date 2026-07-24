@@ -152,6 +152,10 @@ const proposalRunSchema = {
       items: { type: 'string' },
       description: 'Local text/Markdown/CSV/JSON/YAML source files supplied by the operator. Raw chat text is intentionally not accepted.',
     },
+    source_intake_path: {
+      type: 'string',
+      description: 'Existing operator-approved mdp.source-intake.v0 ledger. Required for real native runs.',
+    },
     source_audit_path: {
       type: 'string',
       description: 'Existing mdp.source-audit.v0 JSON ledger to preserve. Optional when source_paths + source_id can generate one.',
@@ -164,6 +168,11 @@ const proposalRunSchema = {
       type: 'string',
       enum: ['user-provided-opportunity', 'private-scratch-opportunity', 'public-source', 'sanitized-example', 'synthetic-example'],
       description: 'Prompt source_kind. Defaults to private-scratch-opportunity.',
+    },
+    privacy_class: {
+      type: 'string',
+      enum: ['synthetic-public', 'sanitized-public', 'private-customer', 'restricted-local'],
+      description: 'Source-intake privacy class. Defaults conservatively from source_kind.',
     },
     model: {
       type: 'string',
@@ -189,9 +198,9 @@ const proposalRunSchema = {
       type: 'string',
       description: 'Prompt id. Current runner supports normalize-opportunity.',
     },
-    allow_existing: {
-      type: 'boolean',
-      description: 'Allow writing into an existing non-empty workdir without deleting it.',
+    reuse_workdir_id: {
+      type: 'string',
+      description: 'Reuse a non-empty workdir only when its local ownership manifest has this exact id.',
     },
     skip_review: {
       type: 'boolean',
@@ -267,16 +276,18 @@ const callProposalRun = (args) => {
     'pack',
     'workdir',
     'source_paths',
+    'source_intake_path',
     'source_audit_path',
     'source_id',
     'source_kind',
+    'privacy_class',
     'model',
     'mock_response_path',
     'dry_run',
     'mdp_bin',
     'native_runner',
     'prompt_id',
-    'allow_existing',
+    'reuse_workdir_id',
     'skip_review',
     'require_audit_grade',
     'max_source_bytes',
@@ -289,9 +300,11 @@ const callProposalRun = (args) => {
   if (!workdir) throw new Error('workdir is required')
 
   const sourcePaths = optionalStringArray(parsedArgs, 'source_paths')
+  const sourceIntakePath = optionalString(parsedArgs, 'source_intake_path')
   const sourceAuditPath = optionalString(parsedArgs, 'source_audit_path')
   const sourceId = optionalString(parsedArgs, 'source_id')
   const sourceKind = optionalString(parsedArgs, 'source_kind')
+  const privacyClass = optionalString(parsedArgs, 'privacy_class')
   const model = optionalString(parsedArgs, 'model')
   const mockResponsePath = optionalString(parsedArgs, 'mock_response_path')
   const mdpBin = optionalString(parsedArgs, 'mdp_bin')
@@ -299,7 +312,7 @@ const callProposalRun = (args) => {
   const promptId = optionalString(parsedArgs, 'prompt_id')
   const maxSourceBytes = optionalInteger(parsedArgs, 'max_source_bytes')
   const dryRun = optionalBoolean(parsedArgs, 'dry_run')
-  const allowExisting = optionalBoolean(parsedArgs, 'allow_existing')
+  const reuseWorkdirId = optionalString(parsedArgs, 'reuse_workdir_id')
   const skipReview = optionalBoolean(parsedArgs, 'skip_review')
   const requireAuditGrade = optionalBoolean(parsedArgs, 'require_audit_grade')
 
@@ -309,16 +322,18 @@ const callProposalRun = (args) => {
 
   const runnerArgs = ['run', '--pack', pack, '--workdir', workdir]
   for (const sourcePath of sourcePaths) runnerArgs.push('--source', sourcePath)
+  if (sourceIntakePath) runnerArgs.push('--source-intake', sourceIntakePath)
   if (sourceAuditPath) runnerArgs.push('--source-audit', sourceAuditPath)
   if (sourceId) runnerArgs.push('--source-id', sourceId)
   if (sourceKind) runnerArgs.push('--source-kind', sourceKind)
+  if (privacyClass) runnerArgs.push('--privacy-class', privacyClass)
   if (model) runnerArgs.push('--model', model)
   if (mockResponsePath) runnerArgs.push('--mock-response', mockResponsePath)
   if (dryRun) runnerArgs.push('--dry-run')
   if (mdpBin) runnerArgs.push('--mdp-bin', mdpBin)
   if (nativeRunner) runnerArgs.push('--native-runner', nativeRunner)
   if (promptId) runnerArgs.push('--prompt-id', promptId)
-  if (allowExisting) runnerArgs.push('--allow-existing')
+  if (reuseWorkdirId) runnerArgs.push('--reuse-workdir-id', reuseWorkdirId)
   if (skipReview) runnerArgs.push('--skip-review')
   if (requireAuditGrade) runnerArgs.push('--require-audit-grade')
   if (maxSourceBytes !== null) runnerArgs.push('--max-source-bytes', String(maxSourceBytes))
