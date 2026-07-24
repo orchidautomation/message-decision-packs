@@ -71,6 +71,12 @@ Schema validity proves shape only. It does not approve a source, prove a model
 call occurred, upgrade fixture/mock/demo evidence, or make MCP transport
 audit-grade.
 
+The repository's deterministic proposal evidence harness may emit a positive
+`audit-grade` receipt solely to test contract acceptance. Its report is marked
+`fixture_only: true`, `provider_calls: 0`, and must never be used as proof that
+a production model invocation occurred or that a runner integration is
+verified.
+
 For audit-grade review, require a runner receipt after validation:
 
 ```bash
