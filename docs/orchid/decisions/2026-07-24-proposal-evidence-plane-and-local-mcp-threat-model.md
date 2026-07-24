@@ -1,8 +1,8 @@
 # Proposal Evidence Plane And Local MCP Threat Model
 
-Date: 2026-07-24  
-Issue: MDP-125  
-Status: proposed; security-lens and human acceptance required  
+Date: 2026-07-24
+Issue: MDP-125
+Status: proposed; security-lens and human acceptance required
 Scope: local proposal normalization runner, local stdio MCP adapter, evidence artifacts, and public/client-demo claims
 
 ## Overview

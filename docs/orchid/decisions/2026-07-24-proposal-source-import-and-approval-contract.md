@@ -1,9 +1,9 @@
 # Proposal Source Import And Approval Contract
 
-Date: 2026-07-24  
-Issue: MDP-141  
-Status: proposed in the CE hardening stack; privacy/security and human review required  
-Depends on: MDP-125  
+Date: 2026-07-24
+Issue: MDP-141
+Status: proposed in the CE hardening stack; privacy/security and human review required
+Depends on: MDP-125
 Implements into: MDP-124, MDP-126, MDP-137
 
 ## Decision
