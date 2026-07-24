@@ -24,6 +24,21 @@ mdp --json skills --dir PACK_ROOT --job JOB_ID
 
 Proceed only when `data.recommendation.skill_id` is `mdp-proposal-review`, the returned `job_id` matches, and `pack_ready` is true. Otherwise report the diagnostics and stop or route pack repair to `$mdp-pack-builder`. There is no fallback job.
 
+## Choose The Evidence Path
+
+Before normalizing proposal material or answering whether a review is
+audit-grade, read [references/evidence-path.md](references/evidence-path.md) and
+follow its decision tree.
+
+- Audit-grade requested + no explicit approved source files = `blocked`.
+- Audit-grade requested + no callable local runner/MCP/native boundary =
+  `blocked` with the smallest source-checkout or installed-plugin command
+  handoff.
+- Ambient same-chat review is allowed only when the operator accepts
+  `assurance: advisory`; never silently degrade an audit-grade request.
+- A tool, runner name, schema-valid artifact, or MCP transport is not the
+  decision. Report the current receipt and runner assurance.
+
 ## Source And Safety Gate
 
 1. Require the exact pack root, supplied review material, review scope, and known owner.
@@ -152,4 +167,9 @@ Use `--readable` only when the user wants the human-readable review artifact. Re
 
 ## Response
 
-Return the selected mode’s packet, the job route, sources reviewed, CLI checks, unsupported claims, gaps, named human review, and smallest next inputs. State the limits of the review explicitly.
+Return `assurance` (`audit-grade`, `advisory`, or `blocked`) first, followed by
+the current receipt decision/runner assurance or an explicit statement that no
+current receipt exists. Then return the selected mode’s packet, job route,
+source paths and intake/audit artifacts actually checked, CLI/MCP checks,
+unsupported claims, gaps, named human review, and smallest next input or exact
+command handoff. State the limits of the review explicitly.

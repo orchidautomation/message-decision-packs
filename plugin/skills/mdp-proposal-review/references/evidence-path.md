@@ -1,0 +1,147 @@
+# Proposal Evidence Path
+
+Read this before normalizing proposal material or answering whether a review is
+audit-grade. The evidence path is a decision gate, not an optional confidence
+upgrade.
+
+## Decide Before Normalizing
+
+1. **Are there explicit local source files?**
+   - No: audit-grade is blocked. Ambient chat, pasted text, a source ID, or a
+     source-audit ledger alone is not an approved source.
+   - If the operator selects pasted text, export only that selection as a
+     bounded candidate. Show its preview and hash, then wait for human approval.
+2. **Is each exact source hash human-approved for this pack and
+   `proposal-review` purpose?**
+   - No: create or report candidate intake state and stop before a real native
+     run. An agent may not approve it.
+3. **Does the operator require audit-grade?**
+   - No: an ambient review of supplied material may continue only as
+     `assurance: advisory`. Do not describe ambient normalization as isolated,
+     receipt-backed, or audit-grade.
+   - Yes: continue only through the local runner or MCP evidence path.
+4. **Can this host call the local runner/MCP and a schema-accepted
+   native/headless boundary?**
+   - No: return `assurance: blocked`, name the missing runtime/evidence, and
+     provide the smallest command handoff below. Do not silently fall back to
+     same-chat normalization.
+5. **Did the current invocation produce an audit-grade receipt?**
+   - Yes only when the result reports `decision: "audit-grade"`,
+     `audit_grade_eligible: true`, a verified runner assurance, matching
+     artifact hashes, and a valid runner audit required by the receipt.
+   - Any dry-run, mock, fixture, advisory, blocked, malformed, failed, or
+     timed-out result is not audit-grade.
+
+## Source Checkout Commands
+
+First create candidate intake and inspect the declared-input-only request:
+
+```bash
+node scripts/mdp-proposal-runner.mjs run \
+  --pack PACK_ROOT \
+  --workdir WORKDIR \
+  --source SOURCE_FILE \
+  --source-id SOURCE_ID \
+  --source-kind private-scratch-opportunity \
+  --dry-run
+```
+
+After a human approves the exact candidate hashes in an
+`mdp.source-intake.v0` ledger, a real invocation is:
+
+```bash
+node scripts/mdp-proposal-runner.mjs run \
+  --pack PACK_ROOT \
+  --workdir NEW_WORKDIR \
+  --source SOURCE_FILE \
+  --source-intake APPROVED_SOURCE_INTAKE_JSON \
+  --source-audit SOURCE_AUDIT_JSON \
+  --model MODEL_ID \
+  --require-audit-grade
+```
+
+`--source-audit` is optional when the runner can create the ledger from the
+supplied file, but it never replaces `--source` or human source approval.
+
+## Installed Plugin Commands
+
+Use the same arguments against the installed bundle:
+
+```bash
+node "${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs" run \
+  --pack PACK_ROOT \
+  --workdir WORKDIR \
+  --source SOURCE_FILE \
+  --source-id SOURCE_ID \
+  --source-kind private-scratch-opportunity \
+  --dry-run
+
+node "${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs" run \
+  --pack PACK_ROOT \
+  --workdir NEW_WORKDIR \
+  --source SOURCE_FILE \
+  --source-intake APPROVED_SOURCE_INTAKE_JSON \
+  --source-audit SOURCE_AUDIT_JSON \
+  --model MODEL_ID \
+  --require-audit-grade
+```
+
+Do not substitute a host-specific or guessed plugin root. Use the installed
+host's actual `PLUGIN_ROOT`.
+
+## MCP Path
+
+Launch the local stdio adapter from source or the installed bundle:
+
+```bash
+node scripts/mdp-proposal-mcp-server.mjs
+node "${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs"
+```
+
+Call `mdp_proposal_run` with path-only arguments:
+
+```json
+{
+  "pack": "PACK_ROOT",
+  "workdir": "NEW_WORKDIR",
+  "source_paths": ["SOURCE_FILE"],
+  "source_intake_path": "APPROVED_SOURCE_INTAKE_JSON",
+  "source_audit_path": "SOURCE_AUDIT_JSON",
+  "model": "MODEL_ID",
+  "require_audit_grade": true
+}
+```
+
+Raw proposal text and ambient chat are not MCP arguments. At least one
+`source_paths` file is required; `source_audit_path` alone is not a runnable
+source. Treat an MCP tool error as blocked.
+
+## Read Results, Not Vibes
+
+For MCP, consume the strict top-level fields:
+
+- `mode`
+- `decision`
+- `audit_grade_eligible`
+- `runner_assurance`
+- `timed_out`
+- `termination_signal`
+- `runner_exit_status`
+
+For a direct runner call, read `proposal-runner-result.json` and its referenced
+`mdp.run-receipt.v0`. MCP transport, tool availability, an installed command,
+schema-valid JSON, or a runner identifier never upgrades the result.
+Report integration support separately from this invocation using only the
+canonical support matrix states.
+
+When asked “is this audit-grade?”, answer in this order:
+
+1. `assurance`: `audit-grade`, `advisory`, or `blocked`;
+2. the current receipt decision and runner assurance, or state that no current
+   receipt exists;
+3. source paths/intake/audit artifacts actually checked;
+4. missing or failed gates;
+5. the smallest next command or human approval needed.
+
+Do not proceed into a confident proposal packet when audit-grade was requested
+and the assurance is advisory or blocked.
