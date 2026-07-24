@@ -28,6 +28,8 @@ Proceed only when `data.recommendation.skill_id` is `mdp-proposal-review`, the r
 
 1. Require the exact pack root, supplied review material, review scope, and known owner.
 2. Use only supplied or explicitly approved sources. Keep restricted pursuit material out of public paths and generated fixtures.
+   Apply the source states `unblessed` → `candidate` → human `approved`. A local path, source ID, chat message, pasted fact, importer result, or `mdp.source-audit.v0` does not itself prove approval. Follow the [proposal source import and approval contract](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/orchid/decisions/2026-07-24-proposal-source-import-and-approval-contract.md): bind human approval to the exact candidate hash, pack source ID, privacy class, and review purpose. Agents/importers may create candidates but never self-approve them.
+   If the operator explicitly selects chat or pasted text, export only that selected text to a bounded local candidate, show its preview/hash, and require human approval; exclude surrounding conversation and agent interpretation. Until `mdp.source-intake.v0` and receipt binding are implemented, treat path-only real client-source runs as unable to prove source approval even when their later runner receipt passes.
 3. Never invent RFP text, requirements, deadlines, evaluator criteria, proof, certifications, compliance status, pricing, references, outcomes, past performance, or approvals.
 4. Validate pack and gaps:
 
