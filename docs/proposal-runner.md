@@ -56,6 +56,20 @@ The stdio MCP server exposes two callable MCP tools:
 
 `mdp_proposal_run` intentionally accepts local source file paths and source-audit paths, not raw chat text. MCP transport is only the call boundary; audit-grade status still comes from a valid runner audit plus `mdp run-receipt --require-runner-audit`.
 
+The MCP adapter hardens that local boundary:
+
+- it canonicalizes pack, workdir, source, intake, audit, mock-response, CLI, and native-runner paths; rejects missing/wrong-type paths and final-component symlinks; and never interprets a path as a shell command;
+- it runs the proposal runner with a minimal explicit environment allowlist rather than the MCP host's full environment;
+- it bounds child output and applies a `timeout_ms` deadline (120 seconds by default, 300 seconds maximum), terminating timed-out runs and reporting exit status `124`;
+- it redacts credential-shaped values from returned diagnostics; and
+- it returns the strict `mdp.proposal-mcp-run-result.v0` envelope with top-level `mode`, `decision`, `audit_grade_eligible`, `runner_assurance`, timeout/termination state, bounded diagnostics, and environment-policy metadata.
+
+Clients should branch on those machine-readable fields, not parse the text
+content. Setting `require_audit_grade: true` fails closed unless this invocation
+returns `decision: "audit-grade"` and `audit_grade_eligible: true`; dry-run,
+mock, advisory, blocked, malformed, timed-out, and failed runner results return
+an MCP tool error.
+
 ## Source Approval Precondition
 
 A path is not approval. Under the [proposal source import and approval contract](orchid/decisions/2026-07-24-proposal-source-import-and-approval-contract.md), chat, pasted text, email/Drive exports, PDFs, OCR, and importer output begin as unblessed input. A maintained importer may create a bounded local candidate, but only a human operator may approve its exact hash, pack source ID, privacy class, and review purpose. A `mdp.source-audit.v0` remains a citation ledger rather than an approval record.

@@ -549,7 +549,16 @@ fn proposal_mcp_run_result_schema() -> Value {
             "hosted_or_remote_mcp",
             "runner_exit_status",
             "runner_result",
+            "mode",
+            "decision",
+            "audit_grade_eligible",
+            "runner_assurance",
+            "timed_out",
+            "termination_signal",
+            "timeout_ms",
+            "stdout",
             "stderr",
+            "environment",
             "guardrails"
         ],
         "additionalProperties": false,
@@ -565,7 +574,25 @@ fn proposal_mcp_run_result_schema() -> Value {
                     {"type": "null"}
                 ]
             },
+            "mode": {"type": ["string", "null"]},
+            "decision": {"enum": ["not-run", "audit-grade", "advisory", "blocked"]},
+            "audit_grade_eligible": {"type": "boolean"},
+            "runner_assurance": {"type": "string"},
+            "timed_out": {"type": "boolean"},
+            "termination_signal": {"type": ["string", "null"]},
+            "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 300000},
+            "stdout": {"type": "string"},
             "stderr": {"type": "string"},
+            "environment": {
+                "type": "object",
+                "required": ["policy", "keys", "secret_values_reported"],
+                "additionalProperties": false,
+                "properties": {
+                    "policy": {"const": "allowlist"},
+                    "keys": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+                    "secret_values_reported": {"const": false}
+                }
+            },
             "guardrails": {
                 "type": "array",
                 "minItems": 1,
@@ -2318,6 +2345,18 @@ mod tests {
         assert_eq!(
             mcp_result["properties"]["hosted_or_remote_mcp"]["const"],
             false
+        );
+        assert_eq!(
+            mcp_result["properties"]["environment"]["properties"]["policy"]["const"],
+            "allowlist"
+        );
+        assert_eq!(mcp_result["properties"]["timeout_ms"]["maximum"], 300000);
+        assert!(
+            mcp_result["required"]
+                .as_array()
+                .expect("MCP required fields")
+                .iter()
+                .any(|field| field == "timed_out")
         );
         assert!(
             mcp_result["description"]

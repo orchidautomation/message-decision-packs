@@ -165,3 +165,12 @@ node scripts/mdp-proposal-mcp-server.mjs
 ```
 
 Pluxx continues to package skills, hooks, assets, and scripts for supported hosts. The local runner/MCP wrapper owns source staging and the runtime call into the native/headless boundary, while the CLI owns deterministic artifact checks. MCP transport alone is not audit-grade; dry-run/mock runner modes are valid for CI and demo fixtures only, and they must block or remain non-audit-grade when `--require-runner-audit` is used.
+
+The MCP result envelope makes transport state explicit: consume its top-level
+`mode`, `decision`, `audit_grade_eligible`, `runner_assurance`, `timed_out`, and
+`runner_exit_status` fields. The wrapper uses canonical local paths, an explicit
+child-environment allowlist, a bounded timeout/output budget, and redacted
+diagnostics. Those controls reduce accidental context and credential exposure,
+but they do not prove that a provider call occurred or replace the runner audit,
+artifact hashes, or receipt decision. A timeout, termination, malformed result,
+or `require_audit_grade` mismatch is a tool error and must remain blocked.
