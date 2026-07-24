@@ -1,7 +1,9 @@
 use crate::constants::{
-    DEFAULT_DIR, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
-    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, RUNNER_AUDIT_CONTRACT,
-    SOURCE_AUDIT_CONTRACT,
+    DEFAULT_DIR, FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF,
+    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
+    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
+    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use serde_json::{Value, json};
 
@@ -28,6 +30,59 @@ pub(crate) fn capabilities() -> Value {
             "card_patch_schema_ref": PROMPT_CARD_PATCH_SCHEMA_REF,
             "prospect_normalization_schema_ref": PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
         },
+        "proposal_evidence_contracts": {
+            "source_intake": {
+                "contract": SOURCE_INTAKE_CONTRACT,
+                "schema_target": "source-intake",
+                "required_for": ["real client-source approval and proposal runner receipt binding"],
+                "caveat": "Only a human may approve exact bytes for proposal-review; the local runner verifies and receipt-binds the ledger but never self-approves it."
+            },
+            "source_audit": {
+                "contract": SOURCE_AUDIT_CONTRACT,
+                "schema_target": "source-audit",
+                "required_for": ["source-cited prompt validation", "audit-grade proposal review when source audit is required"],
+                "caveat": "Citation ledger only; it does not prove source approval or privacy classification."
+            },
+            "native_normalize_request": {
+                "contract": NATIVE_NORMALIZE_REQUEST_CONTRACT,
+                "schema_target": "native-normalize-request",
+                "required_for": ["native proposal normalization runner"],
+                "caveat": "Request shape does not prove that a provider invocation occurred."
+            },
+            "prompt_output": {
+                "contract": PROMPT_OUTPUT_CONTRACT,
+                "schema_target": "prompt-output",
+                "required_for": ["validate-prompt-output", "run-receipt prompt binding"]
+            },
+            "runner_audit": {
+                "contract": RUNNER_AUDIT_CONTRACT,
+                "schema_target": "runner-audit",
+                "required_for": ["run-receipt --require-runner-audit"],
+                "caveat": "Fixture/mock/demo evidence must remain non-audit-grade."
+            },
+            "run_receipt": {
+                "contract": RUN_RECEIPT_CONTRACT,
+                "schema_target": "run-receipt",
+                "required_for": ["per-invocation proposal assurance decision"]
+            },
+            "proposal_run_manifest": {
+                "contract": PROPOSAL_RUN_MANIFEST_CONTRACT,
+                "schema_target": "proposal-run-manifest",
+                "required_for": ["proposal workdir ownership, concurrency refusal, and terminal run state"],
+                "caveat": "In-progress and blocked manifests are not audit-grade evidence."
+            },
+            "proposal_runner_result": {
+                "contract": PROPOSAL_RUNNER_RESULT_CONTRACT,
+                "schema_target": "proposal-runner-result",
+                "required_for": ["local proposal runner summary"]
+            },
+            "proposal_mcp_run_result": {
+                "contract": PROPOSAL_MCP_RUN_RESULT_CONTRACT,
+                "schema_target": "proposal-mcp-run-result",
+                "required_for": ["local stdio MCP proposal runner response"],
+                "caveat": "MCP transport is not model-isolation evidence."
+            }
+        },
         "profile_contracts": {
             "manifest_profile": "mdp.profile.v0",
             "skills": "mdp.skills.v1",
@@ -48,7 +103,7 @@ pub(crate) fn capabilities() -> Value {
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--prompt", "--prompt-id", "--strict"]),
-            command("run-receipt", "mdp.run-receipt.v0", "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
+            command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
             command("author-proof-output", "mdp.author-proof-output.v0", "writes-files-with-out", true, true, false, &["--dir", "--draft", "--out", "--dry-run"]),
             command("render-brief", "mdp.human-brief.v0", "writes-files-with-out", false, true, true, &["--dir", "--file", "--template", "--format", "--out", "--strict"]),
@@ -131,6 +186,22 @@ mod tests {
                 .any(|command| command["name"] == "init" && command["supports_dry_run"] == true)
         );
         assert_eq!(result["profile_contracts"]["skills"], "mdp.skills.v1");
+        assert_eq!(
+            result["proposal_evidence_contracts"]["native_normalize_request"]["schema_target"],
+            "native-normalize-request"
+        );
+        assert_eq!(
+            result["proposal_evidence_contracts"]["source_intake"]["contract"],
+            SOURCE_INTAKE_CONTRACT
+        );
+        assert_eq!(
+            result["proposal_evidence_contracts"]["proposal_mcp_run_result"]["contract"],
+            PROPOSAL_MCP_RUN_RESULT_CONTRACT
+        );
+        assert_eq!(
+            result["proposal_evidence_contracts"]["proposal_run_manifest"]["contract"],
+            PROPOSAL_RUN_MANIFEST_CONTRACT
+        );
         assert_eq!(result["target_contracts"]["kinds"][0], "company");
         assert!(
             result["commands"]
@@ -145,7 +216,7 @@ mod tests {
                 .expect("commands array")
                 .iter()
                 .any(|command| command["name"] == "run-receipt"
-                    && command["output_contract"] == "mdp.run-receipt.v0")
+                    && command["output_contract"] == RUN_RECEIPT_CONTRACT)
         );
         assert!(
             result["stable_error_codes"]

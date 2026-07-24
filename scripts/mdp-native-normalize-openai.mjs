@@ -116,13 +116,36 @@ const validateInputPayload = (input) => {
   requireObject(message, 'request.input[0]')
   if (message.role !== 'user') fail('request.input[0].role must be user')
   if (!('content' in message)) fail('request.input[0].content is required')
+  requireString(message.content, 'request.input[0].content')
   if ('id' in message || 'status' in message || 'type' in message) {
     fail('request.input[0] must be a plain user message without prior response metadata')
   }
+  const unknown = Object.keys(message).filter((key) => !['role', 'content'].includes(key))
+  if (unknown.length > 0) fail(`request.input[0] contains unsupported fields: ${unknown.sort().join(', ')}`)
 }
 
 const validateRequest = (request) => {
   requireObject(request, 'request')
+  if ('instructions' in request) fail('request.instructions is not allowed; include all model-visible prompt guidance in the audited request.input payload')
+  if ('previous_response_id' in request) fail('request must not include previous_response_id')
+  if ('conversation' in request) fail('request must not include conversation')
+  const allowed = new Set([
+    'contract',
+    'provider',
+    'model',
+    'prompt_id',
+    'declared_inputs_only',
+    'input',
+    'prompt_output_schema',
+    'schema_name',
+    'max_output_tokens',
+    'reasoning',
+    'metadata',
+    'tools',
+    'tool_choice',
+  ])
+  const unsupported = Object.keys(request).filter((key) => !allowed.has(key))
+  if (unsupported.length > 0) fail(`request contains unsupported fields: ${unsupported.sort().join(', ')}`)
   if (request.contract !== REQUEST_CONTRACT) fail(`request.contract must be ${REQUEST_CONTRACT}`)
   if (request.provider !== 'openai') fail('request.provider must be openai')
   requireString(request.model, 'request.model')
@@ -130,9 +153,15 @@ const validateRequest = (request) => {
   if (request.declared_inputs_only !== true) fail('request.declared_inputs_only must be true')
   requireObject(request.prompt_output_schema, 'request.prompt_output_schema')
   validateInputPayload(request.input)
-  if ('instructions' in request) fail('request.instructions is not allowed; include all model-visible prompt guidance in the audited request.input payload')
-  if ('previous_response_id' in request) fail('request must not include previous_response_id')
-  if ('conversation' in request) fail('request must not include conversation')
+  if ('schema_name' in request) requireString(request.schema_name, 'request.schema_name')
+  if (
+    'max_output_tokens' in request &&
+    (!Number.isInteger(request.max_output_tokens) || request.max_output_tokens < 1)
+  ) {
+    fail('request.max_output_tokens must be a positive integer')
+  }
+  if ('reasoning' in request) requireObject(request.reasoning, 'request.reasoning')
+  if ('metadata' in request) requireObject(request.metadata, 'request.metadata')
   if ('tools' in request && (!Array.isArray(request.tools) || request.tools.length > 0)) {
     fail('request.tools must be omitted or empty for native normalization')
   }

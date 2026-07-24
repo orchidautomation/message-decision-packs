@@ -106,7 +106,7 @@ The proposal profile supports review and gap surfacing. It does not replace comp
 
 ## Proposal Video Walkthrough
 
-[Proposal Flow Video Demo](examples/proposal-flow-video/README.md) is a synthetic, public-safe walkthrough for messy proposal sources → `mdp init --template proposal` → local proposal runner → source-audit/prompt-output/runner-audit artifacts → run-receipt gates → verified human-readable proposal review output, plus a Remotion project that renders the walkthrough as an MP4. The default demo uses offline mock mode and should produce a blocked/non-audit-grade receipt; the CLI blocks demo/fixture/mock/synthetic runner evidence from `audit-grade`. Real pilots must use native/headless runner evidence, either through the local runner command or bundled local stdio MCP wrapper, plus an audit-grade receipt before claiming model-context isolation.
+[Proposal Flow Video Demo](examples/proposal-flow-video/README.md) is a synthetic, public-safe walkthrough for messy proposal sources → `mdp init --template proposal` → local proposal runner → source-audit/prompt-output/runner-audit artifacts → run-receipt gates → verified human-readable proposal review output, plus a Remotion project that renders the walkthrough as an MP4. The default demo uses offline mock mode and produces a blocked/non-audit-grade receipt; label it mock/non-audit-grade. The CLI blocks demo/fixture/mock/synthetic runner evidence from `audit-grade`. Real pilots must use native/headless runner evidence plus an audit-grade receipt for that invocation before claiming model-context isolation. The [canonical runner support matrix](docs/headless-normalization-runners.md#canonical-runner-support-matrix) separately records whether an integration is verified, recipe-only, unsupported, or fixture/mock-only; currently no runner integration is verified.
 
 ## Canonical GTM Runtime Example: Eve on Vercel
 
@@ -173,6 +173,7 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Prompt Contracts](docs/prompt-extraction-contract.md): normalization and extraction schemas.
 - [Runner Receipts](docs/run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
 - [Local Proposal Runner Surface](docs/proposal-runner.md): host-neutral local command surface for source audit, native/headless normalization, validation, receipts, and review probes.
+- [Deterministic Proposal Evidence Harness](docs/proposal-evidence-harness.md): synthetic CI proof for positive contract acceptance and fail-closed ambient/mock/hash/injection/unsupported-proof cases.
 - [Headless Normalization Runners](docs/headless-normalization-runners.md): native/headless runner recipes for Codex, Claude Code, Cursor, OpenCode, and the bundled local stdio MCP wrapper.
 - [Native API Normalization Runner](docs/native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.
 - [Proof-Output Drafting](docs/proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.

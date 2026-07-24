@@ -18,6 +18,14 @@ GENERATED_INVENTORIES = {
     "opencode": "skills.generated.json",
 }
 FRONTMATTER_NAME = re.compile(r"^name:\s*['\"]?([^'\"\n]+?)['\"]?\s*$", re.MULTILINE)
+PACKAGED_DOC_SURFACES = (
+    Path("plugin/skills"),
+    Path("assets"),
+    Path("plugin/assets"),
+)
+REPO_ONLY_DOC_REFERENCES = (
+    "docs/headless-normalization-runners.md#canonical-runner-support-matrix",
+)
 CURRENT_AGENT_SURFACES = (
     Path("llms.txt"),
     Path("llms-full.txt"),
@@ -152,6 +160,21 @@ def validate_current_agent_surfaces(errors: list[str]) -> None:
                 errors.append(f"current agent surface retains removed term {term}: {path}")
 
 
+def validate_packaged_doc_references(errors: list[str]) -> None:
+    for root in PACKAGED_DOC_SURFACES:
+        if not root.is_dir():
+            errors.append(f"missing packaged documentation surface: {root}")
+            continue
+        for path in sorted(root.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            for reference in REPO_ONLY_DOC_REFERENCES:
+                broken_forms = (f"`{reference}`", f"]({reference})")
+                if any(form in text for form in broken_forms):
+                    errors.append(
+                        f"packaged documentation uses repo-only reference {reference}: {path}"
+                    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=Path("plugin/skills"))
@@ -174,6 +197,7 @@ def main() -> int:
 
     expected = skill_inventory(args.source, errors)
     validate_current_agent_surfaces(errors)
+    validate_packaged_doc_references(errors)
 
     if args.require_bundles:
         for host in HOSTS:

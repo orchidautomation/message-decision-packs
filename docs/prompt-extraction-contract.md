@@ -25,6 +25,15 @@ Keep prompt inputs separate from source/provenance locators:
 
 When PDF/doc extraction feeds a proposal normalization prompt, keep the raw document outside the public pack and pass a bounded source-audit file to validation. The source audit is a local JSON artifact with `contract: "mdp.source-audit.v0"` and `refs` entries:
 
+Inspect the authoritative artifact schemas with:
+
+```bash
+mdp --json schema source-intake
+mdp --json schema source-audit
+mdp --json schema prompt-output
+mdp --json schema native-normalize-request
+```
+
 ```json
 {
   "contract": "mdp.source-audit.v0",
@@ -40,6 +49,8 @@ When PDF/doc extraction feeds a proposal normalization prompt, keep the raw docu
 ```
 
 Each `source_id` must exist in `.mdp/sources.yaml`. Each `ref` should name a declared prompt input or field such as `raw_opportunity.summary` or `source_kind`. Prompt outputs may cite exact refs or ref-plus-snippet forms such as `raw_opportunity.summary: status notifications`; `validate-prompt-output --source-audit` rejects nonexistent refs and snippet text that does not occur in the audited snippet. Public fixtures must stay synthetic or sanitized; real proposal source-audit files belong in non-public/customer-controlled workspace paths unless explicitly approved for publication.
+
+A source-audit is a bounded citation ledger, not proof that the upstream bytes were operator-approved. Follow the [proposal source import and approval contract](orchid/decisions/2026-07-24-proposal-source-import-and-approval-contract.md): unblessed chat/files/imports become bounded local candidates, and only a human may approve an exact candidate hash, pack source ID, privacy class, and review purpose. The local proposal runner emits the provider-neutral `mdp.source-intake.v0` record exposed by `mdp --json schema source-intake`, requires an approved ledger for real native runs, rechecks it against staged bytes and source-audit refs, and includes its hash in the run receipt. A path or source-audit alone still does not prove approval.
 
 `output_contract.schema_ref` names the authoritative response contract. Starter prompt files keep that reference compact by default. Use `mdp init --include-output-schemas` when an agent host or model API needs a literal JSON Schema object in each prompt file under `output_contract.schema`. `output_contract.example` is still useful as a model-friendly reference, but it does not replace the schema contract.
 

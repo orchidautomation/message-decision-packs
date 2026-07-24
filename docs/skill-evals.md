@@ -18,9 +18,30 @@ plugin/skill-evals/
 
 Trigger cases include train/validation splits, distinct scenario families, an expected canonical skill ID or `null`, pack/profile context, near misses, unsafe requests, and profile-crossing cases. The top-level collision ledger names the exact corpus case and competing skill for every ordered pair in both splits; positive ownership alone does not count as collision evidence.
 
-Output cases cover all 17 internal modes in both train and validation: 34 mode/split cells. Assertions use explicit categories such as CLI gate, evidence, boundary, safety, handoff, and human review.
+Output cases cover all 17 internal modes in both train and validation: 34
+mode/split cells. Additional proposal bridge and adversarial cases require a
+blocked result when audit-grade is requested without a callable runner/current
+receipt, require explicit advisory acceptance before ambient pasted-text
+review, keep chat-only facts out of approved evidence, and preserve OCR/source
+mismatches as gaps. Assertions use
+explicit categories such as CLI gate, evidence, boundary, safety, handoff, and
+human review.
 
 ## Deterministic Gate
+
+Canonical skill prose and path contracts are checked separately before the
+behavior corpus. The contract validator enforces bounded frontmatter,
+skill-local links, the single authored `plugin/skills/` source, safe load-time
+instructions, current runner script names, and a small exact allowlist of
+high-risk proposal refusal language:
+
+```bash
+make validate-skill-contracts
+```
+
+Its unit suite creates deliberately invalid temporary skills for every
+proposal guardrail. Exact-string checks are reserved for those safety-critical
+phrases; ordinary instructional prose remains free to evolve.
 
 ```bash
 python3 scripts/skill-eval-harness.py \

@@ -5,25 +5,37 @@
       "ref": "raw_opportunity.customer",
       "source_id": "synthetic-rfp-summary",
       "locator": "messy-sources/01-rfp-ocr.txt#agency",
-      "snippet": "Example Public Services Agency issued a fictional public services modernization RFP."
+      "snippet": "EXAMPLE PUBLIC SERVICES AGENCY Public Services Modernization RFP -- draft text export"
     },
     {
       "ref": "raw_opportunity.summary",
       "source_id": "synthetic-rfp-summary",
       "locator": "messy-sources/01-rfp-ocr.txt#scope-excerpts",
-      "snippet": "The fictional RFP asks for service request intake, status notifications, reporting, and training."
+      "snippet": "Serivce request intake must support online intake for resident questions and service requests."
     },
     {
       "ref": "raw_opportunity.due_date",
       "source_id": "synthetic-rfp-summary",
       "locator": "messy-sources/01-rfp-ocr.txt#due-date",
-      "snippet": "The response is due in six weeks in the synthetic scenario."
+      "snippet": "Due date: response due in six weeks from the workshop date."
     },
     {
       "ref": "raw_opportunity.review_mode",
       "source_id": "synthetic-rfp-summary",
       "locator": "messy-sources/02-capture-notes.md#pursuit-stage",
-      "snippet": "The supplied synthetic review mode is bid/no-bid."
+      "snippet": "Pursuit stage: bid/no-bid review; proposal lead wants a compliance pass after the first gate."
+    },
+    {
+      "ref": "raw_opportunity.proof_inventory",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "messy-sources/03-proof-inventory.md#approved-demo-proof",
+      "snippet": "Generic proof pattern: requirements traceability."
+    },
+    {
+      "ref": "raw_opportunity.compliance_matrix",
+      "source_id": "synthetic-rfp-summary",
+      "locator": "messy-sources/04-compliance-matrix.csv#requirements",
+      "snippet": "OCR excerpt says reporting should summarize request volume and training readiness"
     },
     {
       "ref": "source_kind",

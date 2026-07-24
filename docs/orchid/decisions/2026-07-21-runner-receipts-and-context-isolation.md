@@ -62,6 +62,10 @@ Historical note from 2026-07-21: this was not a full MCP server yet. It was the 
 
 The next slice adds `scripts/mdp-native-normalize-openai.mjs` as an optional BYOK OpenAI reference runner. Pluxx packages repo scripts, so installed bundles can call the same file at `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`. It does not make the core `mdp` CLI a model runner and it does not create/manage API keys. It accepts a `mdp.native-normalize-request.v0` file, rejects conversation resume fields and tools, calls the Responses API with Structured Outputs and `store: false`, writes the strict prompt output, and emits `mdp.runner-audit.v0` with `runner: "native-api"`, `prompt_output_sha256`, and `tool_invocations_observed: 0`. Dry-run and mock-response test modes require no key; real calls require the operator's `OPENAI_API_KEY`.
 
+## Threat Model
+
+The proposed security boundary for source approval, path/workdir ownership, MCP environment and executable controls, artifact freshness, and client-demo claims is documented in [`2026-07-24-proposal-evidence-plane-and-local-mcp-threat-model.md`](2026-07-24-proposal-evidence-plane-and-local-mcp-threat-model.md). Until that model receives security-lens and human acceptance, public walkthroughs remain synthetic and non-audit-grade, and real client-source proof must not be described as production-authorized.
+
 ## Ownership Split
 
 | Layer | Owns | Does not own |

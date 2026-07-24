@@ -5,9 +5,9 @@ PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validat
 PYTHONDONTWRITEBYTECODE ?= 1
 export PYTHONDONTWRITEBYTECODE
 
-.PHONY: validate validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-mcp validate-pluxx-hooks validate-installers validate-llms install-cli demo
+.PHONY: validate validate-cli validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-pluxx-hooks validate-installers validate-llms install-cli demo
 
-validate: validate-cli validate-template validate-skills validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-mcp validate-pluxx-hooks validate-installers validate-llms
+validate: validate-cli validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-pluxx-hooks validate-installers validate-llms
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
@@ -22,6 +22,10 @@ validate-template:
 
 validate-skills:
 	@if [ -f "$(SKILL_VALIDATOR)" ]; then 		for skill in plugin/skills/*; do 			$(PYTHON) "$(SKILL_VALIDATOR)" "$$skill" || exit 1; 		done; 	else 		echo "Skipping skill validation; missing $(SKILL_VALIDATOR)"; 	fi
+
+validate-skill-contracts:
+	$(PYTHON) -m unittest scripts/test_skill_contracts.py
+	$(PYTHON) scripts/validate-skill-contracts.py
 
 validate-skill-evals:
 	$(PYTHON) -m unittest scripts/test_skill_eval_harness.py
@@ -55,6 +59,11 @@ validate-proposal-runner:
 	bash -n scripts/test-proposal-runner.sh
 	bash scripts/test-proposal-runner.sh
 
+validate-proposal-evidence-harness:
+	cd cli && $(CARGO) build
+	node --check scripts/mdp-proposal-evidence-harness.mjs
+	node scripts/mdp-proposal-evidence-harness.mjs --mdp-bin cli/target/debug/mdp --out-dir /tmp/mdp-proposal-evidence-harness >/tmp/mdp-proposal-evidence-harness.json
+
 validate-proposal-mcp:
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	bash -n scripts/test-proposal-mcp-server.sh
@@ -77,6 +86,7 @@ validate-installers:
 	node --check scripts/finalize-release-manifest.mjs
 	node --check scripts/mdp-native-normalize-openai.mjs
 	node --check scripts/mdp-proposal-runner.mjs
+	node --check scripts/mdp-proposal-evidence-harness.mjs
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	node --check examples/proposal-flow-video/scripts/write-demo-runner-audit.mjs
 	scripts/test-install.sh

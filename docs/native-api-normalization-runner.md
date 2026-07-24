@@ -14,6 +14,8 @@ It is optional and BYOK. Installing MDP, validating packs, running evals, and us
 
 The script requires Node.js 18+ for the built-in `fetch` API.
 
+The native implementation is currently `recipe-only`, not a verified integration. Offline request and mock tests prove request construction and fail-closed fixture behavior; they do not prove a real provider invocation. See the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix) for the current state and exact upgrade condition.
+
 For proposal workflows, prefer the higher-level local surface first:
 
 ```bash

@@ -35,7 +35,7 @@
       {
         "id": "public-services-review-context",
         "title": "Public services review context supplied",
-        "source": "raw_opportunity.summary: service request intake, status notifications, reporting, and training",
+        "source": "raw_opportunity.summary: Serivce request intake must support online intake",
         "confidence": "medium",
         "freshness": "synthetic",
         "state_as": "supplied"
@@ -70,7 +70,7 @@
       {
         "id": "public-services-review-context",
         "title": "Public services review context supplied",
-        "source": "raw_opportunity.summary: service request intake, status notifications, reporting, and training",
+        "source": "raw_opportunity.summary: Serivce request intake must support online intake",
         "confidence": "medium",
         "freshness": "synthetic",
         "state_as": "supplied"

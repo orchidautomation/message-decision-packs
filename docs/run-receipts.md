@@ -4,6 +4,13 @@
 
 Use it when the operator wants an audit-grade proposal or document-review flow, especially when a PDF/doc extraction step produced a `mdp.source-audit.v0` ledger.
 
+A receipt assurance value describes one invocation; it is not a public integration-support claim. Consult the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix) before describing a runner as verified. All currently documented named runners are recipe-only, while `custom-headless` is unsupported and mock/demo evidence is fixture/mock-only.
+
+For public demos, apply the
+[Proposal Demo Go/No-Go Gate](proposal-demo-go-no-go.md) before recording or
+presenting a receipt. A mock run is safe to show only when its blocked decision
+and synthetic status are explicit.
+
 ## What It Proves
 
 The receipt records:
@@ -86,7 +93,32 @@ Validation-style CLI behavior applies: a non-`audit-grade` receipt prints the JS
 mdp --json schema runner-audit
 ```
 
-For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the supported isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`:
+The rest of the proposal evidence chain is also inspectable:
+
+```bash
+mdp --json schema source-intake
+mdp --json schema source-audit
+mdp --json schema native-normalize-request
+mdp --json schema prompt-output
+mdp --json schema proposal-runner-result
+mdp --json schema proposal-mcp-run-result
+```
+
+These schemas describe artifact shape and contract version. They do not upgrade
+mock/demo evidence, prove that a provider call occurred, approve source
+material, or turn MCP transport into model-isolation evidence.
+
+The local proposal runner supplies its checked `mdp.source-intake.v0` ledger to
+`run-receipt` as an extra artifact with kind `source-intake`. The receipt hashes
+that exact file. This binds the ledger to the run but does not replace the
+human approval recorded inside approved entries.
+
+The surrounding workdir lifecycle is recorded separately in
+`.mdp-proposal-run.json` (`mdp --json schema proposal-run-manifest`). It binds
+the files produced by the invocation and blocks partial/concurrent reuse, but it
+does not replace the semantic assurance decision in `mdp.run-receipt.v0`.
+
+For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the schema-accepted isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`. Schema acceptance does not make a runner a maintained or verified MDP integration:
 
 - `native-api`: a direct stateless API request with no prior messages and no tools. The bundled optional reference is `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles; see [Native API Normalization Runner](native-api-normalization-runner.md).
 - `codex-exec`: `codex exec` in a sterile working directory with ephemeral output, read-only sandboxing, no resume, prompt-input audit, and zero observed tool events.
@@ -97,7 +129,7 @@ For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt un
 
 Runner audits marked as fixtures are intentionally not production evidence. If a runner audit includes `demo_fixture: true`, `fixture: true`, `mock_response: true`, or a model name that looks synthetic/mock/demo/fixture-only, `mdp run-receipt` blocks instead of returning `audit-grade`. Use those artifacts only for offline walkthroughs and tests.
 
-If no runner audit is supplied and `--require-runner-audit` is omitted, the receipt can still be `audit-grade` from assertion flags, but `runner.assurance` is `asserted`. For production proposal review, use `headless-verified` or `stateless-api-verified`.
+If no runner audit is supplied and `--require-runner-audit` is omitted, the receipt can still be `audit-grade` from assertion flags, but `runner.assurance` is `asserted`. Do not use an asserted receipt as proof of verified model isolation. For production proposal review, require `headless-verified` or `stateless-api-verified` for the current invocation, then separately report the integration state from the canonical matrix.
 
 ## One-Thread UX, Two Planes
 
@@ -133,3 +165,12 @@ node scripts/mdp-proposal-mcp-server.mjs
 ```
 
 Pluxx continues to package skills, hooks, assets, and scripts for supported hosts. The local runner/MCP wrapper owns source staging and the runtime call into the native/headless boundary, while the CLI owns deterministic artifact checks. MCP transport alone is not audit-grade; dry-run/mock runner modes are valid for CI and demo fixtures only, and they must block or remain non-audit-grade when `--require-runner-audit` is used.
+
+The MCP result envelope makes transport state explicit: consume its top-level
+`mode`, `decision`, `audit_grade_eligible`, `runner_assurance`, `timed_out`, and
+`runner_exit_status` fields. The wrapper uses canonical local paths, an explicit
+child-environment allowlist, a bounded timeout/output budget, and redacted
+diagnostics. Those controls reduce accidental context and credential exposure,
+but they do not prove that a provider call occurred or replace the runner audit,
+artifact hashes, or receipt decision. A timeout, termination, malformed result,
+or `require_audit_grade` mismatch is a tool error and must remain blocked.

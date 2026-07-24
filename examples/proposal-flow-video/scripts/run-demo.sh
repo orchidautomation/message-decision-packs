@@ -44,7 +44,13 @@ copy_fixture() {
 
 printf '\n== Proposal flow video demo ==\n'
 printf 'workdir: %s\n' "$workdir"
-printf 'repo:    %s\n\n' "$repo_root"
+if [[ -n "${MDP_BIN:-}" ]]; then
+  printf 'CLI:     installed/explicit binary override\n'
+else
+  printf 'CLI:     source-tree checkout\n'
+fi
+printf 'sources: synthetic fixtures only\n'
+printf 'gate:    docs/proposal-demo-go-no-go.md\n\n'
 
 printf '1) Messy sources staged\n'
 find "$workdir/messy-sources" -maxdepth 1 -type f | sort | sed 's#^#   - #'
@@ -130,8 +136,6 @@ cp "$runner_artifacts/normalize-opportunity-validation.json" "$artifacts/normali
 cp "$runner_artifacts/run-receipt.json" "$artifacts/run-receipt.json"
 cp "$runner_artifacts/run-receipt.stdout.json" "$artifacts/run-receipt.stdout.json"
 cp "$runner_artifacts/normalized-opportunity.json" "$artifacts/normalized-opportunity.json"
-cp "$runner_artifacts/fit-normalized-opportunity.json" "$artifacts/fit-normalized-opportunity.json"
-cp "$runner_artifacts/route-bid-no-bid-review.json" "$artifacts/route-bid-no-bid-review.json"
 
 printf '   source audit:  %s\n' "$artifacts/source-audit.json"
 printf '   prompt output: %s\n' "$artifacts/normalize-opportunity-output.json"
@@ -151,6 +155,21 @@ if runner.get("mock_response") is not True:
     raise SystemExit("Expected default demo runner audit to be marked mock_response=true")
 PY
 fi
+
+# The runner intentionally skips downstream review probes when its receipt is
+# blocked. The synthetic mock walkthrough runs these CLI checks separately and
+# keeps them advisory; they never upgrade the blocked receipt.
+run_mdp --json fit \
+  --dir "$pack_root" \
+  --prospect "$artifacts/normalized-opportunity.json" \
+  > "$artifacts/fit-normalized-opportunity.json"
+
+run_mdp --json --summary route \
+  --entries \
+  --dir "$pack_root" \
+  --persona "Proposal Lead" \
+  --job "bid no bid review" \
+  > "$artifacts/route-bid-no-bid-review.json"
 
 run_mdp --json --summary route \
   --entries \
@@ -217,5 +236,9 @@ print(f"receipt decision:    {receipt['decision']} / runner assurance: {receipt[
 print(f"mock response:       {runner.get('mock_response', False)} (CLI blocks mock/fixture evidence; production needs real native/headless runner evidence)")
 print(f"proof decision:      {proof['data']['decision']} / valid: {proof['data']['valid']}")
 print(f"unsafe claim valid:  {claim['data']['valid']} / guardrails: {len(claim['data']['guardrail_hits'])}")
+if runner_result['mode'] == 'mock' and receipt['decision'] == 'blocked' and runner.get('mock_response') is True:
+    print("presentation gate:   GREEN — safe synthetic demo; use the required mock narration")
+else:
+    print("presentation gate:   YELLOW/RED — stop for human go/no-go review")
 print(f"\nOpen: {root / 'proposal-review.md'}")
 PY

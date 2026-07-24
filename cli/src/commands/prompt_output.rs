@@ -563,7 +563,18 @@ fn validate_prompt_output_refs_against_source_audit(
             continue;
         }
         let input_root = reference_input_root(&base_ref);
-        if !declared_inputs.contains(input_root) || source_audit_exempt_input(input_root) {
+        if !declared_inputs.contains(input_root) {
+            issues.push(issue(
+                "prompt_output_source_input_undeclared",
+                "error",
+                source_ref.path,
+                format!(
+                    "source reference {base_ref} uses input {input_root}, which is not declared by the prompt"
+                ),
+            ));
+            continue;
+        }
+        if source_audit_exempt_input(input_root) {
             continue;
         }
         let Some(audit_ref) = audit.refs.get(&base_ref) else {
@@ -657,15 +668,20 @@ fn collect_prompt_output_source_refs(output: &Value, output_path: &str) -> Vec<P
             let Some(item) = item.as_object() else {
                 continue;
             };
-            for field in ["path", "source_evidence"] {
-                if let Some(reference) = item.get(field).and_then(Value::as_str) {
-                    refs.push(PromptSourceRef {
-                        path: format!(
-                            "{output_path}#/normalization_trace/missing_required/{index}/{field}"
-                        ),
-                        reference: reference.to_string(),
-                    });
-                }
+            // `path` names the normalized field that is missing; it is not an
+            // evidence locator. `source_evidence` is allowed to be either a
+            // field-qualified locator or a human-readable explanation.
+            if let Some(reference) = item
+                .get("source_evidence")
+                .and_then(Value::as_str)
+                .filter(|value| looks_like_source_locator(value))
+            {
+                refs.push(PromptSourceRef {
+                    path: format!(
+                        "{output_path}#/normalization_trace/missing_required/{index}/source_evidence"
+                    ),
+                    reference: reference.to_string(),
+                });
             }
         }
     }
@@ -680,6 +696,17 @@ fn collect_prompt_output_source_refs(output: &Value, output_path: &str) -> Vec<P
         }
     }
     refs
+}
+
+fn looks_like_source_locator(value: &str) -> bool {
+    let value = value.trim();
+    let base = value
+        .split_once(':')
+        .map_or(value, |(candidate, _)| candidate)
+        .trim();
+    !base.is_empty()
+        && !base.chars().any(char::is_whitespace)
+        && (base.contains('.') || value.contains(':'))
 }
 
 fn collect_source_ref_array(value: Option<&Value>, path: &str, refs: &mut Vec<PromptSourceRef>) {
@@ -2310,12 +2337,20 @@ mod tests {
         "confidence": "medium",
         "freshness": "synthetic",
         "state_as": "supplied"
+      },
+      {
+        "id": "ambient-chat-fact",
+        "title": "Fact copied from undeclared ambient chat",
+        "source": "conversation.customer_fact: unsupported evaluator requirement",
+        "confidence": "medium",
+        "freshness": "synthetic",
+        "state_as": "supplied"
       }
     ]
   },
   "normalization_trace": {
     "persona": {
-      "source": "existing_pack_context.personas",
+      "source": "conversation.persona_guess",
       "matched_keywords": ["bid/no-bid"],
       "confidence": "high",
       "needs_review": false
@@ -2332,7 +2367,26 @@ mod tests {
     ],
     "missing_required": []
   },
-  "card_patches": [],
+  "card_patches": [
+    {
+      "card_id": "proof-library",
+      "kind": "claims",
+      "entries": [
+        {
+          "id": "ambient-proof",
+          "title": "Ambient proof must not cross the evidence boundary",
+          "body": "Synthetic adversarial fixture.",
+          "applies_to": ["Proposal Lead"],
+          "evidence": ["conversation.unsourced_proof"],
+          "avoid": [],
+          "confidence": "low",
+          "provenance": ["memory.prior_customer_claim: unsupported"],
+          "status": "needs-review",
+          "notes": []
+        }
+      ]
+    }
+  ],
   "gaps": [],
   "rejected_claims": []
 }"#,
@@ -2395,8 +2449,62 @@ mod tests {
         assert_eq!(result["valid"], false);
         assert!(codes.contains(&"prompt_output_source_snippet_missing"));
         assert!(codes.contains(&"prompt_output_source_ref_missing"));
+        assert!(codes.contains(&"prompt_output_source_input_undeclared"));
+        let undeclared_paths = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter(|issue| issue["code"] == "prompt_output_source_input_undeclared")
+            .filter_map(|issue| issue["path"].as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            undeclared_paths
+                .iter()
+                .any(|path| path.ends_with("/normalization_trace/persona/source"))
+        );
+        assert!(
+            undeclared_paths
+                .iter()
+                .any(|path| path.ends_with("/card_patches/0/entries/0/evidence/0"))
+        );
+        assert!(
+            undeclared_paths
+                .iter()
+                .any(|path| path.ends_with("/card_patches/0/entries/0/provenance/0"))
+        );
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn source_reference_collection_keeps_explanatory_source_evidence_as_prose() {
+        let output = json!({
+            "normalization_trace": {
+                "missing_required": [
+                    {
+                        "field": "person_name",
+                        "path": "normalized_prospect.person_name",
+                        "reason": "not_available_in_source",
+                        "source_evidence": "The supplied source names an agency but does not name a person."
+                    },
+                    {
+                        "field": "deadline",
+                        "path": "normalized_prospect.attributes.deadline",
+                        "reason": "not_available_in_source",
+                        "source_evidence": "conversation.unsourced_deadline"
+                    }
+                ]
+            }
+        });
+
+        let refs = collect_prompt_output_source_refs(&output, "output.json");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].reference, "conversation.unsourced_deadline");
+        assert!(
+            refs[0]
+                .path
+                .ends_with("/normalization_trace/missing_required/1/source_evidence")
+        );
     }
 
     #[test]
