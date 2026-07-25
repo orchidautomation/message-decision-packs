@@ -1,9 +1,9 @@
 use crate::constants::{
     DEFAULT_DIR, FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF,
     PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
-    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
-    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
+    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
+    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use serde_json::{Value, json};
 
@@ -75,6 +75,12 @@ pub(crate) fn capabilities() -> Value {
                 "contract": PROPOSAL_RUNNER_RESULT_CONTRACT,
                 "schema_target": "proposal-runner-result",
                 "required_for": ["local proposal runner summary"]
+            },
+            "proposal_readiness_report": {
+                "contract": PROPOSAL_READINESS_REPORT_CONTRACT,
+                "schema_target": "proposal-readiness-report",
+                "required_for": ["deterministic proposal readiness findings and evidence anchors"],
+                "caveat": "Confidence describes evidence anchoring, not semantic truth or submission approval."
             },
             "proposal_mcp_run_result": {
                 "contract": PROPOSAL_MCP_RUN_RESULT_CONTRACT,
@@ -201,6 +207,10 @@ mod tests {
         assert_eq!(
             result["proposal_evidence_contracts"]["proposal_run_manifest"]["contract"],
             PROPOSAL_RUN_MANIFEST_CONTRACT
+        );
+        assert_eq!(
+            result["proposal_evidence_contracts"]["proposal_readiness_report"]["contract"],
+            PROPOSAL_READINESS_REPORT_CONTRACT
         );
         assert_eq!(result["target_contracts"]["kinds"][0], "company");
         assert!(

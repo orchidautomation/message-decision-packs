@@ -72,6 +72,9 @@ mdp --json eval --dir <pack-root>
 Use `--strict` on `validate` or `eval` for a blocking quality gate. Use `mdp <command> --help` rather than guessing flags.
 
 Read [references/cli-operator.md](references/cli-operator.md) for command selection or artifact-write rules. Read [references/mental-model.md](references/mental-model.md) when explaining product boundaries, pack primitives, or responsibility splits.
+After a validated fix yields a reusable engineering lesson, read
+[references/compound-learning.md](references/compound-learning.md) before
+capturing it.
 
 ## Boundaries
 

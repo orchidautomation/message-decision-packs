@@ -28,6 +28,7 @@ mdp --json schema runner-audit
 mdp --json schema run-receipt
 mdp --json schema proposal-run-manifest
 mdp --json schema proposal-runner-result
+mdp --json schema proposal-readiness-report
 mdp --json schema proposal-mcp-run-result
 ```
 
@@ -35,6 +36,24 @@ mdp --json schema proposal-mcp-run-result
 `proposal_evidence_contracts`, including the required-artifact purpose and
 fixture/transport caveats. Scripts and MCP clients should consume these
 contracts instead of inferring shapes from examples.
+
+The proposal runner entrypoint orchestrates two stable internal modules under
+`scripts/lib/`:
+
+- `proposal-runner-contracts.mjs` owns runner contract identifiers, the
+  host-neutral tool inventory, and the native prompt-output schema.
+- `proposal-runner-runtime.mjs` owns JSON/hash helpers, secret-stripped
+  subprocess environments, and the shared process wrapper.
+
+Both modules ship with installed bundles and are covered by
+`scripts/test-proposal-runner-modules.mjs`. They remain internal APIs;
+downstream hosts should invoke the runner or MCP surface rather than treating
+the modules as a separately versioned JavaScript package.
+
+Published-release smoke tests verify the installed CLI schemas, all three
+runner modules (including readiness reports), proposal skills, local runner
+tool inventory, MCP tool schema, activation guardrails, and a freshly
+initialized proposal pack. Source-tree tests alone are not release proof.
 
 ```bash
 node scripts/mdp-proposal-runner.mjs tools
@@ -113,8 +132,16 @@ The runner:
 - runs `mdp validate-prompt-output --source-audit`;
 - runs `mdp run-receipt --runner-audit ... --require-runner-audit`;
 - optionally runs local `fit` and `route` probes for review support.
+- writes `artifacts/proposal-readiness-report.json` with deterministic blockers,
+  warnings, and SHA-256 evidence anchors.
 
 It does not parse PDFs, prove OCR quality, browse, enrich, scrape, read `.env` files, create API keys, write proposals, submit proposals, approve compliance, or prove semantic truth beyond the supplied artifacts.
+
+The readiness report is a machine-readable review queue, not a truth score.
+`confidence.level` describes how completely findings are anchored to persisted
+artifacts. It does not estimate whether a proposal claim is true. The
+`run-receipt` decision remains the audit-grade gate; readiness never overrides
+a blocked or advisory receipt.
 
 ## Offline Dry Run
 

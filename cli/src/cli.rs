@@ -348,6 +348,7 @@ pub(crate) enum SchemaTarget {
     PromptOutput,
     ProposalRunManifest,
     ProposalRunnerResult,
+    ProposalReadinessReport,
     ProposalMcpRunResult,
     RunReceipt,
     RunnerAudit,

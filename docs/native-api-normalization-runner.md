@@ -39,6 +39,14 @@ The native runner owns:
 
 The runner does not create or manage API keys, parse private PDFs, build source audits, decide fit, update packs, submit proposals, or prove semantic truth beyond the supplied artifacts.
 
+Provider configuration is fail-closed. The default is the official
+`https://api.openai.com/v1` origin. A custom `OPENAI_BASE_URL` must use HTTPS,
+must not contain credentials, query parameters, or fragments, and is rejected
+unless the operator explicitly sets `MDP_ALLOW_CUSTOM_OPENAI_BASE_URL=1` after
+reviewing where credentials and proposal data will be sent. Artifacts record
+only `endpoint_policy` (`official-default` or `custom-explicit`) and the stable
+API path; they do not publish a custom hostname.
+
 ## Request Contract
 
 The host/plugin/runner creates a request JSON file after it has staged source files, extracted bounded text, and loaded the selected MDP prompt contract. In proposal flows, `mdp-proposal-runner.mjs` does this with a single user message whose JSON payload contains only the prompt-declared input fields: `raw_opportunity`, `existing_pack_context`, `source_audit`, and `source_kind`.

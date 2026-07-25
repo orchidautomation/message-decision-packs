@@ -4,6 +4,9 @@ Message Decision Packs (MDP) make agent judgment explicit. A local `.mdp/` folde
 
 MDP is a decision/context layer. It is not an AI SDR, CRM, sequencer, enrichment provider, scraper, BI tool, proposal management system, or generic automation platform. It does not send messages or update external systems.
 
+See [CONCEPTS.md](CONCEPTS.md) for the canonical vocabulary and assurance-state
+boundaries used across the CLI, docs, and agent skills.
+
 ```text
 message-decision-packs/
   cli/      # Rust `mdp` CLI
