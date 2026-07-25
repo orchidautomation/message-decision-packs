@@ -34,6 +34,41 @@ No runner is currently `verified`. A row can move to `verified` only after one r
 
 `headless-verified` and `stateless-api-verified` are assurance values for an individual accepted receipt. They do not mean the corresponding integration is maintained or `verified` in this matrix.
 
+### Subscription-authenticated headless runs
+
+The reviewed consensus is narrower than “subscriptions cannot make fresh
+calls”:
+
+- Codex, Claude Code, and Cursor can start fresh non-interactive runs using
+  account or subscription authentication. Some OpenCode providers also support
+  subscription OAuth.
+- A fresh invocation avoids the operator's current conversation when
+  resume/continue options are not used. It is still an **agent CLI execution**,
+  not a raw provider API request controlled by MDP.
+- Host CLIs retain baked-in system instructions and runtime behavior. Depending
+  on the host and flags, they may also discover user/repository configuration,
+  expose tools, manage persistence, or omit provider-level storage evidence.
+  Prompting the model to ignore those layers is not an enforceable boundary.
+- Hardened wrappers can reduce risk with a sterile workdir, ignored config and
+  rules where supported, externally denied tools, structured output, ephemeral
+  sessions, and captured event logs. That is stronger than ambient
+  conversation, but it remains `recipe-only` until a maintained MDP adapter
+  proves the complete receipt chain.
+- Subscription access generally does not provide a normal vendor API
+  credential for direct Responses/Messages API calls.
+
+Therefore the accurate statement is:
+
+> Fresh subscription-backed CLI runs are possible. MDP does not currently have
+> a subscription-backed, direct-API-equivalent runner that it fully controls
+> and certifies as audit-grade.
+
+The bundled OpenAI runner remains the current cleanest production boundary
+because MDP owns the declared input payload, `tools: []`, structured-output
+request, `store: false`, hashes, runner audit, and receipt inputs. This
+distinction concerns assurance and evidence, not access to a different proposal
+feature set.
+
 ### Client-video decision
 
 The default public proposal walkthrough remains synthetic and must be described as mock/non-audit-grade. A client-facing run may be called real and audit-grade only when that invocation itself ends with `decision: "audit-grade"` and a valid runner assurance from `--require-runner-audit`. Until a real run also satisfies the matrix upgrade rule, do not describe MDP as having a verified runner integration.
@@ -327,12 +362,13 @@ Same-conversation normalization is still useful for drafting, debugging, and wor
 
 ## Source Docs
 
-- Codex non-interactive mode: <https://learn.chatgpt.com/docs/non-interactive-mode>
-- Codex AGENTS.md discovery: <https://learn.chatgpt.com/docs/agent-configuration/agents-md>
-- Claude Code headless/programmatic usage: <https://code.claude.com/docs/en/headless>
-- Claude Code CLI flags: <https://code.claude.com/docs/en/cli-usage>
-- Cursor headless CLI: <https://cursor.com/docs/cli/headless>
+- Codex authentication: <https://developers.openai.com/codex/auth/>
+- Codex non-interactive mode: <https://developers.openai.com/codex/noninteractive/>
+- Claude Code subscription authentication: <https://docs.anthropic.com/en/docs/claude-code/getting-started>
+- Claude Code CLI flags: <https://docs.anthropic.com/en/docs/claude-code/cli-usage>
+- Cursor authentication: <https://docs.cursor.com/en/cli/reference/authentication>
+- Cursor headless CLI: <https://docs.cursor.com/en/cli/headless>
 - Cursor CLI output formats: <https://docs.cursor.com/en/cli/reference/output-format>
-- OpenCode CLI: <https://opencode.ai/docs/cli/>
+- OpenCode providers and authentication: <https://dev.opencode.ai/docs/providers>
 - OpenAI Structured Outputs: <https://developers.openai.com/api/docs/guides/structured-outputs>
 - OpenAI Responses API: <https://developers.openai.com/api/reference/responses/create>
