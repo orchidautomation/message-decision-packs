@@ -4700,6 +4700,34 @@ mod tests {
             .join("examples/clay-audiences-self-serve-enterprise-expansion")
     }
 
+    fn temp_clay_pack(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-clay-{name}-{nonce}"));
+        copy_test_directory(&clay_example_root().join(".mdp"), &root.join(".mdp"));
+        root
+    }
+
+    fn copy_test_directory(source: &Path, destination: &Path) {
+        std::fs::create_dir_all(destination).expect("test destination should be creatable");
+        for entry in std::fs::read_dir(source).expect("test source should be readable") {
+            let entry = entry.expect("test source entry should be readable");
+            let destination_path = destination.join(entry.file_name());
+            if entry
+                .file_type()
+                .expect("test source entry should have a type")
+                .is_dir()
+            {
+                copy_test_directory(&entry.path(), &destination_path);
+            } else {
+                std::fs::copy(entry.path(), destination_path)
+                    .expect("test source file should copy");
+            }
+        }
+    }
+
     #[test]
     fn validate_reports_excluded_target_term_with_field_location() {
         let root = targeted_pack("Company B", &["Company A".to_string()]);
@@ -5900,6 +5928,79 @@ output_contract:
                 .iter()
                 .any(|issue| issue["code"] == "decision_input_applicability_equals_cardinality")
         );
+    }
+
+    #[test]
+    fn decision_input_nested_unknown_fields_fail_closed() {
+        let manifest_path = clay_example_root().join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(manifest_path).expect("manifest should be readable");
+        let mut value: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        let contract = &mut value["decision_input_contracts"][0];
+        contract["normalization"]["prompt_versoin"] = YamlValue::String("ignored typo".to_string());
+        let attribute = &mut contract["attributes"][0];
+        attribute["questoin"] = YamlValue::String("ignored typo".to_string());
+        attribute["value"]["tyep"] = YamlValue::String("string".to_string());
+        attribute["provenance"]["required_fieldz"] = YamlValue::Sequence(Vec::new());
+        attribute["confidence"]["minimun"] = YamlValue::Number(90.into());
+        attribute["freshness"]["max_age_dayz"] = YamlValue::Number(30.into());
+        attribute["status_behavior"]["not_foud"] = YamlValue::String("gap".to_string());
+        let mut issues = Vec::new();
+
+        validate_decision_input_contract_shapes(
+            yaml_get(&value, "decision_input_contracts"),
+            ".mdp/manifest.yaml#/decision_input_contracts",
+            &mut issues,
+        );
+
+        let codes = issues
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+        for expected in [
+            "manifest_decision_input_normalization_unknown_field",
+            "manifest_decision_input_attribute_unknown_field",
+            "manifest_decision_input_value_unknown_field",
+            "manifest_decision_input_provenance_unknown_field",
+            "manifest_decision_input_confidence_unknown_field",
+            "manifest_decision_input_freshness_unknown_field",
+            "manifest_decision_input_status_behavior_unknown_field",
+        ] {
+            assert!(
+                codes.contains(expected),
+                "missing nested typo issue {expected}"
+            );
+        }
+        assert!(
+            issues.iter().all(|issue| issue["severity"] == "error"),
+            "unknown decision input contract fields must invalidate requirements"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_nested_decision_input_freshness_typo() {
+        let root = temp_clay_pack("nested-freshness-typo");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replacen("max_age_days: 180", "max_age_dayz: 180", 1),
+        )
+        .expect("manifest typo fixture should be writable");
+
+        let result = validate_pack(&root).expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "manifest_decision_input_freshness_unknown_field"
+                        && issue["severity"] == "error"
+                })
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

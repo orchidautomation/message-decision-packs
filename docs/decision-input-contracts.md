@@ -60,6 +60,12 @@ Optional attributes preserve gaps without blocking ordinary missing or
 not-applicable cases. Hard gates must explicitly map all five statuses and must
 include the `no-draft` decision effect.
 
+Applicability dependencies must form an acyclic graph. A circular contract
+cannot prove which conditional attempt applies, so validation rejects it
+instead of allowing every member of the cycle to report `not_applicable`.
+Unknown keys anywhere inside a decision input contract are also errors; a typo
+must not silently remove a freshness, confidence, provenance, or status rule.
+
 ## Evidence And Normalization
 
 An `observed` attribute can require:
