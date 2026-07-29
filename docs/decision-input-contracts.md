@@ -33,6 +33,8 @@ host. It includes:
 - source classes and whether public research is permitted;
 - effective behavior for all attempt statuses;
 - source-attempt and normalized-output JSON Schemas;
+- a deterministic `validate-prompt-output` handoff that checks the exact schema
+  and every observed attribute-to-`normalized_prospect` output-path projection;
 - explicit no-draft outcomes and layer boundaries.
 
 Legacy jobs without a binding return `available: false`; existing packs keep
@@ -60,7 +62,7 @@ include the `no-draft` decision effect.
 
 ## Evidence And Normalization
 
-Each attribute can require:
+An `observed` attribute can require:
 
 - an attempt ID;
 - source class and locator;
@@ -68,6 +70,11 @@ Each attribute can require:
 - minimum confidence;
 - maximum freshness age;
 - a sensitivity class.
+
+Non-observed statuses do not fabricate observation evidence. `not_found`,
+`not_applicable`, and `blocked` may stand alone; `error` requires a non-blank
+error detail. Optional attempt provenance may still identify the attempted
+source without pretending a value was observed.
 
 `mdp.normalized-decision-input.v1` preserves those receipts beside the
 provider-neutral `normalized_prospect`. It records the normalization prompt
@@ -83,6 +90,16 @@ version and always requires:
 `ready` here means the data may enter deterministic MDP evaluation. It does not
 authorize copy. Only a later ready fit/brief decision may emit compiled context
 to a separate generator or sequencer.
+
+Before fit, validate the normalized envelope against both the compiled schema
+and the pack's declared output-path projections:
+
+```bash
+mdp --json validate-prompt-output --strict \
+  --dir PACK_ROOT \
+  --prompt prompts/normalize-prospect.yaml \
+  --file NORMALIZED_INPUT.json
+```
 
 The blocked normalization outcomes are:
 

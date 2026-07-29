@@ -1,3 +1,4 @@
+use crate::commands::requirements::validate_normalized_decision_input;
 use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, SOURCE_AUDIT_CONTRACT};
 use crate::models::{CardKind, Manifest, PromptFile};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
@@ -153,6 +154,34 @@ fn validate_prompt_output_parsed(
     mut issues: Vec<Value>,
     source_audit: Option<(&Value, &str, Option<&str>)>,
 ) -> Result<Value> {
+    if prompt.output_contract.output_kind.as_deref() == Some("decision-input-normalization") {
+        if source_audit.is_some() {
+            issues.push(issue(
+                "decision_input_source_audit_unsupported",
+                "error",
+                artifact_path,
+                "decision-input normalization uses per-attribute provenance; do not attach a legacy prompt source audit",
+            ));
+        }
+        issues.extend(validate_normalized_decision_input(
+            root,
+            output,
+            artifact_path,
+        )?);
+        return Ok(json!({
+            "valid": issues.is_empty(),
+            "file": artifact_path,
+            "prompt": prompt_summary(prompt, root),
+            "artifacts": validation_artifacts_summary(
+                artifact_path,
+                prompt_output_sha256,
+                source_audit.as_ref().map(|(_, path, _)| *path),
+                source_audit.as_ref().and_then(|(_, _, sha256)| *sha256)
+            ),
+            "issues": issues
+        }));
+    }
+
     let manifest = read_manifest(root)?;
     validate_output_against_prompt(&manifest, prompt, output, artifact_path, &mut issues);
     validate_card_collisions(root, prompt, output, artifact_path, &mut issues)?;
@@ -2054,6 +2083,13 @@ mod tests {
         temp_pack_with_template(name, "gtm")
     }
 
+    fn clay_example_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("CLI crate should have a repository parent")
+            .join("examples/clay-audiences-self-serve-enterprise-expansion")
+    }
+
     fn write_output(root: &Path, name: &str, body: &str) -> PathBuf {
         let path = root.join(name);
         std::fs::write(&path, body).expect("output fixture should be writable");
@@ -2066,6 +2102,44 @@ mod tests {
             name,
             &serde_json::to_string_pretty(body).expect("output fixture should serialize"),
         )
+    }
+
+    #[test]
+    fn validate_prompt_output_runs_decision_input_projection_checks() {
+        let root = clay_example_root();
+        let mut response: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
+                .expect("normalized response fixture should load"),
+        )
+        .expect("normalized response fixture should be valid JSON");
+
+        let valid = validate_prompt_output_value(
+            &root,
+            &response,
+            "synthetic-response",
+            None,
+            Some("normalize-prospect-row"),
+        )
+        .expect("decision-input prompt validation should run");
+        assert_eq!(valid["valid"], true);
+
+        response["normalized_prospect"]["name"] = json!("Different Synthetic Person");
+        let invalid = validate_prompt_output_value(
+            &root,
+            &response,
+            "synthetic-response",
+            None,
+            Some("normalize-prospect-row"),
+        )
+        .expect("decision-input prompt validation should run");
+        assert_eq!(invalid["valid"], false);
+        assert!(
+            invalid["issues"]
+                .as_array()
+                .expect("issues should be an array")
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_projection_mismatch")
+        );
     }
 
     fn proposal_opportunity_alias_output() -> Value {

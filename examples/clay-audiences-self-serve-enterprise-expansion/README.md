@@ -19,7 +19,8 @@ flowchart LR
     D --> F["Customer-funded normalization"]
     E --> F
     F --> G["mdp.normalized-decision-input.v1"]
-    G --> H["Deterministic validation, fit, routing, brief, and gaps"]
+    G --> V["validate-prompt-output: exact schema plus output-path equality"]
+    V --> H["Deterministic fit, routing, brief, and gaps"]
     H --> I{"Decision outcome"}
     I -->|"ready"| J["Compiled context column"]
     I -->|"all other outcomes"| K["No draft"]
@@ -73,8 +74,10 @@ five statuses:
 - `blocked`: policy or access prevented the attempt.
 - `error`: the provider or host failed while attempting it.
 
-Every attribute result retains its attempt provenance, observation timestamp,
-confidence, and freshness. `blocked` and `error` are never collapsed into
+Observed attribute results retain the contract-required attempt provenance,
+observation timestamp, confidence, and freshness. Non-observed statuses do not
+fabricate observation metadata; an `error` result instead requires its
+non-blank error detail. `blocked` and `error` are never collapsed into
 `not_found`; hard-gate absence is never inferred as safe.
 
 The normalization envelope always sets `draft_allowed` to `false`.
@@ -121,4 +124,8 @@ mdp --json eval --strict \
 mdp --json requirements \
   --dir examples/clay-audiences-self-serve-enterprise-expansion \
   --job prospect-fit-or-brief
+mdp --json validate-prompt-output --strict \
+  --dir examples/clay-audiences-self-serve-enterprise-expansion \
+  --prompt normalize-prospect.yaml \
+  --file examples/clay-audiences-self-serve-enterprise-expansion/fixtures/normalized-response-ready.json
 ```
