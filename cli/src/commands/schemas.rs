@@ -2051,16 +2051,32 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     {"required": ["schema_ref"]},
                     {"required": ["schema"]}
                 ],
+                "allOf": [{
+                    "if": {
+                        "required": ["output_kind"],
+                        "properties": {
+                            "output_kind": {"const": "decision-input-normalization"}
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "contract": {"const": NORMALIZED_DECISION_INPUT_CONTRACT},
+                            "schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT}
+                        }
+                    },
+                    "else": {
+                        "properties": {
+                            "contract": {"const": PROMPT_OUTPUT_CONTRACT}
+                        }
+                    }
+                }],
                 "properties": {
                     "contract": {
-                        "enum": [
-                            PROMPT_OUTPUT_CONTRACT,
-                            NORMALIZED_DECISION_INPUT_CONTRACT
-                        ]
+                        "enum": [PROMPT_OUTPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT]
                     },
                     "output_kind": {
                         "enum": ["card-patches", "prospect-normalization", "decision-input-normalization"],
-                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs legacy MDP prospect JSON for mdp fit/brief; decision-input-normalization outputs the compiled mdp.normalized-decision-input.v1 envelope."
+                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs the legacy prompt-output envelope; decision-input-normalization emits the exact versioned MDP normalized decision-input envelope."
                     },
                     "strict_json_only": {"const": true},
                     "required_top_level": {
@@ -2071,18 +2087,18 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 "prompt_id",
                                 "source_summary",
                                 "runtime_context",
-                                "job_id",
-                                "decision_input_contracts",
-                                "normalization",
-                                "attributes",
                                 "normalized_prospect",
                                 "normalized_opportunity",
                                 "normalization_trace",
                                 "card_patches",
                                 "gaps",
+                                "rejected_claims",
+                                "job_id",
+                                "decision_input_contracts",
+                                "normalization",
+                                "attributes",
                                 "outcome",
-                                "draft_allowed",
-                                "rejected_claims"
+                                "draft_allowed"
                             ]
                         }
                     },
@@ -2114,7 +2130,12 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                         "description": "Compact reference to the response schema family. The CLI derives the concrete schema from this ref, output_kind, prompt_id, and target_card_kinds."
                     },
                     "schema": prompt_response_schema_contract(),
-                    "example": prompt_output_schema(card_kinds)
+                    "example": {
+                        "oneOf": [
+                            prompt_output_schema(card_kinds),
+                            decision_input_envelope_schema()
+                        ]
+                    }
                 }
             }
         }
@@ -2731,7 +2752,8 @@ mod tests {
             true
         );
         assert_eq!(
-            result["properties"]["output_contract"]["properties"]["example"]["required"][0],
+            result["properties"]["output_contract"]["properties"]["example"]["oneOf"][0]["required"]
+                [0],
             "contract"
         );
         let contract_required = result["properties"]["output_contract"]["required"]
@@ -2745,6 +2767,13 @@ mod tests {
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["schema_ref"]["enum"][0],
             PROMPT_CARD_PATCH_SCHEMA_REF
+        );
+        assert!(
+            result["properties"]["output_contract"]["properties"]["schema_ref"]["enum"]
+                .as_array()
+                .expect("schema refs should be an array")
+                .iter()
+                .any(|schema_ref| schema_ref == NORMALIZED_DECISION_INPUT_CONTRACT)
         );
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["schema"]["properties"]["additionalProperties"]

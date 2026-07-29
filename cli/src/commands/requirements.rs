@@ -877,6 +877,25 @@ mod tests {
                 .expect("normalized response fixture should load"),
         )
         .expect("normalized response fixture should be valid JSON");
+        let prompt =
+            crate::pack_io::read_prompt(&root.join(".mdp/prompts/normalize-prospect.yaml"))
+                .expect("bound normalization prompt should load");
+        assert_eq!(
+            prompt.output_contract.contract,
+            NORMALIZED_DECISION_INPUT_CONTRACT
+        );
+        assert_eq!(
+            prompt.output_contract.output_kind.as_deref(),
+            Some("decision-input-normalization")
+        );
+        assert_eq!(
+            prompt.output_contract.schema_ref.as_deref(),
+            Some(NORMALIZED_DECISION_INPUT_CONTRACT)
+        );
+        assert_eq!(
+            prompt.output_contract.example, response,
+            "the bound prompt example must stay identical to the exact compiled-schema fixture"
+        );
         let normalized_attributes = response["attributes"]
             .as_object()
             .expect("normalized attributes should be an object")

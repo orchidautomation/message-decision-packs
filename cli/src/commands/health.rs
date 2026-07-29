@@ -2481,6 +2481,16 @@ fn validate_decision_input_attributes(
                     "equals, not_equals, and in applicability conditions require values",
                 ));
             }
+            if condition.operator == crate::models::DecisionInputConditionOperator::Equals
+                && condition.values.len() != 1
+            {
+                issues.push(issue(
+                    "decision_input_applicability_equals_cardinality",
+                    "error",
+                    format!("{condition_path}/values"),
+                    "equals applicability conditions require exactly one value; use in for multiple values",
+                ));
+            }
         }
         if attribute.decision_effects.is_empty() {
             issues.push(issue(
@@ -3522,28 +3532,23 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             "prompt_output_kind_unknown",
             "error",
             format!("{path}#/output_contract/output_kind"),
-            format!("prompt output_kind must be card-patches, prospect-normalization, or decision-input-normalization, found {output_kind}"),
+            format!(
+                "prompt output_kind must be card-patches, prospect-normalization, or decision-input-normalization, found {output_kind}"
+            ),
         ));
     }
-    if is_decision_input_normalization {
-        if contract.contract != NORMALIZED_DECISION_INPUT_CONTRACT {
-            issues.push(issue(
-                "prompt_output_contract",
-                "error",
-                format!("{path}#/output_contract/contract"),
-                format!(
-                    "decision-input-normalization prompts must use {NORMALIZED_DECISION_INPUT_CONTRACT}, found {}",
-                    contract.contract
-                ),
-            ));
-        }
-    } else if contract.contract != PROMPT_OUTPUT_CONTRACT {
+    let expected_contract = if is_decision_input_normalization {
+        NORMALIZED_DECISION_INPUT_CONTRACT
+    } else {
+        PROMPT_OUTPUT_CONTRACT
+    };
+    if contract.contract != expected_contract {
         issues.push(issue(
             "prompt_output_contract",
             "error",
             format!("{path}#/output_contract/contract"),
             format!(
-                "prompt output contract must be {PROMPT_OUTPUT_CONTRACT}, found {}",
+                "prompt output contract must be {expected_contract}, found {}",
                 contract.contract
             ),
         ));
@@ -3558,7 +3563,7 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     }
 
     let required = if is_decision_input_normalization {
-        vec![
+        [
             "contract",
             "job_id",
             "decision_input_contracts",
@@ -3568,8 +3573,9 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             "outcome",
             "draft_allowed",
         ]
+        .as_slice()
     } else {
-        vec![
+        [
             "contract",
             "prompt_id",
             "source_summary",
@@ -3577,6 +3583,7 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             "gaps",
             "rejected_claims",
         ]
+        .as_slice()
     };
     for field in required {
         if !contract
@@ -3631,9 +3638,7 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     }
     validate_prompt_schema_ref(prompt, path, output_kind, issues);
     if let Some(schema) = prompt.output_contract.schema.as_ref() {
-        if !is_decision_input_normalization {
-            validate_prompt_output_schema(prompt, schema, path, output_kind, issues);
-        }
+        validate_prompt_output_schema(prompt, schema, path, output_kind, issues);
     } else if prompt.output_contract.schema_ref.is_none() {
         issues.push(issue(
             "prompt_output_schema_missing",
@@ -3656,12 +3661,10 @@ fn validate_prompt_schema_ref(
     let Some(schema_ref) = prompt.output_contract.schema_ref.as_deref() else {
         return;
     };
-    let expected = if output_kind == "decision-input-normalization" {
-        NORMALIZED_DECISION_INPUT_CONTRACT
-    } else if output_kind == "prospect-normalization" {
-        PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
-    } else {
-        PROMPT_CARD_PATCH_SCHEMA_REF
+    let expected = match output_kind {
+        "prospect-normalization" => PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+        "decision-input-normalization" => NORMALIZED_DECISION_INPUT_CONTRACT,
+        _ => PROMPT_CARD_PATCH_SCHEMA_REF,
     };
     if schema_ref != expected {
         issues.push(issue(
@@ -3694,7 +3697,9 @@ fn validate_decision_input_prompt_example(
             "prompt_example_contract",
             "error",
             format!("{path}#/output_contract/example/contract"),
-            format!("prompt example contract must be {NORMALIZED_DECISION_INPUT_CONTRACT}"),
+            format!(
+                "decision-input normalization example contract must be {NORMALIZED_DECISION_INPUT_CONTRACT}"
+            ),
         ));
     }
     if example["draft_allowed"].as_bool() != Some(false) {
@@ -3702,7 +3707,7 @@ fn validate_decision_input_prompt_example(
             "prompt_example_draft_allowed",
             "error",
             format!("{path}#/output_contract/example/draft_allowed"),
-            "decision-input normalization examples must set draft_allowed false",
+            "decision-input normalization examples must set draft_allowed to false",
         ));
     }
     if example["normalized_prospect"].as_object().is_none() {
@@ -5588,6 +5593,28 @@ output_contract:
             issues
                 .iter()
                 .any(|issue| issue["code"] == "decision_input_normalization_prompt_missing")
+        );
+    }
+
+    #[test]
+    fn decision_input_equals_applicability_requires_one_value() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let condition = &mut manifest.decision_input_contracts[0]
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "latest_support_context")
+            .expect("Clay example should include latest_support_context")
+            .applies_when[0];
+        condition.values.push("another-value".to_string());
+        let mut issues = Vec::new();
+
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_applicability_equals_cardinality")
         );
     }
 
