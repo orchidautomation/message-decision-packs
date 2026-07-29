@@ -1,0 +1,20 @@
+id: ctas
+kind: ctas
+title: CTA rules
+description: Ask and reply-path boundaries.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: low-friction-after-fit
+  title: Low-friction ask after fit
+  body: After Synthetic Expansion Product fit and evidence are reviewed, prefer one low-friction reply-path question. Do not manufacture urgency or default to a calendar request.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

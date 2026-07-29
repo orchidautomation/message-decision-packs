@@ -1,0 +1,20 @@
+id: signals
+kind: signals
+title: Signals
+description: Source and confidence rules for target-specific evidence.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: attempted-complete-signals
+  title: Preserve every source attempt
+  body: Every declared attribute retains an observed, not_found, not_applicable, blocked, or error status with permitted source class, timestamp, provenance, confidence, and freshness. Provider errors never become absence.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

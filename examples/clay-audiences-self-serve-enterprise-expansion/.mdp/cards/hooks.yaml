@@ -1,0 +1,20 @@
+id: hooks
+kind: hooks
+title: Hooks
+description: Target-aware hooks supported by evidence.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: hook-evidence-gap
+  title: Hook evidence required
+  body: No hook is approved for Synthetic Expansion Product yet. Do not reuse a starter angle or a prior target's category language.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

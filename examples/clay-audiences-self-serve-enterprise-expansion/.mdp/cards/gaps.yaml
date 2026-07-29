@@ -1,0 +1,20 @@
+id: gaps
+kind: gaps
+title: Known gaps
+description: Durable target evidence gaps.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: target-foundation-gaps
+  title: Target foundation evidence missing
+  body: Collect reviewed sources for Synthetic Expansion Product category, product boundaries, ICP, personas, pains, proof, objections, channel policy, hooks, and CTA rules before activation.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

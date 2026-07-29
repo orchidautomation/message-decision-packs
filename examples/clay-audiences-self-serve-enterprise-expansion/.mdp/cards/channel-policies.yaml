@@ -1,0 +1,20 @@
+id: channel-policies
+kind: channel-policies
+title: Channel policies
+description: Neutral channel boundary pending target evidence.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: evidence-before-channel-copy
+  title: Evidence before channel copy
+  body: Do not draft email, social, call-prep, or agent-brief content for Synthetic Expansion Product until fit, claims, and channel rules are supported.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

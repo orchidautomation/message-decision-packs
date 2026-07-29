@@ -1,10 +1,12 @@
 use crate::constants::{
-    DEFAULT_DIR, FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF,
-    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    DEFAULT_DIR, FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT,
+    NORMALIZED_DECISION_INPUT_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
+    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
     PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
-    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
-    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, REQUIREMENTS_CONTRACT,
+    RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
+use crate::models::DecisionInputAttemptStatus;
 use serde_json::{Value, json};
 
 pub(crate) fn capabilities() -> Value {
@@ -96,6 +98,13 @@ pub(crate) fn capabilities() -> Value {
             "context_dimensions": "Optional profile-owned applicability dimensions such as product, capability, solution, or segment; agnostic primitives remain unchanged.",
             "entry_scope": "OR within an entry dimension and AND across dimensions; unscoped entries are global."
         },
+        "decision_input_contracts": {
+            "requirements": REQUIREMENTS_CONTRACT,
+            "normalized_input": NORMALIZED_DECISION_INPUT_CONTRACT,
+            "attempt_statuses": DecisionInputAttemptStatus::ALL,
+            "requirement_classes": ["required", "optional", "conditional", "hard-gate"],
+            "boundary": "The pack and CLI own questions and deterministic decisions. The customer or host owns source collection, provider access, model calls, copy generation, and sequencing."
+        },
         "target_contracts": {
             "manifest_target": "Optional for existing/reference packs; required by the target-aware GTM authoring path.",
             "kinds": ["company", "product", "project"],
@@ -107,6 +116,7 @@ pub(crate) fn capabilities() -> Value {
             command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--target-name", "--target-kind", "--target-alias", "--exclude-term", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
+            command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--prompt", "--prompt-id", "--strict"]),
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
@@ -192,6 +202,18 @@ mod tests {
                 .any(|command| command["name"] == "init" && command["supports_dry_run"] == true)
         );
         assert_eq!(result["profile_contracts"]["skills"], "mdp.skills.v1");
+        assert_eq!(
+            result["decision_input_contracts"]["requirements"],
+            REQUIREMENTS_CONTRACT
+        );
+        assert!(
+            result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .any(|command| command["name"] == "requirements"
+                    && command["output_contract"] == REQUIREMENTS_CONTRACT)
+        );
         assert_eq!(
             result["proposal_evidence_contracts"]["native_normalize_request"]["schema_target"],
             "native-normalize-request"

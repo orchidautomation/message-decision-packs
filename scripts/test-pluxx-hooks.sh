@@ -112,6 +112,7 @@ if command -v cargo >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
   trap 'rm -rf "$workspace_fixture" "$plugin_fixture" "$proposal_fixture" "$root_fallback_fixture"' EXIT
   cp -R "$ROOT/plugin/assets/templates/basic/.mdp" "$root_fallback_fixture/.mdp"
   ln -s "$ROOT/cli" "$root_fallback_fixture/cli"
+  ln -s "$ROOT/rust-toolchain.toml" "$root_fallback_fixture/rust-toolchain.toml"
   git -C "$root_fallback_fixture" init -q
 
   cargo_bin="$(dirname -- "$(command -v cargo)")"

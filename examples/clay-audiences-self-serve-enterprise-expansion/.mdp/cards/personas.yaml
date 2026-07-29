@@ -1,0 +1,20 @@
+id: personas
+kind: personas
+title: Target personas
+description: Neutral persona placeholders pending reviewed target evidence.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: persona-evidence-gap
+  title: Persona evidence required
+  body: Buyer and operator roles for Synthetic Expansion Product are unresolved. Replace these neutral placeholders only when supplied sources support named personas.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

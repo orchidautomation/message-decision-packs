@@ -1,0 +1,12 @@
+{
+  "attributes": {},
+  "background": "Neutral synthetic row for testing Synthetic Expansion Product pack wiring; not evidence about a real account.",
+  "company": "Example Prospect Company",
+  "name": "Example Person",
+  "persona": "Operator",
+  "segment": "target-segment",
+  "signals": [],
+  "source_kind": "synthetic-example",
+  "synthetic": true,
+  "title": "Example Operator"
+}

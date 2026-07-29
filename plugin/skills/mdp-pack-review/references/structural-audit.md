@@ -7,6 +7,13 @@ Read this for pack shape, evidence, and content quality.
 - Validate schema, referenced files, IDs, active profile, primitive coverage, input contracts, and required eval categories.
 - Require one supported `skill_id` for each agent-routable job.
 - Reject obsolete surface metadata, old skill IDs, duplicate jobs, custom routable IDs, and profile-crossing bindings.
+- For jobs with decision-input bindings, compile `mdp.requirements.v1` and audit
+  the exact questions, requirement classes, output paths, source policy,
+  applicability, attempt statuses, provenance, confidence, freshness,
+  sensitivity, and status dispositions.
+- Require hard gates to define all five statuses explicitly, align required
+  normalized fields with `lead_input_requirements`, and enforce no-draft for
+  unresolved or unsafe outcomes.
 
 ## Target Identity
 

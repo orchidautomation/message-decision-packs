@@ -11,8 +11,10 @@ A provider-neutral prospect/source row supplies row-level inputs. The row can co
 If an operator is confused, answer in this order:
 
 ```text
-messy row
-  -> normalize through the pack prompt
+job
+  -> compile the bound decision-input requirements when present
+  -> attempt every declared attribute through host-controlled sources
+  -> normalize the attempted-complete ledger through the versioned pack prompt
   -> validate the prompt output
   -> run fit/readiness
   -> route or brief only after fit allows it
@@ -21,6 +23,13 @@ messy row
 ```
 
 Normalization translates supplied data into pack-owned JSON. It does not mutate the pack, decide final fit, or create final copy.
+
+Decision-input contracts make the step before normalization explicit. The pack
+owns the questions, requirement classes, applicability, source policy,
+provenance, confidence, freshness, and attempt-status behavior. The host owns
+collection and any paid model call. `mdp requirements` compiles the job-specific
+contract and schemas without browsing, enrichment, or execution. See
+[Decision Input Contracts](decision-input-contracts.md).
 
 ```text
 messy source row

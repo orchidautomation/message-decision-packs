@@ -77,6 +77,13 @@ pub(crate) enum Commands {
         #[arg(long, requires = "dir")]
         job: Option<String>,
     },
+    #[command(about = "Compile the decision inputs required for one pack job")]
+    Requirements {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long, help = "Closed profile job id to compile")]
+        job: String,
+    },
     #[command(about = "Validate manifest and card references")]
     Validate {
         #[arg(long, default_value = ".")]
@@ -355,6 +362,7 @@ pub(crate) enum SchemaTarget {
     Brief,
     HumanBrief,
     RuntimeContext,
+    DecisionInput,
     Prospect,
     Eval,
     Skills,
@@ -461,6 +469,25 @@ mod tests {
                 dir: Some(_),
                 job: Some(_)
             }
+        ));
+    }
+
+    #[test]
+    fn requirements_requires_a_job_and_accepts_a_pack_dir() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "requirements",
+            "--dir",
+            "example-pack",
+            "--job",
+            "prospect-fit-or-brief",
+        ])
+        .expect("requirements form should parse");
+        assert!(matches!(
+            parsed.command,
+            Commands::Requirements { dir, job }
+                if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
         ));
     }
 

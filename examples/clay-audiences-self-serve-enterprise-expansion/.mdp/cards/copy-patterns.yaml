@@ -1,0 +1,20 @@
+id: copy-patterns
+kind: copy-patterns
+title: Copy patterns
+description: Neutral structure for later evidence-backed copy.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: evidence-gap-pattern
+  title: Evidence then gap
+  body: When Synthetic Expansion Product evidence is incomplete, return the observed source fact, the unresolved gap, and the next evidence needed. Do not draft persuasive copy.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

@@ -1,0 +1,18 @@
+format: mdp.sources.v0
+purpose: Source ledger for Synthetic Expansion Product. Target identity is known; product claims remain unsupported until evidence is added.
+rules:
+- Add public URLs, user-provided documents, or note identifiers before authoring claims.
+- Keep direct source claims separate from interpretations.
+- Represent missing proof as a gap, never inherited filler.
+sources:
+- confidence: high
+  direct_claims:
+  - The external product target is Synthetic Expansion Product.
+  freshness: current-run
+  gaps:
+  - Category, capabilities, ICP, personas, pains, proof, alternatives, and channel policy require reviewed sources.
+  id: target-identity
+  interpretations:
+  - Use Synthetic Expansion Product as the subject of external positioning; this statement does not prove product capabilities or outcomes.
+  kind: operator-intent
+  locator: user-supplied target identity

@@ -1,0 +1,35 @@
+id: fit-ready
+command: fit
+profile_eval:
+  category: proceed
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - gaps
+expect_status: fit
+prospect:
+  name: Avery Example
+  title: VP Revenue Operations
+  company: Example Expansion Account
+  company_domain: example-expansion.invalid
+  source_kind: synthetic-example
+  synthetic: true
+  trigger: Synthetic usage threshold reached in the reviewed fixture.
+  persona: Buyer
+  segment: self-serve-enterprise-expansion
+  signals:
+  - id: synthetic-expansion-trigger
+    title: Reviewed synthetic expansion trigger
+    source: synthetic-fixture.trigger
+    confidence: high
+    freshness: current
+  attributes:
+    customer_motion: self-serve
+    enterprise_eligibility: eligible
+    do_not_contact: clear
+    open_support_escalation: escalation-clear
+    account_owner_state: assigned
+    last_meaningful_touch: 2026-07-20T12:00:00Z

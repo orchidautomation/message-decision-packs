@@ -1,0 +1,34 @@
+id: fit-rules
+kind: fit-rules
+title: Self-serve enterprise expansion fit
+description: Deterministic fit, hard-gate, human-review, and no-draft policy for the synthetic motion.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: self-serve-expansion-fit
+  title: Eligible self-serve enterprise expansion
+  body: Proceed only for the self-serve-enterprise-expansion segment when the reviewed trigger, owner state, last meaningful touch, and all hard gates are present.
+  applies_to:
+  - Buyer
+  - Operator
+  - self-serve-enterprise-expansion
+  evidence:
+  - target-identity
+  avoid: []
+- id: expansion-hard-gate-disqualifiers
+  title: Disqualify unsafe or inapplicable rows
+  body: Do not proceed when the account is sales-assisted, enterprise-ineligible, suppressed, or in an open support escalation. Ambiguous or unavailable hard gates require human review before any draft.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid:
+  - sales-assisted
+  - ineligible
+  - blocked
+  - escalation-open

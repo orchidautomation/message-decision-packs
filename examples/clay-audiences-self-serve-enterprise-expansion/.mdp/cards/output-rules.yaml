@@ -1,0 +1,20 @@
+id: output-rules
+kind: output-rules
+title: Output rules
+description: Global evidence and target-isolation rules.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: no-draft-before-ready
+  title: No draft before deterministic readiness
+  body: Insufficient-context, disqualified, human-review, malformed, and provider-error outcomes must not produce copy. A downstream customer-funded generator may use only the compiled context column after deterministic evaluation returns ready.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

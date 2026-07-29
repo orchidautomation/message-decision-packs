@@ -15,6 +15,7 @@ review artifacts.
   primitives. GTM and proposal review are profiles, not separate engines.
 - **Card** — a reviewed, typed collection of decision entries.
 - **Job** — a closed profile-owned routing intent bound to an eligible skill.
+- **Decision Input Contract** — a versioned pack declaration of the attributes, source attempts, normalization evidence, and status behavior required before a job can make deterministic MDP decisions.
 - **Gap** — missing or unsupported context kept explicit rather than inferred.
 - **Eval** — a deterministic fixture that tests routing or policy behavior.
 

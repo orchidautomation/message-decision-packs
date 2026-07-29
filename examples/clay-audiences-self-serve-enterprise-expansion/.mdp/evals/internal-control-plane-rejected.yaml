@@ -1,0 +1,15 @@
+command: check-claims
+expect_guardrail_terms_contains:
+- Message Decision Pack
+- local offline decision layer
+- agent handoffs
+expect_valid: false
+id: internal-control-plane-rejected
+profile_eval:
+  category: unsafe-output
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - boundaries
+  - output-contracts
+text: The Message Decision Pack is a local offline decision layer that improves agent handoffs.

@@ -46,6 +46,7 @@ mdp --json gaps --dir PACK_ROOT
 ## Load Only The Needed References
 
 - Read [references/source-intake.md](references/source-intake.md) when planning sources, extracting evidence, normalizing messy material, or mapping profile vocabulary to primitives.
+- Read [references/decision-input-contracts.md](references/decision-input-contracts.md) when a job needs an explicit attempted-complete data contract before normalization, fit, routing, or drafting.
 - Read [references/gtm-authoring.md](references/gtm-authoring.md) for ICP, personas, fit, signals, message angles, CTA policy, and GTM job bindings.
 - Read [references/proposal-authoring.md](references/proposal-authoring.md) for proposal opportunity context, requirements, proof, confidentiality, and proposal job bindings.
 - Read [references/boundaries-output.md](references/boundaries-output.md) when authoring claims, avoid rules, output constraints, or proof-carrying artifacts.
@@ -58,7 +59,18 @@ Do not read every reference by default.
 2. Map reviewed facts into universal primitives; keep profile terminology in labels and entries.
 3. Separate observed evidence from inferred decisions. Put unresolved or unsupported material in gaps.
 4. Keep every prospect-facing surface about the resolved external target. Pack, CLI, schema, prompt, card, eval, starter, and prior-target vocabulary is internal implementation context only.
-5. Author prompts with explicit input and output contracts. Validate model-produced output before using it:
+5. When a job depends on collected or normalized data, author and bind its
+   `decision_input_contracts` before writing the normalization prompt. Compile
+   the job-specific questions and policy:
+
+```bash
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
+```
+
+The compiled contract, not a generic finder or the normalization prompt, states
+what data must be attempted. Keep collection and provider calls outside MDP.
+
+6. Author prompts with explicit input and output contracts. Validate model-produced output before using it:
 
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
@@ -82,9 +94,9 @@ Use `mdp --json schema runner-audit` for the host-owned native/headless runner e
 
 Runner contract acceptance and integration support are separate. Consult [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix) and use only `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only`. Pack authoring, a documented recipe, a schema-valid audit, or MCP transport does not prove a verified integration.
 
-6. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
-7. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target.
-8. Validate, fix, and repeat:
+7. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
+8. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target. Decision-input examples also need synthetic expected outcomes for ready, insufficient-context, disqualified, human-review, malformed, and provider-error.
+9. Validate, fix, and repeat:
 
 ```bash
 mdp --json validate --dir PACK_ROOT

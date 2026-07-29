@@ -39,6 +39,7 @@ mdp --json capabilities
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --dry-run
 mdp --json validate --dir /tmp/mdp-demo
+mdp --json requirements --dir /tmp/mdp-demo --job prospect-fit-or-brief
 mdp --json validate-prompt-output --dir /tmp/mdp-demo --prompt-id extract-claims-proof --file /tmp/claims-output.json
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp --json route --entries --dir /tmp/mdp-demo --persona "PMM" --job "portfolio scope example" --scope product=local-cli
@@ -139,6 +140,36 @@ Use `mdp --json schema prompt` to inspect the reusable prompt contract. Prompt o
 Treat model-produced prompt output as untrusted review input. Run `mdp --json validate-prompt-output` before copying reviewed `card_patches` into cards or saving `normalized_prospect` for `mdp fit` and `mdp brief`. `source_summary.inputs_used` must name exact declared prompt inputs; source paths, snippets, PDF/page locators, URLs, and field-level provenance belong in candidate `evidence`/`provenance`, `signals[].source`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. For proposal PDF/doc normalization, pass `--source-audit <source-audit.json>` to check source refs and ref-plus-snippet citations against a bounded `mdp.source-audit.v0` extraction ledger backed by `.mdp/sources.yaml` source IDs. The validator rejects markdown-wrapped JSON, wrong prompt identity, undeclared input references, wrong card kinds, fake-person normalization, candidate ID collisions with existing card entries, normalized opportunity aliases that diverge from `normalized_prospect`, normalized values outside pack-owned value contracts, missing or non-boolean `normalization_trace.fit_readiness.ready_for_mdp_fit`, prompt outputs that claim `ready_for_mdp_fit: true` while missing manifest `lead_input_requirements.required_fields`, `required_signal_fields`, or `required_attributes`, and audited source refs/snippets that do not exist in the supplied source audit.
 
 Prompt-output validation proves the artifact matches the prompt contract and that its readiness claim is internally consistent with the pack input policy. It does not replace `mdp fit`; run `mdp fit` on the reviewed normalized prospect to get the final fit, disqualified, or insufficient-context decision.
+
+## Decision input requirements
+
+A pack may bind one or more versioned `decision_input_contracts` to an input
+contract or job. Compile the exact job-specific contract before collection or
+normalization:
+
+```bash
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
+```
+
+The `mdp.requirements.v1` result includes:
+
+- the exact question, output path, and value contract for every attribute;
+- `required`, `optional`, `conditional`, or `hard-gate` classification;
+- applicability and deterministic decision effects;
+- permitted source classes and public-research policy;
+- `observed`, `not_found`, `not_applicable`, `blocked`, and `error` behavior;
+- required provenance, confidence, freshness, and sensitivity;
+- an attempted-complete `mdp.source-attempt-request.v1` JSON Schema;
+- an `mdp.normalized-decision-input.v1` JSON Schema;
+- explicit no-draft outcomes and host/MDP ownership boundaries.
+
+Legacy jobs without a decision-input binding return `available: false` and
+remain compatible with existing `lead_input_requirements` behavior.
+
+`requirements` is deterministic and makes no network or model calls. The host
+owns source access and paid normalization. The normalization envelope always
+sets `draft_allowed: false`; a later `fit` or `brief --context` decision must be
+ready before copy generation.
 
 Prospect input keeps a compatibility path for `name`, `title`, and `company`, but new lead workflows should prefer `company_domain` as the account key. `mdp fit` canonicalizes supplied domain-like values such as `https://www.apple.com/` to `apple.com`; it does not infer a domain from a company name. Packs can declare deterministic readiness requirements in `manifest.yaml`:
 

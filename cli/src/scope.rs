@@ -348,6 +348,7 @@ mod tests {
             qualification_gates: None,
             required_primitives: vec![],
             primitive_map: BTreeMap::new(),
+            decision_input_contracts: vec![],
             input_contracts: vec![],
             jobs: vec![],
             profile_eval: ProfileEval::default(),

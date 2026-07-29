@@ -1,0 +1,20 @@
+id: positioning
+kind: positioning
+title: Target positioning
+description: External positioning boundary for Synthetic Expansion Product.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: target-identity
+  title: Position Synthetic Expansion Product
+  body: Prospect-facing positioning must be about Synthetic Expansion Product. Category, value proposition, capabilities, and differentiation remain unknown until cited sources support them.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

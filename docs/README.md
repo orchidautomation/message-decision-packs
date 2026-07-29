@@ -6,6 +6,7 @@ These are the current public docs:
 - [Conceptual Decision Flow](conceptual-decision-flow.md): pack layers, routing, fit, briefs, and drafting boundaries.
 - [Portfolio-Aware GTM Scope](portfolio-scope.md): scope existing primitives by product, capability, solution, or segment within one pack.
 - [Prompt Contracts](prompt-extraction-contract.md): normalization and extraction schemas.
+- [Decision Input Contracts](decision-input-contracts.md): attempted-complete job inputs, source-attempt policy, normalized envelopes, and no-draft behavior.
 - [Runner Receipts](run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
 - [Local Proposal Runner Surface](proposal-runner.md): host-neutral local command surface for staged source audit, native/headless normalization, validation, receipts, and review probes.
 - [Deterministic Proposal Evidence Harness](proposal-evidence-harness.md): network-free synthetic contract and negative-boundary proof for CI.

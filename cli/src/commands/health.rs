@@ -1,10 +1,13 @@
 use crate::constants::{
-    DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
-    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, NORMALIZED_DECISION_INPUT_CONTRACT,
+    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
-    Card, CardKind, InputContract, Manifest, PrimitiveMapping, Profile, ProfileEval, ProfileJob,
-    PromptFile, QualificationGates, TargetIdentity, ValueContract,
+    Card, CardKind, DecisionInputAttemptStatus, DecisionInputContract, DecisionInputDecisionEffect,
+    DecisionInputDisposition, DecisionInputRequirement, InputContract, Manifest, PrimitiveMapping,
+    Profile, ProfileEval, ProfileJob, PromptFile, QualificationGates, TargetIdentity,
+    ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
@@ -269,6 +272,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     }
     let loaded_prompts = validate_prompts(root, &mut issues)?;
     let prompt_inventory = prompt_inventory(&loaded_prompts);
+    validate_decision_input_contracts(&manifest, &prompt_inventory, &mut issues);
     let eval_inventory = collect_eval_inventory(root, &mut issues)?;
     if scoped_entry_count > 0 {
         let (has_selected_scope, has_missing_scope) = portfolio_eval_coverage(root)?;
@@ -1055,6 +1059,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "qualification_gates",
             "required_primitives",
             "primitive_map",
+            "decision_input_contracts",
             "input_contracts",
             "jobs",
             "profile_eval",
@@ -1102,8 +1107,29 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         issues,
     );
     validate_sequence_object_keys(
+        yaml_get(&value, "decision_input_contracts"),
+        &[
+            "id",
+            "version",
+            "description",
+            "normalization",
+            "source_classes",
+            "attributes",
+        ],
+        ".mdp/manifest.yaml#/decision_input_contracts",
+        "manifest_decision_input_contract_unknown_field",
+        issues,
+    );
+    validate_sequence_object_keys(
         yaml_get(&value, "input_contracts"),
-        &["id", "description", "schema_ref", "prompt", "normalizes"],
+        &[
+            "id",
+            "description",
+            "schema_ref",
+            "prompt",
+            "normalizes",
+            "decision_input_contracts",
+        ],
         ".mdp/manifest.yaml#/input_contracts",
         "manifest_input_contract_unknown_field",
         issues,
@@ -1117,6 +1143,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "description",
             "required_primitives",
             "input_contracts",
+            "decision_input_contracts",
         ],
         ".mdp/manifest.yaml#/jobs",
         "manifest_profile_job_unknown_field",
@@ -1362,8 +1389,14 @@ fn validate_profile_mapping(
         &known_primitives,
         issues,
     );
+    let decision_input_contract_ids = manifest
+        .decision_input_contracts
+        .iter()
+        .map(|contract| contract.id.clone())
+        .collect::<BTreeSet<_>>();
     let input_contract_ids = validate_input_contracts(
         &manifest.input_contracts,
+        &decision_input_contract_ids,
         prompt_inventory,
         ".mdp/manifest.yaml#/input_contracts",
         issues,
@@ -1377,9 +1410,11 @@ fn validate_profile_mapping(
             .unwrap_or_default(),
         &known_primitives,
         &input_contract_ids,
+        &decision_input_contract_ids,
         ".mdp/manifest.yaml#/jobs",
         issues,
     );
+    validate_job_decision_input_composition(manifest, issues);
     let missing_activation_sections = validate_activation_sections(manifest, issues);
     validate_eval_profile_refs(eval_inventory, &known_primitives, &job_ids, issues);
 
@@ -1576,6 +1611,7 @@ fn validate_primitive_list(
 
 fn validate_input_contracts(
     input_contracts: &[InputContract],
+    decision_input_contract_ids: &BTreeSet<String>,
     prompt_inventory: &PromptInventory,
     path: &str,
     issues: &mut Vec<Value>,
@@ -1636,6 +1672,14 @@ fn validate_input_contracts(
             "profile_input_contract_normalizes",
             issues,
         );
+        validate_reference_list(
+            &contract.decision_input_contracts,
+            decision_input_contract_ids,
+            &format!("{contract_path}/decision_input_contracts"),
+            "profile_input_contract_decision_input_contract_missing",
+            "decision input contract",
+            issues,
+        );
     }
     seen
 }
@@ -1645,6 +1689,7 @@ fn validate_profile_jobs(
     profile_id: &str,
     known_primitives: &BTreeSet<&str>,
     input_contract_ids: &BTreeSet<String>,
+    decision_input_contract_ids: &BTreeSet<String>,
     path: &str,
     issues: &mut Vec<Value>,
 ) -> BTreeSet<String> {
@@ -1722,8 +1767,91 @@ fn validate_profile_jobs(
             "input contract",
             issues,
         );
+        validate_reference_list(
+            &job.decision_input_contracts,
+            decision_input_contract_ids,
+            &format!("{job_path}/decision_input_contracts"),
+            "profile_job_decision_input_contract_missing",
+            "decision input contract",
+            issues,
+        );
     }
     seen
+}
+
+fn validate_job_decision_input_composition(manifest: &Manifest, issues: &mut Vec<Value>) {
+    let input_contracts = manifest
+        .input_contracts
+        .iter()
+        .map(|contract| (contract.id.as_str(), contract))
+        .collect::<BTreeMap<_, _>>();
+    let decision_contracts = manifest
+        .decision_input_contracts
+        .iter()
+        .map(|contract| (contract.id.as_str(), contract))
+        .collect::<BTreeMap<_, _>>();
+
+    for (job_index, job) in manifest.jobs.iter().enumerate() {
+        let mut contract_ids = job
+            .decision_input_contracts
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        for input_contract_id in &job.input_contracts {
+            if let Some(input_contract) = input_contracts.get(input_contract_id.as_str()) {
+                contract_ids.extend(
+                    input_contract
+                        .decision_input_contracts
+                        .iter()
+                        .map(String::as_str),
+                );
+            }
+        }
+
+        let mut attribute_owners = BTreeMap::new();
+        let mut output_path_owners = BTreeMap::new();
+        for contract_id in contract_ids {
+            let Some(contract) = decision_contracts.get(contract_id) else {
+                continue;
+            };
+            for attribute in &contract.attributes {
+                if let Some(first_contract) =
+                    attribute_owners.insert(attribute.id.as_str(), contract_id)
+                {
+                    if first_contract != contract_id {
+                        issues.push(issue(
+                            "decision_input_job_attribute_duplicate",
+                            "error",
+                            format!(
+                                ".mdp/manifest.yaml#/jobs/{job_index}/decision_input_contracts"
+                            ),
+                            format!(
+                                "job {} composes decision input contracts {} and {} with duplicate attribute id {}",
+                                job.id, first_contract, contract_id, attribute.id
+                            ),
+                        ));
+                    }
+                }
+                if let Some(first_contract) =
+                    output_path_owners.insert(attribute.output_path.as_str(), contract_id)
+                {
+                    if first_contract != contract_id {
+                        issues.push(issue(
+                            "decision_input_job_output_path_duplicate",
+                            "error",
+                            format!(
+                                ".mdp/manifest.yaml#/jobs/{job_index}/decision_input_contracts"
+                            ),
+                            format!(
+                                "job {} composes decision input contracts {} and {} with duplicate output path {}",
+                                job.id, first_contract, contract_id, attribute.output_path
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn validate_primitive_mapping_refs(
@@ -2135,6 +2263,480 @@ fn validate_lead_input_requirements(manifest: &crate::models::Manifest, issues: 
             issues,
         );
     }
+}
+
+fn validate_decision_input_contracts(
+    manifest: &Manifest,
+    prompt_inventory: &PromptInventory,
+    issues: &mut Vec<Value>,
+) {
+    let mut contract_ids = BTreeSet::new();
+    for (contract_index, contract) in manifest.decision_input_contracts.iter().enumerate() {
+        let path = format!(".mdp/manifest.yaml#/decision_input_contracts/{contract_index}");
+        if contract.id.trim().is_empty() {
+            issues.push(issue(
+                "decision_input_contract_id_empty",
+                "error",
+                format!("{path}/id"),
+                "decision input contracts must name a stable id",
+            ));
+        } else if !contract_ids.insert(contract.id.clone()) {
+            issues.push(issue(
+                "decision_input_contract_duplicate",
+                "error",
+                format!("{path}/id"),
+                format!("duplicate decision input contract {}", contract.id),
+            ));
+        }
+        if contract.version.trim().is_empty() {
+            issues.push(issue(
+                "decision_input_contract_version_empty",
+                "error",
+                format!("{path}/version"),
+                "decision input contract version must not be empty",
+            ));
+        }
+        if contract.normalization.prompt.trim().is_empty() {
+            issues.push(issue(
+                "decision_input_normalization_prompt_empty",
+                "error",
+                format!("{path}/normalization/prompt"),
+                "decision input normalization must reference a prompt",
+            ));
+        } else if !prompt_inventory.contains(&contract.normalization.prompt) {
+            issues.push(issue(
+                "decision_input_normalization_prompt_missing",
+                "error",
+                format!("{path}/normalization/prompt"),
+                format!(
+                    "decision input contract {} references missing prompt {}",
+                    contract.id, contract.normalization.prompt
+                ),
+            ));
+        }
+        if contract.normalization.prompt_version.trim().is_empty() {
+            issues.push(issue(
+                "decision_input_normalization_prompt_version_empty",
+                "error",
+                format!("{path}/normalization/prompt_version"),
+                "decision input normalization must declare a prompt version",
+            ));
+        }
+        if contract.normalization.normalized_schema_ref != NORMALIZED_DECISION_INPUT_CONTRACT {
+            issues.push(issue(
+                "decision_input_normalized_schema_unknown",
+                "error",
+                format!("{path}/normalization/normalized_schema_ref"),
+                format!("normalized_schema_ref must be {NORMALIZED_DECISION_INPUT_CONTRACT}"),
+            ));
+        }
+        if contract.source_classes.is_empty() {
+            issues.push(issue(
+                "decision_input_source_classes_empty",
+                "error",
+                format!("{path}/source_classes"),
+                "decision input contracts must declare at least one permitted source class",
+            ));
+        }
+        let declared_sources = contract
+            .source_classes
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if declared_sources.len() != contract.source_classes.len() {
+            issues.push(issue(
+                "decision_input_source_class_duplicate",
+                "error",
+                format!("{path}/source_classes"),
+                "decision input contract source classes must be unique",
+            ));
+        }
+        validate_decision_input_attributes(manifest, contract, &declared_sources, &path, issues);
+    }
+}
+
+fn validate_decision_input_attributes(
+    manifest: &Manifest,
+    contract: &DecisionInputContract,
+    declared_sources: &BTreeSet<crate::models::DecisionInputSourceClass>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    if contract.attributes.is_empty() {
+        issues.push(issue(
+            "decision_input_attributes_empty",
+            "error",
+            format!("{path}/attributes"),
+            "decision input contracts must declare at least one attribute",
+        ));
+        return;
+    }
+    let attribute_ids = contract
+        .attributes
+        .iter()
+        .map(|attribute| attribute.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let required_attributes = manifest
+        .lead_input_requirements
+        .required_attributes
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_fields = manifest
+        .lead_input_requirements
+        .required_fields
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let mut seen_ids = BTreeSet::new();
+    let mut seen_paths = BTreeSet::new();
+    for (attribute_index, attribute) in contract.attributes.iter().enumerate() {
+        let attribute_path = format!("{path}/attributes/{attribute_index}");
+        if !valid_attribute_key(&attribute.id) {
+            issues.push(issue(
+                "decision_input_attribute_id_invalid",
+                "error",
+                format!("{attribute_path}/id"),
+                "decision input attribute ids must use the manifest attribute identifier format",
+            ));
+        } else if !seen_ids.insert(attribute.id.to_ascii_lowercase()) {
+            issues.push(issue(
+                "decision_input_attribute_duplicate",
+                "error",
+                format!("{attribute_path}/id"),
+                format!("duplicate decision input attribute {}", attribute.id),
+            ));
+        }
+        if attribute.question.trim().is_empty() {
+            issues.push(issue(
+                "decision_input_attribute_question_empty",
+                "error",
+                format!("{attribute_path}/question"),
+                "decision input attributes must state the data question they answer",
+            ));
+        }
+        if !valid_decision_input_output_path(&attribute.output_path) {
+            issues.push(issue(
+                "decision_input_output_path_invalid",
+                "error",
+                format!("{attribute_path}/output_path"),
+                format!(
+                    "unsupported normalized prospect output path {}",
+                    attribute.output_path
+                ),
+            ));
+        } else if !seen_paths.insert(attribute.output_path.clone()) {
+            issues.push(issue(
+                "decision_input_output_path_duplicate",
+                "error",
+                format!("{attribute_path}/output_path"),
+                format!(
+                    "multiple decision input attributes map to {}",
+                    attribute.output_path
+                ),
+            ));
+        } else {
+            validate_decision_input_readiness_alignment(
+                manifest,
+                attribute,
+                &required_attributes,
+                &required_fields,
+                &attribute_path,
+                issues,
+            );
+        }
+        validate_value_contract(&attribute.value, &format!("{attribute_path}/value"), issues);
+        if attribute.requirement == DecisionInputRequirement::Conditional
+            && attribute.applies_when.is_empty()
+        {
+            issues.push(issue(
+                "decision_input_conditional_missing_applicability",
+                "error",
+                format!("{attribute_path}/applies_when"),
+                "conditional decision input attributes must declare applies_when",
+            ));
+        }
+        for (condition_index, condition) in attribute.applies_when.iter().enumerate() {
+            let condition_path = format!("{attribute_path}/applies_when/{condition_index}");
+            if condition.attribute == attribute.id
+                || !attribute_ids.contains(condition.attribute.as_str())
+            {
+                issues.push(issue(
+                    "decision_input_applicability_dependency_invalid",
+                    "error",
+                    format!("{condition_path}/attribute"),
+                    format!(
+                        "applicability dependency {} must name another attribute in the same contract",
+                        condition.attribute
+                    ),
+                ));
+            }
+            if condition.operator != crate::models::DecisionInputConditionOperator::Exists
+                && condition.values.is_empty()
+            {
+                issues.push(issue(
+                    "decision_input_applicability_values_empty",
+                    "error",
+                    format!("{condition_path}/values"),
+                    "equals, not_equals, and in applicability conditions require values",
+                ));
+            }
+        }
+        if attribute.decision_effects.is_empty() {
+            issues.push(issue(
+                "decision_input_decision_effects_empty",
+                "error",
+                format!("{attribute_path}/decision_effects"),
+                "decision input attributes must declare at least one deterministic decision effect",
+            ));
+        } else if attribute
+            .decision_effects
+            .iter()
+            .collect::<BTreeSet<_>>()
+            .len()
+            != attribute.decision_effects.len()
+        {
+            issues.push(issue(
+                "decision_input_decision_effect_duplicate",
+                "error",
+                format!("{attribute_path}/decision_effects"),
+                "decision effects must be unique",
+            ));
+        }
+        if attribute.source_classes.is_empty() {
+            issues.push(issue(
+                "decision_input_attribute_source_classes_empty",
+                "error",
+                format!("{attribute_path}/source_classes"),
+                "decision input attributes must declare permitted source classes",
+            ));
+        }
+        for (source_index, source_class) in attribute.source_classes.iter().enumerate() {
+            if !declared_sources.contains(source_class) {
+                issues.push(issue(
+                    "decision_input_attribute_source_class_undeclared",
+                    "error",
+                    format!("{attribute_path}/source_classes/{source_index}"),
+                    "attribute source class must be declared by its decision input contract",
+                ));
+            }
+        }
+        if attribute.provenance.required && attribute.provenance.required_fields.is_empty() {
+            issues.push(issue(
+                "decision_input_provenance_fields_empty",
+                "error",
+                format!("{attribute_path}/provenance/required_fields"),
+                "required provenance must declare the fields a normalizer must preserve",
+            ));
+        }
+        if attribute
+            .confidence
+            .minimum
+            .is_some_and(|minimum| minimum > 100)
+        {
+            issues.push(issue(
+                "decision_input_confidence_minimum_invalid",
+                "error",
+                format!("{attribute_path}/confidence/minimum"),
+                "confidence minimum must be from 0 through 100",
+            ));
+        }
+        if attribute.requirement == DecisionInputRequirement::HardGate {
+            validate_hard_gate_status_policy(attribute, &attribute_path, issues);
+        }
+    }
+}
+
+fn validate_hard_gate_status_policy(
+    attribute: &crate::models::DecisionInputAttribute,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    for status in DecisionInputAttemptStatus::ALL {
+        let disposition = attribute.status_behavior.get(&status);
+        if disposition.is_none() {
+            issues.push(issue(
+                "decision_input_hard_gate_status_behavior_missing",
+                "error",
+                format!("{path}/status_behavior"),
+                format!(
+                    "hard-gate attribute {} must declare behavior for every attempt status, including {:?}",
+                    attribute.id, status
+                ),
+            ));
+            continue;
+        }
+        let disposition = disposition.expect("checked above");
+        let unsafe_non_observed = status != DecisionInputAttemptStatus::Observed
+            && matches!(
+                disposition,
+                DecisionInputDisposition::Accept | DecisionInputDisposition::Evaluate
+            );
+        let unsafe_provider_failure = matches!(
+            status,
+            DecisionInputAttemptStatus::Blocked | DecisionInputAttemptStatus::Error
+        ) && !matches!(
+            disposition,
+            DecisionInputDisposition::Block | DecisionInputDisposition::HumanReview
+        );
+        if unsafe_non_observed || unsafe_provider_failure {
+            issues.push(issue(
+                "decision_input_hard_gate_status_behavior_unsafe",
+                "error",
+                format!("{path}/status_behavior"),
+                format!(
+                    "hard-gate attribute {} maps {:?} to {:?}; unresolved hard-gate attempts must fail closed",
+                    attribute.id, status, disposition
+                ),
+            ));
+        }
+    }
+    if !attribute
+        .decision_effects
+        .contains(&DecisionInputDecisionEffect::NoDraft)
+    {
+        issues.push(issue(
+            "decision_input_hard_gate_no_draft_missing",
+            "error",
+            format!("{path}/decision_effects"),
+            "hard-gate attributes must include the no-draft decision effect",
+        ));
+    }
+}
+
+fn validate_decision_input_readiness_alignment(
+    manifest: &Manifest,
+    attribute: &crate::models::DecisionInputAttribute,
+    required_attributes: &BTreeSet<&str>,
+    required_fields: &BTreeSet<&str>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    for mismatch in decision_input_readiness_mismatches(
+        manifest,
+        attribute,
+        required_attributes,
+        required_fields,
+    ) {
+        issues.push(issue(
+            mismatch.code,
+            "error",
+            format!("{path}/{}", mismatch.field),
+            mismatch.message,
+        ));
+    }
+}
+
+struct DecisionInputReadinessMismatch {
+    code: &'static str,
+    field: &'static str,
+    message: String,
+}
+
+fn decision_input_readiness_mismatches(
+    manifest: &Manifest,
+    attribute: &crate::models::DecisionInputAttribute,
+    required_attributes: &BTreeSet<&str>,
+    required_fields: &BTreeSet<&str>,
+) -> Vec<DecisionInputReadinessMismatch> {
+    let mut mismatches = Vec::new();
+    let readiness_required = matches!(
+        attribute.requirement,
+        DecisionInputRequirement::Required | DecisionInputRequirement::HardGate
+    );
+    if let Some(attribute_name) = attribute.output_path.strip_prefix("attributes.") {
+        let definition = manifest
+            .lead_input_requirements
+            .attribute_definitions
+            .get(attribute_name);
+        if definition.is_none() {
+            mismatches.push(DecisionInputReadinessMismatch {
+                code: "decision_input_attribute_definition_missing",
+                field: "output_path",
+                message: format!(
+                    "{} must be declared in lead_input_requirements.attribute_definitions",
+                    attribute.output_path
+                ),
+            });
+        } else if definition.is_some_and(|definition| {
+            !value_contract_constraints_match(definition, &attribute.value)
+        }) {
+            mismatches.push(DecisionInputReadinessMismatch {
+                code: "decision_input_value_contract_mismatch",
+                field: "value",
+                message: format!(
+                    "{} value contract must match lead_input_requirements.attribute_definitions.{attribute_name}",
+                    attribute.output_path
+                ),
+            });
+        }
+        if readiness_required && !required_attributes.contains(attribute_name) {
+            mismatches.push(DecisionInputReadinessMismatch {
+                code: "decision_input_readiness_requirement_missing",
+                field: "output_path",
+                message: format!(
+                    "{} is {} but is not listed in lead_input_requirements.required_attributes",
+                    attribute.output_path,
+                    if attribute.requirement == DecisionInputRequirement::HardGate {
+                        "a hard gate"
+                    } else {
+                        "required"
+                    }
+                ),
+            });
+        } else if !readiness_required && required_attributes.contains(attribute_name) {
+            mismatches.push(DecisionInputReadinessMismatch {
+                code: "decision_input_readiness_requirement_conflict",
+                field: "requirement",
+                message: format!(
+                    "{} is {} in the decision input contract but required by lead_input_requirements.required_attributes",
+                    attribute.output_path,
+                    if attribute.requirement == DecisionInputRequirement::Conditional {
+                        "conditional"
+                    } else {
+                        "optional"
+                    }
+                ),
+            });
+        }
+    } else {
+        let lead_required = required_fields.contains(attribute.output_path.as_str());
+        if readiness_required && !lead_required {
+            mismatches.push(DecisionInputReadinessMismatch {
+                code: "decision_input_readiness_requirement_missing",
+                field: "output_path",
+                message: format!(
+                    "{} is required by the decision input contract but not by lead_input_requirements.required_fields",
+                    attribute.output_path
+                ),
+            });
+        } else if !readiness_required && lead_required {
+            mismatches.push(DecisionInputReadinessMismatch {
+                code: "decision_input_readiness_requirement_conflict",
+                field: "requirement",
+                message: format!(
+                    "{} is optional or conditional in the decision input contract but required by lead_input_requirements.required_fields",
+                    attribute.output_path
+                ),
+            });
+        }
+    }
+    mismatches
+}
+
+fn value_contract_constraints_match(left: &ValueContract, right: &ValueContract) -> bool {
+    left.value_type == right.value_type
+        && left.format == right.format
+        && left.enum_values == right.enum_values
+        && left.required == right.required
+}
+
+fn valid_decision_input_output_path(path: &str) -> bool {
+    PROSPECT_CONTRACT_FIELDS.contains(&path)
+        || path == "signals"
+        || path
+            .strip_prefix("attributes.")
+            .is_some_and(valid_attribute_key)
 }
 
 fn validate_qualification_gates(gate: Option<&QualificationGates>, issues: &mut Vec<Value>) {
@@ -3541,6 +4143,7 @@ pub(crate) fn gaps(root: &Path) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let mut durable_gaps = Vec::new();
     let mut evidence_gaps = Vec::new();
+    let mut decision_input_contract_gaps = Vec::new();
     if let Ok(card) = read_card_by_id(root, "gaps") {
         for entry in card.entries {
             durable_gaps.push(json!({"id": entry.id, "title": entry.title, "body": entry.body, "applies_to": entry.applies_to}));
@@ -3559,13 +4162,77 @@ pub(crate) fn gaps(root: &Path) -> Result<Value> {
             }
         }
     }
+    let input_contracts_by_id = manifest
+        .input_contracts
+        .iter()
+        .map(|contract| (contract.id.as_str(), contract))
+        .collect::<BTreeMap<_, _>>();
+    for input_contract in &manifest.input_contracts {
+        if input_contract.decision_input_contracts.is_empty() {
+            decision_input_contract_gaps.push(json!({
+                "scope": "input-contract",
+                "id": &input_contract.id,
+                "reason": "no decision input contract articulates what an upstream collector or normalizer must attempt"
+            }));
+        }
+    }
+    for job in &manifest.jobs {
+        let inherited = job.input_contracts.iter().any(|id| {
+            input_contracts_by_id
+                .get(id.as_str())
+                .is_some_and(|contract| !contract.decision_input_contracts.is_empty())
+        });
+        if job.decision_input_contracts.is_empty() && !inherited {
+            decision_input_contract_gaps.push(json!({
+                "scope": "job",
+                "id": &job.id,
+                "reason": "job has no direct or input-contract decision input contract binding"
+            }));
+        }
+    }
+    let required_attributes = manifest
+        .lead_input_requirements
+        .required_attributes
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_fields = manifest
+        .lead_input_requirements
+        .required_fields
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    for contract in &manifest.decision_input_contracts {
+        for attribute in &contract.attributes {
+            for mismatch in decision_input_readiness_mismatches(
+                &manifest,
+                attribute,
+                &required_attributes,
+                &required_fields,
+            ) {
+                decision_input_contract_gaps.push(json!({
+                    "scope": "decision-input-contract",
+                    "id": &contract.id,
+                    "attribute_id": &attribute.id,
+                    "code": mismatch.code,
+                    "reason": mismatch.message
+                }));
+            }
+        }
+    }
     let durable_count = durable_gaps.len();
     let evidence_count = evidence_gaps.len();
+    let decision_input_count = decision_input_contract_gaps.len();
     Ok(json!({
         "contract": "mdp.gaps.v0",
         "durable_gaps": durable_gaps,
         "evidence_gaps": evidence_gaps,
-        "summary": {"durable": durable_count, "evidence": evidence_count}
+        "decision_input_contract_gaps": decision_input_contract_gaps,
+        "summary": {
+            "durable": durable_count,
+            "evidence": evidence_count,
+            "decision_input_contract": decision_input_count
+        }
     }))
 }
 
@@ -3647,6 +4314,13 @@ mod tests {
         )
         .expect("targeted pack should initialize");
         root
+    }
+
+    fn clay_example_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("CLI crate should have a repository parent")
+            .join("examples/clay-audiences-self-serve-enterprise-expansion")
     }
 
     #[test]
@@ -4812,6 +5486,148 @@ output_contract:
         );
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn decision_input_contract_rejects_missing_normalization_prompt() {
+        let manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let mut issues = Vec::new();
+
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_normalization_prompt_missing")
+        );
+    }
+
+    #[test]
+    fn hard_gate_status_behavior_rejects_fail_open_provider_states() {
+        let manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let mut attribute = manifest.decision_input_contracts[0]
+            .attributes
+            .iter()
+            .find(|attribute| attribute.id == "do_not_contact")
+            .expect("Clay example should include do_not_contact")
+            .clone();
+        attribute.status_behavior.insert(
+            DecisionInputAttemptStatus::Blocked,
+            DecisionInputDisposition::Accept,
+        );
+        let mut issues = Vec::new();
+
+        validate_hard_gate_status_policy(&attribute, "test", &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_hard_gate_status_behavior_unsafe")
+        );
+    }
+
+    #[test]
+    fn readiness_alignment_rejects_optional_runtime_required_field() {
+        let manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let mut attribute = manifest.decision_input_contracts[0]
+            .attributes
+            .iter()
+            .find(|attribute| attribute.id == "company_name")
+            .expect("Clay example should include company_name")
+            .clone();
+        attribute.requirement = DecisionInputRequirement::Optional;
+        let required_attributes = manifest
+            .lead_input_requirements
+            .required_attributes
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let required_fields = manifest
+            .lead_input_requirements
+            .required_fields
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+
+        let mismatches = decision_input_readiness_mismatches(
+            &manifest,
+            &attribute,
+            &required_attributes,
+            &required_fields,
+        );
+
+        assert!(
+            mismatches
+                .iter()
+                .any(|mismatch| mismatch.code == "decision_input_readiness_requirement_conflict")
+        );
+    }
+
+    #[test]
+    fn readiness_alignment_rejects_attribute_value_contract_drift() {
+        let manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let mut attribute = manifest.decision_input_contracts[0]
+            .attributes
+            .iter()
+            .find(|attribute| attribute.id == "enterprise_eligibility")
+            .expect("Clay example should include enterprise_eligibility")
+            .clone();
+        attribute.value.enum_values.push("unknown".to_string());
+        let required_attributes = manifest
+            .lead_input_requirements
+            .required_attributes
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let required_fields = manifest
+            .lead_input_requirements
+            .required_fields
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+
+        let mismatches = decision_input_readiness_mismatches(
+            &manifest,
+            &attribute,
+            &required_attributes,
+            &required_fields,
+        );
+
+        assert!(
+            mismatches
+                .iter()
+                .any(|mismatch| mismatch.code == "decision_input_value_contract_mismatch")
+        );
+    }
+
+    #[test]
+    fn job_composition_rejects_cross_contract_attribute_collisions() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let mut duplicate = manifest.decision_input_contracts[0].clone();
+        duplicate.id = "clay.audiences.duplicate".to_string();
+        manifest.decision_input_contracts.push(duplicate);
+        manifest.jobs[0]
+            .decision_input_contracts
+            .push("clay.audiences.duplicate".to_string());
+        let mut issues = Vec::new();
+
+        validate_job_decision_input_composition(&manifest, &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_job_attribute_duplicate")
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_job_output_path_duplicate")
+        );
     }
 
     #[cfg(unix)]

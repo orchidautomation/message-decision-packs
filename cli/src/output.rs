@@ -63,6 +63,16 @@ fn summarize(command: &str, data: &Value) -> Value {
             "route_count": array_len(&data["job_routes"]),
             "diagnostics": data["diagnostics"]
         }),
+        "requirements" => json!({
+            "contract": data["contract"],
+            "status": data["status"],
+            "valid": data["valid"],
+            "available": data["available"],
+            "pack_id": data["pack"]["id"],
+            "job_id": data["job"]["id"],
+            "decision_input_contract_count": array_len(&data["decision_input_contracts"]),
+            "diagnostics": data["diagnostics"]
+        }),
         "doctor" | "validate" | "validate-prompt-output" => json!({
             "valid": data["valid"],
             "strict": data["strict"],

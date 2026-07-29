@@ -1,0 +1,15 @@
+command: route
+expect_load_order_contains:
+- .mdp/cards/personas.yaml
+- .mdp/cards/positioning.yaml
+id: target-route
+job: create or improve messaging for Synthetic Expansion Product
+persona: Operator
+profile_eval:
+  category: job-routing
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - boundaries
+  - output-contracts

@@ -7,6 +7,7 @@ pub(crate) mod init;
 pub(crate) mod pack;
 pub(crate) mod prompt_output;
 pub(crate) mod proof_output;
+pub(crate) mod requirements;
 pub(crate) mod routing;
 pub(crate) mod run_receipt;
 pub(crate) mod sample_leads;
@@ -29,6 +30,7 @@ pub(crate) use prompt_output::validate_prompt_output_file_with_source_audit;
 pub(crate) use proof_output::{
     author_proof_output_file, verify_output_file, verify_output_readable_file, verify_output_value,
 };
+pub(crate) use requirements::requirements;
 pub(crate) use routing::{check_claims_scoped, fit, route_scoped};
 pub(crate) use run_receipt::{RunReceiptOptions, run_receipt};
 pub(crate) use sample_leads::sample_leads;

@@ -31,6 +31,15 @@ class SkillContractTests(unittest.TestCase):
     def test_current_canonical_contract_passes(self):
         self.assertTrue(module.validate(Path("."), Path("plugin/skills"))["valid"])
 
+    def test_core_skill_exposes_job_bound_requirements_handoff(self):
+        skill = Path("plugin/skills/mdp/SKILL.md").read_text()
+        operator = Path("plugin/skills/mdp/references/cli-operator.md").read_text()
+        command = "mdp --json requirements --dir"
+        self.assertIn(command, skill)
+        self.assertIn(command, operator)
+        self.assertIn("available: false", skill)
+        self.assertIn("does not collect sources or call a model", skill)
+
     def test_bad_frontmatter_and_missing_local_link_fail(self):
         path = self.root / "plugin/skills/mdp/SKILL.md"
         text = path.read_text().replace("name: mdp", "name: wrong").replace("description:", "description: short\nignored:", 1).replace("references/mental-model.md", "references/missing.md")

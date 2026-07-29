@@ -52,6 +52,14 @@ mdp --json skills --dir <pack-root> --job <job-id>
 
 Proceed only when `data.recommendation` names the expected skill and `pack_ready` is true. Unknown and profile-crossing job IDs do not have fallbacks.
 
+For a bound job, retrieve its attempted-complete collector and normalization handoff before sourcing or normalizing data:
+
+```bash
+mdp --json requirements --dir <pack-root> --job <job-id>
+```
+
+This command is read-only. It compiles the pack-owned questions, source policy, normalization identity, and request/response schemas; it does not collect sources or call a model. An existing job without a Decision Input Contract returns `available: false` and keeps its current fit/readiness behavior.
+
 Closed v1 pairs:
 
 - `mdp-gtm-brief`: `prospect-fit-or-brief`, `outbound-copy-brief`, `outbound-copy-review`
@@ -64,6 +72,7 @@ Run only the commands the job requires:
 ```bash
 mdp --json doctor --dir <pack-root>
 mdp --json validate --dir <pack-root>
+mdp --json requirements --dir <pack-root> --job <job-id>
 mdp --json explain --dir <pack-root>
 mdp --json gaps --dir <pack-root>
 mdp --json eval --dir <pack-root>

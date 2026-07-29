@@ -1,0 +1,23 @@
+command: fit
+expect_status: insufficient-context
+id: fit-insufficient-context
+profile_eval:
+  category: insufficient-context
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - gaps
+prospect:
+  attributes: {}
+  background: Neutral synthetic row for testing Synthetic Expansion Product pack wiring; not evidence about a real account.
+  company: Example Prospect Company
+  name: Example Person
+  persona: Operator
+  segment: self-serve-enterprise-expansion
+  signals: []
+  source_kind: synthetic-example
+  synthetic: true
+  title: Example Operator

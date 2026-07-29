@@ -12,7 +12,7 @@ message-decision-packs/
   cli/      # Rust `mdp` CLI
   plugin/   # Pluxx plugin package source: skills, assets, hooks, scripts
   docs/     # Current user and maintainer documentation
-  examples/ # One canonical runnable example: Eve on Vercel
+  examples/ # Canonical runnable and synthetic contract examples
 ```
 
 ## Install
@@ -48,6 +48,7 @@ Create and validate the generic MDP reference pack:
 ```bash
 mdp --json init --template gtm --dir /tmp/mdp-demo --force
 mdp --json validate --dir /tmp/mdp-demo
+mdp --json requirements --dir /tmp/mdp-demo --job prospect-fit-or-brief
 mdp --json skills --dir /tmp/mdp-demo
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp --json route --entries --dir /tmp/mdp-demo --persona "PMM" --job "portfolio scope example" --scope product=local-cli
@@ -141,6 +142,15 @@ A pack is a local folder:
 
 Agents should load the manifest first, preserve source provenance, and use routed entries instead of reading every card. For prompt outputs, `source_summary.inputs_used` names declared prompt inputs only; field paths, snippets, URLs, PDF/page locators, and review notes belong in evidence/provenance fields such as `signals[].source`, entry `provenance`, and normalization trace. For GTM rows, normalize supplied data before running the deterministic fit gate. Proposal normalization keeps `normalized_prospect` for compatibility and may include `normalized_opportunity` only as an exact alias. Draft only from `brief --context` output, then run `check-claims`. For source-bound generated output, use `author-proof-output` to compile draft segments when helpful, then use `mdp.proof-output.v0` and `verify-output` before treating cited IDs as proof.
 
+Jobs that need an attempted-complete data policy can bind versioned
+`decision_input_contracts`. `mdp --json requirements --job <job-id>` compiles
+their exact data questions, requirement levels, applicability, source policy,
+attempt statuses, provenance, confidence, freshness, normalized JSON Schema,
+and no-draft boundary. The contract tells external collectors what to attempt;
+MDP does not perform collection or model calls. See
+[Decision Input Contracts](docs/decision-input-contracts.md) and the synthetic
+[Clay Audiences example](examples/clay-audiences-self-serve-enterprise-expansion/README.md).
+
 For audit-grade proposal normalization, the runner or host must make a fresh/stateless model call and pass only prompt-declared inputs. `scripts/mdp-proposal-runner.mjs` is the host-neutral local command surface that stages sources, preserves or creates source-audit inputs, calls the native runner, validates prompt output, creates the required receipt, and runs review-support probes. It is also exposed through `scripts/mdp-proposal-mcp-server.mjs`, a bundled local stdio MCP wrapper; neither surface is a hosted or remote MCP service. `mdp run-receipt` records the host-owned boundary plus local artifact hashes for the source audit, prompt output, validation result, runner audit, and downstream files, and blocks if the validation-result hashes do not match the supplied prompt-output/source-audit artifacts, if the runner-audit prompt-output hash does not match the supplied prompt output, or if the runner audit is marked demo/fixture/mock/synthetic. Same-conversation, dry-run, or mock normalization without a valid required runner-audit receipt is advisory or blocked even when the JSON validates.
 
 Profiles express domain language over ten universal primitives:
@@ -174,6 +184,7 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Portfolio-Aware GTM Scope](docs/portfolio-scope.md): product, capability, solution, and segment scoping inside one pack.
 - [Conceptual Decision Flow](docs/conceptual-decision-flow.md): layer ownership and deterministic decision boundaries.
 - [Prompt Contracts](docs/prompt-extraction-contract.md): normalization and extraction schemas.
+- [Decision Input Contracts](docs/decision-input-contracts.md): attempted-complete data questions, source-attempt policy, normalization envelopes, and no-draft outcomes.
 - [Runner Receipts](docs/run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
 - [Local Proposal Runner Surface](docs/proposal-runner.md): host-neutral local command surface for source audit, native/headless normalization, validation, receipts, and review probes.
 - [Deterministic Proposal Evidence Harness](docs/proposal-evidence-harness.md): synthetic CI proof for positive contract acceptance and fail-closed ambient/mock/hash/injection/unsupported-proof cases.

@@ -125,6 +125,7 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
         qualification_gates: None,
         required_primitives: gtm_required_primitives(),
         primitive_map: gtm_primitive_map(),
+        decision_input_contracts: Vec::new(),
         input_contracts: vec![InputContract {
             id: "prospect".to_string(),
             description: Some(
@@ -134,6 +135,7 @@ pub(crate) fn starter_manifest(name: &str, slug: &str, _template: &str) -> Manif
             schema_ref: Some("mdp.input.prospect.v0".to_string()),
             prompt: Some("prompts/normalize-prospect.yaml".to_string()),
             normalizes: strings(&["account", "person", "relationship"]),
+            decision_input_contracts: Vec::new(),
         }],
         jobs: gtm_profile_jobs(),
         profile_eval: ProfileEval {
@@ -368,6 +370,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 "gaps",
             ]),
             input_contracts: strings(&["prospect"]),
+            decision_input_contracts: Vec::new(),
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
@@ -388,6 +391,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 "gaps",
             ]),
             input_contracts: strings(&["prospect"]),
+            decision_input_contracts: Vec::new(),
         },
         ProfileJob {
             id: "outbound-copy-review".to_string(),
@@ -408,6 +412,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 "gaps",
             ]),
             input_contracts: strings(&["prospect"]),
+            decision_input_contracts: Vec::new(),
         },
     ]
 }
