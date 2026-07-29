@@ -2491,6 +2491,27 @@ fn validate_decision_input_attributes(
                     "equals applicability conditions require exactly one value; use in for multiple values",
                 ));
             }
+            if condition.operator != crate::models::DecisionInputConditionOperator::Exists {
+                if let Some(dependency) = contract
+                    .attributes
+                    .iter()
+                    .find(|candidate| candidate.id == condition.attribute)
+                {
+                    let dependency_type =
+                        dependency.value.value_type.as_deref().unwrap_or("string");
+                    if dependency_type != "string" {
+                        issues.push(issue(
+                            "decision_input_applicability_typed_operand_unsupported",
+                            "error",
+                            format!("{condition_path}/values"),
+                            format!(
+                                "applicability operator {:?} uses string operands but dependency {} has value type {}; use exists or a string-valued dependency",
+                                condition.operator, condition.attribute, dependency_type
+                            ),
+                        ));
+                    }
+                }
+            }
         }
         if attribute.decision_effects.is_empty() {
             issues.push(issue(
@@ -5616,6 +5637,34 @@ output_contract:
                 .iter()
                 .any(|issue| issue["code"] == "decision_input_applicability_equals_cardinality")
         );
+    }
+
+    #[test]
+    fn decision_input_applicability_rejects_string_operands_for_typed_dependencies() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let contract = &mut manifest.decision_input_contracts[0];
+        contract
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "open_support_escalation")
+            .expect("Clay example should include open_support_escalation")
+            .value
+            .value_type = Some("boolean".to_string());
+        let condition = &mut contract
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "latest_support_context")
+            .expect("Clay example should include latest_support_context")
+            .applies_when[0];
+        condition.values = vec!["true".to_string()];
+        let mut issues = Vec::new();
+
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "decision_input_applicability_typed_operand_unsupported"
+        }));
     }
 
     #[test]

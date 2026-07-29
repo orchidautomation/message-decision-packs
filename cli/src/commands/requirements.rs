@@ -557,16 +557,69 @@ fn applies_when_condition_schema(condition: &DecisionInputCondition) -> Value {
     })
 }
 
+#[cfg(test)]
+pub(crate) fn normalized_output_semantic_issues(
+    contracts: &[&DecisionInputContract],
+    response: &Value,
+) -> Vec<String> {
+    let mut issues = Vec::new();
+    let normalized_prospect = &response["normalized_prospect"];
+    for contract in contracts {
+        for attribute in &contract.attributes {
+            let attempt = &response["attributes"][&attribute.id];
+            if attempt["status"] != json!(DecisionInputAttemptStatus::Observed) {
+                continue;
+            }
+            match prospect_value_at_path(normalized_prospect, &attribute.output_path) {
+                Some(value) if value == &attempt["value"] => {}
+                Some(value) => issues.push(format!(
+                    "attributes.{}.value must match normalized_prospect.{}; got attribute value {} and prospect value {}",
+                    attribute.id, attribute.output_path, attempt["value"], value
+                )),
+                None => issues.push(format!(
+                    "observed attribute {} must populate normalized_prospect.{}",
+                    attribute.id, attribute.output_path
+                )),
+            }
+        }
+    }
+    issues
+}
+
+#[cfg(test)]
+fn prospect_value_at_path<'a>(prospect: &'a Value, path: &str) -> Option<&'a Value> {
+    path.split('.').try_fold(prospect, |current, segment| {
+        current.as_object().and_then(|object| object.get(segment))
+    })
+}
+
 fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
-    let mut required = vec!["status"];
+    let required = vec!["status"];
+    let mut observed_required = vec!["value"];
+    let mut observed_properties = Map::new();
     if attribute.provenance.required {
-        required.push("provenance");
+        observed_required.push("provenance");
+        observed_properties.insert(
+            "provenance".to_string(),
+            json!({
+                "type": "array",
+                "minItems": 1
+            }),
+        );
     }
     if attribute.confidence.required {
-        required.push("confidence");
+        observed_required.push("confidence");
+        observed_properties.insert(
+            "confidence".to_string(),
+            json!({
+                "type": "integer",
+                "minimum": attribute.confidence.minimum.unwrap_or(0),
+                "maximum": 100
+            }),
+        );
     }
     if attribute.freshness.required {
-        required.push("freshness");
+        observed_required.push("freshness");
     }
     let provenance_required = attribute
         .provenance
@@ -574,7 +627,6 @@ fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
         .iter()
         .map(|field| serde_json::to_value(field).expect("provenance field should serialize"))
         .collect::<Vec<_>>();
-    let confidence_minimum = attribute.confidence.minimum.unwrap_or(0);
     let freshness_maximum = attribute.freshness.max_age_days.unwrap_or(u32::MAX);
     let freshness_required = if attribute.freshness.required {
         if attribute.freshness.allow_unknown {
@@ -585,6 +637,15 @@ fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
     } else {
         Vec::new()
     };
+    if attribute.freshness.required {
+        observed_properties.insert(
+            "freshness".to_string(),
+            json!({
+                "type": "object",
+                "required": freshness_required
+            }),
+        );
+    }
 
     json!({
         "type": "object",
@@ -595,7 +656,7 @@ fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
             "value": value_contract_json_schema(&attribute.value),
             "provenance": {
                 "type": "array",
-                "minItems": if attribute.provenance.required { 1 } else { 0 },
+                "minItems": 0,
                 "items": {
                     "type": "object",
                     "required": provenance_required,
@@ -611,12 +672,12 @@ fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
             },
             "confidence": {
                 "type": "integer",
-                "minimum": confidence_minimum,
+                "minimum": 0,
                 "maximum": 100
             },
             "freshness": {
                 "type": "object",
-                "required": freshness_required,
+                "required": [],
                 "additionalProperties": false,
                 "properties": {
                     "observed_at": {"type": "string", "format": "date-time"},
@@ -629,11 +690,22 @@ fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
             },
             "error": {"type": "string"}
         },
-        "allOf": [{
-            "if": {"properties": {"status": {"const": "observed"}}},
-            "then": {"required": ["value"]},
-            "else": {"not": {"required": ["value"]}}
-        }]
+        "allOf": [
+            {
+                "if": {"properties": {"status": {"const": "observed"}}},
+                "then": {
+                    "required": observed_required,
+                    "properties": observed_properties,
+                    "not": {"required": ["error"]}
+                },
+                "else": {"not": {"required": ["value"]}}
+            },
+            {
+                "if": {"properties": {"status": {"const": "error"}}},
+                "then": {"required": ["error"]},
+                "else": {"not": {"required": ["error"]}}
+            }
+        ]
     })
 }
 
@@ -781,20 +853,14 @@ mod tests {
 
         let schema = attempt_result_schema(&attribute);
 
-        assert_eq!(
-            schema["required"],
-            json!(["status", "provenance", "confidence", "freshness"])
-        );
-        assert_eq!(schema["properties"]["provenance"]["minItems"], 1);
-        assert_eq!(schema["properties"]["confidence"]["minimum"], 90);
+        assert_eq!(schema["required"], json!(["status"]));
+        assert_eq!(schema["properties"]["provenance"]["minItems"], 0);
+        assert_eq!(schema["properties"]["confidence"]["minimum"], 0);
         assert_eq!(
             schema["properties"]["freshness"]["properties"]["age_days"]["maximum"],
             30
         );
-        assert_eq!(
-            schema["properties"]["freshness"]["required"],
-            json!(["observed_at", "age_days"])
-        );
+        assert_eq!(schema["properties"]["freshness"]["required"], json!([]));
 
         let valid = json!({
             "status": "observed",
@@ -834,12 +900,36 @@ mod tests {
         let mut unknown_allowed_attribute = attribute.clone();
         unknown_allowed_attribute.freshness.allow_unknown = true;
         let unknown_allowed_schema = attempt_result_schema(&unknown_allowed_attribute);
-        assert_eq!(
-            unknown_allowed_schema["properties"]["freshness"]["required"],
-            json!(["observed_at"])
-        );
         draft202012::validate(&unknown_allowed_schema, &missing_age)
             .expect("allow_unknown should preserve acceptance when age_days is absent");
+
+        for status in ["not_found", "not_applicable", "blocked"] {
+            draft202012::validate(&schema, &json!({"status": status}))
+                .expect("clean non-observed statuses should not require fabricated evidence");
+        }
+
+        draft202012::validate(
+            &schema,
+            &json!({"status": "error", "error": "provider timeout"}),
+        )
+        .expect("error status should carry explicit error context");
+        assert!(
+            draft202012::validate(&schema, &json!({"status": "error"})).is_err(),
+            "error status must include error context"
+        );
+        assert!(
+            draft202012::validate(
+                &schema,
+                &json!({"status": "not_found", "error": "provider timeout"})
+            )
+            .is_err(),
+            "non-error statuses must not carry error context"
+        );
+        assert!(
+            draft202012::validate(&schema, &json!({"status": "not_found", "value": "stale"}))
+                .is_err(),
+            "non-observed statuses must not carry stale values"
+        );
     }
 
     #[test]
@@ -916,6 +1006,22 @@ mod tests {
             .expect("exact source-attempt fixture should satisfy the compiled schema");
         draft202012::validate(&compiled["normalized_output_schema"], &response)
             .expect("exact normalized response fixture should satisfy the compiled schema");
+        assert!(
+            normalized_output_semantic_issues(&[contract], &response).is_empty(),
+            "exact normalized response fixture should satisfy semantic output-path projection"
+        );
+
+        let mut mismatched_projection = response.clone();
+        mismatched_projection["normalized_prospect"]["name"] = json!("Different Person");
+        draft202012::validate(
+            &compiled["normalized_output_schema"],
+            &mismatched_projection,
+        )
+        .expect("plain JSON Schema cannot compare dynamic output_path values");
+        assert!(
+            !normalized_output_semantic_issues(&[contract], &mismatched_projection).is_empty(),
+            "semantic validation must reject contradicted normalized prospect output paths"
+        );
 
         let mut forbidden_source = request.clone();
         let attempt = forbidden_source["attempts"]
@@ -967,6 +1073,9 @@ mod tests {
             .expect("do-not-contact should be an object");
         blocked_gate.insert("status".to_string(), json!("blocked"));
         blocked_gate.remove("value");
+        blocked_gate.remove("provenance");
+        blocked_gate.remove("confidence");
+        blocked_gate.remove("freshness");
         assert!(
             draft202012::validate(&compiled["normalized_output_schema"], &blocked_ready).is_err(),
             "a readiness-blocking status must forbid a ready outcome"
