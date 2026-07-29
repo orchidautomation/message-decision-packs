@@ -335,10 +335,14 @@ fn source_attempt_request_schema(job_id: &str, contracts: &[&DecisionInputContra
 fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
     let mut properties = Map::new();
     let mut required = Vec::new();
+    let mut ready_outcome_guards = Vec::new();
     for contract in contracts {
         for attribute in &contract.attributes {
             properties.insert(attribute.id.clone(), attempt_result_schema(attribute));
             required.push(Value::String(attribute.id.clone()));
+            if let Some(guard) = ready_outcome_guard(attribute) {
+                ready_outcome_guards.push(guard);
+            }
         }
     }
     let normalization_receipts = contracts
@@ -366,6 +370,7 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
             "draft_allowed"
         ],
         "additionalProperties": false,
+        "allOf": ready_outcome_guards,
         "properties": {
             "contract": {"const": NORMALIZED_DECISION_INPUT_CONTRACT},
             "job_id": {"const": job_id},
@@ -399,6 +404,56 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
     })
 }
 
+fn ready_outcome_guard(attribute: &DecisionInputAttribute) -> Option<Value> {
+    let blocking_statuses = effective_status_behavior(attribute)
+        .into_iter()
+        .filter_map(|(status, disposition)| {
+            let ready_permitted = match disposition {
+                DecisionInputDisposition::Accept | DecisionInputDisposition::Evaluate => true,
+                DecisionInputDisposition::Gap => {
+                    attribute.requirement == DecisionInputRequirement::Optional
+                }
+                DecisionInputDisposition::Block
+                | DecisionInputDisposition::Disqualify
+                | DecisionInputDisposition::HumanReview => false,
+            };
+            (!ready_permitted).then_some(status)
+        })
+        .collect::<Vec<_>>();
+    if blocking_statuses.is_empty() {
+        return None;
+    }
+
+    let mut attribute_guard = Map::new();
+    attribute_guard.insert(
+        attribute.id.clone(),
+        json!({
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+                "status": {"enum": blocking_statuses}
+            }
+        }),
+    );
+    Some(json!({
+        "if": {
+            "required": ["attributes"],
+            "properties": {
+                "attributes": {
+                    "type": "object",
+                    "required": [&attribute.id],
+                    "properties": attribute_guard
+                }
+            }
+        },
+        "then": {
+            "properties": {
+                "outcome": {"not": {"const": "ready"}}
+            }
+        }
+    }))
+}
+
 fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
     let mut required = vec!["status"];
     if attribute.provenance.required {
@@ -418,6 +473,15 @@ fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
         .collect::<Vec<_>>();
     let confidence_minimum = attribute.confidence.minimum.unwrap_or(0);
     let freshness_maximum = attribute.freshness.max_age_days.unwrap_or(u32::MAX);
+    let freshness_required = if attribute.freshness.required {
+        if attribute.freshness.allow_unknown {
+            vec!["observed_at"]
+        } else {
+            vec!["observed_at", "age_days"]
+        }
+    } else {
+        Vec::new()
+    };
 
     json!({
         "type": "object",
@@ -449,7 +513,7 @@ fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
             },
             "freshness": {
                 "type": "object",
-                "required": if attribute.freshness.required { vec!["observed_at"] } else { Vec::<&str>::new() },
+                "required": freshness_required,
                 "additionalProperties": false,
                 "properties": {
                     "observed_at": {"type": "string", "format": "date-time"},
@@ -581,6 +645,10 @@ mod tests {
             effective_status_behavior(&attribute)[&DecisionInputAttemptStatus::Error],
             DecisionInputDisposition::Gap
         );
+        assert!(
+            ready_outcome_guard(&attribute).is_none(),
+            "optional gaps must not prevent a ready normalization outcome"
+        );
     }
 
     #[test]
@@ -620,6 +688,55 @@ mod tests {
             schema["properties"]["freshness"]["properties"]["age_days"]["maximum"],
             30
         );
+        assert_eq!(
+            schema["properties"]["freshness"]["required"],
+            json!(["observed_at", "age_days"])
+        );
+
+        let valid = json!({
+            "status": "observed",
+            "value": "current",
+            "provenance": [{
+                "attempt_id": "synthetic-attempt-001",
+                "source_class": "customer_system",
+                "source_locator": "synthetic://requirements-test",
+                "observed_at": "2026-07-29T12:00:00Z"
+            }],
+            "confidence": 100,
+            "freshness": {
+                "observed_at": "2026-07-29T12:00:00Z",
+                "age_days": 30
+            }
+        });
+        draft202012::validate(&schema, &valid)
+            .expect("known freshness at the maximum age should validate");
+
+        let mut missing_age = valid.clone();
+        missing_age["freshness"]
+            .as_object_mut()
+            .expect("freshness should be an object")
+            .remove("age_days");
+        assert!(
+            draft202012::validate(&schema, &missing_age).is_err(),
+            "required known freshness must include age_days"
+        );
+
+        let mut over_limit = valid.clone();
+        over_limit["freshness"]["age_days"] = json!(31);
+        assert!(
+            draft202012::validate(&schema, &over_limit).is_err(),
+            "freshness older than max_age_days must be rejected"
+        );
+
+        let mut unknown_allowed_attribute = attribute.clone();
+        unknown_allowed_attribute.freshness.allow_unknown = true;
+        let unknown_allowed_schema = attempt_result_schema(&unknown_allowed_attribute);
+        assert_eq!(
+            unknown_allowed_schema["properties"]["freshness"]["required"],
+            json!(["observed_at"])
+        );
+        draft202012::validate(&unknown_allowed_schema, &missing_age)
+            .expect("allow_unknown should preserve acceptance when age_days is absent");
     }
 
     #[test]
@@ -721,6 +838,21 @@ mod tests {
             .is_err(),
             "non-observed attempts must not retain a stale normalized value"
         );
+
+        let mut blocked_ready = response.clone();
+        let blocked_gate = blocked_ready["attributes"]["do_not_contact"]
+            .as_object_mut()
+            .expect("do-not-contact should be an object");
+        blocked_gate.insert("status".to_string(), json!("blocked"));
+        blocked_gate.remove("value");
+        assert!(
+            draft202012::validate(&compiled["normalized_output_schema"], &blocked_ready).is_err(),
+            "a readiness-blocking status must forbid a ready outcome"
+        );
+
+        blocked_ready["outcome"] = json!("human-review");
+        draft202012::validate(&compiled["normalized_output_schema"], &blocked_ready)
+            .expect("a non-ready outcome should remain valid for a blocked hard gate");
     }
 
     #[test]
