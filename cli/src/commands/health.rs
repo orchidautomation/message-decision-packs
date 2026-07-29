@@ -1106,18 +1106,9 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         ".mdp/manifest.yaml#/primitive_map",
         issues,
     );
-    validate_sequence_object_keys(
+    validate_decision_input_contract_shapes(
         yaml_get(&value, "decision_input_contracts"),
-        &[
-            "id",
-            "version",
-            "description",
-            "normalization",
-            "source_classes",
-            "attributes",
-        ],
         ".mdp/manifest.yaml#/decision_input_contracts",
-        "manifest_decision_input_contract_unknown_field",
         issues,
     );
     validate_sequence_object_keys(
@@ -2583,6 +2574,117 @@ fn validate_decision_input_attributes(
             validate_hard_gate_status_policy(attribute, &attribute_path, issues);
         }
     }
+    validate_decision_input_applicability_cycles(contract, path, issues);
+}
+
+fn validate_decision_input_applicability_cycles(
+    contract: &DecisionInputContract,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let attribute_indices = contract
+        .attributes
+        .iter()
+        .enumerate()
+        .map(|(index, attribute)| (attribute.id.as_str(), index))
+        .collect::<BTreeMap<_, _>>();
+    let dependencies = contract
+        .attributes
+        .iter()
+        .map(|attribute| {
+            let valid_dependencies = attribute
+                .applies_when
+                .iter()
+                .filter_map(|condition| {
+                    attribute_indices
+                        .contains_key(condition.attribute.as_str())
+                        .then_some(condition.attribute.as_str())
+                })
+                .collect::<Vec<_>>();
+            (attribute.id.as_str(), valid_dependencies)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut visited = BTreeSet::new();
+    let mut visiting = BTreeSet::new();
+    let mut stack = Vec::new();
+    let mut reported = BTreeSet::<String>::new();
+    for attribute in &contract.attributes {
+        detect_decision_input_applicability_cycle(
+            attribute.id.as_str(),
+            &dependencies,
+            &attribute_indices,
+            path,
+            &mut visited,
+            &mut visiting,
+            &mut stack,
+            &mut reported,
+            issues,
+        );
+    }
+}
+
+fn detect_decision_input_applicability_cycle<'a>(
+    attribute_id: &'a str,
+    dependencies: &BTreeMap<&'a str, Vec<&'a str>>,
+    attribute_indices: &BTreeMap<&'a str, usize>,
+    path: &str,
+    visited: &mut BTreeSet<&'a str>,
+    visiting: &mut BTreeSet<&'a str>,
+    stack: &mut Vec<&'a str>,
+    reported: &mut BTreeSet<String>,
+    issues: &mut Vec<Value>,
+) {
+    if visited.contains(attribute_id) {
+        return;
+    }
+    if visiting.contains(attribute_id) {
+        if let Some(start) = stack
+            .iter()
+            .position(|candidate| *candidate == attribute_id)
+        {
+            let cycle = stack[start..].to_vec();
+            let cycle_key = cycle.join(" -> ");
+            if reported.insert(cycle_key) {
+                let issue_attribute = cycle.first().copied().unwrap_or(attribute_id);
+                let issue_index = attribute_indices
+                    .get(issue_attribute)
+                    .copied()
+                    .unwrap_or_default();
+                let mut cycle_path = cycle.clone();
+                cycle_path.push(issue_attribute);
+                issues.push(issue(
+                    "decision_input_applicability_cycle",
+                    "error",
+                    format!("{path}/attributes/{issue_index}/applies_when"),
+                    format!(
+                        "decision input applicability dependencies must be acyclic; found {}",
+                        cycle_path.join(" -> ")
+                    ),
+                ));
+            }
+        }
+        return;
+    }
+    visiting.insert(attribute_id);
+    stack.push(attribute_id);
+    if let Some(next_attributes) = dependencies.get(attribute_id) {
+        for next_attribute in next_attributes {
+            detect_decision_input_applicability_cycle(
+                next_attribute,
+                dependencies,
+                attribute_indices,
+                path,
+                visited,
+                visiting,
+                stack,
+                reported,
+                issues,
+            );
+        }
+    }
+    stack.pop();
+    visiting.remove(attribute_id);
+    visited.insert(attribute_id);
 }
 
 fn validate_hard_gate_status_policy(
@@ -3128,11 +3230,165 @@ fn validate_sequence_object_keys(
     }
 }
 
+fn validate_decision_input_contract_shapes(
+    value: Option<&YamlValue>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(contracts) = value.and_then(YamlValue::as_sequence) else {
+        return;
+    };
+    for (contract_index, contract) in contracts.iter().enumerate() {
+        let contract_path = format!("{path}/{contract_index}");
+        validate_object_keys_with_severity(
+            contract,
+            &[
+                "id",
+                "version",
+                "description",
+                "normalization",
+                "source_classes",
+                "attributes",
+            ],
+            &contract_path,
+            "manifest_decision_input_contract_unknown_field",
+            "error",
+            issues,
+        );
+        validate_object_keys_with_severity(
+            yaml_get(contract, "normalization").unwrap_or(&YamlValue::Null),
+            &["prompt", "prompt_version", "normalized_schema_ref"],
+            &format!("{contract_path}/normalization"),
+            "manifest_decision_input_normalization_unknown_field",
+            "error",
+            issues,
+        );
+        let Some(attributes) = yaml_get(contract, "attributes").and_then(YamlValue::as_sequence)
+        else {
+            continue;
+        };
+        for (attribute_index, attribute) in attributes.iter().enumerate() {
+            let attribute_path = format!("{contract_path}/attributes/{attribute_index}");
+            validate_object_keys_with_severity(
+                attribute,
+                &[
+                    "id",
+                    "question",
+                    "description",
+                    "output_path",
+                    "value",
+                    "requirement",
+                    "applies_when",
+                    "decision_effects",
+                    "source_classes",
+                    "provenance",
+                    "confidence",
+                    "freshness",
+                    "sensitivity",
+                    "status_behavior",
+                ],
+                &attribute_path,
+                "manifest_decision_input_attribute_unknown_field",
+                "error",
+                issues,
+            );
+            validate_object_keys_with_severity(
+                yaml_get(attribute, "value").unwrap_or(&YamlValue::Null),
+                &["type", "format", "enum", "required", "description"],
+                &format!("{attribute_path}/value"),
+                "manifest_decision_input_value_unknown_field",
+                "error",
+                issues,
+            );
+            validate_sequence_object_keys_with_severity(
+                yaml_get(attribute, "applies_when"),
+                &["attribute", "operator", "values"],
+                &format!("{attribute_path}/applies_when"),
+                "manifest_decision_input_applicability_unknown_field",
+                "error",
+                issues,
+            );
+            validate_object_keys_with_severity(
+                yaml_get(attribute, "provenance").unwrap_or(&YamlValue::Null),
+                &["required", "required_fields"],
+                &format!("{attribute_path}/provenance"),
+                "manifest_decision_input_provenance_unknown_field",
+                "error",
+                issues,
+            );
+            validate_object_keys_with_severity(
+                yaml_get(attribute, "confidence").unwrap_or(&YamlValue::Null),
+                &["required", "minimum"],
+                &format!("{attribute_path}/confidence"),
+                "manifest_decision_input_confidence_unknown_field",
+                "error",
+                issues,
+            );
+            validate_object_keys_with_severity(
+                yaml_get(attribute, "freshness").unwrap_or(&YamlValue::Null),
+                &["required", "max_age_days", "allow_unknown"],
+                &format!("{attribute_path}/freshness"),
+                "manifest_decision_input_freshness_unknown_field",
+                "error",
+                issues,
+            );
+            validate_object_keys_with_severity(
+                yaml_get(attribute, "status_behavior").unwrap_or(&YamlValue::Null),
+                &[
+                    "observed",
+                    "not_found",
+                    "not_applicable",
+                    "blocked",
+                    "error",
+                ],
+                &format!("{attribute_path}/status_behavior"),
+                "manifest_decision_input_status_behavior_unknown_field",
+                "error",
+                issues,
+            );
+        }
+    }
+}
+
+fn validate_sequence_object_keys_with_severity(
+    value: Option<&YamlValue>,
+    allowed: &[&str],
+    path: &str,
+    code: &str,
+    severity: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(items) = value.and_then(YamlValue::as_sequence) else {
+        return;
+    };
+    for (index, item) in items.iter().enumerate() {
+        validate_object_keys_with_severity(
+            item,
+            allowed,
+            &format!("{path}/{index}"),
+            code,
+            severity,
+            issues,
+        );
+    }
+}
+
 fn validate_object_keys(
     value: &YamlValue,
     allowed: &[&str],
     path: &str,
     code: &str,
+    issues: &mut Vec<Value>,
+) {
+    validate_object_keys_with_severity(value, allowed, path, code, "warning", issues);
+}
+
+fn validate_object_keys_with_severity(
+    value: &YamlValue,
+    allowed: &[&str],
+    path: &str,
+    code: &str,
+    severity: &str,
     issues: &mut Vec<Value>,
 ) {
     let Some(map) = value.as_mapping() else {
@@ -3146,7 +3402,7 @@ fn validate_object_keys(
         if !allowed.contains(key) {
             issues.push(issue(
                 code,
-                "warning",
+                severity,
                 format!("{path}/{key}"),
                 format!(
                     "unsupported field {key} is parsed but ignored; put advisory extension data under entry metadata"
@@ -5670,6 +5926,133 @@ output_contract:
                 "{value_type} comparison dependency must fail validation"
             );
         }
+    }
+
+    #[test]
+    fn decision_input_applicability_rejects_two_node_cycles() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let contract = &mut manifest.decision_input_contracts[0];
+        contract
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "open_support_escalation")
+            .expect("Clay example should include open_support_escalation")
+            .applies_when = vec![crate::models::DecisionInputCondition {
+            attribute: "latest_support_context".to_string(),
+            operator: crate::models::DecisionInputConditionOperator::Exists,
+            values: Vec::new(),
+        }];
+        let mut issues = Vec::new();
+
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_applicability_cycle")
+        );
+    }
+
+    #[test]
+    fn decision_input_applicability_rejects_three_node_cycles() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let contract = &mut manifest.decision_input_contracts[0];
+        contract
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "enterprise_eligibility")
+            .expect("Clay example should include enterprise_eligibility")
+            .applies_when = vec![crate::models::DecisionInputCondition {
+            attribute: "latest_support_context".to_string(),
+            operator: crate::models::DecisionInputConditionOperator::Exists,
+            values: Vec::new(),
+        }];
+        contract
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "open_support_escalation")
+            .expect("Clay example should include open_support_escalation")
+            .applies_when = vec![crate::models::DecisionInputCondition {
+            attribute: "enterprise_eligibility".to_string(),
+            operator: crate::models::DecisionInputConditionOperator::Exists,
+            values: Vec::new(),
+        }];
+        let mut issues = Vec::new();
+
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_applicability_cycle")
+        );
+    }
+
+    #[test]
+    fn decision_input_applicability_allows_acyclic_chains() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let contract = &mut manifest.decision_input_contracts[0];
+        contract
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "enterprise_eligibility")
+            .expect("Clay example should include enterprise_eligibility")
+            .applies_when = vec![crate::models::DecisionInputCondition {
+            attribute: "company_name".to_string(),
+            operator: crate::models::DecisionInputConditionOperator::Exists,
+            values: Vec::new(),
+        }];
+        let mut issues = Vec::new();
+
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .all(|issue| issue["code"] != "decision_input_applicability_cycle")
+        );
+    }
+
+    #[test]
+    fn validate_rejects_nested_decision_input_policy_typos() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-decision-input-policy-typo-{nonce}"));
+        let pack_dir = root.join(".mdp");
+        std::fs::create_dir_all(&pack_dir).expect("pack dir should be writable");
+        let manifest_path = pack_dir.join("manifest.yaml");
+        let raw = std::fs::read_to_string(clay_example_root().join(".mdp").join("manifest.yaml"))
+            .expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("max_age_days: 90", "max_age_dayz: 90")
+                .replace("required_fields:", "required_fieldz:")
+                .replace("minimum: 90", "minimim: 90"),
+        )
+        .expect("manifest should be writable");
+        let mut issues = Vec::new();
+
+        validate_manifest_shape(&root, &mut issues);
+        let codes = issues
+            .iter()
+            .map(|issue| issue["code"].as_str().expect("issue code"))
+            .collect::<BTreeSet<_>>();
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["severity"].as_str() == Some("error"))
+        );
+        assert!(codes.contains("manifest_decision_input_freshness_unknown_field"));
+        assert!(codes.contains("manifest_decision_input_provenance_unknown_field"));
+        assert!(codes.contains("manifest_decision_input_confidence_unknown_field"));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
