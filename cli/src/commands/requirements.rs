@@ -3,9 +3,9 @@ use crate::commands::health::validate_pack;
 use crate::commands::schemas::schema;
 use crate::constants::{NORMALIZED_DECISION_INPUT_CONTRACT, REQUIREMENTS_CONTRACT};
 use crate::models::{
-    DecisionInputAttemptStatus, DecisionInputAttribute, DecisionInputContract,
-    DecisionInputDisposition, DecisionInputRequirement, DecisionInputSourceClass, Manifest,
-    ValueContract,
+    DecisionInputAttemptStatus, DecisionInputAttribute, DecisionInputCondition,
+    DecisionInputConditionOperator, DecisionInputContract, DecisionInputDisposition,
+    DecisionInputRequirement, DecisionInputSourceClass, Manifest, ValueContract,
 };
 use crate::pack_io::read_manifest;
 use anyhow::{Result, anyhow};
@@ -343,6 +343,9 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
             if let Some(guard) = ready_outcome_guard(attribute) {
                 ready_outcome_guards.push(guard);
             }
+            if let Some(guard) = applies_when_ready_outcome_guard(attribute) {
+                ready_outcome_guards.push(guard);
+            }
         }
     }
     let normalization_receipts = contracts
@@ -452,6 +455,106 @@ fn ready_outcome_guard(attribute: &DecisionInputAttribute) -> Option<Value> {
             }
         }
     }))
+}
+
+fn applies_when_ready_outcome_guard(attribute: &DecisionInputAttribute) -> Option<Value> {
+    if attribute.requirement != DecisionInputRequirement::Conditional
+        || attribute.applies_when.is_empty()
+    {
+        return None;
+    }
+
+    let mut attribute_guards = attribute
+        .applies_when
+        .iter()
+        .map(applies_when_condition_schema)
+        .collect::<Vec<_>>();
+    let mut not_applicable_guard = Map::new();
+    not_applicable_guard.insert(
+        attribute.id.clone(),
+        json!({
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+                "status": {"const": DecisionInputAttemptStatus::NotApplicable}
+            }
+        }),
+    );
+    attribute_guards.push(json!({
+        "required": [&attribute.id],
+        "properties": not_applicable_guard
+    }));
+
+    Some(json!({
+        "if": {
+            "required": ["attributes"],
+            "properties": {
+                "attributes": {
+                    "type": "object",
+                    "allOf": attribute_guards
+                }
+            }
+        },
+        "then": {
+            "properties": {
+                "outcome": {"not": {"const": "ready"}}
+            }
+        }
+    }))
+}
+
+fn applies_when_condition_schema(condition: &DecisionInputCondition) -> Value {
+    let observed_status = json!({"const": DecisionInputAttemptStatus::Observed});
+    let condition_state = match condition.operator {
+        DecisionInputConditionOperator::Exists => json!({
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+                "status": observed_status
+            }
+        }),
+        DecisionInputConditionOperator::Equals => {
+            let Some(value) = condition.values.first() else {
+                return json!(false);
+            };
+            json!({
+                "type": "object",
+                "required": ["status", "value"],
+                "properties": {
+                    "status": observed_status,
+                    "value": {"const": value}
+                }
+            })
+        }
+        DecisionInputConditionOperator::NotEquals => json!({
+            "type": "object",
+            "required": ["status", "value"],
+            "properties": {
+                "status": observed_status,
+                "value": {"not": {"enum": &condition.values}}
+            }
+        }),
+        DecisionInputConditionOperator::In => {
+            if condition.values.is_empty() {
+                return json!(false);
+            }
+            json!({
+                "type": "object",
+                "required": ["status", "value"],
+                "properties": {
+                    "status": observed_status,
+                    "value": {"enum": &condition.values}
+                }
+            })
+        }
+    };
+
+    let mut properties = Map::new();
+    properties.insert(condition.attribute.clone(), condition_state);
+    json!({
+        "required": [&condition.attribute],
+        "properties": properties
+    })
 }
 
 fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
@@ -853,6 +956,114 @@ mod tests {
         blocked_ready["outcome"] = json!("human-review");
         draft202012::validate(&compiled["normalized_output_schema"], &blocked_ready)
             .expect("a non-ready outcome should remain valid for a blocked hard gate");
+    }
+
+    #[test]
+    fn conditional_applies_when_guards_block_not_applicable_ready_outcomes() {
+        let root = clay_example_root();
+        let manifest = read_manifest(&root).expect("Clay example manifest should load");
+        let mut contract = manifest
+            .decision_input_contracts
+            .first()
+            .expect("Clay example should declare one decision input contract")
+            .clone();
+        let response: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
+                .expect("normalized response fixture should load"),
+        )
+        .expect("normalized response fixture should be valid JSON");
+
+        let cases = [
+            (
+                DecisionInputConditionOperator::Exists,
+                "person_title",
+                Vec::<String>::new(),
+            ),
+            (
+                DecisionInputConditionOperator::Equals,
+                "person_title",
+                vec!["VP Revenue Operations".to_string()],
+            ),
+            (
+                DecisionInputConditionOperator::NotEquals,
+                "person_title",
+                vec!["Not This Title".to_string()],
+            ),
+            (
+                DecisionInputConditionOperator::In,
+                "person_title",
+                vec![
+                    "VP Revenue Operations".to_string(),
+                    "Chief Revenue Officer".to_string(),
+                ],
+            ),
+        ];
+
+        for (operator, attribute, values) in cases {
+            let conditional_attribute = contract
+                .attributes
+                .iter_mut()
+                .find(|candidate| candidate.id == "current_working_country")
+                .expect("fixture contract should include current_working_country");
+            conditional_attribute.applies_when = vec![DecisionInputCondition {
+                attribute: attribute.to_string(),
+                operator,
+                values,
+            }];
+
+            let schema = normalized_envelope_schema("prospect-fit-or-brief", &[&contract]);
+            let mut invalid_ready = response.clone();
+            let current_country = invalid_ready["attributes"]["current_working_country"]
+                .as_object_mut()
+                .expect("current_working_country should be an object");
+            current_country.insert("status".to_string(), json!("not_applicable"));
+            current_country.remove("value");
+            assert!(
+                draft202012::validate(&schema, &invalid_ready).is_err(),
+                "applied conditional attributes must not validate as ready when marked not_applicable"
+            );
+
+            invalid_ready["outcome"] = json!("insufficient-context");
+            draft202012::validate(&schema, &invalid_ready).expect(
+                "applied conditional not_applicable remains valid with a non-ready outcome",
+            );
+        }
+    }
+
+    #[test]
+    fn conditional_not_applicable_remains_ready_when_condition_does_not_apply() {
+        let root = clay_example_root();
+        let manifest = read_manifest(&root).expect("Clay example manifest should load");
+        let mut contract = manifest
+            .decision_input_contracts
+            .first()
+            .expect("Clay example should declare one decision input contract")
+            .clone();
+        let response: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
+                .expect("normalized response fixture should load"),
+        )
+        .expect("normalized response fixture should be valid JSON");
+        let conditional_attribute = contract
+            .attributes
+            .iter_mut()
+            .find(|candidate| candidate.id == "current_working_country")
+            .expect("fixture contract should include current_working_country");
+        conditional_attribute.applies_when = vec![DecisionInputCondition {
+            attribute: "person_title".to_string(),
+            operator: DecisionInputConditionOperator::Equals,
+            values: vec!["Chief Financial Officer".to_string()],
+        }];
+
+        let schema = normalized_envelope_schema("prospect-fit-or-brief", &[&contract]);
+        let mut ready = response;
+        let current_country = ready["attributes"]["current_working_country"]
+            .as_object_mut()
+            .expect("current_working_country should be an object");
+        current_country.insert("status".to_string(), json!("not_applicable"));
+        current_country.remove("value");
+        draft202012::validate(&schema, &ready)
+            .expect("conditional not_applicable should stay ready when applies_when is false");
     }
 
     #[test]

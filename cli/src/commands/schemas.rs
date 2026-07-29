@@ -2052,10 +2052,15 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     {"required": ["schema"]}
                 ],
                 "properties": {
-                    "contract": {"const": PROMPT_OUTPUT_CONTRACT},
+                    "contract": {
+                        "enum": [
+                            PROMPT_OUTPUT_CONTRACT,
+                            NORMALIZED_DECISION_INPUT_CONTRACT
+                        ]
+                    },
                     "output_kind": {
-                        "enum": ["card-patches", "prospect-normalization"],
-                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs MDP prospect JSON for mdp fit/brief; proposal packs may also include normalized_opportunity as an exact alias."
+                        "enum": ["card-patches", "prospect-normalization", "decision-input-normalization"],
+                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs legacy MDP prospect JSON for mdp fit/brief; decision-input-normalization outputs the compiled mdp.normalized-decision-input.v1 envelope."
                     },
                     "strict_json_only": {"const": true},
                     "required_top_level": {
@@ -2066,11 +2071,17 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 "prompt_id",
                                 "source_summary",
                                 "runtime_context",
+                                "job_id",
+                                "decision_input_contracts",
+                                "normalization",
+                                "attributes",
                                 "normalized_prospect",
                                 "normalized_opportunity",
                                 "normalization_trace",
                                 "card_patches",
                                 "gaps",
+                                "outcome",
+                                "draft_allowed",
                                 "rejected_claims"
                             ]
                         }
@@ -2097,7 +2108,8 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     "schema_ref": {
                         "enum": [
                             PROMPT_CARD_PATCH_SCHEMA_REF,
-                            PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
+                            PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+                            NORMALIZED_DECISION_INPUT_CONTRACT
                         ],
                         "description": "Compact reference to the response schema family. The CLI derives the concrete schema from this ref, output_kind, prompt_id, and target_card_kinds."
                     },

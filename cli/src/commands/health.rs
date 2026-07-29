@@ -3512,15 +3512,32 @@ fn validate_prompt_file(
 fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
     let contract = &prompt.output_contract;
     let output_kind = contract.output_kind.as_deref().unwrap_or("card-patches");
-    if !matches!(output_kind, "card-patches" | "prospect-normalization") {
+    let is_decision_input_normalization = output_kind == "decision-input-normalization"
+        || contract.contract == NORMALIZED_DECISION_INPUT_CONTRACT;
+    if !matches!(
+        output_kind,
+        "card-patches" | "prospect-normalization" | "decision-input-normalization"
+    ) {
         issues.push(issue(
             "prompt_output_kind_unknown",
             "error",
             format!("{path}#/output_contract/output_kind"),
-            format!("prompt output_kind must be card-patches or prospect-normalization, found {output_kind}"),
+            format!("prompt output_kind must be card-patches, prospect-normalization, or decision-input-normalization, found {output_kind}"),
         ));
     }
-    if contract.contract != PROMPT_OUTPUT_CONTRACT {
+    if is_decision_input_normalization {
+        if contract.contract != NORMALIZED_DECISION_INPUT_CONTRACT {
+            issues.push(issue(
+                "prompt_output_contract",
+                "error",
+                format!("{path}#/output_contract/contract"),
+                format!(
+                    "decision-input-normalization prompts must use {NORMALIZED_DECISION_INPUT_CONTRACT}, found {}",
+                    contract.contract
+                ),
+            ));
+        }
+    } else if contract.contract != PROMPT_OUTPUT_CONTRACT {
         issues.push(issue(
             "prompt_output_contract",
             "error",
@@ -3540,14 +3557,27 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
         ));
     }
 
-    let required = [
-        "contract",
-        "prompt_id",
-        "source_summary",
-        "card_patches",
-        "gaps",
-        "rejected_claims",
-    ];
+    let required = if is_decision_input_normalization {
+        vec![
+            "contract",
+            "job_id",
+            "decision_input_contracts",
+            "normalization",
+            "attributes",
+            "normalized_prospect",
+            "outcome",
+            "draft_allowed",
+        ]
+    } else {
+        vec![
+            "contract",
+            "prompt_id",
+            "source_summary",
+            "card_patches",
+            "gaps",
+            "rejected_claims",
+        ]
+    };
     for field in required {
         if !contract
             .required_top_level
@@ -3593,11 +3623,17 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
         ));
     }
 
-    validate_prompt_example(prompt, path, issues);
-    validate_prompt_example_input_references(prompt, path, issues);
+    if is_decision_input_normalization {
+        validate_decision_input_prompt_example(prompt, path, issues);
+    } else {
+        validate_prompt_example(prompt, path, issues);
+        validate_prompt_example_input_references(prompt, path, issues);
+    }
     validate_prompt_schema_ref(prompt, path, output_kind, issues);
     if let Some(schema) = prompt.output_contract.schema.as_ref() {
-        validate_prompt_output_schema(prompt, schema, path, output_kind, issues);
+        if !is_decision_input_normalization {
+            validate_prompt_output_schema(prompt, schema, path, output_kind, issues);
+        }
     } else if prompt.output_contract.schema_ref.is_none() {
         issues.push(issue(
             "prompt_output_schema_missing",
@@ -3620,7 +3656,9 @@ fn validate_prompt_schema_ref(
     let Some(schema_ref) = prompt.output_contract.schema_ref.as_deref() else {
         return;
     };
-    let expected = if output_kind == "prospect-normalization" {
+    let expected = if output_kind == "decision-input-normalization" {
+        NORMALIZED_DECISION_INPUT_CONTRACT
+    } else if output_kind == "prospect-normalization" {
         PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
     } else {
         PROMPT_CARD_PATCH_SCHEMA_REF
@@ -3631,6 +3669,56 @@ fn validate_prompt_schema_ref(
             "error",
             format!("{path}#/output_contract/schema_ref"),
             format!("prompt schema_ref must be {expected} for output_kind {output_kind}, found {schema_ref}"),
+        ));
+    }
+}
+
+fn validate_decision_input_prompt_example(
+    prompt: &PromptFile,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let example = &prompt.output_contract.example;
+    for field in &prompt.output_contract.required_top_level {
+        if example.get(field).is_none() {
+            issues.push(issue(
+                "prompt_example_required_field_missing",
+                "error",
+                format!("{path}#/output_contract/example"),
+                format!("prompt example is missing required field {field}"),
+            ));
+        }
+    }
+    if example["contract"].as_str() != Some(NORMALIZED_DECISION_INPUT_CONTRACT) {
+        issues.push(issue(
+            "prompt_example_contract",
+            "error",
+            format!("{path}#/output_contract/example/contract"),
+            format!("prompt example contract must be {NORMALIZED_DECISION_INPUT_CONTRACT}"),
+        ));
+    }
+    if example["draft_allowed"].as_bool() != Some(false) {
+        issues.push(issue(
+            "prompt_example_draft_allowed",
+            "error",
+            format!("{path}#/output_contract/example/draft_allowed"),
+            "decision-input normalization examples must set draft_allowed false",
+        ));
+    }
+    if example["normalized_prospect"].as_object().is_none() {
+        issues.push(issue(
+            "prompt_normalized_prospect_missing",
+            "error",
+            format!("{path}#/output_contract/example/normalized_prospect"),
+            "decision-input normalization examples must include normalized_prospect object",
+        ));
+    }
+    if example["attributes"].as_object().is_none() {
+        issues.push(issue(
+            "prompt_decision_input_attributes_missing",
+            "error",
+            format!("{path}#/output_contract/example/attributes"),
+            "decision-input normalization examples must include per-attribute attempt results",
         ));
     }
 }
