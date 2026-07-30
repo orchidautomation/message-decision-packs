@@ -42,15 +42,24 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 ```
 
 5. Branch on `data.available`:
-   - When `true`, do not collect or normalize inside this skill. Hand
-     `data.source_attempt_request_schema` and the returned bound prompt to the
-     customer or host, then stop. Require the customer or host to instantiate
-     the request, populate its exact `contract`, `job_id`, and
-     `decision_input_contracts` ID/version receipts, set a trusted UTC `as_of`,
-     record at least one attempt for every compiled attribute during
-     collection, preserve and hash those exact request bytes, and normalize
-     that request with the bound prompt. Resume only after the host returns
-     both the preserved request file and normalized output. Then validate:
+   - When `true`, do not collect or normalize inside this skill.
+     - If both `SOURCE_ATTEMPT_REQUEST_JSON` and `OUTPUT_JSON` are already
+       supplied, validate them immediately with the returned bound prompt.
+     - If either artifact is missing, hand the customer or host the exact
+       complete `mdp --json requirements` result as
+       `DECISION_INPUT_REQUIREMENTS_JSON`, including
+       `data.source_attempt_request_schema`, `data.normalized_output_schema`,
+       and the contract/prompt receipts, plus the returned bound prompt; then
+       stop. Require the customer or host to instantiate the request, populate
+       its exact `contract`, `job_id`, and `decision_input_contracts` ID/version
+       receipts, set a trusted UTC `as_of`, record at least one
+       attempt for every compiled attribute during collection, preserve and
+       hash those exact request bytes, and normalize that request with the
+       bound prompt. The host must pass
+       `DECISION_INPUT_REQUIREMENTS_JSON.data` as the prompt's
+       `decision_input_requirements` input. Resume only after the host returns
+       both the preserved request file and normalized output.
+     - For either the already-supplied or resumed path, validate:
 
      ```bash
      mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_PROMPT_PATH \

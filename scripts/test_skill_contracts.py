@@ -44,12 +44,13 @@ class SkillContractTests(unittest.TestCase):
         skill = Path("plugin/skills/mdp-gtm-brief/SKILL.md").read_text()
         mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
         for text in [skill, mode]:
+            normalized = " ".join(text.split())
             self.assertIn("data.available", text)
             self.assertIn("data.source_attempt_request_schema", text)
             self.assertIn("`decision_input_contracts` ID/version", text)
             self.assertIn("UTC `as_of`", text)
             self.assertIn("attempt for", text)
-            self.assertIn("every compiled attribute", text)
+            self.assertIn("every compiled attribute", normalized)
             self.assertIn("exact request", text)
             self.assertIn("bytes", text)
             self.assertIn("mdp.prompt-output.v0", text)
@@ -58,15 +59,17 @@ class SkillContractTests(unittest.TestCase):
     def test_gtm_brief_constructs_and_hashes_attempts_before_normalization(self):
         mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
         requirements = mode.index("mdp --json requirements")
-        handoff = mode.index("hand `data.source_attempt_request_schema`")
-        stop = mode.index("to the customer or host, then stop")
-        instantiate = mode.index("host to instantiate the request")
-        collect = mode.index("every compiled attribute")
+        missing = mode.index("If either artifact is missing")
+        handoff = mode.index("complete `mdp --json requirements` result")
+        stop = mode.index("plus the bound prompt; then stop")
+        instantiate = mode.index("Require the host to instantiate the request")
+        collect = mode.index("every compiled")
         preserve = mode.index("preserve and hash those exact")
-        normalize = mode.index("normalize\n     that exact request")
+        normalize = mode.index("normalize that exact request")
         resume = mode.index("Resume only when the host")
-        validate = mode.index("the envelope against that file")
-        self.assertLess(requirements, handoff)
+        validate = mode.index("For either the already-supplied or resumed path")
+        self.assertLess(requirements, missing)
+        self.assertLess(missing, handoff)
         self.assertLess(handoff, stop)
         self.assertLess(stop, instantiate)
         self.assertLess(instantiate, collect)
@@ -78,10 +81,28 @@ class SkillContractTests(unittest.TestCase):
     def test_gtm_brief_requires_host_supplied_attempt_ledger(self):
         skill = Path("plugin/skills/mdp-gtm-brief/SKILL.md").read_text()
         self.assertIn("do not collect or normalize inside this skill", skill)
+        self.assertIn("complete `mdp --json requirements` result", skill)
         self.assertIn("`data.source_attempt_request_schema`", skill)
-        self.assertIn("customer or host, then stop", skill)
+        self.assertIn("`data.normalized_output_schema`", skill)
+        self.assertIn("contract/prompt receipts", skill)
+        self.assertIn("DECISION_INPUT_REQUIREMENTS_JSON.data", skill)
+        self.assertIn("returned bound prompt; then", skill)
         self.assertIn("Resume only after the host returns", skill)
         self.assertIn("--prompt BOUND_PROMPT_PATH", skill)
+
+    def test_gtm_brief_validates_resumed_artifacts_without_rehandoff(self):
+        for path in [
+            "plugin/skills/mdp-gtm-brief/SKILL.md",
+            "plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md",
+        ]:
+            text = Path(path).read_text()
+            supplied = text.index("If both `SOURCE_ATTEMPT_REQUEST_JSON` and `OUTPUT_JSON`")
+            immediate = text.index("validate them immediately", supplied)
+            missing = text.index("If either artifact is missing", immediate)
+            handoff = text.index("DECISION_INPUT_REQUIREMENTS_JSON", missing)
+            self.assertLess(supplied, immediate)
+            self.assertLess(immediate, missing)
+            self.assertLess(missing, handoff)
 
     def test_pack_builder_preserves_decision_input_and_legacy_validation_paths(self):
         skill = Path("plugin/skills/mdp-pack-builder/SKILL.md").read_text()

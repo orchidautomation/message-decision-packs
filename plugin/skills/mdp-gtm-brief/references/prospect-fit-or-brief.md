@@ -21,18 +21,27 @@ belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
 
 1. Run `mdp --json requirements --dir PACK_ROOT --job prospect-fit-or-brief`.
 2. Branch on `data.available` from requirements:
-   - When `true`, hand `data.source_attempt_request_schema` and the bound prompt
-     to the customer or host, then stop; this skill must not collect missing
-     prospect data or run the customer-funded normalization call. Require the
-     host to instantiate the request, populate its exact `contract`, `job_id`,
-     and `decision_input_contracts` ID/version receipts; set a trusted UTC `as_of`;
-     record at least one attempt for every compiled attribute during
-     collection, preserve and hash those exact request bytes, and normalize
-     that exact request with the bound pack prompt. Resume only when the host
-     returns both the preserved request file and normalized output. Validate
-     the envelope against that file, and stop before extracting
-     `normalized_prospect` unless validation passes and top-level `outcome` is
-     exactly `ready`.
+   - When `true`, this skill must not collect missing prospect data or run the
+     customer-funded normalization call.
+     - If both `SOURCE_ATTEMPT_REQUEST_JSON` and `OUTPUT_JSON` are already
+       supplied, validate them immediately with the bound prompt.
+     - If either artifact is missing, hand the customer or host the exact
+       complete `mdp --json requirements` result as
+       `DECISION_INPUT_REQUIREMENTS_JSON`, including
+       `data.source_attempt_request_schema`, `data.normalized_output_schema`,
+       and all contract/prompt receipts, plus the bound prompt; then stop.
+       Require the host to instantiate the request, populate its exact
+       `contract`, `job_id`, and `decision_input_contracts` ID/version receipts;
+       set a trusted UTC `as_of`; record at least one attempt for every compiled
+       attribute during collection; preserve and hash those exact request
+       bytes; and normalize that exact request with the bound pack prompt. The
+       host must pass `DECISION_INPUT_REQUIREMENTS_JSON.data` as the prompt's
+       `decision_input_requirements` input. Resume only when the host returns
+       both the preserved request file and normalized output.
+     - For either the already-supplied or resumed path, validate the envelope
+       against the exact request file. Stop before extracting
+       `normalized_prospect` unless validation passes and top-level `outcome`
+       is exactly `ready`.
    - When `false`, normalize supplied source material with the selected legacy
      pack prompt, then validate the `mdp.prompt-output.v0` output without a
      source-attempt request. Stop before extracting `normalized_prospect`
