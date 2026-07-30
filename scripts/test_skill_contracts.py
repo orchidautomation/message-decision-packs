@@ -58,6 +58,10 @@ class SkillContractTests(unittest.TestCase):
     def test_pack_builder_preserves_decision_input_and_legacy_validation_paths(self):
         skill = Path("plugin/skills/mdp-pack-builder/SKILL.md").read_text()
         self.assertIn("data.available", skill)
+        self.assertIn("`output_contract.output_kind`", skill)
+        self.assertIn("`decision-input-normalization`", skill)
+        self.assertIn("regardless of", skill)
+        self.assertIn("job-wide `data.available`", skill)
         self.assertIn("attempted-complete source-attempt request", skill)
         self.assertIn("data.source_attempt_request_schema", skill)
         self.assertIn("`decision_input_contracts` ID/version receipts", skill)

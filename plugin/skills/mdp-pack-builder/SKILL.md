@@ -70,9 +70,14 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 The compiled contract, not a generic finder or the normalization prompt, states
 what data must be attempted. Keep collection and provider calls outside MDP.
 
-6. Author prompts with explicit input and output contracts. Validate model-produced output before using it. Branch on the `requirements` result's exact `data.available` field:
+6. Author prompts with explicit input and output contracts. Inspect the selected
+   prompt's `output_contract.output_kind` and `output_contract.contract` before
+   validating model-produced output:
 
-   - When `data.available` is `true`, construct and preserve one
+   - Only when the selected prompt is the job-bound
+     `decision-input-normalization` prompt producing
+     `mdp.normalized-decision-input.v1`, require `data.available` to be `true`
+     and construct one
      attempted-complete source-attempt request matching
      `data.source_attempt_request_schema`. The customer or host owns collection
      and paid normalization. Populate the schema's exact `contract`, `job_id`,
@@ -92,8 +97,9 @@ mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID \
      Preserve the exact request bytes and SHA-256 receipt with the normalized
      result.
 
-   - When `data.available` is `false`, retain the legacy
-     `mdp.prompt-output.v0` path without a source-attempt request:
+   - For every other prompt output kind or contract, retain the normal
+     `mdp.prompt-output.v0` path without a source-attempt request, regardless of
+     the job-wide `data.available` value:
 
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
