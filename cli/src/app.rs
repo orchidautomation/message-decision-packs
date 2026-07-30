@@ -5,7 +5,8 @@ use crate::commands::{
     init_pack_targeted, init_pack_targeted_dry_run, pack, prospect_brief_with_context,
     render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief,
     requirements, route_scoped, run_receipt, sample_leads, schema, skills, validate_pack,
-    validate_prompt_output_file_with_inputs, verify_output_file, verify_output_readable_file,
+    validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
+    verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -75,6 +76,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             summary_mode,
             "requirements",
             requirements(&dir, &job)?,
+        ),
+        Commands::ValidateSourceBinding { dir, job, file } => print_checked(
+            json_mode,
+            summary_mode,
+            "validate-source-binding",
+            validate_source_binding_file(&dir, &job, &file)?,
         ),
         Commands::Validate { dir, strict } => {
             let data = apply_strict(validate_pack(&dir)?, strict, StrictWarningSource::Issues);

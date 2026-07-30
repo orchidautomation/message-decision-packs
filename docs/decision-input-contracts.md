@@ -40,6 +40,49 @@ host. It includes:
 Legacy jobs without a binding return `available: false`; existing packs keep
 their `lead_input_requirements` fit/readiness behavior.
 
+## Bind An External Source
+
+An integration can map its own fields to the compiled requirements without
+moving collection into MDP. First compile the job, then create an
+integration-owned `mdp.source-binding.v1` document outside the pack:
+
+```bash
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
+mdp --json schema source-binding
+mdp --json validate-source-binding \
+  --dir PACK_ROOT \
+  --job JOB_ID \
+  --file SOURCE_BINDING.json
+```
+
+The binding pins the exact pack ID/version/content digest, requirements digest,
+job, Decision Input Contract ID/version receipts, binding release, and
+normalization release. Every compiled attribute must appear exactly once using
+the qualified `(decision_input_contract_id, attribute_id)` identity. The
+validator rejects missing, duplicate, unknown, stale, requirement-class
+mismatched, or source-class-incompatible entries. One external field key may
+serve multiple requirements; field-key reuse is intentionally allowed.
+
+The public contract keeps `system_of_record` and `acquisition_mode` open so the
+same validator works for Clay, record grids, internal tools, and future
+orchestrators. Provider-specific roles, credentials, legacy IDs, execution
+state, and row results remain integration-owned.
+
+The fixed value-to-attempt-status translation is:
+
+| Integration observation | MDP attempt status |
+|---|---|
+| missing, null, empty, or whitespace-only | `not_found` |
+| false or zero | `observed` |
+| explicitly inapplicable | `not_applicable` |
+| inaccessible or unmapped | `blocked` |
+| runtime failure | `error` |
+
+Both digests are deterministic. The pack digest covers regular files under
+`.mdp` using portable relative paths and raw file bytes. The requirements
+digest covers canonical JSON before its own digest field is added. Symlinks
+fail closed.
+
 ## Attempted-Complete Semantics
 
 Every declared attribute must receive an attempt result:
@@ -136,8 +179,9 @@ The blocked normalization outcomes are:
 
 The official `mdp-pack-builder` skill authors the contract before the
 normalization prompt. The official `mdp-pack-review` skill compiles and audits
-each bound job. MDP intentionally does not ship a public people-finder or
-source-collection skill.
+each bound job and any supplied source binding. The shared `mdp` skill routes
+operators to the validator. MDP intentionally does not ship a public
+people-finder, source-collection skill, or sixth integration skill.
 
 Use the synthetic
 [Clay Audiences self-serve enterprise expansion example](../examples/clay-audiences-self-serve-enterprise-expansion/README.md)

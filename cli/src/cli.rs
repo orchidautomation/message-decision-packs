@@ -84,6 +84,15 @@ pub(crate) enum Commands {
         #[arg(long, help = "Closed profile job id to compile")]
         job: String,
     },
+    #[command(about = "Validate one integration-owned source binding against an exact pack job")]
+    ValidateSourceBinding {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long, help = "Closed profile job id to validate")]
+        job: String,
+        #[arg(long, help = "mdp.source-binding.v1 JSON file")]
+        file: PathBuf,
+    },
     #[command(about = "Validate manifest and card references")]
     Validate {
         #[arg(long, default_value = ".")]
@@ -373,6 +382,7 @@ pub(crate) enum SchemaTarget {
     HumanBrief,
     RuntimeContext,
     DecisionInput,
+    SourceBinding,
     Prospect,
     Eval,
     Skills,
@@ -498,6 +508,29 @@ mod tests {
             parsed.command,
             Commands::Requirements { dir, job }
                 if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
+        ));
+    }
+
+    #[test]
+    fn validate_source_binding_requires_job_pack_and_file() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "validate-source-binding",
+            "--dir",
+            "example-pack",
+            "--job",
+            "prospect-fit-or-brief",
+            "--file",
+            "binding.json",
+        ])
+        .expect("source binding form should parse");
+        assert!(matches!(
+            parsed.command,
+            Commands::ValidateSourceBinding { dir, job, file }
+                if dir == PathBuf::from("example-pack")
+                    && job == "prospect-fit-or-brief"
+                    && file == PathBuf::from("binding.json")
         ));
     }
 

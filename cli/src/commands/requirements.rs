@@ -1,3 +1,4 @@
+use crate::artifact_hash::{canonical_json_sha256, pack_content_sha256};
 use crate::cli::SchemaTarget;
 use crate::commands::health::validate_pack;
 use crate::commands::schemas::schema;
@@ -18,14 +19,15 @@ use std::path::Path;
 
 pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let manifest = read_manifest(root)?;
+    let pack_sha256 = pack_content_sha256(root)?;
     let validation = validate_pack(root)?;
     if validation["valid"] != true {
-        return Ok(json!({
+        return finalize_requirements(json!({
             "contract": REQUIREMENTS_CONTRACT,
             "status": "invalid",
             "valid": false,
             "available": false,
-            "pack": pack_summary(&manifest),
+            "pack": pack_summary(&manifest, &pack_sha256),
             "job": {
                 "id": job_id,
                 "input_contracts": [],
@@ -72,12 +74,12 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         })
         .collect::<Result<Vec<_>>>()?;
     if selected_contracts.is_empty() {
-        return Ok(json!({
+        return finalize_requirements(json!({
             "contract": REQUIREMENTS_CONTRACT,
             "status": "unavailable",
             "valid": true,
             "available": false,
-            "pack": pack_summary(&manifest),
+            "pack": pack_summary(&manifest, &pack_sha256),
             "job": {
                 "id": &job.id,
                 "skill_id": &job.skill_id,
@@ -99,12 +101,12 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let normalized_schema = normalized_envelope_schema(job_id, &selected_contracts);
     let source_attempt_schema = source_attempt_request_schema(job_id, &selected_contracts);
     let collected_results_schema = collected_attempt_results_schema(job_id, &selected_contracts);
-    Ok(json!({
+    finalize_requirements(json!({
         "contract": REQUIREMENTS_CONTRACT,
         "status": "ready",
         "valid": true,
         "available": true,
-        "pack": pack_summary(&manifest),
+        "pack": pack_summary(&manifest, &pack_sha256),
         "job": {
             "id": &job.id,
             "skill_id": &job.skill_id,
@@ -792,13 +794,20 @@ fn decision_input_issue(code: &str, path: impl Into<String>, message: impl Into<
     })
 }
 
-fn pack_summary(manifest: &Manifest) -> Value {
+fn pack_summary(manifest: &Manifest, sha256: &str) -> Value {
     json!({
         "id": &manifest.id,
         "name": &manifest.name,
         "version": &manifest.version,
-        "format": &manifest.format
+        "format": &manifest.format,
+        "sha256": sha256
     })
+}
+
+fn finalize_requirements(mut value: Value) -> Result<Value> {
+    let sha256 = canonical_json_sha256(&value)?;
+    value["requirements_sha256"] = json!(sha256);
+    Ok(value)
 }
 
 fn compile_contract(contract: &DecisionInputContract) -> Value {

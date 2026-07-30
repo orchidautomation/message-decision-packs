@@ -162,6 +162,8 @@ The `mdp.requirements.v1` result includes:
 - an attempted-complete `mdp.source-attempt-request.v1` JSON Schema;
 - an `mdp.normalized-decision-input.v1` JSON Schema;
 - explicit no-draft outcomes and host/MDP ownership boundaries.
+- a portable `.mdp` content digest and canonical requirements digest for
+  integration release pinning.
 
 Legacy jobs without a decision-input binding return `available: false` and
 remain compatible with existing `lead_input_requirements` behavior.
@@ -170,6 +172,24 @@ remain compatible with existing `lead_input_requirements` behavior.
 owns source access and paid normalization. The normalization envelope always
 sets `draft_allowed: false`; a later `fit` or `brief --context` decision must be
 ready before copy generation.
+
+To bind an orchestrator's fields to one exact job, keep the binding outside the
+pack and validate it before enabling the integration:
+
+```bash
+mdp --json schema source-binding
+mdp --json validate-source-binding \
+  --dir PACK_ROOT \
+  --job JOB_ID \
+  --file SOURCE_BINDING.json
+```
+
+`mdp.source-binding.v1` is provider-neutral. It requires exact pack,
+requirements, job, and Decision Input Contract pins; complete and unique
+qualified attribute coverage; compatible requirement/source classes; binding
+and normalization release IDs; and the fixed missing/error status translation.
+External field keys may be reused. The command makes no provider or model
+calls, and legacy jobs with `available: false` cannot be source-bound.
 
 Prospect input keeps a compatibility path for `name`, `title`, and `company`, but new lead workflows should prefer `company_domain` as the account key. `mdp fit` canonicalizes supplied domain-like values such as `https://www.apple.com/` to `apple.com`; it does not infer a domain from a company name. Packs can declare deterministic readiness requirements in `manifest.yaml`:
 

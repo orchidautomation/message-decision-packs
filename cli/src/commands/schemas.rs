@@ -1,4 +1,5 @@
 use crate::cli::SchemaTarget;
+use crate::commands::source_binding::source_binding_schema;
 use crate::constants::{
     FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
     PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
@@ -93,6 +94,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
         SchemaTarget::DecisionInput => decision_input_envelope_schema(),
+        SchemaTarget::SourceBinding => source_binding_schema(),
         SchemaTarget::Prospect => {
             let mut value = prospect_schema();
             if let Some(object) = value.as_object_mut() {
