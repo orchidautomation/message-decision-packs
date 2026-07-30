@@ -1400,8 +1400,7 @@ fn decision_input_attribute_schema() -> Value {
             "provenance",
             "confidence",
             "freshness",
-            "sensitivity",
-            "status_behavior"
+            "sensitivity"
         ],
         "additionalProperties": false,
         "properties": {
@@ -1410,7 +1409,7 @@ fn decision_input_attribute_schema() -> Value {
             "description": {"type": "string"},
             "output_path": {
                 "type": "string",
-                "pattern": "^(name|title|company|company_domain|source_kind|synthetic|linkedin_url|company_url|background|trigger|persona|segment|signals|attributes\\.[A-Za-z][A-Za-z0-9_-]{0,63})$"
+                "pattern": "^(name|title|company|company_domain|source_kind|synthetic|linkedin_url|company_url|background|trigger|persona|segment|attributes\\.[A-Za-z][A-Za-z0-9_-]{0,63})$"
             },
             "value": value_contract_schema(),
             "requirement": {"enum": ["required", "optional", "conditional", "hard-gate"]},
@@ -2390,6 +2389,23 @@ mod tests {
             result["properties"]["decision_input_contracts"]["items"]["properties"]["attributes"]["items"]
                 ["properties"]["requirement"]["enum"][0],
             "required"
+        );
+        let decision_attribute = &result["properties"]["decision_input_contracts"]["items"]["properties"]
+            ["attributes"]["items"];
+        assert!(
+            !decision_attribute["required"]
+                .as_array()
+                .expect("decision attribute required fields should be an array")
+                .iter()
+                .any(|field| field == "status_behavior"),
+            "status_behavior is required only for hard gates by runtime validation"
+        );
+        assert_eq!(
+            decision_attribute["properties"]["output_path"]["pattern"]
+                .as_str()
+                .expect("output path should have a pattern")
+                .contains("signals"),
+            false
         );
         assert_eq!(
             result["properties"]["input_contracts"]["items"]["properties"]["decision_input_contracts"]

@@ -29,11 +29,29 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
     prompt_id: Option<&str>,
     source_audit_path: Option<&Path>,
 ) -> Result<Value> {
+    validate_prompt_output_file_with_inputs(
+        root,
+        file,
+        prompt_path,
+        prompt_id,
+        source_audit_path,
+        None,
+    )
+}
+
+pub(crate) fn validate_prompt_output_file_with_inputs(
+    root: &Path,
+    file: &Path,
+    prompt_path: Option<&Path>,
+    prompt_id: Option<&str>,
+    source_audit_path: Option<&Path>,
+    source_attempt_request_path: Option<&Path>,
+) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of --prompt and --prompt-id"));
     }
 
-    let prompt = resolve_prompt(root, prompt_path, prompt_id)?;
+    let (prompt, resolved_prompt_path) = resolve_prompt(root, prompt_path, prompt_id)?;
     let artifact_path = display_path(file);
     let raw_bytes = fs::read(file)?;
     let prompt_output_sha256 = sha256_hex(&raw_bytes);
@@ -41,11 +59,26 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
         .map_err(|err| anyhow!("prompt output file must be valid UTF-8: {err}"))?;
     let mut issues = Vec::new();
     let source_audit = match source_audit_path {
-        Some(path) => match read_source_audit_file_with_hash(path) {
+        Some(path) => match read_json_file_with_hash(path, "source audit") {
             Ok((value, sha256)) => Some((value, display_path(path), sha256)),
             Err(err) => {
                 issues.push(issue(
                     "source_audit_parse_failed",
+                    "error",
+                    display_path(path),
+                    err.to_string(),
+                ));
+                None
+            }
+        },
+        None => None,
+    };
+    let source_attempt_request = match source_attempt_request_path {
+        Some(path) => match read_json_file_with_hash(path, "source-attempt request") {
+            Ok((value, sha256)) => Some((value, display_path(path), sha256)),
+            Err(err) => {
+                issues.push(issue(
+                    "source_attempt_request_parse_failed",
                     "error",
                     display_path(path),
                     err.to_string(),
@@ -72,7 +105,13 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
                     &artifact_path,
                     Some(prompt_output_sha256.as_str()),
                     source_audit.as_ref().map(|(_, path, _)| path.as_str()),
-                    source_audit.as_ref().map(|(_, _, sha256)| sha256.as_str())
+                    source_audit.as_ref().map(|(_, _, sha256)| sha256.as_str()),
+                    source_attempt_request
+                        .as_ref()
+                        .map(|(_, path, _)| path.as_str()),
+                    source_attempt_request
+                        .as_ref()
+                        .map(|(_, _, sha256)| sha256.as_str())
                 ),
                 "issues": issues
             }));
@@ -91,6 +130,7 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
     validate_prompt_output_parsed(
         root,
         &prompt,
+        &resolved_prompt_path,
         &output,
         &artifact_path,
         Some(prompt_output_sha256.as_str()),
@@ -98,6 +138,9 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
         source_audit
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), Some(sha256.as_str()))),
+        source_attempt_request
+            .as_ref()
+            .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
     )
 }
 
@@ -129,30 +172,56 @@ pub(crate) fn validate_prompt_output_value_with_source_audit(
     source_audit: Option<&Value>,
     source_audit_path: Option<&str>,
 ) -> Result<Value> {
+    validate_prompt_output_value_with_inputs(
+        root,
+        output,
+        artifact_path,
+        prompt_path,
+        prompt_id,
+        source_audit,
+        source_audit_path,
+        None,
+    )
+}
+
+pub(crate) fn validate_prompt_output_value_with_inputs(
+    root: &Path,
+    output: &Value,
+    artifact_path: &str,
+    prompt_path: Option<&Path>,
+    prompt_id: Option<&str>,
+    source_audit: Option<&Value>,
+    source_audit_path: Option<&str>,
+    source_attempt_request: Option<(&Value, &str, &str)>,
+) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of prompt or prompt_id"));
     }
 
-    let prompt = resolve_prompt(root, prompt_path, prompt_id)?;
+    let (prompt, resolved_prompt_path) = resolve_prompt(root, prompt_path, prompt_id)?;
     validate_prompt_output_parsed(
         root,
         &prompt,
+        &resolved_prompt_path,
         output,
         artifact_path,
         None,
         Vec::new(),
         source_audit.map(|value| (value, source_audit_path.unwrap_or("source_audit"), None)),
+        source_attempt_request,
     )
 }
 
 fn validate_prompt_output_parsed(
     root: &Path,
     prompt: &PromptFile,
+    resolved_prompt_path: &Path,
     output: &Value,
     artifact_path: &str,
     prompt_output_sha256: Option<&str>,
     mut issues: Vec<Value>,
     source_audit: Option<(&Value, &str, Option<&str>)>,
+    source_attempt_request: Option<(&Value, &str, &str)>,
 ) -> Result<Value> {
     if prompt.output_contract.output_kind.as_deref() == Some("decision-input-normalization") {
         if source_audit.is_some() {
@@ -167,6 +236,8 @@ fn validate_prompt_output_parsed(
             root,
             output,
             artifact_path,
+            resolved_prompt_path,
+            source_attempt_request,
         )?);
         return Ok(json!({
             "valid": issues.is_empty(),
@@ -176,7 +247,9 @@ fn validate_prompt_output_parsed(
                 artifact_path,
                 prompt_output_sha256,
                 source_audit.as_ref().map(|(_, path, _)| *path),
-                source_audit.as_ref().and_then(|(_, _, sha256)| *sha256)
+                source_audit.as_ref().and_then(|(_, _, sha256)| *sha256),
+                source_attempt_request.as_ref().map(|(_, path, _)| *path),
+                source_attempt_request.as_ref().map(|(_, _, sha256)| *sha256)
             ),
             "issues": issues
         }));
@@ -207,7 +280,9 @@ fn validate_prompt_output_parsed(
             artifact_path,
             prompt_output_sha256,
             source_audit.as_ref().map(|(_, path, _)| *path),
-            source_audit.as_ref().and_then(|(_, _, sha256)| *sha256)
+            source_audit.as_ref().and_then(|(_, _, sha256)| *sha256),
+            None,
+            None
         ),
         "issues": issues
     });
@@ -223,9 +298,10 @@ fn resolve_prompt(
     root: &Path,
     prompt_path: Option<&Path>,
     prompt_id: Option<&str>,
-) -> Result<PromptFile> {
+) -> Result<(PromptFile, PathBuf)> {
     if let Some(path) = prompt_path {
-        return read_prompt(&resolve_prompt_path(root, path));
+        let resolved = resolve_prompt_path(root, path);
+        return Ok((read_prompt(&resolved)?, resolved));
     }
 
     let resolved_id = prompt_id
@@ -242,7 +318,7 @@ fn resolve_prompt(
     for path in prompt_paths {
         let prompt = read_prompt(&path)?;
         if prompt.id == resolved_id {
-            return Ok(prompt);
+            return Ok((prompt, path));
         }
     }
 
@@ -330,14 +406,14 @@ struct PromptSourceRef {
     reference: String,
 }
 
-fn read_source_audit_file_with_hash(path: &Path) -> Result<(Value, String)> {
+fn read_json_file_with_hash(path: &Path, artifact_name: &str) -> Result<(Value, String)> {
     let raw = fs::read(path)?;
     let sha256 = sha256_hex(&raw);
     let text = std::str::from_utf8(&raw)
-        .map_err(|err| anyhow!("source audit file must be valid UTF-8: {err}"))?;
+        .map_err(|err| anyhow!("{artifact_name} file must be valid UTF-8: {err}"))?;
     Ok((
         serde_json::from_str::<Value>(text)
-            .map_err(|_| anyhow!("source audit file must contain valid JSON"))?,
+            .map_err(|_| anyhow!("{artifact_name} file must contain valid JSON"))?,
         sha256,
     ))
 }
@@ -352,6 +428,8 @@ fn validation_artifacts_summary(
     prompt_output_sha256: Option<&str>,
     source_audit_path: Option<&str>,
     source_audit_sha256: Option<&str>,
+    source_attempt_request_path: Option<&str>,
+    source_attempt_request_sha256: Option<&str>,
 ) -> Value {
     let mut artifacts = serde_json::Map::new();
     artifacts.insert(
@@ -367,6 +445,15 @@ fn validation_artifacts_summary(
             json!({
                 "path": source_audit_path,
                 "sha256": source_audit_sha256
+            }),
+        );
+    }
+    if source_attempt_request_path.is_some() || source_attempt_request_sha256.is_some() {
+        artifacts.insert(
+            "source_attempt_request".to_string(),
+            json!({
+                "path": source_attempt_request_path,
+                "sha256": source_attempt_request_sha256
             }),
         );
     }
@@ -2107,13 +2194,32 @@ mod tests {
     #[test]
     fn validate_prompt_output_runs_decision_input_projection_checks() {
         let root = clay_example_root();
+        let request_path = root.join("fixtures/source-attempt-request.json");
+        let request_raw =
+            std::fs::read(&request_path).expect("source-attempt fixture bytes should load");
+        let request: Value = serde_json::from_slice(&request_raw)
+            .expect("source-attempt fixture should be valid JSON");
+        let request_sha256 = sha256_hex(&request_raw);
         let mut response: Value = serde_json::from_str(
             &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
                 .expect("normalized response fixture should load"),
         )
         .expect("normalized response fixture should be valid JSON");
 
-        let valid = validate_prompt_output_value(
+        let valid = validate_prompt_output_value_with_inputs(
+            &root,
+            &response,
+            "synthetic-response",
+            None,
+            Some("normalize-prospect-row"),
+            None,
+            None,
+            Some((&request, "synthetic-request", &request_sha256)),
+        )
+        .expect("decision-input prompt validation should run");
+        assert_eq!(valid["valid"], true);
+
+        let missing_request = validate_prompt_output_value(
             &root,
             &response,
             "synthetic-response",
@@ -2121,15 +2227,25 @@ mod tests {
             Some("normalize-prospect-row"),
         )
         .expect("decision-input prompt validation should run");
-        assert_eq!(valid["valid"], true);
+        assert_eq!(missing_request["valid"], false);
+        assert!(
+            missing_request["issues"]
+                .as_array()
+                .expect("issues should be an array")
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_source_attempt_request_missing")
+        );
 
         response["normalized_prospect"]["name"] = json!("Different Synthetic Person");
-        let invalid = validate_prompt_output_value(
+        let invalid = validate_prompt_output_value_with_inputs(
             &root,
             &response,
             "synthetic-response",
             None,
             Some("normalize-prospect-row"),
+            None,
+            None,
+            Some((&request, "synthetic-request", &request_sha256)),
         )
         .expect("decision-input prompt validation should run");
         assert_eq!(invalid["valid"], false);

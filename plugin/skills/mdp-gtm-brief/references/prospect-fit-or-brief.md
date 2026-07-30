@@ -17,15 +17,18 @@ When using a normalization prompt, `source_summary.inputs_used` should name exac
 ## Workflow
 
 1. Normalize supplied source material into a prospect JSON file using the pack prompt when present.
-2. Validate the full prompt output before using its nested prospect object.
-3. Run the CLI-owned decision:
+2. Validate the full prompt output against its exact source-attempt request
+   before using its nested prospect object.
+3. Inspect the validated envelope's top-level `outcome`. Stop without
+   extracting `normalized_prospect` unless the outcome is exactly `ready`.
+4. Run the CLI-owned decision:
 
 ```bash
 mdp --json fit --dir PACK_ROOT --prospect PROSPECT_JSON
 ```
 
-4. If the user asked only for fit, return status, matched rules, disqualifiers, qualification gates, missing/invalid requirements, and gaps.
-5. If the user asked for a brief and fit permits it, run:
+5. If the user asked only for fit, return status, matched rules, disqualifiers, qualification gates, missing/invalid requirements, and gaps.
+6. If the user asked for a brief and fit permits it, run:
 
 ```bash
 mdp --json --summary brief --context --dir PACK_ROOT --prospect PROSPECT_JSON --channel CHANNEL

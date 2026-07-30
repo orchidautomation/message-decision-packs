@@ -11,6 +11,7 @@
       "prompt_version": "clay-self-serve-enterprise-expansion.v1"
     }
   ],
+  "source_attempt_request_sha256": "b228884027f7754f5136bb9317d164fc8e4d702ea145891997f29c26913fa9df",
   "attributes": {
     "company_name": {
       "status": "observed",
@@ -128,7 +129,7 @@
       ],
       "confidence": 100,
       "freshness": {
-        "observed_at": "2026-07-29T12:00:00Z",
+        "observed_at": "2026-07-20T12:00:00Z",
         "age_days": 9
       }
     },

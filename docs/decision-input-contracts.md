@@ -63,6 +63,9 @@ include the `no-draft` decision effect.
 Applicability dependencies must form an acyclic graph. A circular contract
 cannot prove which conditional attempt applies, so validation rejects it
 instead of allowing every member of the cycle to report `not_applicable`.
+Applicability dependencies must themselves be required or hard gates, so an
+unresolved optional or conditional dependency cannot make a downstream
+condition fail open.
 Unknown keys anywhere inside a decision input contract are also errors; a typo
 must not silently remove a freshness, confidence, provenance, or status rule.
 
@@ -84,7 +87,10 @@ source without pretending a value was observed.
 
 `mdp.normalized-decision-input.v1` preserves those receipts beside the
 provider-neutral `normalized_prospect`. It records the normalization prompt
-version and always requires:
+version and the SHA-256 of the exact source-attempt request. The request carries
+a trusted `as_of` timestamp; validation derives freshness from that anchor,
+binds provenance attempt IDs to the matching requested attribute and source,
+and requires the exact job-bound prompt. It always requires:
 
 ```json
 {
@@ -104,8 +110,14 @@ and the pack's declared output-path projections:
 mdp --json validate-prompt-output --strict \
   --dir PACK_ROOT \
   --prompt prompts/normalize-prospect.yaml \
+  --source-attempt-request SOURCE_ATTEMPT_REQUEST.json \
   --file NORMALIZED_INPUT.json
 ```
+
+Only `outcome: ready` may proceed to normalized prospect extraction. Every
+other top-level outcome stops before fit, brief, or draft work. A non-observed
+attribute must also leave its declared normalized prospect output absent or
+neutral; it cannot smuggle an unverified value into deterministic evaluation.
 
 The blocked normalization outcomes are:
 

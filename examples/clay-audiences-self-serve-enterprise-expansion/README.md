@@ -19,7 +19,7 @@ flowchart LR
     D --> F["Customer-funded normalization"]
     E --> F
     F --> G["mdp.normalized-decision-input.v1"]
-    G --> V["validate-prompt-output: exact schema plus output-path equality"]
+    G --> V["validate-prompt-output: exact schema, source request, prompt, time, and projection binding"]
     V --> H["Deterministic fit, routing, brief, and gaps"]
     H --> I{"Decision outcome"}
     I -->|"ready"| J["Compiled context column"]
@@ -62,7 +62,9 @@ by the host.
 [`fixtures/source-attempt-request.json`](fixtures/source-attempt-request.json)
 is an exact synthetic collector request. It contains one initial attempt for
 each declared attribute. A host may make additional attempts, but it must not
-omit an attribute.
+omit an attribute. Its trusted `as_of` timestamp anchors freshness calculations.
+Every attempt has a unique ID, attribute ID, allowed source class, non-blank
+source locator, and request timestamp.
 
 [`fixtures/normalized-response-ready.json`](fixtures/normalized-response-ready.json)
 is an exact synthetic normalization envelope. Each attribute preserves one of
@@ -79,6 +81,12 @@ observation timestamp, confidence, and freshness. Non-observed statuses do not
 fabricate observation metadata; an `error` result instead requires its
 non-blank error detail. `blocked` and `error` are never collapsed into
 `not_found`; hard-gate absence is never inferred as safe.
+
+The normalized envelope includes the SHA-256 of the exact source-attempt request.
+Validation binds every provenance receipt back to a matching request attempt,
+requires the exact job-bound normalization prompt, verifies UTC timestamps, and
+derives `age_days` from `freshness.observed_at` and the trusted request `as_of`.
+It rejects meaningful normalized prospect values for non-observed attributes.
 
 The normalization envelope always sets `draft_allowed` to `false`.
 `outcome: ready` means only that the normalized data may proceed to
@@ -127,5 +135,6 @@ mdp --json requirements \
 mdp --json validate-prompt-output --strict \
   --dir examples/clay-audiences-self-serve-enterprise-expansion \
   --prompt normalize-prospect.yaml \
+  --source-attempt-request examples/clay-audiences-self-serve-enterprise-expansion/fixtures/source-attempt-request.json \
   --file examples/clay-audiences-self-serve-enterprise-expansion/fixtures/normalized-response-ready.json
 ```

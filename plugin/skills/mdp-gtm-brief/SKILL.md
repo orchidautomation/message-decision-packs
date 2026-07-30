@@ -37,11 +37,16 @@ mdp --json gaps --dir PACK_ROOT
 4. When a pack normalization prompt exists, use its literal output contract and validate the full model output before saving the nested prospect object:
 
 ```bash
-mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
+mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID \
+  --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON --file OUTPUT_JSON
 ```
 
-5. Never invent a person, title, signal, date, persona, segment, or required attribute. Account-only context stays insufficient/no-draft when the pack requires person readiness.
-6. Treat synthetic fixtures as `do_not_contact`; they are for testing only.
+5. Read the validated envelope's top-level `outcome` before extracting
+   `normalized_prospect`. Continue only when `outcome` is exactly `ready`.
+   `insufficient-context`, `disqualified`, `human-review`, `malformed`, and
+   `provider-error` stop the workflow and remain no-draft.
+6. Never invent a person, title, signal, date, persona, segment, or required attribute. Account-only context stays insufficient/no-draft when the pack requires person readiness.
+7. Treat synthetic fixtures as `do_not_contact`; they are for testing only.
 
 ## Load The Mode Reference
 

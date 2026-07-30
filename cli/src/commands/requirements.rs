@@ -7,7 +7,8 @@ use crate::models::{
     DecisionInputConditionOperator, DecisionInputContract, DecisionInputDisposition,
     DecisionInputRequirement, DecisionInputSourceClass, Manifest, ValueContract,
 };
-use crate::pack_io::read_manifest;
+use crate::pack_io::{read_manifest, resolve_pack_path};
+use crate::value_contracts::valid_date;
 use anyhow::{Result, anyhow};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -113,10 +114,13 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         "normalized_output_schema": normalized_schema,
         "normalized_prospect_schema": schema(SchemaTarget::Prospect),
         "semantic_validation": {
-            "command": "mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_NORMALIZATION_PROMPT --file NORMALIZED_INPUT.json",
+            "command": "mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_NORMALIZATION_PROMPT --source-attempt-request SOURCE_ATTEMPT_REQUEST.json --file NORMALIZED_INPUT.json",
             "checks": [
                 "exact-compiled-schema",
-                "observed-attribute-output-path-equality"
+                "bound-source-attempt-request",
+                "bound-normalization-prompt",
+                "trusted-freshness",
+                "attribute-output-path-consistency"
             ]
         },
         "no_draft_policy": {
@@ -144,6 +148,8 @@ pub(crate) fn validate_normalized_decision_input(
     root: &Path,
     output: &Value,
     artifact_path: &str,
+    resolved_prompt_path: &Path,
+    source_attempt_request: Option<(&Value, &str, &str)>,
 ) -> Result<Vec<Value>> {
     let Some(job_id) = output["job_id"].as_str() else {
         return Ok(vec![decision_input_issue(
@@ -178,6 +184,20 @@ pub(crate) fn validate_normalized_decision_input(
     }
 
     let mut issues = Vec::new();
+    validate_bound_normalization_prompt(
+        root,
+        &compiled,
+        resolved_prompt_path,
+        artifact_path,
+        &mut issues,
+    );
+    let source_attempt_index = validate_source_attempt_request(
+        &compiled,
+        output,
+        artifact_path,
+        source_attempt_request,
+        &mut issues,
+    );
     for contract in compiled["decision_input_contracts"]
         .as_array()
         .into_iter()
@@ -188,14 +208,11 @@ pub(crate) fn validate_normalized_decision_input(
                 continue;
             };
             let attempt = &output["attributes"][attribute_id];
-            if attempt["status"].as_str() != Some("observed") {
-                continue;
-            }
             let Some(output_path) = attribute["output_path"].as_str() else {
                 continue;
             };
             let projected = value_at_output_path(&output["normalized_prospect"], output_path);
-            if projected != attempt.get("value") {
+            if attempt["status"].as_str() == Some("observed") && projected != attempt.get("value") {
                 issues.push(decision_input_issue(
                     "decision_input_projection_mismatch",
                     format!(
@@ -206,10 +223,320 @@ pub(crate) fn validate_normalized_decision_input(
                         "observed attribute {attribute_id} must equal its declared normalized_prospect output_path {output_path}"
                     ),
                 ));
+            } else if attempt["status"].as_str() != Some("observed")
+                && projected.is_some_and(meaningful_projected_value)
+            {
+                issues.push(decision_input_issue(
+                    "decision_input_unobserved_projection_present",
+                    format!(
+                        "{artifact_path}#/normalized_prospect/{}",
+                        output_path.replace('.', "/")
+                    ),
+                    format!(
+                        "non-observed attribute {attribute_id} must leave its declared normalized_prospect output_path {output_path} absent or neutral"
+                    ),
+                ));
             }
+            validate_attribute_attempt_receipts(
+                attribute,
+                attempt,
+                artifact_path,
+                source_attempt_index.as_ref(),
+                &mut issues,
+            );
         }
     }
     Ok(issues)
+}
+
+struct SourceAttemptIndex<'a> {
+    attempts: BTreeMap<&'a str, &'a Value>,
+    as_of_seconds: i64,
+}
+
+fn validate_bound_normalization_prompt(
+    root: &Path,
+    compiled: &Value,
+    resolved_prompt_path: &Path,
+    artifact_path: &str,
+    issues: &mut Vec<Value>,
+) {
+    for contract in compiled["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let Some(bound_prompt) = contract["normalization"]["prompt"].as_str() else {
+            continue;
+        };
+        let Ok(expected_path) = resolve_pack_path(root, bound_prompt) else {
+            issues.push(decision_input_issue(
+                "decision_input_bound_prompt_unresolvable",
+                artifact_path,
+                "the compiled normalization prompt path cannot be resolved inside the pack",
+            ));
+            continue;
+        };
+        let selected = resolved_prompt_path
+            .canonicalize()
+            .unwrap_or_else(|_| resolved_prompt_path.to_path_buf());
+        let expected = expected_path.canonicalize().unwrap_or(expected_path);
+        if selected != expected {
+            issues.push(decision_input_issue(
+                "decision_input_prompt_binding_mismatch",
+                artifact_path,
+                "the selected prompt is not the exact normalization prompt bound to the compiled job",
+            ));
+        }
+    }
+}
+
+fn validate_source_attempt_request<'a>(
+    compiled: &Value,
+    output: &Value,
+    artifact_path: &str,
+    source_attempt_request: Option<(&'a Value, &str, &str)>,
+    issues: &mut Vec<Value>,
+) -> Option<SourceAttemptIndex<'a>> {
+    let Some((request, request_path, request_sha256)) = source_attempt_request else {
+        issues.push(decision_input_issue(
+            "decision_input_source_attempt_request_missing",
+            artifact_path,
+            "decision-input normalization validation requires the exact source-attempt request file",
+        ));
+        return None;
+    };
+    if output["source_attempt_request_sha256"].as_str() != Some(request_sha256) {
+        issues.push(decision_input_issue(
+            "decision_input_source_attempt_request_hash_mismatch",
+            format!("{artifact_path}#/source_attempt_request_sha256"),
+            "normalized decision input is not bound to the exact supplied source-attempt request",
+        ));
+    }
+    if jsonschema::draft202012::validate(&compiled["source_attempt_request_schema"], request)
+        .is_err()
+    {
+        issues.push(decision_input_issue(
+            "decision_input_source_attempt_request_schema_mismatch",
+            request_path,
+            "source-attempt request does not satisfy the exact compiled job schema",
+        ));
+        return None;
+    }
+    let Some(as_of) = request["as_of"]
+        .as_str()
+        .and_then(parse_utc_timestamp_seconds)
+    else {
+        issues.push(decision_input_issue(
+            "decision_input_source_attempt_as_of_invalid",
+            format!("{request_path}#/as_of"),
+            "source-attempt request as_of must be a valid UTC timestamp",
+        ));
+        return None;
+    };
+    let mut attempts = BTreeMap::new();
+    for (index, attempt) in request["attempts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let Some(attempt_id) = attempt["attempt_id"].as_str() else {
+            continue;
+        };
+        if attempts.insert(attempt_id, attempt).is_some() {
+            issues.push(decision_input_issue(
+                "decision_input_source_attempt_id_duplicate",
+                format!("{request_path}#/attempts/{index}/attempt_id"),
+                "source-attempt request attempt_id values must be unique",
+            ));
+        }
+        let Some(requested_at) = attempt["requested_at"]
+            .as_str()
+            .and_then(parse_utc_timestamp_seconds)
+        else {
+            issues.push(decision_input_issue(
+                "decision_input_source_attempt_requested_at_invalid",
+                format!("{request_path}#/attempts/{index}/requested_at"),
+                "source-attempt requested_at must be a valid UTC timestamp",
+            ));
+            continue;
+        };
+        if requested_at > as_of {
+            issues.push(decision_input_issue(
+                "decision_input_source_attempt_requested_at_future",
+                format!("{request_path}#/attempts/{index}/requested_at"),
+                "source-attempt requested_at must not be later than the trusted as_of timestamp",
+            ));
+        }
+    }
+    Some(SourceAttemptIndex {
+        attempts,
+        as_of_seconds: as_of,
+    })
+}
+
+fn validate_attribute_attempt_receipts(
+    attribute: &Value,
+    attempt: &Value,
+    artifact_path: &str,
+    source_attempt_index: Option<&SourceAttemptIndex<'_>>,
+    issues: &mut Vec<Value>,
+) {
+    let Some(attribute_id) = attribute["id"].as_str() else {
+        return;
+    };
+    if let Some(provenance) = attempt["provenance"].as_array() {
+        for (index, receipt) in provenance.iter().enumerate() {
+            let receipt_path =
+                format!("{artifact_path}#/attributes/{attribute_id}/provenance/{index}");
+            let Some(observed_at) = receipt["observed_at"].as_str() else {
+                continue;
+            };
+            let Some(observed_at_seconds) = parse_utc_timestamp_seconds(observed_at) else {
+                issues.push(decision_input_issue(
+                    "decision_input_provenance_observed_at_invalid",
+                    format!("{receipt_path}/observed_at"),
+                    "provenance observed_at must be a valid UTC timestamp",
+                ));
+                continue;
+            };
+            let Some(source_attempt_index) = source_attempt_index else {
+                continue;
+            };
+            if observed_at_seconds > source_attempt_index.as_of_seconds {
+                issues.push(decision_input_issue(
+                    "decision_input_provenance_observed_at_future",
+                    format!("{receipt_path}/observed_at"),
+                    "provenance observed_at must not be later than the trusted as_of timestamp",
+                ));
+            }
+            let Some(attempt_id) = receipt["attempt_id"].as_str() else {
+                continue;
+            };
+            let Some(source_attempt) = source_attempt_index.attempts.get(attempt_id) else {
+                issues.push(decision_input_issue(
+                    "decision_input_provenance_attempt_unknown",
+                    format!("{receipt_path}/attempt_id"),
+                    "provenance attempt_id is not present in the supplied source-attempt request",
+                ));
+                continue;
+            };
+            if source_attempt["attribute_id"].as_str() != Some(attribute_id) {
+                issues.push(decision_input_issue(
+                    "decision_input_provenance_attempt_attribute_mismatch",
+                    format!("{receipt_path}/attempt_id"),
+                    "provenance attempt_id belongs to a different decision-input attribute",
+                ));
+            }
+            if receipt["source_class"] != source_attempt["source_class"] {
+                issues.push(decision_input_issue(
+                    "decision_input_provenance_source_class_mismatch",
+                    format!("{receipt_path}/source_class"),
+                    "provenance source_class must match its bound source attempt",
+                ));
+            }
+            if receipt["source_locator"] != source_attempt["source_locator"] {
+                issues.push(decision_input_issue(
+                    "decision_input_provenance_source_locator_mismatch",
+                    format!("{receipt_path}/source_locator"),
+                    "provenance source_locator must match its bound source attempt",
+                ));
+            }
+        }
+    }
+    let Some(freshness) = attempt["freshness"].as_object() else {
+        return;
+    };
+    let Some(observed_at) = freshness.get("observed_at").and_then(Value::as_str) else {
+        return;
+    };
+    let freshness_path = format!("{artifact_path}#/attributes/{attribute_id}/freshness");
+    let Some(observed_at_seconds) = parse_utc_timestamp_seconds(observed_at) else {
+        issues.push(decision_input_issue(
+            "decision_input_freshness_observed_at_invalid",
+            format!("{freshness_path}/observed_at"),
+            "freshness observed_at must be a valid UTC timestamp",
+        ));
+        return;
+    };
+    let Some(source_attempt_index) = source_attempt_index else {
+        return;
+    };
+    if observed_at_seconds > source_attempt_index.as_of_seconds {
+        issues.push(decision_input_issue(
+            "decision_input_freshness_observed_at_future",
+            format!("{freshness_path}/observed_at"),
+            "freshness observed_at must not be later than the trusted as_of timestamp",
+        ));
+        return;
+    }
+    if let Some(age_days) = freshness.get("age_days").and_then(Value::as_u64) {
+        let derived_age =
+            ((source_attempt_index.as_of_seconds - observed_at_seconds) / 86_400) as u64;
+        if age_days != derived_age {
+            issues.push(decision_input_issue(
+                "decision_input_freshness_age_mismatch",
+                format!("{freshness_path}/age_days"),
+                "freshness age_days must equal the age derived from observed_at and the trusted source-attempt as_of timestamp",
+            ));
+        }
+    }
+}
+
+fn meaningful_projected_value(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::String(value) => {
+            let value = value.trim();
+            !value.is_empty() && !value.eq_ignore_ascii_case("n/a")
+        }
+        Value::Array(values) => !values.is_empty(),
+        Value::Object(values) => !values.is_empty(),
+        _ => true,
+    }
+}
+
+fn parse_utc_timestamp_seconds(value: &str) -> Option<i64> {
+    if !value.is_ascii()
+        || value.len() != 20
+        || &value[4..5] != "-"
+        || &value[7..8] != "-"
+        || &value[10..11] != "T"
+        || &value[13..14] != ":"
+        || &value[16..17] != ":"
+        || !value.ends_with('Z')
+    {
+        return None;
+    }
+    let date = &value[..10];
+    if !valid_date(date) {
+        return None;
+    }
+    let year = value[..4].parse::<i64>().ok()?;
+    let month = value[5..7].parse::<i64>().ok()?;
+    let day = value[8..10].parse::<i64>().ok()?;
+    let hour = value[11..13].parse::<i64>().ok()?;
+    let minute = value[14..16].parse::<i64>().ok()?;
+    let second = value[17..19].parse::<i64>().ok()?;
+    if hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    Some(days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = if adjusted_year >= 0 {
+        adjusted_year
+    } else {
+        adjusted_year - 399
+    } / 400;
+    let year_of_era = adjusted_year - era * 400;
+    let adjusted_month = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * adjusted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
 fn value_at_output_path<'a>(prospect: &'a Value, output_path: &str) -> Option<&'a Value> {
@@ -365,14 +692,24 @@ fn source_attempt_request_schema(job_id: &str, contracts: &[&DecisionInputContra
         .map(|attribute| {
             json!({
                 "type": "object",
-                "required": ["attempt_id", "attribute_id", "source_class"],
+                "required": [
+                    "attempt_id",
+                    "attribute_id",
+                    "source_class",
+                    "source_locator",
+                    "requested_at"
+                ],
                 "additionalProperties": false,
                 "properties": {
                     "attempt_id": {"type": "string", "pattern": "\\S"},
                     "attribute_id": {"const": &attribute.id},
                     "source_class": {"enum": &attribute.source_classes},
-                    "source_locator": {"type": "string"},
-                    "requested_at": {"type": "string", "format": "date-time"}
+                    "source_locator": {"type": "string", "pattern": "\\S"},
+                    "requested_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+                    }
                 }
             })
         })
@@ -405,7 +742,7 @@ fn source_attempt_request_schema(job_id: &str, contracts: &[&DecisionInputContra
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "MDP Source Attempt Request v1",
         "type": "object",
-        "required": ["contract", "job_id", "decision_input_contracts", "attempts"],
+        "required": ["contract", "job_id", "decision_input_contracts", "as_of", "attempts"],
         "additionalProperties": false,
         "properties": {
             "contract": {"const": "mdp.source-attempt-request.v1"},
@@ -413,6 +750,12 @@ fn source_attempt_request_schema(job_id: &str, contracts: &[&DecisionInputContra
             "decision_input_contracts": {
                 "type": "array",
                 "const": contract_versions
+            },
+            "as_of": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+                "description": "Trusted UTC timestamp supplied by the host and used for deterministic freshness checks."
             },
             "attempts": {
                 "type": "array",
@@ -461,6 +804,7 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
             "job_id",
             "decision_input_contracts",
             "normalization",
+            "source_attempt_request_sha256",
             "attributes",
             "normalized_prospect",
             "outcome",
@@ -478,6 +822,11 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
             "normalization": {
                 "type": "array",
                 "const": normalization_receipts
+            },
+            "source_attempt_request_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "SHA-256 of the exact source-attempt request file validated with this normalized output."
             },
             "attributes": {
                 "type": "object",
@@ -697,7 +1046,11 @@ fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
                         "attempt_id": {"type": "string", "pattern": "\\S"},
                         "source_class": {"enum": &attribute.source_classes},
                         "source_locator": {"type": "string"},
-                        "observed_at": {"type": "string", "format": "date-time"},
+                        "observed_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+                        },
                         "excerpt": {"type": "string"}
                     }
                 }
@@ -711,7 +1064,11 @@ fn attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                    "observed_at": {"type": "string", "format": "date-time"},
+                    "observed_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+                    },
                     "age_days": {
                         "type": "integer",
                         "minimum": 0
@@ -784,6 +1141,9 @@ fn value_contract_json_schema(contract: &ValueContract) -> Value {
             ),
         );
     }
+    if contract.value_type.as_deref().unwrap_or("string") == "string" {
+        schema.insert("pattern".to_string(), Value::String("\\S".to_string()));
+    }
     Value::Object(schema)
 }
 
@@ -827,6 +1187,45 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-clay-{name}-{nonce}"));
         copy_tree(&clay_example_root(), &root);
         root
+    }
+
+    fn clay_validation_fixture() -> (PathBuf, Value, Value, String, PathBuf) {
+        let root = clay_example_root();
+        let request_raw = std::fs::read(root.join("fixtures/source-attempt-request.json"))
+            .expect("source-attempt fixture bytes should load");
+        let request =
+            serde_json::from_slice(&request_raw).expect("source-attempt fixture should parse");
+        let response = serde_json::from_str(
+            &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
+                .expect("normalized response fixture should load"),
+        )
+        .expect("normalized response fixture should parse");
+        let request_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(request_raw))
+        };
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        (root, request, response, request_sha256, prompt_path)
+    }
+
+    fn semantic_issue_codes(
+        root: &Path,
+        request: &Value,
+        response: &Value,
+        request_sha256: &str,
+        prompt_path: &Path,
+    ) -> BTreeSet<String> {
+        validate_normalized_decision_input(
+            root,
+            response,
+            "synthetic-response",
+            prompt_path,
+            Some((request, "synthetic-request", request_sha256)),
+        )
+        .expect("semantic validation should run")
+        .into_iter()
+        .filter_map(|issue| issue["code"].as_str().map(str::to_string))
+        .collect()
     }
 
     #[test]
@@ -1065,19 +1464,38 @@ mod tests {
             .expect("exact source-attempt fixture should satisfy the compiled schema");
         draft202012::validate(&compiled["normalized_output_schema"], &response)
             .expect("exact normalized response fixture should satisfy the compiled schema");
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let request_raw = std::fs::read(root.join("fixtures/source-attempt-request.json"))
+            .expect("source-attempt fixture bytes should load");
+        let request_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(request_raw))
+        };
         assert!(
-            validate_normalized_decision_input(&root, &response, "synthetic-response")
-                .expect("semantic validation should run")
-                .is_empty(),
+            validate_normalized_decision_input(
+                &root,
+                &response,
+                "synthetic-response",
+                &prompt_path,
+                Some((&request, "synthetic-request", &request_sha256)),
+            )
+            .expect("semantic validation should run")
+            .is_empty(),
             "ready fixture should preserve every observed output-path projection"
         );
         let mut projection_mismatch = response.clone();
         projection_mismatch["normalized_prospect"]["name"] = json!("Different Synthetic Person");
         assert!(
-            validate_normalized_decision_input(&root, &projection_mismatch, "synthetic-response")
-                .expect("semantic validation should run")
-                .iter()
-                .any(|issue| issue["code"] == "decision_input_projection_mismatch"),
+            validate_normalized_decision_input(
+                &root,
+                &projection_mismatch,
+                "synthetic-response",
+                &prompt_path,
+                Some((&request, "synthetic-request", &request_sha256)),
+            )
+            .expect("semantic validation should run")
+            .iter()
+            .any(|issue| issue["code"] == "decision_input_projection_mismatch"),
             "semantic validation must reject observed attribute/output-path disagreement"
         );
 
@@ -1139,6 +1557,164 @@ mod tests {
         blocked_ready["outcome"] = json!("human-review");
         draft202012::validate(&compiled["normalized_output_schema"], &blocked_ready)
             .expect("a non-ready outcome should remain valid for a blocked hard gate");
+    }
+
+    #[test]
+    fn decision_input_semantics_bind_source_attempts_prompt_and_freshness() {
+        let (root, request, response, request_sha256, prompt_path) = clay_validation_fixture();
+
+        assert!(
+            semantic_issue_codes(&root, &request, &response, &request_sha256, &prompt_path,)
+                .is_empty()
+        );
+
+        let mut unknown_attempt = response.clone();
+        unknown_attempt["attributes"]["company_name"]["provenance"][0]["attempt_id"] =
+            json!("synthetic-attempt-unknown");
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &unknown_attempt,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_provenance_attempt_unknown")
+        );
+
+        let mut wrong_attribute_attempt = response.clone();
+        wrong_attribute_attempt["attributes"]["company_name"]["provenance"][0]["attempt_id"] =
+            response["attributes"]["company_domain"]["provenance"][0]["attempt_id"].clone();
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &wrong_attribute_attempt,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_provenance_attempt_attribute_mismatch")
+        );
+
+        let mut wrong_hash = response.clone();
+        wrong_hash["source_attempt_request_sha256"] =
+            json!("0000000000000000000000000000000000000000000000000000000000000000");
+        assert!(
+            semantic_issue_codes(&root, &request, &wrong_hash, &request_sha256, &prompt_path,)
+                .contains("decision_input_source_attempt_request_hash_mismatch")
+        );
+
+        let wrong_prompt = root.join(".mdp/prompts/not-the-bound-prompt.yaml");
+        assert!(
+            semantic_issue_codes(&root, &request, &response, &request_sha256, &wrong_prompt,)
+                .contains("decision_input_prompt_binding_mismatch")
+        );
+
+        let mut wrong_age = response.clone();
+        wrong_age["attributes"]["last_meaningful_touch"]["freshness"]["age_days"] = json!(0);
+        assert!(
+            semantic_issue_codes(&root, &request, &wrong_age, &request_sha256, &prompt_path,)
+                .contains("decision_input_freshness_age_mismatch")
+        );
+
+        let mut future_freshness = response.clone();
+        future_freshness["attributes"]["last_meaningful_touch"]["freshness"]["observed_at"] =
+            json!("2026-07-30T12:00:00Z");
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &future_freshness,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_freshness_observed_at_future")
+        );
+    }
+
+    #[test]
+    fn decision_input_semantics_reject_malformed_times_unobserved_values_and_blank_strings() {
+        let (root, request, response, request_sha256, prompt_path) = clay_validation_fixture();
+
+        let mut malformed_provenance = response.clone();
+        malformed_provenance["attributes"]["company_name"]["provenance"][0]["observed_at"] =
+            json!("not-a-timestamp");
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &malformed_provenance,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_schema_mismatch")
+        );
+
+        let mut malformed_freshness = response.clone();
+        malformed_freshness["attributes"]["last_meaningful_touch"]["freshness"]["observed_at"] =
+            json!("2026-99-99T12:00:00Z");
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &malformed_freshness,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_freshness_observed_at_invalid")
+        );
+
+        let mut unobserved_projection = response.clone();
+        let attempt = unobserved_projection["attributes"]["employee_band"]
+            .as_object_mut()
+            .expect("employee band attempt should be an object");
+        attempt.insert("status".to_string(), json!("not_found"));
+        for field in ["value", "provenance", "confidence", "freshness"] {
+            attempt.remove(field);
+        }
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &unobserved_projection,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_unobserved_projection_present")
+        );
+
+        let mut blank_string = response.clone();
+        blank_string["attributes"]["company_name"]["value"] = json!("   ");
+        blank_string["normalized_prospect"]["company"] = json!("   ");
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &blank_string,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_schema_mismatch")
+        );
+    }
+
+    #[test]
+    fn utc_timestamp_parser_rejects_invalid_calendar_and_clock_values() {
+        assert_eq!(parse_utc_timestamp_seconds("1970-01-01T00:00:00Z"), Some(0));
+        for invalid in [
+            "2026-02-30T12:00:00Z",
+            "2026-07-29T24:00:00Z",
+            "2026-07-29T12:60:00Z",
+            "2026-07-29T12:00:60Z",
+            "2026-07-29T12:00:00+00:00",
+            "not-a-timestamp",
+        ] {
+            assert_eq!(
+                parse_utc_timestamp_seconds(invalid),
+                None,
+                "{invalid} must be rejected"
+            );
+        }
     }
 
     #[test]

@@ -102,6 +102,11 @@ pub(crate) enum Commands {
             help = "Optional mdp.source-audit.v0 JSON file for deterministic source-ref/snippet checks"
         )]
         source_audit: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Exact mdp.source-attempt-request.v1 JSON file for decision-input normalization binding and freshness validation"
+        )]
+        source_attempt_request: Option<PathBuf>,
         #[arg(long, help = "Prompt file path to validate against")]
         prompt: Option<PathBuf>,
         #[arg(long, help = "Prompt id to validate against")]

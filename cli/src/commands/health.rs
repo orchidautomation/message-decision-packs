@@ -2377,6 +2377,11 @@ fn validate_decision_input_attributes(
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let attribute_requirements = contract
+        .attributes
+        .iter()
+        .map(|attribute| (attribute.id.as_str(), &attribute.requirement))
+        .collect::<BTreeMap<_, _>>();
     let required_attributes = manifest
         .lead_input_requirements
         .required_attributes
@@ -2508,6 +2513,22 @@ fn validate_decision_input_attributes(
                             .and_then(|value| value.as_str().map(str::to_string))
                             .unwrap_or_else(|| "comparison".to_string())
                     ),
+                ));
+            }
+            if attribute_requirements
+                .get(condition.attribute.as_str())
+                .is_some_and(|requirement| {
+                    !matches!(
+                        requirement,
+                        DecisionInputRequirement::Required | DecisionInputRequirement::HardGate
+                    )
+                })
+            {
+                issues.push(issue(
+                    "decision_input_applicability_dependency_not_readiness_required",
+                    "error",
+                    format!("{condition_path}/attribute"),
+                    "applicability dependencies must be required or hard-gate attributes so unresolved dependency states cannot certify readiness",
                 ));
             }
         }
@@ -2873,7 +2894,6 @@ fn value_contract_constraints_match(left: &ValueContract, right: &ValueContract)
 
 fn valid_decision_input_output_path(path: &str) -> bool {
     PROSPECT_CONTRACT_FIELDS.contains(&path)
-        || path == "signals"
         || path
             .strip_prefix("attributes.")
             .is_some_and(valid_attribute_key)
@@ -6115,6 +6135,38 @@ output_contract:
                 .iter()
                 .all(|issue| issue["code"] != "decision_input_applicability_cycle")
         );
+    }
+
+    #[test]
+    fn decision_input_applicability_rejects_unresolved_dependency_classes() {
+        for requirement in [
+            DecisionInputRequirement::Optional,
+            DecisionInputRequirement::Conditional,
+        ] {
+            let mut manifest =
+                read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+            let dependency = manifest.decision_input_contracts[0]
+                .attributes
+                .iter_mut()
+                .find(|attribute| attribute.id == "open_support_escalation")
+                .expect("Clay example should include open_support_escalation");
+            dependency.requirement = requirement;
+            let mut issues = Vec::new();
+
+            validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+            assert!(issues.iter().any(|issue| {
+                issue["code"] == "decision_input_applicability_dependency_not_readiness_required"
+            }));
+        }
+    }
+
+    #[test]
+    fn decision_input_output_path_rejects_composite_signals() {
+        assert!(!valid_decision_input_output_path("signals"));
+        assert!(valid_decision_input_output_path(
+            "attributes.reviewed_signal"
+        ));
     }
 
     #[test]

@@ -13,6 +13,11 @@ inputs:
   name: decision_input_requirements
   required: true
 - default: N/A
+  description: SHA-256 of the exact source-attempt request file supplied by the customer or host. Copy this receipt unchanged into source_attempt_request_sha256.
+  missing_behavior: Return a malformed outcome and do not normalize or draft when the exact request hash is absent.
+  name: source_attempt_request_sha256
+  required: true
+- default: N/A
   description: Company domain when available.
   missing_behavior: Use N/A and do not infer company identity from absent data.
   name: company_domain
@@ -34,9 +39,10 @@ inputs:
   required: false
 instructions:
 - External target identity is Synthetic Expansion Product (product). Prospect-facing candidates must position this target, not the pack, CLI, schema, prompt, card, eval, starter, or prior target.
-- Use only raw_row, decision_input_requirements, company_domain, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.
-- Treat decision_input_requirements.normalized_output_schema as the binding response schema. Return exactly one mdp.normalized-decision-input.v1 object with contract, job_id, decision_input_contracts, normalization, attributes, normalized_prospect, outcome, and draft_allowed. Never return the legacy mdp.prompt-output.v0 envelope or its prompt_id, source_summary, normalization_trace, card_patches, gaps, or rejected_claims fields.
+- Use only raw_row, decision_input_requirements, source_attempt_request_sha256, company_domain, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.
+- Treat decision_input_requirements.normalized_output_schema as the binding response schema. Return exactly one mdp.normalized-decision-input.v1 object with contract, job_id, decision_input_contracts, normalization, source_attempt_request_sha256, attributes, normalized_prospect, outcome, and draft_allowed. Never return the legacy mdp.prompt-output.v0 envelope or its prompt_id, source_summary, normalization_trace, card_patches, gaps, or rejected_claims fields.
 - Copy job_id, decision_input_contracts, and each normalization receipt exactly from decision_input_requirements. Do not invent, upgrade, or substitute a contract id, prompt path, prompt version, or schema version.
+- Copy source_attempt_request_sha256 exactly from the customer or host input. Do not calculate, rewrite, or substitute it.
 - 'Treat raw_row as an attempted-complete ledger, not permission to search. Preserve the exact attempt status for all fifteen attributes: observed, not_found, not_applicable, blocked, or error.'
 - Answer only the data questions declared by decision_input_requirements. Do not introduce an attribute because it might be useful.
 - Emit every declared attribute exactly once under attributes. For each attribute, preserve status; include value only when status is observed; and include provenance, confidence, freshness, and error exactly when the compiled per-attribute schema permits or requires them.
@@ -82,6 +88,7 @@ output_contract:
           "prompt_version": "clay-self-serve-enterprise-expansion.v1"
         }
       ],
+      "source_attempt_request_sha256": "b228884027f7754f5136bb9317d164fc8e4d702ea145891997f29c26913fa9df",
       "attributes": {
         "company_name": {
           "status": "observed",
@@ -199,7 +206,7 @@ output_contract:
           ],
           "confidence": 100,
           "freshness": {
-            "observed_at": "2026-07-29T12:00:00Z",
+            "observed_at": "2026-07-20T12:00:00Z",
             "age_days": 9
           }
         },
