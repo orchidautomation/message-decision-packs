@@ -1,0 +1,50 @@
+{
+  "contract": "mdp.source-binding.v1",
+  "binding_release": "synthetic-record-grid-adapter-1",
+  "job_id": "prospect-fit-or-brief",
+  "pack": {
+    "id": "clay-audiences-self-serve-enterprise-expansion",
+    "version": "0.1.0",
+    "sha256": "ebefa47680249169a2a06022046ef8ef1989096f74d27aea85a27b7e5df8c73c"
+  },
+  "requirements": {
+    "contract": "mdp.requirements.v1",
+    "sha256": "b7ba23576012f6953da2fe2ca0b1b396648a9a38f9ae200061ed183f9ac66c15",
+    "decision_input_contracts": [
+      {
+        "id": "clay.audiences.self_serve_enterprise_expansion",
+        "version": "1.0.0"
+      }
+    ]
+  },
+  "normalization_release": "synthetic-normalizer-1",
+  "status_translation": {
+    "missing_value": "not_found",
+    "null_value": "not_found",
+    "empty_string": "not_found",
+    "whitespace_only": "not_found",
+    "false_value": "observed",
+    "zero_value": "observed",
+    "inapplicable": "not_applicable",
+    "inaccessible": "blocked",
+    "unmapped": "blocked",
+    "runtime_failure": "error"
+  },
+  "bindings": [
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"company_name","requirement":"required","source":{"field_key":"record.account.name","source_class":"user_provided","system_of_record":"synthetic-record-grid","acquisition_mode":"record-read"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"company_domain","requirement":"required","source":{"field_key":"record.account.domain","source_class":"user_provided","system_of_record":"synthetic-record-grid","acquisition_mode":"record-read"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"person_name","requirement":"required","source":{"field_key":"record.person.name","source_class":"user_provided","system_of_record":"synthetic-record-grid","acquisition_mode":"record-read"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"person_title","requirement":"required","source":{"field_key":"record.person.title","source_class":"user_provided","system_of_record":"synthetic-record-grid","acquisition_mode":"record-read"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"expansion_trigger_summary","requirement":"required","source":{"field_key":"record.signal.summary","source_class":"user_provided","system_of_record":"synthetic-record-grid","acquisition_mode":"record-read"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"account_owner_state","requirement":"required","source":{"field_key":"record.account.owner_state","source_class":"customer_system","system_of_record":"synthetic-account-store","acquisition_mode":"approved-query"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"last_meaningful_touch","requirement":"required","source":{"field_key":"record.account.last_touch","source_class":"customer_system","system_of_record":"synthetic-account-store","acquisition_mode":"approved-query"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"customer_motion","requirement":"hard-gate","source":{"field_key":"record.account.motion","source_class":"customer_system","system_of_record":"synthetic-account-store","acquisition_mode":"approved-query"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"enterprise_eligibility","requirement":"hard-gate","source":{"field_key":"record.account.eligibility","source_class":"customer_system","system_of_record":"synthetic-account-store","acquisition_mode":"approved-query"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"do_not_contact","requirement":"hard-gate","source":{"field_key":"record.policy.contact_allowed","source_class":"customer_system","system_of_record":"synthetic-policy-store","acquisition_mode":"approved-query"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"open_support_escalation","requirement":"hard-gate","source":{"field_key":"record.support.escalation","source_class":"customer_system","system_of_record":"synthetic-support-store","acquisition_mode":"approved-query"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"current_working_country","requirement":"conditional","source":{"field_key":"record.person.country","source_class":"user_provided","system_of_record":"synthetic-record-grid","acquisition_mode":"record-read"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"latest_support_context","requirement":"conditional","source":{"field_key":"record.support.escalation","source_class":"customer_system","system_of_record":"synthetic-support-store","acquisition_mode":"approved-query"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"employee_band","requirement":"optional","source":{"field_key":"record.account.employee_band","source_class":"user_provided","system_of_record":"synthetic-record-grid","acquisition_mode":"record-read"}},
+    {"decision_input_contract_id":"clay.audiences.self_serve_enterprise_expansion","attribute_id":"executive_sponsor","requirement":"optional","source":{"field_key":"record.account.executive_sponsor","source_class":"customer_system","system_of_record":"synthetic-account-store","acquisition_mode":"approved-query"}}
+  ]
+}

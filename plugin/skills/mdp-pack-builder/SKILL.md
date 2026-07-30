@@ -70,6 +70,20 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 The compiled contract, not a generic finder or the normalization prompt, states
 what data must be attempted. Keep collection and provider calls outside MDP.
 
+If an external orchestrator will consume the job, hand its integration owner
+the complete requirements result plus `mdp --json schema source-binding`.
+Keep the resulting `mdp.source-binding.v1` artifact outside `.mdp`, and require:
+
+```bash
+mdp --json validate-source-binding --dir PACK_ROOT \
+  --job JOB_ID --file SOURCE_BINDING_JSON
+```
+
+before activation. Do not invent provider enums, credentials, legacy provider
+IDs, execution roles, or row-result storage in the pack. The binding must pin
+the portable pack and requirements digests, binding and normalization releases,
+and exact Decision Input Contract receipts.
+
 6. Author prompts with explicit input and output contracts. Inspect the selected
    prompt's `output_contract.output_kind` and `output_contract.contract` before
    validating model-produced output:

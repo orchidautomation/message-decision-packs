@@ -34,6 +34,19 @@ mdp --json eval --strict --dir PACK_ROOT
 Run `requirements` for each job that binds a decision-input contract. A legacy
 job may report the contract as unavailable without becoming invalid.
 
+When a source binding is supplied, also run:
+
+```bash
+mdp --json validate-source-binding --dir PACK_ROOT \
+  --job JOB_ID --file SOURCE_BINDING_JSON
+```
+
+Treat stale pack/requirements pins, missing or duplicate qualified attributes,
+unknown attributes, requirement-class drift, incompatible source classes, or
+non-fixed status translation as blocking integration findings. External field
+keys may repeat. Review the integration release receipts, but do not claim that
+schema validation proves source access, provider execution, or normalization.
+
 Preview a portable compilation when needed:
 
 ```bash

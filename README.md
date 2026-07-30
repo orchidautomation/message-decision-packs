@@ -151,6 +151,14 @@ MDP does not perform collection or model calls. See
 [Decision Input Contracts](docs/decision-input-contracts.md) and the synthetic
 [Clay Audiences example](examples/clay-audiences-self-serve-enterprise-expansion/README.md).
 
+External orchestrators can bind their fields to one exact compiled job through
+the provider-neutral `mdp.source-binding.v1` contract. Use `mdp --json schema
+source-binding`, then `mdp --json validate-source-binding --dir <pack> --job
+<job-id> --file <binding.json>`. The validator checks portable pack and
+requirements digests, exact contract/attribute coverage, requirement classes,
+and allowed source classes. Bindings remain integration-owned and outside
+`.mdp`; MDP still performs no provider calls or orchestration.
+
 For audit-grade proposal normalization, the runner or host must make a fresh/stateless model call and pass only prompt-declared inputs. `scripts/mdp-proposal-runner.mjs` is the host-neutral local command surface that stages sources, preserves or creates source-audit inputs, calls the native runner, validates prompt output, creates the required receipt, and runs review-support probes. It is also exposed through `scripts/mdp-proposal-mcp-server.mjs`, a bundled local stdio MCP wrapper; neither surface is a hosted or remote MCP service. `mdp run-receipt` records the host-owned boundary plus local artifact hashes for the source audit, prompt output, validation result, runner audit, and downstream files, and blocks if the validation-result hashes do not match the supplied prompt-output/source-audit artifacts, if the runner-audit prompt-output hash does not match the supplied prompt output, or if the runner audit is marked demo/fixture/mock/synthetic. Same-conversation, dry-run, or mock normalization without a valid required runner-audit receipt is advisory or blocked even when the JSON validates.
 
 Profiles express domain language over ten universal primitives:
@@ -174,7 +182,15 @@ Profile vocabulary belongs in the manifest, cards, prompts, input contracts, job
 
 The full repository is the product/plugin contract: CLI behavior, docs, canonical templates/assets, authored skills, install/release assets, repo scripts, and Pluxx config stay in lockstep. Authored skills live under `plugin/skills`, and [Pluxx](https://pluxx.dev) packages canonical source into release bundles for Claude Code, Cursor, Codex, and OpenCode. The public MDP installer combines those bundles with the matching Rust CLI binary; Pluxx is the packaging layer, not the CLI runtime or a hosted MDP service.
 
-MDP ships five job-shaped skills: `mdp` for explicit CLI/operator and mixed work, `mdp-pack-builder` for pack authoring, `mdp-pack-review` for the pack artifact itself, `mdp-gtm-brief` for the three GTM fit/brief/copy-review jobs, and `mdp-proposal-review` for the four proposal review jobs. `mdp --json skills --dir <pack> --job <job-id>` validates pack eligibility and the exact job route; host discovery remains separate and host-managed.
+MDP ships five job-shaped skills: `mdp` for explicit CLI/operator and mixed
+work, including source-binding validation; `mdp-pack-builder` for pack
+authoring; `mdp-pack-review` for the pack artifact and supplied integration
+bindings; `mdp-gtm-brief` for the three GTM fit/brief/copy-review jobs; and
+`mdp-proposal-review` for the four proposal review jobs. Source binding does not
+add a sixth skill because it is a CLI contract between pack authoring/review
+and integration-owned execution. `mdp --json skills --dir <pack> --job
+<job-id>` validates pack eligibility and the exact job route; host discovery
+remains separate and host-managed.
 
 See [Distribution](docs/distribution.md) for the release and update contract and [Agent Hook Guidance](docs/agent-hook-guidance.md) for activation/validation boundaries.
 

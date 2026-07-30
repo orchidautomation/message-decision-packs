@@ -40,6 +40,19 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("available: false", skill)
         self.assertIn("does not collect sources or call a model", skill)
 
+    def test_existing_skills_route_provider_neutral_source_binding(self):
+        core = Path("plugin/skills/mdp/SKILL.md").read_text()
+        operator = Path("plugin/skills/mdp/references/cli-operator.md").read_text()
+        builder = Path("plugin/skills/mdp-pack-builder/SKILL.md").read_text()
+        review = Path("plugin/skills/mdp-pack-review/SKILL.md").read_text()
+        command = "mdp --json validate-source-binding"
+        for text in [core, operator, builder, review]:
+            self.assertIn(command, text)
+        self.assertIn("outside", core)
+        self.assertIn("field-key reuse", operator)
+        self.assertIn("provider enums", builder)
+        self.assertIn("External field", review)
+
     def test_gtm_brief_preserves_decision_input_and_legacy_normalization_paths(self):
         skill = Path("plugin/skills/mdp-gtm-brief/SKILL.md").read_text()
         mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()

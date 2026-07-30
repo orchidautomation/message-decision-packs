@@ -73,6 +73,17 @@ fn summarize(command: &str, data: &Value) -> Value {
             "decision_input_contract_count": array_len(&data["decision_input_contracts"]),
             "diagnostics": data["diagnostics"]
         }),
+        "validate-source-binding" => json!({
+            "contract": data["contract"],
+            "status": data["status"],
+            "valid": data["valid"],
+            "available": data["available"],
+            "pack_id": data["pack"]["id"],
+            "job_id": data["job"]["id"],
+            "coverage": data["coverage"],
+            "integration_releases": data["integration_releases"],
+            "diagnostics": data["diagnostics"]
+        }),
         "doctor" | "validate" | "validate-prompt-output" => json!({
             "valid": data["valid"],
             "strict": data["strict"],

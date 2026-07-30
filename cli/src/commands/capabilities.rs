@@ -4,7 +4,8 @@ use crate::constants::{
     PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
     PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
     PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, REQUIREMENTS_CONTRACT,
-    RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_BINDING_CONTRACT,
+    SOURCE_BINDING_VALIDATION_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::models::DecisionInputAttemptStatus;
 use serde_json::{Value, json};
@@ -101,6 +102,8 @@ pub(crate) fn capabilities() -> Value {
         "decision_input_contracts": {
             "requirements": REQUIREMENTS_CONTRACT,
             "normalized_input": NORMALIZED_DECISION_INPUT_CONTRACT,
+            "source_binding": SOURCE_BINDING_CONTRACT,
+            "source_binding_validation": SOURCE_BINDING_VALIDATION_CONTRACT,
             "attempt_statuses": DecisionInputAttemptStatus::ALL,
             "requirement_classes": ["required", "optional", "conditional", "hard-gate"],
             "boundary": "The pack and CLI own questions and deterministic decisions. The customer or host owns source collection, provider access, model calls, copy generation, and sequencing."
@@ -117,6 +120,7 @@ pub(crate) fn capabilities() -> Value {
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
+            command("validate-source-binding", SOURCE_BINDING_VALIDATION_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--file"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-attempt-request", "--collected-attempt-results", "--prompt", "--prompt-id", "--strict"]),
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
@@ -213,6 +217,19 @@ mod tests {
                 .iter()
                 .any(|command| command["name"] == "requirements"
                     && command["output_contract"] == REQUIREMENTS_CONTRACT)
+        );
+        assert_eq!(
+            result["decision_input_contracts"]["source_binding"],
+            SOURCE_BINDING_CONTRACT
+        );
+        assert!(
+            result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .any(|command| command["name"] == "validate-source-binding"
+                    && command["output_contract"] == SOURCE_BINDING_VALIDATION_CONTRACT
+                    && command["supports_strict"] == false)
         );
         assert_eq!(
             result["proposal_evidence_contracts"]["native_normalize_request"]["schema_target"],

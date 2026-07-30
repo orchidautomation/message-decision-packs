@@ -138,6 +138,21 @@ Pack eval fixtures exercise deterministic `ready`, `insufficient-context`, and
 `disqualified` behavior. The contract matrix covers the pre-evaluation
 `human-review`, `malformed`, and `provider-error` host outcomes.
 
+## Portable source-binding proof
+
+Two synthetic integration-owned bindings prove that the public contract is not
+Clay-specific:
+
+- [`fixtures/source-binding-clay-adapter.json`](fixtures/source-binding-clay-adapter.json)
+  uses synthetic table-column and approved-lookup field names.
+- [`fixtures/source-binding-record-grid.json`](fixtures/source-binding-record-grid.json)
+  maps the same requirements to a generic record grid.
+
+Both keep credentials, provider calls, execution state, and row results outside
+MDP. The fixtures deliberately reuse one field key for two support-related
+requirements to prove that field-key reuse is allowed while each qualified
+requirement still appears exactly once.
+
 ## Local proof
 
 ```bash
@@ -148,6 +163,14 @@ mdp --json eval --strict \
 mdp --json requirements \
   --dir examples/clay-audiences-self-serve-enterprise-expansion \
   --job prospect-fit-or-brief
+mdp --json validate-source-binding \
+  --dir examples/clay-audiences-self-serve-enterprise-expansion \
+  --job prospect-fit-or-brief \
+  --file examples/clay-audiences-self-serve-enterprise-expansion/fixtures/source-binding-clay-adapter.json
+mdp --json validate-source-binding \
+  --dir examples/clay-audiences-self-serve-enterprise-expansion \
+  --job prospect-fit-or-brief \
+  --file examples/clay-audiences-self-serve-enterprise-expansion/fixtures/source-binding-record-grid.json
 mdp --json validate-prompt-output --strict \
   --dir examples/clay-audiences-self-serve-enterprise-expansion \
   --prompt normalize-prospect.yaml \

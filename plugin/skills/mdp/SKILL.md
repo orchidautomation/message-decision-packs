@@ -60,6 +60,21 @@ mdp --json requirements --dir <pack-root> --job <job-id>
 
 This command is read-only. It compiles the pack-owned questions, source policy, normalization identity, and request/response schemas; it does not collect sources or call a model. An existing job without a Decision Input Contract returns `available: false` and keeps its current fit/readiness behavior.
 
+When the user is connecting an external orchestrator, keep its mapping outside
+the pack and validate it against the exact compiled release:
+
+```bash
+mdp --json schema source-binding
+mdp --json validate-source-binding --dir <pack-root> \
+  --job <job-id> --file <source-binding.json>
+```
+
+Require `data.valid: true` before integration activation. The command validates
+portable pack/requirements pins, complete and unique qualified attribute
+coverage, requirement classes, allowed source classes, release receipts, and
+fixed status translation. It does not access the source system or run
+normalization. A job with `available: false` cannot be source-bound.
+
 When `requirements` returns `data.available: true`, validate the bound
 normalization with the exact source-attempt request and exact host-collected
 attempt-results ledger:
