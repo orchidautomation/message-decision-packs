@@ -1,6 +1,7 @@
 description: Normalizes an attempted-complete Clay Audiences source-attempt ledger into provider-neutral MDP prospect JSON before deterministic fit or brief runs.
 format: mdp.prompt.v0
 id: normalize-prospect-row
+version: clay-self-serve-enterprise-expansion.v1
 inputs:
 - default: N/A
   description: The bounded source-attempt ledger for all declared decision-input attributes. Every attempt must retain attribute id, source class, status, provenance, timestamp, confidence, and supplied value or error.

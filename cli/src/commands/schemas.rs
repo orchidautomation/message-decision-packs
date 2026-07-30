@@ -2005,9 +2005,32 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
             "instructions",
             "output_contract"
         ],
+        "allOf": [{
+            "if": {
+                "properties": {
+                    "output_contract": {
+                        "required": ["output_kind"],
+                        "properties": {
+                            "output_kind": {"const": "decision-input-normalization"}
+                        }
+                    }
+                }
+            },
+            "then": {
+                "required": ["version"],
+                "properties": {
+                    "version": {"type": "string", "minLength": 1}
+                }
+            }
+        }],
         "properties": {
             "format": {"const": PROMPT_FORMAT_VERSION},
             "id": {"type": "string"},
+            "version": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Version receipt required for decision-input-normalization prompts and bound exactly by the decision input contract."
+            },
             "title": {"type": "string"},
             "description": {"type": "string"},
             "target_card_kinds": {
@@ -2788,6 +2811,7 @@ mod tests {
             result["properties"]["format"]["const"],
             PROMPT_FORMAT_VERSION
         );
+        assert_eq!(result["allOf"][0]["then"]["required"][0], "version");
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["strict_json_only"]["const"],
             true

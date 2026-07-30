@@ -74,9 +74,14 @@ Do not extract or pass `normalized_prospect` to fit, routing, brief, or copy
 work unless validation passes and the envelope's top-level `outcome` is exactly
 `ready`. Every other normalized outcome remains no-draft.
 
-When `requirements` returns `data.available: false`, preserve the legacy
-`mdp.prompt-output.v0` validation path without `--source-attempt-request` and
-use its validated `normalization_trace.fit_readiness.ready_for_mdp_fit` gate.
+For any selected prompt that is not the bound decision-input normalization
+prompt, preserve the legacy `mdp.prompt-output.v0` validation path without
+`--source-attempt-request`, regardless of job-wide `data.available`. Require
+`normalization_trace.fit_readiness.ready_for_mdp_fit` only for a legacy
+prospect-normalization prompt that declares `normalized_prospect` and that
+readiness field. For extraction or card-patch prompts, successful contract
+validation is the applicable machine gate; do not require an undeclared
+normalization trace.
 
 Closed v1 pairs:
 

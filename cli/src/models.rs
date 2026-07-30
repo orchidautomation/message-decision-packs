@@ -490,6 +490,8 @@ pub(crate) enum CardKind {
 pub(crate) struct PromptFile {
     pub(crate) format: String,
     pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) version: Option<String>,
     pub(crate) title: String,
     pub(crate) description: String,
     pub(crate) target_card_kinds: Vec<CardKind>,

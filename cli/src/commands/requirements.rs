@@ -696,11 +696,11 @@ fn effective_status_behavior(
             ),
             (
                 DecisionInputAttemptStatus::Blocked,
-                DecisionInputDisposition::Gap,
+                DecisionInputDisposition::HumanReview,
             ),
             (
                 DecisionInputAttemptStatus::Error,
-                DecisionInputDisposition::Gap,
+                DecisionInputDisposition::HumanReview,
             ),
         ]),
         DecisionInputRequirement::Conditional => BTreeMap::from([
@@ -1365,19 +1365,27 @@ mod tests {
     }
 
     #[test]
-    fn optional_provider_error_remains_explicit_but_does_not_block() {
+    fn optional_provider_failures_require_human_review() {
         let attribute = DecisionInputAttribute {
             requirement: DecisionInputRequirement::Optional,
             ..DecisionInputAttribute::default()
         };
 
         assert_eq!(
+            effective_status_behavior(&attribute)[&DecisionInputAttemptStatus::NotFound],
+            DecisionInputDisposition::Accept
+        );
+        assert_eq!(
+            effective_status_behavior(&attribute)[&DecisionInputAttemptStatus::Blocked],
+            DecisionInputDisposition::HumanReview
+        );
+        assert_eq!(
             effective_status_behavior(&attribute)[&DecisionInputAttemptStatus::Error],
-            DecisionInputDisposition::Gap
+            DecisionInputDisposition::HumanReview
         );
         assert!(
-            ready_outcome_guard(&attribute).is_none(),
-            "optional gaps must not prevent a ready normalization outcome"
+            ready_outcome_guard(&attribute).is_some(),
+            "optional provider and access failures must prevent a ready outcome"
         );
     }
 
@@ -1665,6 +1673,34 @@ mod tests {
         blocked_ready["outcome"] = json!("human-review");
         draft202012::validate(&compiled["normalized_output_schema"], &blocked_ready)
             .expect("a non-ready outcome should remain valid for a blocked hard gate");
+
+        for (status, result) in [
+            ("blocked", json!({"status": "blocked"})),
+            (
+                "error",
+                json!({
+                    "status": "error",
+                    "error": "Synthetic provider failure"
+                }),
+            ),
+        ] {
+            let mut optional_failure = response.clone();
+            optional_failure["attributes"]["employee_band"] = result;
+            optional_failure["normalized_prospect"]["attributes"]
+                .as_object_mut()
+                .expect("normalized attributes should be an object")
+                .remove("employee_band");
+            assert!(
+                draft202012::validate(&compiled["normalized_output_schema"], &optional_failure)
+                    .is_err(),
+                "optional {status} must not certify a ready normalization outcome"
+            );
+            optional_failure["outcome"] = json!("human-review");
+            draft202012::validate(&compiled["normalized_output_schema"], &optional_failure)
+                .unwrap_or_else(|error| {
+                    panic!("optional {status} should permit human-review: {error}")
+                });
+        }
     }
 
     #[test]

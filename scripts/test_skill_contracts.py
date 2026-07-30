@@ -62,7 +62,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("`decision-input-normalization`", skill)
         self.assertIn("regardless of", skill)
         self.assertIn("job-wide `data.available`", skill)
-        self.assertIn("legacy prospect-normalization prompt", skill)
+        self.assertIn("prospect-normalization prompt", skill)
         self.assertIn("card-patch/extraction envelopes", skill)
         self.assertIn("does not declare", skill)
         self.assertIn("attempted-complete source-attempt request", skill)
@@ -71,7 +71,14 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("trusted UTC", skill)
         self.assertIn("attempt for every compiled attribute", skill)
         self.assertIn("--source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON", skill)
-        self.assertIn("top-level `outcome` is exactly `ready`", skill)
+
+    def test_core_skill_distinguishes_legacy_normalization_from_extraction(self):
+        skill = Path("plugin/skills/mdp/SKILL.md").read_text()
+        self.assertIn("regardless of job-wide `data.available`", skill)
+        self.assertIn("prospect-normalization prompt", skill)
+        self.assertIn("extraction or card-patch prompts", skill)
+        self.assertIn("undeclared", skill)
+        self.assertIn("top-level `outcome` is exactly", skill)
         self.assertIn("mdp.prompt-output.v0", skill)
         self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", skill)
 

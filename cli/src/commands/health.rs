@@ -2344,6 +2344,19 @@ fn validate_decision_input_contracts(
                     ),
                 ));
             }
+            if prompt.version.as_deref() != Some(contract.normalization.prompt_version.as_str()) {
+                issues.push(issue(
+                    "decision_input_normalization_prompt_version_mismatch",
+                    "error",
+                    format!("{path}/normalization/prompt_version"),
+                    format!(
+                        "decision input contract {} prompt_version {} must match the bound prompt version {}",
+                        contract.id,
+                        contract.normalization.prompt_version,
+                        prompt.version.as_deref().unwrap_or("<missing>")
+                    ),
+                ));
+            }
         }
         if contract.normalization.prompt_version.trim().is_empty() {
             issues.push(issue(
@@ -3549,6 +3562,7 @@ struct PromptInventoryEntry {
     contract: Option<String>,
     output_kind: Option<String>,
     schema_ref: Option<String>,
+    version: Option<String>,
 }
 
 impl PromptInventory {
@@ -3574,6 +3588,7 @@ fn prompt_inventory(loaded_prompts: &[Value]) -> PromptInventory {
             schema_ref: prompt["output_contract"]["schema_ref"]
                 .as_str()
                 .map(ToOwned::to_owned),
+            version: prompt["version"].as_str().map(ToOwned::to_owned),
         };
         if let Some(id) = prompt["id"].as_str() {
             inventory.refs.insert(id.to_string(), entry.clone());
@@ -3765,6 +3780,7 @@ fn validate_prompts(root: &Path, issues: &mut Vec<Value>) -> Result<Vec<Value>> 
                 validate_prompt_file(&prompt, &display_path, &mut prompt_ids, issues);
                 loaded_prompts.push(json!({
                     "id": prompt.id,
+                    "version": prompt.version,
                     "path": display_path,
                     "target_card_kinds": prompt.target_card_kinds,
                     "inputs": prompt.inputs.len(),
@@ -3800,6 +3816,7 @@ fn validate_prompt_shape(path: &Path, display_path: &str, issues: &mut Vec<Value
         &[
             "format",
             "id",
+            "version",
             "title",
             "description",
             "target_card_kinds",
@@ -3974,6 +3991,18 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
         ));
     }
     if is_decision_input_normalization {
+        if prompt
+            .version
+            .as_deref()
+            .is_none_or(|version| version.trim().is_empty())
+        {
+            issues.push(issue(
+                "decision_input_prompt_version_required",
+                "error",
+                format!("{path}#/version"),
+                "decision-input-normalization prompts must declare a non-blank version",
+            ));
+        }
         if contract.schema_ref.as_deref() != Some(NORMALIZED_DECISION_INPUT_CONTRACT) {
             issues.push(issue(
                 "decision_input_prompt_schema_ref_required",
@@ -6125,6 +6154,37 @@ output_contract:
         assert_eq!(result["valid"], false);
         assert!(codes.contains("decision_input_prompt_schema_ref_required"));
         assert!(codes.contains("decision_input_prompt_inline_schema_unsupported"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn decision_input_contract_rejects_prompt_version_drift() {
+        let root = temp_clay_pack("decision-input-prompt-version-drift");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replacen(
+                "prompt_version: clay-self-serve-enterprise-expansion.v1",
+                "prompt_version: bogus.v999",
+                1,
+            ),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "decision_input_normalization_prompt_version_mismatch"
+                        && issue["severity"] == "error"
+                })
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
