@@ -2828,6 +2828,29 @@ mod tests {
     }
 
     #[test]
+    fn generated_briefs_and_traces_do_not_stale_requirements() {
+        let root = temporary_clay_example("generated-artifacts");
+        let before = requirements(&root, "prospect-fit-or-brief")
+            .expect("requirements should compile before generated artifacts");
+
+        std::fs::create_dir_all(root.join(".mdp/briefs"))
+            .expect("brief output directory should be created");
+        std::fs::create_dir_all(root.join(".mdp/traces"))
+            .expect("trace output directory should be created");
+        std::fs::write(root.join(".mdp/briefs/prospect.json"), "{}\n")
+            .expect("generated brief should be writable");
+        std::fs::write(root.join(".mdp/traces/run.json"), "{}\n")
+            .expect("generated trace should be writable");
+
+        let after = requirements(&root, "prospect-fit-or-brief")
+            .expect("requirements should compile after generated artifacts");
+        assert_eq!(after["pack"]["sha256"], before["pack"]["sha256"]);
+        assert_eq!(after["requirements_sha256"], before["requirements_sha256"]);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn job_input_contract_ids_keep_the_same_shape_when_available() {
         let root = clay_example_root();
         let compiled =

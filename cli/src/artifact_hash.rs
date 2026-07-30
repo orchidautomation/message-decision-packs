@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+const GENERATED_PACK_DIRECTORIES: &[&str] = &["briefs", "traces"];
+
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -52,6 +54,13 @@ fn collect_regular_files(
             ));
         }
         if metadata.is_dir() {
+            if directory == pack_root
+                && GENERATED_PACK_DIRECTORIES
+                    .iter()
+                    .any(|generated| entry.file_name() == *generated)
+            {
+                continue;
+            }
             collect_regular_files(pack_root, &path, files)?;
             continue;
         }
@@ -127,6 +136,29 @@ mod tests {
             pack_content_sha256(&second).unwrap()
         );
         let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn pack_hash_excludes_generated_briefs_and_traces() {
+        let root = std::env::temp_dir().join(format!("mdp-pack-generated-hash-{}", nonce()));
+        fs::create_dir_all(root.join(".mdp/cards")).unwrap();
+        fs::write(root.join(".mdp/manifest.yaml"), "format: mdp.v0\n").unwrap();
+        fs::write(root.join(".mdp/cards/a.yaml"), "id: a\n").unwrap();
+        let authored_hash = pack_content_sha256(&root).unwrap();
+
+        fs::create_dir_all(root.join(".mdp/briefs")).unwrap();
+        fs::create_dir_all(root.join(".mdp/traces")).unwrap();
+        fs::write(
+            root.join(".mdp/briefs/brief.json"),
+            "{\"generated\":true}\n",
+        )
+        .unwrap();
+        fs::write(root.join(".mdp/traces/run.json"), "{\"generated\":true}\n").unwrap();
+        assert_eq!(pack_content_sha256(&root).unwrap(), authored_hash);
+
+        fs::write(root.join(".mdp/cards/a.yaml"), "id: changed\n").unwrap();
+        assert_ne!(pack_content_sha256(&root).unwrap(), authored_hash);
+        let _ = fs::remove_dir_all(root);
     }
 
     fn nonce() -> u128 {

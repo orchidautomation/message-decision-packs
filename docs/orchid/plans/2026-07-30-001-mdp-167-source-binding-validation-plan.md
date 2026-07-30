@@ -57,7 +57,8 @@ linear_issues:
 
 ### Canonical digests
 
-- Hash each regular file under `.mdp` as raw bytes.
+- Hash each authored regular file under `.mdp` as raw bytes, excluding generated
+  local artifacts under `.mdp/briefs/` and `.mdp/traces/`.
 - Sort portable POSIX relative paths and hash canonical records containing the relative path and file SHA-256.
 - Reject symlinks and non-regular entries so the same source tree yields the same digest across checkout paths.
 - Canonicalize the requirements JSON by recursively sorting object keys while preserving array order, then hash the payload before adding its `requirements_sha256` field.

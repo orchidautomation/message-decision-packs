@@ -78,10 +78,12 @@ The fixed value-to-attempt-status translation is:
 | inaccessible or unmapped | `blocked` |
 | runtime failure | `error` |
 
-Both digests are deterministic. The pack digest covers regular files under
-`.mdp` using portable relative paths and raw file bytes. The requirements
-digest covers canonical JSON before its own digest field is added. Symlinks
-fail closed.
+Both digests are deterministic. The pack digest covers authored regular files
+under `.mdp` using portable relative paths and raw file bytes. Generated local
+artifacts under `.mdp/briefs/` and `.mdp/traces/` are excluded so producing a
+brief or trace does not stale an otherwise compatible source binding. The
+requirements digest covers canonical JSON before its own digest field is
+added. Symlinks fail closed.
 
 ## Attempted-Complete Semantics
 
