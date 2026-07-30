@@ -40,13 +40,14 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("available: false", skill)
         self.assertIn("does not collect sources or call a model", skill)
 
-    def test_gtm_brief_preserves_legacy_normalization_path(self):
+    def test_gtm_brief_preserves_decision_input_and_legacy_normalization_paths(self):
         skill = Path("plugin/skills/mdp-gtm-brief/SKILL.md").read_text()
-        reference = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
-        for text in [skill, reference]:
-            self.assertIn("requirements.available", text)
+        mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
+        for text in [skill, mode]:
+            self.assertIn("data.available", text)
+            self.assertIn("source-attempt request", text)
             self.assertIn("mdp.prompt-output.v0", text)
-            self.assertIn("normalization_trace.fit_readiness", text)
+            self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", text)
 
     def test_bad_frontmatter_and_missing_local_link_fail(self):
         path = self.root / "plugin/skills/mdp/SKILL.md"

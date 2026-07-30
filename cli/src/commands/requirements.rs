@@ -1668,6 +1668,43 @@ mod tests {
     }
 
     #[test]
+    fn provenance_attempt_binding_does_not_depend_on_observed_at() {
+        let attribute = json!({"id": "company_name"});
+        let attempt = json!({
+            "status": "observed",
+            "provenance": [{"attempt_id": "synthetic-attempt-unknown"}]
+        });
+        let known_attempt = json!({
+            "attempt_id": "synthetic-attempt-known",
+            "attribute_id": "company_name",
+            "source_class": "synthetic_fixture",
+            "source_locator": "synthetic://known"
+        });
+        let mut attempts = BTreeMap::new();
+        attempts.insert("synthetic-attempt-known", &known_attempt);
+        let source_attempt_index = SourceAttemptIndex {
+            attempts,
+            as_of_seconds: parse_utc_timestamp_seconds("2026-07-29T12:00:00Z")
+                .expect("fixture timestamp should parse"),
+        };
+        let mut issues = Vec::new();
+
+        validate_attribute_attempt_receipts(
+            &attribute,
+            &attempt,
+            "synthetic-response",
+            Some(&source_attempt_index),
+            &mut issues,
+        );
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_provenance_attempt_unknown")
+        );
+    }
+
+    #[test]
     fn decision_input_semantics_reject_malformed_times_unobserved_values_and_blank_strings() {
         let (root, request, response, request_sha256, prompt_path) = clay_validation_fixture();
 

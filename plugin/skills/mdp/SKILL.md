@@ -60,7 +60,8 @@ mdp --json requirements --dir <pack-root> --job <job-id>
 
 This command is read-only. It compiles the pack-owned questions, source policy, normalization identity, and request/response schemas; it does not collect sources or call a model. An existing job without a Decision Input Contract returns `available: false` and keeps its current fit/readiness behavior.
 
-For a bound normalization, validate with the exact source-attempt request:
+When `requirements` returns `data.available: true`, validate the bound
+normalization with the exact source-attempt request:
 
 ```bash
 mdp --json validate-prompt-output --dir <pack-root> \
@@ -72,6 +73,10 @@ mdp --json validate-prompt-output --dir <pack-root> \
 Do not extract or pass `normalized_prospect` to fit, routing, brief, or copy
 work unless validation passes and the envelope's top-level `outcome` is exactly
 `ready`. Every other normalized outcome remains no-draft.
+
+When `requirements` returns `data.available: false`, preserve the legacy
+`mdp.prompt-output.v0` validation path without `--source-attempt-request` and
+use its validated `normalization_trace.fit_readiness.ready_for_mdp_fit` gate.
 
 Closed v1 pairs:
 

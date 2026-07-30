@@ -34,26 +34,38 @@ mdp --json validate --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 ```
 
-4. When a pack normalization prompt exists, first check whether the selected job has an available decision-input contract:
+4. Before using a pack normalization prompt, inspect the selected job's
+   Decision Input Contract handoff:
 
 ```bash
 mdp --json requirements --dir PACK_ROOT --job JOB_ID
 ```
 
-5. If `requirements.available` is `true`, validate the decision-input envelope against the exact source-attempt request:
+5. Branch on `data.available`:
+   - When `true`, use the returned bound prompt and exact source-attempt request,
+     then validate the full decision-input envelope:
 
-```bash
-mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID \
-  --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON --file OUTPUT_JSON
-```
+     ```bash
+     mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID \
+       --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON --file OUTPUT_JSON
+     ```
 
-Read the validated envelope's top-level `outcome` before extracting
-   `normalized_prospect`. Continue only when `outcome` is exactly `ready`.
-   `insufficient-context`, `disqualified`, `human-review`, `malformed`, and
-   `provider-error` stop the workflow and remain no-draft.
-6. If `requirements.available` is `false`, use the legacy prompt-output path: validate the prompt's literal `mdp.prompt-output.v0` contract without a source-attempt request, then use `normalization_trace.fit_readiness` and existing CLI fit/readiness checks before extracting a prospect.
-7. Never invent a person, title, signal, date, persona, segment, or required attribute. Account-only context stays insufficient/no-draft when the pack requires person readiness.
-8. Treat synthetic fixtures as `do_not_contact`; they are for testing only.
+     Continue only when validation passes and the top-level `outcome` is exactly
+     `ready`. Every other outcome stops no-draft before extracting
+     `normalized_prospect`.
+   - When `false`, retain the legacy `mdp.prompt-output.v0` path. Validate
+     without a source-attempt request:
+
+     ```bash
+     mdp --json validate-prompt-output --dir PACK_ROOT \
+       --prompt-id PROMPT_ID --file OUTPUT_JSON
+     ```
+
+     Continue only when validation passes and
+     `normalization_trace.fit_readiness.ready_for_mdp_fit` is exactly `true`
+     before extracting `normalized_prospect`.
+6. Never invent a person, title, signal, date, persona, segment, or required attribute. Account-only context stays insufficient/no-draft when the pack requires person readiness.
+7. Treat synthetic fixtures as `do_not_contact`; they are for testing only.
 
 ## Load The Mode Reference
 
