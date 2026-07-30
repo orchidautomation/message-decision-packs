@@ -900,16 +900,18 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
                 ready_outcome_guards.push(guard);
             }
             if attribute.applies_when.iter().any(|condition| {
-                condition.operator != DecisionInputConditionOperator::Exists
-                    && attribute_domains
-                        .get(condition.attribute.as_str())
-                        .filter(|domain| !domain.is_empty())
-                        .is_some_and(|domain| {
-                            condition
-                                .values
-                                .iter()
-                                .any(|value| !domain.contains(value.as_str()))
-                        })
+                (condition.operator == DecisionInputConditionOperator::Exists
+                    && !condition.values.is_empty())
+                    || (condition.operator != DecisionInputConditionOperator::Exists
+                        && attribute_domains
+                            .get(condition.attribute.as_str())
+                            .filter(|domain| !domain.is_empty())
+                            .is_some_and(|domain| {
+                                condition
+                                    .values
+                                    .iter()
+                                    .any(|value| !domain.contains(value.as_str()))
+                            }))
             }) {
                 ready_outcome_guards.push(json!(false));
             }
@@ -2254,10 +2256,23 @@ mod tests {
         )
         .expect("normalized response fixture should be valid JSON");
 
-        for operator in [
-            DecisionInputConditionOperator::Equals,
-            DecisionInputConditionOperator::NotEquals,
-            DecisionInputConditionOperator::In,
+        for (operator, values) in [
+            (
+                DecisionInputConditionOperator::Exists,
+                vec!["ignored-value".to_string()],
+            ),
+            (
+                DecisionInputConditionOperator::Equals,
+                vec!["not-a-real-enum-value".to_string()],
+            ),
+            (
+                DecisionInputConditionOperator::NotEquals,
+                vec!["not-a-real-enum-value".to_string()],
+            ),
+            (
+                DecisionInputConditionOperator::In,
+                vec!["not-a-real-enum-value".to_string()],
+            ),
         ] {
             let mut contract = base_contract.clone();
             let condition = &mut contract
@@ -2267,7 +2282,7 @@ mod tests {
                 .expect("Clay example should include latest_support_context")
                 .applies_when[0];
             condition.operator = operator.clone();
-            condition.values = vec!["not-a-real-enum-value".to_string()];
+            condition.values = values;
 
             let compiled = normalized_envelope_schema("prospect-fit-or-brief", &[&contract]);
 

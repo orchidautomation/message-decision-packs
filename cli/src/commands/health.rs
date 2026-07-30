@@ -2567,6 +2567,16 @@ fn validate_decision_input_attributes(
                     "equals, not_equals, and in applicability conditions require values",
                 ));
             }
+            if condition.operator == crate::models::DecisionInputConditionOperator::Exists
+                && !condition.values.is_empty()
+            {
+                issues.push(issue(
+                    "decision_input_applicability_exists_values_forbidden",
+                    "error",
+                    format!("{condition_path}/values"),
+                    "exists applicability conditions do not accept values",
+                ));
+            }
             if condition.operator == crate::models::DecisionInputConditionOperator::Equals
                 && condition.values.len() != 1
             {
@@ -2659,6 +2669,19 @@ fn validate_decision_input_attributes(
                 "error",
                 format!("{attribute_path}/source_classes"),
                 "decision input attributes must declare permitted source classes",
+            ));
+        } else if attribute
+            .source_classes
+            .iter()
+            .collect::<BTreeSet<_>>()
+            .len()
+            != attribute.source_classes.len()
+        {
+            issues.push(issue(
+                "decision_input_attribute_source_class_duplicate",
+                "error",
+                format!("{attribute_path}/source_classes"),
+                "decision input attribute source classes must be unique",
             ));
         }
         for (source_index, source_class) in attribute.source_classes.iter().enumerate() {
@@ -6538,6 +6561,45 @@ output_contract:
                 "{operator:?} must reject enum operands outside the dependency domain"
             );
         }
+
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let condition = &mut manifest.decision_input_contracts[0]
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "latest_support_context")
+            .expect("Clay example should include latest_support_context")
+            .applies_when[0];
+        condition.operator = crate::models::DecisionInputConditionOperator::Exists;
+        condition.values = vec!["ignored-value".to_string()];
+        let mut issues = Vec::new();
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "decision_input_applicability_exists_values_forbidden"
+                && issue["severity"] == "error"
+        }));
+    }
+
+    #[test]
+    fn decision_input_attribute_rejects_duplicate_source_classes() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let attribute = manifest.decision_input_contracts[0]
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "company_domain")
+            .expect("Clay example should include company_domain");
+        attribute
+            .source_classes
+            .push(attribute.source_classes[0].clone());
+        let mut issues = Vec::new();
+
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "decision_input_attribute_source_class_duplicate"
+                && issue["severity"] == "error"
+        }));
     }
 
     #[test]

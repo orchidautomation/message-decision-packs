@@ -55,6 +55,20 @@ class SkillContractTests(unittest.TestCase):
             self.assertIn("mdp.prompt-output.v0", text)
             self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", text)
 
+    def test_gtm_brief_constructs_and_hashes_attempts_before_normalization(self):
+        mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
+        requirements = mode.index("mdp --json requirements")
+        instantiate = mode.index("instantiate `data.source_attempt_request_schema`")
+        collect = mode.index("every compiled attribute during collection")
+        preserve = mode.index("Preserve and hash those exact")
+        normalize = mode.index("Then normalize that exact request")
+        validate = mode.index("validate the decision-input envelope")
+        self.assertLess(requirements, instantiate)
+        self.assertLess(instantiate, collect)
+        self.assertLess(collect, preserve)
+        self.assertLess(preserve, normalize)
+        self.assertLess(normalize, validate)
+
     def test_pack_builder_preserves_decision_input_and_legacy_validation_paths(self):
         skill = Path("plugin/skills/mdp-pack-builder/SKILL.md").read_text()
         self.assertIn("data.available", skill)

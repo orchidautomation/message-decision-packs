@@ -85,7 +85,8 @@ non-blank error detail. `blocked` and `error` are never collapsed into
 The normalized envelope includes the SHA-256 of the exact source-attempt request.
 Validation binds every provenance receipt back to a matching request attempt,
 requires the exact job-bound normalization prompt, verifies UTC timestamps, and
-derives `age_days` from `freshness.observed_at` and the trusted request `as_of`.
+derives `age_days` from bound provenance `observed_at` and the trusted request
+`as_of`.
 It rejects meaningful normalized prospect values for non-observed attributes.
 
 The normalization envelope always sets `draft_allowed` to `false`.
