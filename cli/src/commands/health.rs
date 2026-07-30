@@ -3425,14 +3425,36 @@ fn validate_decision_input_contract_shapes(
             "error",
             issues,
         );
-        validate_object_keys_with_severity(
-            yaml_get(contract, "normalization").unwrap_or(&YamlValue::Null),
-            &["prompt", "prompt_version", "normalized_schema_ref"],
-            &format!("{contract_path}/normalization"),
-            "manifest_decision_input_normalization_unknown_field",
-            "error",
+        validate_required_object_keys(
+            contract,
+            &[
+                "id",
+                "version",
+                "normalization",
+                "source_classes",
+                "attributes",
+            ],
+            &contract_path,
+            "manifest_decision_input_contract_required_field_missing",
             issues,
         );
+        if let Some(normalization) = yaml_get(contract, "normalization") {
+            validate_object_keys_with_severity(
+                normalization,
+                &["prompt", "prompt_version", "normalized_schema_ref"],
+                &format!("{contract_path}/normalization"),
+                "manifest_decision_input_normalization_unknown_field",
+                "error",
+                issues,
+            );
+            validate_required_object_keys(
+                normalization,
+                &["prompt", "prompt_version", "normalized_schema_ref"],
+                &format!("{contract_path}/normalization"),
+                "manifest_decision_input_normalization_required_field_missing",
+                issues,
+            );
+        }
         let Some(attributes) = yaml_get(contract, "attributes").and_then(YamlValue::as_sequence)
         else {
             continue;
@@ -3462,6 +3484,25 @@ fn validate_decision_input_contract_shapes(
                 "error",
                 issues,
             );
+            validate_required_object_keys(
+                attribute,
+                &[
+                    "id",
+                    "question",
+                    "output_path",
+                    "value",
+                    "requirement",
+                    "decision_effects",
+                    "source_classes",
+                    "provenance",
+                    "confidence",
+                    "freshness",
+                    "sensitivity",
+                ],
+                &attribute_path,
+                "manifest_decision_input_attribute_required_field_missing",
+                issues,
+            );
             validate_object_keys_with_severity(
                 yaml_get(attribute, "value").unwrap_or(&YamlValue::Null),
                 &["type", "format", "enum", "required", "description"],
@@ -3478,6 +3519,19 @@ fn validate_decision_input_contract_shapes(
                 "error",
                 issues,
             );
+            if let Some(conditions) =
+                yaml_get(attribute, "applies_when").and_then(YamlValue::as_sequence)
+            {
+                for (condition_index, condition) in conditions.iter().enumerate() {
+                    validate_required_object_keys(
+                        condition,
+                        &["attribute", "operator"],
+                        &format!("{attribute_path}/applies_when/{condition_index}"),
+                        "manifest_decision_input_applicability_required_field_missing",
+                        issues,
+                    );
+                }
+            }
             validate_object_keys_with_severity(
                 yaml_get(attribute, "provenance").unwrap_or(&YamlValue::Null),
                 &["required", "required_fields"],
@@ -3486,6 +3540,15 @@ fn validate_decision_input_contract_shapes(
                 "error",
                 issues,
             );
+            if let Some(provenance) = yaml_get(attribute, "provenance") {
+                validate_required_object_keys(
+                    provenance,
+                    &["required", "required_fields"],
+                    &format!("{attribute_path}/provenance"),
+                    "manifest_decision_input_provenance_required_field_missing",
+                    issues,
+                );
+            }
             validate_object_keys_with_severity(
                 yaml_get(attribute, "confidence").unwrap_or(&YamlValue::Null),
                 &["required", "minimum"],
@@ -3494,6 +3557,15 @@ fn validate_decision_input_contract_shapes(
                 "error",
                 issues,
             );
+            if let Some(confidence) = yaml_get(attribute, "confidence") {
+                validate_required_object_keys(
+                    confidence,
+                    &["required"],
+                    &format!("{attribute_path}/confidence"),
+                    "manifest_decision_input_confidence_required_field_missing",
+                    issues,
+                );
+            }
             validate_object_keys_with_severity(
                 yaml_get(attribute, "freshness").unwrap_or(&YamlValue::Null),
                 &["required", "max_age_days", "allow_unknown"],
@@ -3502,6 +3574,15 @@ fn validate_decision_input_contract_shapes(
                 "error",
                 issues,
             );
+            if let Some(freshness) = yaml_get(attribute, "freshness") {
+                validate_required_object_keys(
+                    freshness,
+                    &["required", "allow_unknown"],
+                    &format!("{attribute_path}/freshness"),
+                    "manifest_decision_input_freshness_required_field_missing",
+                    issues,
+                );
+            }
             validate_object_keys_with_severity(
                 yaml_get(attribute, "status_behavior").unwrap_or(&YamlValue::Null),
                 &[
@@ -3577,6 +3658,28 @@ fn validate_object_keys_with_severity(
                 format!(
                     "unsupported field {key} is parsed but ignored; put advisory extension data under entry metadata"
                 ),
+            ));
+        }
+    }
+}
+
+fn validate_required_object_keys(
+    value: &YamlValue,
+    required: &[&str],
+    path: &str,
+    code: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(map) = value.as_mapping() else {
+        return;
+    };
+    for key in required {
+        if !map.contains_key(YamlValue::String((*key).to_string())) {
+            issues.push(issue(
+                code,
+                "error",
+                format!("{path}/{key}"),
+                format!("required field {key} is missing"),
             ));
         }
     }
@@ -6368,6 +6471,135 @@ output_contract:
             issues.iter().all(|issue| issue["severity"] == "error"),
             "unknown decision input contract fields must invalidate requirements"
         );
+    }
+
+    #[test]
+    fn decision_input_missing_required_fields_fail_closed() {
+        let manifest_path = clay_example_root().join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(manifest_path).expect("manifest should be readable");
+        let mut value: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        let contract = &mut value["decision_input_contracts"][0];
+        contract["normalization"]
+            .as_mapping_mut()
+            .expect("normalization should be an object")
+            .remove(YamlValue::String("normalized_schema_ref".to_string()));
+        let attribute = &mut contract["attributes"][0];
+        for field in [
+            "provenance",
+            "confidence",
+            "freshness",
+            "sensitivity",
+            "source_classes",
+        ] {
+            attribute
+                .as_mapping_mut()
+                .expect("attribute should be an object")
+                .remove(YamlValue::String(field.to_string()));
+        }
+        let nested_policy_attribute = &mut contract["attributes"][1];
+        nested_policy_attribute["provenance"]
+            .as_mapping_mut()
+            .expect("provenance should be an object")
+            .remove(YamlValue::String("required_fields".to_string()));
+        nested_policy_attribute["confidence"]
+            .as_mapping_mut()
+            .expect("confidence should be an object")
+            .remove(YamlValue::String("required".to_string()));
+        nested_policy_attribute["freshness"]
+            .as_mapping_mut()
+            .expect("freshness should be an object")
+            .remove(YamlValue::String("allow_unknown".to_string()));
+        let mut issues = Vec::new();
+
+        validate_decision_input_contract_shapes(
+            yaml_get(&value, "decision_input_contracts"),
+            ".mdp/manifest.yaml#/decision_input_contracts",
+            &mut issues,
+        );
+
+        for (code, field) in [
+            (
+                "manifest_decision_input_normalization_required_field_missing",
+                "normalized_schema_ref",
+            ),
+            (
+                "manifest_decision_input_attribute_required_field_missing",
+                "provenance",
+            ),
+            (
+                "manifest_decision_input_attribute_required_field_missing",
+                "confidence",
+            ),
+            (
+                "manifest_decision_input_attribute_required_field_missing",
+                "freshness",
+            ),
+            (
+                "manifest_decision_input_attribute_required_field_missing",
+                "sensitivity",
+            ),
+            (
+                "manifest_decision_input_attribute_required_field_missing",
+                "source_classes",
+            ),
+            (
+                "manifest_decision_input_provenance_required_field_missing",
+                "required_fields",
+            ),
+            (
+                "manifest_decision_input_confidence_required_field_missing",
+                "required",
+            ),
+            (
+                "manifest_decision_input_freshness_required_field_missing",
+                "allow_unknown",
+            ),
+        ] {
+            assert!(
+                issues.iter().any(|issue| {
+                    issue["code"] == code
+                        && issue["path"]
+                            .as_str()
+                            .is_some_and(|path| path.ends_with(field))
+                        && issue["severity"] == "error"
+                }),
+                "missing required-field issue {code} for {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn strict_validation_rejects_omitted_decision_input_policy_object() {
+        let root = temp_clay_pack("missing-decision-input-policy");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut value: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        value["decision_input_contracts"][0]["attributes"][0]
+            .as_mapping_mut()
+            .expect("attribute should be an object")
+            .remove(YamlValue::String("provenance".to_string()));
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&value).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("strict validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "manifest_decision_input_attribute_required_field_missing"
+                        && issue["path"]
+                            .as_str()
+                            .is_some_and(|path| path.ends_with("/provenance"))
+                })
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
