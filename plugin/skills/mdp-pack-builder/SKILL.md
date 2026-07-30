@@ -75,7 +75,12 @@ what data must be attempted. Keep collection and provider calls outside MDP.
    - When `data.available` is `true`, construct and preserve one
      attempted-complete source-attempt request matching
      `data.source_attempt_request_schema`. The customer or host owns collection
-     and paid normalization. Pass the same exact request to validation:
+     and paid normalization. Populate the schema's exact `contract`, `job_id`,
+     and `decision_input_contracts` ID/version receipts; set a trusted UTC
+     `as_of`; and record at least one attempt for every compiled attribute
+     during collection, including its `attempt_id`, `attribute_id`,
+     `source_class`, `source_locator`, and `requested_at`. Preserve that exact
+     file, then pass it to validation:
 
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID \

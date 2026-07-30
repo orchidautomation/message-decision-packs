@@ -8,7 +8,7 @@ use crate::models::{
     DecisionInputRequirement, DecisionInputSourceClass, Manifest, ValueContract,
 };
 use crate::pack_io::{read_manifest, resolve_pack_path};
-use crate::value_contracts::valid_date;
+use crate::value_contracts::{valid_date, valid_date_time};
 use anyhow::{Result, anyhow};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -237,6 +237,7 @@ pub(crate) fn validate_normalized_decision_input(
                     ),
                 ));
             }
+            validate_observed_value_format(attribute, attempt, artifact_path, &mut issues);
             validate_attribute_attempt_receipts(
                 attribute,
                 attempt,
@@ -247,6 +248,36 @@ pub(crate) fn validate_normalized_decision_input(
         }
     }
     Ok(issues)
+}
+
+fn validate_observed_value_format(
+    attribute: &Value,
+    attempt: &Value,
+    artifact_path: &str,
+    issues: &mut Vec<Value>,
+) {
+    if attempt["status"].as_str() != Some("observed") {
+        return;
+    }
+    let Some(format) = attribute["value"]["format"].as_str() else {
+        return;
+    };
+    let Some(value) = attempt["value"].as_str() else {
+        return;
+    };
+    let valid = match format {
+        "date" => valid_date(value),
+        "date-time" => valid_date_time(value),
+        _ => true,
+    };
+    if !valid {
+        let attribute_id = attribute["id"].as_str().unwrap_or("<unknown>");
+        issues.push(decision_input_issue(
+            "decision_input_observed_value_format_invalid",
+            format!("{artifact_path}#/attributes/{attribute_id}/value"),
+            format!("observed attribute {attribute_id} must use valid {format} format"),
+        ));
+    }
 }
 
 struct SourceAttemptIndex<'a> {
@@ -1665,6 +1696,52 @@ mod tests {
             )
             .contains("decision_input_freshness_observed_at_future")
         );
+    }
+
+    #[test]
+    fn decision_input_semantics_reject_invalid_observed_calendar_values() {
+        let (root, request, response, request_sha256, prompt_path) = clay_validation_fixture();
+
+        let mut invalid_date_time = response.clone();
+        invalid_date_time["attributes"]["last_meaningful_touch"]["value"] =
+            json!("2026-02-30T10:00:00Z");
+        invalid_date_time["normalized_prospect"]["attributes"]["last_meaningful_touch"] =
+            json!("2026-02-30T10:00:00Z");
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &invalid_date_time,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_observed_value_format_invalid")
+        );
+
+        let date_root = temporary_clay_example("invalid-observed-date");
+        let manifest_path = date_root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("format: date-time", "format: date"),
+        )
+        .expect("date contract fixture should be writable");
+        let mut invalid_date = response;
+        invalid_date["attributes"]["last_meaningful_touch"]["value"] = json!("2026-02-30");
+        invalid_date["normalized_prospect"]["attributes"]["last_meaningful_touch"] =
+            json!("2026-02-30");
+        assert!(
+            semantic_issue_codes(
+                &date_root,
+                &request,
+                &invalid_date,
+                &request_sha256,
+                &date_root.join(".mdp/prompts/normalize-prospect.yaml"),
+            )
+            .contains("decision_input_observed_value_format_invalid")
+        );
+
+        let _ = std::fs::remove_dir_all(date_root);
     }
 
     #[test]

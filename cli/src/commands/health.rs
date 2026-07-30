@@ -1620,7 +1620,7 @@ fn validate_input_contracts(
         } else if !seen.insert(contract.id.clone()) {
             issues.push(issue(
                 "profile_input_contract_duplicate",
-                "warning",
+                "error",
                 format!("{contract_path}/id"),
                 format!("duplicate input contract {}", contract.id),
             ));
@@ -2901,6 +2901,22 @@ fn decision_input_readiness_mismatches(
             });
         }
     } else {
+        let actual_type = attribute.value.value_type.as_deref().unwrap_or("string");
+        let expected_type = if attribute.output_path == "synthetic" {
+            "boolean"
+        } else {
+            "string"
+        };
+        if actual_type != expected_type {
+            mismatches.push(DecisionInputReadinessMismatch {
+                code: "decision_input_prospect_output_type_mismatch",
+                field: "value",
+                message: format!(
+                    "{} requires a {expected_type} decision-input value, found {actual_type}",
+                    attribute.output_path
+                ),
+            });
+        }
         let lead_required = required_fields.contains(attribute.output_path.as_str());
         if readiness_required && !lead_required {
             mismatches.push(DecisionInputReadinessMismatch {
@@ -6027,6 +6043,27 @@ output_contract:
     }
 
     #[test]
+    fn duplicate_input_contract_ids_are_validation_errors() {
+        let duplicate = InputContract {
+            id: "duplicate-machine-contract".to_string(),
+            ..InputContract::default()
+        };
+        let mut issues = Vec::new();
+
+        validate_input_contracts(
+            &[duplicate.clone(), duplicate],
+            &BTreeSet::new(),
+            &PromptInventory::default(),
+            ".mdp/manifest.yaml#/input_contracts",
+            &mut issues,
+        );
+
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_input_contract_duplicate" && issue["severity"] == "error"
+        }));
+    }
+
+    #[test]
     fn decision_input_equals_applicability_requires_one_value() {
         let mut manifest =
             read_manifest(&clay_example_root()).expect("Clay example manifest should load");
@@ -6404,6 +6441,62 @@ output_contract:
             mismatches
                 .iter()
                 .any(|mismatch| mismatch.code == "decision_input_value_contract_mismatch")
+        );
+    }
+
+    #[test]
+    fn readiness_alignment_rejects_impossible_direct_prospect_types() {
+        let manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let required_attributes = manifest
+            .lead_input_requirements
+            .required_attributes
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let required_fields = manifest
+            .lead_input_requirements
+            .required_fields
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+
+        let mut string_to_boolean = manifest.decision_input_contracts[0]
+            .attributes
+            .iter()
+            .find(|attribute| attribute.id == "company_name")
+            .expect("Clay example should include company_name")
+            .clone();
+        string_to_boolean.output_path = "synthetic".to_string();
+        assert!(
+            decision_input_readiness_mismatches(
+                &manifest,
+                &string_to_boolean,
+                &required_attributes,
+                &required_fields,
+            )
+            .iter()
+            .any(|mismatch| mismatch.code == "decision_input_prospect_output_type_mismatch")
+        );
+
+        let mut boolean_to_string = manifest.decision_input_contracts[0]
+            .attributes
+            .iter()
+            .find(|attribute| attribute.id == "do_not_contact")
+            .expect("Clay example should include do_not_contact")
+            .clone();
+        boolean_to_string.output_path = "company".to_string();
+        boolean_to_string.value.value_type = Some("boolean".to_string());
+        boolean_to_string.value.enum_values.clear();
+        assert!(
+            decision_input_readiness_mismatches(
+                &manifest,
+                &boolean_to_string,
+                &required_attributes,
+                &required_fields,
+            )
+            .iter()
+            .any(|mismatch| mismatch.code == "decision_input_prospect_output_type_mismatch")
         );
     }
 
