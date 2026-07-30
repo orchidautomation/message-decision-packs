@@ -1,0 +1,1064 @@
+format: mdp.v0
+id: clay-audiences-self-serve-enterprise-expansion
+name: Clay Audiences Self-Serve Enterprise Expansion
+version: 0.1.0
+description: Evidence-gated messaging decisions for Synthetic Expansion Product. Product claims, ICP detail, and proof remain gaps until sources support them.
+target:
+  kind: product
+  name: Synthetic Expansion Product
+  aliases:
+  - Example Expansion Product
+  external_terms:
+  - Synthetic Expansion Product
+  excluded_terms:
+  - Basic MDP Template
+  - agent-assisted GTM
+  - local-cli
+  - agent-plugin
+  - example-mdp-demo
+  - real customer
+  internal_terms:
+  - MDP
+  - Message Decision Pack
+  - mdp CLI
+  - manifest plus modular cards
+  - local offline decision layer
+  - agent handoffs
+  source_ids:
+  - target-identity
+profile:
+  id: gtm
+  label: GTM Messaging
+  version: mdp.profile.v0
+  context_dimensions:
+    segment:
+    - target-segment
+personas:
+- Buyer
+- Operator
+target_personas:
+- Buyer
+- Operator
+operator_roles:
+- Operator
+supported_channels:
+- linkedin
+- email
+- call-prep
+- agent-brief
+persona_mappings:
+- persona: Buyer
+  title_keywords:
+  - buyer
+  - decision maker
+- persona: Operator
+  title_keywords:
+  - operator
+  - owner
+lead_input_requirements:
+  required_fields:
+  - name
+  - title
+  - company
+  - company_domain
+  - trigger
+  - persona
+  - segment
+  - signals
+  required_signal_fields:
+  - source
+  required_attributes:
+  - customer_motion
+  - enterprise_eligibility
+  - do_not_contact
+  - open_support_escalation
+  - account_owner_state
+  - last_meaningful_touch
+  value_contracts:
+    segment:
+      type: string
+      enum:
+      - self-serve-enterprise-expansion
+      description: Synthetic segment label for this example motion.
+    source_kind:
+      type: string
+      enum:
+      - user-provided-row
+      - csv-row
+      - crm-export-row
+      - clay-row
+      - deepline-row
+      - private-scratch-row
+      - sanitized-example
+      - synthetic-example
+      description: Provider-neutral source markers accepted from normalization prompts.
+  attribute_definitions:
+    account_owner_state:
+      type: string
+      enum:
+      - assigned
+      - unassigned
+      - unknown
+      description: Reviewed ownership state; no owner names or contact values are required.
+    current_working_country:
+      type: string
+      description: Current working country when person-level applicability is established.
+    customer_motion:
+      type: string
+      enum:
+      - self-serve
+      - sales-assisted
+      - unknown
+      description: Current customer motion used to determine whether this expansion job applies.
+    do_not_contact:
+      type: string
+      enum:
+      - clear
+      - blocked
+      description: Customer-controlled suppression gate.
+    employee_band:
+      type: string
+      enum:
+      - 1-50
+      - 51-200
+      - 201-1000
+      - 1001+
+      - unknown
+      description: Optional bounded company-size band.
+    enterprise_eligibility:
+      type: string
+      enum:
+      - eligible
+      - ineligible
+      - needs-review
+      description: Deterministic enterprise expansion eligibility gate.
+    executive_sponsor:
+      type: string
+      enum:
+      - identified
+      - not-identified
+      - unknown
+      description: Optional sponsor-state marker without person details.
+    last_meaningful_touch:
+      type: string
+      format: date-time
+      description: Timestamp of the last reviewed meaningful customer interaction.
+    latest_support_context:
+      type: string
+      description: Bounded reviewed support summary when an escalation is open.
+    open_support_escalation:
+      type: string
+      enum:
+      - escalation-clear
+      - escalation-open
+      description: Customer-controlled active support escalation gate.
+required_primitives:
+- actors
+- decision-criteria
+- source-signals
+- needs-requirements
+- evidence-proof
+- boundaries
+- output-contracts
+- routing-jobs
+- gaps
+- evals
+primitive_map:
+  actors:
+    cards:
+    - personas
+    input_contracts:
+    - prospect
+  boundaries:
+    cards:
+    - avoid-rules
+    - objections
+    - positioning
+  decision-criteria:
+    cards:
+    - fit-rules
+  evals:
+    evals:
+    - target-route
+    - fit-ready
+    - fit-disqualified
+    - fit-insufficient-context
+    - account-context-missing
+    - internal-control-plane-rejected
+  evidence-proof:
+    cards:
+    - claims
+    - positioning
+  gaps:
+    cards:
+    - gaps
+    evals:
+    - fit-insufficient-context
+    - account-context-missing
+  needs-requirements:
+    cards:
+    - pains
+  output-contracts:
+    cards:
+    - output-rules
+    - copy-patterns
+    - ctas
+    - hooks
+    - channel-policies
+  routing-jobs:
+    cards:
+    - channel-policies
+    - motions
+    jobs:
+    - prospect-fit-or-brief
+    - outbound-copy-brief
+    - outbound-copy-review
+  source-signals:
+    cards:
+    - signals
+    prompts:
+    - normalize-prospect-row
+    input_contracts:
+    - prospect
+    evals:
+    - account-context-missing
+decision_input_contracts:
+- id: clay.audiences.self_serve_enterprise_expansion
+  version: 1.0.0
+  description: Attempted-complete source and normalization contract for the synthetic Clay Audiences enterprise expansion motion.
+  normalization:
+    prompt: prompts/normalize-prospect.yaml
+    prompt_version: clay-self-serve-enterprise-expansion.v4
+    normalized_schema_ref: mdp.normalized-decision-input.v1
+  source_classes:
+  - user_provided
+  - customer_system
+  - reviewed_internal
+  - public_web
+  - synthetic_fixture
+  attributes:
+  - id: company_name
+    question: What is the reviewed company name for this customer account?
+    description: Establish the account identity without inferring a company from a person record.
+    output_path: company
+    value:
+      type: string
+    requirement: required
+    decision_effects:
+    - readiness
+    - fit
+    - routing
+    - brief
+    - gaps
+    - no-draft
+    source_classes:
+    - user_provided
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 90
+    freshness:
+      required: false
+      allow_unknown: true
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: company_domain
+    question: What is the canonical company domain for this customer account?
+    description: Supply the stable account key; do not infer it from the company name.
+    output_path: company_domain
+    value:
+      type: string
+    requirement: required
+    decision_effects:
+    - readiness
+    - fit
+    - routing
+    - gaps
+    - no-draft
+    source_classes:
+    - user_provided
+    - customer_system
+    - reviewed_internal
+    - public_web
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 90
+    freshness:
+      required: false
+      allow_unknown: true
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: person_name
+    question: What is the reviewed full name of the person associated with this motion?
+    description: Identify the intended person without discovering or inventing a contact.
+    output_path: name
+    value:
+      type: string
+    requirement: required
+    decision_effects:
+    - readiness
+    - routing
+    - brief
+    - gaps
+    - no-draft
+    source_classes:
+    - user_provided
+    - customer_system
+    - reviewed_internal
+    - public_web
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 90
+    freshness:
+      required: false
+      allow_unknown: true
+    sensitivity: personal-data
+    status_behavior: {}
+  - id: person_title
+    question: What is the person's current reviewed job title?
+    description: Resolve the pack persona and route; stale or ambiguous titles require review.
+    output_path: title
+    value:
+      type: string
+    requirement: required
+    decision_effects:
+    - readiness
+    - fit
+    - routing
+    - brief
+    - gaps
+    - no-draft
+    source_classes:
+    - user_provided
+    - customer_system
+    - reviewed_internal
+    - public_web
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 85
+    freshness:
+      required: true
+      max_age_days: 180
+      allow_unknown: false
+    sensitivity: personal-data
+    status_behavior: {}
+  - id: expansion_trigger_summary
+    question: What source-backed event makes enterprise expansion relevant now?
+    description: State the bounded why-now context without drafting a message.
+    output_path: trigger
+    value:
+      type: string
+    requirement: required
+    decision_effects:
+    - readiness
+    - fit
+    - routing
+    - brief
+    - gaps
+    - no-draft
+    source_classes:
+    - user_provided
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+      - excerpt
+    confidence:
+      required: true
+      minimum: 80
+    freshness:
+      required: true
+      max_age_days: 90
+      allow_unknown: false
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: account_owner_state
+    question: Is the customer account assigned to an accountable owner?
+    description: Use a bounded state only; owner names and contact values are not required.
+    output_path: attributes.account_owner_state
+    value:
+      type: string
+      enum:
+      - assigned
+      - unassigned
+      - unknown
+    requirement: required
+    decision_effects:
+    - readiness
+    - routing
+    - brief
+    - gaps
+    - no-draft
+    source_classes:
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 100
+    freshness:
+      required: true
+      max_age_days: 7
+      allow_unknown: false
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: last_meaningful_touch
+    question: When did the last reviewed meaningful customer interaction occur?
+    description: Preserve the timestamp only; do not copy private conversation text into the pack.
+    output_path: attributes.last_meaningful_touch
+    value:
+      type: string
+      format: date-time
+    requirement: required
+    decision_effects:
+    - readiness
+    - fit
+    - routing
+    - brief
+    - gaps
+    - no-draft
+    source_classes:
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 100
+    freshness:
+      required: true
+      max_age_days: 90
+      allow_unknown: false
+    sensitivity: customer-private
+    status_behavior: {}
+  - id: customer_motion
+    question: Is this account currently in the self-serve customer motion?
+    description: Hard gate for whether this specific expansion job applies.
+    output_path: attributes.customer_motion
+    value:
+      type: string
+      enum:
+      - self-serve
+      - sales-assisted
+      - unknown
+    requirement: hard-gate
+    decision_effects:
+    - readiness
+    - fit
+    - disqualification
+    - routing
+    - gaps
+    - human-review
+    - no-draft
+    source_classes:
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 100
+    freshness:
+      required: true
+      max_age_days: 7
+      allow_unknown: false
+    sensitivity: customer-private
+    status_behavior:
+      observed: evaluate
+      not_found: block
+      not_applicable: block
+      blocked: human-review
+      error: human-review
+  - id: enterprise_eligibility
+    question: Is the account eligible for the synthetic enterprise expansion motion?
+    description: Hard gate derived from reviewed customer policy, never from model judgment.
+    output_path: attributes.enterprise_eligibility
+    value:
+      type: string
+      enum:
+      - eligible
+      - ineligible
+      - needs-review
+    requirement: hard-gate
+    decision_effects:
+    - readiness
+    - fit
+    - disqualification
+    - routing
+    - gaps
+    - human-review
+    - no-draft
+    source_classes:
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 100
+    freshness:
+      required: true
+      max_age_days: 7
+      allow_unknown: false
+    sensitivity: customer-private
+    status_behavior:
+      observed: evaluate
+      not_found: block
+      not_applicable: block
+      blocked: human-review
+      error: human-review
+  - id: do_not_contact
+    question: Is this account or person currently suppressed from contact?
+    description: Hard safety gate owned by the customer's suppression policy.
+    output_path: attributes.do_not_contact
+    value:
+      type: string
+      enum:
+      - clear
+      - blocked
+    requirement: hard-gate
+    decision_effects:
+    - readiness
+    - disqualification
+    - routing
+    - gaps
+    - human-review
+    - no-draft
+    source_classes:
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 100
+    freshness:
+      required: true
+      max_age_days: 1
+      allow_unknown: false
+    sensitivity: restricted
+    status_behavior:
+      observed: evaluate
+      not_found: block
+      not_applicable: block
+      blocked: human-review
+      error: human-review
+  - id: open_support_escalation
+    question: Is there an unresolved support escalation that should pause this motion?
+    description: Hard customer-experience gate; absence is not inferred from missing support data.
+    output_path: attributes.open_support_escalation
+    value:
+      type: string
+      enum:
+      - escalation-clear
+      - escalation-open
+    requirement: hard-gate
+    decision_effects:
+    - readiness
+    - disqualification
+    - routing
+    - gaps
+    - human-review
+    - no-draft
+    source_classes:
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 100
+    freshness:
+      required: true
+      max_age_days: 1
+      allow_unknown: false
+    sensitivity: restricted
+    status_behavior:
+      observed: evaluate
+      not_found: block
+      not_applicable: block
+      blocked: human-review
+      error: human-review
+  - id: current_working_country
+    question: What is the person's current working country when regional routing applies?
+    description: Attempt only for a resolved person when the customer permits this personal-data use.
+    output_path: attributes.current_working_country
+    value:
+      type: string
+    requirement: conditional
+    applies_when:
+    - attribute: person_name
+      operator: exists
+    decision_effects:
+    - routing
+    - brief
+    - gaps
+    - human-review
+    - no-draft
+    source_classes:
+    - user_provided
+    - customer_system
+    - reviewed_internal
+    - public_web
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 85
+    freshness:
+      required: true
+      max_age_days: 180
+      allow_unknown: false
+    sensitivity: personal-data
+    status_behavior: {}
+  - id: latest_support_context
+    question: What bounded reviewed support context explains the open escalation?
+    description: Preserve a neutral summary only; do not copy tickets or private conversations.
+    output_path: attributes.latest_support_context
+    value:
+      type: string
+    requirement: conditional
+    applies_when:
+    - attribute: open_support_escalation
+      operator: equals
+      values:
+      - escalation-open
+    decision_effects:
+    - fit
+    - routing
+    - brief
+    - gaps
+    - human-review
+    - no-draft
+    source_classes:
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+      - excerpt
+    confidence:
+      required: true
+      minimum: 100
+    freshness:
+      required: true
+      max_age_days: 7
+      allow_unknown: false
+    sensitivity: restricted
+    status_behavior: {}
+  - id: employee_band
+    question: What reviewed employee-count band describes the company?
+    description: Optional context for prioritization; missing data must not block the motion.
+    output_path: attributes.employee_band
+    value:
+      type: string
+      enum:
+      - 1-50
+      - 51-200
+      - 201-1000
+      - 1001+
+      - unknown
+    requirement: optional
+    decision_effects:
+    - fit
+    - brief
+    - gaps
+    source_classes:
+    - user_provided
+    - customer_system
+    - reviewed_internal
+    - public_web
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 75
+    freshness:
+      required: true
+      max_age_days: 365
+      allow_unknown: true
+    sensitivity: public
+    status_behavior: {}
+  - id: executive_sponsor
+    question: Is an executive sponsor state identified for this account?
+    description: Optional bounded state; do not put sponsor names or contact details in this attribute.
+    output_path: attributes.executive_sponsor
+    value:
+      type: string
+      enum:
+      - identified
+      - not-identified
+      - unknown
+    requirement: optional
+    decision_effects:
+    - routing
+    - brief
+    - gaps
+    source_classes:
+    - customer_system
+    - reviewed_internal
+    - synthetic_fixture
+    provenance:
+      required: true
+      required_fields:
+      - attempt_id
+      - source_class
+      - source_locator
+      - observed_at
+    confidence:
+      required: true
+      minimum: 100
+    freshness:
+      required: true
+      max_age_days: 30
+      allow_unknown: true
+    sensitivity: customer-private
+    status_behavior: {}
+input_contracts:
+- id: prospect
+  description: Reviewed prospect/source-row input contract for person, account, and relationship context.
+  schema_ref: mdp.input.prospect.v0
+  prompt: prompts/normalize-prospect.yaml
+  normalizes:
+  - account
+  - person
+  - relationship
+  decision_input_contracts:
+  - clay.audiences.self_serve_enterprise_expansion
+jobs:
+- id: prospect-fit-or-brief
+  skill_id: mdp-gtm-brief
+  label: Prospect row to fit decision or brief
+  description: Normalize supplied prospect context and check fit against reviewed Synthetic Expansion Product evidence.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+  decision_input_contracts:
+  - clay.audiences.self_serve_enterprise_expansion
+- id: outbound-copy-brief
+  skill_id: mdp-gtm-brief
+  label: Outbound copy brief
+  description: Produce grounded Synthetic Expansion Product copy guidance only after fit, proof, and boundaries are supported.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+- id: outbound-copy-review
+  skill_id: mdp-gtm-brief
+  label: Supplied outbound copy review
+  description: Review supplied copy against approved Synthetic Expansion Product claims, proof, boundaries, and output rules.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+profile_eval:
+  required_categories:
+  - proceed
+  - insufficient-context
+  - unsafe-output
+  - job-routing
+  - account-context-missing
+  activation:
+    status: needs-review
+    summary: Target identity for Synthetic Expansion Product is resolved; commercial claims and ICP detail remain evidence gaps.
+cards:
+- id: personas
+  path: cards/personas.yaml
+  kind: personas
+  description: Who the decision pack serves and what each persona needs.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - persona
+- id: positioning
+  path: cards/positioning.yaml
+  kind: positioning
+  description: Category, product boundaries, value pillars, and what this pack is not.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - positioning
+  - category
+  - boundary
+- id: fit-rules
+  path: cards/fit-rules.yaml
+  kind: fit-rules
+  description: ICP, fit, disqualification, and no-message rules.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - fit
+  - icp
+  - disqualifier
+  - no-message
+- id: signals
+  path: cards/signals.yaml
+  kind: signals
+  description: Structured buying signals, triggers, and source interpretation rules.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - signal
+  - trigger
+  - source
+  - linkedin
+- id: pains
+  path: cards/pains.yaml
+  kind: pains
+  description: Buyer pains, triggers, and evidence requirements.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - pain
+  - trigger
+- id: claims
+  path: cards/claims.yaml
+  kind: claims
+  description: Approved claims and proof requirements an agent may use.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - claim
+  - proof
+  - evidence
+- id: motions
+  path: cards/motions.yaml
+  kind: motions
+  description: Approved GTM motions and motion boundaries.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - motion
+  - workflow
+- id: channel-policies
+  path: cards/channel-policies.yaml
+  kind: channel-policies
+  description: Channel-specific policy for LinkedIn, email, call prep, and agent briefs.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - channel
+  - linkedin
+  - email
+  - initial
+  - follow-up
+  - call
+  - prep
+  - agent
+  - brief
+- id: hooks
+  path: cards/hooks.yaml
+  kind: hooks
+  description: Messaging hooks that can be reused after evidence checks.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - hook
+  - copy
+  - message
+- id: ctas
+  path: cards/ctas.yaml
+  kind: ctas
+  description: CTA rules, reply paths, and ask boundaries for outbound copy.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - cta
+  - ask
+  - reply
+  - copy
+  - outbound
+  - message
+- id: avoid-rules
+  path: cards/avoid-rules.yaml
+  kind: avoid-rules
+  description: Claims and categories the agent must avoid.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - guardrail
+  - avoid
+- id: output-rules
+  path: cards/output-rules.yaml
+  kind: output-rules
+  description: Global style, formatting, and output-structure rules for generated text.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - guardrail
+  - style
+  - format
+- id: copy-patterns
+  path: cards/copy-patterns.yaml
+  kind: copy-patterns
+  description: Copy structures and brief patterns for GTM outputs.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - copy
+  - brief
+  - outbound
+  - message
+- id: objections
+  path: cards/objections.yaml
+  kind: objections
+  description: Expected objections, category confusion, and approved response logic.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - objection
+  - alternative
+  - response
+- id: gaps
+  path: cards/gaps.yaml
+  kind: gaps
+  description: Known gaps and open questions agents must surface instead of filling in.
+  personas:
+  - Buyer
+  - Operator
+  tags:
+  - gap
+  - unknown
+  - open-question
+policy:
+  progressive_disclosure: true
+  load_manifest_first: true
+  max_cards_per_route: 13
+  json_contract: mdp.cli.v0
+  no_auth_required: true
+provenance:
+  owner: local
+  created_by: mdp init
+  notes:
+  - 'External positioning target: Synthetic Expansion Product.'
+  - Internal pack, CLI, schema, prompt, card, and eval terms are authoring vocabulary only.
+  - Agents must convert unsupported target claims into gaps instead of starter filler.

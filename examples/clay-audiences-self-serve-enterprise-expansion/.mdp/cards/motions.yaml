@@ -1,0 +1,20 @@
+id: motions
+kind: motions
+title: Motions
+description: Allowed work for the synthetic Clay Audiences expansion flow.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: attempted-complete-before-brief
+  title: Attempt every declared input before brief
+  body: Retrieve the versioned requirements contract, attempt every declared attribute through customer-controlled sources, normalize the ledger, then run deterministic fit and routing. Copy generation is a separate customer-funded step after readiness.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

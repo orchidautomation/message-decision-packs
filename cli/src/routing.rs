@@ -633,6 +633,7 @@ mod tests {
             qualification_gates: None,
             required_primitives: Vec::new(),
             primitive_map: std::collections::BTreeMap::new(),
+            decision_input_contracts: Vec::new(),
             input_contracts: Vec::new(),
             jobs: Vec::new(),
             profile_eval: crate::models::ProfileEval::default(),

@@ -1,0 +1,402 @@
+description: Normalizes an attempted-complete Clay Audiences source-attempt ledger into provider-neutral MDP prospect JSON before deterministic fit or brief runs.
+format: mdp.prompt.v0
+id: normalize-prospect-row
+version: clay-self-serve-enterprise-expansion.v4
+inputs:
+- default: N/A
+  description: The bounded source-attempt ledger for all declared decision-input attributes. Every attempt must retain attribute id, source class, status, provenance, timestamp, confidence, and supplied value or error.
+  missing_behavior: Return the mdp.normalized-decision-input.v1 envelope with outcome malformed, draft_allowed false, and no inferred values.
+  name: raw_row
+  required: true
+- default: N/A
+  description: Exact mdp.requirements.v1 output for job prospect-fit-or-brief, including questions, requirement levels, applicability, value contracts, source policy, and status behavior.
+  missing_behavior: Return a malformed outcome and do not normalize or draft when the versioned requirements contract is absent.
+  name: decision_input_requirements
+  required: true
+- default: N/A
+  description: SHA-256 of the exact source-attempt request file supplied by the customer or host. Copy this receipt unchanged into source_attempt_request_sha256.
+  missing_behavior: Return a malformed outcome and do not normalize or draft when the exact request hash is absent.
+  name: source_attempt_request_sha256
+  required: true
+- default: N/A
+  description: SHA-256 of the exact collected attempt-results ledger supplied as raw_row. Copy this receipt unchanged into collected_attempt_results_sha256.
+  missing_behavior: Return a malformed outcome and do not normalize or draft when the exact collected-results hash is absent.
+  name: collected_attempt_results_sha256
+  required: true
+- default: N/A
+  description: Company domain when available.
+  missing_behavior: Use N/A and do not infer company identity from absent data.
+  name: company_domain
+  required: false
+- default: N/A
+  description: Relevant manifest personas, persona_mappings, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, fit rules, signal definitions, avoid-rules, output rules, and source policy from this MDP.
+  missing_behavior: Do not assume pack-owned persona mappings, value domains, fit rules, attributes, or signal names when this field is N/A.
+  name: existing_pack_context
+  required: false
+- default: N/A
+  description: Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing; fiscal year, renewal dates, event dates, and campaign windows remain pack-declared or supplied metadata.
+  missing_behavior: Do not infer fiscal years, renewal windows, event timing, or local business calendar facts from missing runtime context.
+  name: runtime_context
+  required: false
+- default: user-provided-row
+  description: Provider-neutral source marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example.
+  missing_behavior: Use user-provided-row unless the caller supplies a more specific source kind.
+  name: source_kind
+  required: false
+instructions:
+- External target identity is Synthetic Expansion Product (product). Prospect-facing candidates must position this target, not the pack, CLI, schema, prompt, card, eval, starter, or prior target.
+- Use only raw_row, decision_input_requirements, source_attempt_request_sha256, collected_attempt_results_sha256, company_domain, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.
+- Treat decision_input_requirements.normalized_output_schema as the binding response schema. Return exactly one mdp.normalized-decision-input.v1 object with contract, job_id, decision_input_contracts, normalization, source_attempt_request_sha256, collected_attempt_results_sha256, attributes, normalized_prospect, outcome, and draft_allowed. Never return the legacy mdp.prompt-output.v0 envelope or its prompt_id, source_summary, normalization_trace, card_patches, gaps, or rejected_claims fields.
+- Copy job_id, decision_input_contracts, and each normalization receipt exactly from decision_input_requirements. Do not invent, upgrade, or substitute a contract id, prompt path, prompt version, or schema version.
+- Copy source_attempt_request_sha256 exactly from the customer or host input. Do not calculate, rewrite, or substitute it.
+- Copy collected_attempt_results_sha256 exactly from the customer or host input. Do not calculate, rewrite, or substitute it.
+- 'Treat raw_row as an attempted-complete ledger, not permission to search. Preserve the exact attempt status for all fifteen attributes: observed, not_found, not_applicable, blocked, or error.'
+- Answer only the data questions declared by decision_input_requirements. Do not introduce an attribute because it might be useful.
+- Emit every declared attribute exactly once under attributes. For each attribute, preserve status; include value only when status is observed; and include provenance, confidence, freshness, and error exactly when the compiled per-attribute schema permits or requires them.
+- Preserve status, provenance, confidence, freshness, and error exactly from raw_row. If an observed raw value already satisfies the attribute's declared normalized value contract, copy it unchanged. Otherwise, it may change only through deterministic surface canonicalization—trim surrounding whitespace, case-fold, and normalize spaces or underscores to the declared hyphenated enum label—when that produces exactly one allowed value. Never map between two already-valid values or reinterpret a synonym as a different fact.
+- Apply every applies_when rule deterministically. exists means the dependency is observed; equals and in mean its observed value matches a declared value; not_equals means its observed value differs from every declared value. Multiple conditions are ANDed, so a conditional attribute may be not_applicable only when at least one declared condition does not hold.
+- Do not convert blocked or error into not_found. Do not convert not_found into not_applicable. Do not convert a hard-gate absence into an inferred safe value.
+- The customer or host owns every source request and paid model call. This prompt only normalizes the supplied ledger.
+- Emit no message draft. Always set draft_allowed to false; only a later deterministic MDP evaluation may authorize a separate customer-funded copy step.
+- Set outcome to ready only when every required and applicable conditional attribute is usable and every hard gate permits evaluation. Otherwise choose exactly one of insufficient-context, disqualified, human-review, malformed, or provider-error according to the compiled status behavior and supplied evidence.
+- Return strict JSON only. Do not wrap the response in markdown, prose, comments, or code fences.
+- 'Set normalized_prospect to the exact provider-neutral shape accepted by mdp --json schema prospect: name, title, company, optional company_domain, source_kind, synthetic, linkedin_url, company_url, background, trigger, persona, segment, signals, and bounded attributes.'
+- Populate normalized_prospect only from observed attribute values and their declared output_path mappings. Never turn not_found, not_applicable, blocked, error, an omitted value, or the checked-in example into prospect facts.
+- When company_domain or company_url is supplied, normalize only that supplied domain-like value. Do not infer a domain from company name.
+- Use runtime_context.now_utc and runtime_context.date_utc only to state when this normalization ran or to compare against explicitly supplied timing metadata. Do not hardcode fiscal year or infer customer-specific calendars from the current date.
+- When existing_pack_context includes lead_input_requirements.value_contracts, emit only values allowed by those pack-owned enum/type/format contracts for persona, segment, source_kind, and other normalized scalar fields. An outside-contract value may use only the deterministic surface canonicalization rule above. If it does not resolve uniquely, do not invent a synonym; preserve the failed attempt and choose a non-ready outcome.
+- Use explicit persona from the row only when it already matches a pack-owned persona. Otherwise use pack-owned persona_mappings from existing_pack_context and emit the canonical persona label; if no mapping applies, omit persona rather than guessing.
+- Use attributes only for bounded reviewed metadata such as fiscal_year or segment_tier. Put evidence in signals with source, not in attributes.
+- Attributes are metadata, not proof. Do not use attributes to substantiate customer adoption, production use, design partners, paid pilots, ARR conversion, market validation, compliance, integrations, or product capability claims.
+- When existing_pack_context includes lead_input_requirements.attribute_definitions, emit only declared attributes when allow_undeclared_attributes is false, and match declared type, enum, date, or date-time formats. Invalid or unreviewed metadata must not enter normalized_prospect.
+- Preserve uncertainty in the per-attribute status, provenance, confidence, freshness, and error fields. Do not smooth away disqualifying execution asks such as scrape contacts, auto-send, sequence everyone, enrich leads, or update CRM.
+- Keep raw evidence traceable. Each signal should name the supplied source field, note, URL, or row fragment that supports it when available.
+- For non-synthetic rows, use a meaningful source_kind, keep material signals source-backed, and preserve confidence/freshness from supplied evidence. If source, confidence, or freshness violates the compiled policy, return a non-ready outcome instead of weakening the evidence rules.
+- If the input is account-only and lacks an applicable person name or title, do not invent a contact. Preserve not_found or not_applicable as allowed by the compiled contract and return insufficient-context when a required or applicable value is unresolved.
+output_contract:
+  contract: mdp.normalized-decision-input.v1
+  entry_defaults:
+    applies_to: []
+    avoid: []
+    body: N/A
+    confidence: unknown
+    evidence: []
+    provenance: []
+  example:
+    {
+      "contract": "mdp.normalized-decision-input.v1",
+      "job_id": "prospect-fit-or-brief",
+      "decision_input_contracts": [
+        "clay.audiences.self_serve_enterprise_expansion"
+      ],
+      "normalization": [
+        {
+          "contract_id": "clay.audiences.self_serve_enterprise_expansion",
+          "prompt": "prompts/normalize-prospect.yaml",
+          "prompt_version": "clay-self-serve-enterprise-expansion.v4"
+        }
+      ],
+      "source_attempt_request_sha256": "b228884027f7754f5136bb9317d164fc8e4d702ea145891997f29c26913fa9df",
+      "collected_attempt_results_sha256": "4181b47b398318883538265ff9a3c0735f66ac401086757b9f5d14dd14ba67c7",
+      "attributes": {
+        "company_name": {
+          "status": "observed",
+          "value": "Example Expansion Account",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-001",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/company",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "company_domain": {
+          "status": "observed",
+          "value": "example-expansion.invalid",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-002",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/company",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "person_name": {
+          "status": "observed",
+          "value": "Avery Example",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-003",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/person",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "person_title": {
+          "status": "observed",
+          "value": "VP Revenue Operations",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-004",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/person",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "expansion_trigger_summary": {
+          "status": "observed",
+          "value": "Synthetic usage threshold reached in the reviewed fixture.",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-005",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/trigger",
+              "observed_at": "2026-07-29T12:00:00Z",
+              "excerpt": "Synthetic fixture says a reviewed usage threshold was reached."
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "account_owner_state": {
+          "status": "observed",
+          "value": "assigned",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-006",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/account-state",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "last_meaningful_touch": {
+          "status": "observed",
+          "value": "2026-07-20T12:00:00Z",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-007",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/account-state",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "customer_motion": {
+          "status": "observed",
+          "value": "self-serve",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-008",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/account-state",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "enterprise_eligibility": {
+          "status": "observed",
+          "value": "eligible",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-009",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/eligibility",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "do_not_contact": {
+          "status": "observed",
+          "value": "clear",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-010",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/suppression",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "open_support_escalation": {
+          "status": "observed",
+          "value": "escalation-clear",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-011",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/support",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "current_working_country": {
+          "status": "observed",
+          "value": "United States",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-012",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/person",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "latest_support_context": {
+          "status": "not_applicable",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-013",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/support",
+              "observed_at": "2026-07-29T12:00:00Z",
+              "excerpt": "Synthetic fixture marks the support-context question not applicable."
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "employee_band": {
+          "status": "observed",
+          "value": "201-1000",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-014",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/company",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        },
+        "executive_sponsor": {
+          "status": "not_found",
+          "provenance": [
+            {
+              "attempt_id": "synthetic-attempt-015",
+              "source_class": "synthetic_fixture",
+              "source_locator": "synthetic://clay-example/account-state",
+              "observed_at": "2026-07-29T12:00:00Z"
+            }
+          ],
+          "confidence": 100,
+          "freshness": {
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
+          }
+        }
+      },
+      "normalized_prospect": {
+        "name": "Avery Example",
+        "title": "VP Revenue Operations",
+        "company": "Example Expansion Account",
+        "company_domain": "example-expansion.invalid",
+        "source_kind": "synthetic-example",
+        "synthetic": true,
+        "trigger": "Synthetic usage threshold reached in the reviewed fixture.",
+        "attributes": {
+          "account_owner_state": "assigned",
+          "last_meaningful_touch": "2026-07-20T12:00:00Z",
+          "customer_motion": "self-serve",
+          "enterprise_eligibility": "eligible",
+          "do_not_contact": "clear",
+          "open_support_escalation": "escalation-clear",
+          "current_working_country": "United States",
+          "employee_band": "201-1000"
+        }
+      },
+      "outcome": "ready",
+      "draft_allowed": false
+    }
+  output_kind: decision-input-normalization
+  required_top_level:
+  - contract
+  - job_id
+  - decision_input_contracts
+  - normalization
+  - attributes
+  - normalized_prospect
+  - outcome
+  - draft_allowed
+  schema_ref: mdp.normalized-decision-input.v1
+  strict_json_only: true
+tags:
+- prompt
+- normalization
+- prospect
+- fit
+- routing
+target_card_kinds:
+- personas
+- fit-rules
+- signals
+title: Normalize attempted-complete decision inputs

@@ -46,6 +46,7 @@ mdp --json gaps --dir PACK_ROOT
 ## Load Only The Needed References
 
 - Read [references/source-intake.md](references/source-intake.md) when planning sources, extracting evidence, normalizing messy material, or mapping profile vocabulary to primitives.
+- Read [references/decision-input-contracts.md](references/decision-input-contracts.md) when a job needs an explicit attempted-complete data contract before normalization, fit, routing, or drafting.
 - Read [references/gtm-authoring.md](references/gtm-authoring.md) for ICP, personas, fit, signals, message angles, CTA policy, and GTM job bindings.
 - Read [references/proposal-authoring.md](references/proposal-authoring.md) for proposal opportunity context, requirements, proof, confidentiality, and proposal job bindings.
 - Read [references/boundaries-output.md](references/boundaries-output.md) when authoring claims, avoid rules, output constraints, or proof-carrying artifacts.
@@ -58,13 +59,77 @@ Do not read every reference by default.
 2. Map reviewed facts into universal primitives; keep profile terminology in labels and entries.
 3. Separate observed evidence from inferred decisions. Put unresolved or unsupported material in gaps.
 4. Keep every prospect-facing surface about the resolved external target. Pack, CLI, schema, prompt, card, eval, starter, and prior-target vocabulary is internal implementation context only.
-5. Author prompts with explicit input and output contracts. Validate model-produced output before using it:
+5. When a job depends on collected or normalized data, author and bind its
+   `decision_input_contracts` before writing the normalization prompt. Compile
+   the job-specific questions and policy:
+
+```bash
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
+```
+
+The compiled contract, not a generic finder or the normalization prompt, states
+what data must be attempted. Keep collection and provider calls outside MDP.
+
+6. Author prompts with explicit input and output contracts. Inspect the selected
+   prompt's `output_contract.output_kind` and `output_contract.contract` before
+   validating model-produced output:
+
+   - Only when the selected prompt is the job-bound
+     `decision-input-normalization` prompt producing
+     `mdp.normalized-decision-input.v1`, require `data.available` to be `true`
+     and hand the customer or host the complete exact requirements result as
+     `DECISION_INPUT_REQUIREMENTS_JSON`, including
+     `data.source_attempt_request_schema`,
+     `data.collected_attempt_results_schema`,
+     `data.normalized_output_schema`, and all contract/prompt receipts. The
+     customer or host owns collection and paid normalization. It must construct
+     one attempted-complete `SOURCE_ATTEMPT_REQUEST_JSON` matching the compiled
+     request schema; populate the exact `contract`, `job_id`, and
+     `decision_input_contracts` ID/version receipts; set a trusted UTC `as_of`;
+     preserve the exact request bytes; and compute
+     `SOURCE_ATTEMPT_REQUEST_SHA256`. It must execute every compiled attempt and
+     record the exact statuses, values, evidence, timestamps, confidence, and
+     errors in `COLLECTED_ATTEMPT_RESULTS_JSON`, matching
+     `data.collected_attempt_results_schema`, then compute
+     `COLLECTED_ATTEMPT_RESULTS_SHA256`. Invoke the bound prompt with:
+     - `raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`
+     - `decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`
+     - `source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`
+     - `collected_attempt_results_sha256`:
+       `COLLECTED_ATTEMPT_RESULTS_SHA256`
+
+     Preserve both exact ledgers and pass them to validation:
+
+```bash
+mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_PROMPT_PATH \
+  --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON \
+  --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON \
+  --file OUTPUT_JSON
+```
+
+     Stop before extracting or passing normalized data unless validation
+     succeeds and the envelope's top-level `outcome` is exactly `ready`.
+     Preserve the exact request and collected-results bytes and both SHA-256
+     receipts with the normalized result.
+
+   - For every other prompt output kind or contract, retain the normal
+     `mdp.prompt-output.v0` path without a source-attempt request, regardless of
+     the job-wide `data.available` value:
 
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
 ```
 
-Prompt output contracts use `source_summary.inputs_used` for exact declared input names only. Put source paths, snippets, page locators, URLs, and proof notes in candidate `evidence`/`provenance`, `signals[].source`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. The prompt owns extraction/normalization, the manifest owns allowed values and readiness policy, the CLI owns enforcement, and downstream writers own wording only.
+     For a legacy prospect-normalization prompt whose declared output includes
+     `normalized_prospect` and
+     `normalization_trace.fit_readiness.ready_for_mdp_fit`, require the exact validated
+     `normalization_trace.fit_readiness.ready_for_mdp_fit` field to equal
+     `true` before fit, brief, routing, or drafting. For other v0 output kinds
+     such as card-patch/extraction envelopes, successful contract validation is
+     the applicable gate; do not require a normalization trace that the prompt
+     does not declare.
+
+Legacy prompt output contracts use `source_summary.inputs_used` for exact declared input names only. Put source paths, snippets, page locators, URLs, and proof notes in candidate `evidence`/`provenance`, `signals[].source`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. The prompt owns extraction/normalization, the manifest owns allowed values and readiness policy, the CLI owns enforcement, and downstream writers own wording only.
 
 For proposal PDF/doc extraction, keep the source-audit ledger bounded and local/customer-controlled, then validate raw-field and snippet refs before using normalized opportunity facts:
 
@@ -82,9 +147,9 @@ Use `mdp --json schema runner-audit` for the host-owned native/headless runner e
 
 Runner contract acceptance and integration support are separate. Consult [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix) and use only `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only`. Pack authoring, a documented recipe, a schema-valid audit, or MCP transport does not prove a verified integration.
 
-6. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
-7. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target.
-8. Validate, fix, and repeat:
+7. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
+8. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target. Decision-input examples also need synthetic expected outcomes for ready, insufficient-context, disqualified, human-review, malformed, and provider-error.
+9. Validate, fix, and repeat:
 
 ```bash
 mdp --json validate --dir PACK_ROOT

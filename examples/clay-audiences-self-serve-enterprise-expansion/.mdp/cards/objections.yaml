@@ -1,0 +1,20 @@
+id: objections
+kind: objections
+title: Objections
+description: Target-specific objections supported by evidence.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: objection-evidence-gap
+  title: Objection evidence required
+  body: No objection response is approved for Synthetic Expansion Product yet. Add alternatives and response logic only from supplied or cited sources.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

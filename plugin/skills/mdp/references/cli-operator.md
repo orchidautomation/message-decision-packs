@@ -18,12 +18,15 @@ mdp --json doctor --dir PACK_ROOT
 ```bash
 mdp --json schema skills
 mdp --json validate --dir PACK_ROOT
+mdp --json requirements --dir PACK_ROOT --job JOB
 mdp --json explain --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 mdp --json route --entries --dir PACK_ROOT --persona PERSONA --job JOB
 ```
 
 Prefer CLI output to direct YAML inference. Read pack files only when authoring or when the CLI identifies the exact card or contract needing review.
+
+`requirements` is the read-only, job-bound handoff to collectors and customer-funded normalization runners. It compiles the exact questions, permitted source classes, prompt/version identity, attempt ledger schema, and normalized envelope schema. It never performs research or a model call. Existing jobs without a Decision Input Contract return `available: false` without changing their current fit/readiness path.
 
 ## Deterministic Gates
 

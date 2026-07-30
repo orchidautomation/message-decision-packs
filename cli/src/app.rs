@@ -4,8 +4,8 @@ use crate::commands::{
     check_claims_scoped, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, fit, gaps,
     init_pack_targeted, init_pack_targeted_dry_run, pack, prospect_brief_with_context,
     render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief,
-    route_scoped, run_receipt, sample_leads, schema, skills, validate_pack,
-    validate_prompt_output_file_with_source_audit, verify_output_file, verify_output_readable_file,
+    requirements, route_scoped, run_receipt, sample_leads, schema, skills, validate_pack,
+    validate_prompt_output_file_with_inputs, verify_output_file, verify_output_readable_file,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -70,6 +70,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             "skills",
             skills(dir.as_deref(), job.as_deref()),
         ),
+        Commands::Requirements { dir, job } => print_checked(
+            json_mode,
+            summary_mode,
+            "requirements",
+            requirements(&dir, &job)?,
+        ),
         Commands::Validate { dir, strict } => {
             let data = apply_strict(validate_pack(&dir)?, strict, StrictWarningSource::Issues);
             print_checked(json_mode, summary_mode, "validate", data)
@@ -78,17 +84,21 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             dir,
             file,
             source_audit,
+            source_attempt_request,
+            collected_attempt_results,
             prompt,
             prompt_id,
             strict,
         } => {
             let data = apply_strict(
-                validate_prompt_output_file_with_source_audit(
+                validate_prompt_output_file_with_inputs(
                     &dir,
                     &file,
                     prompt.as_deref(),
                     prompt_id.as_deref(),
                     source_audit.as_deref(),
+                    source_attempt_request.as_deref(),
+                    collected_attempt_results.as_deref(),
                 )?,
                 strict,
                 StrictWarningSource::Issues,

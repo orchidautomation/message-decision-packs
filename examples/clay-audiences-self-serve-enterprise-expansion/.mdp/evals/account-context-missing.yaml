@@ -1,0 +1,21 @@
+command: fit
+expect_status: insufficient-context
+id: account-context-missing
+profile_eval:
+  category: account-context-missing
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - source-signals
+  - gaps
+prospect:
+  company: Example Prospect Company
+  name: Example Person
+  persona: Operator
+  segment: self-serve-enterprise-expansion
+  signals:
+  - id: unproven
+    title: Unproven signal
+  source_kind: synthetic-example
+  synthetic: true
+  title: Example Operator

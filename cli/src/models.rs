@@ -1,3 +1,4 @@
+use crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -29,6 +30,8 @@ pub(crate) struct Manifest {
     pub(crate) required_primitives: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) primitive_map: BTreeMap<String, PrimitiveMapping>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) decision_input_contracts: Vec<DecisionInputContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) input_contracts: Vec<InputContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -108,6 +111,8 @@ pub(crate) struct InputContract {
     pub(crate) prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) normalizes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) decision_input_contracts: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -124,6 +129,198 @@ pub(crate) struct ProfileJob {
     pub(crate) required_primitives: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) input_contracts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) decision_input_contracts: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DecisionInputContract {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) description: Option<String>,
+    #[serde(default)]
+    pub(crate) normalization: DecisionInputNormalization,
+    #[serde(default)]
+    pub(crate) source_classes: Vec<DecisionInputSourceClass>,
+    #[serde(default)]
+    pub(crate) attributes: Vec<DecisionInputAttribute>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DecisionInputNormalization {
+    #[serde(default)]
+    pub(crate) prompt: String,
+    #[serde(default)]
+    pub(crate) prompt_version: String,
+    #[serde(default = "default_decision_input_schema_ref")]
+    pub(crate) normalized_schema_ref: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DecisionInputSourceClass {
+    UserProvided,
+    CustomerSystem,
+    ReviewedInternal,
+    PublicWeb,
+    SyntheticFixture,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DecisionInputAttribute {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) question: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) description: Option<String>,
+    #[serde(default)]
+    pub(crate) output_path: String,
+    #[serde(default)]
+    pub(crate) value: ValueContract,
+    pub(crate) requirement: DecisionInputRequirement,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) applies_when: Vec<DecisionInputCondition>,
+    #[serde(default)]
+    pub(crate) decision_effects: Vec<DecisionInputDecisionEffect>,
+    #[serde(default)]
+    pub(crate) source_classes: Vec<DecisionInputSourceClass>,
+    #[serde(default)]
+    pub(crate) provenance: DecisionInputProvenancePolicy,
+    #[serde(default)]
+    pub(crate) confidence: DecisionInputConfidencePolicy,
+    #[serde(default)]
+    pub(crate) freshness: DecisionInputFreshnessPolicy,
+    #[serde(default)]
+    pub(crate) sensitivity: DecisionInputSensitivity,
+    #[serde(default)]
+    pub(crate) status_behavior: BTreeMap<DecisionInputAttemptStatus, DecisionInputDisposition>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DecisionInputRequirement {
+    #[default]
+    Required,
+    Optional,
+    Conditional,
+    HardGate,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DecisionInputCondition {
+    #[serde(default)]
+    pub(crate) attribute: String,
+    pub(crate) operator: DecisionInputConditionOperator,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) values: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DecisionInputConditionOperator {
+    #[default]
+    Exists,
+    Equals,
+    NotEquals,
+    In,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DecisionInputDecisionEffect {
+    Readiness,
+    Fit,
+    Disqualification,
+    Routing,
+    Brief,
+    Gaps,
+    HumanReview,
+    NoDraft,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DecisionInputProvenancePolicy {
+    #[serde(default)]
+    pub(crate) required: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) required_fields: Vec<DecisionInputProvenanceField>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DecisionInputProvenanceField {
+    AttemptId,
+    SourceClass,
+    SourceLocator,
+    ObservedAt,
+    Excerpt,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DecisionInputConfidencePolicy {
+    #[serde(default)]
+    pub(crate) required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) minimum: Option<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DecisionInputFreshnessPolicy {
+    #[serde(default)]
+    pub(crate) required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) max_age_days: Option<u32>,
+    #[serde(default)]
+    pub(crate) allow_unknown: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DecisionInputSensitivity {
+    #[default]
+    Public,
+    CustomerPrivate,
+    PersonalData,
+    Restricted,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DecisionInputAttemptStatus {
+    Observed,
+    NotFound,
+    NotApplicable,
+    Blocked,
+    Error,
+}
+
+impl DecisionInputAttemptStatus {
+    pub(crate) const ALL: [Self; 5] = [
+        Self::Observed,
+        Self::NotFound,
+        Self::NotApplicable,
+        Self::Blocked,
+        Self::Error,
+    ];
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DecisionInputDisposition {
+    Accept,
+    Evaluate,
+    Gap,
+    Block,
+    Disqualify,
+    HumanReview,
+}
+
+fn default_decision_input_schema_ref() -> String {
+    NORMALIZED_DECISION_INPUT_CONTRACT.to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -293,6 +490,8 @@ pub(crate) enum CardKind {
 pub(crate) struct PromptFile {
     pub(crate) format: String,
     pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) version: Option<String>,
     pub(crate) title: String,
     pub(crate) description: String,
     pub(crate) target_card_kinds: Vec<CardKind>,

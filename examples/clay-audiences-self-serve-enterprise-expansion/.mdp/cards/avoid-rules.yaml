@@ -1,0 +1,26 @@
+id: avoid-rules
+kind: avoid-rules
+title: Avoid rules
+description: Target isolation and unsupported-claim boundaries.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: external-target-only
+  title: Keep authoring vocabulary internal
+  body: Prospect-facing content must position Synthetic Expansion Product. Do not position the pack tooling, CLI, schemas, prompts, cards, eval machinery, a starter example, or a prior target as the product being sold.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid:
+  - MDP
+  - Message Decision Pack
+  - mdp CLI
+  - manifest plus modular cards
+  - local offline decision layer
+  - agent handoffs

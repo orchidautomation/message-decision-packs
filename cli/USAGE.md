@@ -39,6 +39,7 @@ mdp --json capabilities
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --force
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --dry-run
 mdp --json validate --dir /tmp/mdp-demo
+mdp --json requirements --dir /tmp/mdp-demo --job prospect-fit-or-brief
 mdp --json validate-prompt-output --dir /tmp/mdp-demo --prompt-id extract-claims-proof --file /tmp/claims-output.json
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp --json route --entries --dir /tmp/mdp-demo --persona "PMM" --job "portfolio scope example" --scope product=local-cli
@@ -134,11 +135,41 @@ Portfolio terms do not add primitives. A GTM profile may declare `profile.contex
 
 Use repeatable `--scope dimension=value` selectors on `route`, `emit-brief`, and route-scoped `check-claims`. Prospect-driven `fit` and `brief` derive declared scope from scalar `attributes`; a declared `segment` dimension uses the top-level prospect `segment`. Portfolio-sensitive outputs draft from bounded `entry_route.matches` or `context.entries`, not shared card files. Missing/invalid scope blocks drafting, and `verify-output` returns `proof_output_scope_unsupported` for scoped packs until proof artifacts can carry scope. See [Portfolio-Aware GTM Scope](../docs/portfolio-scope.md) for the complete contract and rollout checklist.
 
-Use `mdp --json schema prompt` to inspect the reusable prompt contract. Prompt outputs use `contract: mdp.prompt-output.v0` and must match the contract named by each prompt's `output_contract.schema_ref`; starter prompts can inline the full JSON Schema with `mdp init --include-output-schemas`. Extraction prompts preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance; normalization prompts preserve `normalized_prospect`, `normalization_trace`, gaps, and empty `card_patches`. Proposal normalization may also include `normalized_opportunity` as an exact alias of `normalized_prospect`, but existing consumers should continue to read `normalized_prospect`. Prompt files are local decision contracts, not browsing, scraping, enrichment, sending, sequencing, or CRM-update workflows.
+Use `mdp --json schema prompt` to inspect the reusable prompt definition contract. Prompt outputs must match the runtime contract named by each prompt's `output_contract.schema_ref`: legacy extraction and normalization prompts use `contract: mdp.prompt-output.v0`, while bound decision-input normalization prompts must use `schema_ref: mdp.normalized-decision-input.v1` with the job-compiled requirements schema. Legacy starter prompts can inline their full JSON Schema with `mdp init --include-output-schemas`; decision-input normalization does not accept an inline replacement for its job-compiled schema. Extraction prompts preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance; legacy normalization prompts preserve `normalized_prospect`, `normalization_trace`, gaps, and empty `card_patches`. Proposal normalization may also include `normalized_opportunity` as an exact alias of `normalized_prospect`, but existing consumers should continue to read `normalized_prospect`. Prompt files are local decision contracts, not browsing, scraping, enrichment, sending, sequencing, or CRM-update workflows.
 
 Treat model-produced prompt output as untrusted review input. Run `mdp --json validate-prompt-output` before copying reviewed `card_patches` into cards or saving `normalized_prospect` for `mdp fit` and `mdp brief`. `source_summary.inputs_used` must name exact declared prompt inputs; source paths, snippets, PDF/page locators, URLs, and field-level provenance belong in candidate `evidence`/`provenance`, `signals[].source`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. For proposal PDF/doc normalization, pass `--source-audit <source-audit.json>` to check source refs and ref-plus-snippet citations against a bounded `mdp.source-audit.v0` extraction ledger backed by `.mdp/sources.yaml` source IDs. The validator rejects markdown-wrapped JSON, wrong prompt identity, undeclared input references, wrong card kinds, fake-person normalization, candidate ID collisions with existing card entries, normalized opportunity aliases that diverge from `normalized_prospect`, normalized values outside pack-owned value contracts, missing or non-boolean `normalization_trace.fit_readiness.ready_for_mdp_fit`, prompt outputs that claim `ready_for_mdp_fit: true` while missing manifest `lead_input_requirements.required_fields`, `required_signal_fields`, or `required_attributes`, and audited source refs/snippets that do not exist in the supplied source audit.
 
 Prompt-output validation proves the artifact matches the prompt contract and that its readiness claim is internally consistent with the pack input policy. It does not replace `mdp fit`; run `mdp fit` on the reviewed normalized prospect to get the final fit, disqualified, or insufficient-context decision.
+
+## Decision input requirements
+
+A pack may bind one or more versioned `decision_input_contracts` to an input
+contract or job. Compile the exact job-specific contract before collection or
+normalization:
+
+```bash
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
+```
+
+The `mdp.requirements.v1` result includes:
+
+- the exact question, output path, and value contract for every attribute;
+- `required`, `optional`, `conditional`, or `hard-gate` classification;
+- applicability and deterministic decision effects;
+- permitted source classes and public-research policy;
+- `observed`, `not_found`, `not_applicable`, `blocked`, and `error` behavior;
+- required provenance, confidence, freshness, and sensitivity;
+- an attempted-complete `mdp.source-attempt-request.v1` JSON Schema;
+- an `mdp.normalized-decision-input.v1` JSON Schema;
+- explicit no-draft outcomes and host/MDP ownership boundaries.
+
+Legacy jobs without a decision-input binding return `available: false` and
+remain compatible with existing `lead_input_requirements` behavior.
+
+`requirements` is deterministic and makes no network or model calls. The host
+owns source access and paid normalization. The normalization envelope always
+sets `draft_allowed: false`; a later `fit` or `brief --context` decision must be
+ready before copy generation.
 
 Prospect input keeps a compatibility path for `name`, `title`, and `company`, but new lead workflows should prefer `company_domain` as the account key. `mdp fit` canonicalizes supplied domain-like values such as `https://www.apple.com/` to `apple.com`; it does not infer a domain from a company name. Packs can declare deterministic readiness requirements in `manifest.yaml`:
 

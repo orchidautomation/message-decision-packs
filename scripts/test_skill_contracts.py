@@ -31,6 +31,145 @@ class SkillContractTests(unittest.TestCase):
     def test_current_canonical_contract_passes(self):
         self.assertTrue(module.validate(Path("."), Path("plugin/skills"))["valid"])
 
+    def test_core_skill_exposes_job_bound_requirements_handoff(self):
+        skill = Path("plugin/skills/mdp/SKILL.md").read_text()
+        operator = Path("plugin/skills/mdp/references/cli-operator.md").read_text()
+        command = "mdp --json requirements --dir"
+        self.assertIn(command, skill)
+        self.assertIn(command, operator)
+        self.assertIn("available: false", skill)
+        self.assertIn("does not collect sources or call a model", skill)
+
+    def test_gtm_brief_preserves_decision_input_and_legacy_normalization_paths(self):
+        skill = Path("plugin/skills/mdp-gtm-brief/SKILL.md").read_text()
+        mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
+        for text in [skill, mode]:
+            normalized = " ".join(text.split())
+            self.assertIn("data.available", text)
+            self.assertIn("data.source_attempt_request_schema", text)
+            self.assertIn("data.collected_attempt_results_schema", text)
+            self.assertIn("`decision_input_contracts` ID/version", text)
+            self.assertIn("UTC `as_of`", text)
+            self.assertIn("execute every compiled attempt", normalized)
+            self.assertIn("exact request", text)
+            self.assertIn("bytes", text)
+            self.assertIn("mdp.prompt-output.v0", text)
+            self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", text)
+
+    def test_gtm_brief_constructs_and_hashes_attempts_before_normalization(self):
+        mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
+        requirements = mode.index("mdp --json requirements")
+        missing = mode.index("If any artifact is missing")
+        handoff = mode.index("complete `mdp --json requirements` result")
+        stop = mode.index("bound prompt; then stop")
+        instantiate = mode.index("Require the host to instantiate the request")
+        preserve = mode.index("preserve those exact request")
+        collect = mode.index("execute every compiled attempt")
+        normalize = mode.index("Invoke the bound prompt")
+        resume = mode.index("Resume only when the host")
+        validate = mode.index("For either the already-supplied or resumed path")
+        self.assertLess(requirements, missing)
+        self.assertLess(missing, handoff)
+        self.assertLess(handoff, stop)
+        self.assertLess(stop, instantiate)
+        self.assertLess(instantiate, preserve)
+        self.assertLess(preserve, collect)
+        self.assertLess(preserve, normalize)
+        self.assertLess(collect, normalize)
+        self.assertLess(normalize, resume)
+        self.assertLess(resume, validate)
+
+    def test_gtm_brief_requires_host_supplied_attempt_ledger(self):
+        skill = Path("plugin/skills/mdp-gtm-brief/SKILL.md").read_text()
+        self.assertIn("do not collect or normalize inside this skill", skill)
+        self.assertIn("complete `mdp --json requirements` result", skill)
+        self.assertIn("`data.source_attempt_request_schema`", skill)
+        self.assertIn("`data.collected_attempt_results_schema`", skill)
+        self.assertIn("`data.normalized_output_schema`", skill)
+        self.assertIn("contract/prompt receipts", skill)
+        self.assertIn("`raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`", skill)
+        self.assertIn(
+            "`decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`",
+            skill,
+        )
+        self.assertIn(
+            "`source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`",
+            skill,
+        )
+        self.assertIn(
+            "`collected_attempt_results_sha256`:", skill
+        )
+        self.assertIn("`COLLECTED_ATTEMPT_RESULTS_SHA256`", skill)
+        self.assertIn(
+            "--collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON", skill
+        )
+        self.assertIn("returned bound prompt; then", skill)
+        self.assertIn("Resume only after the host returns", skill)
+        self.assertIn("--prompt BOUND_PROMPT_PATH", skill)
+
+    def test_gtm_brief_validates_resumed_artifacts_without_rehandoff(self):
+        for path in [
+            "plugin/skills/mdp-gtm-brief/SKILL.md",
+            "plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md",
+        ]:
+            text = Path(path).read_text()
+            supplied = text.index("If all three artifacts")
+            collected = text.index("`COLLECTED_ATTEMPT_RESULTS_JSON`", supplied)
+            output = text.index("`OUTPUT_JSON`", collected)
+            immediate = text.index("validate them immediately", supplied)
+            missing = text.index("If any artifact is missing", immediate)
+            handoff = text.index("DECISION_INPUT_REQUIREMENTS_JSON", missing)
+            self.assertLess(supplied, immediate)
+            self.assertLess(supplied, collected)
+            self.assertLess(collected, output)
+            self.assertLess(output, immediate)
+            self.assertLess(immediate, missing)
+            self.assertLess(missing, handoff)
+
+    def test_pack_builder_preserves_decision_input_and_legacy_validation_paths(self):
+        skill = Path("plugin/skills/mdp-pack-builder/SKILL.md").read_text()
+        self.assertIn("data.available", skill)
+        self.assertIn("`output_contract.output_kind`", skill)
+        self.assertIn("`decision-input-normalization`", skill)
+        self.assertIn("regardless of", skill)
+        self.assertIn("job-wide `data.available`", skill)
+        self.assertIn("prospect-normalization prompt", skill)
+        self.assertIn("card-patch/extraction envelopes", skill)
+        self.assertIn("does not declare", skill)
+        self.assertIn("attempted-complete `SOURCE_ATTEMPT_REQUEST_JSON`", skill)
+        self.assertIn("data.source_attempt_request_schema", skill)
+        self.assertIn("`data.collected_attempt_results_schema`", skill)
+        self.assertIn("`data.normalized_output_schema`", skill)
+        self.assertIn("`decision_input_contracts` ID/version receipts", skill)
+        self.assertIn("trusted UTC", skill)
+        self.assertIn("execute every compiled attempt", skill)
+        self.assertIn("`raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`", skill)
+        self.assertIn(
+            "`decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`",
+            skill,
+        )
+        self.assertIn(
+            "`source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`",
+            skill,
+        )
+        self.assertIn("`collected_attempt_results_sha256`:", skill)
+        self.assertIn("--source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON", skill)
+        self.assertIn(
+            "--collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON", skill
+        )
+
+    def test_core_skill_distinguishes_legacy_normalization_from_extraction(self):
+        skill = Path("plugin/skills/mdp/SKILL.md").read_text()
+        normalized = " ".join(skill.split())
+        self.assertIn("regardless of job-wide `data.available`", normalized)
+        self.assertIn("prospect-normalization prompt", skill)
+        self.assertIn("extraction or card-patch prompts", skill)
+        self.assertIn("undeclared", skill)
+        self.assertIn("--collected-attempt-results", skill)
+        self.assertIn("top-level `outcome` is exactly", skill)
+        self.assertIn("mdp.prompt-output.v0", skill)
+        self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", skill)
+
     def test_bad_frontmatter_and_missing_local_link_fail(self):
         path = self.root / "plugin/skills/mdp/SKILL.md"
         text = path.read_text().replace("name: mdp", "name: wrong").replace("description:", "description: short\nignored:", 1).replace("references/mental-model.md", "references/missing.md")

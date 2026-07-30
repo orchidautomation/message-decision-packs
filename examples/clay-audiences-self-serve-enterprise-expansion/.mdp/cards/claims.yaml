@@ -1,0 +1,20 @@
+id: claims
+kind: claims
+title: Claims
+description: Approved target claims and proof requirements.
+personas:
+- Buyer
+- Operator
+tags:
+- target-aware
+- evidence-gated
+entries:
+- id: no-approved-claims
+  title: No approved claims yet
+  body: No capability, outcome, customer, integration, pricing, security, or performance claim is approved for Synthetic Expansion Product until a source is added and reviewed.
+  applies_to:
+  - Buyer
+  - Operator
+  evidence:
+  - target-identity
+  avoid: []

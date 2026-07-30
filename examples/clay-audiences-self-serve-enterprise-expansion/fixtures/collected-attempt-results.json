@@ -1,0 +1,268 @@
+{
+  "contract": "mdp.collected-attempt-results.v1",
+  "job_id": "prospect-fit-or-brief",
+  "decision_input_contracts": [
+    {
+      "id": "clay.audiences.self_serve_enterprise_expansion",
+      "version": "1.0.0"
+    }
+  ],
+  "source_attempt_request_sha256": "b228884027f7754f5136bb9317d164fc8e4d702ea145891997f29c26913fa9df",
+  "attributes": {
+    "company_name": {
+      "status": "observed",
+      "value": "Example Expansion Account",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-001",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/company",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "company_domain": {
+      "status": "observed",
+      "value": "example-expansion.invalid",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-002",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/company",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "person_name": {
+      "status": "observed",
+      "value": "Avery Example",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-003",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/person",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "person_title": {
+      "status": "observed",
+      "value": "VP Revenue Operations",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-004",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/person",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "expansion_trigger_summary": {
+      "status": "observed",
+      "value": "Synthetic usage threshold reached in the reviewed fixture.",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-005",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/trigger",
+          "observed_at": "2026-07-29T12:00:00Z",
+          "excerpt": "Synthetic fixture says a reviewed usage threshold was reached."
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "account_owner_state": {
+      "status": "observed",
+      "value": "assigned",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-006",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/account-state",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "last_meaningful_touch": {
+      "status": "observed",
+      "value": "2026-07-20T12:00:00Z",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-007",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/account-state",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "customer_motion": {
+      "status": "observed",
+      "value": "self-serve",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-008",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/account-state",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "enterprise_eligibility": {
+      "status": "observed",
+      "value": "eligible",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-009",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/eligibility",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "do_not_contact": {
+      "status": "observed",
+      "value": "clear",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-010",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/suppression",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "open_support_escalation": {
+      "status": "observed",
+      "value": "escalation-clear",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-011",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/support",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "current_working_country": {
+      "status": "observed",
+      "value": "United States",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-012",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/person",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "latest_support_context": {
+      "status": "not_applicable",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-013",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/support",
+          "observed_at": "2026-07-29T12:00:00Z",
+          "excerpt": "Synthetic fixture marks the support-context question not applicable."
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "employee_band": {
+      "status": "observed",
+      "value": "201-1000",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-014",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/company",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    "executive_sponsor": {
+      "status": "not_found",
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-015",
+          "source_class": "synthetic_fixture",
+          "source_locator": "synthetic://clay-example/account-state",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "confidence": 100,
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    }
+  }
+}

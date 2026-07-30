@@ -77,6 +77,13 @@ pub(crate) enum Commands {
         #[arg(long, requires = "dir")]
         job: Option<String>,
     },
+    #[command(about = "Compile the decision inputs required for one pack job")]
+    Requirements {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long, help = "Closed profile job id to compile")]
+        job: String,
+    },
     #[command(about = "Validate manifest and card references")]
     Validate {
         #[arg(long, default_value = ".")]
@@ -95,6 +102,16 @@ pub(crate) enum Commands {
             help = "Optional mdp.source-audit.v0 JSON file for deterministic source-ref/snippet checks"
         )]
         source_audit: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Exact mdp.source-attempt-request.v1 JSON file for decision-input normalization binding and freshness validation"
+        )]
+        source_attempt_request: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Exact mdp.collected-attempt-results.v1 JSON file for immutable execution-fact binding and raw-value normalization"
+        )]
+        collected_attempt_results: Option<PathBuf>,
         #[arg(long, help = "Prompt file path to validate against")]
         prompt: Option<PathBuf>,
         #[arg(long, help = "Prompt id to validate against")]
@@ -355,6 +372,7 @@ pub(crate) enum SchemaTarget {
     Brief,
     HumanBrief,
     RuntimeContext,
+    DecisionInput,
     Prospect,
     Eval,
     Skills,
@@ -461,6 +479,25 @@ mod tests {
                 dir: Some(_),
                 job: Some(_)
             }
+        ));
+    }
+
+    #[test]
+    fn requirements_requires_a_job_and_accepts_a_pack_dir() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "requirements",
+            "--dir",
+            "example-pack",
+            "--job",
+            "prospect-fit-or-brief",
+        ])
+        .expect("requirements form should parse");
+        assert!(matches!(
+            parsed.command,
+            Commands::Requirements { dir, job }
+                if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
         ));
     }
 

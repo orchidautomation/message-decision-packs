@@ -688,7 +688,7 @@ import json, pathlib, sys
 result = json.load(open(sys.argv[1]))
 dry = json.load(open(sys.argv[2]))
 demo = json.load(open(sys.argv[3]))
-assert pathlib.Path(result["readiness_report"]) == pathlib.Path(sys.argv[2])
+assert pathlib.Path(result["readiness_report"]).resolve() == pathlib.Path(sys.argv[2]).resolve()
 assert dry["contract"] == "mdp.proposal-readiness-report.v0"
 assert dry["readiness"]["status"] == "blocked"
 assert "non_native_evidence" in [finding["code"] for finding in dry["findings"]]

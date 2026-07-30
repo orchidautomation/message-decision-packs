@@ -34,14 +34,68 @@ mdp --json validate --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 ```
 
-4. When a pack normalization prompt exists, use its literal output contract and validate the full model output before saving the nested prospect object:
+4. Before using a pack normalization prompt, inspect the selected job's
+   Decision Input Contract handoff:
 
 ```bash
-mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
 ```
 
-5. Never invent a person, title, signal, date, persona, segment, or required attribute. Account-only context stays insufficient/no-draft when the pack requires person readiness.
-6. Treat synthetic fixtures as `do_not_contact`; they are for testing only.
+5. Branch on `data.available`:
+   - When `true`, do not collect or normalize inside this skill.
+     - If all three artifacts—`SOURCE_ATTEMPT_REQUEST_JSON`,
+       `COLLECTED_ATTEMPT_RESULTS_JSON`, and `OUTPUT_JSON`—are already supplied,
+       validate them immediately with the returned bound prompt.
+     - If any artifact is missing, hand the customer or host the exact
+       complete `mdp --json requirements` result as
+       `DECISION_INPUT_REQUIREMENTS_JSON`, including
+       `data.source_attempt_request_schema`,
+       `data.collected_attempt_results_schema`,
+       `data.normalized_output_schema`, and the contract/prompt receipts, plus
+       the returned bound prompt; then stop. Require the customer or host to
+       instantiate the request, populate
+       its exact `contract`, `job_id`, and `decision_input_contracts` ID/version
+       receipts, and set a trusted UTC `as_of`. The host must preserve those
+       exact request bytes as `SOURCE_ATTEMPT_REQUEST_JSON`, compute their
+       SHA-256 as `SOURCE_ATTEMPT_REQUEST_SHA256`, execute every compiled
+       attempt, and record the statuses, values, evidence, timestamps,
+       confidence, and errors in a separate attempted-complete
+       `COLLECTED_ATTEMPT_RESULTS_JSON` ledger. Invoke the bound prompt with all
+       four required inputs:
+       - `raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`
+       - `decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`
+       - `source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`
+       - `collected_attempt_results_sha256`:
+         `COLLECTED_ATTEMPT_RESULTS_SHA256`
+
+       Resume only after the host returns all three exact artifacts: the
+       preserved request file, the collected-results ledger used as `raw_row`,
+       and the normalized output.
+     - For either the already-supplied or resumed path, validate:
+
+     ```bash
+     mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_PROMPT_PATH \
+       --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON \
+       --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON \
+       --file OUTPUT_JSON
+     ```
+
+     Continue only when validation passes and the top-level `outcome` is exactly
+     `ready`. Every other outcome stops no-draft before extracting
+     `normalized_prospect`.
+   - When `false`, retain the legacy `mdp.prompt-output.v0` path. Validate
+     without a source-attempt request:
+
+     ```bash
+     mdp --json validate-prompt-output --dir PACK_ROOT \
+       --prompt-id PROMPT_ID --file OUTPUT_JSON
+     ```
+
+     Continue only when validation passes and
+     `normalization_trace.fit_readiness.ready_for_mdp_fit` is exactly `true`
+     before extracting `normalized_prospect`.
+6. Never invent a person, title, signal, date, persona, segment, or required attribute. Account-only context stays insufficient/no-draft when the pack requires person readiness.
+7. Treat synthetic fixtures as `do_not_contact`; they are for testing only.
 
 ## Load The Mode Reference
 

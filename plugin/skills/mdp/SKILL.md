@@ -52,6 +52,40 @@ mdp --json skills --dir <pack-root> --job <job-id>
 
 Proceed only when `data.recommendation` names the expected skill and `pack_ready` is true. Unknown and profile-crossing job IDs do not have fallbacks.
 
+For a bound job, retrieve its attempted-complete collector and normalization handoff before sourcing or normalizing data:
+
+```bash
+mdp --json requirements --dir <pack-root> --job <job-id>
+```
+
+This command is read-only. It compiles the pack-owned questions, source policy, normalization identity, and request/response schemas; it does not collect sources or call a model. An existing job without a Decision Input Contract returns `available: false` and keeps its current fit/readiness behavior.
+
+When `requirements` returns `data.available: true`, validate the bound
+normalization with the exact source-attempt request and exact host-collected
+attempt-results ledger:
+
+```bash
+mdp --json validate-prompt-output --dir <pack-root> \
+  --prompt <bound-prompt> \
+  --source-attempt-request <source-attempt-request.json> \
+  --collected-attempt-results <collected-attempt-results.json> \
+  --file <normalized-output.json>
+```
+
+Do not extract or pass `normalized_prospect` to fit, routing, brief, or copy
+work unless validation passes and the envelope's top-level `outcome` is exactly
+`ready`. Every other normalized outcome remains no-draft.
+
+For any selected prompt that is not the bound decision-input normalization
+prompt, preserve the legacy `mdp.prompt-output.v0` validation path without
+`--source-attempt-request` or `--collected-attempt-results`, regardless of
+job-wide `data.available`. Require
+`normalization_trace.fit_readiness.ready_for_mdp_fit` only for a legacy
+prospect-normalization prompt that declares `normalized_prospect` and that
+readiness field. For extraction or card-patch prompts, successful contract
+validation is the applicable machine gate; do not require an undeclared
+normalization trace.
+
 Closed v1 pairs:
 
 - `mdp-gtm-brief`: `prospect-fit-or-brief`, `outbound-copy-brief`, `outbound-copy-review`
@@ -64,6 +98,7 @@ Run only the commands the job requires:
 ```bash
 mdp --json doctor --dir <pack-root>
 mdp --json validate --dir <pack-root>
+mdp --json requirements --dir <pack-root> --job <job-id>
 mdp --json explain --dir <pack-root>
 mdp --json gaps --dir <pack-root>
 mdp --json eval --dir <pack-root>

@@ -1,11 +1,13 @@
 use crate::cli::SchemaTarget;
 use crate::constants::{
-    FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF,
-    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
-    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
-    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
+    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
+    PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
+    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
+    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
+use crate::models::DecisionInputAttemptStatus;
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
 
@@ -90,6 +92,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
+        SchemaTarget::DecisionInput => decision_input_envelope_schema(),
         SchemaTarget::Prospect => {
             let mut value = prospect_schema();
             if let Some(object) = value.as_object_mut() {
@@ -143,6 +146,55 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         }
         SchemaTarget::Skills => skills_schema(),
     }
+}
+
+fn decision_input_envelope_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Normalized Decision Input v1",
+        "description": "Generic normalized envelope. Use mdp requirements --job for the exact job-specific schema.",
+        "type": "object",
+        "required": [
+            "contract",
+            "job_id",
+            "decision_input_contracts",
+            "normalization",
+            "source_attempt_request_sha256",
+            "collected_attempt_results_sha256",
+            "attributes",
+            "normalized_prospect",
+            "outcome",
+            "draft_allowed"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": NORMALIZED_DECISION_INPUT_CONTRACT},
+            "job_id": non_blank_string_schema(),
+            "decision_input_contracts": string_array(),
+            "normalization": {"type": "array", "items": {"type": "object"}},
+            "source_attempt_request_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+            },
+            "collected_attempt_results_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+            },
+            "attributes": {"type": "object"},
+            "normalized_prospect": prospect_schema(),
+            "outcome": {
+                "enum": [
+                    "ready",
+                    "insufficient-context",
+                    "disqualified",
+                    "human-review",
+                    "malformed",
+                    "provider-error"
+                ]
+            },
+            "draft_allowed": {"const": false}
+        }
+    })
 }
 
 fn source_intake_schema() -> Value {
@@ -1167,6 +1219,7 @@ fn manifest_schema(card_kinds: [&str; 15]) -> Value {
             "qualification_gates": qualification_gates_schema(),
             "required_primitives": primitive_id_array_schema(),
             "primitive_map": primitive_map_schema(),
+            "decision_input_contracts": decision_input_contracts_schema(),
             "input_contracts": input_contracts_schema(),
             "jobs": profile_jobs_schema(),
             "profile_eval": profile_eval_schema(),
@@ -1298,10 +1351,147 @@ fn input_contracts_schema() -> Value {
                 "description": {"type": "string"},
                 "schema_ref": {"type": "string"},
                 "prompt": {"type": "string", "description": "Prompt id or .mdp-relative prompt path used to normalize this profile input, when the profile has one."},
-                "normalizes": string_array()
+                "normalizes": string_array(),
+                "decision_input_contracts": string_array()
             }
         }
     })
+}
+
+fn decision_input_contracts_schema() -> Value {
+    json!({
+        "type": "array",
+        "description": "Versioned articulation of the data and source attempts required before deterministic MDP decisions.",
+        "items": {
+            "type": "object",
+            "required": ["id", "version", "normalization", "source_classes", "attributes"],
+            "additionalProperties": false,
+            "properties": {
+                "id": non_blank_string_schema(),
+                "version": non_blank_string_schema(),
+                "description": {"type": "string"},
+                "normalization": {
+                    "type": "object",
+                    "required": ["prompt", "prompt_version", "normalized_schema_ref"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "prompt": non_blank_string_schema(),
+                        "prompt_version": non_blank_string_schema(),
+                        "normalized_schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT}
+                    }
+                },
+                "source_classes": {
+                    "type": "array",
+                    "items": decision_input_source_class_schema(),
+                    "minItems": 1,
+                    "uniqueItems": true
+                },
+                "attributes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": decision_input_attribute_schema()
+                }
+            }
+        }
+    })
+}
+
+fn decision_input_attribute_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": [
+            "id",
+            "question",
+            "output_path",
+            "value",
+            "requirement",
+            "decision_effects",
+            "source_classes",
+            "provenance",
+            "confidence",
+            "freshness",
+            "sensitivity"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "id": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"},
+            "question": non_blank_string_schema(),
+            "description": {"type": "string"},
+            "output_path": {
+                "type": "string",
+                "pattern": "^(name|title|company|company_domain|source_kind|synthetic|linkedin_url|company_url|background|trigger|persona|segment|attributes\\.[A-Za-z][A-Za-z0-9_-]{0,63})$"
+            },
+            "value": value_contract_schema(),
+            "requirement": {"enum": ["required", "optional", "conditional", "hard-gate"]},
+            "applies_when": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["attribute", "operator"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "attribute": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"},
+                        "operator": {"enum": ["exists", "equals", "not_equals", "in"]},
+                        "values": string_array()
+                    }
+                }
+            },
+            "decision_effects": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {"enum": ["readiness", "fit", "disqualification", "routing", "brief", "gaps", "human-review", "no-draft"]}
+            },
+            "source_classes": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": decision_input_source_class_schema()
+            },
+            "provenance": {
+                "type": "object",
+                "required": ["required", "required_fields"],
+                "additionalProperties": false,
+                "properties": {
+                    "required": {"type": "boolean"},
+                    "required_fields": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {"enum": ["attempt_id", "source_class", "source_locator", "observed_at", "excerpt"]}
+                    }
+                }
+            },
+            "confidence": {
+                "type": "object",
+                "required": ["required"],
+                "additionalProperties": false,
+                "properties": {
+                    "required": {"type": "boolean"},
+                    "minimum": {"type": "integer", "minimum": 0, "maximum": 100}
+                }
+            },
+            "freshness": {
+                "type": "object",
+                "required": ["required", "allow_unknown"],
+                "additionalProperties": false,
+                "properties": {
+                    "required": {"type": "boolean"},
+                    "max_age_days": {"type": "integer", "minimum": 0},
+                    "allow_unknown": {"type": "boolean"}
+                }
+            },
+            "sensitivity": {"enum": ["public", "customer-private", "personal-data", "restricted"]},
+            "status_behavior": {
+                "type": "object",
+                "propertyNames": {"enum": DecisionInputAttemptStatus::ALL},
+                "additionalProperties": {"enum": ["accept", "evaluate", "gap", "block", "disqualify", "human-review"]}
+            }
+        }
+    })
+}
+
+fn decision_input_source_class_schema() -> Value {
+    json!({"enum": ["user_provided", "customer_system", "reviewed_internal", "public_web", "synthetic_fixture"]})
 }
 
 fn profile_jobs_schema() -> Value {
@@ -1318,7 +1508,8 @@ fn profile_jobs_schema() -> Value {
                 "label": {"type": "string"},
                 "description": {"type": "string"},
                 "required_primitives": primitive_id_array_schema(),
-                "input_contracts": string_array()
+                "input_contracts": string_array(),
+                "decision_input_contracts": string_array()
             }
         }
     })
@@ -1819,9 +2010,32 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
             "instructions",
             "output_contract"
         ],
+        "allOf": [{
+            "if": {
+                "properties": {
+                    "output_contract": {
+                        "required": ["output_kind"],
+                        "properties": {
+                            "output_kind": {"const": "decision-input-normalization"}
+                        }
+                    }
+                }
+            },
+            "then": {
+                "required": ["version"],
+                "properties": {
+                    "version": {"type": "string", "minLength": 1}
+                }
+            }
+        }],
         "properties": {
             "format": {"const": PROMPT_FORMAT_VERSION},
             "id": {"type": "string"},
+            "version": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Version receipt required for decision-input-normalization prompts and bound exactly by the decision input contract."
+            },
             "title": {"type": "string"},
             "description": {"type": "string"},
             "target_card_kinds": {
@@ -1869,11 +2083,34 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     {"required": ["schema_ref"]},
                     {"required": ["schema"]}
                 ],
+                "allOf": [{
+                    "if": {
+                        "required": ["output_kind"],
+                        "properties": {
+                            "output_kind": {"const": "decision-input-normalization"}
+                        }
+                    },
+                    "then": {
+                        "required": ["schema_ref"],
+                        "not": {"required": ["schema"]},
+                        "properties": {
+                            "contract": {"const": NORMALIZED_DECISION_INPUT_CONTRACT},
+                            "schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT}
+                        }
+                    },
+                    "else": {
+                        "properties": {
+                            "contract": {"const": PROMPT_OUTPUT_CONTRACT}
+                        }
+                    }
+                }],
                 "properties": {
-                    "contract": {"const": PROMPT_OUTPUT_CONTRACT},
+                    "contract": {
+                        "enum": [PROMPT_OUTPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT]
+                    },
                     "output_kind": {
-                        "enum": ["card-patches", "prospect-normalization"],
-                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs MDP prospect JSON for mdp fit/brief; proposal packs may also include normalized_opportunity as an exact alias."
+                        "enum": ["card-patches", "prospect-normalization", "decision-input-normalization"],
+                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs the legacy prompt-output envelope; decision-input-normalization emits the exact versioned MDP normalized decision-input envelope."
                     },
                     "strict_json_only": {"const": true},
                     "required_top_level": {
@@ -1889,7 +2126,13 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 "normalization_trace",
                                 "card_patches",
                                 "gaps",
-                                "rejected_claims"
+                                "rejected_claims",
+                                "job_id",
+                                "decision_input_contracts",
+                                "normalization",
+                                "attributes",
+                                "outcome",
+                                "draft_allowed"
                             ]
                         }
                     },
@@ -1915,12 +2158,18 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     "schema_ref": {
                         "enum": [
                             PROMPT_CARD_PATCH_SCHEMA_REF,
-                            PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
+                            PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+                            NORMALIZED_DECISION_INPUT_CONTRACT
                         ],
                         "description": "Compact reference to the response schema family. The CLI derives the concrete schema from this ref, output_kind, prompt_id, and target_card_kinds."
                     },
                     "schema": prompt_response_schema_contract(),
-                    "example": prompt_output_schema(card_kinds)
+                    "example": {
+                        "oneOf": [
+                            prompt_output_schema(card_kinds),
+                            decision_input_envelope_schema()
+                        ]
+                    }
                 }
             }
         }
@@ -2107,6 +2356,8 @@ fn attribute_schema() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jsonschema::draft202012;
+    use std::path::PathBuf;
 
     #[test]
     fn prospect_schema_keeps_required_skill_input_fields() {
@@ -2127,6 +2378,22 @@ mod tests {
         assert_eq!(result["properties"]["company_domain"]["type"], "string");
         assert_eq!(result["properties"]["attributes"]["maxProperties"], 25);
         assert!(result["properties"]["attributes"]["additionalProperties"].is_object());
+    }
+
+    #[test]
+    fn generic_decision_input_schema_accepts_official_normalized_fixture() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("CLI crate should have a repository parent")
+            .join("examples/clay-audiences-self-serve-enterprise-expansion");
+        let fixture: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
+                .expect("official normalized response fixture should load"),
+        )
+        .expect("official normalized response fixture should parse");
+
+        draft202012::validate(&decision_input_envelope_schema(), &fixture)
+            .expect("generic decision input schema should accept the official fixture");
     }
 
     #[test]
@@ -2166,6 +2433,37 @@ mod tests {
         assert_eq!(
             result["properties"]["input_contracts"]["items"]["properties"]["prompt"]["type"],
             "string"
+        );
+        assert_eq!(
+            result["properties"]["decision_input_contracts"]["items"]["properties"]["version"]["type"],
+            "string"
+        );
+        assert_eq!(
+            result["properties"]["decision_input_contracts"]["items"]["properties"]["attributes"]["items"]
+                ["properties"]["requirement"]["enum"][0],
+            "required"
+        );
+        let decision_attribute = &result["properties"]["decision_input_contracts"]["items"]["properties"]
+            ["attributes"]["items"];
+        assert!(
+            !decision_attribute["required"]
+                .as_array()
+                .expect("decision attribute required fields should be an array")
+                .iter()
+                .any(|field| field == "status_behavior"),
+            "status_behavior is required only for hard gates by runtime validation"
+        );
+        assert_eq!(
+            decision_attribute["properties"]["output_path"]["pattern"]
+                .as_str()
+                .expect("output path should have a pattern")
+                .contains("signals"),
+            false
+        );
+        assert_eq!(
+            result["properties"]["input_contracts"]["items"]["properties"]["decision_input_contracts"]
+                ["type"],
+            "array"
         );
         assert_eq!(
             result["properties"]["jobs"]["items"]["properties"]["required_primitives"]["items"]["enum"]
@@ -2518,12 +2816,14 @@ mod tests {
             result["properties"]["format"]["const"],
             PROMPT_FORMAT_VERSION
         );
+        assert_eq!(result["allOf"][0]["then"]["required"][0], "version");
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["strict_json_only"]["const"],
             true
         );
         assert_eq!(
-            result["properties"]["output_contract"]["properties"]["example"]["required"][0],
+            result["properties"]["output_contract"]["properties"]["example"]["oneOf"][0]["required"]
+                [0],
             "contract"
         );
         let contract_required = result["properties"]["output_contract"]["required"]
@@ -2537,6 +2837,21 @@ mod tests {
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["schema_ref"]["enum"][0],
             PROMPT_CARD_PATCH_SCHEMA_REF
+        );
+        assert!(
+            result["properties"]["output_contract"]["properties"]["schema_ref"]["enum"]
+                .as_array()
+                .expect("schema refs should be an array")
+                .iter()
+                .any(|schema_ref| schema_ref == NORMALIZED_DECISION_INPUT_CONTRACT)
+        );
+        assert_eq!(
+            result["properties"]["output_contract"]["allOf"][0]["then"]["required"][0],
+            "schema_ref"
+        );
+        assert_eq!(
+            result["properties"]["output_contract"]["allOf"][0]["then"]["not"]["required"][0],
+            "schema"
         );
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["schema"]["properties"]["additionalProperties"]

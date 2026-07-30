@@ -1,0 +1,47 @@
+{
+  "contract": "mdp.decision-input-expected-outcomes.v1",
+  "cases": [
+    {
+      "id": "ready",
+      "synthetic_change": "All applicable required and hard-gate attributes are observed with contract-valid safe values.",
+      "expected_outcome": "ready",
+      "draft_allowed": false,
+      "next_action": "Run deterministic MDP validation and fit; compile context only if that decision is ready."
+    },
+    {
+      "id": "insufficient-context",
+      "synthetic_change": "company_domain.status is not_found.",
+      "expected_outcome": "insufficient-context",
+      "draft_allowed": false,
+      "next_action": "Return the company_domain gap without inferring a domain."
+    },
+    {
+      "id": "disqualified",
+      "synthetic_change": "enterprise_eligibility is observed with value ineligible.",
+      "expected_outcome": "disqualified",
+      "draft_allowed": false,
+      "next_action": "Stop the expansion motion."
+    },
+    {
+      "id": "human-review",
+      "synthetic_change": "do_not_contact.status is blocked.",
+      "expected_outcome": "human-review",
+      "draft_allowed": false,
+      "next_action": "Require an authorized person to resolve the suppression gate."
+    },
+    {
+      "id": "malformed",
+      "synthetic_change": "The response omits prompt_version or an attempted attribute.",
+      "expected_outcome": "malformed",
+      "draft_allowed": false,
+      "next_action": "Reject the payload against the compiled JSON Schema."
+    },
+    {
+      "id": "provider-error",
+      "synthetic_change": "The normalization provider returns an error before producing a schema-valid envelope.",
+      "expected_outcome": "provider-error",
+      "draft_allowed": false,
+      "next_action": "Preserve the provider error; retry or escalate in the host."
+    }
+  ]
+}

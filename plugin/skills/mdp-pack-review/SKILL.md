@@ -26,9 +26,13 @@ Run the narrow checks first, then strict gates:
 mdp --json validate --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 mdp --json eval --dir PACK_ROOT
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
 mdp --json validate --strict --dir PACK_ROOT
 mdp --json eval --strict --dir PACK_ROOT
 ```
+
+Run `requirements` for each job that binds a decision-input contract. A legacy
+job may report the contract as unavailable without becoming invalid.
 
 Preview a portable compilation when needed:
 
@@ -43,6 +47,9 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
 - Treat CLI errors as findings, not prose to reinterpret away.
 - Verify every agent-routable `jobs[]` entry has one canonical `skill_id` and a supported closed pair.
 - Check source receipts, freshness, confidence, approved claims/proof, avoid rules, output rules, and gaps for internal consistency.
+- For each decision-input contract, verify that every attribute states an answerable question, requirement class, output path, value contract, decision effects, allowed source classes, provenance, confidence, freshness, sensitivity, and effective behavior for all five attempt statuses. Hard gates must map every status explicitly and include no-draft behavior.
+- Verify that required and hard-gate output paths agree with `lead_input_requirements`, that conditional dependencies resolve, and that the compiled source request attempts every declared attribute.
+- Verify normalization prompt identity/version, the normalized JSON envelope, explicit `draft_allowed: false`, and synthetic coverage for ready, insufficient-context, disqualified, human-review, malformed, and provider-error.
 - When `manifest.target` exists, verify target kind/name, source IDs, aliases, supported external terms, exclusions, and internal vocabulary boundaries. Treat target contamination as a high-severity wrong-product risk.
 - Distinguish structural validity from commercial readiness or human approval.
 - Sample representative routes and deterministic claim/output gates when the pack changed those decisions.
