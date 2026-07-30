@@ -417,6 +417,7 @@ fn validate_attribute_attempt_receipts(
     let Some(attribute_id) = attribute["id"].as_str() else {
         return;
     };
+    let mut provenance_observed_at_seconds = Vec::new();
     if let Some(provenance) = attempt["provenance"].as_array() {
         for (index, receipt) in provenance.iter().enumerate() {
             let receipt_path =
@@ -467,6 +468,7 @@ fn validate_attribute_attempt_receipts(
                     ));
                     continue;
                 };
+                provenance_observed_at_seconds.push(observed_at_seconds);
                 if let Some(source_attempt_index) = source_attempt_index {
                     if observed_at_seconds > source_attempt_index.as_of_seconds {
                         issues.push(decision_input_issue(
@@ -494,6 +496,17 @@ fn validate_attribute_attempt_receipts(
         ));
         return;
     };
+    let temporal_value_seconds = match attribute["value"]["format"].as_str() {
+        Some("date-time") => attempt["value"]
+            .as_str()
+            .and_then(parse_utc_timestamp_seconds),
+        Some("date") => attempt["value"]
+            .as_str()
+            .and_then(|value| parse_utc_timestamp_seconds(&format!("{value}T00:00:00Z"))),
+        _ => None,
+    };
+    let expected_freshness_seconds =
+        temporal_value_seconds.or_else(|| provenance_observed_at_seconds.into_iter().max());
     let Some(source_attempt_index) = source_attempt_index else {
         return;
     };
@@ -504,6 +517,16 @@ fn validate_attribute_attempt_receipts(
             "freshness observed_at must not be later than the trusted as_of timestamp",
         ));
         return;
+    }
+    if let Some(expected_freshness_seconds) = expected_freshness_seconds {
+        if observed_at_seconds != expected_freshness_seconds {
+            issues.push(decision_input_issue(
+                "decision_input_freshness_provenance_timestamp_mismatch",
+                format!("{freshness_path}/observed_at"),
+                "freshness observed_at must equal the temporal observed value or, for non-temporal values, the latest bound provenance observed_at timestamp",
+            ));
+            return;
+        }
     }
     if let Some(age_days) = freshness.get("age_days").and_then(Value::as_u64) {
         let derived_age =
@@ -1695,6 +1718,21 @@ mod tests {
                 &prompt_path,
             )
             .contains("decision_input_freshness_observed_at_future")
+        );
+
+        let mut stale_provenance_with_fresh_metadata = response;
+        stale_provenance_with_fresh_metadata["attributes"]["person_title"]["provenance"][0]["observed_at"] =
+            json!("2020-01-01T00:00:00Z");
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &stale_provenance_with_fresh_metadata,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_freshness_provenance_timestamp_mismatch"),
+            "freshness must derive from the bound evidence timestamp"
         );
     }
 

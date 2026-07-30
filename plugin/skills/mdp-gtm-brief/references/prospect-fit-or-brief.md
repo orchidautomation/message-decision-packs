@@ -22,9 +22,13 @@ belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
 1. Run `mdp --json requirements --dir PACK_ROOT --job prospect-fit-or-brief`.
 2. Normalize supplied source material using the pack prompt when present.
 3. Branch on `data.available` from requirements:
-   - When `true`, validate the decision-input envelope against its exact
-     source-attempt request. Stop before extracting `normalized_prospect` unless
-     validation passes and top-level `outcome` is exactly `ready`.
+   - When `true`, instantiate `data.source_attempt_request_schema`. Populate its
+     exact `contract`, `job_id`, and `decision_input_contracts` ID/version
+     receipts; set a trusted UTC `as_of`; and record at least one attempt for
+     every compiled attribute during collection. Preserve those exact request
+     bytes and validate the decision-input envelope against that file. Stop
+     before extracting `normalized_prospect` unless validation passes and
+     top-level `outcome` is exactly `ready`.
    - When `false`, validate the legacy `mdp.prompt-output.v0` output without a
      source-attempt request. Stop before extracting `normalized_prospect` unless
      validation passes and

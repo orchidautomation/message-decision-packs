@@ -45,7 +45,13 @@ class SkillContractTests(unittest.TestCase):
         mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
         for text in [skill, mode]:
             self.assertIn("data.available", text)
-            self.assertIn("source-attempt request", text)
+            self.assertIn("data.source_attempt_request_schema", text)
+            self.assertIn("`decision_input_contracts` ID/version", text)
+            self.assertIn("UTC `as_of`", text)
+            self.assertIn("attempt for", text)
+            self.assertIn("every compiled attribute", text)
+            self.assertIn("exact request", text)
+            self.assertIn("bytes", text)
             self.assertIn("mdp.prompt-output.v0", text)
             self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", text)
 

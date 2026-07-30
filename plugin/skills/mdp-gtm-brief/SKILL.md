@@ -42,8 +42,12 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 ```
 
 5. Branch on `data.available`:
-   - When `true`, use the returned bound prompt and exact source-attempt request,
-     then validate the full decision-input envelope:
+   - When `true`, use the returned bound prompt and instantiate
+     `data.source_attempt_request_schema`. Populate its exact `contract`,
+     `job_id`, and `decision_input_contracts` ID/version receipts; set a trusted
+     UTC `as_of`; and record at least one attempt for every compiled attribute
+     during collection. Preserve those exact request bytes, then validate the
+     full decision-input envelope with that file:
 
      ```bash
      mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID \
