@@ -518,9 +518,17 @@ fn validate_attribute_attempt_receipts(
             return;
         }
     }
+    let derived_age = ((source_attempt_index.as_of_seconds - observed_at_seconds) / 86_400) as u64;
+    if let Some(max_age_days) = attribute["freshness"]["max_age_days"].as_u64() {
+        if derived_age > max_age_days {
+            issues.push(decision_input_issue(
+                "decision_input_freshness_age_over_limit",
+                format!("{freshness_path}/observed_at"),
+                "freshness observed_at is older than the maximum age allowed by the compiled decision-input contract",
+            ));
+        }
+    }
     if let Some(age_days) = freshness.get("age_days").and_then(Value::as_u64) {
-        let derived_age =
-            ((source_attempt_index.as_of_seconds - observed_at_seconds) / 86_400) as u64;
         if age_days != derived_age {
             issues.push(decision_input_issue(
                 "decision_input_freshness_age_mismatch",
@@ -1776,6 +1784,27 @@ mod tests {
             )
             .contains("decision_input_freshness_provenance_timestamp_mismatch"),
             "freshness must derive from the bound evidence timestamp"
+        );
+
+        let mut known_stale_without_age = response.clone();
+        known_stale_without_age["attributes"]["employee_band"]["provenance"][0]["observed_at"] =
+            json!("2020-01-01T00:00:00Z");
+        known_stale_without_age["attributes"]["employee_band"]["freshness"]["observed_at"] =
+            json!("2020-01-01T00:00:00Z");
+        known_stale_without_age["attributes"]["employee_band"]["freshness"]
+            .as_object_mut()
+            .expect("employee_band freshness should be an object")
+            .remove("age_days");
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &known_stale_without_age,
+                &request_sha256,
+                &prompt_path,
+            )
+            .contains("decision_input_freshness_age_over_limit"),
+            "allow_unknown must not bypass a deterministically stale observed_at timestamp"
         );
 
         let mut future_business_date = response.clone();

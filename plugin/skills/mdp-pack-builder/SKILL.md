@@ -105,9 +105,11 @@ mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID \
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
 ```
 
-     Require the exact validated
+     For legacy prospect-normalization outputs, require the exact validated
      `normalization_trace.fit_readiness.ready_for_mdp_fit` field to equal
-     `true` before fit, brief, routing, or drafting.
+     `true` before fit, brief, routing, or drafting. For other v0 output kinds
+     such as card-patch/extraction envelopes, successful contract validation is
+     the applicable gate.
 
 Legacy prompt output contracts use `source_summary.inputs_used` for exact declared input names only. Put source paths, snippets, page locators, URLs, and proof notes in candidate `evidence`/`provenance`, `signals[].source`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. The prompt owns extraction/normalization, the manifest owns allowed values and readiness policy, the CLI owns enforcement, and downstream writers own wording only.
 
