@@ -228,7 +228,7 @@ decision_input_contracts:
   description: Attempted-complete source and normalization contract for the synthetic Clay Audiences enterprise expansion motion.
   normalization:
     prompt: prompts/normalize-prospect.yaml
-    prompt_version: clay-self-serve-enterprise-expansion.v2
+    prompt_version: clay-self-serve-enterprise-expansion.v3
     normalized_schema_ref: mdp.normalized-decision-input.v1
   source_classes:
   - user_provided

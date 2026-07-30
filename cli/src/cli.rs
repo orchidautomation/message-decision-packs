@@ -109,7 +109,7 @@ pub(crate) enum Commands {
         source_attempt_request: Option<PathBuf>,
         #[arg(
             long,
-            help = "Exact mdp.collected-attempt-results.v1 JSON file for status, value, and evidence binding"
+            help = "Exact mdp.collected-attempt-results.v1 JSON file for immutable execution-fact binding and raw-value normalization"
         )]
         collected_attempt_results: Option<PathBuf>,
         #[arg(long, help = "Prompt file path to validate against")]

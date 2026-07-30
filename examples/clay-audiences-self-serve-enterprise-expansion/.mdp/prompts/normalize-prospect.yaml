@@ -1,7 +1,7 @@
 description: Normalizes an attempted-complete Clay Audiences source-attempt ledger into provider-neutral MDP prospect JSON before deterministic fit or brief runs.
 format: mdp.prompt.v0
 id: normalize-prospect-row
-version: clay-self-serve-enterprise-expansion.v2
+version: clay-self-serve-enterprise-expansion.v3
 inputs:
 - default: N/A
   description: The bounded source-attempt ledger for all declared decision-input attributes. Every attempt must retain attribute id, source class, status, provenance, timestamp, confidence, and supplied value or error.
@@ -53,6 +53,7 @@ instructions:
 - 'Treat raw_row as an attempted-complete ledger, not permission to search. Preserve the exact attempt status for all fifteen attributes: observed, not_found, not_applicable, blocked, or error.'
 - Answer only the data questions declared by decision_input_requirements. Do not introduce an attribute because it might be useful.
 - Emit every declared attribute exactly once under attributes. For each attribute, preserve status; include value only when status is observed; and include provenance, confidence, freshness, and error exactly when the compiled per-attribute schema permits or requires them.
+- Preserve status, provenance, confidence, freshness, and error exactly from raw_row. An observed raw value may change only to canonicalize it into the attribute's declared normalized value contract; never reinterpret it as a different fact.
 - Apply every applies_when rule deterministically. exists means the dependency is observed; equals and in mean its observed value matches a declared value; not_equals means its observed value differs from every declared value. Multiple conditions are ANDed, so a conditional attribute may be not_applicable only when at least one declared condition does not hold.
 - Do not convert blocked or error into not_found. Do not convert not_found into not_applicable. Do not convert a hard-gate absence into an inferred safe value.
 - The customer or host owns every source request and paid model call. This prompt only normalizes the supplied ledger.
@@ -92,7 +93,7 @@ output_contract:
         {
           "contract_id": "clay.audiences.self_serve_enterprise_expansion",
           "prompt": "prompts/normalize-prospect.yaml",
-          "prompt_version": "clay-self-serve-enterprise-expansion.v2"
+          "prompt_version": "clay-self-serve-enterprise-expansion.v3"
         }
       ],
       "source_attempt_request_sha256": "b228884027f7754f5136bb9317d164fc8e4d702ea145891997f29c26913fa9df",

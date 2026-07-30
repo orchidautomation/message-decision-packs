@@ -103,8 +103,10 @@ safe values.
 Commit only synthetic or explicitly sanitized fixtures. Show:
 
 - one attempted-complete source request;
-- one separately hashed collected-results ledger whose statuses, values, and
-  evidence exactly bind the normalized attribute map;
+- one separately hashed collected-results ledger whose immutable statuses,
+  evidence, confidence, freshness, and errors exactly bind the normalized
+  attribute map while raw values may canonicalize into declared value
+  contracts;
 - one schema-valid normalized response;
 - ready and insufficient-context behavior;
 - an observed disqualifying hard-gate value;

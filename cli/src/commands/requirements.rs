@@ -467,12 +467,19 @@ fn validate_collected_attempt_results(
             "normalized decision input is not bound to the exact supplied collected attempt-results ledger",
         ));
     }
-    if output["attributes"] != results["attributes"] {
-        issues.push(decision_input_issue(
-            "decision_input_collected_attempt_results_mismatch",
-            format!("{artifact_path}#/attributes"),
-            "normalized attribute statuses, values, and evidence must exactly match the collected attempt-results ledger",
-        ));
+    for (attribute_id, normalized) in output["attributes"].as_object().into_iter().flatten() {
+        let collected = &results["attributes"][attribute_id];
+        for field in ["status", "provenance", "confidence", "freshness", "error"] {
+            if normalized.get(field) != collected.get(field) {
+                issues.push(decision_input_issue(
+                    "decision_input_collected_attempt_results_mismatch",
+                    format!("{artifact_path}#/attributes/{attribute_id}/{field}"),
+                    format!(
+                        "normalized {field} for {attribute_id} must exactly match the collected attempt-results ledger"
+                    ),
+                ));
+            }
+        }
     }
 }
 
@@ -1001,7 +1008,10 @@ fn collected_attempt_results_schema(job_id: &str, contracts: &[&DecisionInputCon
     let mut required = Vec::new();
     for contract in contracts {
         for attribute in &contract.attributes {
-            properties.insert(attribute.id.clone(), attempt_result_schema(attribute));
+            properties.insert(
+                attribute.id.clone(),
+                collected_attempt_result_schema(attribute),
+            );
             required.push(Value::String(attribute.id.clone()));
         }
     }
@@ -1045,6 +1055,14 @@ fn collected_attempt_results_schema(job_id: &str, contracts: &[&DecisionInputCon
             }
         }
     })
+}
+
+fn collected_attempt_result_schema(attribute: &DecisionInputAttribute) -> Value {
+    let mut schema = attempt_result_schema(attribute);
+    schema["properties"]["value"] = json!({
+        "description": "Raw host-collected value. The bound normalizer may canonicalize it only into the attribute's declared normalized value contract."
+    });
+    schema
 }
 
 fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
@@ -1943,6 +1961,30 @@ mod tests {
             .iter()
             .any(|issue| issue["code"] == "decision_input_projection_mismatch"),
             "semantic validation must reject observed attribute/output-path disagreement"
+        );
+
+        let mut raw_results = results.clone();
+        raw_results["attributes"]["customer_motion"]["value"] = json!("Self Serve");
+        let raw_results_bytes =
+            serde_json::to_vec_pretty(&raw_results).expect("raw results should serialize");
+        let raw_results_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(&raw_results_bytes))
+        };
+        let mut canonicalized_response = response.clone();
+        canonicalized_response["collected_attempt_results_sha256"] = json!(&raw_results_sha256);
+        assert!(
+            validate_normalized_decision_input(
+                &root,
+                &canonicalized_response,
+                "synthetic-response",
+                &prompt_path,
+                Some((&request, "synthetic-request", &request_sha256)),
+                Some((&raw_results, "synthetic-raw-results", &raw_results_sha256)),
+            )
+            .expect("semantic validation should run")
+            .is_empty(),
+            "normalization may canonicalize raw values into the declared normalized value contract"
         );
 
         let mut blocked_results = results.clone();

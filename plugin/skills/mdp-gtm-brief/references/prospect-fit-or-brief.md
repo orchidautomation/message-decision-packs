@@ -23,13 +23,16 @@ belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
 2. Branch on `data.available` from requirements:
    - When `true`, this skill must not collect missing prospect data or run the
      customer-funded normalization call.
-     - If both `SOURCE_ATTEMPT_REQUEST_JSON` and `OUTPUT_JSON` are already
-       supplied, validate them immediately with the bound prompt.
-     - If either artifact is missing, hand the customer or host the exact
+     - If all three artifacts—`SOURCE_ATTEMPT_REQUEST_JSON`,
+       `COLLECTED_ATTEMPT_RESULTS_JSON`, and `OUTPUT_JSON`—are already supplied,
+       validate them immediately with the bound prompt.
+     - If any artifact is missing, hand the customer or host the exact
        complete `mdp --json requirements` result as
        `DECISION_INPUT_REQUIREMENTS_JSON`, including
-       `data.source_attempt_request_schema`, `data.normalized_output_schema`,
-       and all contract/prompt receipts, plus the bound prompt; then stop.
+       `data.source_attempt_request_schema`,
+       `data.collected_attempt_results_schema`,
+       `data.normalized_output_schema`, and all contract/prompt receipts, plus
+       the bound prompt; then stop.
        Require the host to instantiate the request, populate its exact
        `contract`, `job_id`, and `decision_input_contracts` ID/version receipts;
        and set a trusted UTC `as_of`. The host must preserve those exact request
@@ -45,11 +48,11 @@ belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
        - `collected_attempt_results_sha256`:
          `COLLECTED_ATTEMPT_RESULTS_SHA256`
 
-       Resume only when the host returns both the preserved request file and
-       normalized output, plus the exact collected-results ledger used as
-       `raw_row`.
+       Resume only when the host returns all three exact artifacts: the
+       preserved request file, the collected-results ledger used as `raw_row`,
+       and the normalized output.
      - For either the already-supplied or resumed path, validate the envelope
-       against the exact request file. Stop before extracting
+       against the exact request and collected-results files. Stop before extracting
        `normalized_prospect` unless validation passes and top-level `outcome`
        is exactly `ready`.
    - When `false`, normalize supplied source material with the selected legacy

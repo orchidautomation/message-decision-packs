@@ -43,14 +43,17 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 
 5. Branch on `data.available`:
    - When `true`, do not collect or normalize inside this skill.
-     - If both `SOURCE_ATTEMPT_REQUEST_JSON` and `OUTPUT_JSON` are already
-       supplied, validate them immediately with the returned bound prompt.
-     - If either artifact is missing, hand the customer or host the exact
+     - If all three artifacts—`SOURCE_ATTEMPT_REQUEST_JSON`,
+       `COLLECTED_ATTEMPT_RESULTS_JSON`, and `OUTPUT_JSON`—are already supplied,
+       validate them immediately with the returned bound prompt.
+     - If any artifact is missing, hand the customer or host the exact
        complete `mdp --json requirements` result as
        `DECISION_INPUT_REQUIREMENTS_JSON`, including
-       `data.source_attempt_request_schema`, `data.normalized_output_schema`,
-       and the contract/prompt receipts, plus the returned bound prompt; then
-       stop. Require the customer or host to instantiate the request, populate
+       `data.source_attempt_request_schema`,
+       `data.collected_attempt_results_schema`,
+       `data.normalized_output_schema`, and the contract/prompt receipts, plus
+       the returned bound prompt; then stop. Require the customer or host to
+       instantiate the request, populate
        its exact `contract`, `job_id`, and `decision_input_contracts` ID/version
        receipts, and set a trusted UTC `as_of`. The host must preserve those
        exact request bytes as `SOURCE_ATTEMPT_REQUEST_JSON`, compute their
@@ -65,9 +68,9 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
        - `collected_attempt_results_sha256`:
          `COLLECTED_ATTEMPT_RESULTS_SHA256`
 
-       Resume only after the host returns both the preserved request file and
-       normalized output, plus the exact collected-results ledger used as
-       `raw_row`.
+       Resume only after the host returns all three exact artifacts: the
+       preserved request file, the collected-results ledger used as `raw_row`,
+       and the normalized output.
      - For either the already-supplied or resumed path, validate:
 
      ```bash
