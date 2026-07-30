@@ -728,6 +728,49 @@ fn effective_status_behavior(
         DecisionInputRequirement::HardGate => BTreeMap::new(),
     };
     behavior.extend(attribute.status_behavior.clone());
+    let fail_closed_statuses = match attribute.requirement {
+        DecisionInputRequirement::Required => vec![
+            DecisionInputAttemptStatus::NotFound,
+            DecisionInputAttemptStatus::NotApplicable,
+            DecisionInputAttemptStatus::Blocked,
+            DecisionInputAttemptStatus::Error,
+        ],
+        DecisionInputRequirement::Conditional => vec![
+            DecisionInputAttemptStatus::NotFound,
+            DecisionInputAttemptStatus::Blocked,
+            DecisionInputAttemptStatus::Error,
+        ],
+        DecisionInputRequirement::Optional => vec![
+            DecisionInputAttemptStatus::Blocked,
+            DecisionInputAttemptStatus::Error,
+        ],
+        DecisionInputRequirement::HardGate => Vec::new(),
+    };
+    for status in fail_closed_statuses {
+        let disposition = behavior
+            .get(&status)
+            .expect("every non-hard-gate status has a compiled disposition");
+        let permits_ready = matches!(
+            disposition,
+            DecisionInputDisposition::Accept | DecisionInputDisposition::Evaluate
+        ) || (attribute.requirement == DecisionInputRequirement::Optional
+            && *disposition == DecisionInputDisposition::Gap);
+        if permits_ready {
+            behavior.insert(
+                status,
+                match status {
+                    DecisionInputAttemptStatus::Blocked | DecisionInputAttemptStatus::Error => {
+                        DecisionInputDisposition::HumanReview
+                    }
+                    DecisionInputAttemptStatus::NotFound
+                    | DecisionInputAttemptStatus::NotApplicable => DecisionInputDisposition::Gap,
+                    DecisionInputAttemptStatus::Observed => unreachable!(
+                        "observed values are never clamped by fail-closed status policy"
+                    ),
+                },
+            );
+        }
+    }
     behavior
 }
 
@@ -1386,6 +1429,45 @@ mod tests {
         assert!(
             ready_outcome_guard(&attribute).is_some(),
             "optional provider and access failures must prevent a ready outcome"
+        );
+    }
+
+    #[test]
+    fn required_fail_open_override_cannot_compile_a_ready_schema() {
+        let (root, _request, mut response, _request_sha256, _prompt_path) =
+            clay_validation_fixture();
+        let mut manifest = read_manifest(&root).expect("Clay example manifest should load");
+        let contract = manifest
+            .decision_input_contracts
+            .iter_mut()
+            .find(|contract| contract.id == "clay.audiences.self_serve_enterprise_expansion")
+            .expect("Clay decision-input contract should exist");
+        let attribute = contract
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "company_domain")
+            .expect("Clay contract should include company_domain");
+        attribute.status_behavior.insert(
+            DecisionInputAttemptStatus::NotFound,
+            DecisionInputDisposition::Accept,
+        );
+        assert_eq!(
+            effective_status_behavior(attribute)[&DecisionInputAttemptStatus::NotFound],
+            DecisionInputDisposition::Gap,
+            "unsafe required overrides must be clamped fail-closed in compiled contracts"
+        );
+        let contracts = vec![&*contract];
+        let compiled_schema = normalized_envelope_schema("prospect-fit-or-brief", &contracts);
+
+        response["attributes"]["company_domain"] = json!({"status": "not_found"});
+        response["normalized_prospect"]
+            .as_object_mut()
+            .expect("normalized prospect should be an object")
+            .remove("company_domain");
+
+        assert!(
+            draft202012::validate(&compiled_schema, &response).is_err(),
+            "required not_found evidence must never validate with outcome ready"
         );
     }
 

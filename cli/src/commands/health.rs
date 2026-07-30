@@ -2679,6 +2679,8 @@ fn validate_decision_input_attributes(
         }
         if attribute.requirement == DecisionInputRequirement::HardGate {
             validate_hard_gate_status_policy(attribute, &attribute_path, issues);
+        } else {
+            validate_readiness_status_policy(attribute, &attribute_path, issues);
         }
     }
     validate_decision_input_applicability_cycles(contract, path, issues);
@@ -2848,6 +2850,52 @@ fn validate_hard_gate_status_policy(
             format!("{path}/decision_effects"),
             "hard-gate attributes must include the no-draft decision effect",
         ));
+    }
+}
+
+fn validate_readiness_status_policy(
+    attribute: &crate::models::DecisionInputAttribute,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let must_fail_closed = match attribute.requirement {
+        DecisionInputRequirement::Required => vec![
+            DecisionInputAttemptStatus::NotFound,
+            DecisionInputAttemptStatus::NotApplicable,
+            DecisionInputAttemptStatus::Blocked,
+            DecisionInputAttemptStatus::Error,
+        ],
+        DecisionInputRequirement::Conditional => vec![
+            DecisionInputAttemptStatus::NotFound,
+            DecisionInputAttemptStatus::Blocked,
+            DecisionInputAttemptStatus::Error,
+        ],
+        DecisionInputRequirement::Optional => vec![
+            DecisionInputAttemptStatus::Blocked,
+            DecisionInputAttemptStatus::Error,
+        ],
+        DecisionInputRequirement::HardGate => Vec::new(),
+    };
+    for status in must_fail_closed {
+        let Some(disposition) = attribute.status_behavior.get(&status) else {
+            continue;
+        };
+        let permits_ready = matches!(
+            disposition,
+            DecisionInputDisposition::Accept | DecisionInputDisposition::Evaluate
+        ) || (attribute.requirement == DecisionInputRequirement::Optional
+            && *disposition == DecisionInputDisposition::Gap);
+        if permits_ready {
+            issues.push(issue(
+                "decision_input_status_behavior_unsafe",
+                "error",
+                format!("{path}/status_behavior"),
+                format!(
+                    "{:?} attribute {} maps {:?} to {:?}; missing or failed required evidence must not certify readiness",
+                    attribute.requirement, attribute.id, status, disposition
+                ),
+            ));
+        }
     }
 }
 
@@ -6556,6 +6604,46 @@ output_contract:
             issues
                 .iter()
                 .any(|issue| issue["code"] == "decision_input_hard_gate_status_behavior_unsafe")
+        );
+    }
+
+    #[test]
+    fn readiness_status_behavior_rejects_fail_open_missing_evidence() {
+        let manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let mut required = manifest.decision_input_contracts[0]
+            .attributes
+            .iter()
+            .find(|attribute| attribute.id == "company_domain")
+            .expect("Clay example should include company_domain")
+            .clone();
+        required.status_behavior.insert(
+            DecisionInputAttemptStatus::NotFound,
+            DecisionInputDisposition::Accept,
+        );
+        let mut issues = Vec::new();
+
+        validate_readiness_status_policy(&required, "test", &mut issues);
+
+        assert!(issues.iter().any(|issue| issue["code"]
+            == "decision_input_status_behavior_unsafe"
+            && issue["severity"] == "error"));
+
+        let mut optional = manifest.decision_input_contracts[0]
+            .attributes
+            .iter()
+            .find(|attribute| attribute.id == "employee_band")
+            .expect("Clay example should include employee_band")
+            .clone();
+        optional.status_behavior.insert(
+            DecisionInputAttemptStatus::NotFound,
+            DecisionInputDisposition::Accept,
+        );
+        let mut optional_issues = Vec::new();
+        validate_readiness_status_policy(&optional, "test", &mut optional_issues);
+        assert!(
+            optional_issues.is_empty(),
+            "optional absence must remain a valid nonblocking policy"
         );
     }
 
