@@ -872,6 +872,21 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
     let mut required = Vec::new();
     let mut ready_outcome_guards = Vec::new();
     for contract in contracts {
+        let attribute_domains = contract
+            .attributes
+            .iter()
+            .map(|attribute| {
+                (
+                    attribute.id.as_str(),
+                    attribute
+                        .value
+                        .enum_values
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<BTreeSet<_>>(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
         for attribute in &contract.attributes {
             properties.insert(attribute.id.clone(), attempt_result_schema(attribute));
             required.push(Value::String(attribute.id.clone()));
@@ -883,6 +898,20 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
             }
             if let Some(guard) = conditional_applicability_state_guard(attribute) {
                 ready_outcome_guards.push(guard);
+            }
+            if attribute.applies_when.iter().any(|condition| {
+                condition.operator != DecisionInputConditionOperator::Exists
+                    && attribute_domains
+                        .get(condition.attribute.as_str())
+                        .filter(|domain| !domain.is_empty())
+                        .is_some_and(|domain| {
+                            condition
+                                .values
+                                .iter()
+                                .any(|value| !domain.contains(value.as_str()))
+                        })
+            }) {
+                ready_outcome_guards.push(json!(false));
             }
         }
     }
@@ -2206,6 +2235,52 @@ mod tests {
             assert!(
                 draft202012::validate(&schema, &invalid_ready).is_err(),
                 "applied conditional attributes must never be marked not_applicable"
+            );
+        }
+    }
+
+    #[test]
+    fn compiled_schema_fails_closed_on_out_of_domain_applicability_values() {
+        let root = clay_example_root();
+        let manifest = read_manifest(&root).expect("Clay example manifest should load");
+        let base_contract = manifest
+            .decision_input_contracts
+            .first()
+            .expect("Clay example should declare one decision input contract")
+            .clone();
+        let response: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
+                .expect("normalized response fixture should load"),
+        )
+        .expect("normalized response fixture should be valid JSON");
+
+        for operator in [
+            DecisionInputConditionOperator::Equals,
+            DecisionInputConditionOperator::NotEquals,
+            DecisionInputConditionOperator::In,
+        ] {
+            let mut contract = base_contract.clone();
+            let condition = &mut contract
+                .attributes
+                .iter_mut()
+                .find(|attribute| attribute.id == "latest_support_context")
+                .expect("Clay example should include latest_support_context")
+                .applies_when[0];
+            condition.operator = operator.clone();
+            condition.values = vec!["not-a-real-enum-value".to_string()];
+
+            let compiled = normalized_envelope_schema("prospect-fit-or-brief", &[&contract]);
+
+            assert!(
+                compiled["allOf"]
+                    .as_array()
+                    .expect("compiled guards should be an array")
+                    .contains(&json!(false)),
+                "{operator:?} out-of-domain operands must make the compiled contract unsatisfiable"
+            );
+            assert!(
+                draft202012::validate(&compiled, &response).is_err(),
+                "{operator:?} out-of-domain operands must reject every normalized envelope"
             );
         }
     }

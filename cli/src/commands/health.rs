@@ -2330,6 +2330,18 @@ fn validate_decision_input_contracts(
                 ),
             ));
         } else if let Some(prompt) = prompt_inventory.get(&contract.normalization.prompt) {
+            if prompt.canonical_path.as_deref() != Some(contract.normalization.prompt.as_str()) {
+                issues.push(issue(
+                    "decision_input_normalization_prompt_path_required",
+                    "error",
+                    format!("{path}/normalization/prompt"),
+                    format!(
+                        "decision input contract {} must bind the canonical pack-relative prompt path {}; prompt ids are not runtime-resolvable bindings",
+                        contract.id,
+                        prompt.canonical_path.as_deref().unwrap_or("<missing>")
+                    ),
+                ));
+            }
             if prompt.contract.as_deref() != Some(NORMALIZED_DECISION_INPUT_CONTRACT)
                 || prompt.output_kind.as_deref() != Some("decision-input-normalization")
                 || prompt.schema_ref.as_deref() != Some(NORMALIZED_DECISION_INPUT_CONTRACT)
@@ -2434,6 +2446,21 @@ fn validate_decision_input_attributes(
         .attributes
         .iter()
         .map(|attribute| (attribute.id.as_str(), &attribute.requirement))
+        .collect::<BTreeMap<_, _>>();
+    let attribute_value_enums = contract
+        .attributes
+        .iter()
+        .map(|attribute| {
+            (
+                attribute.id.as_str(),
+                attribute
+                    .value
+                    .enum_values
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<BTreeSet<_>>(),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let required_attributes = manifest
         .lead_input_requirements
@@ -2567,6 +2594,26 @@ fn validate_decision_input_attributes(
                             .unwrap_or_else(|| "comparison".to_string())
                     ),
                 ));
+            }
+            if condition.operator != crate::models::DecisionInputConditionOperator::Exists {
+                if let Some(domain) = attribute_value_enums
+                    .get(condition.attribute.as_str())
+                    .filter(|domain| !domain.is_empty())
+                {
+                    for (value_index, value) in condition.values.iter().enumerate() {
+                        if !domain.contains(value.as_str()) {
+                            issues.push(issue(
+                                "decision_input_applicability_value_out_of_domain",
+                                "error",
+                                format!("{condition_path}/values/{value_index}"),
+                                format!(
+                                    "applicability value {value} is not declared by dependency attribute {}",
+                                    condition.attribute
+                                ),
+                            ));
+                        }
+                    }
+                }
             }
             if attribute_requirements
                 .get(condition.attribute.as_str())
@@ -3714,6 +3761,7 @@ struct PromptInventoryEntry {
     output_kind: Option<String>,
     schema_ref: Option<String>,
     version: Option<String>,
+    canonical_path: Option<String>,
 }
 
 impl PromptInventory {
@@ -3740,6 +3788,9 @@ fn prompt_inventory(loaded_prompts: &[Value]) -> PromptInventory {
                 .as_str()
                 .map(ToOwned::to_owned),
             version: prompt["version"].as_str().map(ToOwned::to_owned),
+            canonical_path: prompt["path"]
+                .as_str()
+                .map(|path| path.strip_prefix(".mdp/").unwrap_or(path).to_string()),
         };
         if let Some(id) = prompt["id"].as_str() {
             inventory.refs.insert(id.to_string(), entry.clone());
@@ -6340,6 +6391,37 @@ output_contract:
     }
 
     #[test]
+    fn decision_input_contract_rejects_prompt_id_binding() {
+        let root = temp_clay_pack("decision-input-prompt-id-binding");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replacen(
+                "prompt: prompts/normalize-prospect.yaml",
+                "prompt: normalize-prospect-row",
+                1,
+            ),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "decision_input_normalization_prompt_path_required"
+                        && issue["severity"] == "error"
+                })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn required_provenance_must_bind_to_a_source_attempt() {
         let mut manifest =
             read_manifest(&clay_example_root()).expect("Clay example manifest should load");
@@ -6425,6 +6507,37 @@ output_contract:
                 .iter()
                 .any(|issue| issue["code"] == "decision_input_applicability_equals_cardinality")
         );
+    }
+
+    #[test]
+    fn decision_input_applicability_rejects_out_of_domain_values() {
+        for operator in [
+            crate::models::DecisionInputConditionOperator::Equals,
+            crate::models::DecisionInputConditionOperator::NotEquals,
+            crate::models::DecisionInputConditionOperator::In,
+        ] {
+            let mut manifest =
+                read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+            let condition = &mut manifest.decision_input_contracts[0]
+                .attributes
+                .iter_mut()
+                .find(|attribute| attribute.id == "latest_support_context")
+                .expect("Clay example should include latest_support_context")
+                .applies_when[0];
+            condition.operator = operator.clone();
+            condition.values = vec!["not-a-real-enum-value".to_string()];
+            let mut issues = Vec::new();
+
+            validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+            assert!(
+                issues.iter().any(|issue| {
+                    issue["code"] == "decision_input_applicability_value_out_of_domain"
+                        && issue["severity"] == "error"
+                }),
+                "{operator:?} must reject enum operands outside the dependency domain"
+            );
+        }
     }
 
     #[test]
