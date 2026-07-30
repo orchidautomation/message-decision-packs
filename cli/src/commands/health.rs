@@ -6390,7 +6390,7 @@ output_contract:
         std::fs::write(
             &manifest_path,
             raw.replacen(
-                "prompt_version: clay-self-serve-enterprise-expansion.v3",
+                "prompt_version: clay-self-serve-enterprise-expansion.v4",
                 "prompt_version: bogus.v999",
                 1,
             ),

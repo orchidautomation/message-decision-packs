@@ -467,7 +467,16 @@ fn validate_collected_attempt_results(
             "normalized decision input is not bound to the exact supplied collected attempt-results ledger",
         ));
     }
-    for (attribute_id, normalized) in output["attributes"].as_object().into_iter().flatten() {
+    for attribute in compiled["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|contract| contract["attributes"].as_array().into_iter().flatten())
+    {
+        let Some(attribute_id) = attribute["id"].as_str() else {
+            continue;
+        };
+        let normalized = &output["attributes"][attribute_id];
         let collected = &results["attributes"][attribute_id];
         for field in ["status", "provenance", "confidence", "freshness", "error"] {
             if normalized.get(field) != collected.get(field) {
@@ -479,6 +488,18 @@ fn validate_collected_attempt_results(
                     ),
                 ));
             }
+        }
+        if collected["status"].as_str() == Some("observed")
+            && jsonschema::draft202012::validate(&attribute["value"], &collected["value"]).is_ok()
+            && normalized["value"] != collected["value"]
+        {
+            issues.push(decision_input_issue(
+                "decision_input_canonical_collected_value_changed",
+                format!("{artifact_path}#/attributes/{attribute_id}/value"),
+                format!(
+                    "collected value for {attribute_id} already satisfies the normalized value contract and must remain unchanged"
+                ),
+            ));
         }
     }
 }
@@ -1985,6 +2006,35 @@ mod tests {
             .expect("semantic validation should run")
             .is_empty(),
             "normalization may canonicalize raw values into the declared normalized value contract"
+        );
+
+        let mut canonical_results = results.clone();
+        canonical_results["attributes"]["customer_motion"]["value"] = json!("sales-assisted");
+        let canonical_results_bytes = serde_json::to_vec_pretty(&canonical_results)
+            .expect("canonical results should serialize");
+        let canonical_results_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(&canonical_results_bytes))
+        };
+        let mut reversed_hard_gate = response.clone();
+        reversed_hard_gate["collected_attempt_results_sha256"] = json!(&canonical_results_sha256);
+        assert!(
+            validate_normalized_decision_input(
+                &root,
+                &reversed_hard_gate,
+                "synthetic-response",
+                &prompt_path,
+                Some((&request, "synthetic-request", &request_sha256)),
+                Some((
+                    &canonical_results,
+                    "synthetic-canonical-results",
+                    &canonical_results_sha256,
+                )),
+            )
+            .expect("semantic validation should run")
+            .iter()
+            .any(|issue| issue["code"] == "decision_input_canonical_collected_value_changed"),
+            "normalization must not change one already-valid hard-gate value into another"
         );
 
         let mut blocked_results = results.clone();

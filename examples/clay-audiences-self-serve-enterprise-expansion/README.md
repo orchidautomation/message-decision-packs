@@ -93,7 +93,8 @@ request and the exact collected-results ledger.
 Validation binds every provenance receipt back to a matching request attempt,
 requires normalized statuses, evidence, confidence, freshness, and errors to
 equal the collected ledger, allows raw collected values to canonicalize only
-into their declared normalized value contracts,
+when they do not already satisfy the declared normalized value contract, and
+requires already-valid values to remain unchanged,
 requires the exact job-bound normalization prompt, verifies UTC timestamps, and
 derives `age_days` from bound provenance `observed_at` and the trusted request
 `as_of`.
