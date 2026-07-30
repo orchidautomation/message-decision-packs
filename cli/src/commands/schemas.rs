@@ -2063,6 +2063,8 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                         }
                     },
                     "then": {
+                        "required": ["schema_ref"],
+                        "not": {"required": ["schema"]},
                         "properties": {
                             "contract": {"const": NORMALIZED_DECISION_INPUT_CONTRACT},
                             "schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT}
@@ -2813,6 +2815,14 @@ mod tests {
                 .expect("schema refs should be an array")
                 .iter()
                 .any(|schema_ref| schema_ref == NORMALIZED_DECISION_INPUT_CONTRACT)
+        );
+        assert_eq!(
+            result["properties"]["output_contract"]["allOf"][0]["then"]["required"][0],
+            "schema_ref"
+        );
+        assert_eq!(
+            result["properties"]["output_contract"]["allOf"][0]["then"]["not"]["required"][0],
+            "schema"
         );
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["schema"]["properties"]["additionalProperties"]

@@ -3973,6 +3973,26 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             ),
         ));
     }
+    if is_decision_input_normalization {
+        if contract.schema_ref.as_deref() != Some(NORMALIZED_DECISION_INPUT_CONTRACT) {
+            issues.push(issue(
+                "decision_input_prompt_schema_ref_required",
+                "error",
+                format!("{path}#/output_contract/schema_ref"),
+                format!(
+                    "decision-input-normalization prompts must use schema_ref {NORMALIZED_DECISION_INPUT_CONTRACT}"
+                ),
+            ));
+        }
+        if contract.schema.is_some() {
+            issues.push(issue(
+                "decision_input_prompt_inline_schema_unsupported",
+                "error",
+                format!("{path}#/output_contract/schema"),
+                "decision-input-normalization prompts must use the canonical schema_ref; inline schemas are not supported for the job-compiled normalized envelope",
+            ));
+        }
+    }
     if !contract.strict_json_only {
         issues.push(issue(
             "prompt_output_not_strict_json",
@@ -4057,7 +4077,12 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
         validate_prompt_example_input_references(prompt, path, issues);
     }
     validate_prompt_schema_ref(prompt, path, output_kind, issues);
-    if let Some(schema) = prompt.output_contract.schema.as_ref() {
+    if let Some(schema) = prompt
+        .output_contract
+        .schema
+        .as_ref()
+        .filter(|_| !is_decision_input_normalization)
+    {
         validate_prompt_output_schema(prompt, schema, path, output_kind, issues);
     } else if prompt.output_contract.schema_ref.is_none() {
         issues.push(issue(
@@ -6072,6 +6097,34 @@ output_contract:
                         && issue["severity"] == "error"
                 })
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn decision_input_normalization_rejects_inline_schema_replacement() {
+        let root = temp_clay_pack("inline-decision-input-schema");
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        std::fs::write(
+            &prompt_path,
+            raw.replace(
+                "  schema_ref: mdp.normalized-decision-input.v1\n",
+                "  schema:\n    type: object\n    additionalProperties: false\n    properties: {}\n    required: []\n",
+            ),
+        )
+        .expect("prompt should be writable");
+
+        let result = validate_pack(&root).expect("validation should return diagnostics");
+        let codes = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(result["valid"], false);
+        assert!(codes.contains("decision_input_prompt_schema_ref_required"));
+        assert!(codes.contains("decision_input_prompt_inline_schema_unsupported"));
         let _ = std::fs::remove_dir_all(root);
     }
 
