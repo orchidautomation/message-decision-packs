@@ -14,12 +14,12 @@ or update a CRM.
 flowchart LR
     A["Clay Audiences segment"] --> B["Retrieve mdp.requirements.v1"]
     B --> C["Attempt every declared attribute through customer-controlled sources"]
-    C --> D["Source-attempt ledger"]
+    C --> D["Source-attempt request + collected-results ledger"]
     B --> E["Retrieve versioned normalization prompt"]
     D --> F["Customer-funded normalization"]
     E --> F
     F --> G["mdp.normalized-decision-input.v1"]
-    G --> V["validate-prompt-output: exact schema, source request, prompt, time, and projection binding"]
+    G --> V["validate-prompt-output: exact schemas, request/results hashes, prompt, time, and projection binding"]
     V --> H["Deterministic fit, routing, brief, and gaps"]
     H --> I{"Decision outcome"}
     I -->|"ready"| J["Compiled context column"]
@@ -66,6 +66,12 @@ omit an attribute. Its trusted `as_of` timestamp anchors freshness calculations.
 Every attempt has a unique ID, attribute ID, allowed source class, non-blank
 source locator, and request timestamp.
 
+[`fixtures/collected-attempt-results.json`](fixtures/collected-attempt-results.json)
+is the separate synthetic execution ledger. It binds to the exact request hash
+and preserves the host-observed status, value, evidence, timestamp, confidence,
+freshness, or error for every declared attribute. The normalizer may not change
+those facts.
+
 [`fixtures/normalized-response-ready.json`](fixtures/normalized-response-ready.json)
 is an exact synthetic normalization envelope. Each attribute preserves one of
 five statuses:
@@ -82,12 +88,19 @@ fabricate observation metadata; an `error` result instead requires its
 non-blank error detail. `blocked` and `error` are never collapsed into
 `not_found`; hard-gate absence is never inferred as safe.
 
-The normalized envelope includes the SHA-256 of the exact source-attempt request.
+The normalized envelope includes the SHA-256 of both the exact source-attempt
+request and the exact collected-results ledger.
 Validation binds every provenance receipt back to a matching request attempt,
+requires normalized statuses, values, and evidence to equal the collected
+ledger,
 requires the exact job-bound normalization prompt, verifies UTC timestamps, and
 derives `age_days` from bound provenance `observed_at` and the trusted request
 `as_of`.
-It rejects meaningful normalized prospect values for non-observed attributes.
+It rejects meaningful normalized prospect values for non-observed attributes
+and rejects routing fields that are not backed by a declared `output_path`.
+The compiled unbound-field policy permits only `source_kind` and `synthetic`,
+which are provenance/safety markers rather than identity, fit, signal, or
+routing inputs.
 
 The normalization envelope always sets `draft_allowed` to `false`.
 `outcome: ready` means only that the normalized data may proceed to
@@ -137,5 +150,6 @@ mdp --json validate-prompt-output --strict \
   --dir examples/clay-audiences-self-serve-enterprise-expansion \
   --prompt normalize-prospect.yaml \
   --source-attempt-request examples/clay-audiences-self-serve-enterprise-expansion/fixtures/source-attempt-request.json \
+  --collected-attempt-results examples/clay-audiences-self-serve-enterprise-expansion/fixtures/collected-attempt-results.json \
   --file examples/clay-audiences-self-serve-enterprise-expansion/fixtures/normalized-response-ready.json
 ```

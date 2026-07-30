@@ -1,7 +1,9 @@
 use crate::cli::SchemaTarget;
 use crate::commands::health::validate_pack;
 use crate::commands::schemas::schema;
-use crate::constants::{NORMALIZED_DECISION_INPUT_CONTRACT, REQUIREMENTS_CONTRACT};
+use crate::constants::{
+    COLLECTED_ATTEMPT_RESULTS_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT, REQUIREMENTS_CONTRACT,
+};
 use crate::models::{
     DecisionInputAttemptStatus, DecisionInputAttribute, DecisionInputCondition,
     DecisionInputConditionOperator, DecisionInputContract, DecisionInputDisposition,
@@ -96,6 +98,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         .collect::<Vec<_>>();
     let normalized_schema = normalized_envelope_schema(job_id, &selected_contracts);
     let source_attempt_schema = source_attempt_request_schema(job_id, &selected_contracts);
+    let collected_results_schema = collected_attempt_results_schema(job_id, &selected_contracts);
     Ok(json!({
         "contract": REQUIREMENTS_CONTRACT,
         "status": "ready",
@@ -111,16 +114,23 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         },
         "decision_input_contracts": compiled_contracts,
         "source_attempt_request_schema": source_attempt_schema,
+        "collected_attempt_results_schema": collected_results_schema,
         "normalized_output_schema": normalized_schema,
         "normalized_prospect_schema": schema(SchemaTarget::Prospect),
+        "normalized_prospect_unbound_policy": {
+            "allowed_fields": ["source_kind", "synthetic"],
+            "reason": "Only non-decision provenance/safety markers may be present without a Decision Input output_path. All identity, fit, routing, signal, and attribute values require an explicit output_path."
+        },
         "semantic_validation": {
-            "command": "mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_NORMALIZATION_PROMPT --source-attempt-request SOURCE_ATTEMPT_REQUEST.json --file NORMALIZED_INPUT.json",
+            "command": "mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_NORMALIZATION_PROMPT --source-attempt-request SOURCE_ATTEMPT_REQUEST.json --collected-attempt-results COLLECTED_ATTEMPT_RESULTS.json --file NORMALIZED_INPUT.json",
             "checks": [
                 "exact-compiled-schema",
                 "bound-source-attempt-request",
+                "bound-collected-attempt-results",
                 "bound-normalization-prompt",
                 "trusted-freshness",
-                "attribute-output-path-consistency"
+                "attribute-output-path-consistency",
+                "no-unbound-prospect-fields"
             ]
         },
         "no_draft_policy": {
@@ -150,6 +160,7 @@ pub(crate) fn validate_normalized_decision_input(
     artifact_path: &str,
     resolved_prompt_path: &Path,
     source_attempt_request: Option<(&Value, &str, &str)>,
+    collected_attempt_results: Option<(&Value, &str, &str)>,
 ) -> Result<Vec<Value>> {
     let Some(job_id) = output["job_id"].as_str() else {
         return Ok(vec![decision_input_issue(
@@ -198,6 +209,15 @@ pub(crate) fn validate_normalized_decision_input(
         source_attempt_request,
         &mut issues,
     );
+    validate_collected_attempt_results(
+        &compiled,
+        output,
+        artifact_path,
+        source_attempt_request.map(|(_, _, sha256)| sha256),
+        collected_attempt_results,
+        &mut issues,
+    );
+    validate_no_unbound_prospect_fields(&compiled, output, artifact_path, &mut issues);
     for contract in compiled["decision_input_contracts"]
         .as_array()
         .into_iter()
@@ -405,6 +425,115 @@ fn validate_source_attempt_request<'a>(
         attempts,
         as_of_seconds: as_of,
     })
+}
+
+fn validate_collected_attempt_results(
+    compiled: &Value,
+    output: &Value,
+    artifact_path: &str,
+    source_attempt_request_sha256: Option<&str>,
+    collected_attempt_results: Option<(&Value, &str, &str)>,
+    issues: &mut Vec<Value>,
+) {
+    let Some((results, results_path, results_sha256)) = collected_attempt_results else {
+        issues.push(decision_input_issue(
+            "decision_input_collected_attempt_results_missing",
+            artifact_path,
+            "decision-input normalization validation requires the exact collected attempt-results ledger",
+        ));
+        return;
+    };
+    if jsonschema::draft202012::validate(&compiled["collected_attempt_results_schema"], results)
+        .is_err()
+    {
+        issues.push(decision_input_issue(
+            "decision_input_collected_attempt_results_schema_mismatch",
+            results_path,
+            "collected attempt results do not satisfy the exact compiled job schema",
+        ));
+        return;
+    }
+    if results["source_attempt_request_sha256"].as_str() != source_attempt_request_sha256 {
+        issues.push(decision_input_issue(
+            "decision_input_collected_attempt_request_hash_mismatch",
+            format!("{results_path}#/source_attempt_request_sha256"),
+            "collected attempt results are not bound to the exact supplied source-attempt request",
+        ));
+    }
+    if output["collected_attempt_results_sha256"].as_str() != Some(results_sha256) {
+        issues.push(decision_input_issue(
+            "decision_input_collected_attempt_results_hash_mismatch",
+            format!("{artifact_path}#/collected_attempt_results_sha256"),
+            "normalized decision input is not bound to the exact supplied collected attempt-results ledger",
+        ));
+    }
+    if output["attributes"] != results["attributes"] {
+        issues.push(decision_input_issue(
+            "decision_input_collected_attempt_results_mismatch",
+            format!("{artifact_path}#/attributes"),
+            "normalized attribute statuses, values, and evidence must exactly match the collected attempt-results ledger",
+        ));
+    }
+}
+
+fn validate_no_unbound_prospect_fields(
+    compiled: &Value,
+    output: &Value,
+    artifact_path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let output_paths = compiled["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|contract| contract["attributes"].as_array().into_iter().flatten())
+        .filter_map(|attribute| attribute["output_path"].as_str())
+        .collect::<BTreeSet<_>>();
+    let Some(prospect) = output["normalized_prospect"].as_object() else {
+        return;
+    };
+    let allowed_unbound = compiled["normalized_prospect_unbound_policy"]["allowed_fields"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    for (field, value) in prospect {
+        if allowed_unbound.contains(field.as_str()) {
+            continue;
+        }
+        if field == "attributes" {
+            if let Some(attributes) = value.as_object() {
+                for (attribute, value) in attributes {
+                    let path = format!("attributes.{attribute}");
+                    if !output_paths.contains(path.as_str()) && meaningful_projected_value(value) {
+                        issues.push(decision_input_issue(
+                            "decision_input_unbound_prospect_field",
+                            format!(
+                                "{artifact_path}#/normalized_prospect/attributes/{attribute}"
+                            ),
+                            format!(
+                                "normalized prospect field {path} is not backed by a declared decision-input output_path"
+                            ),
+                        ));
+                    }
+                }
+            }
+            continue;
+        }
+        let bound = output_paths.iter().any(|output_path| {
+            *output_path == field || output_path.starts_with(&format!("{field}."))
+        });
+        if !bound && meaningful_projected_value(value) {
+            issues.push(decision_input_issue(
+                "decision_input_unbound_prospect_field",
+                format!("{artifact_path}#/normalized_prospect/{field}"),
+                format!(
+                    "normalized prospect field {field} is not backed by a declared decision-input output_path"
+                ),
+            ));
+        }
+    }
 }
 
 fn validate_attribute_attempt_receipts(
@@ -867,6 +996,57 @@ fn source_attempt_request_schema(job_id: &str, contracts: &[&DecisionInputContra
     })
 }
 
+fn collected_attempt_results_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
+    let mut properties = Map::new();
+    let mut required = Vec::new();
+    for contract in contracts {
+        for attribute in &contract.attributes {
+            properties.insert(attribute.id.clone(), attempt_result_schema(attribute));
+            required.push(Value::String(attribute.id.clone()));
+        }
+    }
+    let contract_versions = contracts
+        .iter()
+        .map(|contract| {
+            json!({
+                "id": contract.id,
+                "version": contract.version
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Collected Attempt Results v1",
+        "type": "object",
+        "required": [
+            "contract",
+            "job_id",
+            "decision_input_contracts",
+            "source_attempt_request_sha256",
+            "attributes"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": COLLECTED_ATTEMPT_RESULTS_CONTRACT},
+            "job_id": {"const": job_id},
+            "decision_input_contracts": {
+                "type": "array",
+                "const": contract_versions
+            },
+            "source_attempt_request_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+            },
+            "attributes": {
+                "type": "object",
+                "required": required,
+                "additionalProperties": false,
+                "properties": properties
+            }
+        }
+    })
+}
+
 fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
     let mut properties = Map::new();
     let mut required = Vec::new();
@@ -937,6 +1117,7 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
             "decision_input_contracts",
             "normalization",
             "source_attempt_request_sha256",
+            "collected_attempt_results_sha256",
             "attributes",
             "normalized_prospect",
             "outcome",
@@ -959,6 +1140,11 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
                 "type": "string",
                 "pattern": "^[a-f0-9]{64}$",
                 "description": "SHA-256 of the exact source-attempt request file validated with this normalized output."
+            },
+            "collected_attempt_results_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "SHA-256 of the exact collected attempt-results ledger validated with this normalized output."
             },
             "attributes": {
                 "type": "object",
@@ -1397,12 +1583,26 @@ mod tests {
         request_sha256: &str,
         prompt_path: &Path,
     ) -> BTreeSet<String> {
+        let results_raw = std::fs::read(root.join("fixtures/collected-attempt-results.json"))
+            .expect("collected-results fixture bytes should load");
+        let mut results: Value =
+            serde_json::from_slice(&results_raw).expect("collected-results fixture should parse");
+        results["attributes"] = response["attributes"].clone();
+        let results_bytes =
+            serde_json::to_vec_pretty(&results).expect("collected results should serialize");
+        let results_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(results_bytes))
+        };
+        let mut bound_response = response.clone();
+        bound_response["collected_attempt_results_sha256"] = json!(&results_sha256);
         validate_normalized_decision_input(
             root,
-            response,
+            &bound_response,
             "synthetic-response",
             prompt_path,
             Some((request, "synthetic-request", request_sha256)),
+            Some((&results, "synthetic-results", &results_sha256)),
         )
         .expect("semantic validation should run")
         .into_iter()
@@ -1689,6 +1889,11 @@ mod tests {
 
         let compiled =
             requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
+        assert_eq!(
+            compiled["normalized_prospect_unbound_policy"]["allowed_fields"],
+            json!(["source_kind", "synthetic"]),
+            "compiler must explicitly limit unbound fields to non-decision provenance markers"
+        );
         draft202012::validate(&compiled["source_attempt_request_schema"], &request)
             .expect("exact source-attempt fixture should satisfy the compiled schema");
         draft202012::validate(&compiled["normalized_output_schema"], &response)
@@ -1700,6 +1905,16 @@ mod tests {
             use sha2::{Digest, Sha256};
             format!("{:x}", Sha256::digest(request_raw))
         };
+        let results_raw = std::fs::read(root.join("fixtures/collected-attempt-results.json"))
+            .expect("collected-results fixture bytes should load");
+        let results: Value = serde_json::from_slice(&results_raw)
+            .expect("collected-results fixture should be valid JSON");
+        let results_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(results_raw))
+        };
+        draft202012::validate(&compiled["collected_attempt_results_schema"], &results)
+            .expect("exact collected-results fixture should satisfy the compiled schema");
         assert!(
             validate_normalized_decision_input(
                 &root,
@@ -1707,6 +1922,7 @@ mod tests {
                 "synthetic-response",
                 &prompt_path,
                 Some((&request, "synthetic-request", &request_sha256)),
+                Some((&results, "synthetic-results", &results_sha256)),
             )
             .expect("semantic validation should run")
             .is_empty(),
@@ -1721,11 +1937,66 @@ mod tests {
                 "synthetic-response",
                 &prompt_path,
                 Some((&request, "synthetic-request", &request_sha256)),
+                Some((&results, "synthetic-results", &results_sha256)),
             )
             .expect("semantic validation should run")
             .iter()
             .any(|issue| issue["code"] == "decision_input_projection_mismatch"),
             "semantic validation must reject observed attribute/output-path disagreement"
+        );
+
+        let mut blocked_results = results.clone();
+        let blocked_company = blocked_results["attributes"]["company_domain"]
+            .as_object_mut()
+            .expect("company-domain result should be an object");
+        blocked_company.insert("status".to_string(), json!("blocked"));
+        blocked_company.remove("value");
+        let blocked_results_raw =
+            serde_json::to_vec_pretty(&blocked_results).expect("blocked results should serialize");
+        let blocked_results_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(&blocked_results_raw))
+        };
+        let mut fabricated_observed = response.clone();
+        fabricated_observed["collected_attempt_results_sha256"] = json!(&blocked_results_sha256);
+        assert!(
+            validate_normalized_decision_input(
+                &root,
+                &fabricated_observed,
+                "synthetic-response",
+                &prompt_path,
+                Some((&request, "synthetic-request", &request_sha256)),
+                Some((
+                    &blocked_results,
+                    "synthetic-blocked-results",
+                    &blocked_results_sha256,
+                )),
+            )
+            .expect("semantic validation should run")
+            .iter()
+            .any(|issue| issue["code"] == "decision_input_collected_attempt_results_mismatch"),
+            "normalization must not turn a host-recorded blocked result into observed/ready"
+        );
+
+        let mut unbound_routing = response.clone();
+        unbound_routing["normalized_prospect"]["segment"] = json!("invented-segment");
+        unbound_routing["normalized_prospect"]["signals"] = json!([{
+            "id": "invented-signal",
+            "title": "Invented routing signal"
+        }]);
+        assert!(
+            validate_normalized_decision_input(
+                &root,
+                &unbound_routing,
+                "synthetic-response",
+                &prompt_path,
+                Some((&request, "synthetic-request", &request_sha256)),
+                Some((&results, "synthetic-results", &results_sha256)),
+            )
+            .expect("semantic validation should run")
+            .iter()
+            .any(|issue| issue["code"] == "decision_input_unbound_prospect_field"),
+            "normalization must reject segment and signal fields without declared output paths"
         );
 
         let mut forbidden_source = request.clone();

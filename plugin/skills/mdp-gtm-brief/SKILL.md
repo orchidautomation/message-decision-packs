@@ -58,18 +58,23 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
        attempt, and record the statuses, values, evidence, timestamps,
        confidence, and errors in a separate attempted-complete
        `COLLECTED_ATTEMPT_RESULTS_JSON` ledger. Invoke the bound prompt with all
-       three required inputs:
+       four required inputs:
        - `raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`
        - `decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`
        - `source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`
+       - `collected_attempt_results_sha256`:
+         `COLLECTED_ATTEMPT_RESULTS_SHA256`
 
        Resume only after the host returns both the preserved request file and
-       normalized output.
+       normalized output, plus the exact collected-results ledger used as
+       `raw_row`.
      - For either the already-supplied or resumed path, validate:
 
      ```bash
      mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_PROMPT_PATH \
-       --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON --file OUTPUT_JSON
+       --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON \
+       --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON \
+       --file OUTPUT_JSON
      ```
 
      Continue only when validation passes and the top-level `outcome` is exactly

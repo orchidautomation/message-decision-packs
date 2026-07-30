@@ -160,6 +160,7 @@ fn decision_input_envelope_schema() -> Value {
             "decision_input_contracts",
             "normalization",
             "source_attempt_request_sha256",
+            "collected_attempt_results_sha256",
             "attributes",
             "normalized_prospect",
             "outcome",
@@ -172,6 +173,10 @@ fn decision_input_envelope_schema() -> Value {
             "decision_input_contracts": string_array(),
             "normalization": {"type": "array", "items": {"type": "object"}},
             "source_attempt_request_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+            },
+            "collected_attempt_results_sha256": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
             },

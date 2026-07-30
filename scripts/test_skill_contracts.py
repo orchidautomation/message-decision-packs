@@ -94,6 +94,13 @@ class SkillContractTests(unittest.TestCase):
             "`source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`",
             skill,
         )
+        self.assertIn(
+            "`collected_attempt_results_sha256`:", skill
+        )
+        self.assertIn("`COLLECTED_ATTEMPT_RESULTS_SHA256`", skill)
+        self.assertIn(
+            "--collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON", skill
+        )
         self.assertIn("returned bound prompt; then", skill)
         self.assertIn("Resume only after the host returns", skill)
         self.assertIn("--prompt BOUND_PROMPT_PATH", skill)
@@ -122,19 +129,36 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("prospect-normalization prompt", skill)
         self.assertIn("card-patch/extraction envelopes", skill)
         self.assertIn("does not declare", skill)
-        self.assertIn("attempted-complete source-attempt request", skill)
+        self.assertIn("attempted-complete `SOURCE_ATTEMPT_REQUEST_JSON`", skill)
         self.assertIn("data.source_attempt_request_schema", skill)
+        self.assertIn("`data.collected_attempt_results_schema`", skill)
+        self.assertIn("`data.normalized_output_schema`", skill)
         self.assertIn("`decision_input_contracts` ID/version receipts", skill)
         self.assertIn("trusted UTC", skill)
-        self.assertIn("attempt for every compiled attribute", skill)
+        self.assertIn("execute every compiled attempt", skill)
+        self.assertIn("`raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`", skill)
+        self.assertIn(
+            "`decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`",
+            skill,
+        )
+        self.assertIn(
+            "`source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`",
+            skill,
+        )
+        self.assertIn("`collected_attempt_results_sha256`:", skill)
         self.assertIn("--source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON", skill)
+        self.assertIn(
+            "--collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON", skill
+        )
 
     def test_core_skill_distinguishes_legacy_normalization_from_extraction(self):
         skill = Path("plugin/skills/mdp/SKILL.md").read_text()
-        self.assertIn("regardless of job-wide `data.available`", skill)
+        normalized = " ".join(skill.split())
+        self.assertIn("regardless of job-wide `data.available`", normalized)
         self.assertIn("prospect-normalization prompt", skill)
         self.assertIn("extraction or card-patch prompts", skill)
         self.assertIn("undeclared", skill)
+        self.assertIn("--collected-attempt-results", skill)
         self.assertIn("top-level `outcome` is exactly", skill)
         self.assertIn("mdp.prompt-output.v0", skill)
         self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", skill)

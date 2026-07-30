@@ -19,7 +19,8 @@ deterministic decision.
    `observed`, `not_found`, `not_applicable`, `blocked`, and `error`.
 9. Bind the contract to the relevant `input_contracts[]` or `jobs[]`.
 10. Run `mdp --json requirements --dir PACK_ROOT --job JOB_ID` and inspect the
-    compiled request and normalized-output schemas before authoring the prompt.
+    compiled request, collected-results, and normalized-output schemas before
+    authoring the prompt.
 
 The contract owns the questions. The prompt normalizes answers supplied by the
 host. A collector may use customer-approved systems or permitted public
@@ -102,12 +103,18 @@ safe values.
 Commit only synthetic or explicitly sanitized fixtures. Show:
 
 - one attempted-complete source request;
+- one separately hashed collected-results ledger whose statuses, values, and
+  evidence exactly bind the normalized attribute map;
 - one schema-valid normalized response;
 - ready and insufficient-context behavior;
 - an observed disqualifying hard-gate value;
 - a blocked or ambiguous hard gate requiring human review;
 - a malformed contract/payload rejection;
 - a provider error preserved outside the decision engine.
+
+Reject meaningful normalized prospect fields without a declared `output_path`;
+only compiler-declared non-decision provenance/safety markers may remain
+unbound.
 
 Keep hosted APIs, provider credentials, auth, billing, live data access, model
 calls, copy generation, CRM writes, and sequencing outside the pack.

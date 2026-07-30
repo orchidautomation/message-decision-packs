@@ -38,13 +38,16 @@ belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
        record the statuses, values, evidence, timestamps, confidence, and
        errors in a separate attempted-complete
        `COLLECTED_ATTEMPT_RESULTS_JSON` ledger. Invoke the bound prompt with all
-       three required inputs:
+       four required inputs:
        - `raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`
        - `decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`
        - `source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`
+       - `collected_attempt_results_sha256`:
+         `COLLECTED_ATTEMPT_RESULTS_SHA256`
 
        Resume only when the host returns both the preserved request file and
-       normalized output.
+       normalized output, plus the exact collected-results ledger used as
+       `raw_row`.
      - For either the already-supplied or resumed path, validate the envelope
        against the exact request file. Stop before extracting
        `normalized_prospect` unless validation passes and top-level `outcome`

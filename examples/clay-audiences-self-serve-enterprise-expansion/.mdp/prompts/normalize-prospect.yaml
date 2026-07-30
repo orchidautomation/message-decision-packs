@@ -1,7 +1,7 @@
 description: Normalizes an attempted-complete Clay Audiences source-attempt ledger into provider-neutral MDP prospect JSON before deterministic fit or brief runs.
 format: mdp.prompt.v0
 id: normalize-prospect-row
-version: clay-self-serve-enterprise-expansion.v1
+version: clay-self-serve-enterprise-expansion.v2
 inputs:
 - default: N/A
   description: The bounded source-attempt ledger for all declared decision-input attributes. Every attempt must retain attribute id, source class, status, provenance, timestamp, confidence, and supplied value or error.
@@ -17,6 +17,11 @@ inputs:
   description: SHA-256 of the exact source-attempt request file supplied by the customer or host. Copy this receipt unchanged into source_attempt_request_sha256.
   missing_behavior: Return a malformed outcome and do not normalize or draft when the exact request hash is absent.
   name: source_attempt_request_sha256
+  required: true
+- default: N/A
+  description: SHA-256 of the exact collected attempt-results ledger supplied as raw_row. Copy this receipt unchanged into collected_attempt_results_sha256.
+  missing_behavior: Return a malformed outcome and do not normalize or draft when the exact collected-results hash is absent.
+  name: collected_attempt_results_sha256
   required: true
 - default: N/A
   description: Company domain when available.
@@ -40,10 +45,11 @@ inputs:
   required: false
 instructions:
 - External target identity is Synthetic Expansion Product (product). Prospect-facing candidates must position this target, not the pack, CLI, schema, prompt, card, eval, starter, or prior target.
-- Use only raw_row, decision_input_requirements, source_attempt_request_sha256, company_domain, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.
-- Treat decision_input_requirements.normalized_output_schema as the binding response schema. Return exactly one mdp.normalized-decision-input.v1 object with contract, job_id, decision_input_contracts, normalization, source_attempt_request_sha256, attributes, normalized_prospect, outcome, and draft_allowed. Never return the legacy mdp.prompt-output.v0 envelope or its prompt_id, source_summary, normalization_trace, card_patches, gaps, or rejected_claims fields.
+- Use only raw_row, decision_input_requirements, source_attempt_request_sha256, collected_attempt_results_sha256, company_domain, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.
+- Treat decision_input_requirements.normalized_output_schema as the binding response schema. Return exactly one mdp.normalized-decision-input.v1 object with contract, job_id, decision_input_contracts, normalization, source_attempt_request_sha256, collected_attempt_results_sha256, attributes, normalized_prospect, outcome, and draft_allowed. Never return the legacy mdp.prompt-output.v0 envelope or its prompt_id, source_summary, normalization_trace, card_patches, gaps, or rejected_claims fields.
 - Copy job_id, decision_input_contracts, and each normalization receipt exactly from decision_input_requirements. Do not invent, upgrade, or substitute a contract id, prompt path, prompt version, or schema version.
 - Copy source_attempt_request_sha256 exactly from the customer or host input. Do not calculate, rewrite, or substitute it.
+- Copy collected_attempt_results_sha256 exactly from the customer or host input. Do not calculate, rewrite, or substitute it.
 - 'Treat raw_row as an attempted-complete ledger, not permission to search. Preserve the exact attempt status for all fifteen attributes: observed, not_found, not_applicable, blocked, or error.'
 - Answer only the data questions declared by decision_input_requirements. Do not introduce an attribute because it might be useful.
 - Emit every declared attribute exactly once under attributes. For each attribute, preserve status; include value only when status is observed; and include provenance, confidence, freshness, and error exactly when the compiled per-attribute schema permits or requires them.
@@ -86,10 +92,11 @@ output_contract:
         {
           "contract_id": "clay.audiences.self_serve_enterprise_expansion",
           "prompt": "prompts/normalize-prospect.yaml",
-          "prompt_version": "clay-self-serve-enterprise-expansion.v1"
+          "prompt_version": "clay-self-serve-enterprise-expansion.v2"
         }
       ],
       "source_attempt_request_sha256": "b228884027f7754f5136bb9317d164fc8e4d702ea145891997f29c26913fa9df",
+      "collected_attempt_results_sha256": "4181b47b398318883538265ff9a3c0735f66ac401086757b9f5d14dd14ba67c7",
       "attributes": {
         "company_name": {
           "status": "observed",
@@ -355,17 +362,6 @@ output_contract:
         "source_kind": "synthetic-example",
         "synthetic": true,
         "trigger": "Synthetic usage threshold reached in the reviewed fixture.",
-        "persona": "Buyer",
-        "segment": "self-serve-enterprise-expansion",
-        "signals": [
-          {
-            "id": "synthetic-expansion-trigger",
-            "title": "Reviewed synthetic expansion trigger",
-            "source": "synthetic-fixture.trigger",
-            "confidence": "high",
-            "freshness": "current"
-          }
-        ],
         "attributes": {
           "account_owner_state": "assigned",
           "last_meaningful_touch": "2026-07-20T12:00:00Z",

@@ -112,6 +112,7 @@ mdp --json validate-prompt-output --strict \
   --dir PACK_ROOT \
   --prompt prompts/normalize-prospect.yaml \
   --source-attempt-request SOURCE_ATTEMPT_REQUEST.json \
+  --collected-attempt-results COLLECTED_ATTEMPT_RESULTS.json \
   --file NORMALIZED_INPUT.json
 ```
 
@@ -119,6 +120,9 @@ Only `outcome: ready` may proceed to normalized prospect extraction. Every
 other top-level outcome stops before fit, brief, or draft work. A non-observed
 attribute must also leave its declared normalized prospect output absent or
 neutral; it cannot smuggle an unverified value into deterministic evaluation.
+The normalized attribute map must exactly equal the separately hashed
+host-collected results ledger, and meaningful prospect fields without a
+declared Decision Input `output_path` are rejected.
 
 The blocked normalization outcomes are:
 

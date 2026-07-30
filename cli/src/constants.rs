@@ -13,6 +13,7 @@ pub(crate) const PROPOSAL_READINESS_REPORT_CONTRACT: &str = "mdp.proposal-readin
 pub(crate) const PROPOSAL_MCP_RUN_RESULT_CONTRACT: &str = "mdp.proposal-mcp-run-result.v0";
 pub(crate) const PROPOSAL_RUN_MANIFEST_CONTRACT: &str = "mdp.proposal-run-manifest.v0";
 pub(crate) const REQUIREMENTS_CONTRACT: &str = "mdp.requirements.v1";
+pub(crate) const COLLECTED_ATTEMPT_RESULTS_CONTRACT: &str = "mdp.collected-attempt-results.v1";
 pub(crate) const NORMALIZED_DECISION_INPUT_CONTRACT: &str = "mdp.normalized-decision-input.v1";
 pub(crate) const PROMPT_CARD_PATCH_SCHEMA_REF: &str = "mdp.prompt-output.card-patches.v0";
 pub(crate) const PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF: &str =

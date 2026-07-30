@@ -1,18 +1,13 @@
 {
-  "contract": "mdp.normalized-decision-input.v1",
+  "contract": "mdp.collected-attempt-results.v1",
   "job_id": "prospect-fit-or-brief",
   "decision_input_contracts": [
-    "clay.audiences.self_serve_enterprise_expansion"
-  ],
-  "normalization": [
     {
-      "contract_id": "clay.audiences.self_serve_enterprise_expansion",
-      "prompt": "prompts/normalize-prospect.yaml",
-      "prompt_version": "clay-self-serve-enterprise-expansion.v2"
+      "id": "clay.audiences.self_serve_enterprise_expansion",
+      "version": "1.0.0"
     }
   ],
   "source_attempt_request_sha256": "b228884027f7754f5136bb9317d164fc8e4d702ea145891997f29c26913fa9df",
-  "collected_attempt_results_sha256": "4181b47b398318883538265ff9a3c0735f66ac401086757b9f5d14dd14ba67c7",
   "attributes": {
     "company_name": {
       "status": "observed",
@@ -269,26 +264,5 @@
         "age_days": 0
       }
     }
-  },
-  "normalized_prospect": {
-    "name": "Avery Example",
-    "title": "VP Revenue Operations",
-    "company": "Example Expansion Account",
-    "company_domain": "example-expansion.invalid",
-    "source_kind": "synthetic-example",
-    "synthetic": true,
-    "trigger": "Synthetic usage threshold reached in the reviewed fixture.",
-    "attributes": {
-      "account_owner_state": "assigned",
-      "last_meaningful_touch": "2026-07-20T12:00:00Z",
-      "customer_motion": "self-serve",
-      "enterprise_eligibility": "eligible",
-      "do_not_contact": "clear",
-      "open_support_escalation": "escalation-clear",
-      "current_working_country": "United States",
-      "employee_band": "201-1000"
-    }
-  },
-  "outcome": "ready",
-  "draft_allowed": false
+  }
 }

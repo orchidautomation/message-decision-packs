@@ -77,25 +77,40 @@ what data must be attempted. Keep collection and provider calls outside MDP.
    - Only when the selected prompt is the job-bound
      `decision-input-normalization` prompt producing
      `mdp.normalized-decision-input.v1`, require `data.available` to be `true`
-     and construct one
-     attempted-complete source-attempt request matching
-     `data.source_attempt_request_schema`. The customer or host owns collection
-     and paid normalization. Populate the schema's exact `contract`, `job_id`,
-     and `decision_input_contracts` ID/version receipts; set a trusted UTC
-     `as_of`; and record at least one attempt for every compiled attribute
-     during collection, including its `attempt_id`, `attribute_id`,
-     `source_class`, `source_locator`, and `requested_at`. Preserve that exact
-     file, then pass it to validation:
+     and hand the customer or host the complete exact requirements result as
+     `DECISION_INPUT_REQUIREMENTS_JSON`, including
+     `data.source_attempt_request_schema`,
+     `data.collected_attempt_results_schema`,
+     `data.normalized_output_schema`, and all contract/prompt receipts. The
+     customer or host owns collection and paid normalization. It must construct
+     one attempted-complete `SOURCE_ATTEMPT_REQUEST_JSON` matching the compiled
+     request schema; populate the exact `contract`, `job_id`, and
+     `decision_input_contracts` ID/version receipts; set a trusted UTC `as_of`;
+     preserve the exact request bytes; and compute
+     `SOURCE_ATTEMPT_REQUEST_SHA256`. It must execute every compiled attempt and
+     record the exact statuses, values, evidence, timestamps, confidence, and
+     errors in `COLLECTED_ATTEMPT_RESULTS_JSON`, matching
+     `data.collected_attempt_results_schema`, then compute
+     `COLLECTED_ATTEMPT_RESULTS_SHA256`. Invoke the bound prompt with:
+     - `raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`
+     - `decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`
+     - `source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`
+     - `collected_attempt_results_sha256`:
+       `COLLECTED_ATTEMPT_RESULTS_SHA256`
+
+     Preserve both exact ledgers and pass them to validation:
 
 ```bash
-mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID \
-  --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON --file OUTPUT_JSON
+mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_PROMPT_PATH \
+  --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON \
+  --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON \
+  --file OUTPUT_JSON
 ```
 
      Stop before extracting or passing normalized data unless validation
      succeeds and the envelope's top-level `outcome` is exactly `ready`.
-     Preserve the exact request bytes and SHA-256 receipt with the normalized
-     result.
+     Preserve the exact request and collected-results bytes and both SHA-256
+     receipts with the normalized result.
 
    - For every other prompt output kind or contract, retain the normal
      `mdp.prompt-output.v0` path without a source-attempt request, regardless of
