@@ -390,58 +390,61 @@ fn validate_attribute_attempt_receipts(
         for (index, receipt) in provenance.iter().enumerate() {
             let receipt_path =
                 format!("{artifact_path}#/attributes/{attribute_id}/provenance/{index}");
-            let Some(observed_at) = receipt["observed_at"].as_str() else {
-                continue;
-            };
-            let Some(observed_at_seconds) = parse_utc_timestamp_seconds(observed_at) else {
-                issues.push(decision_input_issue(
-                    "decision_input_provenance_observed_at_invalid",
-                    format!("{receipt_path}/observed_at"),
-                    "provenance observed_at must be a valid UTC timestamp",
-                ));
-                continue;
-            };
-            let Some(source_attempt_index) = source_attempt_index else {
-                continue;
-            };
-            if observed_at_seconds > source_attempt_index.as_of_seconds {
-                issues.push(decision_input_issue(
-                    "decision_input_provenance_observed_at_future",
-                    format!("{receipt_path}/observed_at"),
-                    "provenance observed_at must not be later than the trusted as_of timestamp",
-                ));
+            if let Some(source_attempt_index) = source_attempt_index {
+                if let Some(attempt_id) = receipt["attempt_id"].as_str() {
+                    if let Some(source_attempt) = source_attempt_index.attempts.get(attempt_id) {
+                        if source_attempt["attribute_id"].as_str() != Some(attribute_id) {
+                            issues.push(decision_input_issue(
+                                "decision_input_provenance_attempt_attribute_mismatch",
+                                format!("{receipt_path}/attempt_id"),
+                                "provenance attempt_id belongs to a different decision-input attribute",
+                            ));
+                        }
+                        if receipt.get("source_class").is_some()
+                            && receipt["source_class"] != source_attempt["source_class"]
+                        {
+                            issues.push(decision_input_issue(
+                                "decision_input_provenance_source_class_mismatch",
+                                format!("{receipt_path}/source_class"),
+                                "provenance source_class must match its bound source attempt",
+                            ));
+                        }
+                        if receipt.get("source_locator").is_some()
+                            && receipt["source_locator"] != source_attempt["source_locator"]
+                        {
+                            issues.push(decision_input_issue(
+                                "decision_input_provenance_source_locator_mismatch",
+                                format!("{receipt_path}/source_locator"),
+                                "provenance source_locator must match its bound source attempt",
+                            ));
+                        }
+                    } else {
+                        issues.push(decision_input_issue(
+                            "decision_input_provenance_attempt_unknown",
+                            format!("{receipt_path}/attempt_id"),
+                            "provenance attempt_id is not present in the supplied source-attempt request",
+                        ));
+                    }
+                }
             }
-            let Some(attempt_id) = receipt["attempt_id"].as_str() else {
-                continue;
-            };
-            let Some(source_attempt) = source_attempt_index.attempts.get(attempt_id) else {
-                issues.push(decision_input_issue(
-                    "decision_input_provenance_attempt_unknown",
-                    format!("{receipt_path}/attempt_id"),
-                    "provenance attempt_id is not present in the supplied source-attempt request",
-                ));
-                continue;
-            };
-            if source_attempt["attribute_id"].as_str() != Some(attribute_id) {
-                issues.push(decision_input_issue(
-                    "decision_input_provenance_attempt_attribute_mismatch",
-                    format!("{receipt_path}/attempt_id"),
-                    "provenance attempt_id belongs to a different decision-input attribute",
-                ));
-            }
-            if receipt["source_class"] != source_attempt["source_class"] {
-                issues.push(decision_input_issue(
-                    "decision_input_provenance_source_class_mismatch",
-                    format!("{receipt_path}/source_class"),
-                    "provenance source_class must match its bound source attempt",
-                ));
-            }
-            if receipt["source_locator"] != source_attempt["source_locator"] {
-                issues.push(decision_input_issue(
-                    "decision_input_provenance_source_locator_mismatch",
-                    format!("{receipt_path}/source_locator"),
-                    "provenance source_locator must match its bound source attempt",
-                ));
+            if let Some(observed_at) = receipt["observed_at"].as_str() {
+                let Some(observed_at_seconds) = parse_utc_timestamp_seconds(observed_at) else {
+                    issues.push(decision_input_issue(
+                        "decision_input_provenance_observed_at_invalid",
+                        format!("{receipt_path}/observed_at"),
+                        "provenance observed_at must be a valid UTC timestamp",
+                    ));
+                    continue;
+                };
+                if let Some(source_attempt_index) = source_attempt_index {
+                    if observed_at_seconds > source_attempt_index.as_of_seconds {
+                        issues.push(decision_input_issue(
+                            "decision_input_provenance_observed_at_future",
+                            format!("{receipt_path}/observed_at"),
+                            "provenance observed_at must not be later than the trusted as_of timestamp",
+                        ));
+                    }
+                }
             }
         }
     }
@@ -1581,6 +1584,38 @@ mod tests {
             )
             .contains("decision_input_provenance_attempt_unknown")
         );
+
+        let attempt_id_only_root = temporary_clay_example("attempt-id-only-provenance");
+        let manifest_path = attempt_id_only_root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replacen(
+                "required_fields:\n      - attempt_id\n      - source_class\n      - source_locator\n      - observed_at",
+                "required_fields:\n      - attempt_id",
+                1,
+            ),
+        )
+        .expect("manifest should be writable");
+        let mut unknown_attempt_without_observed_at = response.clone();
+        let company_receipt =
+            unknown_attempt_without_observed_at["attributes"]["company_name"]["provenance"][0]
+                .as_object_mut()
+                .expect("company provenance receipt should be an object");
+        company_receipt.insert("attempt_id".to_string(), json!("synthetic-attempt-unknown"));
+        company_receipt.remove("observed_at");
+        assert!(
+            semantic_issue_codes(
+                &attempt_id_only_root,
+                &request,
+                &unknown_attempt_without_observed_at,
+                &request_sha256,
+                &attempt_id_only_root.join(".mdp/prompts/normalize-prospect.yaml"),
+            )
+            .contains("decision_input_provenance_attempt_unknown"),
+            "attempt_id binding must not depend on observed_at being present"
+        );
+        let _ = std::fs::remove_dir_all(attempt_id_only_root);
 
         let mut wrong_attribute_attempt = response.clone();
         wrong_attribute_attempt["attributes"]["company_name"]["provenance"][0]["attempt_id"] =

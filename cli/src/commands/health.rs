@@ -1801,10 +1801,35 @@ fn validate_job_decision_input_composition(manifest: &Manifest, issues: &mut Vec
 
         let mut attribute_owners = BTreeMap::new();
         let mut output_path_owners = BTreeMap::new();
+        let mut normalization_owner: Option<(&str, &str, &str)> = None;
         for contract_id in contract_ids {
             let Some(contract) = decision_contracts.get(contract_id) else {
                 continue;
             };
+            let prompt = contract.normalization.prompt.as_str();
+            let prompt_version = contract.normalization.prompt_version.as_str();
+            if let Some((first_contract, first_prompt, first_prompt_version)) = normalization_owner
+            {
+                if first_prompt != prompt || first_prompt_version != prompt_version {
+                    issues.push(issue(
+                        "decision_input_job_normalization_mismatch",
+                        "error",
+                        format!(".mdp/manifest.yaml#/jobs/{job_index}/decision_input_contracts"),
+                        format!(
+                            "job {} composes decision input contracts {} and {} with different normalization bindings ({}@{} vs {}@{})",
+                            job.id,
+                            first_contract,
+                            contract_id,
+                            first_prompt,
+                            first_prompt_version,
+                            prompt,
+                            prompt_version
+                        ),
+                    ));
+                }
+            } else {
+                normalization_owner = Some((contract_id, prompt, prompt_version));
+            }
             for attribute in &contract.attributes {
                 if let Some(first_contract) =
                     attribute_owners.insert(attribute.id.as_str(), contract_id)
@@ -6332,6 +6357,65 @@ output_contract:
             issues
                 .iter()
                 .any(|issue| issue["code"] == "decision_input_job_output_path_duplicate")
+        );
+    }
+
+    fn duplicate_contract_with_unique_projection(manifest: &Manifest) -> DecisionInputContract {
+        let mut duplicate = manifest.decision_input_contracts[0].clone();
+        duplicate.id = "clay.audiences.other-normalizer".to_string();
+        duplicate.normalization.prompt = "prompts/other-normalize-prospect.yaml".to_string();
+        duplicate.normalization.prompt_version = "other-normalizer.v1".to_string();
+        for (index, attribute) in duplicate.attributes.iter_mut().enumerate() {
+            attribute.id = format!("other_attribute_{index}");
+            attribute.output_path = format!("attributes.other_attribute_{index}");
+            attribute.applies_when.clear();
+        }
+        duplicate
+    }
+
+    #[test]
+    fn job_composition_rejects_direct_normalization_mismatch() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let duplicate = duplicate_contract_with_unique_projection(&manifest);
+        manifest.jobs[0]
+            .decision_input_contracts
+            .push(duplicate.id.clone());
+        manifest.decision_input_contracts.push(duplicate);
+        let mut issues = Vec::new();
+
+        validate_job_decision_input_composition(&manifest, &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| { issue["code"] == "decision_input_job_normalization_mismatch" })
+        );
+    }
+
+    #[test]
+    fn job_composition_rejects_inherited_normalization_mismatch() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let duplicate = duplicate_contract_with_unique_projection(&manifest);
+        let duplicate_id = duplicate.id.clone();
+        manifest.decision_input_contracts.push(duplicate);
+        manifest.input_contracts.push(InputContract {
+            id: "other-normalization-input".to_string(),
+            decision_input_contracts: vec![duplicate_id],
+            ..InputContract::default()
+        });
+        manifest.jobs[0]
+            .input_contracts
+            .push("other-normalization-input".to_string());
+        let mut issues = Vec::new();
+
+        validate_job_decision_input_composition(&manifest, &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| { issue["code"] == "decision_input_job_normalization_mismatch" })
         );
     }
 
