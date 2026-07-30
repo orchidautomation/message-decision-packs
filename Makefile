@@ -41,11 +41,8 @@ validate-plugin:
 	@if [ -f "$(PLUGIN_VALIDATOR)" ]; then 		$(PYTHON) "$(PLUGIN_VALIDATOR)" plugin; 	else 		echo "Skipping plugin validation; missing $(PLUGIN_VALIDATOR)"; 	fi
 
 validate-version-sync:
-	@cli_version=$$(awk -F'"' '/^version = / { print $$2; exit }' cli/Cargo.toml); \
-	plugin_version=$$($(PYTHON) -c 'import json; print(json.load(open("plugin/.codex-plugin/plugin.json"))["version"])'); \
-	pluxx_version=$$(sed -n "s/^[[:space:]]*version: '\([^']*\)'.*/\1/p" pluxx.config.ts); \
-	test "$$cli_version" = "$$plugin_version"; \
-	test "$$cli_version" = "$$pluxx_version"
+	bash scripts/validate-version-sync.sh
+	bash scripts/test-version-sync.sh
 
 validate-native-runner:
 	node --check scripts/mdp-native-normalize-openai.mjs
@@ -88,7 +85,7 @@ validate-llms:
 
 validate-installers:
 	bash -n scripts/install.sh scripts/bootstrap-runtime.sh scripts/daytona-mdp-release-qa.sh scripts/finalize-release-assets.sh scripts/test-install.sh scripts/mdp-activate.sh scripts/mdp-post-edit-validate.sh scripts/test-pluxx-hooks.sh scripts/test-native-runner.sh scripts/test-proposal-runner.sh
-	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh scripts/test-proposal-mcp-server.sh
+	bash -n scripts/release-install-smoke.sh scripts/test-release-install-smoke.sh scripts/test-proposal-mcp-server.sh scripts/validate-version-sync.sh scripts/test-version-sync.sh
 	node --check scripts/finalize-release-manifest.mjs
 	node --check scripts/mdp-native-normalize-openai.mjs
 	node --check scripts/mdp-proposal-runner.mjs
