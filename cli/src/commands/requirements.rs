@@ -489,19 +489,45 @@ fn validate_collected_attempt_results(
                 ));
             }
         }
-        if collected["status"].as_str() == Some("observed")
-            && jsonschema::draft202012::validate(&attribute["value"], &collected["value"]).is_ok()
-            && normalized["value"] != collected["value"]
-        {
+        if collected["status"].as_str() == Some("observed") {
+            let expected_value =
+                canonicalize_collected_value(&collected["value"], &attribute["value"]);
+            if normalized["value"] == expected_value {
+                continue;
+            }
             issues.push(decision_input_issue(
                 "decision_input_canonical_collected_value_changed",
                 format!("{artifact_path}#/attributes/{attribute_id}/value"),
                 format!(
-                    "collected value for {attribute_id} already satisfies the normalized value contract and must remain unchanged"
+                    "normalized value for {attribute_id} must equal the collected value after only trim, case-fold, and space/underscore-to-hyphen enum canonicalization"
                 ),
             ));
         }
     }
+}
+
+fn canonicalize_collected_value(value: &Value, value_contract: &Value) -> Value {
+    if jsonschema::draft202012::validate(value_contract, value).is_ok()
+        || !value_contract["enum"].is_array()
+    {
+        return value.clone();
+    }
+    let Some(raw) = value.as_str() else {
+        return value.clone();
+    };
+    Value::String(
+        raw.trim()
+            .chars()
+            .flat_map(char::to_lowercase)
+            .map(|character| {
+                if character.is_whitespace() || character == '_' {
+                    '-'
+                } else {
+                    character
+                }
+            })
+            .collect(),
+    )
 }
 
 fn validate_no_unbound_prospect_fields(
@@ -2035,6 +2061,35 @@ mod tests {
             .iter()
             .any(|issue| issue["code"] == "decision_input_canonical_collected_value_changed"),
             "normalization must not change one already-valid hard-gate value into another"
+        );
+
+        let mut nonsense_results = results.clone();
+        nonsense_results["attributes"]["customer_motion"]["value"] = json!("nonsense");
+        let nonsense_results_bytes = serde_json::to_vec_pretty(&nonsense_results)
+            .expect("nonsense results should serialize");
+        let nonsense_results_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(&nonsense_results_bytes))
+        };
+        let mut invented_hard_gate = response.clone();
+        invented_hard_gate["collected_attempt_results_sha256"] = json!(&nonsense_results_sha256);
+        assert!(
+            validate_normalized_decision_input(
+                &root,
+                &invented_hard_gate,
+                "synthetic-response",
+                &prompt_path,
+                Some((&request, "synthetic-request", &request_sha256)),
+                Some((
+                    &nonsense_results,
+                    "synthetic-nonsense-results",
+                    &nonsense_results_sha256,
+                )),
+            )
+            .expect("semantic validation should run")
+            .iter()
+            .any(|issue| issue["code"] == "decision_input_canonical_collected_value_changed"),
+            "normalization must not turn an unknown raw value into a valid hard-gate value"
         );
 
         let mut blocked_results = results.clone();
