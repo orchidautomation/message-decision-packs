@@ -49,6 +49,15 @@ class SkillContractTests(unittest.TestCase):
             self.assertIn("mdp.prompt-output.v0", text)
             self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", text)
 
+    def test_pack_builder_preserves_decision_input_and_legacy_validation_paths(self):
+        skill = Path("plugin/skills/mdp-pack-builder/SKILL.md").read_text()
+        self.assertIn("data.available", skill)
+        self.assertIn("attempted-complete source-attempt request", skill)
+        self.assertIn("--source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON", skill)
+        self.assertIn("top-level `outcome` is exactly `ready`", skill)
+        self.assertIn("mdp.prompt-output.v0", skill)
+        self.assertIn("normalization_trace.fit_readiness.ready_for_mdp_fit", skill)
+
     def test_bad_frontmatter_and_missing_local_link_fail(self):
         path = self.root / "plugin/skills/mdp/SKILL.md"
         text = path.read_text().replace("name: mdp", "name: wrong").replace("description:", "description: short\nignored:", 1).replace("references/mental-model.md", "references/missing.md")

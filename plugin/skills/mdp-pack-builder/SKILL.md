@@ -70,13 +70,22 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 The compiled contract, not a generic finder or the normalization prompt, states
 what data must be attempted. Keep collection and provider calls outside MDP.
 
-6. Author prompts with explicit input and output contracts. Validate model-produced output before using it:
+6. Author prompts with explicit input and output contracts. Validate model-produced output before using it. Branch on the `requirements` result:
+
+   - When `data.available` is `true`, construct and preserve the exact attempted-complete source-attempt request returned by the handoff, pass it to validation, and stop before extracting or passing normalized data unless validation succeeds and the envelope's top-level `outcome` is exactly `ready`:
+
+```bash
+mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID \
+  --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON --file OUTPUT_JSON
+```
+
+   - When `data.available` is `false`, retain the legacy `mdp.prompt-output.v0` validation path without a source-attempt request and require its validated `normalization_trace.fit_readiness.ready_for_mdp_fit` gate before using `normalized_prospect`:
 
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file OUTPUT_JSON
 ```
 
-Prompt output contracts use `source_summary.inputs_used` for exact declared input names only. Put source paths, snippets, page locators, URLs, and proof notes in candidate `evidence`/`provenance`, `signals[].source`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. The prompt owns extraction/normalization, the manifest owns allowed values and readiness policy, the CLI owns enforcement, and downstream writers own wording only.
+Legacy prompt output contracts use `source_summary.inputs_used` for exact declared input names only. Put source paths, snippets, page locators, URLs, and proof notes in candidate `evidence`/`provenance`, `signals[].source`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. The prompt owns extraction/normalization, the manifest owns allowed values and readiness policy, the CLI owns enforcement, and downstream writers own wording only.
 
 For proposal PDF/doc extraction, keep the source-audit ledger bounded and local/customer-controlled, then validate raw-field and snippet refs before using normalized opportunity facts:
 
