@@ -159,6 +159,7 @@ fn decision_input_envelope_schema() -> Value {
             "job_id",
             "decision_input_contracts",
             "normalization",
+            "source_attempt_request_sha256",
             "attributes",
             "normalized_prospect",
             "outcome",
@@ -170,6 +171,10 @@ fn decision_input_envelope_schema() -> Value {
             "job_id": non_blank_string_schema(),
             "decision_input_contracts": string_array(),
             "normalization": {"type": "array", "items": {"type": "object"}},
+            "source_attempt_request_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+            },
             "attributes": {"type": "object"},
             "normalized_prospect": prospect_schema(),
             "outcome": {
@@ -2321,6 +2326,8 @@ fn attribute_schema() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jsonschema::draft202012;
+    use std::path::PathBuf;
 
     #[test]
     fn prospect_schema_keeps_required_skill_input_fields() {
@@ -2341,6 +2348,22 @@ mod tests {
         assert_eq!(result["properties"]["company_domain"]["type"], "string");
         assert_eq!(result["properties"]["attributes"]["maxProperties"], 25);
         assert!(result["properties"]["attributes"]["additionalProperties"].is_object());
+    }
+
+    #[test]
+    fn generic_decision_input_schema_accepts_official_normalized_fixture() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("CLI crate should have a repository parent")
+            .join("examples/clay-audiences-self-serve-enterprise-expansion");
+        let fixture: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
+                .expect("official normalized response fixture should load"),
+        )
+        .expect("official normalized response fixture should parse");
+
+        draft202012::validate(&decision_input_envelope_schema(), &fixture)
+            .expect("generic decision input schema should accept the official fixture");
     }
 
     #[test]

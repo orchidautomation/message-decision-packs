@@ -2329,6 +2329,21 @@ fn validate_decision_input_contracts(
                     contract.id, contract.normalization.prompt
                 ),
             ));
+        } else if let Some(prompt) = prompt_inventory.get(&contract.normalization.prompt) {
+            if prompt.contract.as_deref() != Some(NORMALIZED_DECISION_INPUT_CONTRACT)
+                || prompt.output_kind.as_deref() != Some("decision-input-normalization")
+                || prompt.schema_ref.as_deref() != Some(NORMALIZED_DECISION_INPUT_CONTRACT)
+            {
+                issues.push(issue(
+                    "decision_input_normalization_prompt_contract_mismatch",
+                    "error",
+                    format!("{path}/normalization/prompt"),
+                    format!(
+                        "decision input contract {} must bind a decision-input-normalization prompt whose contract and schema_ref are {}",
+                        contract.id, NORMALIZED_DECISION_INPUT_CONTRACT
+                    ),
+                ));
+            }
         }
         if contract.normalization.prompt_version.trim().is_empty() {
             issues.push(issue(
@@ -3477,25 +3492,47 @@ fn validate_primitive_map_shape(value: Option<&YamlValue>, path: &str, issues: &
 
 #[derive(Debug, Default)]
 struct PromptInventory {
-    refs: BTreeSet<String>,
+    refs: BTreeMap<String, PromptInventoryEntry>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct PromptInventoryEntry {
+    contract: Option<String>,
+    output_kind: Option<String>,
+    schema_ref: Option<String>,
 }
 
 impl PromptInventory {
     fn contains(&self, value: &str) -> bool {
-        self.refs.contains(value)
+        self.refs.contains_key(value)
+    }
+
+    fn get(&self, value: &str) -> Option<&PromptInventoryEntry> {
+        self.refs.get(value)
     }
 }
 
 fn prompt_inventory(loaded_prompts: &[Value]) -> PromptInventory {
     let mut inventory = PromptInventory::default();
     for prompt in loaded_prompts {
+        let entry = PromptInventoryEntry {
+            contract: prompt["output_contract"]["contract"]
+                .as_str()
+                .map(ToOwned::to_owned),
+            output_kind: prompt["output_contract"]["output_kind"]
+                .as_str()
+                .map(ToOwned::to_owned),
+            schema_ref: prompt["output_contract"]["schema_ref"]
+                .as_str()
+                .map(ToOwned::to_owned),
+        };
         if let Some(id) = prompt["id"].as_str() {
-            inventory.refs.insert(id.to_string());
+            inventory.refs.insert(id.to_string(), entry.clone());
         }
         if let Some(path) = prompt["path"].as_str() {
-            inventory.refs.insert(path.to_string());
+            inventory.refs.insert(path.to_string(), entry.clone());
             if let Some(stripped) = path.strip_prefix(".mdp/") {
-                inventory.refs.insert(stripped.to_string());
+                inventory.refs.insert(stripped.to_string(), entry.clone());
             }
         }
     }
@@ -3681,7 +3718,12 @@ fn validate_prompts(root: &Path, issues: &mut Vec<Value>) -> Result<Vec<Value>> 
                     "id": prompt.id,
                     "path": display_path,
                     "target_card_kinds": prompt.target_card_kinds,
-                    "inputs": prompt.inputs.len()
+                    "inputs": prompt.inputs.len(),
+                    "output_contract": {
+                        "contract": prompt.output_contract.contract,
+                        "output_kind": prompt.output_contract.output_kind,
+                        "schema_ref": prompt.output_contract.schema_ref
+                    }
                 }));
             }
             Err(err) => issues.push(issue(
@@ -5951,6 +5993,37 @@ output_contract:
                 .iter()
                 .any(|issue| issue["code"] == "decision_input_normalization_prompt_missing")
         );
+    }
+
+    #[test]
+    fn decision_input_contract_rejects_legacy_normalization_prompt_binding() {
+        let root = temp_clay_pack("legacy-normalization-prompt");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replacen(
+                "prompt: prompts/normalize-prospect.yaml",
+                "prompt: prompts/hooks.yaml",
+                1,
+            ),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "decision_input_normalization_prompt_contract_mismatch"
+                        && issue["severity"] == "error"
+                })
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
