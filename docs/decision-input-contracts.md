@@ -90,7 +90,8 @@ provider-neutral `normalized_prospect`. It records the normalization prompt
 version and the SHA-256 of the exact source-attempt request. The request carries
 a trusted `as_of` timestamp; validation derives freshness from that anchor,
 binds provenance attempt IDs to the matching requested attribute and source,
-and requires the exact job-bound prompt. It always requires:
+and requires the exact job-bound prompt. Every normalized envelope requires
+`draft_allowed: false` and exactly one closed outcome. A ready envelope is:
 
 ```json
 {
