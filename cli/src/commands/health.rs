@@ -2632,10 +2632,6 @@ fn validate_decision_input_attributes(
                 "required provenance must include attempt_id so evidence binds to the exact source-attempt request",
             ));
         }
-        let temporal_value = matches!(
-            attribute.value.format.as_deref(),
-            Some("date" | "date-time")
-        );
         if attribute.freshness.required && !attribute.provenance.required {
             issues.push(issue(
                 "decision_input_freshness_provenance_timestamp_required",
@@ -2644,7 +2640,6 @@ fn validate_decision_input_attributes(
                 "required freshness must bind to required provenance",
             ));
         } else if attribute.freshness.required
-            && !temporal_value
             && !attribute
                 .provenance
                 .required_fields
@@ -2654,7 +2649,7 @@ fn validate_decision_input_attributes(
                 "decision_input_freshness_provenance_timestamp_required",
                 "error",
                 format!("{attribute_path}/provenance/required_fields"),
-                "required freshness for non-temporal values must bind to required provenance observed_at timestamps",
+                "required freshness must bind to required provenance observed_at timestamps",
             ));
         }
         if attribute
@@ -6097,6 +6092,30 @@ output_contract:
 
         assert!(issues.iter().any(|issue| {
             issue["code"] == "decision_input_provenance_attempt_id_required"
+                && issue["severity"] == "error"
+        }));
+    }
+
+    #[test]
+    fn required_freshness_for_temporal_values_requires_provenance_observed_at() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let attribute = manifest.decision_input_contracts[0]
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == "last_meaningful_touch")
+            .expect("Clay example should include last_meaningful_touch");
+        attribute.provenance.required_fields = vec![
+            crate::models::DecisionInputProvenanceField::AttemptId,
+            crate::models::DecisionInputProvenanceField::SourceClass,
+            crate::models::DecisionInputProvenanceField::SourceLocator,
+        ];
+        let mut issues = Vec::new();
+
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "decision_input_freshness_provenance_timestamp_required"
                 && issue["severity"] == "error"
         }));
     }

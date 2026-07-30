@@ -206,8 +206,8 @@ output_contract:
           ],
           "confidence": 100,
           "freshness": {
-            "observed_at": "2026-07-20T12:00:00Z",
-            "age_days": 9
+            "observed_at": "2026-07-29T12:00:00Z",
+            "age_days": 0
           }
         },
         "customer_motion": {

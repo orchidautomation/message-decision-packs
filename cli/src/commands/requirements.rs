@@ -496,17 +496,7 @@ fn validate_attribute_attempt_receipts(
         ));
         return;
     };
-    let temporal_value_seconds = match attribute["value"]["format"].as_str() {
-        Some("date-time") => attempt["value"]
-            .as_str()
-            .and_then(parse_utc_timestamp_seconds),
-        Some("date") => attempt["value"]
-            .as_str()
-            .and_then(|value| parse_utc_timestamp_seconds(&format!("{value}T00:00:00Z"))),
-        _ => None,
-    };
-    let expected_freshness_seconds =
-        temporal_value_seconds.or_else(|| provenance_observed_at_seconds.into_iter().max());
+    let expected_freshness_seconds = provenance_observed_at_seconds.into_iter().max();
     let Some(source_attempt_index) = source_attempt_index else {
         return;
     };
@@ -523,7 +513,7 @@ fn validate_attribute_attempt_receipts(
             issues.push(decision_input_issue(
                 "decision_input_freshness_provenance_timestamp_mismatch",
                 format!("{freshness_path}/observed_at"),
-                "freshness observed_at must equal the temporal observed value or, for non-temporal values, the latest bound provenance observed_at timestamp",
+                "freshness observed_at must equal the latest bound provenance observed_at timestamp",
             ));
             return;
         }
@@ -1753,7 +1743,7 @@ mod tests {
         );
 
         let mut wrong_age = response.clone();
-        wrong_age["attributes"]["last_meaningful_touch"]["freshness"]["age_days"] = json!(0);
+        wrong_age["attributes"]["last_meaningful_touch"]["freshness"]["age_days"] = json!(9);
         assert!(
             semantic_issue_codes(&root, &request, &wrong_age, &request_sha256, &prompt_path,)
                 .contains("decision_input_freshness_age_mismatch")
@@ -1773,7 +1763,7 @@ mod tests {
             .contains("decision_input_freshness_observed_at_future")
         );
 
-        let mut stale_provenance_with_fresh_metadata = response;
+        let mut stale_provenance_with_fresh_metadata = response.clone();
         stale_provenance_with_fresh_metadata["attributes"]["person_title"]["provenance"][0]["observed_at"] =
             json!("2020-01-01T00:00:00Z");
         assert!(
@@ -1787,6 +1777,49 @@ mod tests {
             .contains("decision_input_freshness_provenance_timestamp_mismatch"),
             "freshness must derive from the bound evidence timestamp"
         );
+
+        let mut future_business_date = response.clone();
+        future_business_date["attributes"]["last_meaningful_touch"]["value"] =
+            json!("2027-07-20T12:00:00Z");
+        future_business_date["normalized_prospect"]["attributes"]["last_meaningful_touch"] =
+            json!("2027-07-20T12:00:00Z");
+        assert!(
+            semantic_issue_codes(
+                &root,
+                &request,
+                &future_business_date,
+                &request_sha256,
+                &prompt_path,
+            )
+            .is_empty(),
+            "freshness should derive from provenance, not future business date values"
+        );
+
+        let historical_date_root = temporary_clay_example("historical-business-date");
+        let manifest_path = historical_date_root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("format: date-time", "format: date"),
+        )
+        .expect("date contract fixture should be writable");
+        let mut historical_business_date = response;
+        historical_business_date["attributes"]["last_meaningful_touch"]["value"] =
+            json!("1999-01-01");
+        historical_business_date["normalized_prospect"]["attributes"]["last_meaningful_touch"] =
+            json!("1999-01-01");
+        assert!(
+            semantic_issue_codes(
+                &historical_date_root,
+                &request,
+                &historical_business_date,
+                &request_sha256,
+                &historical_date_root.join(".mdp/prompts/normalize-prospect.yaml"),
+            )
+            .is_empty(),
+            "freshness should derive from provenance, not historical business date values"
+        );
+        let _ = std::fs::remove_dir_all(historical_date_root);
     }
 
     #[test]
