@@ -49,8 +49,7 @@ class SkillContractTests(unittest.TestCase):
             self.assertIn("data.source_attempt_request_schema", text)
             self.assertIn("`decision_input_contracts` ID/version", text)
             self.assertIn("UTC `as_of`", text)
-            self.assertIn("attempt for", text)
-            self.assertIn("every compiled attribute", normalized)
+            self.assertIn("execute every compiled attempt", normalized)
             self.assertIn("exact request", text)
             self.assertIn("bytes", text)
             self.assertIn("mdp.prompt-output.v0", text)
@@ -63,18 +62,19 @@ class SkillContractTests(unittest.TestCase):
         handoff = mode.index("complete `mdp --json requirements` result")
         stop = mode.index("plus the bound prompt; then stop")
         instantiate = mode.index("Require the host to instantiate the request")
-        collect = mode.index("every compiled")
-        preserve = mode.index("preserve and hash those exact")
-        normalize = mode.index("normalize that exact request")
+        preserve = mode.index("preserve those exact request")
+        collect = mode.index("execute every compiled attempt")
+        normalize = mode.index("Invoke the bound prompt")
         resume = mode.index("Resume only when the host")
         validate = mode.index("For either the already-supplied or resumed path")
         self.assertLess(requirements, missing)
         self.assertLess(missing, handoff)
         self.assertLess(handoff, stop)
         self.assertLess(stop, instantiate)
-        self.assertLess(instantiate, collect)
-        self.assertLess(collect, preserve)
+        self.assertLess(instantiate, preserve)
+        self.assertLess(preserve, collect)
         self.assertLess(preserve, normalize)
+        self.assertLess(collect, normalize)
         self.assertLess(normalize, resume)
         self.assertLess(resume, validate)
 
@@ -85,7 +85,15 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("`data.source_attempt_request_schema`", skill)
         self.assertIn("`data.normalized_output_schema`", skill)
         self.assertIn("contract/prompt receipts", skill)
-        self.assertIn("DECISION_INPUT_REQUIREMENTS_JSON.data", skill)
+        self.assertIn("`raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`", skill)
+        self.assertIn(
+            "`decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`",
+            skill,
+        )
+        self.assertIn(
+            "`source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`",
+            skill,
+        )
         self.assertIn("returned bound prompt; then", skill)
         self.assertIn("Resume only after the host returns", skill)
         self.assertIn("--prompt BOUND_PROMPT_PATH", skill)

@@ -52,13 +52,19 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
        and the contract/prompt receipts, plus the returned bound prompt; then
        stop. Require the customer or host to instantiate the request, populate
        its exact `contract`, `job_id`, and `decision_input_contracts` ID/version
-       receipts, set a trusted UTC `as_of`, record at least one
-       attempt for every compiled attribute during collection, preserve and
-       hash those exact request bytes, and normalize that request with the
-       bound prompt. The host must pass
-       `DECISION_INPUT_REQUIREMENTS_JSON.data` as the prompt's
-       `decision_input_requirements` input. Resume only after the host returns
-       both the preserved request file and normalized output.
+       receipts, and set a trusted UTC `as_of`. The host must preserve those
+       exact request bytes as `SOURCE_ATTEMPT_REQUEST_JSON`, compute their
+       SHA-256 as `SOURCE_ATTEMPT_REQUEST_SHA256`, execute every compiled
+       attempt, and record the statuses, values, evidence, timestamps,
+       confidence, and errors in a separate attempted-complete
+       `COLLECTED_ATTEMPT_RESULTS_JSON` ledger. Invoke the bound prompt with all
+       three required inputs:
+       - `raw_row`: `COLLECTED_ATTEMPT_RESULTS_JSON`
+       - `decision_input_requirements`: `DECISION_INPUT_REQUIREMENTS_JSON.data`
+       - `source_attempt_request_sha256`: `SOURCE_ATTEMPT_REQUEST_SHA256`
+
+       Resume only after the host returns both the preserved request file and
+       normalized output.
      - For either the already-supplied or resumed path, validate:
 
      ```bash
