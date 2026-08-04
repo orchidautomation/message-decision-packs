@@ -5,6 +5,9 @@ Read this when explaining what belongs in MDP or deciding which layer owns a beh
 ## Responsibility Split
 
 - CLI: validation, closed job-to-skill routing, readiness, fit, routes, briefs, claim/output checks, gaps, and evals.
+- Decision trace: a bounded inspection projection of existing CLI or run
+  authority. Its designed graph and observed path explain a result without
+  executing policy or replacing the source artifact.
 - Pack: approved decision context, one `skill_id` per agent-routable job, evidence, boundaries, output contracts, gaps, and fixtures.
 - Prompt: extraction or normalization from supplied inputs into strict prompt-output JSON. `source_summary.inputs_used` names declared inputs only; source paths, snippets, page locators, URLs, and proof notes belong in evidence/provenance, `signals[].source`, or normalization trace.
 - Manifest: allowed values, required fields/signals/attributes, profile job bindings, and pack-owned readiness policy.

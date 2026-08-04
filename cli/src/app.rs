@@ -1,12 +1,13 @@
-use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat};
+use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
 use crate::commands::{
     RunReceiptOptions, TargetInitOptions, author_proof_output_file, capabilities,
     check_claims_scoped, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, fit, gaps,
-    init_pack_targeted, init_pack_targeted_dry_run, pack, prospect_brief_with_context,
-    render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief,
-    requirements, route_scoped, run_receipt, run_request_file, sample_leads, schema, skills,
-    validate_pack, validate_prompt_output_file_with_inputs, validate_source_binding_file,
-    verify_output_file, verify_output_readable_file, verify_run_files,
+    init_pack_targeted, init_pack_targeted_dry_run, pack, project_run_files, project_source_file,
+    prospect_brief_with_context, render_human_brief_file, render_human_brief_markdown,
+    render_mermaid, render_readable_prospect_brief, requirements, route_scoped, run_receipt,
+    run_request_file, sample_leads, schema, skills, validate_pack,
+    validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
+    verify_output_readable_file, verify_run_files,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -165,6 +166,40 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             "verify-run",
             verify_run_files(bundle.as_deref(), &receipt, artifact_root.as_deref())?,
         ),
+        Commands::Trace {
+            file,
+            bundle,
+            receipt,
+            artifact_root,
+            format,
+            out,
+        } => {
+            let trace = match (file.as_deref(), bundle.as_deref(), receipt.as_deref()) {
+                (Some(path), None, None) => project_source_file(path)?,
+                (None, Some(bundle), Some(receipt)) => {
+                    project_run_files(bundle, receipt, artifact_root.as_deref())?
+                }
+                _ => unreachable!("clap validates trace source arguments"),
+            };
+            let data = serde_json::to_value(&trace)?;
+            if format == TraceFormat::Mermaid {
+                let mermaid = render_mermaid(&trace);
+                if let Some(path) = out.as_deref() {
+                    fs::write(path, &mermaid)?;
+                }
+                if !json_mode && !summary_mode {
+                    println!("{mermaid}");
+                    Ok(())
+                } else {
+                    print_output(json_mode, summary_mode, "trace", data)
+                }
+            } else {
+                if let Some(path) = out.as_deref() {
+                    write_json_file(path, &data)?;
+                }
+                print_output(json_mode, summary_mode, "trace", data)
+            }
+        }
         Commands::ConsumeRun {
             ledger,
             job_id,

@@ -20,6 +20,22 @@ mdp --json skills --dir <pack-root>
 3. Treat `packaged_skill_ids` as released inventory, `eligibility` as pack policy, and `host_discovery.status: unobserved` as literal. Never claim MDP hid or exposed a host-discovered skill.
 4. Use JSON output for decisions. Use `--summary` only for a concise human status.
 
+When the user asks why an existing fit, route, brief, normalization, or clean
+run reached its result, prefer the bounded projection before opening full
+source artifacts:
+
+```bash
+mdp --json trace --file <saved-cli-result-or-contracted-artifact.json>
+mdp --json trace --bundle <run-bundle.json> --receipt <run-receipt.json> \
+  --artifact-root <published-artifact-directory>
+```
+
+Treat `mdp.decision-trace.v1` as explanatory only. Distinguish its
+`designed_graph` from its `observed_path`, keep the authority notice intact,
+and follow artifact references only when deeper review is necessary. Never
+infer missing steps, recover redacted prose, or upgrade a blocked/unavailable
+trace. Use `--format mermaid` only as a display adapter over that same trace.
+
 For a new authoritative execution, freeze the pack and declared inputs into an
 `mdp.run-request.v1` file, then launch the shared runtime outside the authoring
 conversation:

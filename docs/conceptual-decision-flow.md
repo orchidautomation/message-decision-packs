@@ -24,6 +24,12 @@ job
 
 Normalization translates supplied data into pack-owned JSON. It does not mutate the pack, decide final fit, or create final copy.
 
+After a decision exists, `mdp trace` can project its designed policy graph and
+one observed path from a saved fit, route, brief, prompt-output, or v1 run
+artifact. The projection is an inspection layer: it does not execute the flow,
+infer missing steps, or gain authority over its source. See
+[Decision Traces](decision-traces.md).
+
 Decision-input contracts make the step before normalization explicit. The pack
 owns the questions, requirement classes, applicability, source policy,
 provenance, confidence, freshness, and attempt-status behavior. The host owns

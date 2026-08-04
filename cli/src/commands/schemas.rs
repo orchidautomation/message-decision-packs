@@ -104,6 +104,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RunReceiptV1 => run_receipt_v1_schema(),
         SchemaTarget::RunVerificationV1 => run_verification_v1_schema(),
         SchemaTarget::RunExecutionV1 => run_execution_v1_schema(),
+        SchemaTarget::DecisionTraceV1 => crate::commands::decision_trace_schema(),
         SchemaTarget::CanonicalAuthorityBlockV1 => canonical_authority_block_v1_schema(),
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::HumanBrief => human_brief_schema(),
@@ -3282,6 +3283,40 @@ mod tests {
             assert_eq!(result["additionalProperties"], false);
             assert_eq!(result["properties"]["contract"]["const"], contract);
         }
+    }
+
+    #[test]
+    fn decision_trace_schema_is_closed_and_compiles() {
+        let result = schema(SchemaTarget::DecisionTraceV1);
+        draft202012::new(&result).expect("decision trace schema should compile");
+        assert_eq!(result["additionalProperties"], false);
+        assert_eq!(
+            result["properties"]["contract"]["const"],
+            "mdp.decision-trace.v1"
+        );
+        assert_eq!(
+            result["properties"]["designed_graph"]["properties"]["nodes"]["maxItems"],
+            256
+        );
+        assert_eq!(
+            result["properties"]["observed_path"]["properties"]["edges"]["maxItems"],
+            512
+        );
+
+        let trace = crate::commands::decision_trace::project_source_value(
+            &json!({
+                "contract": "mdp.fit.v0",
+                "status": "fit",
+                "context": {"missing_requirements": [], "invalid_requirements": []},
+                "matches": [{"id": "synthetic-fit-rule"}],
+                "disqualifiers": [],
+                "decision": "ignored"
+            }),
+            "a".repeat(64),
+        );
+        let instance = serde_json::to_value(trace).expect("trace should serialize");
+        draft202012::validate(&result, &instance)
+            .expect("projected decision trace should validate against its public schema");
     }
 
     #[test]

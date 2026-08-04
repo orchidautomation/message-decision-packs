@@ -54,6 +54,7 @@ mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --person
 mdp --json route --entries --dir /tmp/mdp-demo --persona "PMM" --job "portfolio scope example" --scope product=local-cli
 mdp sample-leads --dir /tmp/mdp-demo --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
+mdp --json trace --file examples/decision-trace/fixtures/fit-ready-result.json
 mdp --json --summary brief --context --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
 mdp render-brief --dir /tmp/mdp-demo --file /tmp/mdp-demo/.mdp/briefs/example-linkedin.json --template gtm-prospect --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.md
 mdp --json check-claims --dir /tmp/mdp-demo --text "MDP is a local offline CLI for modular message context."
@@ -137,6 +138,7 @@ A pack is a local folder:
   prompts/*.yaml         # optional normalization/extraction contracts
   cards/*.yaml           # modular decisions and boundaries
   briefs/                # generated local review artifacts
+  traces/                # optional generated decision-trace views
   evals/*.yaml
 ```
 
@@ -201,6 +203,7 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Conceptual Decision Flow](docs/conceptual-decision-flow.md): layer ownership and deterministic decision boundaries.
 - [Prompt Contracts](docs/prompt-extraction-contract.md): normalization and extraction schemas.
 - [Decision Input Contracts](docs/decision-input-contracts.md): attempted-complete data questions, source-attempt policy, normalization envelopes, and no-draft outcomes.
+- [Decision Traces](docs/decision-traces.md): bounded JSON and Mermaid projections of existing decision authority.
 - [Runner Receipts](docs/run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
 - [Local Proposal Runner Surface](docs/proposal-runner.md): host-neutral local command surface for source audit, native/headless normalization, validation, receipts, and review probes.
 - [Deterministic Proposal Evidence Harness](docs/proposal-evidence-harness.md): synthetic CI proof for positive contract acceptance and fail-closed ambient/mock/hash/injection/unsupported-proof cases.
