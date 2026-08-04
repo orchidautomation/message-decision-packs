@@ -14,7 +14,7 @@ The authoring conversation is a control plane. It may compile requirements, laun
 
 The initial execution boundary is local and customer-controlled:
 
-1. A native stateless API/BYOK driver performs one explicit schema-constrained request without conversation continuation or model tools.
+1. The Rust authority owns the native stateless API/BYOK reference transport and performs one explicit schema-constrained request without conversation continuation or model tools. External headless or customer drivers remain attested unless an independent enforcing control observes their exact request.
 2. A bounded adapter invokes existing customer-controlled headless subprocess or container surfaces with a read-only declared bundle and records their observable controls. The host retains container lifecycle and sandbox ownership; MDP does not become a portable container manager in the MVP.
 3. A deterministic-only operation uses the shared runtime and receipt contract without invoking a model driver; it reports input-provenance and artifact-integrity assurance rather than fresh-inference properties.
 4. A fresh coding-agent task may invoke the shared runner, but task creation itself is only a hygiene improvement and never isolation proof.
@@ -67,12 +67,12 @@ The exact v1 labels and downgrade table are owned by MDP-179, but they must pres
 
 ## Required Run Authority
 
-Every attempted run binds:
+Every attempted run binds request identity, applicable preflight and audit evidence, and terminal state:
 
 1. **Released pack:** immutable release ID, full portable pack digest, manifest/profile/schema versions, and compatibility result.
 2. **Declared run envelope:** run/profile/operation IDs, canonical input manifest, source and normalization audit references, canonical prompt/instruction hashes when applicable, allowed runtime policy, operation mode, and non-secret privacy/retention policy. Generative operations additionally bind a driver and provider target; deterministic-only operations record inference fields as not applicable.
 3. **Observed runner audit:** runner/build/version, platform, sanitized staging identity, environment policy hash, file/tool/network events, timestamps, terminal state, requested/resolved provider/model metadata when available, and explicit unknown properties.
-4. **Output authority:** raw-response hash when retention allows, normalized output and schema hash, deterministic decision and reason-code hash, compiled-context hash, claim/validation result and version, receipt hash, and optional signature metadata.
+4. **Output authority on success:** raw-response hash when retention allows, normalized output and schema hash, deterministic decision and reason-code hash, compiled-context hash, claim/validation result and version, receipt hash, and optional signature metadata. Non-success runs do not fabricate this authority set and publish only the sanitized diagnostics and audit metadata allowed by their terminal state.
 
 Preflight and invocation must read the same immutable content-addressed snapshot. Staging resolves only regular declared artifacts beneath a private run root, without path traversal, absolute paths, links, special files, or link following. Secrets use a driver-specific non-artifact channel and are excluded from inherited environments, logs, receipts, and model-visible content by default.
 
