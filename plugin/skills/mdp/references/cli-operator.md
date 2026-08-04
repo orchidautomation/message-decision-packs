@@ -55,6 +55,64 @@ Use [canonical runner support matrix](https://github.com/orchidautomation/messag
 
 Do not reproduce these decisions manually in a skill.
 
+## Clean Runs And Decision Authority
+
+Use one file-oriented v1 request for both proposal and GTM:
+
+```bash
+mdp --json schema run-request-v1
+mdp --json run --request RUN_REQUEST_JSON --out-dir NEW_RUN_DIRECTORY
+mdp --json verify-run --bundle NEW_RUN_DIRECTORY/run-bundle.json \
+  --receipt NEW_RUN_DIRECTORY/run-receipt.json \
+  --artifact-root NEW_RUN_DIRECTORY
+```
+
+For MCP-capable coding-agent hosts, launch the profile-neutral local stdio
+adapter from the source checkout or installed plugin bundle:
+
+```bash
+node scripts/mdp-run-mcp-server.mjs
+node "${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs"
+```
+
+It exposes `mdp_run_tools`, `mdp_run`, and read-only `mdp_verify_run`.
+`mdp_run` accepts only `request_path`, a new `output_dir`, and an optional
+bounded `timeout_ms`. `mdp_verify_run` accepts existing bundle and receipt paths,
+an optional artifact root, and the same bounded deadline. Each tool spawns the
+matching CLI command as a separate process with a bounded environment, stdin,
+output buffer, and deadline, then returns the canonical CLI data object unchanged.
+It does not accept inline requests, raw source bodies, ambient chat, provider
+credentials, or assurance overrides. Configure the host to start this server;
+do not paste evidence into its tool arguments.
+
+On timeout or output overflow, the adapter closes the isolated process group
+before recovery. It removes staging state only when the CLI's bounded
+`mdp.run-recovery-claim.v1` names the exact transaction for the requested
+output and execution ID and the claim/transaction pass file-type, link,
+ownership, component-name, and canonical-parent checks. A missing or malformed
+claim fails closed and never authorizes wildcard cleanup.
+
+The runtime must create `NEW_RUN_DIRECTORY`; never point it at an existing
+workdir. Keep the request, released pack digest, declared input manifest,
+prompt, execution policy, driver/model identity, audit, output, decision,
+compiled context, validation, and receipt together. A non-success state is
+`no-draft` and must not expose partial model output or decision authority.
+
+The original conversation may explain the result but must not add evidence or
+change the authoritative decision. Copy the CLI-rendered authority block
+verbatim. Treat contradictory ambient prose as unreceipted commentary.
+
+The MCP process boundary keeps the surrounding agent in the control plane; it
+does not itself prove fresh model context or isolation. The Rust CLI remains
+the sole authority for request parsing, staging, execution, terminal state,
+assurance, validation, artifact hashes, and receipts. Never promote an
+assurance dimension because the invocation used MCP.
+
+`verify-run` is integrity-only; it does not establish freshness from external
+host state. A table/job host that needs replay protection must atomically
+consume the verified receipt in host-owned durable storage. `consume-run` is a
+local conformance reference with explicit rollback and cloning limitations.
+
 ## Artifact Writes
 
 Preview commands that support `--dry-run` before writing:

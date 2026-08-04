@@ -12,16 +12,22 @@ use anyhow::{Context, Result, anyhow};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::HashSet;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fmt;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PROPOSAL_PROFILE: &str = "proposal";
 const VALIDATE_EXISTING_OUTPUT: &str = "validate-existing-output";
 const GTM_PROFILE: &str = "gtm";
 const QUALIFY: &str = "qualify";
 const GENERATED_PACK_DIRECTORIES: &[&str] = &["briefs", "traces"];
+const MAX_PACK_FILES: usize = 10_000;
+const MAX_PACK_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_EXECUTION_ID_BYTES: usize = 128;
+const MAX_OUTPUT_LEAF_BYTES: usize = 120;
+const MAX_RECOVERY_CLAIM_BYTES: usize = 512;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -36,8 +42,91 @@ pub(crate) struct RunExecution {
     pub(crate) authority_block: Value,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RunFailureKind {
+    Preflight,
+    PolicyBlocked,
+    RunnerFailed,
+}
+
+#[derive(Debug)]
+pub(crate) struct RunFailure {
+    kind: RunFailureKind,
+    code: &'static str,
+}
+
+impl RunFailure {
+    fn new(kind: RunFailureKind, code: &'static str) -> Self {
+        Self { kind, code }
+    }
+
+    pub(crate) fn kind(&self) -> RunFailureKind {
+        self.kind
+    }
+
+    pub(crate) fn code(&self) -> &'static str {
+        self.code
+    }
+}
+
+impl fmt::Display for RunFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.code)
+    }
+}
+
+impl std::error::Error for RunFailure {}
+
+fn run_failure(kind: RunFailureKind, code: &'static str) -> anyhow::Error {
+    anyhow::Error::new(RunFailure::new(kind, code))
+}
+
+struct RunDeadline {
+    started_at: Instant,
+    budget: Duration,
+}
+
+impl RunDeadline {
+    fn new(timeout_ms: u64) -> Self {
+        Self {
+            started_at: Instant::now(),
+            budget: Duration::from_millis(timeout_ms),
+        }
+    }
+
+    fn check(&self) -> Result<()> {
+        if self.started_at.elapsed() >= self.budget {
+            return Err(run_failure(
+                RunFailureKind::RunnerFailed,
+                "execution-timeout",
+            ));
+        }
+        Ok(())
+    }
+}
+
+struct TransactionGuard {
+    transaction_dir: PathBuf,
+    claim_path: PathBuf,
+}
+
+#[derive(Serialize)]
+struct RunRecoveryClaim<'a> {
+    contract: &'static str,
+    execution_id: &'a str,
+    transaction_leaf: &'a str,
+}
+
+impl Drop for TransactionGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.transaction_dir);
+        let _ = fs::remove_file(&self.claim_path);
+    }
+}
+
 #[derive(Clone)]
 struct StagedInput {
+    logical_name: String,
     authority: ArtifactAuthority,
     source_path: PathBuf,
     staged_path: PathBuf,
@@ -56,12 +145,14 @@ fn execute_run_inner<F>(
 where
     F: FnOnce() -> Result<()>,
 {
-    validate_request(request)?;
+    validate_request(request)
+        .map_err(|_| run_failure(RunFailureKind::Preflight, "request-policy-invalid"))?;
+    let deadline = RunDeadline::new(request.execution_policy.timeout_ms);
     let final_dir = output_root;
     if final_dir.exists() {
-        return Err(anyhow!(
-            "run output directory already exists: {}",
-            final_dir.display()
+        return Err(run_failure(
+            RunFailureKind::Preflight,
+            "output-directory-reused",
         ));
     }
     let parent = final_dir
@@ -74,7 +165,45 @@ where
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| anyhow!("run output directory must have a UTF-8 leaf name"))?;
-    let transaction_dir = parent.join(format!(".{leaf}.tmp-{}", unique_suffix()));
+    validate_output_leaf(leaf)?;
+    let transaction_leaf = format!(".{leaf}.tmp-{:032x}", unique_suffix());
+    let transaction_dir = parent.join(&transaction_leaf);
+    let claim_path = parent.join(format!(".{leaf}.mdp-run.claim"));
+    let claim_value = RunRecoveryClaim {
+        contract: "mdp.run-recovery-claim.v1",
+        execution_id: &request.execution_id,
+        transaction_leaf: &transaction_leaf,
+    };
+    let mut claim_bytes = serde_json::to_vec(&claim_value)?;
+    claim_bytes.push(b'\n');
+    if claim_bytes.len() > MAX_RECOVERY_CLAIM_BYTES {
+        return Err(run_failure(
+            RunFailureKind::Preflight,
+            "output-claim-invalid",
+        ));
+    }
+    let mut claim = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&claim_path)
+        .map_err(|_| run_failure(RunFailureKind::Preflight, "output-directory-claimed"))?;
+    if claim
+        .write_all(&claim_bytes)
+        .and_then(|_| claim.sync_all())
+        .is_err()
+    {
+        drop(claim);
+        let _ = fs::remove_file(&claim_path);
+        return Err(run_failure(
+            RunFailureKind::RunnerFailed,
+            "output-claim-failed",
+        ));
+    }
+    drop(claim);
+    let transaction_guard = TransactionGuard {
+        transaction_dir: transaction_dir.clone(),
+        claim_path,
+    };
     fs::create_dir(&transaction_dir).with_context(|| {
         format!(
             "creating transaction directory {}",
@@ -82,20 +211,35 @@ where
         )
     })?;
     set_private_directory(&transaction_dir)?;
+    deadline.check()?;
 
-    let outcome = execute_transaction(request, &transaction_dir, before_post_check);
-    if outcome.is_err() {
-        let _ = fs::remove_dir_all(&transaction_dir);
+    let (bundle_sha256, receipt) =
+        match execute_transaction(request, &transaction_dir, &deadline, before_post_check) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                cleanup_failed_transaction(&transaction_dir)?;
+                return Err(classify_execution_error(error));
+            }
+        };
+    if let Err(error) = deadline.check() {
+        cleanup_failed_transaction(&transaction_dir)?;
+        return Err(error);
     }
-    let (bundle_sha256, receipt) = outcome?;
     fs::remove_dir_all(transaction_dir.join("private"))
-        .context("removing private staged inputs before commit")?;
+        .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "private-cleanup-failed"))?;
+    if fs::symlink_metadata(final_dir).is_ok() {
+        return Err(run_failure(
+            RunFailureKind::Preflight,
+            "output-directory-reused",
+        ));
+    }
     fs::rename(&transaction_dir, &final_dir).with_context(|| {
         format!(
             "atomically committing run directory {}",
             final_dir.display()
         )
     })?;
+    drop(transaction_guard);
 
     let authority_block = json!({
         "contract": "mdp.canonical-authority-block.v1",
@@ -125,9 +269,29 @@ where
     })
 }
 
+fn classify_execution_error(error: anyhow::Error) -> anyhow::Error {
+    if error.downcast_ref::<RunFailure>().is_some() {
+        error
+    } else {
+        run_failure(RunFailureKind::RunnerFailed, "run-execution-failed")
+    }
+}
+
+fn cleanup_failed_transaction(transaction_dir: &Path) -> Result<()> {
+    match fs::remove_dir_all(transaction_dir) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(run_failure(
+            RunFailureKind::RunnerFailed,
+            "private-cleanup-failed",
+        )),
+    }
+}
+
 fn execute_transaction<F>(
     request: &RunRequestV1,
     transaction_dir: &Path,
+    deadline: &RunDeadline,
     before_post_check: F,
 ) -> Result<(String, RunReceiptV1)>
 where
@@ -143,8 +307,13 @@ where
     }
 
     let source_pack = Path::new(&request.pack_dir);
+    validate_pack_source_bounds(source_pack)
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "pack-boundary-refused"))?;
+    deadline.check()?;
     let source_snapshot = pack_content_snapshot(source_pack)?;
+    validate_pack_snapshot_bounds(&source_snapshot)?;
     copy_pack(source_pack, &staged_pack)?;
+    deadline.check()?;
     let staged_snapshot = pack_content_snapshot(&staged_pack)?;
     if source_snapshot != staged_snapshot {
         return Err(anyhow!("pack changed while it was being staged"));
@@ -155,8 +324,16 @@ where
         .as_ref()
         .map(|profile| profile.id.as_str())
         .unwrap_or("gtm");
+    if request.profile != profile_id {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "pack-profile-mismatch",
+        ));
+    }
 
-    let staged = stage_inputs(request, &staged_inputs)?;
+    let staged = stage_inputs(request, &staged_inputs)
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "declared-input-refused"))?;
+    deadline.check()?;
     verify_sources_unchanged(&staged)?;
     if pack_content_snapshot(source_pack)? != source_snapshot {
         return Err(anyhow!("pack changed while declared inputs were staged"));
@@ -193,11 +370,19 @@ where
     write_json_create_new(&transaction_dir.join("run-bundle.json"), &bundle)?;
 
     let mut validation = None;
-    let (mut terminal_state, mut success_values) = if request.profile != profile_id {
-        (TerminalState::NoDraftPolicyBlocked, None)
-    } else if request.profile == PROPOSAL_PROFILE && request.operation == VALIDATE_EXISTING_OUTPUT {
-        let prompt_output = required_input(&staged, "prompt-output")?;
+    let (mut terminal_state, mut success_values) = if request.profile == PROPOSAL_PROFILE
+        && request.operation == VALIDATE_EXISTING_OUTPUT
+    {
+        let prompt_output = required_typed_input(
+            &staged,
+            "prompt-output",
+            "mdp.prompt-output.v0",
+            "application/json",
+        )?;
         let source_audit = optional_input(&staged, "source-audit");
+        if let Some(input) = source_audit {
+            validate_input_type(input, "mdp.source-audit.v0", "application/json")?;
+        }
         let source_attempt = optional_input(&staged, "source-attempt-request");
         let attempt_results = optional_input(&staged, "collected-attempt-results");
         let result = validate_prompt_output_file_with_inputs(
@@ -226,10 +411,26 @@ where
             (TerminalState::NoDraftOutputInvalid, None)
         }
     } else if request.profile == GTM_PROFILE && request.operation == QUALIFY {
-        let normalized = required_input(&staged, "normalized-decision-input")?;
-        let source_attempt = required_input(&staged, "source-attempt-request")?;
-        let attempt_results = required_input(&staged, "collected-attempt-results")?;
-        let bound_prompt = required_input(&staged, "bound-prompt")?;
+        let normalized = required_typed_input(
+            &staged,
+            "normalized-decision-input",
+            "mdp.normalized-decision-input.v1",
+            "application/json",
+        )?;
+        let source_attempt = required_typed_input(
+            &staged,
+            "source-attempt-request",
+            "mdp.source-attempt-request.v1",
+            "application/json",
+        )?;
+        let attempt_results = required_typed_input(
+            &staged,
+            "collected-attempt-results",
+            "mdp.collected-attempt-results.v1",
+            "application/json",
+        )?;
+        let bound_prompt =
+            required_typed_input(&staged, "bound-prompt", "mdp.prompt.v0", "application/yaml")?;
         let normalized_value: Value = serde_json::from_slice(&fs::read(&normalized.staged_path)?)?;
         let prompt_manifest_path = normalized_value["normalization"]
             .as_array()
@@ -278,8 +479,10 @@ where
     } else {
         (TerminalState::NoDraftPolicyBlocked, None)
     };
+    deadline.check()?;
 
     before_post_check()?;
+    deadline.check()?;
     let staged_pack_after = pack_content_snapshot(&staged_pack)?;
     let source_pack_after = pack_content_snapshot(source_pack)?;
     let sources_unchanged = verify_sources_unchanged(&staged).is_ok();
@@ -327,6 +530,11 @@ where
         limitations: vec![
             "local deterministic validation does not attest to authoring-context provenance".into(),
             "host-level filesystem and process isolation remain operator-owned".into(),
+            "timeout_ms is enforced at bounded runtime phase boundaries; blocking filesystem calls are not preempted"
+                .into(),
+            "pack_release_id is caller-supplied; MDP observes and binds the portable pack digest"
+                .into(),
+            "local receipt hashes provide integrity, not signer identity or non-repudiation".into(),
         ],
     };
     let audit_path = transaction_dir.join("runner-audit.json");
@@ -473,7 +681,7 @@ fn success_artifacts(
     let schema_id = bundle
         .inputs
         .iter()
-        .find(|input| input.logical_name.ends_with("prompt-output"))
+        .find(|input| staged_authority_name_is_exact(&input.logical_name, "prompt-output"))
         .map(|input| input.schema_id.clone())
         .unwrap_or_else(|| "mdp.prompt-output.v0".into());
     let compiled_context = json!({
@@ -505,11 +713,19 @@ fn success_artifacts(
     })
 }
 
+fn staged_authority_name_is_exact(authority_name: &str, logical_name: &str) -> bool {
+    authority_name
+        .strip_prefix("declared/")
+        .and_then(|name| name.split_once('-'))
+        .is_some_and(|(_, name)| name == logical_name)
+}
+
 fn validate_request(request: &RunRequestV1) -> Result<()> {
     if request.contract != RUN_REQUEST_V1 {
         return Err(anyhow!("unsupported run request contract"));
     }
     if request.execution_id.is_empty()
+        || request.execution_id.len() > MAX_EXECUTION_ID_BYTES
         || !request
             .execution_id
             .bytes()
@@ -540,6 +756,26 @@ fn validate_request(request: &RunRequestV1) -> Result<()> {
             "deterministic runs require network_mode=none and no endpoints"
         ));
     }
+    if request.execution_policy.filesystem_mode != "private-staging"
+        || request.execution_policy.tool_mode != "none"
+        || !request.execution_policy.environment_allowlist.is_empty()
+    {
+        return Err(anyhow!(
+            "deterministic runs require private-staging, no tools, and an empty environment allowlist"
+        ));
+    }
+    if request.execution_policy.max_input_bytes == 0
+        || request.execution_policy.max_output_bytes == 0
+        || request.execution_policy.timeout_ms == 0
+    {
+        return Err(anyhow!("execution policy limits must be positive"));
+    }
+    if !matches!(
+        request.execution_policy.retention_policy.as_str(),
+        "receipt-only" | "customer-controlled-workdir"
+    ) {
+        return Err(anyhow!("unsupported deterministic retention policy"));
+    }
     let mut names = HashSet::new();
     for input in &request.inputs {
         validate_logical_name(&input.logical_name)?;
@@ -548,6 +784,106 @@ fn validate_request(request: &RunRequestV1) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn validate_output_leaf(leaf: &str) -> Result<()> {
+    if leaf.is_empty()
+        || leaf.len() > MAX_OUTPUT_LEAF_BYTES
+        || !leaf.is_ascii()
+        || matches!(leaf, "." | "..")
+        || !leaf
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err(run_failure(
+            RunFailureKind::Preflight,
+            "output-directory-name-invalid",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_pack_snapshot_bounds(
+    snapshot: &crate::artifact_hash::PortablePackSnapshot,
+) -> Result<()> {
+    if snapshot.files.len() > MAX_PACK_FILES {
+        return Err(anyhow!("pack exceeds fixed file-count limit"));
+    }
+    let byte_count = snapshot.files.iter().try_fold(0u64, |total, file| {
+        total
+            .checked_add(file.byte_count)
+            .ok_or_else(|| anyhow!("pack byte count overflow"))
+    })?;
+    if byte_count > MAX_PACK_BYTES {
+        return Err(anyhow!("pack exceeds fixed byte limit"));
+    }
+    Ok(())
+}
+
+fn validate_pack_source_bounds(root: &Path) -> Result<()> {
+    let pack_root = root.join(".mdp");
+    let metadata = fs::symlink_metadata(&pack_root)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(anyhow!("pack root must be a real directory"));
+    }
+    let mut file_count = 0usize;
+    let mut byte_count = 0u64;
+    validate_pack_directory_bounds(&pack_root, true, &mut file_count, &mut byte_count)
+}
+
+fn validate_pack_directory_bounds(
+    directory: &Path,
+    pack_root: bool,
+    file_count: &mut usize,
+    byte_count: &mut u64,
+) -> Result<()> {
+    let mut entries = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        if pack_root
+            && GENERATED_PACK_DIRECTORIES
+                .iter()
+                .any(|name| entry.file_name() == *name)
+        {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(entry.path())?;
+        if metadata.file_type().is_symlink() {
+            return Err(anyhow!("pack staging rejects symlinks"));
+        }
+        if metadata.is_dir() {
+            validate_pack_directory_bounds(&entry.path(), false, file_count, byte_count)?;
+        } else if metadata.is_file() {
+            reject_hard_link(&metadata, "pack staging")?;
+            *file_count = file_count
+                .checked_add(1)
+                .ok_or_else(|| anyhow!("pack file count overflow"))?;
+            if *file_count > MAX_PACK_FILES {
+                return Err(anyhow!("pack exceeds fixed file-count limit"));
+            }
+            *byte_count = byte_count
+                .checked_add(metadata.len())
+                .ok_or_else(|| anyhow!("pack byte count overflow"))?;
+            if *byte_count > MAX_PACK_BYTES {
+                return Err(anyhow!("pack exceeds fixed byte limit"));
+            }
+        } else {
+            return Err(anyhow!("pack staging accepts only regular files"));
+        }
+    }
+    Ok(())
+}
+
+fn read_bounded(path: &Path, max_bytes: u64, label: &str) -> Result<Vec<u8>> {
+    let mut file = File::open(path)?;
+    let mut bytes = Vec::new();
+    Read::by_ref(&mut file)
+        .take(max_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(anyhow!("{label} exceeds byte limit"));
+    }
+    Ok(bytes)
 }
 
 fn stage_inputs(request: &RunRequestV1, target: &Path) -> Result<Vec<StagedInput>> {
@@ -564,14 +900,22 @@ fn stage_inputs(request: &RunRequestV1, target: &Path) -> Result<Vec<StagedInput
                 return Err(anyhow!("declared inputs must be regular non-symlink files"));
             }
             reject_hard_link(&metadata, "declared inputs")?;
-            let bytes = fs::read(source)?;
             total_bytes = total_bytes
-                .checked_add(bytes.len() as u64)
+                .checked_add(metadata.len())
                 .ok_or_else(|| anyhow!("declared input byte count overflow"))?;
             if total_bytes > request.execution_policy.max_input_bytes {
                 return Err(anyhow!(
                     "declared inputs exceed execution policy byte limit"
                 ));
+            }
+            let remaining = request
+                .execution_policy
+                .max_input_bytes
+                .checked_sub(total_bytes - metadata.len())
+                .ok_or_else(|| anyhow!("declared input byte count overflow"))?;
+            let bytes = read_bounded(source, remaining, "declared input")?;
+            if bytes.len() as u64 != metadata.len() {
+                return Err(anyhow!("declared input changed while it was staged"));
             }
             let initial_sha256 = sha256_hex(&bytes);
             let staged_path = target.join(format!("{index:03}-{}", input.logical_name));
@@ -581,6 +925,7 @@ fn stage_inputs(request: &RunRequestV1, target: &Path) -> Result<Vec<StagedInput
                 return Err(anyhow!("declared input changed while it was staged"));
             }
             Ok(StagedInput {
+                logical_name: input.logical_name.clone(),
                 authority: ArtifactAuthority {
                     logical_name: format!("declared/{index:03}-{}", input.logical_name),
                     schema_id: input.schema_id.clone(),
@@ -601,10 +946,21 @@ fn stage_inputs(request: &RunRequestV1, target: &Path) -> Result<Vec<StagedInput
 fn verify_sources_unchanged(inputs: &[StagedInput]) -> Result<()> {
     for input in inputs {
         let metadata = fs::symlink_metadata(&input.source_path)?;
+        let source_bytes = read_bounded(
+            &input.source_path,
+            input.authority.byte_count,
+            "declared input",
+        )?;
+        let staged_bytes = read_bounded(
+            &input.staged_path,
+            input.authority.byte_count,
+            "staged input",
+        )?;
         if metadata.file_type().is_symlink()
             || !metadata.is_file()
-            || sha256_hex(&fs::read(&input.source_path)?) != input.initial_sha256
-            || sha256_hex(&fs::read(&input.staged_path)?) != input.initial_sha256
+            || metadata.len() != input.authority.byte_count
+            || sha256_hex(&source_bytes) != input.initial_sha256
+            || sha256_hex(&staged_bytes) != input.initial_sha256
         {
             return Err(anyhow!("declared input mutated during execution"));
         }
@@ -616,16 +972,26 @@ fn required_input<'a>(inputs: &'a [StagedInput], name: &str) -> Result<&'a Stage
     optional_input(inputs, name).ok_or_else(|| anyhow!("required declared input missing: {name}"))
 }
 
+fn required_typed_input<'a>(
+    inputs: &'a [StagedInput],
+    name: &str,
+    schema_id: &str,
+    media_type: &str,
+) -> Result<&'a StagedInput> {
+    let input = required_input(inputs, name)?;
+    validate_input_type(input, schema_id, media_type)?;
+    Ok(input)
+}
+
+fn validate_input_type(input: &StagedInput, schema_id: &str, media_type: &str) -> Result<()> {
+    if input.authority.schema_id != schema_id || input.authority.media_type != media_type {
+        return Err(anyhow!("declared input schema or media type mismatch"));
+    }
+    Ok(())
+}
+
 fn optional_input<'a>(inputs: &'a [StagedInput], name: &str) -> Option<&'a StagedInput> {
-    inputs.iter().find(|input| {
-        input
-            .authority
-            .logical_name
-            .rsplit('-')
-            .next()
-            .is_some_and(|suffix| suffix == name)
-            || input.authority.logical_name.ends_with(&format!("-{name}"))
-    })
+    inputs.iter().find(|input| input.logical_name == name)
 }
 
 fn assurance_dimensions(
@@ -641,11 +1007,21 @@ fn assurance_dimensions(
     vec![
         AssuranceDimension {
             dimension: "declared-input-isolation".into(),
-            state: AssuranceEvidenceState::Enforced,
+            state: AssuranceEvidenceState::Observed,
             provenance: EvidenceProvenance::MdpObserved,
             evidence_refs: vec![bundle_sha256.into()],
             limitations: vec![
                 "OS-level access outside the private staging tree is not attested".into(),
+            ],
+        },
+        AssuranceDimension {
+            dimension: "declared-input-byte-binding".into(),
+            state: AssuranceEvidenceState::Verified,
+            provenance: EvidenceProvenance::MdpObserved,
+            evidence_refs: vec![bundle_sha256.into()],
+            limitations: vec![
+                "exact source and staged bytes were re-read and matched during this local invocation"
+                    .into(),
             ],
         },
         AssuranceDimension {
@@ -703,10 +1079,24 @@ fn copy_pack(source_root: &Path, target_root: &Path) -> Result<()> {
     let target = target_root.join(".mdp");
     fs::create_dir(&target)?;
     set_private_directory(&target)?;
-    copy_pack_directory(&source, &target, true)
+    let mut remaining_bytes = MAX_PACK_BYTES;
+    let mut remaining_files = MAX_PACK_FILES;
+    copy_pack_directory(
+        &source,
+        &target,
+        true,
+        &mut remaining_bytes,
+        &mut remaining_files,
+    )
 }
 
-fn copy_pack_directory(source: &Path, target: &Path, pack_root: bool) -> Result<()> {
+fn copy_pack_directory(
+    source: &Path,
+    target: &Path,
+    pack_root: bool,
+    remaining_bytes: &mut u64,
+    remaining_files: &mut usize,
+) -> Result<()> {
     let mut entries = fs::read_dir(source)?.collect::<std::io::Result<Vec<_>>>()?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
@@ -725,10 +1115,25 @@ fn copy_pack_directory(source: &Path, target: &Path, pack_root: bool) -> Result<
         if metadata.is_dir() {
             fs::create_dir(&destination)?;
             set_private_directory(&destination)?;
-            copy_pack_directory(&entry.path(), &destination, false)?;
+            copy_pack_directory(
+                &entry.path(),
+                &destination,
+                false,
+                remaining_bytes,
+                remaining_files,
+            )?;
         } else if metadata.is_file() {
             reject_hard_link(&metadata, "pack staging")?;
-            write_bytes_create_new(&destination, &fs::read(entry.path())?)?;
+            if *remaining_files == 0 || metadata.len() > *remaining_bytes {
+                return Err(anyhow!("pack exceeds fixed staging limit"));
+            }
+            let bytes = read_bounded(&entry.path(), *remaining_bytes, "pack")?;
+            if bytes.len() as u64 != metadata.len() {
+                return Err(anyhow!("pack changed while it was staged"));
+            }
+            *remaining_files -= 1;
+            *remaining_bytes -= bytes.len() as u64;
+            write_bytes_create_new(&destination, &bytes)?;
         } else {
             return Err(anyhow!("pack staging accepts only regular files"));
         }
@@ -807,10 +1212,11 @@ fn unique_suffix() -> u128 {
 
 #[cfg(test)]
 mod tests {
-    use super::{execute_run_inner, validate_request};
+    use super::{execute_run_inner, gtm_success_artifacts, validate_request};
     use crate::commands::init::init_pack;
     use crate::run_contracts::{
-        ExecutionPolicy, LocalArtifactInput, RunMode, RunRequestV1, TerminalState,
+        ExecutionPolicy, LocalArtifactInput, PackAuthority, RunBundleV1, RunMode, RunRequestV1,
+        TerminalState,
     };
     use std::fs;
     use std::path::Path;
@@ -898,6 +1304,17 @@ mod tests {
             "mdp.gtm-qualification-decision.v1"
         );
         assert_eq!(receipt["compiled_context"].is_object(), true);
+        assert_eq!(receipt["decision"]["decision"], "no-draft");
+        assert_eq!(
+            receipt["decision"]["reason_codes"],
+            serde_json::json!(["insufficient-context"])
+        );
+        assert!(receipt["assurance"].as_array().unwrap().iter().any(|item| {
+            item["dimension"] == "declared-input-isolation" && item["state"] == "observed"
+        }));
+        assert!(receipt["assurance"].as_array().unwrap().iter().any(|item| {
+            item["dimension"] == "declared-input-byte-binding" && item["state"] == "verified"
+        }));
         assert!(run.join("artifacts/output.json").is_file());
         assert!(!run.join("private").exists());
         let verification = crate::commands::run_verification::verify_run_files(
@@ -910,6 +1327,74 @@ mod tests {
 
         request.execution_id = "run-gtm-reuse".into();
         assert!(execute_run_inner(&request, &run, || Ok(())).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn gtm_decision_mapping_covers_qualified_disqualified_and_insufficient_context() {
+        let qualified = gtm_artifacts_for_fit_status("fit");
+        assert_eq!(qualified.decision.decision, "qualified");
+        assert_eq!(qualified.decision.reason_codes, vec!["ready"]);
+
+        let disqualified = gtm_artifacts_for_fit_status("disqualified");
+        assert_eq!(disqualified.decision.decision, "no-draft");
+        assert_eq!(disqualified.decision.reason_codes, vec!["disqualified"]);
+
+        let insufficient = gtm_artifacts_for_fit_status("insufficient-context");
+        assert_eq!(insufficient.decision.decision, "no-draft");
+        assert_eq!(
+            insufficient.decision.reason_codes,
+            vec!["insufficient-context"]
+        );
+    }
+
+    #[test]
+    fn gtm_missing_required_evidence_publishes_no_authority() {
+        let root = temp_path("gtm-missing-evidence");
+        let run = root.join("run");
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let pack = repository.join("examples/clay-audiences-self-serve-enterprise-expansion");
+        let fixtures = pack.join("fixtures");
+        let mut request = gtm_request_fixture(&pack, &fixtures);
+        request
+            .inputs
+            .retain(|input| input.logical_name != "source-attempt-request");
+
+        assert!(execute_run_inner(&request, &run, || Ok(())).is_err());
+        assert!(!run.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn gtm_contradictory_source_binding_commits_invalid_no_draft_without_decision() {
+        let root = temp_path("gtm-invalid-binding");
+        let run = root.join("run");
+        fs::create_dir_all(&root).unwrap();
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let pack = repository.join("examples/clay-audiences-self-serve-enterprise-expansion");
+        let fixtures = pack.join("fixtures");
+        let normalized_path = root.join("contradictory-normalized.json");
+        let mut normalized: serde_json::Value = serde_json::from_slice(
+            &fs::read(fixtures.join("normalized-response-ready.json")).unwrap(),
+        )
+        .unwrap();
+        normalized["source_attempt_request_sha256"] = serde_json::Value::String("f".repeat(64));
+        fs::write(
+            &normalized_path,
+            serde_json::to_vec_pretty(&normalized).unwrap(),
+        )
+        .unwrap();
+        let mut request = gtm_request_fixture(&pack, &fixtures);
+        request.inputs[0].source_path = normalized_path.display().to_string();
+
+        let result = execute_run_inner(&request, &run, || Ok(())).unwrap();
+        assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
+        assert!(receipt["decision"].is_null());
+        assert!(receipt["output"].is_null());
+        assert!(receipt["compiled_context"].is_null());
+        assert!(receipt["validation"].is_object());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -930,6 +1415,42 @@ mod tests {
         })
         .unwrap();
         assert_eq!(result.terminal_state, TerminalState::NoDraftAuditIncomplete);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pack_mutation_forces_audit_incomplete_and_no_output() {
+        let root = temp_path("pack-mutation");
+        let pack = root.join("pack");
+        let run = root.join("run");
+        init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let output = repository
+            .join("examples/proposal-flow-video/fixtures/normalize-opportunity-output.json");
+        let source_audit =
+            repository.join("examples/proposal-flow-video/fixtures/source-audit.json");
+        let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
+        request.inputs.push(LocalArtifactInput {
+            logical_name: "source-audit".into(),
+            source_path: source_audit.display().to_string(),
+            schema_id: "mdp.source-audit.v0".into(),
+            media_type: "application/json".into(),
+            provenance_refs: vec![],
+        });
+        let manifest = pack.join(".mdp/manifest.yaml");
+
+        let result = execute_run_inner(&request, &run, || {
+            let mut bytes = fs::read(&manifest)?;
+            bytes.extend_from_slice(b"\n# mutated during run\n");
+            fs::write(&manifest, bytes)?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(result.terminal_state, TerminalState::NoDraftAuditIncomplete);
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
+        assert!(receipt["output"].is_null());
+        assert!(!run.join("artifacts/output.json").exists());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -968,6 +1489,129 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn semantic_input_roles_require_exact_logical_names() {
+        let root = temp_path("exact-role");
+        let pack = root.join("pack");
+        let run = root.join("run");
+        init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let output = repository
+            .join("examples/proposal-flow-video/fixtures/normalize-opportunity-output.json");
+        let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
+        request.inputs[0].logical_name = "backup-prompt-output".into();
+
+        assert!(execute_run_inner(&request, &run, || Ok(())).is_err());
+        assert!(!run.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn deadline_failure_removes_transaction_and_output_claim() {
+        let root = temp_path("timeout-cleanup");
+        let pack = root.join("pack");
+        let run = root.join("run");
+        init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
+        let output = root.join("invalid.json");
+        fs::write(&output, "{}\n").unwrap();
+        let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
+        request.execution_policy.timeout_ms = 1;
+
+        assert!(
+            execute_run_inner(&request, &run, || {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                Ok(())
+            })
+            .is_err()
+        );
+        assert!(!run.exists());
+        let leftovers = fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(".run."))
+            .collect::<Vec<_>>();
+        assert!(
+            leftovers.is_empty(),
+            "leftover transaction state: {leftovers:?}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recovery_claim_binds_exact_transaction_leaf_and_is_removed() {
+        let root = temp_path("recovery-claim");
+        let pack = root.join("pack");
+        let run = root.join("run");
+        let claim = root.join(".run.mdp-run.claim");
+        init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
+        let output = root.join("invalid.json");
+        fs::write(&output, "{}\n").unwrap();
+        let request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
+
+        let result = execute_run_inner(&request, &run, || {
+            let bytes = fs::read(&claim)?;
+            assert!(bytes.len() <= 512);
+            assert!(bytes.ends_with(b"\n"));
+            let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+            assert_eq!(value["contract"], "mdp.run-recovery-claim.v1");
+            assert_eq!(value["execution_id"], "run-1");
+            let transaction_leaf = value["transaction_leaf"].as_str().unwrap();
+            assert!(transaction_leaf.starts_with(".run.tmp-"));
+            let nonce = transaction_leaf.strip_prefix(".run.tmp-").unwrap();
+            assert!(nonce.len() >= 16);
+            assert!(
+                nonce
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            );
+            assert!(!transaction_leaf.contains(['/', '\\']));
+            assert!(root.join(transaction_leaf).is_dir());
+            assert_eq!(value.as_object().unwrap().len(), 3);
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
+        assert!(!claim.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn declared_input_metadata_limit_is_checked_before_reading() {
+        let root = temp_path("input-bound");
+        let pack = root.join("pack");
+        let run = root.join("run");
+        init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
+        let output = root.join("oversized.json");
+        let file = fs::File::create(&output).unwrap();
+        file.set_len(2_000_000).unwrap();
+        let request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
+
+        assert!(execute_run_inner(&request, &run, || Ok(())).is_err());
+        assert!(!run.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn top_level_mdp_symlink_is_refused() {
+        use std::os::unix::fs::symlink;
+        let root = temp_path("pack-root-link");
+        let actual = root.join("actual");
+        let linked = root.join("linked");
+        let run = root.join("run");
+        init_pack(&actual, "Proposal Run", "proposal", true, false).unwrap();
+        fs::create_dir_all(&linked).unwrap();
+        symlink(actual.join(".mdp"), linked.join(".mdp")).unwrap();
+        let output = root.join("invalid.json");
+        fs::write(&output, "{}\n").unwrap();
+        let request = request_fixture(linked.to_str().unwrap(), output.to_str().unwrap());
+
+        assert!(execute_run_inner(&request, &run, || Ok(())).is_err());
+        assert!(!run.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
     fn request_fixture(pack: &str, output: &str) -> RunRequestV1 {
         RunRequestV1 {
             contract: "mdp.run-request.v1".into(),
@@ -1001,6 +1645,44 @@ mod tests {
             driver: None,
             model: None,
         }
+    }
+
+    fn gtm_artifacts_for_fit_status(status: &str) -> super::SuccessArtifacts {
+        let request = request_fixture("unused", "unused");
+        let bundle = RunBundleV1 {
+            contract: "mdp.run-bundle.v1".into(),
+            execution_id: request.execution_id.clone(),
+            created_at: request.created_at.clone(),
+            profile: "gtm".into(),
+            operation: "qualify".into(),
+            mode: RunMode::Deterministic,
+            job_identity: None,
+            pack: PackAuthority {
+                release_id: "release-1".into(),
+                pack_id: "pack-1".into(),
+                version: "1".into(),
+                profile_id: "gtm".into(),
+                portable_digest: "a".repeat(64),
+                files: vec![],
+            },
+            prompt: None,
+            inputs: vec![],
+            execution_policy_sha256: "b".repeat(64),
+            driver: None,
+            model: None,
+        };
+        gtm_success_artifacts(
+            &request,
+            &bundle,
+            &"c".repeat(64),
+            serde_json::json!({
+                "status": status,
+                "context": {},
+                "matches": [],
+                "disqualifiers": []
+            }),
+        )
+        .unwrap()
     }
 
     fn gtm_request_fixture(pack: &Path, fixtures: &Path) -> RunRequestV1 {

@@ -1,0 +1,39 @@
+{
+  "contract": "mdp.runner-audit.v1",
+  "execution_id": "synthetic-no-draft-001",
+  "runner_version": "synthetic-reference-1",
+  "runner_build_sha256": null,
+  "platform": "synthetic-table-worker",
+  "snapshot_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "provider_request_body_sha256": null,
+  "provider_request_schema_id": null,
+  "terminal_state": "no-draft:audit-incomplete",
+  "assurance": [
+    {
+      "dimension": "fresh-invocation",
+      "state": "unknown",
+      "provenance": "host-attested",
+      "evidence_refs": [],
+      "limitations": ["The table worker could not prove that session reuse was disabled."]
+    },
+    {
+      "dimension": "declared-input-isolation",
+      "state": "unsupported",
+      "provenance": "host-attested",
+      "evidence_refs": ["table:synthetic/row:42"],
+      "limitations": ["The worker could read neighboring table rows."]
+    },
+    {
+      "dimension": "replay-protection",
+      "state": "unknown",
+      "provenance": "unknown",
+      "evidence_refs": [],
+      "limitations": ["No durable row-level consumption transaction was available."]
+    }
+  ],
+  "limitations": [
+    "Synthetic conformance fixture only.",
+    "No provider request was made because the required boundary evidence was incomplete.",
+    "No draft or downstream action is authorized."
+  ]
+}

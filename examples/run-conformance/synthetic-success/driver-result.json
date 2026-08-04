@@ -1,0 +1,23 @@
+{
+  "contract": "mdp.driver-result.v1",
+  "execution_id": "synthetic-success-001",
+  "terminal_state": "success",
+  "output": {
+    "logical_name": "output.json",
+    "schema_id": "mdp.synthetic-output.v1",
+    "media_type": "application/json",
+    "byte_count": 96,
+    "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+    "provenance": "driver-attested",
+    "provenance_refs": ["mdp.driver-request.v1#synthetic-success-001"]
+  },
+  "audit": {
+    "logical_name": "runner-audit.json",
+    "schema_id": "mdp.runner-audit.v1",
+    "media_type": "application/json",
+    "byte_count": 1437,
+    "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+    "provenance": "host-attested",
+    "provenance_refs": ["mdp.driver-request.v1#synthetic-success-001"]
+  }
+}

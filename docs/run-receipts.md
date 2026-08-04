@@ -2,7 +2,10 @@
 
 `mdp run-receipt` creates the legacy local `mdp.run-receipt.v0` artifact for workflows where an agent host or runner normalized messy source material before deterministic MDP checks ran. The unified clean-context runtime uses the closed v1 contracts described below. The v0 command remains available for compatibility while v1 execution is introduced.
 
-Use it when the operator wants an audit-grade proposal or document-review flow, especially when a PDF/doc extraction step produced a `mdp.source-audit.v0` ledger.
+Use v0 only to preserve or inspect an existing proposal/document-review flow,
+especially when a PDF/doc extraction step produced a `mdp.source-audit.v0`
+ledger. Its historical `audit-grade` decision is not the v1 assurance vector
+and must not be used as proof of the new clean-run boundary.
 
 A receipt assurance value describes one invocation; it is not a public integration-support claim. Consult the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix) before describing a runner as verified. All currently documented named runners are recipe-only, while `custom-headless` is unsupported and mock/demo evidence is fixture/mock-only.
 
@@ -83,7 +86,14 @@ These terms are deliberately narrower:
 - **Deterministic replay** means deterministic stages can be recomputed from the same canonical bytes and policy. It does not promise byte-identical generative output unless the provider supplies and honors a deterministic contract.
 - **Audit evidence** means the receipt identifies exactly which claim was declared, observed, enforced, or recomputed and by whom. It is not a claim that source content was true or that a third-party model exposed its hidden context.
 
-The terminal state is either `success` or an explicit `no-draft:*` state. Preflight refusal, runner failure, invalid output, invalid decision, incomplete audit, or policy failure must not leave a draft that a host can mistake for authorized output.
+The terminal state is either `success` or an explicit `no-draft:*` state.
+`success` means the runtime completed and sealed an authoritative decision; it
+does not mean the decision authorized drafting. For example, a successful GTM
+evaluation may return decision `no-draft` with reason `disqualified` or
+`insufficient-context`. Hosts must inspect the sealed decision, never `valid`
+or terminal state alone. Preflight refusal, runner failure, invalid output,
+invalid decision, incomplete audit, or policy failure must not leave any
+decision or draft authority that a host can mistake for usable output.
 
 ### V0 Compatibility and Migration
 

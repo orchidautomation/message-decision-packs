@@ -201,9 +201,26 @@ pub(crate) fn verify_run(
         }
     }
 
+    let recomputed_assurance = recompute_assurance(
+        bundle.mode,
+        receipt.terminal_state,
+        &bundle_hash,
+        &receipt.assurance,
+    );
+    if receipt.assurance != recomputed_assurance {
+        issues.push("assurance-not-verifier-derived".to_string());
+    }
+
     if let Some(root) = artifact_root {
         verify_artifact(root, &receipt.runner_audit, &mut issues);
-        verify_runner_audit(root, receipt, &mut issues);
+        verify_runner_audit(
+            root,
+            bundle,
+            receipt,
+            &bundle_hash,
+            &recomputed_assurance,
+            &mut issues,
+        );
         for artifact in [
             receipt.output.as_ref(),
             receipt.compiled_context.as_ref(),
@@ -222,12 +239,105 @@ pub(crate) fn verify_run(
         integrity_only: true,
         execution_id: receipt.execution_id.clone(),
         terminal_state: receipt.terminal_state,
-        recomputed_assurance: receipt.assurance.clone(),
+        recomputed_assurance,
         issues,
     })
 }
 
-fn verify_runner_audit(root: &Path, receipt: &RunReceiptV1, issues: &mut Vec<String>) {
+fn recompute_assurance(
+    mode: RunMode,
+    terminal_state: crate::run_contracts::TerminalState,
+    bundle_sha256: &str,
+    claimed: &[crate::run_contracts::AssuranceDimension],
+) -> Vec<crate::run_contracts::AssuranceDimension> {
+    use crate::run_contracts::{AssuranceDimension, TerminalState};
+
+    if mode == RunMode::Deterministic {
+        return vec![
+            AssuranceDimension {
+                dimension: "declared-input-isolation".into(),
+                state: AssuranceEvidenceState::Observed,
+                provenance: EvidenceProvenance::MdpObserved,
+                evidence_refs: vec![bundle_sha256.into()],
+                limitations: vec![
+                    "OS-level access outside the private staging tree is not attested".into(),
+                ],
+            },
+            AssuranceDimension {
+                dimension: "declared-input-byte-binding".into(),
+                state: AssuranceEvidenceState::Verified,
+                provenance: EvidenceProvenance::MdpObserved,
+                evidence_refs: vec![bundle_sha256.into()],
+                limitations: vec![
+                    "exact source and staged bytes were re-read and matched during this local invocation"
+                        .into(),
+                ],
+            },
+            AssuranceDimension {
+                dimension: "source-mutation-resistance".into(),
+                state: if terminal_state == TerminalState::NoDraftAuditIncomplete {
+                    AssuranceEvidenceState::Unknown
+                } else {
+                    AssuranceEvidenceState::Verified
+                },
+                provenance: EvidenceProvenance::VerifierRecomputed,
+                evidence_refs: vec![bundle_sha256.into()],
+                limitations: vec![],
+            },
+            AssuranceDimension {
+                dimension: "stateless-inference".into(),
+                state: AssuranceEvidenceState::NotApplicable,
+                provenance: EvidenceProvenance::MdpObserved,
+                evidence_refs: vec![],
+                limitations: vec!["this operation performs no model inference".into()],
+            },
+            AssuranceDimension {
+                dimension: "audit-evidence".into(),
+                state: if terminal_state == TerminalState::NoDraftAuditIncomplete {
+                    AssuranceEvidenceState::Unknown
+                } else {
+                    AssuranceEvidenceState::Observed
+                },
+                provenance: EvidenceProvenance::MdpObserved,
+                evidence_refs: vec![bundle_sha256.into()],
+                limitations: vec![
+                    "receipt integrity is locally recomputable; host durability is not attested"
+                        .into(),
+                ],
+            },
+        ];
+    }
+
+    // The local verifier has no authenticated observer for generative drivers.
+    // Preserve non-elevated evidence, but deterministically downgrade any
+    // caller-supplied enforced/verified claim until such a trust root exists.
+    claimed
+        .iter()
+        .map(|dimension| {
+            let mut recomputed = dimension.clone();
+            if matches!(
+                recomputed.state,
+                AssuranceEvidenceState::Enforced | AssuranceEvidenceState::Verified
+            ) {
+                recomputed.state = AssuranceEvidenceState::Unknown;
+                recomputed.limitations.push(
+                    "local integrity verification cannot authenticate generative enforcement"
+                        .into(),
+                );
+            }
+            recomputed
+        })
+        .collect()
+}
+
+fn verify_runner_audit(
+    root: &Path,
+    bundle: &RunBundleV1,
+    receipt: &RunReceiptV1,
+    bundle_sha256: &str,
+    recomputed_assurance: &[crate::run_contracts::AssuranceDimension],
+    issues: &mut Vec<String>,
+) {
     let path = root.join(&receipt.runner_audit.logical_name);
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
@@ -247,8 +357,30 @@ fn verify_runner_audit(root: &Path, receipt: &RunReceiptV1, issues: &mut Vec<Str
     {
         issues.push("runner-audit-authority-mismatch".to_string());
     }
-    if audit.assurance != receipt.assurance {
+    if audit.snapshot_sha256 != bundle_sha256 || audit.snapshot_sha256 != receipt.bundle_sha256 {
+        issues.push("runner-audit-snapshot-mismatch".to_string());
+    }
+    match bundle.mode {
+        RunMode::Deterministic => {
+            if audit.provider_request_body_sha256.is_some()
+                || audit.provider_request_schema_id.is_some()
+            {
+                issues.push("deterministic-provider-request-evidence-present".to_string());
+            }
+        }
+        RunMode::Generative => {
+            if audit.provider_request_body_sha256.is_none()
+                || audit.provider_request_schema_id.is_none()
+            {
+                issues.push("generative-provider-request-evidence-missing".to_string());
+            }
+        }
+    }
+    if audit.assurance != recomputed_assurance {
         issues.push("runner-audit-assurance-mismatch".to_string());
+    }
+    if audit.limitations != receipt.limitations {
+        issues.push("runner-audit-limitations-mismatch".to_string());
     }
 }
 
@@ -297,7 +429,7 @@ fn verify_artifact(root: &Path, authority: &ArtifactAuthority, issues: &mut Vec<
 
 #[cfg(test)]
 mod tests {
-    use super::{verify_legacy_v0_receipt, verify_run};
+    use super::{recompute_assurance, verify_legacy_v0_receipt, verify_run};
     use crate::artifact_hash::{canonical_json_sha256_for_domain, sha256_hex};
     use crate::run_contracts::*;
     use std::fs;
@@ -327,14 +459,17 @@ mod tests {
         assert!(!verify_run(&bundle, &receipt, Some(&root)).unwrap().valid);
 
         fs::write(root.join("output.json"), b"{}\n").unwrap();
-        receipt.assurance[0].state = AssuranceEvidenceState::Enforced;
+        receipt.assurance[0].state = AssuranceEvidenceState::Verified;
+        receipt.assurance[0].provenance = EvidenceProvenance::MdpObserved;
+        write_audit(&root, &receipt);
+        receipt.runner_audit = artifact(&root, "audit.json");
         seal_receipt(&mut receipt);
         let result = verify_run(&bundle, &receipt, Some(&root)).unwrap();
         assert!(
             result
                 .issues
                 .iter()
-                .any(|issue| issue.starts_with("driver-attestation-cannot-elevate:"))
+                .any(|issue| issue == "assurance-not-verifier-derived")
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -354,6 +489,44 @@ mod tests {
                 .issues
                 .contains(&"no-draft-authority-leak".to_string())
         );
+    }
+
+    #[test]
+    fn verifier_binds_runner_audit_snapshot_and_limitations() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-verify-audit-binding-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        for name in ["output.json", "context.json", "validation.json"] {
+            fs::write(root.join(name), b"{}\n").unwrap();
+        }
+        let bundle = sample_bundle();
+        let mut receipt = sample_receipt(&bundle, &root);
+        write_audit(&root, &receipt);
+        let mut audit: RunnerAuditV1 =
+            serde_json::from_slice(&fs::read(root.join("audit.json")).unwrap()).unwrap();
+        audit.snapshot_sha256 = "f".repeat(64);
+        audit.limitations.push("caller-added".into());
+        fs::write(root.join("audit.json"), serde_json::to_vec(&audit).unwrap()).unwrap();
+        receipt.runner_audit = artifact(&root, "audit.json");
+        seal_receipt(&mut receipt);
+
+        let result = verify_run(&bundle, &receipt, Some(&root)).unwrap();
+        assert!(
+            result
+                .issues
+                .contains(&"runner-audit-snapshot-mismatch".to_string())
+        );
+        assert!(
+            result
+                .issues
+                .contains(&"runner-audit-limitations-mismatch".to_string())
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -405,6 +578,9 @@ mod tests {
     }
 
     fn sample_receipt(bundle: &RunBundleV1, root: &Path) -> RunReceiptV1 {
+        let bundle_sha256 =
+            canonical_json_sha256_for_domain(RUN_BUNDLE_V1, &serde_json::to_value(bundle).unwrap())
+                .unwrap();
         RunReceiptV1 {
             contract: RUN_RECEIPT_V1.into(),
             execution_id: bundle.execution_id.clone(),
@@ -412,24 +588,19 @@ mod tests {
             profile: bundle.profile.clone(),
             operation: bundle.operation.clone(),
             job_identity: None,
-            bundle_sha256: canonical_json_sha256_for_domain(
-                RUN_BUNDLE_V1,
-                &serde_json::to_value(bundle).unwrap(),
-            )
-            .unwrap(),
+            bundle_sha256: bundle_sha256.clone(),
             terminal_state: TerminalState::Success,
             output: Some(artifact_or_placeholder(root, "output.json")),
             decision: Some(sealed_decision()),
             compiled_context: Some(artifact_or_placeholder(root, "context.json")),
             validation: Some(artifact_or_placeholder(root, "validation.json")),
             runner_audit: artifact_or_placeholder(root, "audit.json"),
-            assurance: vec![AssuranceDimension {
-                dimension: "request-boundary".into(),
-                state: AssuranceEvidenceState::Observed,
-                provenance: EvidenceProvenance::DriverAttested,
-                evidence_refs: vec![],
-                limitations: vec![],
-            }],
+            assurance: recompute_assurance(
+                bundle.mode,
+                TerminalState::Success,
+                &bundle_sha256,
+                &[],
+            ),
             limitations: vec![],
             receipt_sha256: String::new(),
         }
@@ -503,7 +674,7 @@ mod tests {
             runner_version: "0.1.56".into(),
             runner_build_sha256: None,
             platform: "test".into(),
-            snapshot_sha256: "d".repeat(64),
+            snapshot_sha256: receipt.bundle_sha256.clone(),
             provider_request_body_sha256: None,
             provider_request_schema_id: None,
             terminal_state: receipt.terminal_state,

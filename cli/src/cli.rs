@@ -411,6 +411,7 @@ pub(crate) enum SchemaTarget {
     PromptOutput,
     ProposalRunManifest,
     ProposalRunnerResult,
+    ProposalRunnerResultV1,
     ProposalReadinessReport,
     ProposalMcpRunResult,
     RunReceipt,
@@ -422,6 +423,8 @@ pub(crate) enum SchemaTarget {
     RunnerAuditV1,
     RunReceiptV1,
     RunVerificationV1,
+    RunExecutionV1,
+    CanonicalAuthorityBlockV1,
     Brief,
     HumanBrief,
     RuntimeContext,
@@ -632,6 +635,15 @@ mod tests {
             ("runner-audit-v1", SchemaTarget::RunnerAuditV1),
             ("run-receipt-v1", SchemaTarget::RunReceiptV1),
             ("run-verification-v1", SchemaTarget::RunVerificationV1),
+            ("run-execution-v1", SchemaTarget::RunExecutionV1),
+            (
+                "canonical-authority-block-v1",
+                SchemaTarget::CanonicalAuthorityBlockV1,
+            ),
+            (
+                "proposal-runner-result-v1",
+                SchemaTarget::ProposalRunnerResultV1,
+            ),
         ];
 
         for (name, expected) in targets {

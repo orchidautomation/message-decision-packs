@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
@@ -12,6 +11,7 @@ import {
 import { dirname, join } from 'node:path'
 
 import { MAX_CONTEXT_CHARS } from './proposal-runner-contracts.mjs'
+import { superviseProcess } from './process-supervisor.mjs'
 
 export class RunnerError extends Error {
   constructor(message, code = 1) {
@@ -105,25 +105,30 @@ export const nonProviderEnvironment = (source = process.env) =>
     ),
   )
 
-export const runProcess = ({
+export const runProcess = async ({
   command,
   args,
   stdoutPath,
   stderrPath,
   allowNonZero = false,
   environment = nonProviderEnvironment(),
+  timeoutMs = 120_000,
+  recovery = null,
 }) => {
-  const result = spawnSync(command[0], [...command.slice(1), ...args], {
-    encoding: 'utf8',
-    env: environment,
-    maxBuffer: 20 * 1024 * 1024,
+  const result = await superviseProcess({
+    command,
+    args,
+    environment,
+    timeoutMs,
+    maxOutputBytes: 20 * 1024 * 1024,
+    recovery,
   })
   if (stdoutPath) writeText(stdoutPath, result.stdout || '')
   if (stderrPath) writeText(stderrPath, result.stderr || '')
   const status = result.status ?? 1
-  if (result.error) {
-    fail(`Failed to run ${command[0]}: ${result.error.message}`)
-  }
+  if (result.timedOut) fail(`Command timed out after ${timeoutMs}ms: ${command[0]}`)
+  if (result.overflowed) fail(`Command exceeded the bounded output limit: ${command[0]}`)
+  if (result.spawnFailed) fail(`Failed to run ${command[0]}`)
   if (status !== 0 && !allowNonZero) {
     fail(
       `Command failed (${status}): ${[...command, ...args].join(' ')}\n${result.stderr || result.stdout}`,

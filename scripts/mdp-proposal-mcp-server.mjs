@@ -333,6 +333,14 @@ const proposalRunSchema = {
       type: 'boolean',
       description: 'Validate request shape only; no model output, receipt, fit, or route.',
     },
+    clean_run_v1: {
+      type: 'boolean',
+      description: 'Finalize the generated output with canonical Rust mdp run v1. Requires pack_release_id and cannot be combined with dry_run.',
+    },
+    pack_release_id: {
+      type: 'string',
+      description: 'Immutable pack release identifier handed unchanged to canonical mdp run v1.',
+    },
     prompt_id: {
       type: 'string',
       description: 'Prompt id. Current runner supports normalize-opportunity.',
@@ -397,6 +405,9 @@ const proposalRunOutputSchema = {
     decision: { enum: ['not-run', 'audit-grade', 'advisory', 'blocked'] },
     audit_grade_eligible: { type: 'boolean' },
     runner_assurance: { type: 'string' },
+    authority_contract: { type: ['string', 'null'] },
+    terminal_state: { type: ['string', 'null'] },
+    canonical_authority: { type: ['object', 'null'] },
     timed_out: { type: 'boolean' },
     termination_signal: { type: ['string', 'null'] },
     timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
@@ -428,7 +439,7 @@ const tools = [
     name: 'mdp_proposal_run',
     title: 'Run MDP proposal normalization pipeline',
     description:
-      'Run the local proposal runner from explicit local file paths only. It stages supplied sources, builds a declared-input-only native request, optionally invokes the native runner, validates prompt output, creates a run receipt, and runs review probes. Dry-run/mock modes are never audit-grade; real audit-grade still requires valid runner-audit evidence and mdp run-receipt --require-runner-audit.',
+      'Run the local proposal runner from explicit local file paths only. It stages supplied sources, builds a declared-input-only native request, optionally invokes the native runner, and can hand an existing output to canonical Rust mdp run v1 for deterministic validation and receipt authority. The v1 handoff does not claim the Rust runtime performed upstream model inference.',
     inputSchema: proposalRunSchema,
     outputSchema: proposalRunOutputSchema,
   },
@@ -483,6 +494,8 @@ const callProposalRun = async (args) => {
     'model',
     'mock_response_path',
     'dry_run',
+    'clean_run_v1',
+    'pack_release_id',
     'prompt_id',
     'reuse_workdir_id',
     'skip_review',
@@ -538,12 +551,20 @@ const callProposalRun = async (args) => {
     throw new Error(`max_source_bytes must be between 1000 and ${MAX_SOURCE_BYTES}`)
   }
   const dryRun = optionalBoolean(parsedArgs, 'dry_run')
+  const cleanRunV1 = optionalBoolean(parsedArgs, 'clean_run_v1')
+  const packReleaseId = optionalString(parsedArgs, 'pack_release_id')
   const reuseWorkdirId = optionalString(parsedArgs, 'reuse_workdir_id')
   const skipReview = optionalBoolean(parsedArgs, 'skip_review')
   const requireAuditGrade = optionalBoolean(parsedArgs, 'require_audit_grade')
   const timeoutMs = optionalInteger(parsedArgs, 'timeout_ms') ?? DEFAULT_TIMEOUT_MS
   if (timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
     throw new Error(`timeout_ms must be between 100 and ${MAX_TIMEOUT_MS}`)
+  }
+  if (cleanRunV1 && !packReleaseId) {
+    throw new Error('clean_run_v1 requires pack_release_id')
+  }
+  if (cleanRunV1 && dryRun) {
+    throw new Error('clean_run_v1 cannot be combined with dry_run')
   }
 
   if (sourcePaths.length === 0) {
@@ -560,6 +581,8 @@ const callProposalRun = async (args) => {
   if (model) runnerArgs.push('--model', model)
   if (mockResponsePath) runnerArgs.push('--mock-response', mockResponsePath)
   if (dryRun) runnerArgs.push('--dry-run')
+  if (cleanRunV1) runnerArgs.push('--clean-run-v1')
+  if (packReleaseId) runnerArgs.push('--pack-release-id', packReleaseId)
   if (promptId) runnerArgs.push('--prompt-id', promptId)
   if (reuseWorkdirId) runnerArgs.push('--reuse-workdir-id', reuseWorkdirId)
   if (skipReview) runnerArgs.push('--skip-review')
@@ -589,6 +612,13 @@ const callProposalRun = async (args) => {
     decision: parsed?.decision ?? 'blocked',
     audit_grade_eligible: parsed?.audit_grade_eligible === true,
     runner_assurance: parsed?.runner_assurance ?? 'unknown',
+    ...(cleanRunV1
+      ? {
+          authority_contract: parsed?.authority_contract ?? null,
+          terminal_state: parsed?.terminal_state ?? null,
+          canonical_authority: parsed?.canonical_authority ?? null,
+        }
+      : {}),
     timed_out: result.timedOut,
     termination_signal: result.signal,
     timeout_ms: timeoutMs,
@@ -605,6 +635,7 @@ const callProposalRun = async (args) => {
       'The child received an explicit environment allowlist; secret values are never returned in MCP diagnostics.',
       `The runner was bounded by a ${timeoutMs}ms deadline and bounded stdout/stderr buffers.`,
       'The model isolation claim comes from the runner-audit plus mdp run-receipt, not from MCP transport alone.',
+      'For clean_run_v1, terminal state and canonical authority are returned unchanged from canonical Rust mdp run output; MCP does not calculate v1 hashes, assurance, terminal state, or receipt authority.',
       'Dry-run/mock/demo/fixture/synthetic evidence remains non-audit-grade.',
     ],
   }
@@ -662,7 +693,7 @@ const handleRequest = async (message) => {
             version: serverVersion,
           },
           instructions:
-            'Use mdp_proposal_run only with explicit local file paths. Do not pass ambient chat/source text as proposal evidence. Audit-grade requires a real runner-audit and mdp run-receipt --require-runner-audit.',
+            'Use mdp_proposal_run only with explicit local file paths. Do not pass ambient chat/source text as proposal evidence. clean_run_v1 delegates deterministic validation and receipt authority to canonical Rust mdp run but does not prove the Rust runtime performed upstream model inference.',
         })
       }
       case 'notifications/initialized':

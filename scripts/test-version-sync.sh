@@ -36,8 +36,18 @@ fi
 cp \
   "$repo_root/plugin/.codex-plugin/plugin.json" \
   "$fixture_root/plugin/.codex-plugin/plugin.json"
-sed -i "s/version: '[^']*'/version: '9.9.9'/" \
-  "$fixture_root/pluxx.config.ts"
+"$python_bin" - "$fixture_root/pluxx.config.ts" <<'PY'
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+content = path.read_text()
+updated, count = re.subn(r"version: '[^']*'", "version: '9.9.9'", content, count=1)
+if count != 1:
+    raise SystemExit("expected exactly one Pluxx version field")
+path.write_text(updated)
+PY
 
 if "$repo_root/scripts/validate-version-sync.sh" "$fixture_root" >/dev/null 2>&1; then
   echo "Expected a Pluxx-version mismatch to fail" >&2

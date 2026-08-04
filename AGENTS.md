@@ -4,7 +4,10 @@
 
 This repo contains Message Decision Packs (MDP): a local/offline standard, CLI, and Codex plugin for modular GTM messaging context.
 
-MDP stores decision context and routing contracts. It is not execution infrastructure.
+MDP stores decision context and routing contracts. Its local CLI may provide a
+bounded deterministic run/verify kernel that freezes declared inputs, evaluates
+MDP-owned rules, and emits receipts. That kernel is part of the local standard;
+it does not make MDP generalized execution infrastructure.
 
 Do not describe MDP as:
 

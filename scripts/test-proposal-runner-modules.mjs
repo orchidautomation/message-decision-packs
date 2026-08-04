@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -17,9 +17,11 @@ import {
   RunnerError,
   nonProviderEnvironment,
   readJson,
+  runProcess,
   sha256File,
   writeJsonAtomic,
 } from './lib/proposal-runner-runtime.mjs'
+import { cleanupMdpRecoveryClaim } from './lib/process-supervisor.mjs'
 
 test('contract module exposes stable runner and prompt-output fixtures', () => {
   const tools = toolEnvelope()
@@ -32,6 +34,7 @@ test('contract module exposes stable runner and prompt-output fixtures', () => {
       'mdp_normalize_opportunity',
       'mdp_validate_normalization',
       'mdp_run_receipt',
+      'mdp_clean_run_v1',
       'mdp_review_proposal',
     ],
   )
@@ -69,4 +72,77 @@ test('runtime errors preserve explicit exit codes', () => {
   const error = new RunnerError('fixture', 7)
   assert.equal(error.message, 'fixture')
   assert.equal(error.exitCode, 7)
+})
+
+test('runtime terminates a subprocess at its explicit deadline', async () => {
+  await assert.rejects(
+    runProcess({
+        command: [process.execPath],
+        args: ['-e', 'setInterval(() => {}, 1000)'],
+        timeoutMs: 50,
+      }),
+    (error) => error instanceof RunnerError && /timed out after 50ms/.test(error.message),
+  )
+})
+
+test('proposal runtime timeout closes descendants before returning', async (t) => {
+  if (process.platform === 'win32') return t.skip('Unix process-group behavior')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-proposal-process-group-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const marker = join(root, 'descendant-survived')
+  const childCode = [
+    "const {spawn}=require('node:child_process')",
+    `const code=${JSON.stringify(`process.on('SIGTERM',()=>{});setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(marker)},'survived'),700);setInterval(()=>{},1000)`)}`,
+    "spawn(process.execPath,['-e',code],{stdio:'ignore'})",
+    "process.on('SIGTERM',()=>process.exit(0))",
+    "setInterval(()=>{},1000)",
+  ].join(';')
+  await assert.rejects(
+    runProcess({ command: [process.execPath], args: ['-e', childCode], timeoutMs: 100 }),
+    (error) => error instanceof RunnerError && /timed out/.test(error.message),
+  )
+  await new Promise((resolveWait) => setTimeout(resolveWait, 800))
+  assert.equal(existsSync(marker), false)
+})
+
+test('recovery removes only the exact transaction named by a bounded owned claim', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-recovery-module-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const output = join(root, 'clean-run')
+  const transactionLeaf = '.clean-run.tmp-0123456789abcdef0123456789abcdef'
+  const transaction = join(root, transactionLeaf)
+  const claim = join(root, '.clean-run.mdp-run.claim')
+  const unrelated = join(root, '.clean-run.tmp-ffffffffffffffffffffffffffffffff')
+  mkdirSync(transaction)
+  mkdirSync(unrelated)
+  writeFileSync(join(transaction, 'private-source'), 'private bytes')
+  writeFileSync(claim, `${JSON.stringify({
+    contract: 'mdp.run-recovery-claim.v1',
+    execution_id: 'run-1',
+    transaction_leaf: transactionLeaf,
+  })}\n`)
+  assert.equal(cleanupMdpRecoveryClaim({ outputDir: output, executionId: 'run-1' }), true)
+  assert.equal(existsSync(transaction), false)
+  assert.equal(existsSync(claim), false)
+  assert.equal(existsSync(unrelated), true)
+})
+
+test('recovery refuses hard-linked or mismatched claims without deleting a transaction', (t) => {
+  if (process.platform === 'win32') return
+  const root = mkdtempSync(join(tmpdir(), 'mdp-recovery-module-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const output = join(root, 'clean-run')
+  const transactionLeaf = '.clean-run.tmp-0123456789abcdef0123456789abcdef'
+  const transaction = join(root, transactionLeaf)
+  const claim = join(root, '.clean-run.mdp-run.claim')
+  mkdirSync(transaction)
+  writeFileSync(claim, `${JSON.stringify({
+    contract: 'mdp.run-recovery-claim.v1',
+    execution_id: 'different-run',
+    transaction_leaf: transactionLeaf,
+  })}\n`)
+  linkSync(claim, `${claim}.hardlink`)
+  assert.equal(cleanupMdpRecoveryClaim({ outputDir: output, executionId: 'run-1' }), false)
+  assert.equal(existsSync(transaction), true)
+  assert.equal(existsSync(claim), true)
 })

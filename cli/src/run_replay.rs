@@ -340,6 +340,8 @@ mod tests {
     };
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn test_dir(name: &str) -> PathBuf {
@@ -396,6 +398,42 @@ mod tests {
             }
         );
         assert_eq!(fs::read_to_string(&ledger).unwrap().lines().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn concurrent_consumers_never_both_accept_first() {
+        let root = test_dir("concurrent");
+        let ledger = root.join("ledger.jsonl");
+        let barrier = Arc::new(Barrier::new(3));
+        let mut handles = Vec::new();
+        for _ in 0..2 {
+            let barrier = Arc::clone(&barrier);
+            let ledger = ledger.clone();
+            handles.push(thread::spawn(move || {
+                let consume = request("job-1", "key-1", 'a', 0);
+                barrier.wait();
+                compare_and_consume(&ledger, &consume)
+            }));
+        }
+        barrier.wait();
+        let outcomes = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|outcome| matches!(outcome, Ok(ReplayConsumeOutcome::AcceptedFirst { .. })))
+                .count(),
+            1
+        );
+        assert_eq!(fs::read_to_string(&ledger).unwrap().lines().count(), 1);
+        assert!(!lock_path(&ledger).exists());
+        assert!(matches!(
+            compare_and_consume(&ledger, &request("job-2", "key-2", 'b', 1)).unwrap(),
+            ReplayConsumeOutcome::AcceptedFirst { version: 2, .. }
+        ));
         fs::remove_dir_all(root).unwrap();
     }
 

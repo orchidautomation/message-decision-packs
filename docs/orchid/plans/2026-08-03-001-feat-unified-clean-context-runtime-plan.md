@@ -540,7 +540,7 @@ sequenceDiagram
 **Approach:**
 
 1. Expose one file-oriented `mdp run` command with deterministic preflight, terminal status, assurance vector, limitations, validation, and immutable artifact references.
-2. Expose `mdp_run_tools` and `mdp_run` over local stdio MCP as thin argument/result transport.
+2. Expose `mdp_run_tools`, `mdp_run`, and read-only `mdp_verify_run` over local stdio MCP as thin argument/result transport.
 3. Teach plugin skills to freeze inputs, show preflight, invoke the command, and return immutable authority without allowing ambient edits to inherit the receipt.
 4. Render a canonical authority block directly from verified CLI output. It contains terminal state, decision and reason codes, assurance dimensions, limitations, artifact hashes, and the verification command; ambient commentary cannot be inserted into or presented as that block.
 5. Label fresh-task-only and same-conversation paths as advisory; label deterministic-only runs without inference language.

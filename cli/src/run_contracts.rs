@@ -8,6 +8,9 @@ pub(crate) const DRIVER_RESULT_V1: &str = "mdp.driver-result.v1";
 pub(crate) const RUNNER_AUDIT_V1: &str = "mdp.runner-audit.v1";
 pub(crate) const RUN_RECEIPT_V1: &str = "mdp.run-receipt.v1";
 pub(crate) const RUN_VERIFICATION_V1: &str = "mdp.run-verification.v1";
+pub(crate) const RUN_EXECUTION_V1: &str = "mdp.run-execution.v1";
+pub(crate) const CANONICAL_AUTHORITY_BLOCK_V1: &str = "mdp.canonical-authority-block.v1";
+pub(crate) const PROPOSAL_RUNNER_RESULT_V1: &str = "mdp.proposal-runner-result.v1";
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -95,7 +98,6 @@ pub(crate) struct LocalArtifactInput {
     pub(crate) source_path: String,
     pub(crate) schema_id: String,
     pub(crate) media_type: String,
-    #[serde(default)]
     pub(crate) provenance_refs: Vec<String>,
 }
 
@@ -108,7 +110,6 @@ pub(crate) struct ArtifactAuthority {
     pub(crate) byte_count: u64,
     pub(crate) sha256: String,
     pub(crate) provenance: EvidenceProvenance,
-    #[serde(default)]
     pub(crate) provenance_refs: Vec<String>,
 }
 
@@ -170,9 +171,7 @@ pub(crate) struct AssuranceDimension {
     pub(crate) dimension: String,
     pub(crate) state: AssuranceEvidenceState,
     pub(crate) provenance: EvidenceProvenance,
-    #[serde(default)]
     pub(crate) evidence_refs: Vec<String>,
-    #[serde(default)]
     pub(crate) limitations: Vec<String>,
 }
 
@@ -249,7 +248,6 @@ pub(crate) struct RunnerAuditV1 {
     pub(crate) provider_request_schema_id: Option<String>,
     pub(crate) terminal_state: TerminalState,
     pub(crate) assurance: Vec<AssuranceDimension>,
-    #[serde(default)]
     pub(crate) limitations: Vec<String>,
 }
 
@@ -279,7 +277,6 @@ pub(crate) struct RunReceiptV1 {
     pub(crate) validation: Option<ArtifactAuthority>,
     pub(crate) runner_audit: ArtifactAuthority,
     pub(crate) assurance: Vec<AssuranceDimension>,
-    #[serde(default)]
     pub(crate) limitations: Vec<String>,
     pub(crate) receipt_sha256: String,
 }
@@ -293,16 +290,16 @@ pub(crate) struct RunVerificationV1 {
     pub(crate) execution_id: String,
     pub(crate) terminal_state: TerminalState,
     pub(crate) recomputed_assurance: Vec<AssuranceDimension>,
-    #[serde(default)]
     pub(crate) issues: Vec<String>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        AssuranceEvidenceState, DRIVER_REQUEST_V1, DRIVER_RESULT_V1, EvidenceProvenance,
-        GtmReasonCode, RUN_BUNDLE_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1,
-        RUNNER_AUDIT_V1, RunMode, TerminalState,
+        AssuranceEvidenceState, CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_RESULT_V1,
+        EvidenceProvenance, GtmReasonCode, PROPOSAL_RUNNER_RESULT_V1, RUN_BUNDLE_V1,
+        RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
+        RunMode, TerminalState,
     };
 
     #[test]
@@ -314,6 +311,12 @@ mod tests {
         assert_eq!(RUNNER_AUDIT_V1, "mdp.runner-audit.v1");
         assert_eq!(RUN_RECEIPT_V1, "mdp.run-receipt.v1");
         assert_eq!(RUN_VERIFICATION_V1, "mdp.run-verification.v1");
+        assert_eq!(RUN_EXECUTION_V1, "mdp.run-execution.v1");
+        assert_eq!(
+            CANONICAL_AUTHORITY_BLOCK_V1,
+            "mdp.canonical-authority-block.v1"
+        );
+        assert_eq!(PROPOSAL_RUNNER_RESULT_V1, "mdp.proposal-runner-result.v1");
         assert!(TerminalState::Success.is_success());
         assert!(!TerminalState::NoDraftRunnerFailed.is_success());
         assert_eq!(

@@ -1,6 +1,20 @@
 # Native API Normalization Runner
 
-The strongest audit boundary for proposal/document normalization is a native stateless model call. The operator's chat remains the control plane, but the normalizer call is a separate request that contains only the prompt package and declared inputs.
+> **Current contract boundary:** this JavaScript runner is the legacy v0 BYOK
+> compatibility transport. New deterministic proposal validation and GTM
+> qualification use `mdp run` and `mdp.run-receipt.v1`. The proposal runner's
+> `--clean-run-v1` option can bind this runner's output and audit as declared
+> upstream artifacts, but the v1 receipt honestly marks the actual MDP
+> operation as deterministic validation; it does not claim Rust performed or
+> independently observed the upstream provider call. A real native v1 proof is
+> separately human-gated under MDP-184.
+
+The cleanest currently documented provider boundary for proposal/document
+normalization is a native stateless model call. The operator's chat remains the
+control plane, but the normalizer call is a separate request that contains only
+the prompt package and declared inputs. This is stronger hygiene than a
+same-conversation run, but provider and transport properties remain limited to
+what the runner and provider actually expose.
 
 This repo includes a small OpenAI reference runner:
 

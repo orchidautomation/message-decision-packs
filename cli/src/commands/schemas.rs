@@ -10,8 +10,9 @@ use crate::constants::{
 };
 use crate::models::DecisionInputAttemptStatus;
 use crate::run_contracts::{
-    DRIVER_REQUEST_V1, DRIVER_RESULT_V1, RUN_BUNDLE_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1,
-    RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
+    CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_RESULT_V1, PROPOSAL_RUNNER_RESULT_V1,
+    RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1,
+    RUNNER_AUDIT_V1,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -90,6 +91,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         }
         SchemaTarget::ProposalRunManifest => proposal_run_manifest_schema(),
         SchemaTarget::ProposalRunnerResult => proposal_runner_result_schema(),
+        SchemaTarget::ProposalRunnerResultV1 => proposal_runner_result_v1_schema(),
         SchemaTarget::ProposalReadinessReport => proposal_readiness_report_schema(),
         SchemaTarget::ProposalMcpRunResult => proposal_mcp_run_result_schema(),
         SchemaTarget::RunReceipt => run_receipt_schema(),
@@ -101,6 +103,8 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RunnerAuditV1 => runner_audit_v1_schema(),
         SchemaTarget::RunReceiptV1 => run_receipt_v1_schema(),
         SchemaTarget::RunVerificationV1 => run_verification_v1_schema(),
+        SchemaTarget::RunExecutionV1 => run_execution_v1_schema(),
+        SchemaTarget::CanonicalAuthorityBlockV1 => canonical_authority_block_v1_schema(),
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
@@ -620,6 +624,30 @@ fn proposal_runner_result_schema() -> Value {
     })
 }
 
+fn proposal_runner_result_v1_schema() -> Value {
+    let mut schema = proposal_runner_result_schema();
+    schema["title"] = json!("MDP Proposal Runner Result v1");
+    schema["description"] = json!(
+        "Compatibility summary for proposal output finalized by canonical mdp run v1. Canonical run and authority fields, not the advisory decision projection, carry decision authority."
+    );
+    schema["properties"]["contract"] = json!({"const": PROPOSAL_RUNNER_RESULT_V1});
+    schema["properties"]["runner_assurance"] = json!({"const": "see-canonical-authority"});
+    schema["properties"]["authority_contract"] = json!({"const": RUN_EXECUTION_V1});
+    schema["properties"]["terminal_state"] = terminal_state_schema();
+    schema["properties"]["canonical_run"] = run_execution_v1_schema();
+    schema["properties"]["canonical_authority"] = canonical_authority_block_v1_schema();
+    let required = schema["required"]
+        .as_array_mut()
+        .expect("proposal runner result required fields");
+    required.extend([
+        json!("authority_contract"),
+        json!("terminal_state"),
+        json!("canonical_run"),
+        json!("canonical_authority"),
+    ]);
+    schema
+}
+
 fn proposal_readiness_report_schema() -> Value {
     let confidence = json!({
         "type": "object",
@@ -747,6 +775,7 @@ fn proposal_mcp_run_result_schema() -> Value {
             "runner_result": {
                 "anyOf": [
                     proposal_runner_result_schema(),
+                    proposal_runner_result_v1_schema(),
                     {"type": "null"}
                 ]
             },
@@ -754,6 +783,11 @@ fn proposal_mcp_run_result_schema() -> Value {
             "decision": {"enum": ["not-run", "audit-grade", "advisory", "blocked"]},
             "audit_grade_eligible": {"type": "boolean"},
             "runner_assurance": {"type": "string"},
+            "authority_contract": {"type": ["string", "null"]},
+            "terminal_state": {"anyOf": [terminal_state_schema(), {"type": "null"}]},
+            "canonical_authority": {
+                "anyOf": [canonical_authority_block_v1_schema(), {"type": "null"}]
+            },
             "timed_out": {"type": "boolean"},
             "termination_signal": {"type": ["string", "null"]},
             "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 300000},
@@ -774,7 +808,20 @@ fn proposal_mcp_run_result_schema() -> Value {
                 "minItems": 1,
                 "items": {"type": "string"}
             }
-        }
+        },
+        "allOf": [{
+            "if": {
+                "properties": {
+                    "runner_result": {
+                        "type": "object",
+                        "properties": {"contract": {"const": PROPOSAL_RUNNER_RESULT_V1}},
+                        "required": ["contract"]
+                    }
+                },
+                "required": ["runner_result"]
+            },
+            "then": {"required": ["authority_contract", "terminal_state", "canonical_authority"]}
+        }]
     })
 }
 
@@ -1117,15 +1164,15 @@ fn execution_policy_v1_schema() -> Value {
         ],
         "additionalProperties": false,
         "properties": {
-            "environment_allowlist": string_array(),
-            "filesystem_mode": non_blank_string_schema(),
-            "tool_mode": non_blank_string_schema(),
-            "network_mode": non_blank_string_schema(),
-            "authorized_endpoints": string_array(),
+            "environment_allowlist": {"type": "array", "maxItems": 0},
+            "filesystem_mode": {"const": "private-staging"},
+            "tool_mode": {"const": "none"},
+            "network_mode": {"const": "none"},
+            "authorized_endpoints": {"type": "array", "maxItems": 0},
             "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
             "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
             "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
-            "retention_policy": non_blank_string_schema()
+            "retention_policy": {"enum": ["receipt-only", "customer-controlled-workdir"]}
         }
     })
 }
@@ -1201,20 +1248,56 @@ fn run_request_v1_schema() -> Value {
         "additionalProperties": false,
         "properties": {
             "contract": {"const": RUN_REQUEST_V1},
-            "execution_id": non_blank_string_schema(),
+            "execution_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"},
             "created_at": {"type": "string", "format": "date-time"},
             "profile": non_blank_string_schema(),
             "operation": non_blank_string_schema(),
-            "mode": {"enum": ["deterministic", "generative"]},
+            "mode": {"const": "deterministic"},
             "job_identity": nullable_object_schema(job_identity_v1_schema()),
             "pack_dir": non_blank_string_schema(),
             "pack_release_id": non_blank_string_schema(),
-            "prompt": nullable_object_schema(local_artifact_input_v1_schema()),
-            "inputs": {"type": "array", "items": local_artifact_input_v1_schema()},
+            "prompt": {"type": "null"},
+            "inputs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 10000,
+                "items": local_artifact_input_v1_schema()
+            },
             "execution_policy": execution_policy_v1_schema(),
-            "driver": nullable_object_schema(driver_identity_v1_schema()),
-            "model": nullable_object_schema(model_identity_v1_schema())
-        }
+            "driver": {"type": "null"},
+            "model": {"type": "null"}
+        },
+        "oneOf": [
+            {
+                "properties": {
+                    "profile": {"const": "proposal"},
+                    "operation": {"const": "validate-existing-output"},
+                    "inputs": {
+                        "contains": {
+                            "type": "object",
+                            "properties": {"logical_name": {"const": "prompt-output"}},
+                            "required": ["logical_name"]
+                        },
+                        "minContains": 1,
+                        "maxContains": 1
+                    }
+                }
+            },
+            {
+                "properties": {
+                    "profile": {"const": "gtm"},
+                    "operation": {"const": "qualify"},
+                    "inputs": {
+                        "allOf": [
+                            {"contains": {"type": "object", "properties": {"logical_name": {"const": "normalized-decision-input"}}, "required": ["logical_name"]}, "minContains": 1, "maxContains": 1},
+                            {"contains": {"type": "object", "properties": {"logical_name": {"const": "source-attempt-request"}}, "required": ["logical_name"]}, "minContains": 1, "maxContains": 1},
+                            {"contains": {"type": "object", "properties": {"logical_name": {"const": "collected-attempt-results"}}, "required": ["logical_name"]}, "minContains": 1, "maxContains": 1},
+                            {"contains": {"type": "object", "properties": {"logical_name": {"const": "bound-prompt"}}, "required": ["logical_name"]}, "minContains": 1, "maxContains": 1}
+                        ]
+                    }
+                }
+            }
+        ]
     })
 }
 
@@ -1375,6 +1458,117 @@ fn run_verification_v1_schema() -> Value {
             "recomputed_assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "issues": string_array()
         }
+    })
+}
+
+fn canonical_authority_block_v1_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Canonical Authority Block v1",
+        "description": "Conversation-safe handoff for one CLI-owned terminal run result. Hash-bound artifacts, not surrounding commentary, carry decision authority.",
+        "type": "object",
+        "required": [
+            "contract", "execution_id", "terminal_state", "decision", "assurance",
+            "limitations", "bundle_sha256", "receipt_sha256", "verification",
+            "authority_notice"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": CANONICAL_AUTHORITY_BLOCK_V1},
+            "execution_id": {"type": "string"},
+            "terminal_state": terminal_state_schema(),
+            "decision": nullable_object_schema(decision_authority_v1_schema()),
+            "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
+            "limitations": string_array(),
+            "reason_codes": string_array(),
+            "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
+            "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
+            "verification": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": ["bundle", "receipt", "artifact_root"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "bundle": {"type": "string", "minLength": 1},
+                            "receipt": {"type": "string", "minLength": 1},
+                            "artifact_root": {"type": "string", "minLength": 1}
+                        }
+                    },
+                    {"type": "null"}
+                ]
+            },
+            "authority_notice": {"type": "string", "minLength": 1}
+        },
+        "allOf": [
+            {
+                "if": {"properties": {"terminal_state": {"const": "no-draft:preflight-refused"}}},
+                "then": {
+                    "required": ["reason_codes"],
+                    "properties": {
+                        "decision": {"type": "null"},
+                        "bundle_sha256": {"type": "null"},
+                        "receipt_sha256": {"type": "null"},
+                        "verification": {"type": "null"}
+                    }
+                },
+                "else": {
+                    "properties": {
+                        "bundle_sha256": sha256_schema(),
+                        "receipt_sha256": sha256_schema(),
+                        "verification": {"type": "object"}
+                    }
+                }
+            }
+        ]
+    })
+}
+
+fn run_execution_v1_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Run Execution v1",
+        "description": "Stable mdp run command payload. Preflight refusal is an explicit non-verifiable terminal result; all later terminal states bind a published receipt.",
+        "type": "object",
+        "required": [
+            "contract", "valid", "execution_id", "terminal_state", "run_dir",
+            "bundle_sha256", "receipt_sha256", "authority_block"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": RUN_EXECUTION_V1},
+            "valid": {"type": "boolean"},
+            "execution_id": {"type": "string"},
+            "terminal_state": terminal_state_schema(),
+            "run_dir": {"type": ["string", "null"]},
+            "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
+            "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
+            "authority_block": canonical_authority_block_v1_schema()
+        },
+        "allOf": [
+            {
+                "if": {"properties": {"terminal_state": {"const": "success"}}},
+                "then": {"properties": {"valid": {"const": true}}},
+                "else": {"properties": {"valid": {"const": false}}}
+            },
+            {
+                "if": {"properties": {"terminal_state": {"const": "no-draft:preflight-refused"}}},
+                "then": {
+                    "properties": {
+                        "run_dir": {"type": "null"},
+                        "bundle_sha256": {"type": "null"},
+                        "receipt_sha256": {"type": "null"}
+                    }
+                },
+                "else": {
+                    "properties": {
+                        "run_dir": {"type": "string", "minLength": 1},
+                        "bundle_sha256": sha256_schema(),
+                        "receipt_sha256": sha256_schema()
+                    }
+                }
+            }
+        ]
     })
 }
 
@@ -3066,6 +3260,15 @@ mod tests {
             (SchemaTarget::RunnerAuditV1, RUNNER_AUDIT_V1),
             (SchemaTarget::RunReceiptV1, RUN_RECEIPT_V1),
             (SchemaTarget::RunVerificationV1, RUN_VERIFICATION_V1),
+            (SchemaTarget::RunExecutionV1, RUN_EXECUTION_V1),
+            (
+                SchemaTarget::CanonicalAuthorityBlockV1,
+                CANONICAL_AUTHORITY_BLOCK_V1,
+            ),
+            (
+                SchemaTarget::ProposalRunnerResultV1,
+                PROPOSAL_RUNNER_RESULT_V1,
+            ),
         ];
 
         for (target, contract) in cases {
@@ -3109,6 +3312,71 @@ mod tests {
             receipt["properties"]["terminal_state"]["enum"][1],
             "no-draft:preflight-refused"
         );
+    }
+
+    #[test]
+    fn executable_run_request_schema_matches_deterministic_kernel_policy() {
+        let request = schema(SchemaTarget::RunRequestV1);
+        assert_eq!(request["properties"]["mode"]["const"], "deterministic");
+        assert_eq!(request["properties"]["inputs"]["minItems"], 1);
+        assert_eq!(
+            request["properties"]["execution_policy"]["properties"]["network_mode"]["const"],
+            "none"
+        );
+        assert_eq!(request["properties"]["prompt"]["type"], "null");
+        assert_eq!(request["properties"]["driver"]["type"], "null");
+        assert_eq!(request["properties"]["model"]["type"], "null");
+    }
+
+    #[test]
+    fn executable_run_request_schema_accepts_shipped_profiles_and_rejects_future_mode() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("CLI crate should have a repository parent")
+            .join("examples/run-conformance/run-requests");
+        let request_schema = schema(SchemaTarget::RunRequestV1);
+        for name in ["proposal-validate-existing-output.json", "gtm-qualify.json"] {
+            let fixture: Value = serde_json::from_slice(
+                &std::fs::read(root.join(name)).expect("run request fixture should be readable"),
+            )
+            .expect("run request fixture should parse");
+            draft202012::validate(&request_schema, &fixture)
+                .unwrap_or_else(|error| panic!("{name} should validate: {error}"));
+        }
+
+        let mut unsupported: Value = serde_json::from_slice(
+            &std::fs::read(root.join("proposal-validate-existing-output.json")).unwrap(),
+        )
+        .unwrap();
+        unsupported["mode"] = json!("generative");
+        assert!(draft202012::validate(&request_schema, &unsupported).is_err());
+        unsupported["mode"] = json!("deterministic");
+        unsupported["inputs"] = json!([]);
+        assert!(draft202012::validate(&request_schema, &unsupported).is_err());
+    }
+
+    #[test]
+    fn proposal_clean_run_v1_has_additive_closed_schema() {
+        let result = schema(SchemaTarget::ProposalRunnerResultV1);
+        assert_eq!(
+            result["properties"]["contract"]["const"],
+            PROPOSAL_RUNNER_RESULT_V1
+        );
+        assert_eq!(
+            result["properties"]["runner_assurance"]["const"],
+            "see-canonical-authority"
+        );
+        assert_eq!(
+            result["properties"]["canonical_run"]["properties"]["contract"]["const"],
+            RUN_EXECUTION_V1
+        );
+
+        let mcp = schema(SchemaTarget::ProposalMcpRunResult);
+        assert_eq!(
+            mcp["properties"]["runner_result"]["anyOf"][1]["properties"]["contract"]["const"],
+            PROPOSAL_RUNNER_RESULT_V1
+        );
+        assert!(mcp["properties"]["canonical_authority"].is_object());
     }
 
     #[test]

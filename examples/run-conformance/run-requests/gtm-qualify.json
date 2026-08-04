@@ -1,0 +1,58 @@
+{
+  "contract": "mdp.run-request.v1",
+  "execution_id": "synthetic-gtm-qualification-001",
+  "created_at": "2026-08-03T00:00:00Z",
+  "profile": "gtm",
+  "operation": "qualify",
+  "mode": "deterministic",
+  "job_identity": {
+    "job_id": "synthetic-row-001",
+    "idempotency_key": "synthetic-row-001-v1"
+  },
+  "pack_dir": "examples/clay-audiences-self-serve-enterprise-expansion",
+  "pack_release_id": "synthetic-source-tree-clay-expansion-example",
+  "prompt": null,
+  "inputs": [
+    {
+      "logical_name": "normalized-decision-input",
+      "source_path": "examples/clay-audiences-self-serve-enterprise-expansion/fixtures/normalized-response-ready.json",
+      "schema_id": "mdp.normalized-decision-input.v1",
+      "media_type": "application/json",
+      "provenance_refs": []
+    },
+    {
+      "logical_name": "source-attempt-request",
+      "source_path": "examples/clay-audiences-self-serve-enterprise-expansion/fixtures/source-attempt-request.json",
+      "schema_id": "mdp.source-attempt-request.v1",
+      "media_type": "application/json",
+      "provenance_refs": []
+    },
+    {
+      "logical_name": "collected-attempt-results",
+      "source_path": "examples/clay-audiences-self-serve-enterprise-expansion/fixtures/collected-attempt-results.json",
+      "schema_id": "mdp.collected-attempt-results.v1",
+      "media_type": "application/json",
+      "provenance_refs": []
+    },
+    {
+      "logical_name": "bound-prompt",
+      "source_path": "examples/clay-audiences-self-serve-enterprise-expansion/.mdp/prompts/normalize-prospect.yaml",
+      "schema_id": "mdp.prompt.v0",
+      "media_type": "application/yaml",
+      "provenance_refs": []
+    }
+  ],
+  "execution_policy": {
+    "environment_allowlist": [],
+    "filesystem_mode": "private-staging",
+    "tool_mode": "none",
+    "network_mode": "none",
+    "authorized_endpoints": [],
+    "max_input_bytes": 2097152,
+    "max_output_bytes": 1048576,
+    "timeout_ms": 30000,
+    "retention_policy": "receipt-only"
+  },
+  "driver": null,
+  "model": null
+}
