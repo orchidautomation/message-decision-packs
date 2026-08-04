@@ -16,6 +16,7 @@ validate-run-v1-golden:
 	node scripts/test-run-v1-golden.mjs
 
 validate-run-conformance:
+	cd cli && $(CARGO) build
 	node scripts/test-run-conformance.mjs
 
 validate-run-mcp:
