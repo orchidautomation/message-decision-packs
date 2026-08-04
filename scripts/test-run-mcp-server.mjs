@@ -330,7 +330,11 @@ test('interrupting the real CLI during staging removes its exact claim and priva
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const pack = join(root, 'pack')
   cpSync(join(repoRoot, 'plugin', 'assets', 'templates', 'proposal'), pack, { recursive: true })
-  writeFileSync(join(pack, 'large-staging-fixture.bin'), Buffer.alloc(96 * 1024 * 1024, 0x61))
+  const stagingFixture = join(pack, '.mdp', 'staging-fixture')
+  mkdirSync(stagingFixture)
+  for (let index = 0; index < 6_000; index += 1) {
+    writeFileSync(join(stagingFixture, `${index.toString().padStart(4, '0')}.txt`), 'a')
+  }
   const promptOutput = join(root, 'prompt-output.json')
   cpSync(join(repoRoot, 'examples', 'proposal-flow-video', 'fixtures', 'normalize-opportunity-output.json'), promptOutput)
   const requestPath = join(root, 'request.json')
