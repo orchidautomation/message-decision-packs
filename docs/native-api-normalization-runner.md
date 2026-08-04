@@ -6,8 +6,11 @@
 > `--clean-run-v1` option can bind this runner's output and audit as declared
 > upstream artifacts, but the v1 receipt honestly marks the actual MDP
 > operation as deterministic validation; it does not claim Rust performed or
-> independently observed the upstream provider call. A real native v1 proof is
-> separately human-gated under MDP-184.
+> independently observed the upstream provider call. MDP-184 completed the
+> installed proof matrix with an explicit policy-blocked native cell: the
+> request shape passed offline, but no provider call was authorized and no
+> receipt exists. The remaining real native proposal proof is tracked in
+> MDP-149. See the [sanitized proof record](orchid/qa/2026-08-03-mdp-184-clean-run-proof.md).
 
 The cleanest currently documented provider boundary for proposal/document
 normalization is a native stateless model call. The operator's chat remains the
@@ -28,7 +31,7 @@ It is optional and BYOK. Installing MDP, validating packs, running evals, and us
 
 The script requires Node.js 18+ for the built-in `fetch` API.
 
-The native implementation is currently `recipe-only`, not a verified integration. Offline request and mock tests prove request construction and fail-closed fixture behavior; they do not prove a real provider invocation. See the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix) for the current state and exact upgrade condition.
+The native implementation is currently `recipe-only`, not a verified integration. Offline request and mock tests prove request construction and fail-closed fixture behavior; they do not prove a real provider invocation. The MDP-184 installed dry run additionally proved the released request shape without making a provider call; it did not change this support state. See the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix) for the current state and exact upgrade condition.
 
 For proposal workflows, prefer the higher-level local surface first:
 

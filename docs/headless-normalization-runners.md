@@ -3,8 +3,12 @@
 > **V1 note:** the shared `mdp run` kernel is now the canonical authority for
 > deterministic proposal validation and GTM qualification. The headless paths
 > below remain v0 compatibility/reference transports until a released v1
-> driver completes MDP-184 proof. A new process, task, CLI, or MCP call improves
-> context hygiene but cannot by itself prove declared-input isolation.
+> driver completes real provider proof. MDP-184 closed its four-cell installed
+> matrix with two deterministic customer-controlled passes and two explicit
+> native no-draft/not-run outcomes; it did not verify a provider integration.
+> See the [sanitized proof record](orchid/qa/2026-08-03-mdp-184-clean-run-proof.md).
+> A new process, task, CLI, or MCP call improves context hygiene but cannot by
+> itself prove declared-input isolation.
 
 MDP does not own generalized model execution. The plugin teaches the agent what
 to do, and the CLI owns pack/input authority, deterministic evaluation,
@@ -35,7 +39,7 @@ No runner is currently `verified`. A row can move to `verified` only after one r
 
 | Candidate | Current state | Required isolation evidence | Current repository evidence | Missing proof / exact upgrade condition |
 | --- | --- | --- | --- | --- |
-| `native-api` | `recipe-only` | Stateless request; no prior messages, conversation attachment, or tools; structured output; `store: false`; zero tool calls; exact output hash. | Maintained OpenAI Responses request builder and audit emitter; offline dry-run/mock coverage; receipt validator. | Run one explicit real request with synthetic source material, validate its output, and produce an audit-grade receipt with matching hashes. Commit only sanitized evidence. Tracked in MDP-149. |
+| `native-api` | `recipe-only` | Stateless request; no prior messages, conversation attachment, or tools; structured output; `store: false`; zero tool calls; exact output hash. | Maintained OpenAI Responses request builder and audit emitter; offline dry-run/mock coverage; receipt validator; installed v0.1.59 request-shape dry run recorded under MDP-184. | Run one explicit real request with synthetic source material, validate its output, and produce an audit-grade receipt with matching hashes. Commit only sanitized evidence. Tracked in MDP-149. |
 | `codex-exec` | `recipe-only` | Ephemeral/no-resume run; no session persistence; sterile workdir and instruction/config discovery; audited prompt input; read-only sandbox; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained wrapper that isolates home/workdir, audits model-visible input, parses events, and completes the full receipt chain in a machine-observed run. |
 | `claude-print` | `recipe-only` | Bare print mode; no resume or persistence; structured output; tools disabled; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained wrapper and complete the full receipt chain in a machine-observed run. |
 | `cursor-print` | `recipe-only` | No resume or `--force`; sterile workdir and audited input; external tool denial; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained wrapper/external sandbox that denies tools and completes the full receipt chain in a machine-observed run. |
