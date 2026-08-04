@@ -1,5 +1,6 @@
 pub(crate) mod briefs;
 pub(crate) mod capabilities;
+pub(crate) mod decision_trace;
 pub(crate) mod evals;
 pub(crate) mod health;
 pub(crate) mod human_brief;
@@ -21,6 +22,9 @@ pub(crate) use briefs::{
     demo_copy, emit_brief_scoped, prospect_brief_with_context, render_readable_prospect_brief,
 };
 pub(crate) use capabilities::capabilities;
+pub(crate) use decision_trace::{
+    decision_trace_schema, project_run_files, project_source_file, render_mermaid,
+};
 pub(crate) use evals::eval_pack;
 pub(crate) use health::{doctor, explain, gaps, validate_pack};
 pub(crate) use human_brief::{render_human_brief_file, render_human_brief_markdown};

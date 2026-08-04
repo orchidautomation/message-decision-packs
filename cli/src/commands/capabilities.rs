@@ -1,3 +1,7 @@
+use crate::commands::decision_trace::{
+    DECISION_TRACE_V1, MAX_MERMAID_BYTES, MAX_TRACE_EDGES, MAX_TRACE_LABEL_BYTES, MAX_TRACE_NODES,
+    MAX_TRACE_SOURCE_BYTES,
+};
 use crate::constants::{
     DEFAULT_DIR, FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT,
     NORMALIZED_DECISION_INPUT_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION,
@@ -114,6 +118,19 @@ pub(crate) fn capabilities() -> Value {
             "canonical_authority_block": {"contract": CANONICAL_AUTHORITY_BLOCK_V1, "schema_target": "canonical-authority-block-v1"},
             "assurance": "Vector-valued evidence; v0 labels and driver assertions never silently elevate."
         },
+        "decision_trace_contract": {
+            "contract": DECISION_TRACE_V1,
+            "schema_target": "decision-trace-v1",
+            "projection_only": true,
+            "source_authority_retained": true,
+            "limits": {
+                "source_bytes": MAX_TRACE_SOURCE_BYTES,
+                "nodes": MAX_TRACE_NODES,
+                "edges": MAX_TRACE_EDGES,
+                "label_bytes": MAX_TRACE_LABEL_BYTES,
+                "mermaid_bytes": MAX_MERMAID_BYTES
+            }
+        },
         "profile_contracts": {
             "manifest_profile": "mdp.profile.v0",
             "skills": "mdp.skills.v1",
@@ -147,6 +164,7 @@ pub(crate) fn capabilities() -> Value {
             command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-attempt-request", "--collected-attempt-results", "--prompt", "--prompt-id", "--strict"]),
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
             command("verify-run", RUN_VERIFICATION_V1, "read-only", false, false, false, &["--bundle", "--receipt", "--artifact-root"]),
+            command("trace", DECISION_TRACE_V1, "read-only-unless-out", false, true, false, &["--file", "--bundle", "--receipt", "--artifact-root", "--format", "--out"]),
             command("consume-run", "mdp.run-consumption-result.v1", "writes-local-ledger", false, false, false, &["--ledger", "--job-id", "--idempotency-key", "--receipt-sha256", "--expected-prior-version", "--permit-exact-replay"]),
             command("run", RUN_EXECUTION_V1, "writes-new-run-directory", false, true, false, &["--request", "--out-dir"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
@@ -299,6 +317,20 @@ mod tests {
                 .iter()
                 .any(|command| command["name"] == "run"
                     && command["output_contract"] == RUN_EXECUTION_V1)
+        );
+        assert_eq!(
+            result["decision_trace_contract"]["contract"],
+            DECISION_TRACE_V1
+        );
+        assert_eq!(result["decision_trace_contract"]["projection_only"], true);
+        assert!(
+            result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .any(|command| command["name"] == "trace"
+                    && command["output_contract"] == DECISION_TRACE_V1
+                    && command["supports_out"] == true)
         );
         assert_eq!(
             result["clean_run_contracts"]["canonical_authority_block"]["contract"],

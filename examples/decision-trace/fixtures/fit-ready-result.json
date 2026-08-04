@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "command": "fit",
+  "data": {
+    "contract": "mdp.fit.v0",
+    "status": "fit",
+    "context": {
+      "missing_requirements": [],
+      "invalid_requirements": []
+    },
+    "matches": [
+      {"id": "synthetic-fit-rule"}
+    ],
+    "disqualifiers": [],
+    "decision": "Proceed to route/brief with stated assumptions."
+  }
+}

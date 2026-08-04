@@ -44,6 +44,19 @@ mdp --json verify-run \
   --artifact-root <published-artifact-directory>
 ```
 
+Project the verified relationships into a bounded explanation with:
+
+```bash
+mdp --json trace \
+  --bundle <run-bundle.json> \
+  --receipt <run-receipt.json> \
+  --artifact-root <published-artifact-directory>
+```
+
+The resulting `mdp.decision-trace.v1` object is explanatory only. It reuses
+the same verification rules, preserves integrity limitations, and never
+replaces the bundle, receipt, decision hash, or verification result.
+
 Omitting `--artifact-root` checks the bundle, decision, receipt, terminal-state,
 and assurance relationships but cannot re-read published artifact bytes. The
 result therefore remains `integrity_only: true`. Supplying a v0 receipt without

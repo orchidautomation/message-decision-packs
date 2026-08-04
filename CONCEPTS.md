@@ -22,6 +22,13 @@ review artifacts.
   pack and does not execute collection.
 - **Gap** — missing or unsupported context kept explicit rather than inferred.
 - **Eval** — a deterministic fixture that tests routing or policy behavior.
+- **Decision trace** — a bounded, read-only `mdp.decision-trace.v1`
+  projection of existing decision artifacts. The source artifacts retain all
+  decision, output, and assurance authority.
+- **Designed graph** — policy and gate relationships relevant to a decision.
+- **Observed path** — the bounded facts recorded for one decision. A
+  **decision graph** is the JSON or Mermaid visualization of the designed
+  graph plus observed path.
 
 ## Evidence And Assurance
 

@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -181,6 +181,28 @@ pub(crate) enum Commands {
             help = "Optional root containing receipt artifacts at their logical names"
         )]
         artifact_root: Option<PathBuf>,
+    },
+    #[command(
+        about = "Project a saved decision result or verified run into a bounded trace",
+        group(ArgGroup::new("trace_source").required(true).multiple(false).args(["file", "bundle"]))
+    )]
+    Trace {
+        #[arg(long, conflicts_with_all = ["bundle", "receipt"], help = "Saved CLI JSON result or supported raw contracted artifact")]
+        file: Option<PathBuf>,
+        #[arg(long, requires = "receipt", help = "mdp.run-bundle.v1 JSON file")]
+        bundle: Option<PathBuf>,
+        #[arg(long, requires = "bundle", help = "mdp.run-receipt.v1 JSON file")]
+        receipt: Option<PathBuf>,
+        #[arg(
+            long,
+            requires = "bundle",
+            help = "Optional root containing receipt artifacts at their logical names"
+        )]
+        artifact_root: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = TraceFormat::Json)]
+        format: TraceFormat,
+        #[arg(long, help = "Write the projection or Mermaid view to a file")]
+        out: Option<PathBuf>,
     },
     #[command(about = "Atomically consume one verified receipt in the local conformance ledger")]
     ConsumeRun {
@@ -424,6 +446,7 @@ pub(crate) enum SchemaTarget {
     RunReceiptV1,
     RunVerificationV1,
     RunExecutionV1,
+    DecisionTraceV1,
     CanonicalAuthorityBlockV1,
     Brief,
     HumanBrief,
@@ -445,6 +468,12 @@ pub(crate) enum SampleLeadsFormat {
 pub(crate) enum HumanBriefFormat {
     Markdown,
     Json,
+}
+
+#[derive(Clone, ValueEnum, PartialEq, Eq)]
+pub(crate) enum TraceFormat {
+    Json,
+    Mermaid,
 }
 
 #[derive(Clone, ValueEnum, PartialEq, Eq)]
@@ -498,6 +527,61 @@ impl RunIsolation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trace_requires_exactly_one_complete_source_form() {
+        let file = Cli::try_parse_from(["mdp", "trace", "--file", "fit.json"])
+            .expect("saved result should parse");
+        assert!(matches!(
+            file.command,
+            Commands::Trace {
+                file: Some(_),
+                bundle: None,
+                receipt: None,
+                ..
+            }
+        ));
+
+        let run = Cli::try_parse_from([
+            "mdp",
+            "trace",
+            "--bundle",
+            "bundle.json",
+            "--receipt",
+            "receipt.json",
+            "--artifact-root",
+            "run",
+            "--format",
+            "mermaid",
+        ])
+        .expect("run authority pair should parse");
+        assert!(matches!(
+            run.command,
+            Commands::Trace {
+                file: None,
+                bundle: Some(_),
+                receipt: Some(_),
+                format: TraceFormat::Mermaid,
+                ..
+            }
+        ));
+
+        assert!(Cli::try_parse_from(["mdp", "trace"]).is_err());
+        assert!(Cli::try_parse_from(["mdp", "trace", "--bundle", "bundle.json"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "trace",
+                "--file",
+                "fit.json",
+                "--bundle",
+                "bundle.json",
+                "--receipt",
+                "receipt.json"
+            ])
+            .is_err()
+        );
+    }
 
     #[test]
     fn skills_accepts_inventory_pack_and_single_job_forms() {
@@ -636,6 +720,7 @@ mod tests {
             ("run-receipt-v1", SchemaTarget::RunReceiptV1),
             ("run-verification-v1", SchemaTarget::RunVerificationV1),
             ("run-execution-v1", SchemaTarget::RunExecutionV1),
+            ("decision-trace-v1", SchemaTarget::DecisionTraceV1),
             (
                 "canonical-authority-block-v1",
                 SchemaTarget::CanonicalAuthorityBlockV1,

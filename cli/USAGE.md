@@ -45,6 +45,8 @@ mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --person
 mdp --json route --entries --dir /tmp/mdp-demo --persona "PMM" --job "portfolio scope example" --scope product=local-cli
 mdp sample-leads --dir /tmp/mdp-demo --persona "PMM" --job "initial email outbound copy" --count 3 --format yaml
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
+mdp --json trace --file examples/decision-trace/fixtures/fit-ready-result.json
+mdp trace --file examples/decision-trace/fixtures/fit-no-draft-result.json --format mermaid
 mdp --json --summary brief --context --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
 mdp brief --context --readable --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.md
 mdp render-brief --dir /tmp/mdp-demo --file /tmp/mdp-demo/.mdp/briefs/example-linkedin.json --template gtm-prospect --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.md
@@ -102,6 +104,14 @@ constraints:
 These proof-output constraints are pack-owned card entry fields, not fields the model may put inside the generated proof-output artifact.
 
 ## JSON contract
+
+`mdp trace` accepts one saved CLI result with `--file`, or a complete v1
+`--bundle` and `--receipt` pair. Add `--artifact-root` to re-read receipt-bound
+artifacts. JSON is the default; `--format mermaid` renders the same canonical
+projection. `--out` is the only trace form that writes a file. The command
+never mutates pack policy or treats `.mdp/traces` as authority. Inspect the
+closed contract with `mdp --json schema decision-trace-v1`.
+
 
 All commands support `--json`; add `--summary` for compact status output. Run `mdp --json capabilities` when an agent or wrapper needs to inspect command names, coarse side effects, output contracts, `--out` support, dry-run support, strict-mode support, and stable error codes. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.
 

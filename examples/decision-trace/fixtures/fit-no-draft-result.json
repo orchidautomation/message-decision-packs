@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "command": "fit",
+  "data": {
+    "contract": "mdp.fit.v0",
+    "status": "insufficient-context",
+    "context": {
+      "missing_requirements": [
+        {"field": "title"}
+      ],
+      "invalid_requirements": []
+    },
+    "matches": [],
+    "disqualifiers": [],
+    "decision": "Ask for more context before drafting."
+  }
+}
