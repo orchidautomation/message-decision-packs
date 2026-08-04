@@ -140,6 +140,7 @@ pub(crate) fn capabilities() -> Value {
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
             command("verify-run", RUN_VERIFICATION_V1, "read-only", false, false, false, &["--bundle", "--receipt", "--artifact-root"]),
             command("consume-run", "mdp.run-consumption-result.v1", "writes-local-ledger", false, false, false, &["--ledger", "--job-id", "--idempotency-key", "--receipt-sha256", "--expected-prior-version", "--permit-exact-replay"]),
+            command("run", RUN_RECEIPT_V1, "writes-new-run-directory", false, true, false, &["--request", "--out-dir"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
             command("author-proof-output", "mdp.author-proof-output.v0", "writes-files-with-out", true, true, false, &["--dir", "--draft", "--out", "--dry-run"]),
             command("render-brief", "mdp.human-brief.v0", "writes-files-with-out", false, true, true, &["--dir", "--file", "--template", "--format", "--out", "--strict"]),

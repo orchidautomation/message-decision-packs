@@ -200,6 +200,13 @@ pub(crate) enum Commands {
         )]
         permit_exact_replay: bool,
     },
+    #[command(about = "Execute one clean run from an exact v1 request file")]
+    Run {
+        #[arg(long, help = "mdp.run-request.v1 JSON file")]
+        request: PathBuf,
+        #[arg(long, help = "New directory for immutable published run artifacts")]
+        out_dir: PathBuf,
+    },
     #[command(about = "Verify proof-carrying generated output against loaded pack IDs")]
     VerifyOutput {
         #[arg(long, default_value = ".")]

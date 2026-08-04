@@ -45,6 +45,38 @@ If `mdp` is not found, make sure the install directory printed by the installer 
 
 Supported agent bundles package activation and validation hooks where the host supports them: detect `.mdp/`, surface MDP guidance, then run focused validation after relevant pack edits. Do not make hooks silently generate full briefs, enrich leads, or write private scratch outside documented ignored paths. See [Agent Hook Guidance](agent-hook-guidance.md).
 
+## Run Outside The Authoring Conversation
+
+Building a pack in Codex, Claude Code, Clay, DeepLine, or another context-rich
+host is useful. Running the decision in that same conversation cannot prove
+that prior messages, host instructions, discovered files, tools, or retrieval
+were excluded. Telling the model to ignore earlier context is not isolation.
+
+For an authoritative local run, create an exact `mdp.run-request.v1` file and
+launch the shared runtime:
+
+```bash
+mdp --json schema run-request-v1
+mdp --json run --request <run-request.json> --out-dir <new-run-directory>
+mdp --json verify-run \
+  --bundle <new-run-directory>/run-bundle.json \
+  --receipt <new-run-directory>/run-receipt.json \
+  --artifact-root <new-run-directory>
+```
+
+The result separates declared, observed, enforced, verified, unknown,
+redacted, unsupported, and not-applicable evidence. Deterministic GTM runs do
+not call a model and therefore mark inference dimensions `not-applicable`.
+Generative proposal or generic-driver runs report only the boundary their
+runner actually enforced. A new coding-agent task or MCP call is transport, not
+proof by itself.
+
+Return the verified authority block to the original conversation unchanged.
+Any additional evidence, rewritten decision, or “improved” qualification needs
+a new run and receipt. Hosts such as Clay own rows, batching, retries,
+credentials, source collection, and downstream actions; MDP owns the frozen
+decision contract and validation.
+
 ## Create A Starter Pack
 
 ```bash

@@ -4,9 +4,9 @@ use crate::commands::{
     check_claims_scoped, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, fit, gaps,
     init_pack_targeted, init_pack_targeted_dry_run, pack, prospect_brief_with_context,
     render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief,
-    requirements, route_scoped, run_receipt, sample_leads, schema, skills, validate_pack,
-    validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
-    verify_output_readable_file, verify_run_files,
+    requirements, route_scoped, run_receipt, run_request_file, sample_leads, schema, skills,
+    validate_pack, validate_prompt_output_file_with_inputs, validate_source_binding_file,
+    verify_output_file, verify_output_readable_file, verify_run_files,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -195,6 +195,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 }),
             )
         }
+        Commands::Run { request, out_dir } => print_checked(
+            json_mode,
+            summary_mode,
+            "run",
+            run_request_file(&request, &out_dir)?,
+        ),
         Commands::VerifyOutput {
             dir,
             file,

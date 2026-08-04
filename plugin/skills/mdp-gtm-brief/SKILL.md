@@ -113,6 +113,13 @@ Load only the selected mode.
 - Supply every required portfolio `--scope` dimension; never silently choose a product, brand, region, or offer.
 - A passing claim check is not approval to send.
 - Preserve CLI diagnostics and gaps verbatim enough for the next reviewer to act.
+- When decision authority must be isolated from a context-rich authoring chat,
+  create a deterministic `mdp.run-request.v1` and use `mdp run`; do not call a
+  model driver. Verify the returned bundle and receipt before presenting the
+  decision. Inference assurance is `not-applicable`, while upstream source and
+  normalization provenance remain separate limitations.
+- MDP returns qualification and bounded context. Campaign drafting, table
+  batching, retries, enrichment, outbound, and CRM actions remain host-owned.
 
 ## Response
 

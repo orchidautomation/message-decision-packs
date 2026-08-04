@@ -118,6 +118,15 @@ fn summarize(command: &str, data: &Value) -> Value {
             "assurance": data["recomputed_assurance"],
             "issues": data["issues"]
         }),
+        "run" => json!({
+            "valid": data["valid"],
+            "execution_id": data["execution_id"],
+            "terminal_state": data["terminal_state"],
+            "run_dir": data["run_dir"],
+            "bundle_sha256": data["bundle_sha256"],
+            "receipt_sha256": data["receipt_sha256"],
+            "authority_block": data["authority_block"]
+        }),
         "verify-output" => json!({
             "valid": data["valid"],
             "decision": data["decision"],
