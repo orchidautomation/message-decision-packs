@@ -109,6 +109,15 @@ fn summarize(command: &str, data: &Value) -> Value {
             "dry_run": data["dry_run"],
             "write_plan": data["write_plan"]
         }),
+        "verify-run" => json!({
+            "contract": data["contract"],
+            "valid": data["valid"],
+            "integrity_only": data["integrity_only"],
+            "execution_id": data["execution_id"],
+            "terminal_state": data["terminal_state"],
+            "assurance": data["recomputed_assurance"],
+            "issues": data["issues"]
+        }),
         "verify-output" => json!({
             "valid": data["valid"],
             "decision": data["decision"],

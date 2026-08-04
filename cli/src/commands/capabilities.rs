@@ -8,6 +8,10 @@ use crate::constants::{
     SOURCE_BINDING_VALIDATION_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::models::DecisionInputAttemptStatus;
+use crate::run_contracts::{
+    DRIVER_REQUEST_V1, DRIVER_RESULT_V1, RUN_BUNDLE_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1,
+    RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
+};
 use serde_json::{Value, json};
 
 pub(crate) fn capabilities() -> Value {
@@ -92,6 +96,16 @@ pub(crate) fn capabilities() -> Value {
                 "caveat": "MCP transport is not model-isolation evidence."
             }
         },
+        "clean_run_contracts": {
+            "run_request": {"contract": RUN_REQUEST_V1, "schema_target": "run-request-v1"},
+            "run_bundle": {"contract": RUN_BUNDLE_V1, "schema_target": "run-bundle-v1"},
+            "driver_request": {"contract": DRIVER_REQUEST_V1, "schema_target": "driver-request-v1"},
+            "driver_result": {"contract": DRIVER_RESULT_V1, "schema_target": "driver-result-v1"},
+            "runner_audit": {"contract": RUNNER_AUDIT_V1, "schema_target": "runner-audit-v1"},
+            "run_receipt": {"contract": RUN_RECEIPT_V1, "schema_target": "run-receipt-v1"},
+            "run_verification": {"contract": RUN_VERIFICATION_V1, "schema_target": "run-verification-v1"},
+            "assurance": "Vector-valued evidence; v0 labels and driver assertions never silently elevate."
+        },
         "profile_contracts": {
             "manifest_profile": "mdp.profile.v0",
             "skills": "mdp.skills.v1",
@@ -124,6 +138,8 @@ pub(crate) fn capabilities() -> Value {
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-attempt-request", "--collected-attempt-results", "--prompt", "--prompt-id", "--strict"]),
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
+            command("verify-run", RUN_VERIFICATION_V1, "read-only", false, false, false, &["--bundle", "--receipt", "--artifact-root"]),
+            command("consume-run", "mdp.run-consumption-result.v1", "writes-local-ledger", false, false, false, &["--ledger", "--job-id", "--idempotency-key", "--receipt-sha256", "--expected-prior-version", "--permit-exact-replay"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
             command("author-proof-output", "mdp.author-proof-output.v0", "writes-files-with-out", true, true, false, &["--dir", "--draft", "--out", "--dry-run"]),
             command("render-brief", "mdp.human-brief.v0", "writes-files-with-out", false, true, true, &["--dir", "--file", "--template", "--format", "--out", "--strict"]),

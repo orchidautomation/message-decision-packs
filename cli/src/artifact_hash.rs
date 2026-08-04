@@ -435,7 +435,8 @@ fn contains_negative_zero_token(bytes: &[u8]) -> bool {
 mod tests {
     use super::{
         AuthorityJsonLimits, canonical_json_sha256, canonical_json_sha256_for_domain,
-        pack_content_sha256, pack_content_snapshot, parse_authority_json,
+        canonicalize_json, pack_content_sha256, pack_content_snapshot, parse_authority_json,
+        sha256_hex,
     };
     use serde_json::json;
     use std::fs;
@@ -477,6 +478,62 @@ mod tests {
             parse_authority_json::<serde_json::Value>(br#"{"a":{"b":{"c":1}}}"#, limits).is_err()
         );
         assert!(parse_authority_json::<serde_json::Value>(br#"{"a":{"b":1}}"#, limits).is_ok());
+    }
+
+    #[test]
+    fn language_neutral_authority_vectors_match_rust() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/run-v1/canonical-json-vectors.json"
+        ))
+        .unwrap();
+        for vector in fixture["accepted"].as_array().unwrap() {
+            let raw = vector["raw_json"].as_str().unwrap().as_bytes();
+            let parsed: serde_json::Value =
+                parse_authority_json(raw, AuthorityJsonLimits::default()).unwrap();
+            assert_eq!(raw.len() as u64, vector["raw_byte_count"].as_u64().unwrap());
+            assert_eq!(sha256_hex(raw), vector["raw_utf8_sha256"].as_str().unwrap());
+            assert_eq!(
+                serde_json::to_string(&canonicalize_json(&parsed)).unwrap(),
+                vector["canonical_json"].as_str().unwrap()
+            );
+            assert_eq!(
+                canonical_json_sha256(&parsed).unwrap(),
+                vector["canonical_utf8_sha256"].as_str().unwrap()
+            );
+            assert_eq!(
+                canonical_json_sha256_for_domain(vector["domain"].as_str().unwrap(), &parsed)
+                    .unwrap(),
+                vector["domain_sha256"].as_str().unwrap()
+            );
+        }
+        for vector in fixture["rejected"].as_array().unwrap() {
+            let overrides = &vector["limits"];
+            let mut limits = AuthorityJsonLimits::default();
+            if let Some(value) = overrides["max_bytes"].as_u64() {
+                limits.max_bytes = value as usize;
+            }
+            if let Some(value) = overrides["max_depth"].as_u64() {
+                limits.max_depth = value as usize;
+            }
+            if let Some(value) = overrides["max_object_members"].as_u64() {
+                limits.max_object_members = value as usize;
+            }
+            if let Some(value) = overrides["max_array_length"].as_u64() {
+                limits.max_array_length = value as usize;
+            }
+            if let Some(value) = overrides["max_string_bytes"].as_u64() {
+                limits.max_string_bytes = value as usize;
+            }
+            assert!(
+                parse_authority_json::<serde_json::Value>(
+                    vector["raw_json"].as_str().unwrap().as_bytes(),
+                    limits
+                )
+                .is_err(),
+                "{} should be rejected",
+                vector["id"].as_str().unwrap()
+            );
+        }
     }
 
     #[test]

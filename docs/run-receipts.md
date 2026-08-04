@@ -1,17 +1,108 @@
 # MDP Run Receipts
 
-`mdp run-receipt` creates a local `mdp.run-receipt.v0` artifact for workflows where an agent host or runner normalized messy source material before deterministic MDP checks ran.
+`mdp run-receipt` creates the legacy local `mdp.run-receipt.v0` artifact for workflows where an agent host or runner normalized messy source material before deterministic MDP checks ran. The unified clean-context runtime uses the closed v1 contracts described below. The v0 command remains available for compatibility while v1 execution is introduced.
 
 Use it when the operator wants an audit-grade proposal or document-review flow, especially when a PDF/doc extraction step produced a `mdp.source-audit.v0` ledger.
 
 A receipt assurance value describes one invocation; it is not a public integration-support claim. Consult the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix) before describing a runner as verified. All currently documented named runners are recipe-only, while `custom-headless` is unsupported and mock/demo evidence is fixture/mock-only.
+
+## Unified Execution Contracts (v1)
+
+The v1 family separates what an operator asked to run, the immutable bytes the runtime staged, what a driver claims happened, the receipt MDP issued, and what a later verifier could recompute. Each contract is a closed Draft 2020-12 JSON Schema: unknown fields are rejected instead of becoming unaudited side channels.
+
+| Contract | CLI schema target | Authority |
+| --- | --- | --- |
+| `mdp.run-request.v1` | `run-request-v1` | Operator intent and local source paths before safe staging. Paths are not evidence that the staged bytes matched. |
+| `mdp.run-bundle.v1` | `run-bundle-v1` | Immutable pack snapshot, declared input hashes, policy hash, and pinned driver/model identity used for this invocation. |
+| `mdp.driver-request.v1` | `driver-request-v1` | The bounded request passed to an external driver. It contains staged artifact authority, not arbitrary workspace access. |
+| `mdp.driver-result.v1` | `driver-result-v1` | Driver-returned terminal state plus hashed output and runner-audit artifacts. Driver statements remain driver-attested until independently observed or verified. |
+| `mdp.runner-audit.v1` | `runner-audit-v1` | Runtime observations, explicit evidence provenance, assurance dimensions, and limitations for one invocation. |
+| `mdp.run-receipt.v1` | `run-receipt-v1` | MDP's terminal result, bound artifacts, decision authority, validation, assurance vector, limitations, and receipt hash. |
+| `mdp.run-verification.v1` | `run-verification-v1` | A verifier's recomputed integrity and assurance result. `integrity_only: true` means external provider or host state was unavailable and was not silently assumed. |
+
+Inspect the exact contracts with:
+
+```bash
+mdp --json schema run-request-v1
+mdp --json schema run-bundle-v1
+mdp --json schema driver-request-v1
+mdp --json schema driver-result-v1
+mdp --json schema runner-audit-v1
+mdp --json schema run-receipt-v1
+mdp --json schema run-verification-v1
+```
+
+Verify v1 artifacts without invoking a runner:
+
+```bash
+mdp --json verify-run \
+  --bundle <run-bundle.json> \
+  --receipt <run-receipt.json> \
+  --artifact-root <published-artifact-directory>
+```
+
+Omitting `--artifact-root` checks the bundle, decision, receipt, terminal-state,
+and assurance relationships but cannot re-read published artifact bytes. The
+result therefore remains `integrity_only: true`. Supplying a v0 receipt without
+`--bundle` emits an explicit legacy mapping whose isolation dimension remains
+unknown; even a historical `audit-grade` label cannot become v1 verified
+assurance.
+
+Integrity verification is deliberately separate from freshness consumption.
+For conformance and local pilots, an operator can atomically compare and
+consume a verified receipt with:
+
+```bash
+mdp --json consume-run \
+  --ledger <local-ledger.jsonl> \
+  --job-id <expected-job-id> \
+  --idempotency-key <expected-idempotency-key> \
+  --receipt-sha256 <verified-receipt-hash> \
+  --expected-prior-version <ledger-version>
+```
+
+`--permit-exact-replay` permits only the exact same job, idempotency identity,
+receipt hash, and original prior version. The local ledger serializes writers
+and verifies an append-only hash chain, but it cannot detect filesystem
+rollback, restored snapshots, or cloned ledgers. Production hosts must replace
+it with their own durable atomic transaction and monotonic trust anchor.
+
+### Assurance Is a Vector
+
+V1 does not use one unqualified `audit-grade` boolean. It records dimensions such as context isolation, declared-input isolation, stateless request construction, tool/filesystem/network enforcement, artifact integrity, validation, and replay protection separately. Every dimension has:
+
+- a state: `declared`, `observed`, `enforced`, `verified`, `unknown`, `redacted`, `unsupported`, or `not-applicable`;
+- provenance: `mdp-observed`, `provider-returned`, `customer-attested`, `host-attested`, `driver-attested`, `verifier-recomputed`, or `unknown`;
+- evidence references and explicit limitations.
+
+These terms are deliberately narrower:
+
+- **Fresh context** means the model invocation did not inherit the authoring conversation or another prior session. A new process is useful evidence only when session resume, configuration discovery, instruction discovery, caches, and persisted state are also controlled.
+- **Stateless inference** means the provider request did not intentionally attach prior provider-side messages or a reusable session. It does not prove the provider performed no caching, logging, retention, or hidden request transformation.
+- **Declared-input isolation** means only the immutable pack release and manifest-listed run inputs were available to the execution boundary. It requires filesystem, tool, network, environment, and driver controls; prompt language alone cannot establish it.
+- **Deterministic replay** means deterministic stages can be recomputed from the same canonical bytes and policy. It does not promise byte-identical generative output unless the provider supplies and honors a deterministic contract.
+- **Audit evidence** means the receipt identifies exactly which claim was declared, observed, enforced, or recomputed and by whom. It is not a claim that source content was true or that a third-party model exposed its hidden context.
+
+The terminal state is either `success` or an explicit `no-draft:*` state. Preflight refusal, runner failure, invalid output, invalid decision, incomplete audit, or policy failure must not leave a draft that a host can mistake for authorized output.
+
+### V0 Compatibility and Migration
+
+`mdp.run-receipt.v0` and `mdp.runner-audit.v0` remain readable and their existing schema targets remain `run-receipt` and `runner-audit`. They are legacy evidence, not aliases for v1:
+
+- a v0 receipt must never be relabeled as v1 or silently upgraded to a stronger v1 assurance state;
+- v0 `audit-grade` maps only to the historical v0 decision under its original assumptions;
+- migration requires constructing a new v1 bundle from exact available bytes, preserving the v0 artifacts as provenance, and marking unavailable controls `unknown` or `unsupported`;
+- a verifier must report when it can check only hashes and local structure (`integrity_only: true`); missing external host/provider evidence cannot be inferred from a successful historical result;
+- v0 and v1 hashes are contract-domain-separated and are not interchangeable.
+
+This compatibility rule lets existing proposal pilots remain inspectable without overstating them, while proposal and GTM workflows converge on one v1 execution and receipt authority.
 
 For public demos, apply the
 [Proposal Demo Go/No-Go Gate](proposal-demo-go-no-go.md) before recording or
 presenting a receipt. A mock run is safe to show only when its blocked decision
 and synthetic status are explicit.
 
-## What It Proves
+## Legacy v0: What It Proves
 
 The receipt records:
 
@@ -24,7 +115,7 @@ The receipt records:
 
 It does not prove the semantic truth of claims beyond the supplied artifacts, and it cannot itself create model context isolation. The host runner owns that boundary; the CLI records and gates the declared boundary.
 
-## Proposal Review Command
+## Legacy v0 Proposal Review Command
 
 For the default `proposal-review` workflow, save the validation result first, then create the receipt:
 
@@ -75,7 +166,7 @@ The validation result may be either the raw `data` object from `validate-prompt-
 }
 ```
 
-## Decisions
+## Legacy v0 Decisions
 
 | Decision | `valid` | Meaning |
 | --- | --- | --- |
@@ -85,7 +176,7 @@ The validation result may be either the raw `data` object from `validate-prompt-
 
 Validation-style CLI behavior applies: a non-`audit-grade` receipt prints the JSON result and exits nonzero.
 
-## Runner Audit
+## Legacy v0 Runner Audit
 
 `mdp.runner-audit.v0` is the host-owned artifact that makes the isolation claim reviewable. Get its schema with:
 

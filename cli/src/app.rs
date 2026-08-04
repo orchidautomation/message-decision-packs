@@ -6,10 +6,13 @@ use crate::commands::{
     render_human_brief_file, render_human_brief_markdown, render_readable_prospect_brief,
     requirements, route_scoped, run_receipt, sample_leads, schema, skills, validate_pack,
     validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
-    verify_output_readable_file,
+    verify_output_readable_file, verify_run_files,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
+use crate::run_replay::{
+    LOCAL_LEDGER_DURABILITY_LIMITATION, ReplayConsumeRequest, compare_and_consume,
+};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::fs;
@@ -151,6 +154,46 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 data = attach_stdout_artifact(data);
             }
             print_checked(json_mode, summary_mode, "run-receipt", data)
+        }
+        Commands::VerifyRun {
+            bundle,
+            receipt,
+            artifact_root,
+        } => print_checked(
+            json_mode,
+            summary_mode,
+            "verify-run",
+            verify_run_files(bundle.as_deref(), &receipt, artifact_root.as_deref())?,
+        ),
+        Commands::ConsumeRun {
+            ledger,
+            job_id,
+            idempotency_key,
+            receipt_sha256,
+            expected_prior_version,
+            permit_exact_replay,
+        } => {
+            let outcome = compare_and_consume(
+                &ledger,
+                &ReplayConsumeRequest {
+                    job_id,
+                    idempotency_key,
+                    receipt_sha256,
+                    expected_prior_version,
+                    permit_exact_replay,
+                },
+            )?;
+            print_output(
+                json_mode,
+                summary_mode,
+                "consume-run",
+                json!({
+                    "contract": "mdp.run-consumption-result.v1",
+                    "local_reference_only": true,
+                    "outcome": outcome,
+                    "limitation": LOCAL_LEDGER_DURABILITY_LIMITATION
+                }),
+            )
         }
         Commands::VerifyOutput {
             dir,

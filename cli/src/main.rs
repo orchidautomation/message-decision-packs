@@ -11,6 +11,7 @@ mod pack_io;
 mod prospect_validation;
 mod routing;
 mod run_contracts;
+mod run_replay;
 mod runtime_context;
 mod scope;
 mod skill_catalog;
