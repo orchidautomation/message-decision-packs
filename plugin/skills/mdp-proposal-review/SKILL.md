@@ -39,6 +39,13 @@ follow its decision tree.
 - A tool, runner name, schema-valid artifact, or MCP transport is not the
   decision. Report the current receipt and runner assurance.
 
+For new v1 runs, the preferred handoff is an exact `mdp.run-request.v1` file
+followed by `mdp run --request ... --out-dir ...` and `mdp verify-run`. The
+authoring conversation must not perform the authoritative review after
+launching the run or add evidence to its returned decision. Keep the existing
+proposal runner and `run-receipt` commands only as explicit v0 compatibility
+paths; never relabel their historical `audit-grade` value as v1 assurance.
+
 ## Source And Safety Gate
 
 1. Require the exact pack root, supplied review material, review scope, and known owner.

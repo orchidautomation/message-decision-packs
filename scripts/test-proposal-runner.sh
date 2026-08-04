@@ -15,6 +15,7 @@ mock_response="$tmp_dir/mock-response.json"
 minimal_attrs_output="$tmp_dir/minimal-attrs-output.json"
 dry_result="$tmp_dir/dry-result.json"
 mock_result="$tmp_dir/mock-result.json"
+clean_run_result="$tmp_dir/clean-run-result.json"
 demo_stdout="$tmp_dir/demo.stdout"
 helper_audit="$tmp_dir/helper-runner-audit.json"
 helper_stdout="$tmp_dir/helper.stdout.json"
@@ -624,6 +625,94 @@ assert not (artifacts / "route-bid-no-bid-review.json").exists()
 review = next(step for step in result["steps"] if step["name"] == "mdp_review_proposal")
 assert review["status"] == "skipped"
 assert "receipt decision blocked" in review["reason"]
+PY
+
+node "$root/scripts/mdp-proposal-runner.mjs" run \
+  --pack "$pack" \
+  --pack-release-id proposal-test-release-v1 \
+  --clean-run-v1 \
+  --workdir "$tmp_dir/clean-run" \
+  --source-audit "$root/examples/proposal-flow-video/fixtures/source-audit.json" \
+  --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+  --source "$root/examples/proposal-flow-video/messy-sources/02-capture-notes.md" \
+  --source "$root/examples/proposal-flow-video/messy-sources/03-proof-inventory.md" \
+  --source "$root/examples/proposal-flow-video/messy-sources/04-compliance-matrix.csv" \
+  --source-kind synthetic-example \
+  --model gpt-test \
+  --mock-response "$mock_response" > "$clean_run_result"
+
+python3 - "$clean_run_result" "$tmp_dir/clean-run/artifacts" <<'PY'
+import json, pathlib, sys
+
+result = json.load(open(sys.argv[1]))
+artifacts = pathlib.Path(sys.argv[2])
+request = json.load(open(artifacts / "run-request-v1.json"))
+run_dir = artifacts / "clean-run-v1"
+bundle = json.load(open(run_dir / "run-bundle.json"))
+receipt = json.load(open(run_dir / "run-receipt.json"))
+
+assert result["contract"] == "mdp.proposal-runner-result.v1"
+assert result["authority_contract"] == "mdp.run-execution.v1"
+assert result["terminal_state"] == "success"
+assert result["canonical_run"]["terminal_state"] == "success"
+assert result["canonical_authority"] == result["canonical_run"]["authority_block"]
+assert result["canonical_authority"]["contract"] == "mdp.canonical-authority-block.v1"
+assert result["decision"] == "advisory"
+assert result["audit_grade_eligible"] is False
+assert request["contract"] == "mdp.run-request.v1"
+assert request["profile"] == "proposal"
+assert request["operation"] == "validate-existing-output"
+assert request["mode"] == "deterministic"
+assert request["pack_release_id"] == "proposal-test-release-v1"
+assert request["prompt"] is None
+assert request["driver"] is None
+assert request["model"] is None
+assert "assurance" not in request
+assert "receipt_sha256" not in request
+assert "bundle_sha256" not in request
+assert bundle["contract"] == "mdp.run-bundle.v1"
+assert receipt["contract"] == "mdp.run-receipt.v1"
+assert receipt["terminal_state"] == "success"
+assert receipt["receipt_sha256"] == result["canonical_run"]["receipt_sha256"]
+for expected in ["prompt-output", "source-audit", "source-intake", "runner-audit", "native-request"]:
+    assert any(item["logical_name"].endswith(expected) for item in bundle["inputs"]), expected
+clean_step = next(step for step in result["steps"] if step["name"] == "mdp_clean_run_v1")
+assert clean_step["status"] == "ok"
+assert clean_step["terminal_state"] == "success"
+PY
+
+cat > "$tmp_dir/failing-native-runner.mjs" <<'JS'
+import { writeFileSync } from 'node:fs'
+const args = process.argv.slice(2)
+const out = args[args.indexOf('--out') + 1]
+const audit = args[args.indexOf('--runner-audit') + 1]
+writeFileSync(out, '{}\n')
+writeFileSync(audit, '{}\n')
+process.exit(7)
+JS
+
+expect_fail "Native normalization failed before canonical clean-run finalization" \
+  node "$root/scripts/mdp-proposal-runner.mjs" run \
+    --pack "$pack" \
+    --pack-release-id proposal-test-release-v1 \
+    --clean-run-v1 \
+    --workdir "$tmp_dir/native-failure-clean-run" \
+    --source-audit "$root/examples/proposal-flow-video/fixtures/source-audit.json" \
+    --source "$root/examples/proposal-flow-video/messy-sources/01-rfp-ocr.txt" \
+    --source "$root/examples/proposal-flow-video/messy-sources/02-capture-notes.md" \
+    --source "$root/examples/proposal-flow-video/messy-sources/03-proof-inventory.md" \
+    --source "$root/examples/proposal-flow-video/messy-sources/04-compliance-matrix.csv" \
+    --source-kind synthetic-example \
+    --model gpt-test \
+    --native-runner "$tmp_dir/failing-native-runner.mjs" \
+    --mock-response "$mock_response"
+test ! -e "$tmp_dir/native-failure-clean-run/artifacts/run-request-v1.json"
+test ! -e "$tmp_dir/native-failure-clean-run/artifacts/clean-run-v1"
+python3 - "$tmp_dir/native-failure-clean-run/.mdp-proposal-run.json" <<'PY'
+import json, sys
+manifest = json.load(open(sys.argv[1]))
+assert manifest["status"] == "blocked"
+assert manifest["decision"] == "blocked"
 PY
 
 DEMO_WORKDIR="$tmp_dir/demo" bash "$root/examples/proposal-flow-video/scripts/run-demo.sh" > "$demo_stdout"

@@ -1,0 +1,46 @@
+{
+  "contract": "mdp.runner-audit.v1",
+  "execution_id": "synthetic-success-001",
+  "runner_version": "synthetic-reference-1",
+  "runner_build_sha256": null,
+  "platform": "customer-controlled-ephemeral-worker",
+  "snapshot_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+  "provider_request_body_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+  "provider_request_schema_id": "synthetic.provider.request.v1",
+  "terminal_state": "success",
+  "assurance": [
+    {
+      "dimension": "fresh-invocation",
+      "state": "observed",
+      "provenance": "host-attested",
+      "evidence_refs": ["process:synthetic-success-001"],
+      "limitations": ["The provider's hidden request transformations were not observable."]
+    },
+    {
+      "dimension": "declared-input-isolation",
+      "state": "observed",
+      "provenance": "host-attested",
+      "evidence_refs": ["snapshot:7777777777777777777777777777777777777777777777777777777777777777"],
+      "limitations": ["This fixture does not independently verify the host sandbox."]
+    },
+    {
+      "dimension": "stateless-request-construction",
+      "state": "declared",
+      "provenance": "driver-attested",
+      "evidence_refs": ["request:8888888888888888888888888888888888888888888888888888888888888888"],
+      "limitations": ["Driver attestation cannot elevate this dimension to enforced or verified."]
+    },
+    {
+      "dimension": "replay-protection",
+      "state": "unknown",
+      "provenance": "unknown",
+      "evidence_refs": [],
+      "limitations": ["Durable host receipt consumption occurs after this driver result."]
+    }
+  ],
+  "limitations": [
+    "Synthetic conformance fixture only.",
+    "No provider call occurred.",
+    "Downstream actions remain host-owned and separately authorized."
+  ]
+}

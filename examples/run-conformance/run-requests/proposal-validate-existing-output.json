@@ -1,0 +1,41 @@
+{
+  "contract": "mdp.run-request.v1",
+  "execution_id": "synthetic-proposal-validation-001",
+  "created_at": "2026-08-03T00:00:00Z",
+  "profile": "proposal",
+  "operation": "validate-existing-output",
+  "mode": "deterministic",
+  "job_identity": null,
+  "pack_dir": "plugin/assets/templates/proposal",
+  "pack_release_id": "synthetic-source-tree-proposal-example",
+  "prompt": null,
+  "inputs": [
+    {
+      "logical_name": "prompt-output",
+      "source_path": "examples/proposal-flow-video/fixtures/normalize-opportunity-output.json",
+      "schema_id": "mdp.prompt-output.v0",
+      "media_type": "application/json",
+      "provenance_refs": []
+    },
+    {
+      "logical_name": "source-audit",
+      "source_path": "examples/proposal-flow-video/fixtures/source-audit.json",
+      "schema_id": "mdp.source-audit.v0",
+      "media_type": "application/json",
+      "provenance_refs": []
+    }
+  ],
+  "execution_policy": {
+    "environment_allowlist": [],
+    "filesystem_mode": "private-staging",
+    "tool_mode": "none",
+    "network_mode": "none",
+    "authorized_endpoints": [],
+    "max_input_bytes": 1048576,
+    "max_output_bytes": 1048576,
+    "timeout_ms": 30000,
+    "retention_policy": "receipt-only"
+  },
+  "driver": null,
+  "model": null
+}

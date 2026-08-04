@@ -1,0 +1,460 @@
+#!/usr/bin/env node
+
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { superviseProcess } from './lib/process-supervisor.mjs'
+
+const MCP_PROTOCOL_VERSION = '2025-06-18'
+const SERVER_NAME = 'message-decision-packs-runner'
+const MAX_JSON_RPC_LINE_BYTES = 1_000_000
+const MAX_REQUEST_FILE_BYTES = 1_048_576
+const MAX_CHILD_BUFFER_BYTES = 1_000_000
+const DEFAULT_TIMEOUT_MS = 120_000
+const MAX_TIMEOUT_MS = 300_000
+const JSON_RPC_PARSE_ERROR = -32700
+const JSON_RPC_INVALID_REQUEST = -32600
+const JSON_RPC_METHOD_NOT_FOUND = -32601
+const JSON_RPC_INVALID_PARAMS = -32602
+const CHILD_ENV_KEYS = [
+  'PATH',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'SSL_CERT_FILE',
+  'SSL_CERT_DIR',
+  'NODE_EXTRA_CA_CERTS',
+]
+
+const scriptDir = dirname(fileURLToPath(import.meta.url))
+const bundleRoot = resolve(scriptDir, '..')
+
+const readVersion = () => {
+  for (const path of [
+    join(bundleRoot, 'plugin.json'),
+    join(bundleRoot, '.codex-plugin', 'plugin.json'),
+    join(bundleRoot, 'plugin', '.codex-plugin', 'plugin.json'),
+  ]) {
+    if (!existsSync(path)) continue
+    try {
+      const value = JSON.parse(readFileSync(path, 'utf8'))
+      if (typeof value.version === 'string' && value.version.trim()) return value.version
+    } catch {
+      // A malformed optional version file must not change run authority.
+    }
+  }
+  return '0.0.0-local'
+}
+
+const serverVersion = readVersion()
+const writeMessage = (message) => process.stdout.write(`${JSON.stringify(message)}\n`)
+const response = (id, result) => ({ jsonrpc: '2.0', id, result })
+const errorResponse = (id, code, message, data) => ({
+  jsonrpc: '2.0',
+  id: id ?? null,
+  error: data === undefined ? { code, message } : { code, message, data },
+})
+const toolResult = (structuredContent, isError = false) => ({
+  content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }],
+  structuredContent,
+  isError,
+})
+
+const asObject = (value, label) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`)
+  }
+  return value
+}
+
+const assertOnly = (value, allowed) => {
+  const unsupported = Object.keys(value).filter((key) => !allowed.has(key))
+  if (unsupported.length > 0) {
+    throw new Error(`unsupported argument(s): ${unsupported.sort().join(', ')}; pass file paths only`)
+  }
+}
+
+const requiredString = (value, key) => {
+  if (typeof value[key] !== 'string' || value[key].trim() === '') {
+    throw new Error(`${key} must be a non-empty string`)
+  }
+  if (value[key].includes('\0')) throw new Error(`${key} must not contain NUL bytes`)
+  return value[key]
+}
+
+const canonicalExistingFile = (value, label) => {
+  const requested = resolve(value)
+  if (!existsSync(requested)) throw new Error(`${label} does not exist`)
+  if (lstatSync(requested).isSymbolicLink()) throw new Error(`${label} must not be a symlink`)
+  const canonical = realpathSync(requested)
+  const stats = statSync(canonical)
+  if (!stats.isFile()) throw new Error(`${label} must be a regular file`)
+  if (stats.size > MAX_REQUEST_FILE_BYTES) {
+    throw new Error(`${label} exceeds ${MAX_REQUEST_FILE_BYTES} bytes`)
+  }
+  return canonical
+}
+
+const canonicalRequestPath = (value) => canonicalExistingFile(value, 'request_path')
+
+const canonicalExistingDir = (value, label) => {
+  const requested = resolve(value)
+  if (!existsSync(requested)) throw new Error(`${label} does not exist`)
+  if (lstatSync(requested).isSymbolicLink()) throw new Error(`${label} must not be a symlink`)
+  const canonical = realpathSync(requested)
+  if (!statSync(canonical).isDirectory()) throw new Error(`${label} must be a directory`)
+  return canonical
+}
+
+const canonicalNewOutputDir = (value) => {
+  const requested = resolve(value)
+  if (existsSync(requested)) throw new Error('output_dir must not already exist')
+  const leaf = basename(requested)
+  if (!leaf || leaf === '.' || leaf === '..') throw new Error('output_dir must name a new directory')
+  const requestedParent = dirname(requested)
+  if (!existsSync(requestedParent)) throw new Error('output_dir parent does not exist')
+  if (lstatSync(requestedParent).isSymbolicLink()) throw new Error('output_dir parent must not be a symlink')
+  const parent = realpathSync(requestedParent)
+  if (!statSync(parent).isDirectory()) throw new Error('output_dir parent must be a directory')
+  return join(parent, leaf)
+}
+
+const childEnvironment = () =>
+  Object.fromEntries(
+    CHILD_ENV_KEYS.filter((key) => typeof process.env[key] === 'string').map((key) => [key, process.env[key]]),
+  )
+
+const invokeCli = (args, cwd, timeoutMs, recovery = null) =>
+  superviseProcess({
+    command: [process.env.MDP_BIN || 'mdp'],
+    args,
+    cwd,
+    environment: childEnvironment(),
+    timeoutMs,
+    maxOutputBytes: MAX_CHILD_BUFFER_BYTES,
+    recovery,
+  })
+
+const recoveryExecutionId = (requestPath) => {
+  try {
+    const value = JSON.parse(readFileSync(requestPath, 'utf8'))
+    return typeof value?.execution_id === 'string' ? value.execution_id : null
+  } catch {
+    return null
+  }
+}
+
+const tools = [
+  {
+    name: 'mdp_run_tools',
+    title: 'Inspect the MDP clean-run boundary',
+    description:
+      'Describe the local file-oriented clean-run adapter. MCP is transport only; the mdp CLI remains the sole authority for execution, hashes, assurance, validation, and terminal state.',
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+  },
+  {
+    name: 'mdp_run',
+    title: 'Run an explicit MDP request',
+    description:
+      'Spawn mdp run with one explicit run-request file and a new output directory. Raw chat, source bodies, inline requests, and assurance overrides are not accepted.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['request_path', 'output_dir'],
+      properties: {
+        request_path: {
+          type: 'string',
+          description: 'Existing regular, non-symlink mdp.run-request.v1 JSON file.',
+        },
+        output_dir: {
+          type: 'string',
+          description: 'New run directory whose existing non-symlink parent is controlled by the operator.',
+        },
+        timeout_ms: {
+          type: 'integer',
+          minimum: 100,
+          maximum: MAX_TIMEOUT_MS,
+          description: `CLI deadline. Defaults to ${DEFAULT_TIMEOUT_MS}ms.`,
+        },
+      },
+    },
+  },
+  {
+    name: 'mdp_verify_run',
+    title: 'Verify an MDP run receipt',
+    description:
+      'Run the read-only mdp verify-run command for explicit bundle and receipt files. Returns the canonical CLI verification result without adding MCP assurance.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['bundle_path', 'receipt_path'],
+      properties: {
+        bundle_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-bundle.v1 file.' },
+        receipt_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-receipt.v1 file.' },
+        artifact_root: { type: 'string', description: 'Optional existing, non-symlink artifact directory.' },
+        timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
+      },
+    },
+  },
+]
+
+const callRunTools = (args) => {
+  const parsed = asObject(args || {}, 'arguments')
+  assertOnly(parsed, new Set())
+  return toolResult({
+    contract: 'mdp.run-mcp-tools.v1',
+    transport: 'local-stdio',
+    tools: ['mdp_run_tools', 'mdp_run', 'mdp_verify_run'],
+    cli_authority: ['run request parsing', 'pack and input staging', 'execution', 'terminal state', 'assurance', 'artifact hashes', 'validation', 'receipt'],
+    mcp_authority: [],
+    guardrails: [
+      'Only explicit local request_path and output_dir arguments cross this MCP boundary.',
+      'The adapter starts a separate CLI process with bounded time, output, stdin, and environment.',
+      'MCP transport does not prove fresh context, isolation, freshness, replay safety, or audit grade.',
+      'The returned run result and authority block are copied from mdp --json run without modification.',
+    ],
+  })
+}
+
+const callRun = async (args) => {
+  const parsed = asObject(args || {}, 'arguments')
+  assertOnly(parsed, new Set(['request_path', 'output_dir', 'timeout_ms']))
+  const requestPath = canonicalRequestPath(requiredString(parsed, 'request_path'))
+  const outputDir = canonicalNewOutputDir(requiredString(parsed, 'output_dir'))
+  const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
+    throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
+  }
+
+  const invocation = await invokeCli(
+    ['--json', 'run', '--request', requestPath, '--out-dir', outputDir],
+    dirname(outputDir),
+    timeoutMs,
+    { outputDir, executionId: recoveryExecutionId(requestPath) },
+  )
+  if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
+    const code = invocation.timedOut
+      ? 'cli-timeout'
+      : invocation.overflowed
+        ? 'cli-output-limit'
+        : 'cli-unavailable'
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code }, true)
+  }
+
+  let envelope
+  try {
+    envelope = JSON.parse(invocation.stdout)
+  } catch {
+    return toolResult(
+      {
+        ok: false,
+        contract: 'mdp.run-mcp-error.v1',
+        code: invocation.status === 0 ? 'invalid-cli-output' : 'cli-run-failed',
+      },
+      true,
+    )
+  }
+  if (
+    envelope?.ok !== true ||
+    envelope?.command !== 'run' ||
+    !envelope.data ||
+    typeof envelope.data !== 'object' ||
+    Array.isArray(envelope.data) ||
+    envelope.data.contract !== 'mdp.run-execution.v1' ||
+    !envelope.data.authority_block ||
+    typeof envelope.data.authority_block !== 'object' ||
+    Array.isArray(envelope.data.authority_block) ||
+    envelope.data.authority_block.terminal_state !== envelope.data.terminal_state
+  ) {
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
+  }
+
+  const success = invocation.status === 0 && envelope.data.valid === true && envelope.data.terminal_state === 'success'
+  const noDraft =
+    invocation.status !== 0 &&
+    envelope.data.valid === false &&
+    typeof envelope.data.terminal_state === 'string' &&
+    envelope.data.terminal_state.startsWith('no-draft:')
+  if (!success && !noDraft) {
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
+  }
+
+  // `mdp run` exits nonzero for a canonical no-draft result. Do not turn that
+  // decision state into an MCP transport error. Do not wrap, reinterpret, or
+  // promote assurance: the exact CLI data object is the MCP tool result.
+  return toolResult(envelope.data)
+}
+
+const callVerifyRun = async (args) => {
+  const parsed = asObject(args || {}, 'arguments')
+  assertOnly(parsed, new Set(['bundle_path', 'receipt_path', 'artifact_root', 'timeout_ms']))
+  const bundlePath = canonicalExistingFile(requiredString(parsed, 'bundle_path'), 'bundle_path')
+  const receiptPath = canonicalExistingFile(requiredString(parsed, 'receipt_path'), 'receipt_path')
+  const artifactRoot = parsed.artifact_root === undefined
+    ? null
+    : canonicalExistingDir(requiredString(parsed, 'artifact_root'), 'artifact_root')
+  const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
+    throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
+  }
+  const cliArgs = ['--json', 'verify-run', '--bundle', bundlePath, '--receipt', receiptPath]
+  if (artifactRoot) cliArgs.push('--artifact-root', artifactRoot)
+  const invocation = await invokeCli(cliArgs, dirname(bundlePath), timeoutMs)
+  if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
+    const code = invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable'
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code }, true)
+  }
+  let envelope
+  try {
+    envelope = JSON.parse(invocation.stdout)
+  } catch {
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true)
+  }
+  if (
+    envelope?.ok !== true ||
+    envelope?.command !== 'verify-run' ||
+    !envelope.data ||
+    typeof envelope.data !== 'object' ||
+    Array.isArray(envelope.data) ||
+    envelope.data.contract !== 'mdp.run-verification.v1' ||
+    typeof envelope.data.valid !== 'boolean' ||
+    (invocation.status === 0) !== envelope.data.valid
+  ) {
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
+  }
+  // An invalid verification is a canonical integrity result, not an MCP
+  // transport failure. Preserve it exactly so the caller can fail closed on
+  // `valid: false` without losing the CLI's issue list.
+  return toolResult(envelope.data)
+}
+
+const handleToolCall = async (params) => {
+  const call = asObject(params || {}, 'params')
+  if (typeof call.name !== 'string' || call.name.trim() === '') {
+    throw new Error('params.name must be a non-empty string')
+  }
+  switch (call.name) {
+    case 'mdp_run_tools':
+      return callRunTools(call.arguments || {})
+    case 'mdp_run':
+      return await callRun(call.arguments || {})
+    case 'mdp_verify_run':
+      return await callVerifyRun(call.arguments || {})
+    default:
+      throw Object.assign(new Error(`unknown tool: ${call.name}`), { code: JSON_RPC_METHOD_NOT_FOUND })
+  }
+}
+
+const handleRequest = async (message) => {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) {
+    return errorResponse(null, JSON_RPC_INVALID_REQUEST, 'invalid JSON-RPC message')
+  }
+  if (message.jsonrpc !== '2.0') {
+    return errorResponse(message.id, JSON_RPC_INVALID_REQUEST, 'jsonrpc must be 2.0')
+  }
+  const notification = !('id' in message)
+  if (typeof message.method !== 'string' || !message.method.trim()) {
+    return notification ? null : errorResponse(message.id, JSON_RPC_INVALID_REQUEST, 'method must be a non-empty string')
+  }
+
+  try {
+    switch (message.method) {
+      case 'initialize':
+        return notification
+          ? null
+          : response(message.id, {
+              protocolVersion: message.params?.protocolVersion || MCP_PROTOCOL_VERSION,
+              capabilities: { tools: { listChanged: false } },
+              serverInfo: { name: SERVER_NAME, version: serverVersion },
+              instructions:
+                'Use mdp_run with an already-written run-request file and a new output directory. Use mdp_verify_run to independently check the resulting bundle and receipt. The surrounding agent is control plane only; only the CLI result and receipt have decision authority.',
+            })
+      case 'notifications/initialized':
+        return null
+      case 'ping':
+        return notification ? null : response(message.id, {})
+      case 'tools/list':
+        return notification ? null : response(message.id, { tools })
+      case 'tools/call':
+        return notification ? null : response(message.id, await handleToolCall(message.params))
+      default:
+        return notification
+          ? null
+          : errorResponse(message.id, JSON_RPC_METHOD_NOT_FOUND, `method not found: ${message.method}`)
+    }
+  } catch (error) {
+    return notification
+      ? null
+      : errorResponse(
+          message.id,
+          Number.isInteger(error.code) ? error.code : JSON_RPC_INVALID_PARAMS,
+          error.message || 'invalid parameters',
+        )
+  }
+}
+
+const handleLine = async (line) => {
+  if (Buffer.byteLength(line, 'utf8') > MAX_JSON_RPC_LINE_BYTES) {
+    writeMessage(errorResponse(null, JSON_RPC_INVALID_REQUEST, `JSON-RPC message exceeds ${MAX_JSON_RPC_LINE_BYTES} bytes`))
+    return
+  }
+  if (!line.trim()) return
+  let message
+  try {
+    message = JSON.parse(line)
+  } catch {
+    writeMessage(errorResponse(null, JSON_RPC_PARSE_ERROR, 'parse error'))
+    return
+  }
+  if (Array.isArray(message)) {
+    const replies = []
+    for (const item of message) {
+      const reply = await handleRequest(item)
+      if (reply) replies.push(reply)
+    }
+    if (replies.length) writeMessage(replies)
+    return
+  }
+  const reply = await handleRequest(message)
+  if (reply) writeMessage(reply)
+}
+
+let buffer = ''
+let discardingOversizedLine = false
+let queue = Promise.resolve()
+const enqueue = (line) => {
+  queue = queue.then(() => handleLine(line))
+}
+process.stdin.setEncoding('utf8')
+process.stdin.resume()
+process.stdin.on('data', (chunk) => {
+  if (discardingOversizedLine) {
+    const newline = chunk.indexOf('\n')
+    if (newline < 0) return
+    discardingOversizedLine = false
+    chunk = chunk.slice(newline + 1)
+  }
+  buffer += chunk
+  let newline
+  while ((newline = buffer.indexOf('\n')) >= 0) {
+    enqueue(buffer.slice(0, newline))
+    buffer = buffer.slice(newline + 1)
+  }
+  if (Buffer.byteLength(buffer, 'utf8') > MAX_JSON_RPC_LINE_BYTES) {
+    writeMessage(errorResponse(null, JSON_RPC_INVALID_REQUEST, `JSON-RPC message exceeds ${MAX_JSON_RPC_LINE_BYTES} bytes`))
+    buffer = ''
+    discardingOversizedLine = true
+  }
+})
+process.stdin.on('end', () => {
+  if (buffer.trim() && !discardingOversizedLine) enqueue(buffer)
+})
+
+process.on('uncaughtException', () => {
+  process.stderr.write('mdp run MCP server fatal error\n')
+  process.exit(1)
+})

@@ -87,9 +87,11 @@ fi
 for required in \
   "$codex_plugin_root/scripts/mdp-proposal-runner.mjs" \
   "$codex_plugin_root/scripts/mdp-proposal-mcp-server.mjs" \
+  "$codex_plugin_root/scripts/mdp-run-mcp-server.mjs" \
   "$codex_plugin_root/scripts/mdp-native-normalize-openai.mjs" \
   "$codex_plugin_root/scripts/lib/proposal-runner-contracts.mjs" \
   "$codex_plugin_root/scripts/lib/proposal-runner-runtime.mjs" \
+  "$codex_plugin_root/scripts/lib/process-supervisor.mjs" \
   "$codex_plugin_root/scripts/lib/proposal-readiness-report.mjs" \
   "$codex_plugin_root/scripts/mdp-activate.sh" \
   "$codex_plugin_root/skills/mdp/SKILL.md" \
@@ -114,6 +116,14 @@ for schema_target in \
   schema="$("$mdp_bin" --json schema "$schema_target")"
   if ! printf '%s\n' "$schema" | grep -F '"$schema"' >/dev/null; then
     echo "Installed CLI schema failed: $schema_target" >&2
+    exit 1
+  fi
+done
+
+for schema_target in run-request-v1 run-bundle-v1 driver-request-v1 driver-result-v1 runner-audit-v1 run-receipt-v1 run-verification-v1; do
+  schema="$("$mdp_bin" --json schema "$schema_target")"
+  if ! printf '%s\n' "$schema" | grep -F '"$schema"' >/dev/null; then
+    echo "Installed CLI v1 schema failed: $schema_target" >&2
     exit 1
   fi
 done
@@ -154,10 +164,105 @@ for expected in \
   fi
 done
 
+run_mcp_list_stdout="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"release-install-smoke","version":"0.0.0"},"capabilities":{}}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' |
+    node "$codex_plugin_root/scripts/mdp-run-mcp-server.mjs"
+)"
+for expected in \
+  "message-decision-packs-runner" \
+  "mdp_run_tools" \
+  "mdp_run" \
+  "mdp_verify_run" \
+  "Raw chat, source bodies, inline requests, and assurance overrides are not accepted"; do
+  if ! printf '%s\n' "$run_mcp_list_stdout" | grep -F "$expected" >/dev/null; then
+    echo "Installed clean-run MCP server list output missing expected guardrail text: $expected" >&2
+    printf '%s\n' "$run_mcp_list_stdout" >&2
+    exit 1
+  fi
+done
+
 proposal_fixture="$(mktemp -d)"
 trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
 "$mdp_bin" --json init --template proposal --dir "$proposal_fixture" >/tmp/mdp-release-install-init.json
 "$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
+gtm_fixture="$proposal_fixture/gtm-pack"
+cp -R "$ROOT/examples/clay-audiences-self-serve-enterprise-expansion" "$gtm_fixture"
+"$mdp_bin" --json validate --dir "$gtm_fixture" >/tmp/mdp-release-install-gtm-validate.json
+
+printf '{}\n' > "$proposal_fixture/invalid-prompt-output.json"
+python3 - "$proposal_fixture" "$gtm_fixture" <<'PY'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1]).resolve()
+gtm_root = pathlib.Path(sys.argv[2]).resolve()
+policy = {
+    "environment_allowlist": [], "filesystem_mode": "private-staging",
+    "tool_mode": "none", "network_mode": "none", "authorized_endpoints": [],
+    "max_input_bytes": 1048576, "max_output_bytes": 1048576,
+    "timeout_ms": 30000, "retention_policy": "receipt-only",
+}
+base = {
+    "contract": "mdp.run-request.v1", "created_at": "2026-08-03T00:00:00Z",
+    "mode": "deterministic", "job_identity": None, "pack_dir": str(root),
+    "pack_release_id": "release-install-smoke", "prompt": None,
+    "execution_policy": policy, "driver": None, "model": None,
+}
+proposal = dict(base, execution_id="release-smoke-proposal", profile="proposal",
+                operation="validate-existing-output", inputs=[{
+                    "logical_name": "prompt-output",
+                    "source_path": str(root / "invalid-prompt-output.json"),
+                    "schema_id": "mdp.prompt-output.v0", "media_type": "application/json",
+                    "provenance_refs": [],
+                }])
+gtm = dict(base, execution_id="release-smoke-gtm", profile="gtm", operation="qualify",
+           pack_dir=str(gtm_root), job_identity={"job_id":"release-smoke-gtm", "idempotency_key":"release-smoke-gtm-v1"},
+           inputs=[
+               {"logical_name":"normalized-decision-input", "source_path":str(gtm_root / "fixtures/normalized-response-ready.json"), "schema_id":"mdp.normalized-decision-input.v1", "media_type":"application/json", "provenance_refs":[]},
+               {"logical_name":"source-attempt-request", "source_path":str(gtm_root / "fixtures/source-attempt-request.json"), "schema_id":"mdp.source-attempt-request.v1", "media_type":"application/json", "provenance_refs":[]},
+               {"logical_name":"collected-attempt-results", "source_path":str(gtm_root / "fixtures/collected-attempt-results.json"), "schema_id":"mdp.collected-attempt-results.v1", "media_type":"application/json", "provenance_refs":[]},
+               {"logical_name":"bound-prompt", "source_path":str(gtm_root / ".mdp/prompts/normalize-prospect.yaml"), "schema_id":"mdp.prompt.v0", "media_type":"application/yaml", "provenance_refs":[]},
+           ])
+for name, value in [("proposal-request.json", proposal), ("gtm-request.json", gtm)]:
+    (root / name).write_text(json.dumps(value, indent=2) + "\n")
+PY
+
+node_bin="$(command -v node)"
+for profile in proposal gtm; do
+  request="$proposal_fixture/$profile-request.json"
+  run_dir="$proposal_fixture/$profile-run"
+  if (cd "$install_home" && "$mdp_bin" --json run --request "$request" --out-dir "$run_dir") >"$proposal_fixture/$profile-run.stdout.json" 2>"$proposal_fixture/$profile-run.stderr"; then
+    :
+  fi
+  test -f "$run_dir/run-bundle.json"
+  test -f "$run_dir/run-receipt.json"
+  (cd "$install_home" && "$mdp_bin" --json verify-run \
+    --bundle "$run_dir/run-bundle.json" \
+    --receipt "$run_dir/run-receipt.json" \
+    --artifact-root "$run_dir") >"$proposal_fixture/$profile-verify.json"
+done
+
+python3 - "$proposal_fixture/proposal-request.json" "$proposal_fixture/mcp-run-request.json" <<'PY'
+import json, sys
+value = json.load(open(sys.argv[1]))
+value["execution_id"] = "release-smoke-mcp"
+json.dump(value, open(sys.argv[2], "w"), indent=2)
+open(sys.argv[2], "a").write("\n")
+PY
+mcp_run_stdout="$({
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+  python3 - "$proposal_fixture/mcp-run-request.json" "$proposal_fixture/mcp-run" <<'PY'
+import json, sys
+print(json.dumps({"jsonrpc":"2.0", "id":2, "method":"tools/call", "params": {
+    "name":"mdp_run", "arguments":{"request_path":sys.argv[1], "output_dir":sys.argv[2]}}}))
+PY
+} | (cd "$install_home" && MDP_BIN="$mdp_bin" "$node_bin" "$codex_plugin_root/scripts/mdp-run-mcp-server.mjs"))"
+if ! printf '%s\n' "$mcp_run_stdout" | grep -F '"terminal_state"' >/dev/null; then
+  echo "Installed MCP mdp_run did not return canonical CLI data." >&2
+  printf '%s\n' "$mcp_run_stdout" >&2
+  exit 1
+fi
+test -f "$proposal_fixture/mcp-run/run-receipt.json"
 
 activation_output="$(
   HOME="$install_home" \

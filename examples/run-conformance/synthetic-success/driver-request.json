@@ -1,0 +1,28 @@
+{
+  "contract": "mdp.driver-request.v1",
+  "execution_id": "synthetic-success-001",
+  "profile": "gtm",
+  "operation": "bounded-context-draft",
+  "prompt": {
+    "logical_name": "prompt.txt",
+    "schema_id": "mdp.synthetic-prompt.v1",
+    "media_type": "text/plain",
+    "byte_count": 57,
+    "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "provenance": "mdp-observed",
+    "provenance_refs": ["mdp.run-bundle.v1#/prompt"]
+  },
+  "inputs": [
+    {
+      "logical_name": "declared-input.json",
+      "schema_id": "mdp.synthetic-lead.v1",
+      "media_type": "application/json",
+      "byte_count": 82,
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "provenance": "mdp-observed",
+      "provenance_refs": ["mdp.run-bundle.v1#/inputs/0"]
+    }
+  ],
+  "output_schema_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "execution_policy_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+}

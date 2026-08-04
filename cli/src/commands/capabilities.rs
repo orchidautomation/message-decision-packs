@@ -8,6 +8,11 @@ use crate::constants::{
     SOURCE_BINDING_VALIDATION_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::models::DecisionInputAttemptStatus;
+use crate::run_contracts::{
+    CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_RESULT_V1, PROPOSAL_RUNNER_RESULT_V1,
+    RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1,
+    RUNNER_AUDIT_V1,
+};
 use serde_json::{Value, json};
 
 pub(crate) fn capabilities() -> Value {
@@ -79,6 +84,11 @@ pub(crate) fn capabilities() -> Value {
                 "schema_target": "proposal-runner-result",
                 "required_for": ["local proposal runner summary"]
             },
+            "proposal_runner_result_v1": {
+                "contract": PROPOSAL_RUNNER_RESULT_V1,
+                "schema_target": "proposal-runner-result-v1",
+                "required_for": ["proposal compatibility handoff to canonical clean-run authority"]
+            },
             "proposal_readiness_report": {
                 "contract": PROPOSAL_READINESS_REPORT_CONTRACT,
                 "schema_target": "proposal-readiness-report",
@@ -91,6 +101,18 @@ pub(crate) fn capabilities() -> Value {
                 "required_for": ["local stdio MCP proposal runner response"],
                 "caveat": "MCP transport is not model-isolation evidence."
             }
+        },
+        "clean_run_contracts": {
+            "run_request": {"contract": RUN_REQUEST_V1, "schema_target": "run-request-v1"},
+            "run_bundle": {"contract": RUN_BUNDLE_V1, "schema_target": "run-bundle-v1"},
+            "driver_request": {"contract": DRIVER_REQUEST_V1, "schema_target": "driver-request-v1"},
+            "driver_result": {"contract": DRIVER_RESULT_V1, "schema_target": "driver-result-v1"},
+            "runner_audit": {"contract": RUNNER_AUDIT_V1, "schema_target": "runner-audit-v1"},
+            "run_receipt": {"contract": RUN_RECEIPT_V1, "schema_target": "run-receipt-v1"},
+            "run_verification": {"contract": RUN_VERIFICATION_V1, "schema_target": "run-verification-v1"},
+            "run_execution": {"contract": RUN_EXECUTION_V1, "schema_target": "run-execution-v1"},
+            "canonical_authority_block": {"contract": CANONICAL_AUTHORITY_BLOCK_V1, "schema_target": "canonical-authority-block-v1"},
+            "assurance": "Vector-valued evidence; v0 labels and driver assertions never silently elevate."
         },
         "profile_contracts": {
             "manifest_profile": "mdp.profile.v0",
@@ -124,6 +146,9 @@ pub(crate) fn capabilities() -> Value {
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-attempt-request", "--collected-attempt-results", "--prompt", "--prompt-id", "--strict"]),
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
+            command("verify-run", RUN_VERIFICATION_V1, "read-only", false, false, false, &["--bundle", "--receipt", "--artifact-root"]),
+            command("consume-run", "mdp.run-consumption-result.v1", "writes-local-ledger", false, false, false, &["--ledger", "--job-id", "--idempotency-key", "--receipt-sha256", "--expected-prior-version", "--permit-exact-replay"]),
+            command("run", RUN_EXECUTION_V1, "writes-new-run-directory", false, true, false, &["--request", "--out-dir"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
             command("author-proof-output", "mdp.author-proof-output.v0", "writes-files-with-out", true, true, false, &["--dir", "--draft", "--out", "--dry-run"]),
             command("render-brief", "mdp.human-brief.v0", "writes-files-with-out", false, true, true, &["--dir", "--file", "--template", "--format", "--out", "--strict"]),
@@ -266,6 +291,18 @@ mod tests {
                 .iter()
                 .any(|command| command["name"] == "run-receipt"
                     && command["output_contract"] == RUN_RECEIPT_CONTRACT)
+        );
+        assert!(
+            result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .any(|command| command["name"] == "run"
+                    && command["output_contract"] == RUN_EXECUTION_V1)
+        );
+        assert_eq!(
+            result["clean_run_contracts"]["canonical_authority_block"]["contract"],
+            CANONICAL_AUTHORITY_BLOCK_V1
         );
         assert!(
             result["stable_error_codes"]

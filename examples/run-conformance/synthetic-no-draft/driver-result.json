@@ -1,0 +1,15 @@
+{
+  "contract": "mdp.driver-result.v1",
+  "execution_id": "synthetic-no-draft-001",
+  "terminal_state": "no-draft:audit-incomplete",
+  "output": null,
+  "audit": {
+    "logical_name": "runner-audit.json",
+    "schema_id": "mdp.runner-audit.v1",
+    "media_type": "application/json",
+    "byte_count": 1021,
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "provenance": "host-attested",
+    "provenance_refs": ["mdp.driver-request.v1#synthetic-no-draft-001"]
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "contract": "mdp.authority-json-golden-vectors.v1",
+  "description": "Language-neutral vectors for bounded authority JSON parsing and domain-separated canonical hashing. raw_json is hashed exactly as UTF-8 bytes; canonical_json is the normalized hash payload.",
+  "default_limits": {
+    "max_bytes": 1048576,
+    "max_depth": 32,
+    "max_object_members": 1024,
+    "max_array_length": 10000,
+    "max_string_bytes": 262144
+  },
+  "accepted": [
+    {
+      "id": "object-key-order-a",
+      "domain": "mdp.run-bundle.v1",
+      "raw_json": "{\"z\":0,\"a\":{\"two\":2,\"one\":1}}",
+      "raw_byte_count": 29,
+      "raw_utf8_sha256": "91a9085c2c043fca03003239acb21adfa82aa4fac3463ee15fa61ebeab2e9219",
+      "canonical_json": "{\"a\":{\"one\":1,\"two\":2},\"z\":0}",
+      "canonical_utf8_sha256": "f04745199c1620a910bf5d352972931dd8aaa818e8452afb69793de646b77e47",
+      "domain_sha256": "4b4ab1df22d856a1e968d3659049ce5bbcecf6575e780ad51006572255999a24"
+    },
+    {
+      "id": "object-key-order-b",
+      "domain": "mdp.run-bundle.v1",
+      "raw_json": "{ \"a\" : { \"one\" : 1, \"two\" : 2 }, \"z\" : 0 }",
+      "raw_byte_count": 43,
+      "raw_utf8_sha256": "942d146b2a2903291ab498a76bae829e08f4123b45ad2f7ad0eada1ae02fbf6f",
+      "canonical_json": "{\"a\":{\"one\":1,\"two\":2},\"z\":0}",
+      "canonical_utf8_sha256": "f04745199c1620a910bf5d352972931dd8aaa818e8452afb69793de646b77e47",
+      "domain_sha256": "4b4ab1df22d856a1e968d3659049ce5bbcecf6575e780ad51006572255999a24"
+    },
+    {
+      "id": "unicode-literal-and-escape",
+      "domain": "mdp.run-request.v1",
+      "raw_json": "{\"emoji\":\"\\ud83c\\udf38\",\"é\":\"café\",\"ключ\":\"значение\"}",
+      "raw_byte_count": 67,
+      "raw_utf8_sha256": "3014b3aab9c6d15bab0fd894c2c5eb1efefa7779219a4b15729027e88de2f861",
+      "canonical_json": "{\"emoji\":\"🌸\",\"é\":\"café\",\"ключ\":\"значение\"}",
+      "canonical_utf8_sha256": "e286699ca30631af035a00d15eb3e792c23c5782bcab51ef6eabaedd0c2d0aa2",
+      "domain_sha256": "3cac21f4cd9947b183d41435c4b1ce99937a1e8795c7cd42449c858a6927b20b"
+    },
+    {
+      "id": "unicode-scalar-key-order",
+      "domain": "mdp.run-request.v1",
+      "raw_json": "{\"𐀀\":\"astral\",\"\":\"bmp\"}",
+      "raw_byte_count": 29,
+      "raw_utf8_sha256": "5e72745dd500f8b8d997ef851679707b89099da29d2aca4b93dfd85810ebaa20",
+      "canonical_json": "{\"\":\"bmp\",\"𐀀\":\"astral\"}",
+      "canonical_utf8_sha256": "94065525f1ea09913315f5a3f2cb846d9dda91a016d4726a60b4d99a53e50788",
+      "domain_sha256": "8c65eb155c6ffae3ddd1e1e5c05c5444239fc1c355fa8e2bda4a211bd3e2132b"
+    },
+    {
+      "id": "safe-integer-bounds",
+      "domain": "mdp.run-receipt.v1",
+      "raw_json": "{\"max\":9007199254740991,\"min\":-9007199254740991}",
+      "raw_byte_count": 48,
+      "raw_utf8_sha256": "63546eb60913dcb1cdd5118f7bf4885beed344af930c8a9d5f38fad243fd4819",
+      "canonical_json": "{\"max\":9007199254740991,\"min\":-9007199254740991}",
+      "canonical_utf8_sha256": "63546eb60913dcb1cdd5118f7bf4885beed344af930c8a9d5f38fad243fd4819",
+      "domain_sha256": "6b190d72b2e359ea1e096016b6420104922c471b455f6dd662f63ef1d32922bc"
+    },
+    {
+      "id": "array-order-preserved",
+      "domain": "mdp.driver-request.v1",
+      "raw_json": "{\"values\":[3,1,2]}",
+      "raw_byte_count": 18,
+      "raw_utf8_sha256": "c2d02feadd9a74ac8989f91e0f89044215f3f18e368c414771d457b8246ce293",
+      "canonical_json": "{\"values\":[3,1,2]}",
+      "canonical_utf8_sha256": "c2d02feadd9a74ac8989f91e0f89044215f3f18e368c414771d457b8246ce293",
+      "domain_sha256": "71540e53fbdf6768d07af3f5da515502b56842374840a59a704bfb92e212fbb8"
+    },
+    {
+      "id": "array-order-distinct",
+      "domain": "mdp.driver-request.v1",
+      "raw_json": "{\"values\":[1,3,2]}",
+      "raw_byte_count": 18,
+      "raw_utf8_sha256": "d3e6e9c5d29629e0fed6b12f2c1531b2bbbbb50c21957041a28fcad021901f6b",
+      "canonical_json": "{\"values\":[1,3,2]}",
+      "canonical_utf8_sha256": "d3e6e9c5d29629e0fed6b12f2c1531b2bbbbb50c21957041a28fcad021901f6b",
+      "domain_sha256": "3b1d2c4fb19ba370681ecb5e0d057e4cff231530b30ad6ab0ff052229606d58d"
+    },
+    {
+      "id": "empty-structures",
+      "domain": "mdp.runner-audit.v1",
+      "raw_json": "{\"array\":[],\"object\":{},\"string\":\"\",\"null\":null}",
+      "raw_byte_count": 48,
+      "raw_utf8_sha256": "d1a22ff3617a91761f3a949cfbc9027559786d7987803488893b882942132f19",
+      "canonical_json": "{\"array\":[],\"null\":null,\"object\":{},\"string\":\"\"}",
+      "canonical_utf8_sha256": "8cacae2e1017427e5afd715cdc756587fe581d2c50247f81e190f41fcb2e146c",
+      "domain_sha256": "15381fee7849d6fdf2e4154588b5f5acb336696e234b5f040584168df4d093b4"
+    }
+  ],
+  "rejected": [
+    {"id":"duplicate-member","raw_json":"{\"a\":1,\"a\":2}","error_category":"duplicate_member"},
+    {"id":"negative-zero","raw_json":"{\"value\":-0}","error_category":"negative_zero"},
+    {"id":"decimal-float","raw_json":"{\"value\":1.0}","error_category":"floating_point"},
+    {"id":"exponent-float","raw_json":"{\"value\":1e0}","error_category":"floating_point"},
+    {"id":"positive-out-of-range","raw_json":"{\"value\":9007199254740992}","error_category":"unsafe_integer"},
+    {"id":"negative-out-of-range","raw_json":"{\"value\":-9007199254740992}","error_category":"unsafe_integer"},
+    {"id":"excess-depth","raw_json":"{\"a\":{\"b\":{\"c\":1}}}","limits":{"max_depth":2},"error_category":"depth_limit"},
+    {"id":"excess-byte-size","raw_json":"{\"a\":123}","limits":{"max_bytes":8},"error_category":"byte_limit"},
+    {"id":"excess-array-length","raw_json":"[1,2,3]","limits":{"max_array_length":2},"error_category":"array_limit"},
+    {"id":"excess-object-members","raw_json":"{\"a\":1,\"b\":2,\"c\":3}","limits":{"max_object_members":2},"error_category":"object_limit"},
+    {"id":"excess-string-bytes","raw_json":"\"ééé\"","limits":{"max_string_bytes":4},"error_category":"string_limit"},
+    {"id":"excess-key-bytes","raw_json":"{\"ééé\":1}","limits":{"max_string_bytes":4},"error_category":"string_limit"},
+    {"id":"trailing-data","raw_json":"{} {}","error_category":"invalid_json"},
+    {"id":"lone-surrogate","raw_json":"\"\\ud800\"","error_category":"invalid_unicode"}
+  ]
+}

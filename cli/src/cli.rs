@@ -170,6 +170,43 @@ pub(crate) enum Commands {
         #[arg(long, help = "Show the receipt artifact write without writing it")]
         dry_run: bool,
     },
+    #[command(about = "Verify one v1 clean-run bundle and receipt without invoking a runner")]
+    VerifyRun {
+        #[arg(long, help = "mdp.run-bundle.v1 JSON file; required for v1 receipts")]
+        bundle: Option<PathBuf>,
+        #[arg(long, help = "mdp.run-receipt.v1 JSON file")]
+        receipt: PathBuf,
+        #[arg(
+            long,
+            help = "Optional root containing receipt artifacts at their logical names"
+        )]
+        artifact_root: Option<PathBuf>,
+    },
+    #[command(about = "Atomically consume one verified receipt in the local conformance ledger")]
+    ConsumeRun {
+        #[arg(long, help = "Append-only local reference ledger path")]
+        ledger: PathBuf,
+        #[arg(long)]
+        job_id: String,
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(long)]
+        receipt_sha256: String,
+        #[arg(long)]
+        expected_prior_version: u64,
+        #[arg(
+            long,
+            help = "Permit replay only when job, key, receipt, and prior version match"
+        )]
+        permit_exact_replay: bool,
+    },
+    #[command(about = "Execute one clean run from an exact v1 request file")]
+    Run {
+        #[arg(long, help = "mdp.run-request.v1 JSON file")]
+        request: PathBuf,
+        #[arg(long, help = "New directory for immutable published run artifacts")]
+        out_dir: PathBuf,
+    },
     #[command(about = "Verify proof-carrying generated output against loaded pack IDs")]
     VerifyOutput {
         #[arg(long, default_value = ".")]
@@ -374,10 +411,20 @@ pub(crate) enum SchemaTarget {
     PromptOutput,
     ProposalRunManifest,
     ProposalRunnerResult,
+    ProposalRunnerResultV1,
     ProposalReadinessReport,
     ProposalMcpRunResult,
     RunReceipt,
     RunnerAudit,
+    RunRequestV1,
+    RunBundleV1,
+    DriverRequestV1,
+    DriverResultV1,
+    RunnerAuditV1,
+    RunReceiptV1,
+    RunVerificationV1,
+    RunExecutionV1,
+    CanonicalAuthorityBlockV1,
     Brief,
     HumanBrief,
     RuntimeContext,
@@ -576,5 +623,37 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn v1_execution_schema_targets_use_explicit_versioned_names() {
+        let targets = [
+            ("run-request-v1", SchemaTarget::RunRequestV1),
+            ("run-bundle-v1", SchemaTarget::RunBundleV1),
+            ("driver-request-v1", SchemaTarget::DriverRequestV1),
+            ("driver-result-v1", SchemaTarget::DriverResultV1),
+            ("runner-audit-v1", SchemaTarget::RunnerAuditV1),
+            ("run-receipt-v1", SchemaTarget::RunReceiptV1),
+            ("run-verification-v1", SchemaTarget::RunVerificationV1),
+            ("run-execution-v1", SchemaTarget::RunExecutionV1),
+            (
+                "canonical-authority-block-v1",
+                SchemaTarget::CanonicalAuthorityBlockV1,
+            ),
+            (
+                "proposal-runner-result-v1",
+                SchemaTarget::ProposalRunnerResultV1,
+            ),
+        ];
+
+        for (name, expected) in targets {
+            let parsed = Cli::try_parse_from(["mdp", "schema", name])
+                .unwrap_or_else(|error| panic!("{name} should parse: {error}"));
+            assert!(
+                matches!(parsed.command, Commands::Schema { target } if std::mem::discriminant(&target) == std::mem::discriminant(&expected))
+            );
+        }
+
+        assert!(Cli::try_parse_from(["mdp", "schema", "run-request"]).is_err());
     }
 }

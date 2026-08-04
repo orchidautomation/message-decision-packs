@@ -20,7 +20,36 @@ mdp --json skills --dir <pack-root>
 3. Treat `packaged_skill_ids` as released inventory, `eligibility` as pack policy, and `host_discovery.status: unobserved` as literal. Never claim MDP hid or exposed a host-discovered skill.
 4. Use JSON output for decisions. Use `--summary` only for a concise human status.
 
-For audit-grade proposal/document normalization, require `mdp run-receipt` after prompt-output validation. A skill running inside the current conversation cannot by itself guarantee model context isolation; the host runner must report `--isolation isolated`, `--declared-inputs-only`, and for production proposal pilots a valid `--runner-audit ... --require-runner-audit` from a native/headless runner. Prefer the host-neutral local proposal runner when available: `scripts/mdp-proposal-runner.mjs` in source checkouts or `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed Pluxx bundles. For MCP-capable hosts, the bundled local stdio MCP wrapper is `scripts/mdp-proposal-mcp-server.mjs` or `${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs`; it exposes `mdp_proposal_tools` and file/path-only `mdp_proposal_run`. This is local stdio only, not a hosted or remote MCP service, and MCP transport alone is not audit-grade. MDP also ships the lower-level optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs` or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; dry-run/mock validation and normal MDP install/use do not need an API key, but a real native model call requires the operator's secure `OPENAI_API_KEY`. Demo, fixture, mock, or synthetic runner audits are blocked from audit-grade and may only be used for walkthroughs/tests. Activation hooks may report whether that key is present, but they are advisory only; the blocking gate remains `mdp run-receipt --require-runner-audit`.
+For a new authoritative execution, freeze the pack and declared inputs into an
+`mdp.run-request.v1` file, then launch the shared runtime outside the authoring
+conversation:
+
+```bash
+mdp --json run --request <run-request.json> --out-dir <new-run-directory>
+mdp --json verify-run --bundle <new-run-directory>/run-bundle.json \
+  --receipt <new-run-directory>/run-receipt.json \
+  --artifact-root <new-run-directory>
+```
+
+For MCP-capable hosts, the profile-neutral adapter is
+`scripts/mdp-run-mcp-server.mjs` or
+`${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs`. It exposes `mdp_run_tools`,
+`mdp_run`, and read-only `mdp_verify_run`; pass only existing authority-file
+paths and, for execution, a new `output_dir`. The MCP server transports the
+file-oriented CLI calls and returns canonical CLI data unchanged. It owns no
+assurance dimension and must never accept ambient chat, inline evidence, or an
+assurance override.
+
+The current conversation is a control plane, never proof of fresh context. Do
+not add chat facts, rewrite a decision, or repair a no-draft result after the
+run. Present the verified CLI authority block intact and label all surrounding
+explanation as outside receipt authority. A new agent task is only advisory
+unless its runner evidence proves the relevant controls. Deterministic-only
+runs must report inference dimensions as `not-applicable`, not “fresh.”
+
+`mdp run-receipt` remains the legacy v0 proposal compatibility path. A v0
+`audit-grade` label does not silently become v1 verified assurance. Prefer the
+host-neutral local proposal runner when available: `scripts/mdp-proposal-runner.mjs` in source checkouts or `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed Pluxx bundles. For MCP-capable hosts, the bundled local stdio MCP wrapper is `scripts/mdp-proposal-mcp-server.mjs` or `${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs`; it exposes `mdp_proposal_tools` and file/path-only `mdp_proposal_run`. This is local stdio only, not a hosted or remote MCP service, and MCP transport alone is not isolation evidence. MDP also ships the lower-level optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs` or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; dry-run/mock validation and normal MDP install/use do not need an API key, but a real native model call requires the operator's secure `OPENAI_API_KEY`. Demo, fixture, mock, or synthetic runner audits may only be used for walkthroughs/tests.
 
 If the user asks whether proposal work is audit-grade, route the answer to
 `$mdp-proposal-review` even when the request sounds like general MDP help. That

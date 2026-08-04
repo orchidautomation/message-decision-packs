@@ -68,12 +68,21 @@ The runner step names are:
 - `mdp_run_receipt`
 - `mdp_review_proposal`
 
+When `--clean-run-v1` is selected, `mdp_clean_run_v1` replaces the legacy
+`mdp_validate_normalization` and `mdp_run_receipt` steps. The Rust CLI is the
+sole authority for the v1 validation artifact, hashes, terminal state, receipt,
+and canonical authority block.
+
 The stdio MCP server exposes two callable MCP tools:
 
 - `mdp_proposal_tools` — read-only inspection of the runner boundary contract.
 - `mdp_proposal_run` — file/path-only wrapper around `mdp-proposal-runner.mjs run`.
 
 `mdp_proposal_run` intentionally accepts local source file paths and source-audit paths, not raw chat text. MCP transport is only the call boundary; audit-grade status still comes from a valid runner audit plus `mdp run-receipt --require-runner-audit`.
+
+The MCP tool accepts `clean_run_v1: true` with a required
+`pack_release_id`. It returns the CLI-owned `authority_contract`,
+`terminal_state`, and `canonical_authority` fields without recalculating them.
 
 The MCP adapter hardens that local boundary:
 
@@ -142,6 +151,51 @@ The readiness report is a machine-readable review queue, not a truth score.
 artifacts. It does not estimate whether a proposal claim is true. The
 `run-receipt` decision remains the audit-grade gate; readiness never overrides
 a blocked or advisory receipt.
+
+## Canonical v1 Compatibility Route
+
+Use the opt-in compatibility route to finalize an already-generated proposal
+normalization through the canonical Rust `mdp run` runtime:
+
+```bash
+node scripts/mdp-proposal-runner.mjs run \
+  --pack <pack-root> \
+  --pack-release-id <immutable-release-id> \
+  --clean-run-v1 \
+  --workdir <new-customer-controlled-run-dir> \
+  --source <approved-text-export.txt> \
+  --source-intake <operator-approved-source-intake.json> \
+  --source-id <id-from-pack-.mdp-sources-yaml> \
+  --source-kind private-scratch-opportunity \
+  --model <openai-model-id>
+```
+
+The JavaScript runner still performs the existing proposal-specific source
+staging and native model invocation. It then writes
+`artifacts/run-request-v1.json` containing file-oriented declared inputs and
+invokes:
+
+```bash
+mdp --json run \
+  --request <workdir>/artifacts/run-request-v1.json \
+  --out-dir <workdir>/artifacts/clean-run-v1
+```
+
+The request uses the deterministic `proposal` / `validate-existing-output`
+operation. JavaScript does not set v1 hashes, assurance, terminal state, or
+receipt values. Consumers must treat `canonical_run` and
+`canonical_authority` in `mdp.proposal-runner-result.v1` as authoritative. The
+legacy `decision` field is only a compatibility projection, and
+`audit_grade_eligible` remains false on this route.
+
+This boundary matters: the v1 artifacts prove deterministic validation and
+hash binding of the exact declared files handed to `mdp run`. They do not prove
+that the Rust runtime performed the upstream model inference, that the model
+received no undeclared provider context, or that the JavaScript/native runner
+was isolated from ambient host state. Until the canonical runtime supports a
+generative driver, do not label this route end-to-end isolated or audit-grade.
+The default invocation without `--clean-run-v1` remains the unchanged v0
+proposal workflow.
 
 ## Offline Dry Run
 

@@ -187,6 +187,22 @@ messages = [
             },
         },
     },
+    {
+        "jsonrpc": "2.0",
+        "id": 13,
+        "method": "tools/call",
+        "params": {
+            "name": "mdp_proposal_run",
+            "arguments": {
+                "pack": pack,
+                "workdir": str(pathlib.Path(workdir).parent / "clean-run-missing-release"),
+                "source_paths": [source],
+                "source_id": "synthetic-rfp-summary",
+                "source_kind": "synthetic-example",
+                "clean_run_v1": True,
+            },
+        },
+    },
 ]
 with open(transcript, "w", encoding="utf-8") as handle:
     for message in messages:
@@ -214,7 +230,7 @@ workdir_manifest_path = pathlib.Path(sys.argv[4])
 mcp_result_schema = json.load(open(sys.argv[5]))["data"]
 stderr_path = pathlib.Path(sys.argv[6])
 lines = [line for line in stdout_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-assert len(lines) == 12, f"expected 12 JSON-RPC responses, got {len(lines)}: {stdout_path.read_text()}"
+assert len(lines) == 13, f"expected 13 JSON-RPC responses, got {len(lines)}: {stdout_path.read_text()}"
 messages = [json.loads(line) for line in lines]
 responses = {message["id"]: message for message in messages}
 
@@ -237,6 +253,8 @@ assert run_tool["inputSchema"]["additionalProperties"] is False
 assert "source_text" not in run_tool["inputSchema"]["properties"]
 assert "source_intake_path" in run_tool["inputSchema"]["properties"]
 assert "reuse_workdir_id" in run_tool["inputSchema"]["properties"]
+assert "clean_run_v1" in run_tool["inputSchema"]["properties"]
+assert "pack_release_id" in run_tool["inputSchema"]["properties"]
 assert run_tool["inputSchema"]["properties"]["timeout_ms"]["maximum"] == 300000
 assert run_tool["inputSchema"]["properties"]["source_paths"]["maxItems"] == 16
 assert run_tool["inputSchema"]["properties"]["max_source_bytes"]["maximum"] == 100000
@@ -247,6 +265,8 @@ output_schema = run_tool["outputSchema"]
 assert output_schema["additionalProperties"] is False
 for required in ["mode", "decision", "audit_grade_eligible", "timed_out", "timeout_ms", "environment"]:
     assert required in output_schema["required"], f"missing outputSchema requirement {required}"
+for v1_field in ["authority_contract", "terminal_state", "canonical_authority"]:
+    assert v1_field in output_schema["properties"], f"missing v1 outputSchema field {v1_field}"
 
 tools_call = result(3, "tools/call mdp_proposal_tools")
 assert tools_call["isError"] is False
@@ -267,6 +287,9 @@ assert run_content["runner_result"]["audit_grade_eligible"] is False
 assert run_content["mode"] == "dry-run"
 assert run_content["decision"] == "not-run"
 assert run_content["audit_grade_eligible"] is False
+assert "authority_contract" not in run_content
+assert "terminal_state" not in run_content
+assert "canonical_authority" not in run_content
 assert run_content["timed_out"] is False
 assert run_content["termination_signal"] is None
 assert run_content["environment"]["policy"] == "allowlist"
@@ -324,6 +347,10 @@ assert "5000000 byte file limit" in oversized_source["error"]["message"]
 oversized_excerpt = responses[12]
 assert oversized_excerpt["error"]["code"] == -32602
 assert "max_source_bytes must be between 1000 and 100000" in oversized_excerpt["error"]["message"]
+
+clean_run_missing_release = responses[13]
+assert clean_run_missing_release["error"]["code"] == -32602
+assert "clean_run_v1 requires pack_release_id" in clean_run_missing_release["error"]["message"]
 
 all_output = stdout_path.read_text(encoding="utf-8") + stderr_path.read_text(encoding="utf-8")
 assert "must-not-leak" not in all_output

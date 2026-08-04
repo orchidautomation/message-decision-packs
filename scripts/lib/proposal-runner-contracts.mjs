@@ -1,5 +1,7 @@
 export const RUNNER_CONTRACT = 'mdp.proposal-runner.v0'
 export const RESULT_CONTRACT = 'mdp.proposal-runner-result.v0'
+export const RESULT_CONTRACT_V1 = 'mdp.proposal-runner-result.v1'
+export const RUN_REQUEST_CONTRACT_V1 = 'mdp.run-request.v1'
 export const TOOLS_CONTRACT = 'mdp.proposal-runner-tools.v0'
 export const SOURCE_INTAKE_CONTRACT = 'mdp.source-intake.v0'
 export const SOURCE_AUDIT_CONTRACT = 'mdp.source-audit.v0'
@@ -59,6 +61,13 @@ export const toolEnvelope = () => ({
       boundary: 'deterministic local receipt gate',
       purpose:
         'Run mdp run-receipt --require-runner-audit to bind prompt output, validation, source audit, and runner audit.',
+    },
+    {
+      name: 'mdp_clean_run_v1',
+      mode: 'cli',
+      boundary: 'canonical Rust clean-run runtime',
+      purpose:
+        'Optionally hand the generated proposal output and exact file-oriented evidence to mdp run. The CLI alone owns v1 staging, hashes, assurance, terminal state, receipt, and authority.',
     },
     {
       name: 'mdp_review_proposal',

@@ -1,6 +1,17 @@
 # Headless Normalization Runners
 
-MDP is intentionally not the model runner. The plugin teaches the agent what to do, and the CLI validates/hash-gates the artifacts it receives. For production proposal or document review, the model call that turns messy source material into `mdp.prompt-output.v0` should run in a headless/stateless boundary, not inside the operator's current chat context.
+> **V1 note:** the shared `mdp run` kernel is now the canonical authority for
+> deterministic proposal validation and GTM qualification. The headless paths
+> below remain v0 compatibility/reference transports until a released v1
+> driver completes MDP-184 proof. A new process, task, CLI, or MCP call improves
+> context hygiene but cannot by itself prove declared-input isolation.
+
+MDP does not own generalized model execution. The plugin teaches the agent what
+to do, and the CLI owns pack/input authority, deterministic evaluation,
+validation, receipts, and verification. For proposal or document review, a
+model call that turns messy source material into `mdp.prompt-output.v0` should
+run in a separate stateless boundary, not inside the operator's current chat
+context.
 
 The strongest default boundary is a native stateless API call. This repo includes an optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs`, and Pluxx packages it into installed bundles under `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; see [Native API Normalization Runner](native-api-normalization-runner.md). For the proposal flow, `scripts/mdp-proposal-runner.mjs` is the local orchestration surface that stages sources, builds the native request, calls the runner, validates prompt output, creates the receipt, and runs review probes; see [Local Proposal Runner Surface](proposal-runner.md). Headless Codex, Claude Code, Cursor, and OpenCode entries below are recipe-only adapter paths, not verified MDP integrations.
 

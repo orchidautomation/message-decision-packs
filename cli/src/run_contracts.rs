@@ -1,0 +1,343 @@
+use crate::artifact_hash::PortableFileRecord;
+use serde::{Deserialize, Serialize};
+
+pub(crate) const RUN_REQUEST_V1: &str = "mdp.run-request.v1";
+pub(crate) const RUN_BUNDLE_V1: &str = "mdp.run-bundle.v1";
+pub(crate) const DRIVER_REQUEST_V1: &str = "mdp.driver-request.v1";
+pub(crate) const DRIVER_RESULT_V1: &str = "mdp.driver-result.v1";
+pub(crate) const RUNNER_AUDIT_V1: &str = "mdp.runner-audit.v1";
+pub(crate) const RUN_RECEIPT_V1: &str = "mdp.run-receipt.v1";
+pub(crate) const RUN_VERIFICATION_V1: &str = "mdp.run-verification.v1";
+pub(crate) const RUN_EXECUTION_V1: &str = "mdp.run-execution.v1";
+pub(crate) const CANONICAL_AUTHORITY_BLOCK_V1: &str = "mdp.canonical-authority-block.v1";
+pub(crate) const PROPOSAL_RUNNER_RESULT_V1: &str = "mdp.proposal-runner-result.v1";
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum RunMode {
+    Deterministic,
+    Generative,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub(crate) enum TerminalState {
+    #[serde(rename = "success")]
+    Success,
+    #[serde(rename = "no-draft:preflight-refused")]
+    NoDraftPreflightRefused,
+    #[serde(rename = "no-draft:runner-failed")]
+    NoDraftRunnerFailed,
+    #[serde(rename = "no-draft:output-invalid")]
+    NoDraftOutputInvalid,
+    #[serde(rename = "no-draft:decision-invalid")]
+    NoDraftDecisionInvalid,
+    #[serde(rename = "no-draft:audit-incomplete")]
+    NoDraftAuditIncomplete,
+    #[serde(rename = "no-draft:policy-blocked")]
+    NoDraftPolicyBlocked,
+}
+
+impl TerminalState {
+    pub(crate) fn is_success(self) -> bool {
+        self == Self::Success
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum EvidenceProvenance {
+    MdpObserved,
+    ProviderReturned,
+    CustomerAttested,
+    HostAttested,
+    DriverAttested,
+    VerifierRecomputed,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum AssuranceEvidenceState {
+    Declared,
+    Observed,
+    Enforced,
+    Verified,
+    Unknown,
+    Redacted,
+    Unsupported,
+    NotApplicable,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum GtmReasonCode {
+    Ready,
+    InsufficientContext,
+    MissingRequiredSourceAttempt,
+    InvalidSourceBinding,
+    StaleDecisionInput,
+    InvalidDecisionInput,
+    Disqualified,
+    ScopeMismatch,
+    HardGateFailed,
+    ValidationFailed,
+    PolicyBlocked,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JobIdentity {
+    pub(crate) job_id: String,
+    pub(crate) idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LocalArtifactInput {
+    pub(crate) logical_name: String,
+    pub(crate) source_path: String,
+    pub(crate) schema_id: String,
+    pub(crate) media_type: String,
+    pub(crate) provenance_refs: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ArtifactAuthority {
+    pub(crate) logical_name: String,
+    pub(crate) schema_id: String,
+    pub(crate) media_type: String,
+    pub(crate) byte_count: u64,
+    pub(crate) sha256: String,
+    pub(crate) provenance: EvidenceProvenance,
+    pub(crate) provenance_refs: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PackAuthority {
+    pub(crate) release_id: String,
+    pub(crate) pack_id: String,
+    pub(crate) version: String,
+    pub(crate) profile_id: String,
+    pub(crate) portable_digest: String,
+    pub(crate) files: Vec<PortableFileRecord>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ExecutionPolicy {
+    pub(crate) environment_allowlist: Vec<String>,
+    pub(crate) filesystem_mode: String,
+    pub(crate) tool_mode: String,
+    pub(crate) network_mode: String,
+    pub(crate) authorized_endpoints: Vec<String>,
+    pub(crate) max_input_bytes: u64,
+    pub(crate) max_output_bytes: u64,
+    pub(crate) timeout_ms: u64,
+    pub(crate) retention_policy: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverIdentity {
+    pub(crate) driver_id: String,
+    pub(crate) implementation: String,
+    pub(crate) version: String,
+    pub(crate) build_sha256: Option<String>,
+    pub(crate) executable_sha256: Option<String>,
+    pub(crate) image_digest: Option<String>,
+    pub(crate) configuration_sha256: String,
+    pub(crate) dependency_lock_sha256: Option<String>,
+    pub(crate) identity_provenance: EvidenceProvenance,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ModelIdentity {
+    pub(crate) provider: String,
+    pub(crate) requested_model: String,
+    pub(crate) resolved_model: Option<String>,
+    pub(crate) authorized_endpoint: String,
+    pub(crate) parameters_sha256: String,
+    pub(crate) session_behavior: AssuranceEvidenceState,
+    pub(crate) cache_behavior: AssuranceEvidenceState,
+    pub(crate) storage_behavior: AssuranceEvidenceState,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AssuranceDimension {
+    pub(crate) dimension: String,
+    pub(crate) state: AssuranceEvidenceState,
+    pub(crate) provenance: EvidenceProvenance,
+    pub(crate) evidence_refs: Vec<String>,
+    pub(crate) limitations: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunRequestV1 {
+    pub(crate) contract: String,
+    pub(crate) execution_id: String,
+    pub(crate) created_at: String,
+    pub(crate) profile: String,
+    pub(crate) operation: String,
+    pub(crate) mode: RunMode,
+    pub(crate) job_identity: Option<JobIdentity>,
+    pub(crate) pack_dir: String,
+    pub(crate) pack_release_id: String,
+    pub(crate) prompt: Option<LocalArtifactInput>,
+    pub(crate) inputs: Vec<LocalArtifactInput>,
+    pub(crate) execution_policy: ExecutionPolicy,
+    pub(crate) driver: Option<DriverIdentity>,
+    pub(crate) model: Option<ModelIdentity>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunBundleV1 {
+    pub(crate) contract: String,
+    pub(crate) execution_id: String,
+    pub(crate) created_at: String,
+    pub(crate) profile: String,
+    pub(crate) operation: String,
+    pub(crate) mode: RunMode,
+    pub(crate) job_identity: Option<JobIdentity>,
+    pub(crate) pack: PackAuthority,
+    pub(crate) prompt: Option<ArtifactAuthority>,
+    pub(crate) inputs: Vec<ArtifactAuthority>,
+    pub(crate) execution_policy_sha256: String,
+    pub(crate) driver: Option<DriverIdentity>,
+    pub(crate) model: Option<ModelIdentity>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverRequestV1 {
+    pub(crate) contract: String,
+    pub(crate) execution_id: String,
+    pub(crate) profile: String,
+    pub(crate) operation: String,
+    pub(crate) prompt: ArtifactAuthority,
+    pub(crate) inputs: Vec<ArtifactAuthority>,
+    pub(crate) output_schema_sha256: String,
+    pub(crate) execution_policy_sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverResultV1 {
+    pub(crate) contract: String,
+    pub(crate) execution_id: String,
+    pub(crate) terminal_state: TerminalState,
+    pub(crate) output: Option<ArtifactAuthority>,
+    pub(crate) audit: ArtifactAuthority,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunnerAuditV1 {
+    pub(crate) contract: String,
+    pub(crate) execution_id: String,
+    pub(crate) runner_version: String,
+    pub(crate) runner_build_sha256: Option<String>,
+    pub(crate) platform: String,
+    pub(crate) snapshot_sha256: String,
+    pub(crate) provider_request_body_sha256: Option<String>,
+    pub(crate) provider_request_schema_id: Option<String>,
+    pub(crate) terminal_state: TerminalState,
+    pub(crate) assurance: Vec<AssuranceDimension>,
+    pub(crate) limitations: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DecisionAuthority {
+    pub(crate) schema_id: String,
+    pub(crate) decision: String,
+    pub(crate) reason_codes: Vec<String>,
+    pub(crate) sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunReceiptV1 {
+    pub(crate) contract: String,
+    pub(crate) execution_id: String,
+    pub(crate) created_at: String,
+    pub(crate) profile: String,
+    pub(crate) operation: String,
+    pub(crate) job_identity: Option<JobIdentity>,
+    pub(crate) bundle_sha256: String,
+    pub(crate) terminal_state: TerminalState,
+    pub(crate) output: Option<ArtifactAuthority>,
+    pub(crate) decision: Option<DecisionAuthority>,
+    pub(crate) compiled_context: Option<ArtifactAuthority>,
+    pub(crate) validation: Option<ArtifactAuthority>,
+    pub(crate) runner_audit: ArtifactAuthority,
+    pub(crate) assurance: Vec<AssuranceDimension>,
+    pub(crate) limitations: Vec<String>,
+    pub(crate) receipt_sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunVerificationV1 {
+    pub(crate) contract: String,
+    pub(crate) valid: bool,
+    pub(crate) integrity_only: bool,
+    pub(crate) execution_id: String,
+    pub(crate) terminal_state: TerminalState,
+    pub(crate) recomputed_assurance: Vec<AssuranceDimension>,
+    pub(crate) issues: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        AssuranceEvidenceState, CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_RESULT_V1,
+        EvidenceProvenance, GtmReasonCode, PROPOSAL_RUNNER_RESULT_V1, RUN_BUNDLE_V1,
+        RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
+        RunMode, TerminalState,
+    };
+
+    #[test]
+    fn authority_enums_have_stable_wire_values() {
+        assert_eq!(RUN_REQUEST_V1, "mdp.run-request.v1");
+        assert_eq!(RUN_BUNDLE_V1, "mdp.run-bundle.v1");
+        assert_eq!(DRIVER_REQUEST_V1, "mdp.driver-request.v1");
+        assert_eq!(DRIVER_RESULT_V1, "mdp.driver-result.v1");
+        assert_eq!(RUNNER_AUDIT_V1, "mdp.runner-audit.v1");
+        assert_eq!(RUN_RECEIPT_V1, "mdp.run-receipt.v1");
+        assert_eq!(RUN_VERIFICATION_V1, "mdp.run-verification.v1");
+        assert_eq!(RUN_EXECUTION_V1, "mdp.run-execution.v1");
+        assert_eq!(
+            CANONICAL_AUTHORITY_BLOCK_V1,
+            "mdp.canonical-authority-block.v1"
+        );
+        assert_eq!(PROPOSAL_RUNNER_RESULT_V1, "mdp.proposal-runner-result.v1");
+        assert!(TerminalState::Success.is_success());
+        assert!(!TerminalState::NoDraftRunnerFailed.is_success());
+        assert_eq!(
+            serde_json::to_string(&RunMode::Deterministic).unwrap(),
+            "\"deterministic\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TerminalState::NoDraftAuditIncomplete).unwrap(),
+            "\"no-draft:audit-incomplete\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EvidenceProvenance::MdpObserved).unwrap(),
+            "\"mdp-observed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&AssuranceEvidenceState::NotApplicable).unwrap(),
+            "\"not-applicable\""
+        );
+        assert_eq!(
+            serde_json::to_string(&GtmReasonCode::MissingRequiredSourceAttempt).unwrap(),
+            "\"missing-required-source-attempt\""
+        );
+    }
+}

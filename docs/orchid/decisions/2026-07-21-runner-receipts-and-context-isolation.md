@@ -2,7 +2,8 @@
 
 Date: 2026-07-21
 Issue: MDP-114
-Status: first implementation slice
+Status: superseded as cross-profile architecture authority; retained as the historical proposal/v0 implementation record
+Superseded by: [`2026-08-03-unified-clean-context-runtime.md`](2026-08-03-unified-clean-context-runtime.md)
 
 ## Decision
 

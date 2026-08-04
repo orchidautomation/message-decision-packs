@@ -24,8 +24,11 @@ import {
   DEFAULT_SOURCE_KIND,
   MAX_SNIPPET_CHARS,
   PRIVACY_CLASSES,
+  PROMPT_OUTPUT_CONTRACT,
   REQUEST_CONTRACT,
   RESULT_CONTRACT,
+  RESULT_CONTRACT_V1,
+  RUN_REQUEST_CONTRACT_V1,
   RUNNER_CONTRACT,
   RUN_MANIFEST_CONTRACT,
   SAFE_SOURCE_ID,
@@ -74,6 +77,8 @@ Purpose:
 
 Options:
   --pack PATH              Proposal MDP pack root. Required.
+  --clean-run-v1           Finalize the generated output through canonical Rust mdp run v1.
+  --pack-release-id ID     Immutable pack release id. Required with --clean-run-v1.
   --workdir PATH           Empty/customer-controlled run directory. Required.
   --source PATH            Text/Markdown/CSV/JSON/YAML source file. Repeatable.
   --source-intake PATH     Existing approved mdp.source-intake.v0 JSON for a real native run.
@@ -98,6 +103,8 @@ const parseArgs = (argv) => {
   const args = {
     command,
     pack: null,
+    cleanRunV1: false,
+    packReleaseId: null,
     workdir: null,
     sources: [],
     sourceIntake: null,
@@ -130,6 +137,13 @@ const parseArgs = (argv) => {
     switch (flag) {
       case '--pack':
         args.pack = next(index, flag)
+        index += 1
+        break
+      case '--clean-run-v1':
+        args.cleanRunV1 = true
+        break
+      case '--pack-release-id':
+        args.packReleaseId = next(index, flag)
         index += 1
         break
       case '--workdir':
@@ -773,6 +787,50 @@ const parseCliData = (path) => {
   return value.data || value
 }
 
+const cleanRunInput = (logicalName, sourcePath, schemaId, provenanceRefs = []) => ({
+  logical_name: logicalName,
+  source_path: sourcePath,
+  schema_id: schemaId,
+  media_type: 'application/json',
+  provenance_refs: provenanceRefs,
+})
+
+const buildCleanRunV1Request = ({ args, packRoot, runState, paths }) => ({
+  contract: RUN_REQUEST_CONTRACT_V1,
+  execution_id: runState.manifest.run_id,
+  created_at: runState.manifest.started_at,
+  profile: 'proposal',
+  operation: 'validate-existing-output',
+  mode: 'deterministic',
+  job_identity: null,
+  pack_dir: packRoot,
+  pack_release_id: args.packReleaseId,
+  prompt: null,
+  inputs: [
+    cleanRunInput('native-request', paths.request, REQUEST_CONTRACT),
+    cleanRunInput('prompt-output', paths.promptOutput, PROMPT_OUTPUT_CONTRACT, ['native-request']),
+    cleanRunInput('source-audit', paths.sourceAudit, SOURCE_AUDIT_CONTRACT),
+    cleanRunInput('source-intake', paths.sourceIntake, SOURCE_INTAKE_CONTRACT, ['source-audit']),
+    cleanRunInput('runner-audit', paths.runnerAudit, 'mdp.runner-audit.v0', [
+      'native-request',
+      'prompt-output',
+    ]),
+  ],
+  execution_policy: {
+    environment_allowlist: [],
+    filesystem_mode: 'private-staging',
+    tool_mode: 'none',
+    network_mode: 'none',
+    authorized_endpoints: [],
+    max_input_bytes: 20_000_000,
+    max_output_bytes: 2_000_000,
+    timeout_ms: 30_000,
+    retention_policy: 'customer-controlled-workdir',
+  },
+  driver: null,
+  model: null,
+})
+
 const persistRunnerResult = ({
   paths,
   result,
@@ -795,11 +853,17 @@ const persistRunnerResult = ({
   return report
 }
 
-const run = (args) => {
+const run = async (args) => {
   if (!args.pack) fail(`Missing --pack\n\n${usage()}`)
   if (!args.workdir) fail(`Missing --workdir\n\n${usage()}`)
   if (args.promptId !== DEFAULT_PROMPT_ID) {
     fail(`This proposal runner currently supports only --prompt-id ${DEFAULT_PROMPT_ID}`)
+  }
+  if (args.cleanRunV1 && !args.packReleaseId) {
+    fail('--clean-run-v1 requires --pack-release-id naming the immutable pack release.')
+  }
+  if (args.cleanRunV1 && args.dryRun) {
+    fail('--clean-run-v1 cannot be combined with --dry-run because no output exists to validate.')
   }
   const packRoot = assertSafePackRoot(args.pack)
   const promptPath = join(packRoot, '.mdp', 'prompts', `${args.promptId}.yaml`)
@@ -848,6 +912,10 @@ const run = (args) => {
     receipt: join(artifactsDir, 'run-receipt.json'),
     receiptStdout: join(artifactsDir, 'run-receipt.stdout.json'),
     receiptStderr: join(artifactsDir, 'run-receipt.stderr'),
+    cleanRunRequest: join(artifactsDir, 'run-request-v1.json'),
+    cleanRunDir: join(artifactsDir, 'clean-run-v1'),
+    cleanRunStdout: join(artifactsDir, 'clean-run-v1.stdout.json'),
+    cleanRunStderr: join(artifactsDir, 'clean-run-v1.stderr'),
     normalized: join(artifactsDir, 'normalized-opportunity.json'),
     fit: join(artifactsDir, 'fit-normalized-opportunity.json'),
     fitStderr: join(artifactsDir, 'fit-normalized-opportunity.stderr'),
@@ -926,7 +994,7 @@ const run = (args) => {
   ]
 
   const mdpCommand = resolveMdpCommand(args.mdpBin, bundleRoot)
-  const packValidation = runProcess({
+  const packValidation = await runProcess({
     command: mdpCommand,
     args: ['--json', 'validate', '--dir', packRoot, '--strict'],
     stdoutPath: paths.packValidation,
@@ -946,7 +1014,7 @@ const run = (args) => {
 
   const nativeArgs = ['--request', paths.request]
   if (args.dryRun) {
-    const dryRun = runProcess({
+    const dryRun = await runProcess({
       command: ['node', nativeRunner],
       args: [...nativeArgs, '--dry-run'],
       stdoutPath: paths.nativeDryRun,
@@ -990,13 +1058,17 @@ const run = (args) => {
     paths.runnerAudit,
   ]
   if (args.mockResponse) normalizeArgs.push('--mock-response', resolve(args.mockResponse))
-  const nativeResult = runProcess({
+  const nativeResult = await runProcess({
     command: ['node', nativeRunner],
     args: normalizeArgs,
     stdoutPath: paths.nativeResult,
     stderrPath: paths.nativeStderr,
     environment: args.mockResponse ? nonProviderEnvironment() : process.env,
+    allowNonZero: true,
   })
+  if (nativeResult.status !== 0) {
+    fail(`Native normalization failed before canonical clean-run finalization. See ${paths.nativeResult} and ${paths.nativeStderr}`)
+  }
   steps.push({
     name: 'mdp_normalize_opportunity',
     status: nativeResult.status === 0 ? 'ok' : 'failed',
@@ -1009,77 +1081,120 @@ const run = (args) => {
     mode: args.mockResponse ? 'mock' : 'native',
   })
 
-  const validation = runProcess({
-    command: mdpCommand,
-    args: [
-      '--json',
-      'validate-prompt-output',
-      '--dir',
-      packRoot,
-      '--prompt-id',
-      args.promptId,
-      '--file',
-      paths.promptOutput,
-      '--source-audit',
-      paths.sourceAudit,
-    ],
-    stdoutPath: paths.validation,
-    stderrPath: paths.validationStderr,
-    allowNonZero: true,
-  })
-  const validationData = parseCliData(paths.validation)
-  steps.push({
-    name: 'mdp_validate_normalization',
-    status: validationData?.valid ? 'ok' : 'blocked',
-    artifacts: { validation: paths.validation },
-    exit_status: validation.status,
-    issue_count: validationData?.issues?.length ?? null,
-  })
+  let validationData
+  let receiptData
+  let canonicalRun = null
+  let reportPaths = paths
+  if (args.cleanRunV1) {
+    writeJson(
+      paths.cleanRunRequest,
+      buildCleanRunV1Request({ args, packRoot, runState, paths }),
+    )
+    const cleanRun = await runProcess({
+      command: mdpCommand,
+      args: ['--json', 'run', '--request', paths.cleanRunRequest, '--out-dir', paths.cleanRunDir],
+      stdoutPath: paths.cleanRunStdout,
+      stderrPath: paths.cleanRunStderr,
+      allowNonZero: true,
+      timeoutMs: 120_000,
+      recovery: { outputDir: paths.cleanRunDir, executionId: runState.manifest.run_id },
+    })
+    canonicalRun = parseCliData(paths.cleanRunStdout)
+    validationData = maybeReadJson(join(paths.cleanRunDir, 'artifacts', 'validation.json'))
+    receiptData = maybeReadJson(join(paths.cleanRunDir, 'run-receipt.json'))
+    steps.push({
+      name: 'mdp_clean_run_v1',
+      status: canonicalRun?.valid === true ? 'ok' : 'blocked',
+      artifacts: {
+        request: paths.cleanRunRequest,
+        run_dir: paths.cleanRunDir,
+        bundle: join(paths.cleanRunDir, 'run-bundle.json'),
+        receipt: join(paths.cleanRunDir, 'run-receipt.json'),
+      },
+      exit_status: cleanRun.status,
+      terminal_state: canonicalRun?.terminal_state ?? 'no-draft:runner-failed',
+    })
+    if (!canonicalRun || !receiptData) {
+      fail(`Canonical mdp run did not return complete v1 authority. See ${paths.cleanRunStdout} and ${paths.cleanRunStderr}`)
+    }
+    reportPaths = {
+      ...paths,
+      validation: join(paths.cleanRunDir, 'artifacts', 'validation.json'),
+      receipt: join(paths.cleanRunDir, 'run-receipt.json'),
+    }
+  } else {
+    const validation = await runProcess({
+      command: mdpCommand,
+      args: [
+        '--json',
+        'validate-prompt-output',
+        '--dir',
+        packRoot,
+        '--prompt-id',
+        args.promptId,
+        '--file',
+        paths.promptOutput,
+        '--source-audit',
+        paths.sourceAudit,
+      ],
+      stdoutPath: paths.validation,
+      stderrPath: paths.validationStderr,
+      allowNonZero: true,
+    })
+    validationData = parseCliData(paths.validation)
+    steps.push({
+      name: 'mdp_validate_normalization',
+      status: validationData?.valid ? 'ok' : 'blocked',
+      artifacts: { validation: paths.validation },
+      exit_status: validation.status,
+      issue_count: validationData?.issues?.length ?? null,
+    })
 
-  const receipt = runProcess({
-    command: mdpCommand,
-    args: [
-      '--json',
-      'run-receipt',
-      '--dir',
-      packRoot,
-      '--workflow',
-      'proposal-review',
-      '--isolation',
-      'isolated',
-      '--declared-inputs-only',
-      '--prompt-id',
-      args.promptId,
-      '--prompt-output',
-      paths.promptOutput,
-      '--validation',
-      paths.validation,
-      '--source-audit',
-      paths.sourceAudit,
-      '--runner-audit',
-      paths.runnerAudit,
-      '--require-runner-audit',
-      '--artifact',
-      `source-intake=${paths.sourceIntake}`,
-      '--out',
-      paths.receipt,
-    ],
-    stdoutPath: paths.receiptStdout,
-    stderrPath: paths.receiptStderr,
-    allowNonZero: true,
-  })
-  const receiptData = maybeReadJson(paths.receipt) || parseCliData(paths.receiptStdout)
-  steps.push({
-    name: 'mdp_run_receipt',
-    status: receiptData?.decision === 'audit-grade' ? 'ok' : 'blocked',
-    artifacts: {
-      receipt: paths.receipt,
-      receipt_stdout: paths.receiptStdout,
-    },
-    exit_status: receipt.status,
-    decision: receiptData?.decision ?? null,
-    runner_assurance: receiptData?.runner?.assurance ?? null,
-  })
+    const receipt = await runProcess({
+      command: mdpCommand,
+      args: [
+        '--json',
+        'run-receipt',
+        '--dir',
+        packRoot,
+        '--workflow',
+        'proposal-review',
+        '--isolation',
+        'isolated',
+        '--declared-inputs-only',
+        '--prompt-id',
+        args.promptId,
+        '--prompt-output',
+        paths.promptOutput,
+        '--validation',
+        paths.validation,
+        '--source-audit',
+        paths.sourceAudit,
+        '--runner-audit',
+        paths.runnerAudit,
+        '--require-runner-audit',
+        '--artifact',
+        `source-intake=${paths.sourceIntake}`,
+        '--out',
+        paths.receipt,
+      ],
+      stdoutPath: paths.receiptStdout,
+      stderrPath: paths.receiptStderr,
+      allowNonZero: true,
+    })
+    receiptData = maybeReadJson(paths.receipt) || parseCliData(paths.receiptStdout)
+    steps.push({
+      name: 'mdp_run_receipt',
+      status: receiptData?.decision === 'audit-grade' ? 'ok' : 'blocked',
+      artifacts: {
+        receipt: paths.receipt,
+        receipt_stdout: paths.receiptStdout,
+      },
+      exit_status: receipt.status,
+      decision: receiptData?.decision ?? null,
+      runner_assurance: receiptData?.runner?.assurance ?? null,
+    })
+  }
 
   const promptOutput = maybeReadJson(paths.promptOutput)
   if (validationData?.valid === true && promptOutput?.normalized_prospect) {
@@ -1089,10 +1204,10 @@ const run = (args) => {
   if (
     !args.skipReview &&
     validationData?.valid === true &&
-    receiptData?.decision === 'audit-grade'
+    (args.cleanRunV1 ? canonicalRun?.valid === true : receiptData?.decision === 'audit-grade')
   ) {
     if (promptOutput?.normalized_prospect) {
-      const fit = runProcess({
+      const fit = await runProcess({
         command: mdpCommand,
         args: ['--json', 'fit', '--dir', packRoot, '--prospect', paths.normalized],
         stdoutPath: paths.fit,
@@ -1105,7 +1220,7 @@ const run = (args) => {
         artifacts: { fit: paths.fit },
         exit_status: fit.status,
       })
-      const route = runProcess({
+      const route = await runProcess({
         command: mdpCommand,
         args: [
           '--json',
@@ -1143,27 +1258,41 @@ const run = (args) => {
       reason:
         validationData?.valid !== true
           ? 'prompt-output validation did not succeed'
-          : `run receipt decision ${receiptData?.decision ?? 'missing'} is not acceptable for review probes`,
+          : args.cleanRunV1
+            ? `canonical run terminal state ${canonicalRun?.terminal_state ?? 'missing'} is not acceptable for review probes`
+            : `run receipt decision ${receiptData?.decision ?? 'missing'} is not acceptable for review probes`,
     })
   }
 
-  const decision = receiptData?.decision ?? 'blocked'
-  const runnerAssurance = receiptData?.runner?.assurance ?? 'unknown'
+  const decision = args.cleanRunV1
+    ? canonicalRun?.valid === true
+      ? 'advisory'
+      : 'blocked'
+    : receiptData?.decision ?? 'blocked'
+  const runnerAssurance = args.cleanRunV1
+    ? 'see-canonical-authority'
+    : receiptData?.runner?.assurance ?? 'unknown'
   const mode = args.mockResponse ? 'mock' : 'native'
   const result = {
-    contract: RESULT_CONTRACT,
+    contract: args.cleanRunV1 ? RESULT_CONTRACT_V1 : RESULT_CONTRACT,
     runner_contract: RUNNER_CONTRACT,
     mode,
-    ok: decision === 'audit-grade',
-    audit_grade_eligible: mode === 'native' && decision === 'audit-grade',
+    ok: args.cleanRunV1 ? canonicalRun?.valid === true : decision === 'audit-grade',
+    audit_grade_eligible: args.cleanRunV1 ? false : mode === 'native' && decision === 'audit-grade',
     decision,
     runner_assurance: runnerAssurance,
     run_id: runState.manifest.run_id,
     run_manifest: runState.manifestPath,
     workdir,
-    artifacts: paths,
+    artifacts: args.cleanRunV1 ? reportPaths : paths,
     steps,
     caveats: [
+      ...(args.cleanRunV1
+        ? [
+            'Canonical v1 authority is the exact mdp run result and its hash-bound artifacts. The legacy decision field is an advisory compatibility projection only.',
+            'This v1 compatibility route validates an existing generated output deterministically; the current Rust kernel does not claim to have performed or isolated the upstream model invocation.',
+          ]
+        : []),
       mode === 'mock'
         ? 'Mock mode is offline-only and must not be described as audit-grade model isolation.'
         : 'Native mode is audit-grade only when run-receipt returns decision audit-grade with stateless-api-verified or headless-verified assurance.',
@@ -1173,9 +1302,17 @@ const run = (args) => {
       'This runner stages bounded local text and source-audit artifacts; it does not prove PDF/OCR quality, semantic truth beyond supplied artifacts, compliance status, legal approval, or proposal submission readiness.',
       'The current surface is a host-neutral local runner command set also exposed by the bundled local stdio MCP wrapper; it is not a hosted or remote MCP service.',
     ],
+    ...(args.cleanRunV1
+      ? {
+          authority_contract: canonicalRun.contract,
+          terminal_state: canonicalRun.terminal_state,
+          canonical_run: canonicalRun,
+          canonical_authority: canonicalRun.authority_block,
+        }
+      : {}),
   }
   persistRunnerResult({
-    paths,
+    paths: reportPaths,
     result,
     validation: validationData,
     receipt: receiptData,
@@ -1189,7 +1326,7 @@ const run = (args) => {
   }
 }
 
-const main = () => {
+const main = async () => {
   try {
     const args = parseArgs(process.argv.slice(2))
     if (args.command === 'help') {
@@ -1200,7 +1337,7 @@ const main = () => {
       console.log(JSON.stringify(toolEnvelope(), null, 2))
       return
     }
-    run(args)
+    await run(args)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (activeRun) {
@@ -1222,4 +1359,4 @@ const main = () => {
   }
 }
 
-main()
+await main()
