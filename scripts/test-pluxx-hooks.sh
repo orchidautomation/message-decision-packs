@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
-PLUXX_VERSION="${PLUXX_VERSION:-0.1.39}"
+PLUXX_VERSION="${PLUXX_VERSION:-0.1.40}"
 if command -v pluxx >/dev/null 2>&1 && [ "$(pluxx --version)" = "$PLUXX_VERSION" ]; then
   PLUXX_CMD=(pluxx)
 elif command -v npx >/dev/null 2>&1; then

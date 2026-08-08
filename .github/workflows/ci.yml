@@ -36,8 +36,8 @@ jobs:
           node-version: 24
       - name: Install Pluxx
         run: |
-          expected='sha512-AuPRridYTbD+W1Jb+d2vpV0QgRI+5Hw2bB+VGNja/BwZyMDXdTH/5pi3en27w+210WX3Dxr36z43ZPspGHxYnQ=='
-          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.39 --pack-destination "$RUNNER_TEMP" --silent)"
+          expected='sha512-Q+jPmsq/vzApk9nWJE6o5UqV2Scddsf7rl5tsehX/n8A/D8QXGN9NQgAXgdOAKI6cw/DyDhDmnUnv92NsvfS5g=='
+          pluxx_tarball="$(npm pack @orchid-labs/pluxx@0.1.40 --pack-destination "$RUNNER_TEMP" --silent)"
           pluxx_tarball_path="$RUNNER_TEMP/$pluxx_tarball"
           actual="$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`)' "$pluxx_tarball_path")"
           test "$actual" = "$expected"
