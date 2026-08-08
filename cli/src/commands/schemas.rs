@@ -2359,8 +2359,8 @@ fn canonical_skill_id_array_schema() -> Value {
 
 fn brief_schema() -> Value {
     json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Brief Contracts v0", "oneOf": [
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "scope", "portfolio_sensitive", "draft_status", "required_load_order", "context", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "draft_status": {"enum": ["ready", "blocked"]}, "required_load_order": string_array(), "context": context_schema(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "scope", "portfolio_sensitive", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"]}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "scope", "portfolio_sensitive", "draft_status", "required_load_order", "context", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "draft_status": {"enum": ["ready", "blocked"]}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "context": context_schema(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "scope", "portfolio_sensitive", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"]}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
     ]})
 }
 
@@ -2409,7 +2409,96 @@ fn human_brief_schema() -> Value {
 }
 
 fn context_schema() -> Value {
-    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "scope", "evidence", "avoid", "constraints", "metadata", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "scope", "evidence", "avoid", "constraints", "metadata", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+}
+
+fn product_foundation_resolution_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["job_id", "status", "selected_facets", "optional_facet_ids", "excluded_facet_ids", "untriggered_facet_ids", "diagnostics"],
+        "additionalProperties": false,
+        "properties": {
+            "job_id": {"type": "string"},
+            "status": {"enum": ["unassessed", "ready", "blocked"]},
+            "selected_facets": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["id", "kind", "classification", "reason", "entry_refs", "gap_refs", "entries", "gaps", "conflicts_with"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": {"type": "string"},
+                        "kind": {"type": "string"},
+                        "classification": {"enum": ["required", "conditional"]},
+                        "reason": {"type": "string"},
+                        "entry_refs": {"type": "array", "items": product_foundation_entry_ref_schema()},
+                        "gap_refs": {"type": "array", "items": product_foundation_entry_ref_schema()},
+                        "entries": {"type": "array", "items": resolved_foundation_entry_schema()},
+                        "gaps": {"type": "array", "items": resolved_foundation_entry_schema()},
+                        "conflicts_with": string_array()
+                    }
+                }
+            },
+            "optional_facet_ids": string_array(),
+            "excluded_facet_ids": string_array(),
+            "untriggered_facet_ids": string_array(),
+            "diagnostics": {"type": "array", "items": product_foundation_diagnostic_schema()}
+        }
+    })
+}
+
+fn resolved_foundation_entry_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["card_id", "entry_id", "card_kind", "title", "body", "applies_to", "scope", "evidence", "avoid"],
+        "additionalProperties": false,
+        "properties": {
+            "card_id": {"type": "string"},
+            "entry_id": {"type": "string"},
+            "card_kind": {"type": "string"},
+            "title": {"type": "string"},
+            "body": {"type": "string"},
+            "applies_to": string_array(),
+            "scope": scope_map_schema(),
+            "evidence": string_array(),
+            "avoid": string_array(),
+            "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1},
+            "constraints": constraints_schema(),
+            "metadata": metadata_schema()
+        }
+    })
+}
+
+fn product_foundation_diagnostic_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["code", "severity", "path", "message"],
+        "additionalProperties": false,
+        "properties": {
+            "code": {"type": "string"},
+            "severity": {"enum": ["info", "error"]},
+            "path": {"type": "string"},
+            "message": {"type": "string"}
+        }
+    })
+}
+
+fn product_foundation_load_order_schema() -> Value {
+    json!({
+        "type": "array",
+        "items": {
+            "type": "object",
+            "required": ["facet_id", "classification", "reference_kind", "card_id", "entry_id"],
+            "additionalProperties": false,
+            "properties": {
+                "facet_id": {"type": "string"},
+                "classification": {"enum": ["required", "conditional"]},
+                "reference_kind": {"enum": ["entry", "gap"]},
+                "card_id": {"type": "string"},
+                "entry_id": {"type": "string"}
+            }
+        }
+    })
 }
 
 fn scope_map_schema() -> Value {
@@ -3051,6 +3140,7 @@ fn attribute_schema() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::briefs::emit_brief;
     use jsonschema::draft202012;
     use std::path::PathBuf;
 
@@ -3246,6 +3336,62 @@ mod tests {
                 [0],
             "code"
         );
+        assert_eq!(
+            result["oneOf"][0]["properties"]["product_foundation"]["properties"]["status"]["enum"],
+            json!(["unassessed", "ready", "blocked"])
+        );
+        assert_eq!(
+            result["oneOf"][1]["properties"]["product_foundation_load_order"]["items"]["properties"]
+                ["reference_kind"]["enum"],
+            json!(["entry", "gap"])
+        );
+        assert_eq!(
+            result["oneOf"][0]["properties"]["product_foundation"]["properties"]["selected_facets"]
+                ["items"]["properties"]["entries"]["items"]["properties"]["exact_paragraphs"]["minimum"],
+            1
+        );
+        assert!(
+            result["oneOf"][0]["required"]
+                .as_array()
+                .expect("required fields")
+                .iter()
+                .all(|field| field != "product_foundation")
+        );
+    }
+
+    #[test]
+    fn brief_schema_validates_foundation_output_and_legacy_absence() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("CLI crate should have a repository parent")
+            .join("plugin/assets/templates/basic");
+        let output = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
+            .expect("basic brief should emit");
+        let schema = brief_schema();
+
+        draft202012::validate(&schema, &output)
+            .expect("emitted foundation fields should satisfy the brief schema");
+
+        let mut legacy = output;
+        legacy
+            .as_object_mut()
+            .expect("brief should be an object")
+            .remove("product_foundation");
+        legacy
+            .as_object_mut()
+            .expect("brief should be an object")
+            .remove("product_foundation_load_order");
+        legacy["context"]
+            .as_object_mut()
+            .expect("context should be an object")
+            .remove("product_foundation");
+        legacy["context"]
+            .as_object_mut()
+            .expect("context should be an object")
+            .remove("product_foundation_load_order");
+
+        draft202012::validate(&schema, &legacy)
+            .expect("v0 brief schema should preserve legacy field absence");
     }
 
     #[test]

@@ -780,6 +780,35 @@ mod tests {
         root
     }
 
+    fn add_selected_foundation_gap(root: &Path) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["gaps"] =
+            serde_yaml::from_str("- card_id: gaps\n  entry_id: missing-company-proof\n")
+                .expect("gap reference should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn set_profile_activation(root: &Path, status: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile_eval"]["activation"]["status"] =
+            serde_yaml::Value::String(status.to_string());
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
     #[test]
     fn brief_marks_no_draft_when_fit_is_insufficient() {
         let root = temp_pack("brief-no-draft");
@@ -1141,6 +1170,81 @@ mod tests {
                 .expect("load order should be an array")
                 .iter()
                 .any(|path| path == ".mdp/cards/ctas.yaml")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn emit_brief_preserves_blocked_foundation_without_drafting_entries() {
+        let root = temp_pack("emit-brief-foundation-gap");
+        add_selected_foundation_gap(&root);
+
+        let result = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
+            .expect("brief should resolve blocked foundation");
+
+        assert_eq!(result["draft_status"], "blocked");
+        assert_eq!(result["context"]["status"], "blocked");
+        assert_eq!(result["product_foundation"]["status"], "blocked");
+        assert_eq!(
+            result["context"]["reason"],
+            "selected product foundation authority is blocked"
+        );
+        assert!(
+            result["context"]["entries"]
+                .as_array()
+                .expect("context entries")
+                .is_empty()
+        );
+        assert!(
+            result["product_foundation"]["diagnostics"]
+                .as_array()
+                .expect("foundation diagnostics")
+                .iter()
+                .any(
+                    |diagnostic| diagnostic["code"] == "product_foundation_selected_facet_has_gaps"
+                )
+        );
+        assert!(
+            result["product_foundation_load_order"]
+                .as_array()
+                .expect("foundation load order")
+                .iter()
+                .any(|reference| {
+                    reference["reference_kind"] == "gap"
+                        && reference["entry_id"] == "missing-company-proof"
+                })
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn emit_brief_honors_needs_review_activation_veto() {
+        let root = temp_pack("emit-brief-needs-review");
+        set_profile_activation(&root, "needs-review");
+
+        let result = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
+            .expect("brief should honor activation veto");
+
+        assert_eq!(result["draft_status"], "blocked");
+        assert_eq!(result["context"]["status"], "blocked");
+        assert_eq!(result["product_foundation"]["status"], "ready");
+        assert_eq!(
+            result["context"]["reason"],
+            "profile activation requires review or is blocked"
+        );
+        assert!(
+            result["context"]["entries"]
+                .as_array()
+                .expect("context entries")
+                .is_empty()
+        );
+        assert!(
+            !result["product_foundation_load_order"]
+                .as_array()
+                .expect("foundation load order")
+                .is_empty()
         );
 
         let _ = std::fs::remove_dir_all(root);

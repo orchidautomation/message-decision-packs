@@ -36,6 +36,8 @@ pub(crate) struct ResolvedFoundationEntry {
     pub(crate) scope: BTreeMap<String, Vec<String>>,
     pub(crate) evidence: Vec<String>,
     pub(crate) avoid: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) exact_paragraphs: Option<usize>,
     #[serde(skip_serializing_if = "EntryConstraints::is_empty")]
     pub(crate) constraints: EntryConstraints,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -94,6 +96,7 @@ struct IndexedEntry {
     scope: BTreeMap<String, Vec<String>>,
     evidence: Vec<String>,
     avoid: Vec<String>,
+    exact_paragraphs: Option<usize>,
     constraints: EntryConstraints,
     metadata: BTreeMap<String, Value>,
 }
@@ -125,6 +128,7 @@ impl ProductFoundationIndex {
                 scope: entry.scope.clone(),
                 evidence: entry.evidence.clone(),
                 avoid: entry.avoid.clone(),
+                exact_paragraphs: entry.exact_paragraphs,
                 constraints: entry.constraints.clone(),
                 metadata: entry.metadata.clone(),
             })
@@ -141,6 +145,7 @@ impl IndexedEntry {
             scope: entry.scope.clone(),
             evidence: entry.evidence.clone(),
             avoid: entry.avoid.clone(),
+            exact_paragraphs: entry.exact_paragraphs,
             constraints: entry.constraints.clone(),
             metadata: entry.metadata.clone(),
         }
@@ -238,7 +243,15 @@ pub(crate) fn resolve_product_foundation(
         }
     }
 
+    let no_selected_authority = selections.is_empty();
     let mut diagnostics = Vec::new();
+    if no_selected_authority {
+        diagnostics.push(diagnostic(
+            "product_foundation_selected_authority_empty",
+            format!(".mdp/manifest.yaml#/jobs/{job_index}/product_foundation"),
+            format!("job {job_id} selects no required or triggered conditional facets"),
+        ));
+    }
     let mut selected_facets = Vec::new();
     for (facet_id, (classification, reason, selection_path)) in selections {
         let Some((facet_index, facet)) = facets.get(facet_id.as_str()) else {
@@ -552,10 +565,12 @@ mod tests {
 
     #[test]
     fn two_jobs_resolve_disjoint_required_facets_in_stable_order() {
+        let mut alpha = entry("alpha", "Alpha");
+        alpha.exact_paragraphs = Some(2);
         let cards = vec![card(
             "positioning",
             CardKind::Positioning,
-            vec![entry("alpha", "Alpha"), entry("beta", "Beta")],
+            vec![alpha, entry("beta", "Beta")],
         )];
         let index = ProductFoundationIndex::from_cards(&cards);
         let mut manifest = manifest_with_foundation(vec![
@@ -586,6 +601,14 @@ mod tests {
             vec!["zeta"]
         );
         assert_eq!(first.selected_facets[0].entries[0].body, "Alpha");
+        assert_eq!(
+            first.selected_facets[0].entries[0].exact_paragraphs,
+            Some(2)
+        );
+        assert_eq!(
+            resolution_json(&first)["selected_facets"][0]["entries"][0]["exact_paragraphs"],
+            2
+        );
     }
 
     #[test]
@@ -609,6 +632,45 @@ mod tests {
             resolve_product_foundation(&manifest, &index, "free-text job").status,
             ProductFoundationStatus::Unassessed
         );
+    }
+
+    #[test]
+    fn opted_in_binding_without_selected_authority_blocks() {
+        let mut manifest = manifest_with_foundation(vec![facet(
+            "optional",
+            vec![reference("positioning", "optional")],
+        )]);
+        let job_id = manifest.jobs[0].id.clone();
+
+        for binding in [
+            ProductFoundationBinding::default(),
+            ProductFoundationBinding {
+                optional: vec!["optional".to_string()],
+                ..ProductFoundationBinding::default()
+            },
+            ProductFoundationBinding {
+                conditional: vec![ProductFoundationConditionalFacet {
+                    facet_id: "optional".to_string(),
+                    when: ProductFoundationCondition {
+                        fact: ProductFoundationConditionFact::JobId,
+                        equals: "different-job".to_string(),
+                    },
+                }],
+                ..ProductFoundationBinding::default()
+            },
+        ] {
+            manifest.jobs[0].product_foundation = Some(binding);
+
+            let result =
+                resolve_product_foundation(&manifest, &ProductFoundationIndex::default(), &job_id);
+
+            assert_eq!(result.status, ProductFoundationStatus::Blocked);
+            assert!(result.selected_facets.is_empty());
+            assert!(result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "product_foundation_selected_authority_empty"
+                    && diagnostic.path == ".mdp/manifest.yaml#/jobs/0/product_foundation"
+            }));
+        }
     }
 
     #[test]

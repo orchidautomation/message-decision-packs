@@ -58,8 +58,9 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
             );
         }
     };
+    let pack_valid = validation["valid"].as_bool().unwrap_or(false);
     let mut diagnostics = validation["issues"].as_array().cloned().unwrap_or_default();
-    if !validation["valid"].as_bool().unwrap_or(false)
+    if !pack_valid
         && !crate::commands::requirements::validation_has_only_foundation_errors(&validation)
     {
         return bootstrap_payload(
@@ -108,7 +109,12 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
         };
         match resolve_product_foundation_for_pack(root, &manifest, &job.id) {
             Ok(product_foundation) => {
-                routes.push(route_payload(&manifest, job, &product_foundation));
+                routes.push(route_payload(
+                    &manifest,
+                    job,
+                    &product_foundation,
+                    pack_valid,
+                ));
             }
             Err(error) => diagnostics.push(diagnostic(
                 "product_foundation_resolution_failed",
@@ -266,6 +272,7 @@ fn route_payload(
     manifest: &Manifest,
     job: &ProfileJob,
     product_foundation: &ProductFoundationResolution,
+    pack_valid: bool,
 ) -> Value {
     let missing_primitives = job
         .required_primitives
@@ -294,6 +301,7 @@ fn route_payload(
         "job_id": job.id,
         "skill_id": job.skill_id,
         "pack_ready": missing_primitives.is_empty()
+            && pack_valid
             && !explicit_activation_blocks
             && !product_foundation.blocks_activation(),
         "missing_primitives": missing_primitives,
@@ -395,6 +403,49 @@ mod tests {
 
         assert_eq!(result["job_routes"][0]["pack_ready"], false);
         assert_eq!(result["recommendation"]["pack_ready"], false);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skills_foundation_validation_errors_veto_every_pack_ready_projection() {
+        let root = temp_root("skills-invalid-foundation");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["kind"] =
+            serde_yaml::Value::String("unknown_foundation_kind".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let all_routes = skills(Some(&root), None);
+
+        assert_eq!(all_routes["valid"], false);
+        assert_eq!(all_routes["status"], "unresolved");
+        assert!(
+            all_routes["job_routes"]
+                .as_array()
+                .expect("job routes")
+                .iter()
+                .all(|route| route["pack_ready"] == false)
+        );
+        assert!(
+            all_routes["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "product_foundation_facet_kind_unknown")
+        );
+
+        let selected = skills(Some(&root), Some("prospect-fit-or-brief"));
+        assert_eq!(selected["recommendation"]["pack_ready"], false);
+        assert_eq!(selected["job_routes"][0]["pack_ready"], false);
 
         let _ = std::fs::remove_dir_all(root);
     }

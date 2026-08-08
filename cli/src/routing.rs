@@ -660,7 +660,51 @@ fn has_token(tokens: &[String], needle: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::init::init_pack;
     use crate::models::{CardRef, LeadInputRequirements, Policy, Provenance};
+    use crate::pack_io::read_manifest;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_pack(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-routing-{name}-{nonce}"));
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        root
+    }
+
+    fn add_selected_foundation_gap(root: &Path) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["gaps"] =
+            serde_yaml::from_str("- card_id: gaps\n  entry_id: missing-company-proof\n")
+                .expect("gap reference should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn set_profile_activation(root: &Path, status: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile_eval"]["activation"]["status"] =
+            serde_yaml::Value::String(status.to_string());
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
 
     fn manifest(max_cards_per_route: usize) -> Manifest {
         Manifest {
@@ -868,5 +912,103 @@ mod tests {
         );
 
         assert_eq!(value["metadata"]["segment_hint"], "enterprise");
+    }
+
+    #[test]
+    fn selected_foundation_gap_blocks_route_and_drafting_context() {
+        let root = temp_pack("foundation-gap");
+        add_selected_foundation_gap(&root);
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let scope = ScopeResolution::default();
+
+        let route = entry_route_scoped(&root, &manifest, "PMM", "prospect-fit-or-brief", &scope)
+            .expect("entry route should resolve");
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            true,
+            &scope,
+        )
+        .expect("entry context should resolve");
+
+        for output in [&route, &context] {
+            assert_eq!(output["status"], "blocked");
+            assert_eq!(output["product_foundation"]["status"], "blocked");
+            assert!(
+                output["product_foundation"]["diagnostics"]
+                    .as_array()
+                    .expect("foundation diagnostics")
+                    .iter()
+                    .any(|diagnostic| diagnostic["code"]
+                        == "product_foundation_selected_facet_has_gaps")
+            );
+            assert!(
+                output["product_foundation_load_order"]
+                    .as_array()
+                    .expect("foundation load order")
+                    .iter()
+                    .any(|reference| {
+                        reference["reference_kind"] == "gap"
+                            && reference["card_id"] == "gaps"
+                            && reference["entry_id"] == "missing-company-proof"
+                    })
+            );
+        }
+        assert_eq!(
+            context["reason"],
+            "selected product foundation authority is blocked"
+        );
+        assert!(
+            context["entries"]
+                .as_array()
+                .expect("context entries")
+                .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn needs_review_profile_blocks_route_and_drafting_context() {
+        let root = temp_pack("needs-review");
+        set_profile_activation(&root, "needs-review");
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let scope = ScopeResolution::default();
+
+        let route = entry_route_scoped(&root, &manifest, "PMM", "prospect-fit-or-brief", &scope)
+            .expect("entry route should resolve");
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            true,
+            &scope,
+        )
+        .expect("entry context should resolve");
+
+        assert_eq!(route["status"], "blocked");
+        assert_eq!(context["status"], "blocked");
+        assert_eq!(context["product_foundation"]["status"], "ready");
+        assert_eq!(
+            context["reason"],
+            "profile activation requires review or is blocked"
+        );
+        assert!(
+            !context["product_foundation_load_order"]
+                .as_array()
+                .expect("foundation load order")
+                .is_empty()
+        );
+        assert!(
+            context["entries"]
+                .as_array()
+                .expect("context entries")
+                .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }
