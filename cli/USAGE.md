@@ -139,6 +139,42 @@ JSON errors use stable top-level codes where the CLI can classify the failure. R
 
 `profile.id` and canonical `jobs[].skill_id` bindings are skill-routing metadata. Use `mdp --json skills --dir .` for pack eligibility and `mdp --json skills --dir . --job <job-id>` for one deterministic recommendation. A profile is activation-ready only when `mdp --json validate --dir .` reports `data.profile.activation_ready: true`. Profile-aware manifests declare `required_primitives`, `primitive_map`, `input_contracts`, closed profile jobs, and `profile_eval.required_categories`; validation rejects unknown primitive IDs, unknown or profile-incompatible job/skill pairs, and missing mapped card, prompt, input contract, job, or eval references. Missing required primitive or eval-category coverage is warning-first by default and fails with `--strict`. Eval fixtures can run `command: validate-prompt-output` with `prompt_id` or `prompt` plus inline `prompt_output` and optional `source_audit`, so profile activation can prove normalization contracts before rows reach `mdp fit` or `mdp brief`.
 
+### Product foundation discovery
+
+An optional `profile.product_foundation.facets` registry indexes exact existing
+card entries and explicit gap entries. Each canonical job may classify facet
+IDs under `jobs[].product_foundation.required`, `conditional`, `optional`, and
+`excluded`. Conditional facts are closed static equality checks over
+`manifest_id`, `profile_id`, or `job_id`. `conflicts_with` is explicit
+structural metadata; the CLI never infers semantic conflict from prose.
+
+Inspect one exact canonical job:
+
+```bash
+mdp --json skills --dir . --job prospect-fit-or-brief
+mdp --json requirements --dir . --job prospect-fit-or-brief
+mdp --json route --entries --dir . --persona "GTM Engineering" --job prospect-fit-or-brief
+```
+
+`skills` exposes a compact status/ID/diagnostic summary. `requirements`
+exposes the complete selected facets, exact refs, bounded entry content, and
+optional/excluded/untriggered IDs. Route, context, and brief output carry the
+exact selected foundation load order. Unknown or free-text jobs are
+`unassessed`; they never select foundation authority by token matching.
+
+Statuses are `unassessed`, `ready`, and `blocked`. A selected empty facet,
+explicit gap, dangling reference, or explicit conflict with another selected
+facet blocks. Optional, excluded, and false conditional facets do not block or
+enter selected context. Foundation readiness only vetoes broader readiness:
+`ready` never promotes another failing gate and never means sufficient-for-job
+or self-standing. Explicit profile activation `needs-review` or `blocked` also
+vetoes job/profile activation.
+
+`.mdp/README.md` is orientation only. The resolver never reads it, but the
+portable pack snapshot includes it like every other regular `.mdp/` file, so a
+README-only edit changes the portable hash without changing decision
+authority. See [Product Foundations](../docs/product-foundations.md).
+
 Universal primitive IDs are `actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evidence-proof`, `boundaries`, `output-contracts`, `routing-jobs`, `gaps`, and `evals`. Keep domain terms such as account context or opportunity context in profile-owned card IDs, input contracts, prompts, jobs, and eval fixtures unless a future format explicitly adds a new core card kind.
 
 Portfolio terms do not add primitives. A GTM profile may declare `profile.context_dimensions` such as `product`, `capability`, `solution`, or `segment`, plus generic `context_dimension_dependencies`. Card entries use `scope` to narrow where their existing primitive decision applies. Matching is OR within an entry dimension and AND across dimensions; unscoped entries are global. V1 accepts one runtime value per dimension.

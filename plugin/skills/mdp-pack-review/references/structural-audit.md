@@ -6,6 +6,14 @@ Read this for pack shape, evidence, and content quality.
 
 - Validate schema, referenced files, IDs, active profile, primitive coverage, input contracts, and required eval categories.
 - Require one supported `skill_id` for each agent-routable job.
+- Resolve every product-foundation binding by exact canonical job ID. Confirm
+  required and true conditional facets are selected; optional, excluded,
+  unrelated-job, and false conditional content stays out.
+- Validate exact entry/gap closure, static `manifest_id`/`profile_id`/`job_id`
+  equality conditions, and explicit conflicts. Selected empties, gaps,
+  dangling refs, or conflicts block. Never infer semantic conflict from prose.
+- Treat `.mdp/README.md` as orientation only. It participates in the portable
+  pack hash but cannot satisfy foundation readiness.
 - Reject obsolete surface metadata, old skill IDs, duplicate jobs, custom routable IDs, and profile-crossing bindings.
 - For jobs with decision-input bindings, compile `mdp.requirements.v1` and audit
   the exact questions, requirement classes, output paths, source policy,

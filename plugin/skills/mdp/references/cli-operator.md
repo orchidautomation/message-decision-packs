@@ -28,6 +28,16 @@ mdp --json route --entries --dir PACK_ROOT --persona PERSONA --job JOB
 
 Prefer CLI output to direct YAML inference. Read pack files only when authoring or when the CLI identifies the exact card or contract needing review.
 
+For product authority, pass one exact canonical manifest job ID to both
+`skills --job` and `requirements --job`. Inspect the compact skills summary,
+then the complete requirements `product_foundation` projection and exact
+selected refs. Unknown or free-text jobs remain `unassessed`; do not guess a
+nearby job or select foundation entries through keyword overlap.
+
+Read `.mdp/README.md` only after the CLI projection and only for navigation.
+It cannot close a gap or override a diagnostic. Foundation `ready` is a
+veto-only result and never means sufficient-for-job or self-standing.
+
 `requirements` is the read-only, job-bound handoff to collectors and customer-funded normalization runners. It compiles the exact questions, permitted source classes, prompt/version identity, attempt ledger schema, and normalized envelope schema. It never performs research or a model call. Existing jobs without a Decision Input Contract return `available: false` without changing their current fit/readiness path.
 
 `validate-source-binding` checks one integration-owned

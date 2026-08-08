@@ -5572,7 +5572,7 @@ facets:
 "#,
         )
         .expect("foundation should parse");
-        manifest["jobs"][0]["product_foundation"] = serde_yaml::from_str(
+        let binding: YamlValue = serde_yaml::from_str(
             r#"
 required:
   - identity
@@ -5586,6 +5586,12 @@ excluded: []
 "#,
         )
         .expect("binding should parse");
+        for job in manifest["jobs"]
+            .as_sequence_mut()
+            .expect("jobs should be a sequence")
+        {
+            job["product_foundation"] = binding.clone();
+        }
         std::fs::write(
             manifest_path,
             serde_yaml::to_string(&manifest).expect("manifest should serialize"),

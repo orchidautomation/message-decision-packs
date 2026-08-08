@@ -9,7 +9,7 @@
   },
   "requirements": {
     "contract": "mdp.requirements.v1",
-    "sha256": "b7ba23576012f6953da2fe2ca0b1b396648a9a38f9ae200061ed183f9ac66c15",
+    "sha256": "7851e3b3582fd475fd32600c155d1a41da30af348e1dd95b58a4ed3ed7c15dc1",
     "decision_input_contracts": [
       {
         "id": "clay.audiences.self_serve_enterprise_expansion",

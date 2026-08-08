@@ -15,6 +15,14 @@ review artifacts.
   primitives. GTM and proposal review are profiles, not separate engines.
 - **Card** — a reviewed, typed collection of decision entries.
 - **Job** — a closed profile-owned routing intent bound to an eligible skill.
+- **Product-foundation facet** — a profile-owned index of exact existing card
+  entries and explicit gaps for one product-understanding concern. It is not a
+  primitive, card kind, or second source of product prose.
+- **Product-foundation binding** — one canonical job's classification of facet
+  IDs as required, conditional, optional, or excluded.
+- **Resolved product foundation** — the CLI's deterministic, exact-job
+  projection of required and triggered conditional facets. Optional, excluded,
+  and untriggered content is not selected.
 - **Decision Input Contract** — a versioned pack declaration of the attributes, source attempts, normalization evidence, and status behavior required before a job can make deterministic MDP decisions.
 - **Source binding** — an integration-owned, provider-neutral mapping from one
   exact compiled job's qualified Decision Input attributes to external fields,
@@ -51,6 +59,12 @@ review artifacts.
   `fixture/mock-only`.
 - **Per-run decision:** `audit-grade`, `advisory`, `blocked`, or `not-run`.
 - **Readiness:** `ready`, `advisory`, or `blocked`.
+- **Product-foundation status:** `unassessed`, `ready`, or `blocked`.
+
+Product-foundation readiness is veto-only. `blocked` prevents broader
+activation, but `ready` never establishes sufficient-for-job, self-standing,
+commercial, human-approved, or audit-grade status. `unassessed` preserves
+legacy compatibility without claiming sufficiency.
 
 Do not substitute “supported” for “verified,” or “valid JSON” for
 “audit-grade.” MDP is a decision/context layer, not execution infrastructure.

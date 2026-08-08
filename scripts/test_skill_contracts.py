@@ -228,6 +228,34 @@ class SkillContractTests(unittest.TestCase):
                 self.assertIn(f"proposal_authoring_guardrail_missing:{guardrail}", self.codes())
                 authoring.write_text(original)
 
+    def test_each_product_foundation_guardrail_is_enforced(self):
+        for skill_id, guardrails in module.FOUNDATION_GUARDRAILS.items():
+            path = self.root / "plugin/skills" / skill_id / "SKILL.md"
+            original = path.read_text()
+            for guardrail, phrase in guardrails.items():
+                with self.subTest(skill_id=skill_id, guardrail=guardrail):
+                    path.write_text(
+                        original.replace(phrase, "REMOVED_FOUNDATION_GUARDRAIL", 1)
+                    )
+                    self.assertIn(
+                        f"foundation_guardrail_missing:{skill_id}:{guardrail}",
+                        self.codes(),
+                    )
+                    path.write_text(original)
+
+    def test_public_product_foundation_doc_keeps_authority_and_readiness_boundaries(self):
+        text = Path("docs/product-foundations.md").read_text()
+        for phrase in [
+            "exact canonical IDs",
+            "`unassessed`, `ready`, or `blocked`",
+            "Foundation readiness is a veto-only input",
+            "never establishes\n`sufficient-for-job`, self-standing status",
+            "README prose cannot satisfy a facet",
+            "changing it changes the portable pack hash",
+            "does not add an eleventh primitive",
+        ]:
+            self.assertIn(phrase, text)
+
 
 if __name__ == "__main__":
     unittest.main()

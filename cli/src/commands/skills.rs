@@ -365,7 +365,7 @@ mod tests {
         assert_eq!(result["job_routes"][0]["pack_ready"], true);
         assert_eq!(
             result["job_routes"][0]["product_foundation"]["status"],
-            "unassessed"
+            "ready"
         );
         assert_eq!(result["recommendation"]["skill_id"], "mdp-gtm-brief");
         jsonschema::draft202012::validate(

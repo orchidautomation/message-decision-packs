@@ -590,7 +590,15 @@ mod tests {
 
     #[test]
     fn unbound_legacy_and_unknown_jobs_are_unassessed() {
-        let manifest = starter_manifest("Test", "test", "gtm");
+        let mut manifest = starter_manifest("Test", "test", "gtm");
+        manifest
+            .profile
+            .as_mut()
+            .expect("starter profile")
+            .product_foundation = None;
+        for job in &mut manifest.jobs {
+            job.product_foundation = None;
+        }
         let index = ProductFoundationIndex::default();
 
         assert_eq!(
