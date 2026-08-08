@@ -578,14 +578,7 @@ pub(crate) fn validation_errors_block_job(
     issues: &[Value],
 ) -> bool {
     issues.iter().any(|issue| {
-        if issue["severity"] != "error" {
-            return false;
-        }
-        let Some(code) = issue["code"].as_str() else {
-            return true;
-        };
-        !is_product_foundation_validation_code(code)
-            || product_foundation_issue_applies_to_job(manifest, resolution, issue)
+        issue["severity"] == "error" && validation_issue_applies_to_job(manifest, resolution, issue)
     })
 }
 
@@ -596,14 +589,20 @@ pub(crate) fn validation_issues_for_job(
 ) -> Vec<Value> {
     issues
         .iter()
-        .filter(|issue| {
-            issue["code"].as_str().is_none_or(|code| {
-                !is_product_foundation_validation_code(code)
-                    || product_foundation_issue_applies_to_job(manifest, resolution, issue)
-            })
-        })
+        .filter(|issue| validation_issue_applies_to_job(manifest, resolution, issue))
         .cloned()
         .collect()
+}
+
+fn validation_issue_applies_to_job(
+    manifest: &Manifest,
+    resolution: &ProductFoundationResolution,
+    issue: &Value,
+) -> bool {
+    issue["code"].as_str().is_none_or(|code| {
+        !is_product_foundation_validation_code(code)
+            || product_foundation_issue_applies_to_job(manifest, resolution, issue)
+    })
 }
 
 fn product_foundation_issue_applies_to_job(
@@ -1115,6 +1114,52 @@ mod tests {
             &manifest,
             &selected,
             std::slice::from_ref(&selected_issue)
+        ));
+    }
+
+    #[test]
+    fn job_aware_diagnostics_and_blocking_share_relevance_policy() {
+        let cards = vec![card(
+            "positioning",
+            CardKind::Positioning,
+            vec![entry("one", "One")],
+        )];
+        let index = ProductFoundationIndex::from_cards(&cards);
+        let mut manifest = manifest_with_foundation(vec![facet(
+            "identity",
+            vec![reference("positioning", "one")],
+        )]);
+        manifest.jobs[0].product_foundation = Some(binding(&["identity"]));
+        manifest.jobs[1].product_foundation = Some(binding(&["identity"]));
+        let selected = resolve_product_foundation(&manifest, &index, &manifest.jobs[0].id);
+        let issues = vec![
+            json!({
+                "code": "product_foundation_condition_fact_unknown",
+                "severity": "error",
+                "path": ".mdp/manifest.yaml#/jobs/1/product_foundation/conditional/0/when/fact"
+            }),
+            json!({
+                "code": "pack_notice",
+                "severity": "warning",
+                "path": ".mdp/manifest.yaml"
+            }),
+            json!({
+                "code": "card_read_failed",
+                "severity": "error",
+                "path": ".mdp/cards/missing.yaml"
+            }),
+        ];
+
+        let displayed = validation_issues_for_job(&manifest, &selected, &issues);
+
+        assert_eq!(displayed, issues[1..]);
+        assert!(validation_errors_block_job(
+            &manifest, &selected, &displayed
+        ));
+        assert!(!validation_errors_block_job(
+            &manifest,
+            &selected,
+            &displayed[..1]
         ));
     }
 }
