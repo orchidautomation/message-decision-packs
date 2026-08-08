@@ -14,7 +14,7 @@ use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
 use crate::product_foundation::{
-    ProductFoundationIndex, resolution_json, resolve_product_foundation,
+    ProductFoundationIndex, apply_validation_errors, resolution_json, resolve_product_foundation,
 };
 use crate::routing::select_cards;
 use crate::scope::valid_declared_identifier;
@@ -119,7 +119,10 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     let mut issues = Vec::new();
     validate_manifest_shape(root, &mut issues);
     let mut card_ids = BTreeSet::new();
-    let mut card_entry_index = BTreeMap::new();
+    let mut card_entry_index: BTreeMap<
+        String,
+        (CardKind, BTreeSet<String>, BTreeSet<String>),
+    > = BTreeMap::new();
     let mut foundation_cards = Vec::new();
     let mut loaded_cards = Vec::new();
     let mut scoped_entry_count = 0usize;
@@ -266,15 +269,16 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
                         "card has no entries",
                     ));
                 }
+                let mut entry_ids = BTreeSet::new();
+                let mut duplicate_entry_ids = BTreeSet::new();
+                for entry in &card.entries {
+                    if !entry_ids.insert(entry.id.clone()) {
+                        duplicate_entry_ids.insert(entry.id.clone());
+                    }
+                }
                 card_entry_index.insert(
                     card_ref.id.clone(),
-                    (
-                        card.kind.clone(),
-                        card.entries
-                            .iter()
-                            .map(|entry| entry.id.clone())
-                            .collect::<BTreeSet<_>>(),
-                    ),
+                    (card.kind.clone(), entry_ids, duplicate_entry_ids),
                 );
                 loaded_cards.push(json!({"id": card.id, "kind": card_ref.kind, "path": display_path, "entries": card.entries.len()}));
                 foundation_cards.push(card);
@@ -1404,7 +1408,7 @@ fn validate_profile_job_product_foundation_shapes(
 
 fn validate_product_foundation(
     manifest: &Manifest,
-    card_entry_index: &BTreeMap<String, (CardKind, BTreeSet<String>)>,
+    card_entry_index: &BTreeMap<String, (CardKind, BTreeSet<String>, BTreeSet<String>)>,
     issues: &mut Vec<Value>,
 ) {
     let registry = manifest
@@ -1524,7 +1528,7 @@ fn validate_product_foundation_entry_refs(
     refs: &[ProductFoundationEntryRef],
     path: &str,
     require_gap_card: bool,
-    card_entry_index: &BTreeMap<String, (CardKind, BTreeSet<String>)>,
+    card_entry_index: &BTreeMap<String, (CardKind, BTreeSet<String>, BTreeSet<String>)>,
     issues: &mut Vec<Value>,
 ) {
     let mut seen = BTreeSet::new();
@@ -1542,7 +1546,9 @@ fn validate_product_foundation_entry_refs(
                 ),
             ));
         }
-        let Some((card_kind, entry_ids)) = card_entry_index.get(&reference.card_id) else {
+        let Some((card_kind, entry_ids, duplicate_entry_ids)) =
+            card_entry_index.get(&reference.card_id)
+        else {
             issues.push(issue(
                 "product_foundation_card_missing",
                 "error",
@@ -1562,6 +1568,17 @@ fn validate_product_foundation_entry_refs(
                 format!(
                     "gap reference card {} must have kind gaps",
                     reference.card_id
+                ),
+            ));
+        }
+        if duplicate_entry_ids.contains(&reference.entry_id) {
+            issues.push(issue(
+                "product_foundation_entry_ambiguous",
+                "error",
+                format!("{ref_path}/entry_id"),
+                format!(
+                    "product foundation references ambiguous duplicate entry {}#{}",
+                    reference.card_id, reference.entry_id
                 ),
             ));
         }
@@ -1901,8 +1918,9 @@ fn validate_profile_mapping(
                 ));
             }
         }
-        let product_foundation =
+        let mut product_foundation =
             resolve_product_foundation(manifest, product_foundation_index, &job.id);
+        apply_validation_errors(&mut product_foundation, issues.as_slice());
         let activation_ready = missing_job_primitives.is_empty()
             && !explicit_activation_blocks
             && !product_foundation.blocks_activation();

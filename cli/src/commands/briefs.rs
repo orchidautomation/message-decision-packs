@@ -809,6 +809,20 @@ mod tests {
         .expect("manifest should be writable");
     }
 
+    fn set_foundation_facet_kind(root: &Path, kind: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["kind"] =
+            serde_yaml::Value::String(kind.to_string());
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
     #[test]
     fn brief_marks_no_draft_when_fit_is_insufficient() {
         let root = temp_pack("brief-no-draft");
@@ -831,6 +845,36 @@ mod tests {
                 .expect("foundation load order")
                 .is_empty()
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn briefs_block_invalid_foundation_before_drafting() {
+        let root = temp_pack("brief-invalid-foundation");
+        set_foundation_facet_kind(&root, "unknown-foundation-kind");
+
+        let emitted = emit_brief(
+            &root,
+            "PMM",
+            None,
+            Some("prospect-fit-or-brief"),
+        )
+        .expect("emit brief should resolve invalid foundation");
+        assert_eq!(emitted["draft_status"], "blocked");
+        assert_eq!(emitted["context"]["status"], "blocked");
+        assert_eq!(emitted["product_foundation"]["status"], "blocked");
+
+        let prospect_path = root.join("examples").join("clay-row.json");
+        let prospect = prospect_brief(
+            &root,
+            &prospect_path,
+            "linkedin",
+            Some("prospect-fit-or-brief"),
+        )
+        .expect("prospect brief should resolve invalid foundation");
+        assert_eq!(prospect["draft_status"], "no-draft");
+        assert_eq!(prospect["product_foundation"]["status"], "blocked");
 
         let _ = std::fs::remove_dir_all(root);
     }

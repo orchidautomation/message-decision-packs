@@ -492,6 +492,64 @@ pub(crate) fn resolution_json(resolution: &ProductFoundationResolution) -> Value
     })
 }
 
+pub(crate) fn apply_validation_errors(
+    resolution: &mut ProductFoundationResolution,
+    issues: &[Value],
+) {
+    if resolution.status == ProductFoundationStatus::Unassessed {
+        return;
+    }
+
+    let mut added = false;
+    for issue in issues {
+        if issue["severity"] != "error" {
+            continue;
+        }
+        let Some(code) = issue["code"].as_str() else {
+            continue;
+        };
+        if !is_product_foundation_validation_code(code) {
+            continue;
+        }
+        let path = issue["path"]
+            .as_str()
+            .unwrap_or(".mdp/manifest.yaml")
+            .to_string();
+        let message = issue["message"]
+            .as_str()
+            .unwrap_or("product foundation validation failed")
+            .to_string();
+        if resolution
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code && diagnostic.path == path)
+        {
+            continue;
+        }
+        resolution.diagnostics.push(ProductFoundationDiagnostic {
+            code: code.to_string(),
+            severity: "error".to_string(),
+            path,
+            message,
+        });
+        added = true;
+    }
+
+    if added {
+        resolution.status = ProductFoundationStatus::Blocked;
+        resolution.diagnostics.sort_by(|left, right| {
+            (&left.path, &left.code, &left.message).cmp(&(&right.path, &right.code, &right.message))
+        });
+    }
+}
+
+fn is_product_foundation_validation_code(code: &str) -> bool {
+    code.starts_with("product_foundation_")
+        || code.starts_with("profile_job_product_foundation_")
+        || code.starts_with("manifest_product_foundation_")
+        || code.starts_with("manifest_profile_job_product_foundation_")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

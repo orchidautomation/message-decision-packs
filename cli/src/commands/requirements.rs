@@ -11,7 +11,9 @@ use crate::models::{
     DecisionInputRequirement, DecisionInputSourceClass, Manifest, ValueContract,
 };
 use crate::pack_io::{read_manifest, resolve_pack_path};
-use crate::product_foundation::{resolution_json, resolve_product_foundation_for_pack};
+use crate::product_foundation::{
+    apply_validation_errors, resolution_json, resolve_product_foundation_for_pack,
+};
 use crate::value_contracts::{valid_date, valid_date_time};
 use anyhow::{Result, anyhow};
 use serde_json::{Map, Value, json};
@@ -30,7 +32,12 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     if validation["valid"] != true {
         let product_foundation = match resolve_product_foundation_for_pack(root, &manifest, job_id)
         {
-            Ok(resolution) => resolution_json(&resolution),
+            Ok(mut resolution) => {
+                if let Some(issues) = validation["issues"].as_array() {
+                    apply_validation_errors(&mut resolution, issues);
+                }
+                resolution_json(&resolution)
+            }
             Err(_) => blocked_product_foundation_resolution(job_id),
         };
         return finalize_requirements(json!({

@@ -1,8 +1,10 @@
+use crate::commands::health::validate_pack;
 use crate::constants::DEFAULT_DIR;
 use crate::models::{CardKind, Entry, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
 use crate::product_foundation::{
-    ProductFoundationResolution, resolution_json, resolve_product_foundation_for_pack,
+    ProductFoundationResolution, apply_validation_errors, resolution_json,
+    resolve_product_foundation_for_pack,
 };
 use crate::runtime_context::current_runtime_context;
 use crate::scope::{ScopeResolution, match_entry_scope};
@@ -168,11 +170,16 @@ pub(crate) fn entry_route_scoped(
     job: &str,
     scope: &ScopeResolution,
 ) -> Result<Value> {
+    let validation = validate_pack(root)?;
+    let mut product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
+    if let Some(issues) = validation["issues"].as_array() {
+        apply_validation_errors(&mut product_foundation, issues);
+    }
     let details = route_entry_details(root, manifest, persona, job, false, scope)?;
-    let product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
     let product_foundation_load_order = foundation_load_order(&product_foundation);
     let explicit_activation_blocks = manifest.profile_eval.blocks_activation();
-    let blocked = !details.scope_ready(scope)
+    let blocked = validation["valid"] != true
+        || !details.scope_ready(scope)
         || product_foundation.blocks_activation()
         || explicit_activation_blocks;
 
@@ -224,13 +231,22 @@ pub(crate) fn entry_context_with_runtime_scoped(
         .iter()
         .filter_map(|value| value["path"].as_str().map(|path| json!(path)))
         .collect();
+    let validation = validate_pack(root)?;
+    let mut product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
+    if let Some(issues) = validation["issues"].as_array() {
+        apply_validation_errors(&mut product_foundation, issues);
+    }
     let details = route_entry_details(root, manifest, persona, job, true, scope)?;
     let scope_blocked = !details.scope_ready(scope);
-    let product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
     let product_foundation_load_order = foundation_load_order(&product_foundation);
     let foundation_blocked = product_foundation.blocks_activation();
     let activation_blocked = manifest.profile_eval.blocks_activation();
-    if !draft_ready || scope_blocked || foundation_blocked || activation_blocked {
+    if validation["valid"] != true
+        || !draft_ready
+        || scope_blocked
+        || foundation_blocked
+        || activation_blocked
+    {
         let blocked_reason = if scope_blocked {
             "portfolio scope is missing or invalid"
         } else if foundation_blocked {
@@ -706,6 +722,37 @@ mod tests {
         .expect("manifest should be writable");
     }
 
+    fn set_foundation_facet_kind(root: &Path, kind: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["kind"] =
+            serde_yaml::Value::String(kind.to_string());
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn duplicate_foundation_entry(root: &Path) {
+        let card_path = root.join(".mdp/cards/positioning.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        let mut card: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("card should parse");
+        let first_entry = card["entries"][0].clone();
+        card["entries"]
+            .as_sequence_mut()
+            .expect("card entries")
+            .push(first_entry);
+        std::fs::write(
+            card_path,
+            serde_yaml::to_string(&card).expect("card should serialize"),
+        )
+        .expect("card should be writable");
+    }
+
     fn manifest(max_cards_per_route: usize) -> Manifest {
         Manifest {
             format: "mdp.v0".to_string(),
@@ -965,6 +1012,68 @@ mod tests {
                 .as_array()
                 .expect("context entries")
                 .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invalid_foundation_blocks_route_and_drafting_context() {
+        let root = temp_pack("invalid-foundation");
+        set_foundation_facet_kind(&root, "unknown-foundation-kind");
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let scope = ScopeResolution::default();
+
+        let route = entry_route_scoped(&root, &manifest, "PMM", "prospect-fit-or-brief", &scope)
+            .expect("entry route should resolve");
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            true,
+            &scope,
+        )
+        .expect("entry context should resolve");
+
+        for output in [&route, &context] {
+            assert_eq!(output["status"], "blocked");
+            assert_eq!(output["product_foundation"]["status"], "blocked");
+            assert!(
+                output["product_foundation"]["diagnostics"]
+                    .as_array()
+                    .expect("foundation diagnostics")
+                    .iter()
+                    .any(|diagnostic| diagnostic["code"]
+                        == "product_foundation_facet_kind_unknown")
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ambiguous_foundation_entry_blocks_route_instead_of_selecting_last_duplicate() {
+        let root = temp_pack("ambiguous-foundation-entry");
+        duplicate_foundation_entry(&root);
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let route = entry_route_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            &ScopeResolution::default(),
+        )
+        .expect("entry route should resolve");
+
+        assert_eq!(route["status"], "blocked");
+        assert_eq!(route["product_foundation"]["status"], "blocked");
+        assert!(
+            route["product_foundation"]["diagnostics"]
+                .as_array()
+                .expect("foundation diagnostics")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "product_foundation_entry_ambiguous")
         );
 
         let _ = std::fs::remove_dir_all(root);

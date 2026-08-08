@@ -1,7 +1,7 @@
 use crate::models::{Manifest, ProfileJob};
 use crate::pack_io::read_manifest;
 use crate::product_foundation::{
-    ProductFoundationClassification, ProductFoundationResolution,
+    ProductFoundationClassification, ProductFoundationResolution, apply_validation_errors,
     resolve_product_foundation_for_pack,
 };
 use crate::skill_catalog::{BOOTSTRAP_SKILL_IDS, JOB_ROUTE_SPECS, PACKAGED_SKILL_IDS, route_spec};
@@ -108,7 +108,10 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
             continue;
         };
         match resolve_product_foundation_for_pack(root, &manifest, &job.id) {
-            Ok(product_foundation) => {
+            Ok(mut product_foundation) => {
+                if let Some(issues) = validation["issues"].as_array() {
+                    apply_validation_errors(&mut product_foundation, issues);
+                }
                 routes.push(route_payload(
                     &manifest,
                     job,
@@ -434,6 +437,13 @@ mod tests {
                 .expect("job routes")
                 .iter()
                 .all(|route| route["pack_ready"] == false)
+        );
+        assert!(
+            all_routes["job_routes"]
+                .as_array()
+                .expect("job routes")
+                .iter()
+                .all(|route| route["product_foundation"]["status"] == "blocked")
         );
         assert!(
             all_routes["diagnostics"]
