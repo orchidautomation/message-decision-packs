@@ -19,7 +19,7 @@ entries:
   - GTM Engineering
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   - examples/clay-row.json
   avoid: []
 - id: no-context-no-copy
@@ -29,7 +29,7 @@ entries:
   - GTM Engineering
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid:
   - no source
   - unknown persona
@@ -41,7 +41,7 @@ entries:
   - GTM Engineering
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid:
   - blast
   - auto-send

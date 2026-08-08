@@ -7,6 +7,138 @@ profile:
   id: proposal
   label: Proposal Review
   version: mdp.profile.v0
+  product_foundation:
+    facets:
+    - id: product-identity
+      kind: product_identity
+      entries:
+      - card_id: opportunity-context
+        entry_id: public-services-modernization
+      - card_id: opportunity-context
+        entry_id: public-safe-scenario
+    - id: product-exclusions
+      kind: product_exclusions
+      entries:
+      - card_id: proposal-boundaries
+        entry_id: no-raw-customer-material
+      - card_id: proposal-boundaries
+        entry_id: no-compliance-guarantee
+      - card_id: proposal-boundaries
+        entry_id: review-not-submission
+    - id: actors
+      kind: actors
+      entries:
+      - card_id: proposal-roles
+        entry_id: proposal-lead
+      - card_id: proposal-roles
+        entry_id: solution-owner
+      - card_id: proposal-roles
+        entry_id: executive-reviewer
+    - id: operating-context
+      kind: operating_context
+      entries:
+      - card_id: opportunity-context
+        entry_id: public-services-modernization
+      - card_id: opportunity-context
+        entry_id: six-week-response-window
+      - card_id: opportunity-context
+        entry_id: public-safe-scenario
+    - id: problems
+      kind: problems
+      entries:
+      - card_id: requirement-signals
+        entry_id: online-intake-requirement
+      - card_id: requirement-signals
+        entry_id: integration-requirement
+      - card_id: requirement-signals
+        entry_id: training-requirement
+    - id: outcomes
+      kind: outcomes
+      entries:
+      - card_id: review-outputs
+        entry_id: bid-no-bid-brief
+      - card_id: review-outputs
+        entry_id: compliance-matrix
+      - card_id: review-outputs
+        entry_id: red-team-gap-report
+    - id: differentiators
+      kind: differentiators
+      entries:
+      - card_id: evaluation-criteria
+        entry_id: proof-before-theme
+      - card_id: proposal-output-rules
+        entry_id: label-source-confidence
+    - id: alternatives
+      kind: alternatives
+      entries:
+      - card_id: bid-no-bid-rules
+        entry_id: no-bid-for-policy-bypass
+    - id: claims
+      kind: claims
+      entries:
+      - card_id: proof-library
+        entry_id: approved-synthetic-proof
+    - id: proof-boundaries
+      kind: proof_boundaries
+      entries:
+      - card_id: proof-library
+        entry_id: unsupported-certifications
+      - card_id: proof-library
+        entry_id: no-past-performance-claim
+      - card_id: compliance-boundaries
+        entry_id: compliance-review-boundary
+      - card_id: compliance-boundaries
+        entry_id: no-regulated-data
+    - id: terminology
+      kind: terminology
+      entries:
+      - card_id: requirements-matrix
+        entry_id: requirement-status-labels
+    - id: offers
+      kind: offers
+      entries:
+      - card_id: review-gates
+        entry_id: bid-no-bid-review
+      - card_id: review-gates
+        entry_id: compliance-review
+      - card_id: review-gates
+        entry_id: proof-review
+      - card_id: review-gates
+        entry_id: red-team-review
+    - id: motions
+      kind: motions
+      entries:
+      - card_id: review-gates
+        entry_id: bid-no-bid-review
+      - card_id: review-gates
+        entry_id: compliance-review
+      - card_id: review-gates
+        entry_id: proof-review
+      - card_id: review-gates
+        entry_id: red-team-review
+    - id: calls-to-action
+      kind: calls_to_action
+      entries:
+      - card_id: review-outputs
+        entry_id: executive-summary
+    - id: narrative-posture
+      kind: narrative_posture
+      entries:
+      - card_id: proposal-output-rules
+        entry_id: label-source-confidence
+      - card_id: proposal-output-rules
+        entry_id: keep-review-shape
+      - card_id: proposal-output-rules
+        entry_id: no-invented-proof
+    - id: known-gaps
+      kind: gaps
+      gaps:
+      - card_id: gaps
+        entry_id: missing-rfp-text
+      - card_id: gaps
+        entry_id: missing-proof
+      - card_id: gaps
+        entry_id: public-safety-gap
 personas:
 - Proposal Lead
 - Solution Owner
@@ -194,6 +326,19 @@ jobs:
   - gaps
   input_contracts:
   - opportunity
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - operating-context
+    - problems
+    - alternatives
+    - proof-boundaries
+    - offers
+    - narrative-posture
+    optional:
+    - known-gaps
 - id: compliance-review
   skill_id: mdp-proposal-review
   label: Compliance review
@@ -207,6 +352,19 @@ jobs:
   - gaps
   input_contracts:
   - opportunity
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - operating-context
+    - problems
+    - proof-boundaries
+    - terminology
+    - offers
+    - narrative-posture
+    optional:
+    - known-gaps
 - id: proof-review
   skill_id: mdp-proposal-review
   label: Proof or win theme review
@@ -221,6 +379,20 @@ jobs:
   - gaps
   input_contracts:
   - opportunity
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - operating-context
+    - problems
+    - claims
+    - proof-boundaries
+    - differentiators
+    - offers
+    - narrative-posture
+    optional:
+    - known-gaps
 - id: red-team-review
   skill_id: mdp-proposal-review
   label: Red-team gap review
@@ -236,6 +408,22 @@ jobs:
   - gaps
   input_contracts:
   - opportunity
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - operating-context
+    - problems
+    - outcomes
+    - claims
+    - proof-boundaries
+    - terminology
+    - offers
+    - calls-to-action
+    - narrative-posture
+    optional:
+    - known-gaps
 profile_eval:
   required_categories:
   - proceed

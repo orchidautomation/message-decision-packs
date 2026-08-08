@@ -24,6 +24,135 @@ profile:
     - product
     solution:
     - product
+  product_foundation:
+    facets:
+    - id: product-identity
+      kind: product_identity
+      entries:
+      - card_id: positioning
+        entry_id: decision-layer
+      - card_id: positioning
+        entry_id: progressive-disclosure
+    - id: product-exclusions
+      kind: product_exclusions
+      entries:
+      - card_id: positioning
+        entry_id: not-execution-system
+      - card_id: avoid-rules
+        entry_id: not-execution
+    - id: actors
+      kind: actors
+      entries:
+      - card_id: personas
+        entry_id: gtm-engineering
+      - card_id: personas
+        entry_id: pmm
+      - card_id: personas
+        entry_id: pm
+    - id: operating-context
+      kind: operating_context
+      entries:
+      - card_id: signals
+        entry_id: source-row-signal
+      - card_id: signals
+        entry_id: linkedin-profile-signal
+      - card_id: signals
+        entry_id: company-context-signal
+    - id: problems
+      kind: problems
+      entries:
+      - card_id: pains
+        entry_id: agent-context-drift
+      - card_id: pains
+        entry_id: handoff-friction
+      - card_id: pains
+        entry_id: claim-inconsistency
+    - id: outcomes
+      kind: outcomes
+      entries:
+      - card_id: claims
+        entry_id: modular-pack-routing
+      - card_id: claims
+        entry_id: local-offline
+      - card_id: claims
+        entry_id: versionable-context
+    - id: differentiators
+      kind: differentiators
+      entries:
+      - card_id: positioning
+        entry_id: progressive-disclosure
+      - card_id: claims
+        entry_id: local-offline
+    - id: alternatives
+      kind: alternatives
+      entries:
+      - card_id: objections
+        entry_id: why-not-prompt
+      - card_id: objections
+        entry_id: why-not-sequencer
+    - id: claims
+      kind: claims
+      entries:
+      - card_id: claims
+        entry_id: modular-pack-routing
+      - card_id: claims
+        entry_id: local-offline
+      - card_id: claims
+        entry_id: versionable-context
+    - id: proof-boundaries
+      kind: proof_boundaries
+      entries:
+      - card_id: avoid-rules
+        entry_id: no-unsourced-claims
+      - card_id: fit-rules
+        entry_id: no-context-no-copy
+    - id: offers
+      kind: offers
+      entries:
+      - card_id: motions
+        entry_id: copy-brief
+      - card_id: motions
+        entry_id: agent-preflight
+      - card_id: motions
+        entry_id: source-row-to-brief
+    - id: motions
+      kind: motions
+      entries:
+      - card_id: motions
+        entry_id: copy-brief
+      - card_id: motions
+        entry_id: agent-preflight
+      - card_id: motions
+        entry_id: source-row-to-brief
+    - id: calls-to-action
+      kind: calls_to_action
+      entries:
+      - card_id: ctas
+        entry_id: soft-ask
+      - card_id: ctas
+        entry_id: calendar-second
+      - card_id: ctas
+        entry_id: no-false-urgency
+      - card_id: ctas
+        entry_id: reply-path
+    - id: narrative-posture
+      kind: narrative_posture
+      entries:
+      - card_id: output-rules
+        entry_id: plain-text-by-default
+      - card_id: output-rules
+        entry_id: no-fake-personalization
+      - card_id: copy-patterns
+        entry_id: claim-gap
+    - id: known-gaps
+      kind: gaps
+      gaps:
+      - card_id: gaps
+        entry_id: missing-company-proof
+      - card_id: gaps
+        entry_id: unclear-fit
+      - card_id: gaps
+        entry_id: hosted-api-not-included
 personas:
 - GTM Engineering
 - PMM
@@ -237,6 +366,17 @@ jobs:
   - gaps
   input_contracts:
   - prospect
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - operating-context
+    - problems
+    - claims
+    - proof-boundaries
+    optional:
+    - known-gaps
 - id: outbound-copy-brief
   skill_id: mdp-gtm-brief
   label: Outbound copy brief
@@ -252,6 +392,23 @@ jobs:
   - gaps
   input_contracts:
   - prospect
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - operating-context
+    - problems
+    - outcomes
+    - differentiators
+    - claims
+    - proof-boundaries
+    - offers
+    - motions
+    - calls-to-action
+    - narrative-posture
+    optional:
+    - known-gaps
 - id: outbound-copy-review
   skill_id: mdp-gtm-brief
   label: Supplied outbound copy review
@@ -267,6 +424,18 @@ jobs:
   - gaps
   input_contracts:
   - prospect
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - alternatives
+    - claims
+    - proof-boundaries
+    - calls-to-action
+    - narrative-posture
+    optional:
+    - known-gaps
 profile_eval:
   required_categories:
   - proceed

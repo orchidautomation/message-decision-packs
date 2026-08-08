@@ -20,7 +20,7 @@ entries:
   - PMM
   - GTM Engineering
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: calendar-second
   title: Calendar second
@@ -29,7 +29,7 @@ entries:
   - PMM
   - GTM Engineering
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: no-false-urgency
   title: No false urgency
@@ -37,7 +37,7 @@ entries:
   applies_to:
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: reply-path
   title: Reply path
@@ -46,5 +46,5 @@ entries:
   - PMM
   - GTM Engineering
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []

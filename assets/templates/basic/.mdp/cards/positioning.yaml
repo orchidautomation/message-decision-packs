@@ -19,7 +19,7 @@ entries:
   - PMM
   - PM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: not-execution-system
   title: Not execution
@@ -29,7 +29,7 @@ entries:
   - PMM
   - PM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: progressive-disclosure
   title: Progressive disclosure
@@ -38,5 +38,5 @@ entries:
   - GTM Engineering
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []

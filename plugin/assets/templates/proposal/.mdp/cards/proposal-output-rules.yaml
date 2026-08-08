@@ -34,7 +34,7 @@ entries:
   - Proposal Lead
   - Executive Reviewer
   evidence:
-  - docs/plans/2026-07-01-006-docs-proposal-reference-profile-template-plan.md
+  - proposal-safety-boundary
   avoid:
   - final proposal draft
   metadata:

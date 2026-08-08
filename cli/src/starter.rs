@@ -4,8 +4,10 @@ use crate::constants::{
 };
 use crate::models::{
     Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints, InputContract,
-    LeadInputRequirements, Manifest, PersonaMapping, Policy, PrimitiveMapping, Profile,
-    ProfileActivation, ProfileEval, ProfileJob, Provenance, ValueContract,
+    LeadInputRequirements, Manifest, PersonaMapping, Policy, PrimitiveMapping,
+    ProductFoundationBinding, ProductFoundationEntryRef, ProductFoundationFacet,
+    ProductFoundationFacetKind, ProductFoundationRegistry, Profile, ProfileActivation, ProfileEval,
+    ProfileJob, Provenance, ValueContract,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -205,7 +207,7 @@ fn gtm_profile() -> Profile {
             ("capability".to_string(), strings(&["product"])),
             ("solution".to_string(), strings(&["product"])),
         ]),
-        product_foundation: None,
+        product_foundation: Some(gtm_product_foundation()),
     }
 }
 
@@ -372,7 +374,15 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             ]),
             input_contracts: strings(&["prospect"]),
             decision_input_contracts: Vec::new(),
-            product_foundation: None,
+            product_foundation: Some(foundation_binding(&[
+                "product-identity",
+                "product-exclusions",
+                "actors",
+                "operating-context",
+                "problems",
+                "claims",
+                "proof-boundaries",
+            ])),
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
@@ -394,7 +404,21 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             ]),
             input_contracts: strings(&["prospect"]),
             decision_input_contracts: Vec::new(),
-            product_foundation: None,
+            product_foundation: Some(foundation_binding(&[
+                "product-identity",
+                "product-exclusions",
+                "actors",
+                "operating-context",
+                "problems",
+                "outcomes",
+                "differentiators",
+                "claims",
+                "proof-boundaries",
+                "offers",
+                "motions",
+                "calls-to-action",
+                "narrative-posture",
+            ])),
         },
         ProfileJob {
             id: "outbound-copy-review".to_string(),
@@ -416,7 +440,16 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             ]),
             input_contracts: strings(&["prospect"]),
             decision_input_contracts: Vec::new(),
-            product_foundation: None,
+            product_foundation: Some(foundation_binding(&[
+                "product-identity",
+                "product-exclusions",
+                "actors",
+                "alternatives",
+                "claims",
+                "proof-boundaries",
+                "calls-to-action",
+                "narrative-posture",
+            ])),
         },
     ]
 }
@@ -437,6 +470,179 @@ fn primitive_mapping(
     }
 }
 
+fn gtm_product_foundation() -> ProductFoundationRegistry {
+    ProductFoundationRegistry {
+        facets: vec![
+            foundation_facet(
+                "product-identity",
+                ProductFoundationFacetKind::ProductIdentity,
+                &[
+                    ("positioning", "decision-layer"),
+                    ("positioning", "progressive-disclosure"),
+                ],
+            ),
+            foundation_facet(
+                "product-exclusions",
+                ProductFoundationFacetKind::ProductExclusions,
+                &[
+                    ("positioning", "not-execution-system"),
+                    ("avoid-rules", "not-execution"),
+                ],
+            ),
+            foundation_facet(
+                "actors",
+                ProductFoundationFacetKind::Actors,
+                &[
+                    ("personas", "gtm-engineering"),
+                    ("personas", "pmm"),
+                    ("personas", "pm"),
+                ],
+            ),
+            foundation_facet(
+                "operating-context",
+                ProductFoundationFacetKind::OperatingContext,
+                &[
+                    ("signals", "source-row-signal"),
+                    ("signals", "linkedin-profile-signal"),
+                    ("signals", "company-context-signal"),
+                ],
+            ),
+            foundation_facet(
+                "problems",
+                ProductFoundationFacetKind::Problems,
+                &[
+                    ("pains", "agent-context-drift"),
+                    ("pains", "handoff-friction"),
+                    ("pains", "claim-inconsistency"),
+                ],
+            ),
+            foundation_facet(
+                "outcomes",
+                ProductFoundationFacetKind::Outcomes,
+                &[
+                    ("claims", "modular-pack-routing"),
+                    ("claims", "local-offline"),
+                    ("claims", "versionable-context"),
+                ],
+            ),
+            foundation_facet(
+                "differentiators",
+                ProductFoundationFacetKind::Differentiators,
+                &[
+                    ("positioning", "progressive-disclosure"),
+                    ("claims", "local-offline"),
+                ],
+            ),
+            foundation_facet(
+                "alternatives",
+                ProductFoundationFacetKind::Alternatives,
+                &[
+                    ("objections", "why-not-prompt"),
+                    ("objections", "why-not-sequencer"),
+                ],
+            ),
+            foundation_facet(
+                "claims",
+                ProductFoundationFacetKind::Claims,
+                &[
+                    ("claims", "modular-pack-routing"),
+                    ("claims", "local-offline"),
+                    ("claims", "versionable-context"),
+                ],
+            ),
+            foundation_facet(
+                "proof-boundaries",
+                ProductFoundationFacetKind::ProofBoundaries,
+                &[
+                    ("avoid-rules", "no-unsourced-claims"),
+                    ("fit-rules", "no-context-no-copy"),
+                ],
+            ),
+            foundation_facet(
+                "offers",
+                ProductFoundationFacetKind::Offers,
+                &[
+                    ("motions", "copy-brief"),
+                    ("motions", "agent-preflight"),
+                    ("motions", "source-row-to-brief"),
+                ],
+            ),
+            foundation_facet(
+                "motions",
+                ProductFoundationFacetKind::Motions,
+                &[
+                    ("motions", "copy-brief"),
+                    ("motions", "agent-preflight"),
+                    ("motions", "source-row-to-brief"),
+                ],
+            ),
+            foundation_facet(
+                "calls-to-action",
+                ProductFoundationFacetKind::CallsToAction,
+                &[
+                    ("ctas", "soft-ask"),
+                    ("ctas", "calendar-second"),
+                    ("ctas", "no-false-urgency"),
+                    ("ctas", "reply-path"),
+                ],
+            ),
+            foundation_facet(
+                "narrative-posture",
+                ProductFoundationFacetKind::NarrativePosture,
+                &[
+                    ("output-rules", "plain-text-by-default"),
+                    ("output-rules", "no-fake-personalization"),
+                    ("copy-patterns", "claim-gap"),
+                ],
+            ),
+            ProductFoundationFacet {
+                id: "known-gaps".to_string(),
+                kind: ProductFoundationFacetKind::Gaps,
+                entries: Vec::new(),
+                gaps: foundation_refs(&[
+                    ("gaps", "missing-company-proof"),
+                    ("gaps", "unclear-fit"),
+                    ("gaps", "hosted-api-not-included"),
+                ]),
+                conflicts_with: Vec::new(),
+            },
+        ],
+    }
+}
+
+fn foundation_binding(required: &[&str]) -> ProductFoundationBinding {
+    ProductFoundationBinding {
+        required: strings(required),
+        conditional: Vec::new(),
+        optional: vec!["known-gaps".to_string()],
+        excluded: Vec::new(),
+    }
+}
+
+fn foundation_facet(
+    id: &str,
+    kind: ProductFoundationFacetKind,
+    entries: &[(&str, &str)],
+) -> ProductFoundationFacet {
+    ProductFoundationFacet {
+        id: id.to_string(),
+        kind,
+        entries: foundation_refs(entries),
+        gaps: Vec::new(),
+        conflicts_with: Vec::new(),
+    }
+}
+
+fn foundation_refs(values: &[(&str, &str)]) -> Vec<ProductFoundationEntryRef> {
+    values
+        .iter()
+        .map(|(card_id, entry_id)| ProductFoundationEntryRef {
+            card_id: (*card_id).to_string(),
+            entry_id: (*entry_id).to_string(),
+        })
+        .collect()
+}
+
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_string()).collect()
 }
@@ -444,19 +650,19 @@ fn strings(values: &[&str]) -> Vec<String> {
 pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
     vec![
         ("personas.yaml", card("personas", CardKind::Personas, "Core personas", "The users who author, maintain, and consume the decision pack.", &["GTM Engineering", "PMM", "PM"], &["persona"], vec![
-            entry_with_evidence("gtm-engineering", "GTM Engineering", "Needs precise contracts, data boundaries, approved workflows, and machine-readable routing.", &["GTM Engineering"], &["README.md"]),
-            entry_with_evidence("pmm", "PMM", "Needs pains, triggers, hooks, proof points, CTA policy, and copy constraints without losing source fidelity.", &["PMM"], &["README.md"]),
-            entry_with_evidence("pm", "PM", "Needs product boundaries, roadmap-relevant pain evidence, and clear decisions about what the product is not.", &["PM"], &["README.md"]),
+            entry_with_evidence("gtm-engineering", "GTM Engineering", "Needs precise contracts, data boundaries, approved workflows, and machine-readable routing.", &["GTM Engineering"], &["mdp-reference-contract"]),
+            entry_with_evidence("pmm", "PMM", "Needs pains, triggers, hooks, proof points, CTA policy, and copy constraints without losing source fidelity.", &["PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("pm", "PM", "Needs product boundaries, roadmap-relevant pain evidence, and clear decisions about what the product is not.", &["PM"], &["mdp-reference-contract"]),
         ])),
         ("positioning.yaml", card("positioning", CardKind::Positioning, "Positioning and boundaries", "Category and product truth that every routed brief should preserve.", &["GTM Engineering", "PMM", "PM"], &["positioning", "category", "boundary"], vec![
-            entry_with_evidence("decision-layer", "Decision/context layer", "Describe MDP as a local, agent-readable decision and context layer for GTM messaging. It stores what an agent should load, believe, avoid, and surface as a gap.", &["GTM Engineering", "PMM", "PM"], &["README.md"]),
-            entry_with_evidence("not-execution-system", "Not execution", "Do not describe MDP as a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.", &["GTM Engineering", "PMM", "PM"], &["README.md"]),
-            entry_with_evidence("progressive-disclosure", "Progressive disclosure", "The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.", &["GTM Engineering", "PMM"], &["README.md"]),
+            entry_with_evidence("decision-layer", "Decision/context layer", "Describe MDP as a local, agent-readable decision and context layer for GTM messaging. It stores what an agent should load, believe, avoid, and surface as a gap.", &["GTM Engineering", "PMM", "PM"], &["mdp-reference-contract"]),
+            entry_with_evidence("not-execution-system", "Not execution", "Do not describe MDP as a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.", &["GTM Engineering", "PMM", "PM"], &["mdp-reference-contract"]),
+            entry_with_evidence("progressive-disclosure", "Progressive disclosure", "The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.", &["GTM Engineering", "PMM"], &["mdp-reference-contract"]),
         ])),
         ("fit-rules.yaml", card("fit-rules", CardKind::FitRules, "Fit rules", "ICP, qualification, disqualification, and no-message rules.", &["GTM Engineering", "PMM", "PM"], &["fit", "icp", "disqualifier", "no-message"], vec![
-            entry_with_evidence("good-fit-agent-gtm", "Good fit: agent-assisted GTM", "Use when the account is building GTM workflows with agents, provider-neutral source rows, Codex/Claude Code/OpenCode, or multiple systems that need consistent message context.", &["GTM Engineering", "PMM"], &["README.md", "examples/clay-row.json"]),
-            Entry { id: "no-context-no-copy".to_string(), title: "No message without context".to_string(), body: "If the row has no persona, trigger, source, or useful account context, return insufficient-context instead of drafting polished copy.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], scope: BTreeMap::new(), evidence: vec!["README.md".to_string()], avoid: vec!["no source".to_string(), "unknown persona".to_string(), "no trigger".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
-            Entry { id: "bad-fit-sending-only".to_string(), title: "Bad fit: sending-only ask".to_string(), body: "If the request is only to blast, sequence, or auto-send messages without decision context, treat it as out of scope for MDP.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], scope: BTreeMap::new(), evidence: vec!["README.md".to_string()], avoid: vec!["blast".to_string(), "auto-send".to_string(), "sequence everyone".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            entry_with_evidence("good-fit-agent-gtm", "Good fit: agent-assisted GTM", "Use when the account is building GTM workflows with agents, provider-neutral source rows, Codex/Claude Code/OpenCode, or multiple systems that need consistent message context.", &["GTM Engineering", "PMM"], &["mdp-reference-contract", "examples/clay-row.json"]),
+            Entry { id: "no-context-no-copy".to_string(), title: "No message without context".to_string(), body: "If the row has no persona, trigger, source, or useful account context, return insufficient-context instead of drafting polished copy.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], scope: BTreeMap::new(), evidence: vec!["mdp-reference-contract".to_string()], avoid: vec!["no source".to_string(), "unknown persona".to_string(), "no trigger".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "bad-fit-sending-only".to_string(), title: "Bad fit: sending-only ask".to_string(), body: "If the request is only to blast, sequence, or auto-send messages without decision context, treat it as out of scope for MDP.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string()], scope: BTreeMap::new(), evidence: vec!["mdp-reference-contract".to_string()], avoid: vec!["blast".to_string(), "auto-send".to_string(), "sequence everyone".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
         ])),
         ("signals.yaml", card("signals", CardKind::Signals, "Signals and triggers", "How to interpret source rows, LinkedIn context, source material, and account signals.", &["GTM Engineering", "PMM", "PM"], &["signal", "trigger", "source", "source-row", "csv", "crm", "linkedin"], vec![
             entry_with_evidence("source-row-signal", "Source row signal", "Treat user-provided rows, CSVs, CRM exports, Clay, Deepline, or other supplied row-like inputs as evidence inputs. Preserve source and confidence when present, and state weak signals as hypotheses.", &["GTM Engineering", "PMM"], &["examples/clay-row.json"]),
@@ -464,32 +670,32 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("company-context-signal", "Company context signal", "Company website, hiring, funding, product, and stack clues can shape the pain hypothesis when the pack states how to interpret them.", &["PMM", "PM"], &["examples/clay-row.json"]),
         ])),
         ("pains.yaml", card("pains", CardKind::Pains, "Pains and triggers", "Reusable buyer pains with evidence expectations.", &["PMM", "PM"], &["pain", "trigger"], vec![
-            entry_with_evidence("agent-context-drift", "Agent context drift", "Agents working on GTM tasks lose product truth when source context, contracts, and approved claims are scattered.", &["PMM", "PM"], &["README.md"]),
-            entry_with_evidence("handoff-friction", "Handoff friction", "Teams need a way to give agents enough context to draft or decide without dumping a giant doc into every prompt.", &["GTM Engineering", "PMM"], &["README.md"]),
-            entry_with_evidence("claim-inconsistency", "Claim inconsistency", "Different agents or workflows reuse outdated claims, unsupported proof points, or mismatched CTAs when there is no shared pack.", &["PMM"], &["README.md"]),
+            entry_with_evidence("agent-context-drift", "Agent context drift", "Agents working on GTM tasks lose product truth when source context, contracts, and approved claims are scattered.", &["PMM", "PM"], &["mdp-reference-contract"]),
+            entry_with_evidence("handoff-friction", "Handoff friction", "Teams need a way to give agents enough context to draft or decide without dumping a giant doc into every prompt.", &["GTM Engineering", "PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("claim-inconsistency", "Claim inconsistency", "Different agents or workflows reuse outdated claims, unsupported proof points, or mismatched CTAs when there is no shared pack.", &["PMM"], &["mdp-reference-contract"]),
         ])),
         ("claims.yaml", card("claims", CardKind::Claims, "Approved claims", "Claims an agent may use only when the route and source context support them.", &["PMM", "GTM Engineering"], &["claim", "proof", "evidence"], vec![
-            entry_with_evidence("modular-pack-routing", "Modular pack routing", "MDP lets teams store messaging decisions in a manifest plus modular cards so agents load relevant context instead of a giant prompt.", &["PMM", "GTM Engineering"], &["README.md"]),
-            entry_with_evidence("local-offline", "Local offline CLI", "The MVP CLI runs locally/offline without auth and returns stable JSON for agent and script usage.", &["GTM Engineering"], &["README.md", "cli/src/main.rs"]),
-            entry_with_evidence("versionable-context", "Versionable message context", "A pack can live in a repo so teams can review, diff, test, and update messaging decisions over time.", &["GTM Engineering", "PMM"], &["README.md"]),
+            entry_with_evidence("modular-pack-routing", "Modular pack routing", "MDP lets teams store messaging decisions in a manifest plus modular cards so agents load relevant context instead of a giant prompt.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
+            entry_with_evidence("local-offline", "Local offline CLI", "The MVP CLI runs locally/offline without auth and returns stable JSON for agent and script usage.", &["GTM Engineering"], &["mdp-reference-contract"]),
+            entry_with_evidence("versionable-context", "Versionable message context", "A pack can live in a repo so teams can review, diff, test, and update messaging decisions over time.", &["GTM Engineering", "PMM"], &["mdp-reference-contract"]),
         ])),
         ("motions.yaml", card("motions", CardKind::Motions, "Approved motions", "GTM workflows this pack can support as context.", &["GTM Engineering", "PMM"], &["motion", "workflow"], vec![
-            entry_with_evidence("copy-brief", "Copy brief", "Route persona, pain, hook, avoid-rules, CTA policy, and copy-pattern cards to produce a grounded brief, not final unsupervised sending.", &["PMM"], &["README.md"]),
-            entry_with_evidence("agent-preflight", "Agent preflight", "Let an agent inspect the pack before doing GTM work and report missing evidence or unsupported claims.", &["GTM Engineering"], &["README.md"]),
-            entry_with_evidence("source-row-to-brief", "Source row to brief", "Convert a provider-neutral prospect/source row into a message brief before drafting. Keep source fields as inputs, not as proof of claims.", &["GTM Engineering", "PMM"], &["README.md", "examples/clay-row.json"]),
+            entry_with_evidence("copy-brief", "Copy brief", "Route persona, pain, hook, avoid-rules, CTA policy, and copy-pattern cards to produce a grounded brief, not final unsupervised sending.", &["PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("agent-preflight", "Agent preflight", "Let an agent inspect the pack before doing GTM work and report missing evidence or unsupported claims.", &["GTM Engineering"], &["mdp-reference-contract"]),
+            entry_with_evidence("source-row-to-brief", "Source row to brief", "Convert a provider-neutral prospect/source row into a message brief before drafting. Keep source fields as inputs, not as proof of claims.", &["GTM Engineering", "PMM"], &["mdp-reference-contract", "examples/clay-row.json"]),
         ])),
         ("channel-policies.yaml", card("channel-policies", CardKind::ChannelPolicies, "Channel policies", "Channel and lifecycle rules for how routed message decisions should be used.", &["GTM Engineering", "PMM"], &["channel", "linkedin", "email", "initial", "follow-up", "call", "prep", "agent", "brief"], vec![
-            entry_with_evidence("linkedin-initial-touch", "LinkedIn initial touch", "For a first LinkedIn touch, use one sourced observation or explicitly labeled hypothesis, one relevant angle, and one low-friction ask. Keep it brief and do not make the first note feel like a full pitch.", &["PMM"], &["README.md"]),
-            entry_with_evidence("linkedin-follow-up", "LinkedIn follow-up", "For a later LinkedIn note, reference the earlier outreach lightly, add one new relevance angle or question, and keep the ask low-friction. Do not use guilt, breakup framing, or a bare bump.", &["PMM"], &["README.md"]),
-            Entry { id: "email-initial-touch".to_string(), title: "Email initial touch".to_string(), body: "For a first cold email, use the email output rules, one source-backed reason or explicit hypothesis, one approved angle, and one reply path. Keep one soft CTA and one question only. Do not lead with a calendar ask unless fit is strong and the source context supports it. Default to no links, attachments, images, HTML polish, or tracking unless the user explicitly overrides.".to_string(), applies_to: vec!["PMM".to_string()], scope: BTreeMap::new(), evidence: vec!["README.md".to_string()], avoid: vec![], exact_paragraphs: None, constraints: initial_email_constraints(), metadata: BTreeMap::new() },
-            entry_with_evidence("email-follow-up", "Email follow-up", "For follow-up email copy, assume a maximum of three follow-up notes after the initial email. Refer back without assuming interest, add one concrete reason, question, angle, or proof gap, and keep the reply path to owner validation or relevance. Do not use bump language, bare bumps, guilt breakup framing, or imply a longer follow-up sequence than the user supplied.", &["PMM"], &["README.md"]),
-            entry_with_evidence("call-prep", "Call prep", "Return likely persona, pains, allowed claims, avoid-rules, open questions, and the exact cards loaded. Do not pretend this is CRM history.", &["GTM Engineering", "PMM"], &["README.md"]),
-            entry_with_evidence("agent-brief", "Agent brief", "Return fit status, loaded cards, approved claims, avoid-rules, source hypotheses, open gaps, and exact handoff boundaries. Do not send, enrich, or update external systems.", &["GTM Engineering", "PMM"], &["README.md"]),
+            entry_with_evidence("linkedin-initial-touch", "LinkedIn initial touch", "For a first LinkedIn touch, use one sourced observation or explicitly labeled hypothesis, one relevant angle, and one low-friction ask. Keep it brief and do not make the first note feel like a full pitch.", &["PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("linkedin-follow-up", "LinkedIn follow-up", "For a later LinkedIn note, reference the earlier outreach lightly, add one new relevance angle or question, and keep the ask low-friction. Do not use guilt, breakup framing, or a bare bump.", &["PMM"], &["mdp-reference-contract"]),
+            Entry { id: "email-initial-touch".to_string(), title: "Email initial touch".to_string(), body: "For a first cold email, use the email output rules, one source-backed reason or explicit hypothesis, one approved angle, and one reply path. Keep one soft CTA and one question only. Do not lead with a calendar ask unless fit is strong and the source context supports it. Default to no links, attachments, images, HTML polish, or tracking unless the user explicitly overrides.".to_string(), applies_to: vec!["PMM".to_string()], scope: BTreeMap::new(), evidence: vec!["mdp-reference-contract".to_string()], avoid: vec![], exact_paragraphs: None, constraints: initial_email_constraints(), metadata: BTreeMap::new() },
+            entry_with_evidence("email-follow-up", "Email follow-up", "For follow-up email copy, assume a maximum of three follow-up notes after the initial email. Refer back without assuming interest, add one concrete reason, question, angle, or proof gap, and keep the reply path to owner validation or relevance. Do not use bump language, bare bumps, guilt breakup framing, or imply a longer follow-up sequence than the user supplied.", &["PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("call-prep", "Call prep", "Return likely persona, pains, allowed claims, avoid-rules, open questions, and the exact cards loaded. Do not pretend this is CRM history.", &["GTM Engineering", "PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("agent-brief", "Agent brief", "Return fit status, loaded cards, approved claims, avoid-rules, source hypotheses, open gaps, and exact handoff boundaries. Do not send, enrich, or update external systems.", &["GTM Engineering", "PMM"], &["mdp-reference-contract"]),
         ])),
         ("hooks.yaml", card("hooks", CardKind::Hooks, "Hooks", "Starter hook patterns that require local evidence before use.", &["PMM"], &["hook", "copy", "message"], vec![
-            entry_with_evidence("manifest-not-monolith", "Manifest, not monolith", "Position the pack as a small manifest plus task-specific cards so agents load the minimum needed context.", &["PMM"], &["README.md"]),
-            entry_with_evidence("evidence-before-action", "Evidence before action", "Emphasize that GTM execution should start with source context, contracts, and approval boundaries.", &["PMM"], &["README.md"]),
-            entry_with_evidence("one-context-many-agents", "One context, many agents", "Use when the account has Claude Code, Codex, OpenCode, Clay, or other systems that need the same source of messaging truth.", &["PMM", "GTM Engineering"], &["README.md", "examples/clay-row.json"]),
+            entry_with_evidence("manifest-not-monolith", "Manifest, not monolith", "Position the pack as a small manifest plus task-specific cards so agents load the minimum needed context.", &["PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("evidence-before-action", "Evidence before action", "Emphasize that GTM execution should start with source context, contracts, and approval boundaries.", &["PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("one-context-many-agents", "One context, many agents", "Use when the account has Claude Code, Codex, OpenCode, Clay, or other systems that need the same source of messaging truth.", &["PMM", "GTM Engineering"], &["mdp-reference-contract", "examples/clay-row.json"]),
         ])),
         ("portfolio-examples.yaml", card("portfolio-examples", CardKind::Hooks, "Portfolio scope examples", "Synthetic examples showing how product scope filters otherwise agnostic message decisions.", &["PMM"], &["portfolio", "scope", "example"], vec![
             entry("portfolio-scope-is-applicability", "Scope qualifies primitives", "Product, capability, solution, and segment narrow where an entry applies. They do not replace actors, pains, proof, boundaries, hooks, CTAs, or other agnostic primitives.", &["PMM"]),
@@ -498,13 +704,13 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             scoped_entry("portfolio-routing-capability", "Portfolio routing capability angle", "Use structured product-aware routing when the selected local CLI product and portfolio-routing capability are both relevant.", &["PMM"], &[("product", &["local-cli"]), ("capability", &["portfolio-routing"])]),
         ])),
         ("ctas.yaml", card("ctas", CardKind::Ctas, "CTA rules", "Calls to action, reply paths, and ask boundaries for outbound copy.", &["PMM", "GTM Engineering"], &["cta", "ask", "reply", "copy", "outbound", "message"], vec![
-            entry_with_evidence("soft-ask", "Soft ask", "Default to a low-friction ask that optimizes for a human reply: compare notes, sanity-check the hypothesis, ask who owns the problem, or ask whether the angle is worth a quick look.", &["PMM", "GTM Engineering"], &["README.md"]),
-            entry_with_evidence("calendar-second", "Calendar second", "Do not make the first CTA a calendar booking unless fit is strong, the reason for urgency is sourced, and the channel policy allows it. Use a reply-path question first when fit or ownership is uncertain.", &["PMM", "GTM Engineering"], &["README.md"]),
-            entry_with_evidence("no-false-urgency", "No false urgency", "Do not manufacture urgency or imply the prospect has asked for help unless the source row says so.", &["PMM"], &["README.md"]),
-            entry_with_evidence("reply-path", "Reply path", "When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.", &["PMM", "GTM Engineering"], &["README.md"]),
+            entry_with_evidence("soft-ask", "Soft ask", "Default to a low-friction ask that optimizes for a human reply: compare notes, sanity-check the hypothesis, ask who owns the problem, or ask whether the angle is worth a quick look.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
+            entry_with_evidence("calendar-second", "Calendar second", "Do not make the first CTA a calendar booking unless fit is strong, the reason for urgency is sourced, and the channel policy allows it. Use a reply-path question first when fit or ownership is uncertain.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
+            entry_with_evidence("no-false-urgency", "No false urgency", "Do not manufacture urgency or imply the prospect has asked for help unless the source row says so.", &["PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("reply-path", "Reply path", "When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
         ])),
         ("avoid-rules.yaml", card("avoid-rules", CardKind::AvoidRules, "Avoid rules", "Category and claim boundaries agents must keep intact.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"], vec![
-            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, meeting booker, sender, AI-owned response system, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], scope: BTreeMap::new(), evidence: vec!["README.md".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string(), "update CRM".to_string(), "updates CRM".to_string(), "sends for you".to_string(), "auto-sends".to_string(), "books meetings".to_string(), "launches campaigns".to_string(), "AI can own the response".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, meeting booker, sender, AI-owned response system, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], scope: BTreeMap::new(), evidence: vec!["mdp-reference-contract".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string(), "update CRM".to_string(), "updates CRM".to_string(), "sends for you".to_string(), "auto-sends".to_string(), "books meetings".to_string(), "launches campaigns".to_string(), "AI can own the response".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
             Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance/security approval, production adoption, design partner, paid pilot, market validation, commercial traction, weak trust claims, fake personalization, RFP/proposal-platform replacement, or product capability claims unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], scope: BTreeMap::new(), evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "doubles reply rates".to_string(), "fully automated".to_string(), "connect to your CRM".to_string(), "connects to your CRM".to_string(), "native CRM integration".to_string(), "security-approved".to_string(), "handles compliance".to_string(), "compliance approval".to_string(), "customers already use".to_string(), "customers rely on".to_string(), "customer adoption".to_string(), "design partner".to_string(), "design partners".to_string(), "paid pilot".to_string(), "paid pilots".to_string(), "production adoption".to_string(), "production use".to_string(), "validated adoption".to_string(), "ARR conversion".to_string(), "workshop conversion".to_string(), "workshops converted".to_string(), "market validated".to_string(), "market validation".to_string(), "I loved your recent LinkedIn post".to_string(), "bypasses procurement".to_string(), "bypass legal".to_string(), "replace proposal management software".to_string(), "replaces proposal management software".to_string(), "best-in-class".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
         ])),
         ("output-rules.yaml", card("output-rules", CardKind::OutputRules, "Output rules", "Global style, formatting, and output-structure rules generated text must follow.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"], vec![
@@ -516,13 +722,13 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry("no-meta-commentary", "No meta commentary", "Do not explain why the copy works, describe the structure, or include drafting notes unless the user asks for critique or rationale.", &["PMM", "GTM Engineering", "PM"]),
         ])),
         ("copy-patterns.yaml", card("copy-patterns", CardKind::CopyPatterns, "Copy patterns", "Reusable structures for brief and copy outputs.", &["PMM"], &["copy", "brief", "outbound", "message"], vec![
-            entry_with_evidence("brief-contract", "Brief contract", "Return audience, job, loaded cards, decision trace, approved claims, avoid rules, open questions, and draft direction.", &["PMM"], &["README.md"]),
-            entry_with_evidence("claim-gap", "Claim gap", "When evidence is missing, write the gap explicitly instead of smoothing over it with generic GTM language.", &["PMM", "PM"], &["README.md"]),
-            entry_with_evidence("trigger-hypothesis-proof-gap-angle-cta", "Trigger/hypothesis -> proof gap -> angle -> CTA", "Structure outbound copy as observed trigger or explicit hypothesis, proof gap or missing context, approved MDP angle, and one soft CTA. Mark weak inputs as hypotheses instead of fake personalization.", &["PMM"], &["README.md", "examples/clay-row.json"]),
+            entry_with_evidence("brief-contract", "Brief contract", "Return audience, job, loaded cards, decision trace, approved claims, avoid rules, open questions, and draft direction.", &["PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("claim-gap", "Claim gap", "When evidence is missing, write the gap explicitly instead of smoothing over it with generic GTM language.", &["PMM", "PM"], &["mdp-reference-contract"]),
+            entry_with_evidence("trigger-hypothesis-proof-gap-angle-cta", "Trigger/hypothesis -> proof gap -> angle -> CTA", "Structure outbound copy as observed trigger or explicit hypothesis, proof gap or missing context, approved MDP angle, and one soft CTA. Mark weak inputs as hypotheses instead of fake personalization.", &["PMM"], &["mdp-reference-contract", "examples/clay-row.json"]),
         ])),
         ("objections.yaml", card("objections", CardKind::Objections, "Objections and alternatives", "Category confusion and response logic for agents to preserve.", &["PMM", "GTM Engineering"], &["objection", "alternative", "response"], vec![
-            entry_with_evidence("why-not-prompt", "Why not one giant prompt?", "Explain that MDP favors versioned, testable, progressively loaded cards so agents can fetch only the context needed for the current job.", &["PMM", "GTM Engineering"], &["README.md"]),
-            entry_with_evidence("why-not-sequencer", "Why not a sequencer?", "Clarify that MDP stores message decisions and evidence. Sequencers or CRMs may consume outputs, but they are separate execution systems.", &["PMM", "GTM Engineering"], &["README.md"]),
+            entry_with_evidence("why-not-prompt", "Why not one giant prompt?", "Explain that MDP favors versioned, testable, progressively loaded cards so agents can fetch only the context needed for the current job.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
+            entry_with_evidence("why-not-sequencer", "Why not a sequencer?", "Clarify that MDP stores message decisions and evidence. Sequencers or CRMs may consume outputs, but they are separate execution systems.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
         ])),
         ("gaps.yaml", card("gaps", CardKind::Gaps, "Known gaps", "Durable gaps and open questions agents should surface instead of inventing answers.", &["GTM Engineering", "PMM", "PM"], &["gap", "unknown", "open-question"], vec![
             entry("missing-company-proof", "Missing company-specific proof", "If a prospect/account row lacks concrete source context, ask for source material or state the personalization gap before drafting.", &["PMM", "GTM Engineering"]),
@@ -544,9 +750,9 @@ pub(crate) fn starter_source_ledger(_template: &str) -> Value {
         ],
         "sources": [
             {
-                "id": "mdp-readme",
+                "id": "mdp-reference-contract",
                 "kind": "repo-doc",
-                "locator": "README.md",
+                "locator": ".mdp/cards/positioning.yaml",
                 "freshness": "repo-current",
                 "confidence": "high",
                 "direct_claims": [

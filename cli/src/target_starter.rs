@@ -1,5 +1,7 @@
 use crate::models::{
-    Card, CardKind, Entry, EntryConstraints, Manifest, PersonaMapping, TargetIdentity,
+    Card, CardKind, Entry, EntryConstraints, Manifest, PersonaMapping, ProductFoundationBinding,
+    ProductFoundationEntryRef, ProductFoundationFacet, ProductFoundationFacetKind,
+    ProductFoundationRegistry, TargetIdentity,
 };
 use crate::starter::{starter_manifest, starter_prompts};
 use serde_json::{Value, json};
@@ -51,6 +53,7 @@ pub(crate) fn target_manifest(
         profile.context_dimensions =
             BTreeMap::from([("segment".to_string(), vec!["target-segment".to_string()])]);
         profile.context_dimension_dependencies.clear();
+        profile.product_foundation = Some(target_product_foundation());
     }
     manifest
         .cards
@@ -107,6 +110,7 @@ pub(crate) fn target_manifest(
                 "Check structural validity, target isolation, gaps, and eval coverage.".to_string()
             }
         });
+        job.product_foundation = Some(target_foundation_binding(job.id.as_str()));
     }
     manifest.profile_eval.required_categories = vec![
         "insufficient-context".to_string(),
@@ -316,7 +320,204 @@ pub(crate) fn target_cards(target: &TargetIdentity) -> Vec<(&'static str, Card)>
     if let Some((_, avoid_rules)) = cards.iter_mut().find(|(_, card)| card.id == "avoid-rules") {
         avoid_rules.entries[0].avoid = target.internal_terms.clone();
     }
+    if let Some((_, gaps)) = cards.iter_mut().find(|(_, card)| card.id == "gaps") {
+        gaps.entries.extend([
+            gap_entry(
+                "product-facts-missing",
+                "Product facts missing",
+                &format!(
+                    "Category, capabilities, product boundaries, outcomes, differentiators, alternatives, offers, and terminology for {target_name} require reviewed sources."
+                ),
+            ),
+            gap_entry(
+                "icp-actors-missing",
+                "ICP and actor evidence missing",
+                &format!(
+                    "ICP, buyer roles, operator roles, pains, triggers, and disqualifiers for {target_name} require reviewed sources."
+                ),
+            ),
+            gap_entry(
+                "proof-missing",
+                "Proof missing",
+                &format!(
+                    "Claims, customer proof, quantified outcomes, certifications, integrations, and channel-specific evidence for {target_name} are not approved."
+                ),
+            ),
+        ]);
+    }
     cards
+}
+
+fn target_product_foundation() -> ProductFoundationRegistry {
+    ProductFoundationRegistry {
+        facets: vec![
+            target_facet(
+                "product-identity",
+                ProductFoundationFacetKind::ProductIdentity,
+                &[("positioning", "target-identity")],
+                &[("gaps", "product-facts-missing")],
+            ),
+            target_facet(
+                "product-exclusions",
+                ProductFoundationFacetKind::ProductExclusions,
+                &[("avoid-rules", "external-target-only")],
+                &[],
+            ),
+            target_facet(
+                "actors",
+                ProductFoundationFacetKind::Actors,
+                &[("personas", "persona-evidence-gap")],
+                &[("gaps", "icp-actors-missing")],
+            ),
+            target_facet(
+                "operating-context",
+                ProductFoundationFacetKind::OperatingContext,
+                &[("signals", "source-backed-signals")],
+                &[],
+            ),
+            target_facet(
+                "problems",
+                ProductFoundationFacetKind::Problems,
+                &[("pains", "pain-evidence-gap")],
+                &[("gaps", "icp-actors-missing")],
+            ),
+            target_facet(
+                "claims",
+                ProductFoundationFacetKind::Claims,
+                &[("claims", "no-approved-claims")],
+                &[("gaps", "proof-missing")],
+            ),
+            target_facet(
+                "proof-boundaries",
+                ProductFoundationFacetKind::ProofBoundaries,
+                &[
+                    ("fit-rules", "no-evidence-no-fit"),
+                    ("avoid-rules", "external-target-only"),
+                    ("output-rules", "no-filler"),
+                ],
+                &[("gaps", "proof-missing")],
+            ),
+            target_facet(
+                "offers",
+                ProductFoundationFacetKind::Offers,
+                &[("motions", "research-before-outreach")],
+                &[],
+            ),
+            target_facet(
+                "motions",
+                ProductFoundationFacetKind::Motions,
+                &[("motions", "research-before-outreach")],
+                &[],
+            ),
+            target_facet(
+                "calls-to-action",
+                ProductFoundationFacetKind::CallsToAction,
+                &[("ctas", "low-friction-after-fit")],
+                &[],
+            ),
+            target_facet(
+                "narrative-posture",
+                ProductFoundationFacetKind::NarrativePosture,
+                &[
+                    ("output-rules", "no-filler"),
+                    ("copy-patterns", "evidence-gap-pattern"),
+                ],
+                &[],
+            ),
+            target_facet(
+                "known-gaps",
+                ProductFoundationFacetKind::Gaps,
+                &[],
+                &[
+                    ("gaps", "product-facts-missing"),
+                    ("gaps", "icp-actors-missing"),
+                    ("gaps", "proof-missing"),
+                ],
+            ),
+        ],
+    }
+}
+
+fn target_foundation_binding(job_id: &str) -> ProductFoundationBinding {
+    let required = match job_id {
+        "prospect-fit-or-brief" => vec![
+            "product-identity",
+            "product-exclusions",
+            "actors",
+            "operating-context",
+            "problems",
+            "claims",
+            "proof-boundaries",
+        ],
+        "outbound-copy-brief" => vec![
+            "product-identity",
+            "product-exclusions",
+            "actors",
+            "operating-context",
+            "problems",
+            "claims",
+            "proof-boundaries",
+            "offers",
+            "motions",
+            "calls-to-action",
+            "narrative-posture",
+        ],
+        _ => vec![
+            "product-identity",
+            "product-exclusions",
+            "actors",
+            "claims",
+            "proof-boundaries",
+            "calls-to-action",
+            "narrative-posture",
+        ],
+    };
+    ProductFoundationBinding {
+        required: required.into_iter().map(str::to_string).collect(),
+        conditional: Vec::new(),
+        optional: vec!["known-gaps".to_string()],
+        excluded: Vec::new(),
+    }
+}
+
+fn target_facet(
+    id: &str,
+    kind: ProductFoundationFacetKind,
+    entries: &[(&str, &str)],
+    gaps: &[(&str, &str)],
+) -> ProductFoundationFacet {
+    ProductFoundationFacet {
+        id: id.to_string(),
+        kind,
+        entries: target_refs(entries),
+        gaps: target_refs(gaps),
+        conflicts_with: Vec::new(),
+    }
+}
+
+fn target_refs(values: &[(&str, &str)]) -> Vec<ProductFoundationEntryRef> {
+    values
+        .iter()
+        .map(|(card_id, entry_id)| ProductFoundationEntryRef {
+            card_id: (*card_id).to_string(),
+            entry_id: (*entry_id).to_string(),
+        })
+        .collect()
+}
+
+fn gap_entry(id: &str, title: &str, body: &str) -> Entry {
+    Entry {
+        id: id.to_string(),
+        title: title.to_string(),
+        body: body.to_string(),
+        applies_to: strings(&PERSONAS),
+        scope: BTreeMap::new(),
+        evidence: Vec::new(),
+        avoid: Vec::new(),
+        exact_paragraphs: None,
+        constraints: EntryConstraints::default(),
+        metadata: BTreeMap::new(),
+    }
 }
 
 pub(crate) fn target_source_ledger(target: &TargetIdentity) -> Value {

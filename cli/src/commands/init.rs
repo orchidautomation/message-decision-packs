@@ -1,9 +1,10 @@
 use crate::constants::{DEFAULT_DIR, FORMAT_VERSION};
-use crate::models::TargetIdentity;
+use crate::models::{Card, Manifest, TargetIdentity};
 use crate::pack_io::{
     planned_directory, planned_json_write_after_dirs, planned_yaml_write_after_dirs, read_manifest,
     write_json_file, write_yaml,
 };
+use crate::pack_readme::render_pack_readme;
 use crate::starter::{
     starter_cards, starter_evals, starter_manifest, starter_prompts, starter_prospect,
     starter_source_ledger,
@@ -434,6 +435,8 @@ fn init_gtm_pack(
 ) -> Result<Value> {
     validate_target_destination(root, target)?;
     let pack_dir = root.join(DEFAULT_DIR);
+    let readme_path = pack_dir.join("README.md");
+    refuse_existing_file(&readme_path, force)?;
     let cards_dir = pack_dir.join("cards");
     let briefs_dir = pack_dir.join("briefs");
     let evals_dir = pack_dir.join("evals");
@@ -449,19 +452,12 @@ fn init_gtm_pack(
         .with_context(|| format!("creating {}", examples_dir.display()))?;
     let slug = slugify(name);
     let manifest_path = pack_dir.join("manifest.yaml");
-    if let Some(target) = target {
-        write_yaml(
-            &manifest_path,
-            &target_manifest(name, &slug, template, target),
-            force,
-        )?;
+    let manifest = if let Some(target) = target {
+        target_manifest(name, &slug, template, target)
     } else {
-        write_yaml(
-            &manifest_path,
-            &starter_manifest(name, &slug, template),
-            force,
-        )?;
-    }
+        starter_manifest(name, &slug, template)
+    };
+    write_yaml(&manifest_path, &manifest, force)?;
     let source_ledger_path = pack_dir.join("sources.yaml");
     let source_ledger = target
         .map(target_source_ledger)
@@ -470,7 +466,7 @@ fn init_gtm_pack(
     let cards = target
         .map(target_cards)
         .unwrap_or_else(|| starter_cards(template));
-    for (filename, card) in cards {
+    for (filename, card) in &cards {
         write_yaml(&cards_dir.join(filename), &card, force)?;
     }
     let evals = target.map(target_evals).unwrap_or_else(starter_evals);
@@ -480,9 +476,19 @@ fn init_gtm_pack(
     let prompts = target
         .map(|target| target_prompts(target, include_output_schemas))
         .unwrap_or_else(|| starter_prompts(include_output_schemas));
-    for (filename, prompt) in prompts {
+    for (filename, prompt) in &prompts {
         write_yaml(&prompts_dir.join(filename), &prompt, force)?;
     }
+    let prompt_ids = prompts
+        .iter()
+        .filter_map(|(_, prompt)| prompt["id"].as_str().map(str::to_string))
+        .collect::<Vec<_>>();
+    let card_models = cards.iter().map(|(_, card)| card).collect::<Vec<_>>();
+    write_text_file(
+        &readme_path,
+        &render_pack_readme(&manifest, &card_models, &source_ledger, &prompt_ids),
+        force,
+    )?;
     let prospect_path = examples_dir.join(if target.is_some() {
         "prospect-row.json"
     } else {
@@ -506,6 +512,7 @@ fn init_gtm_pack(
         &cards_dir,
         &evals_dir,
         &prompts_dir,
+        &readme_path,
         &prospect_path,
         target,
     ))
@@ -576,6 +583,7 @@ fn init_gtm_pack_dry_run(
     let examples_dir = root.join("examples");
     let manifest_path = pack_dir.join("manifest.yaml");
     let source_ledger_path = pack_dir.join("sources.yaml");
+    let readme_path = pack_dir.join("README.md");
     let prospect_path = examples_dir.join(if target.is_some() {
         "prospect-row.json"
     } else {
@@ -589,6 +597,7 @@ fn init_gtm_pack_dry_run(
         &cards_dir,
         &evals_dir,
         &prompts_dir,
+        &readme_path,
         &prospect_path,
         target,
     );
@@ -602,6 +611,7 @@ fn init_gtm_pack_dry_run(
         planned_directory(&examples_dir),
         planned_yaml_write_after_dirs(&manifest_path, force),
         planned_yaml_write_after_dirs(&source_ledger_path, force),
+        planned_markdown_write_after_dirs(&readme_path, force),
     ];
     let cards = target
         .map(target_cards)
@@ -746,6 +756,8 @@ fn extend_unique(target: &mut Vec<String>, values: &[String]) {
 }
 
 fn init_proposal_pack(root: &Path, name: &str, force: bool) -> Result<Value> {
+    let readme_path = root.join(DEFAULT_DIR).join("README.md");
+    refuse_existing_file(&readme_path, force)?;
     for directory in proposal_template_dirs(root) {
         fs::create_dir_all(&directory)
             .with_context(|| format!("creating {}", directory.display()))?;
@@ -754,6 +766,7 @@ fn init_proposal_pack(root: &Path, name: &str, force: bool) -> Result<Value> {
         let contents = proposal_template_contents(relative_path, contents, name)?;
         write_embedded_text(root, relative_path, contents.as_ref(), force)?;
     }
+    write_text_file(&readme_path, &proposal_readme(name)?, force)?;
     Ok(proposal_init_payload(root, name))
 }
 
@@ -772,6 +785,10 @@ fn init_proposal_pack_dry_run(root: &Path, name: &str, force: bool) -> Result<Va
         };
         write_plan.push(planned_write);
     }
+    write_plan.push(planned_markdown_write_after_dirs(
+        &root.join(DEFAULT_DIR).join("README.md"),
+        force,
+    ));
     if let Some(object) = payload.as_object_mut() {
         object.insert("dry_run".to_string(), json!(true));
         object.insert("template".to_string(), json!("proposal"));
@@ -814,6 +831,75 @@ fn write_embedded_text(
     fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))
 }
 
+fn refuse_existing_file(path: &Path, force: bool) -> Result<()> {
+    if path.exists() && !force {
+        return Err(anyhow!(
+            "{} already exists; pass --force to overwrite",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn write_text_file(path: &Path, contents: &str, force: bool) -> Result<()> {
+    refuse_existing_file(path, force)?;
+    fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
+}
+
+fn planned_markdown_write_after_dirs(path: &Path, force: bool) -> Value {
+    let action = if path.exists() && force {
+        "overwrite"
+    } else if path.exists() {
+        "blocked"
+    } else {
+        "create"
+    };
+    json!({
+        "kind": "markdown-file",
+        "path": path.display().to_string(),
+        "action": action,
+        "would_write": matches!(action, "create" | "overwrite"),
+        "parent_exists": true
+    })
+}
+
+fn proposal_readme(name: &str) -> Result<String> {
+    let manifest_raw = proposal_template_contents(
+        ".mdp/manifest.yaml",
+        include_str!("../../../plugin/assets/templates/proposal/.mdp/manifest.yaml"),
+        name,
+    )?;
+    let manifest: Manifest =
+        serde_yaml::from_str(manifest_raw.as_ref()).context("parsing proposal manifest")?;
+    let mut cards = Vec::new();
+    let mut prompt_ids = Vec::new();
+    let mut source_ledger = Value::Null;
+    for (relative_path, contents) in PROPOSAL_TEMPLATE_FILES {
+        if relative_path.starts_with(".mdp/cards/") {
+            cards.push(
+                serde_yaml::from_str::<Card>(contents)
+                    .with_context(|| format!("parsing embedded {relative_path}"))?,
+            );
+        } else if *relative_path == ".mdp/sources.yaml" {
+            source_ledger = serde_yaml::from_str(contents)
+                .context("parsing embedded proposal source ledger")?;
+        } else if relative_path.starts_with(".mdp/prompts/") {
+            let prompt: Value = serde_yaml::from_str(contents)
+                .with_context(|| format!("parsing embedded {relative_path}"))?;
+            if let Some(id) = prompt["id"].as_str() {
+                prompt_ids.push(id.to_string());
+            }
+        }
+    }
+    let card_refs = cards.iter().collect::<Vec<_>>();
+    Ok(render_pack_readme(
+        &manifest,
+        &card_refs,
+        &source_ledger,
+        &prompt_ids,
+    ))
+}
+
 fn proposal_template_contents(
     relative_path: &str,
     contents: &'static str,
@@ -852,6 +938,7 @@ fn init_payload(
     cards_dir: &Path,
     evals_dir: &Path,
     prompts_dir: &Path,
+    readme_path: &Path,
     prospect_path: &Path,
     target: Option<&TargetIdentity>,
 ) -> Value {
@@ -872,6 +959,7 @@ fn init_payload(
         "cards_dir": cards_dir.display().to_string(),
         "evals_dir": evals_dir.display().to_string(),
         "prompts_dir": prompts_dir.display().to_string(),
+        "readme": readme_path.display().to_string(),
         "example_prospect": prospect_path.display().to_string(),
         "example_prospect_kind": "synthetic-example",
         "next_commands": [
@@ -891,6 +979,7 @@ fn proposal_init_payload(root: &Path, name: &str) -> Value {
     let cards_dir = pack_dir.join("cards");
     let evals_dir = pack_dir.join("evals");
     let prompts_dir = pack_dir.join("prompts");
+    let readme_path = pack_dir.join("README.md");
     json!({
         "format": FORMAT_VERSION,
         "template": "proposal",
@@ -903,6 +992,7 @@ fn proposal_init_payload(root: &Path, name: &str) -> Value {
         "cards_dir": cards_dir.display().to_string(),
         "evals_dir": evals_dir.display().to_string(),
         "prompts_dir": prompts_dir.display().to_string(),
+        "readme": readme_path.display().to_string(),
         "example_prospect": Value::Null,
         "example_prospect_kind": Value::Null,
         "next_commands": [
@@ -918,9 +1008,209 @@ fn proposal_init_payload(root: &Path, name: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::artifact_hash::pack_content_sha256;
+    use crate::product_foundation::{ProductFoundationStatus, resolve_product_foundation_for_pack};
     use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn generic_gtm_init_has_ready_foundations_and_orientation_readme() {
+        let root = std::env::temp_dir().join(format!("mdp-foundation-gtm-{}", nonce()));
+        init_pack(&root, "Basic MDP Template", "gtm", true, false)
+            .expect("generic GTM pack should initialize");
+
+        let manifest = read_manifest(&root).expect("manifest should parse");
+        for job in &manifest.jobs {
+            let foundation = resolve_product_foundation_for_pack(&root, &manifest, &job.id)
+                .expect("foundation should resolve");
+            assert_eq!(
+                foundation.status,
+                ProductFoundationStatus::Ready,
+                "{}",
+                job.id
+            );
+            assert!(!foundation.selected_facets.is_empty());
+        }
+        let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
+            .expect("orientation README should exist");
+        for heading in [
+            "## Authority",
+            "## Thesis",
+            "## Actors and ICP",
+            "## Supported Jobs",
+            "## Decision Flow",
+            "## Boundaries",
+            "## Sources",
+            "## Prompts",
+            "## Commands",
+            "## Gaps",
+        ] {
+            assert!(readme.contains(heading), "missing {heading}");
+        }
+        assert!(readme.contains("orientation only"));
+        assert!(readme.contains("prospect-fit-or-brief"));
+        assert!(readme.contains("mdp --json skills --job prospect-fit-or-brief"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn targeted_gtm_init_selects_explicit_product_icp_and_proof_gaps() {
+        let root = std::env::temp_dir().join(format!("mdp-foundation-target-{}", nonce()));
+        init_pack_targeted(
+            &root,
+            "Company B Messaging",
+            "gtm",
+            &TargetInitOptions {
+                custom_name: true,
+                name: Some("Company B"),
+                ..TargetInitOptions::default()
+            },
+            true,
+            false,
+        )
+        .expect("targeted GTM pack should initialize");
+
+        let manifest = read_manifest(&root).expect("manifest should parse");
+        assert_eq!(
+            manifest.profile_eval.activation.status.as_deref(),
+            Some("needs-review")
+        );
+        for job in &manifest.jobs {
+            let foundation = resolve_product_foundation_for_pack(&root, &manifest, &job.id)
+                .expect("foundation should resolve");
+            assert_eq!(foundation.status, ProductFoundationStatus::Blocked);
+            let gap_ids = foundation
+                .selected_facets
+                .iter()
+                .flat_map(|facet| {
+                    facet
+                        .gap_refs
+                        .iter()
+                        .map(|reference| reference.entry_id.as_str())
+                })
+                .collect::<BTreeSet<_>>();
+            assert!(gap_ids.contains("product-facts-missing"));
+            assert!(gap_ids.contains("icp-actors-missing"));
+            assert!(gap_ids.contains("proof-missing"));
+        }
+        let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
+            .expect("orientation README should exist");
+        assert!(readme.contains("Company B"));
+        assert!(readme.contains("Product facts missing"));
+        assert!(readme.contains("ICP and actor evidence missing"));
+        assert!(!readme.contains("Company B improves"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn proposal_init_has_ready_foundations_and_public_safe_orientation() {
+        let root = std::env::temp_dir().join(format!("mdp-foundation-proposal-{}", nonce()));
+        init_pack(&root, PROPOSAL_TEMPLATE_NAME, "proposal", true, false)
+            .expect("proposal pack should initialize");
+
+        let manifest = read_manifest(&root).expect("manifest should parse");
+        for job in &manifest.jobs {
+            assert_eq!(
+                resolve_product_foundation_for_pack(&root, &manifest, &job.id)
+                    .expect("foundation should resolve")
+                    .status,
+                ProductFoundationStatus::Ready,
+                "{}",
+                job.id
+            );
+        }
+        let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
+            .expect("orientation README should exist");
+        assert!(readme.contains("synthetic"));
+        assert!(readme.contains("does not certify compliance"));
+        for forbidden in ["raw transcript", "/Users/", "approved for CUI"] {
+            assert!(!readme.contains(forbidden), "README leaked {forbidden}");
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn readme_is_non_authoritative_but_part_of_portable_identity() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-authority-{}", nonce()));
+        init_pack(&root, "Basic MDP Template", "gtm", true, false)
+            .expect("generic GTM pack should initialize");
+        let manifest = read_manifest(&root).expect("manifest should parse");
+        let job_id = manifest.jobs[0].id.clone();
+        let before = resolve_product_foundation_for_pack(&root, &manifest, &job_id)
+            .expect("foundation should resolve");
+        let hash_before = pack_content_sha256(&root).expect("pack should hash");
+        std::fs::write(
+            root.join(".mdp/README.md"),
+            "# Contradiction\n\nThis prose falsely claims the pack is an AI SDR.\n",
+        )
+        .expect("README should be writable");
+        let after = resolve_product_foundation_for_pack(&root, &manifest, &job_id)
+            .expect("foundation should still resolve");
+        let hash_after = pack_content_sha256(&root).expect("pack should hash");
+
+        assert_eq!(before, after);
+        assert_ne!(hash_before, hash_after);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn init_dry_run_and_collision_contract_include_orientation_readme() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-collision-{}", nonce()));
+        let readme_path = root.join(".mdp/README.md");
+        std::fs::create_dir_all(root.join(".mdp")).expect("pack directory should exist");
+        std::fs::write(&readme_path, "# Human authored\n").expect("README should be writable");
+
+        let dry_run = init_pack_dry_run(&root, "Basic MDP Template", "gtm", false, false)
+            .expect("dry run should return plan");
+        let readme_plan = dry_run["write_plan"]
+            .as_array()
+            .expect("write plan array")
+            .iter()
+            .find(|entry| entry["path"] == readme_path.display().to_string())
+            .expect("README plan should be present");
+        assert_eq!(readme_plan["action"], "blocked");
+        assert_eq!(readme_plan["would_write"], false);
+
+        let error = init_pack(&root, "Basic MDP Template", "gtm", false, false)
+            .expect_err("normal init must preserve human-authored README");
+        assert!(error.to_string().contains("README.md already exists"));
+        assert_eq!(
+            std::fs::read_to_string(&readme_path).expect("README should remain readable"),
+            "# Human authored\n"
+        );
+        init_pack(&root, "Basic MDP Template", "gtm", true, false)
+            .expect("explicit force may replace README");
+        assert!(
+            std::fs::read_to_string(&readme_path)
+                .expect("README should be readable")
+                .contains("## Authority")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn generated_gtm_authority_has_no_dangling_repo_local_evidence_locator() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-locators-{}", nonce()));
+        init_pack(&root, "Basic MDP Template", "gtm", true, false)
+            .expect("generic GTM pack should initialize");
+        let mut paths = std::fs::read_dir(root.join(".mdp/cards"))
+            .expect("card directory should be readable")
+            .map(|entry| entry.expect("card entry should be readable").path())
+            .collect::<Vec<_>>();
+        paths.push(root.join(".mdp/sources.yaml"));
+        for path in paths {
+            let raw = std::fs::read_to_string(&path).expect("authority file should be readable");
+            for dangling in ["README.md", "AGENTS.md", "docs/", "cli/src/"] {
+                assert!(
+                    !raw.contains(dangling),
+                    "{} contains repo-local authority locator {dangling}",
+                    path.display()
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn generated_basic_starter_matches_plugin_template() {
@@ -1020,8 +1310,7 @@ mod tests {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/proposal");
 
         let generated_files = collect_files(&root);
-        let mut plugin_files = collect_files(&plugin_template);
-        plugin_files.remove("README.md");
+        let plugin_files = collect_files(&plugin_template);
         assert_eq!(generated_files, plugin_files);
         assert!(root.join(".mdp").join("briefs").is_dir());
         assert_eq!(result["template"], "proposal");

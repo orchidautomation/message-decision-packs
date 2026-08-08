@@ -7,7 +7,7 @@ rules:
 sources:
 - id: synthetic-rfp-summary
   kind: synthetic-example
-  locator: docs/demo-scenario.md
+  locator: .mdp/cards/opportunity-context.yaml
   freshness: generated
   confidence: demo-only
   direct_claims:
@@ -30,3 +30,15 @@ sources:
   - Proof may be used only as synthetic demo evidence.
   gaps:
   - No named customer, certification, or past performance claim is approved.
+- id: proposal-safety-boundary
+  kind: synthetic-policy
+  locator: .mdp/cards/proposal-boundaries.yaml
+  freshness: generated
+  confidence: high
+  direct_claims:
+  - This public template contains synthetic or sanitized review fixtures only.
+  - It does not certify compliance, authorize regulated-data handling, replace legal or procurement review, or authorize submission.
+  interpretations:
+  - Surface unsupported claims and private-source risks as gaps requiring human review.
+  gaps:
+  - Real proposal authority must remain in a private customer-controlled pack unless explicitly sanitized and approved.

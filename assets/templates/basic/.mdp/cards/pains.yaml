@@ -16,7 +16,7 @@ entries:
   - PMM
   - PM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: handoff-friction
   title: Handoff friction
@@ -25,7 +25,7 @@ entries:
   - GTM Engineering
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: claim-inconsistency
   title: Claim inconsistency
@@ -33,5 +33,5 @@ entries:
   applies_to:
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []

@@ -12,11 +12,11 @@ sources:
   - MDP stores decision context and routing contracts; it is not execution infrastructure.
   freshness: repo-current
   gaps: []
-  id: mdp-readme
+  id: mdp-reference-contract
   interpretations:
   - Use this source for category boundaries, not for third-party customer proof.
   kind: repo-doc
-  locator: README.md
+  locator: .mdp/cards/positioning.yaml
 - confidence: demo-only
   direct_claims:
   - This row is fictional starter data for exercising fit, route, and brief commands.

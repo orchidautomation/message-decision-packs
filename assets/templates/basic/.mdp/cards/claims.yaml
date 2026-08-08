@@ -17,7 +17,7 @@ entries:
   - PMM
   - GTM Engineering
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: local-offline
   title: Local offline CLI
@@ -25,8 +25,7 @@ entries:
   applies_to:
   - GTM Engineering
   evidence:
-  - README.md
-  - cli/src/main.rs
+  - mdp-reference-contract
   avoid: []
 - id: versionable-context
   title: Versionable message context
@@ -35,5 +34,5 @@ entries:
   - GTM Engineering
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []

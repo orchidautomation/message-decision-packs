@@ -15,7 +15,7 @@ entries:
   applies_to:
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: agent-preflight
   title: Agent preflight
@@ -23,7 +23,7 @@ entries:
   applies_to:
   - GTM Engineering
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: source-row-to-brief
   title: Source row to brief
@@ -32,6 +32,6 @@ entries:
   - GTM Engineering
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   - examples/clay-row.json
   avoid: []
