@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
-PLUXX_VERSION="${PLUXX_VERSION:-0.1.36}"
+PLUXX_VERSION="${PLUXX_VERSION:-0.1.39}"
 if command -v pluxx >/dev/null 2>&1 && [ "$(pluxx --version)" = "$PLUXX_VERSION" ]; then
   PLUXX_CMD=(pluxx)
 elif command -v npx >/dev/null 2>&1; then
@@ -168,6 +168,7 @@ assert(claudeHooks.hooks.PostToolUse, 'Claude Code hooks must include post-tool 
 assert(codexHooks.hooks[startupEvent], 'Codex hooks must include startup activation.')
 assert(codexHooks.hooks.UserPromptSubmit, 'Codex hooks must include prompt activation.')
 assert(codexHooks.hooks.PostToolUse, 'Codex hooks must include post-tool validation.')
+assert(codexHooks.hooks.PostToolUse[0]?.matcher === 'Edit|Write|apply_patch', 'Codex post-tool validation must be scoped to edit-capable tools.')
 assert(codexCompanion.enforcedByPluginBundle === true, 'Codex hook companion must mark hooks as bundled.')
 assert(codexCompanion.pluginBundleFeatureFlag === 'hooks', 'Codex hook companion must document the current feature flag.')
 

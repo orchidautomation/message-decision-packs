@@ -52,6 +52,7 @@ export default definePlugin({
     postToolUse: [
       {
         command: 'bash "${PLUGIN_ROOT}/scripts/mdp-post-edit-validate.sh"',
+        matcher: 'Edit|Write|apply_patch',
         timeout: 120000,
       },
     ],
