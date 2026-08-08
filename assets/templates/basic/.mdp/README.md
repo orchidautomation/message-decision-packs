@@ -42,6 +42,7 @@ A modular message decision pack for agent-readable ICP, pains, triggers, proof, 
 ## Sources
 
 - `mdp-reference-contract`: .mdp/cards/positioning.yaml
+- `mdp-pack-manifest`: .mdp/manifest.yaml
 - `example-prospect`: examples/clay-row.json
 
 ## Prompts

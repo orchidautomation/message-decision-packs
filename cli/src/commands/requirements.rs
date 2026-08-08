@@ -12,7 +12,8 @@ use crate::models::{
 };
 use crate::pack_io::{read_manifest, resolve_pack_path};
 use crate::product_foundation::{
-    apply_validation_errors, resolution_json, resolve_product_foundation_for_pack,
+    apply_validation_errors_for_job, resolution_json, resolve_product_foundation_for_pack,
+    validation_errors_block_job, validation_issues_for_job,
 };
 use crate::value_contracts::{valid_date, valid_date_time};
 use anyhow::{Result, anyhow};
@@ -29,37 +30,56 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         .ok_or_else(|| anyhow!("unknown profile job {job_id}"))?;
     let pack_sha256 = pack_content_sha256(root)?;
     let validation = validate_pack(root)?;
+    let mut product_foundation_resolution =
+        resolve_product_foundation_for_pack(root, &manifest, job_id);
     if validation["valid"] != true {
-        let product_foundation = match resolve_product_foundation_for_pack(root, &manifest, job_id)
-        {
+        let product_foundation = match product_foundation_resolution.as_mut() {
             Ok(mut resolution) => {
                 if let Some(issues) = validation["issues"].as_array() {
-                    apply_validation_errors(&mut resolution, issues);
+                    apply_validation_errors_for_job(&mut resolution, &manifest, issues);
                 }
                 resolution_json(&resolution)
             }
             Err(_) => blocked_product_foundation_resolution(job_id),
         };
-        return finalize_requirements(json!({
-            "contract": REQUIREMENTS_CONTRACT,
-            "status": "invalid",
-            "valid": false,
-            "available": false,
-            "pack": pack_summary(&manifest, &pack_sha256),
-            "job": {
-                "id": &job.id,
-                "skill_id": &job.skill_id,
-                "input_contracts": &job.input_contracts,
-                "decision_input_contracts": &job.decision_input_contracts
+        let validation_issues = product_foundation_resolution.as_ref().map_or_else(
+            |_| validation["issues"].as_array().cloned().unwrap_or_default(),
+            |resolution| {
+                validation_issues_for_job(
+                    &manifest,
+                    resolution,
+                    validation["issues"]
+                        .as_array()
+                        .map(Vec::as_slice)
+                        .unwrap_or(&[]),
+                )
             },
-            "product_foundation": product_foundation,
-            "decision_input_contracts": [],
-            "diagnostics": validation["issues"]
-        }));
+        );
+        let validation_blocks_job = product_foundation_resolution
+            .as_ref()
+            .map_or(true, |resolution| {
+                validation_errors_block_job(&manifest, resolution, &validation_issues)
+            });
+        if validation_blocks_job {
+            return finalize_requirements(json!({
+                "contract": REQUIREMENTS_CONTRACT,
+                "status": "invalid",
+                "valid": false,
+                "available": false,
+                "pack": pack_summary(&manifest, &pack_sha256),
+                "job": {
+                    "id": &job.id,
+                    "skill_id": &job.skill_id,
+                    "input_contracts": &job.input_contracts,
+                    "decision_input_contracts": &job.decision_input_contracts
+                },
+                "product_foundation": product_foundation,
+                "decision_input_contracts": [],
+                "diagnostics": validation_issues
+            }));
+        }
     }
-    let product_foundation = resolution_json(&resolve_product_foundation_for_pack(
-        root, &manifest, job_id,
-    )?);
+    let product_foundation = resolution_json(&product_foundation_resolution?);
     let selected_input_contracts = job
         .input_contracts
         .iter()
@@ -3084,6 +3104,52 @@ optional:
                 .iter()
                 .any(|diagnostic| {
                     diagnostic["code"] == "product_foundation_selected_reference_dangling"
+                })
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn requirements_selected_job_ignores_other_job_foundation_errors() {
+        let root = temporary_clay_example("unrelated-foundation-error");
+        add_product_foundation(&root, "target-identity");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][1]["product_foundation"] = serde_yaml::from_str(
+            r#"
+required:
+  - selected-identity
+conditional:
+  - facet_id: selected-identity
+    when:
+      fact: unsupported_fact
+      equals: outbound-copy-brief
+"#,
+        )
+        .expect("foundation binding should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let compiled =
+            requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
+
+        assert_eq!(compiled["valid"], true);
+        assert_ne!(compiled["status"], "invalid");
+        assert_eq!(compiled["available"], true);
+        assert_eq!(compiled["product_foundation"]["status"], "ready");
+        assert!(
+            compiled["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .all(|diagnostic| {
+                    diagnostic["code"] != "product_foundation_condition_fact_unknown"
                 })
         );
 

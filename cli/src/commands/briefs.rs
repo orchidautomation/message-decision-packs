@@ -125,22 +125,49 @@ pub(crate) fn prospect_brief_from_value_with_context(
         .unwrap_or_else(|| "prospect-json".to_string());
     let prospect_is_synthetic = prospect.synthetic;
     let job_text = brief_job(&manifest, job, &format!("write {channel} outbound message"));
-    let route = select_cards(&manifest, Some(&persona), Some(&job_text));
+    let routing_task = brief_routing_task(job, &job_text, channel);
+    let route = select_cards(&manifest, Some(&persona), Some(&routing_task));
     let load_order: Vec<String> = route
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
         .collect();
     let fit_draft_ready = fit_status == "fit";
     let initial_draft_status = if fit_draft_ready { "ready" } else { "no-draft" };
-    let context = entry_context_with_runtime_scoped(
+    let mut context = entry_context_with_runtime_scoped(
         root,
         &manifest,
         &persona,
-        &job_text,
+        &routing_task,
         fit_draft_ready,
         &runtime_context,
         &scope,
     )?;
+    if routing_task != job_text {
+        let foundation_context = entry_context_with_runtime_scoped(
+            root,
+            &manifest,
+            &persona,
+            &job_text,
+            fit_draft_ready,
+            &runtime_context,
+            &scope,
+        )?;
+        context["product_foundation"] = foundation_context["product_foundation"].clone();
+        context["product_foundation_load_order"] =
+            foundation_context["product_foundation_load_order"].clone();
+        if foundation_context["product_foundation"]["status"] == "blocked"
+            || foundation_context["reason"] == "pack validation failed for this job"
+        {
+            context["status"] = json!("blocked");
+            context["reason"] = foundation_context["reason"].clone();
+            context["entries"] = json!([]);
+            context["full_card_required"] = json!([]);
+            context["summary"]["entry_count"] = json!(0);
+            context["summary"]["required_entry_count"] = json!(0);
+            context["summary"]["supporting_entry_count"] = json!(0);
+            context["summary"]["guardrail_entry_count"] = json!(0);
+        }
+    }
     let portfolio_sensitive = context["portfolio_sensitive"].as_bool().unwrap_or(false);
     let bounded_context = include_context || portfolio_sensitive;
     let draft_status = if initial_draft_status == "ready" && context["status"] == "ready" {
@@ -214,6 +241,14 @@ fn brief_job(manifest: &Manifest, explicit_job: Option<&str>, legacy_default: &s
                 .then(|| "outbound-copy-brief".to_string())
         })
         .unwrap_or_else(|| legacy_default.to_string())
+}
+
+fn brief_routing_task(explicit_job: Option<&str>, foundation_job: &str, channel: &str) -> String {
+    if explicit_job.is_some() {
+        foundation_job.to_string()
+    } else {
+        format!("write {channel} outbound message")
+    }
 }
 
 fn brief_no_draft_reason(fit_result: &Value) -> String {
@@ -886,6 +921,36 @@ mod tests {
         assert_eq!(emitted["inputs"]["job"], "outbound-copy-brief");
         assert_ne!(prospect["product_foundation"]["status"], "unassessed");
         assert_ne!(emitted["product_foundation"]["status"], "unassessed");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn canonical_default_preserves_channel_specific_entry_routing() {
+        let root = temp_pack("canonical-default-channel-routing");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result = prospect_brief_with_context(&root, &prospect_path, "linkedin", None, true)
+            .expect("prospect brief should preserve channel routing");
+        let channel_entry_ids = result["context"]["entries"]
+            .as_array()
+            .expect("context entries should be an array")
+            .iter()
+            .filter(|entry| entry["card_id"] == "channel-policies")
+            .filter_map(|entry| entry["entry_id"].as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(result["job"], "outbound-copy-brief");
+        assert_eq!(
+            result["product_foundation"]["job_id"],
+            "outbound-copy-brief"
+        );
+        assert!(channel_entry_ids.contains(&"linkedin-initial-touch"));
+        assert!(
+            channel_entry_ids
+                .iter()
+                .all(|entry_id| !entry_id.starts_with("email-"))
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -677,7 +677,7 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
         ("claims.yaml", card("claims", CardKind::Claims, "Approved claims", "Claims an agent may use only when the route and source context support them.", &["PMM", "GTM Engineering"], &["claim", "proof", "evidence"], vec![
             entry_with_evidence("modular-pack-routing", "Modular pack routing", "MDP lets teams store messaging decisions in a manifest plus modular cards so agents load relevant context instead of a giant prompt.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
             entry_with_evidence("local-offline", "Local offline CLI", "MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.", &["GTM Engineering"], &["mdp-reference-contract"]),
-            entry_with_evidence("versionable-context", "Modular message context", "The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.", &["GTM Engineering", "PMM"], &["mdp-reference-contract"]),
+            entry_with_evidence("versionable-context", "Version-declared context", "Each MDP pack declares a version in its manifest alongside the card references for its modular message context.", &["GTM Engineering", "PMM"], &["mdp-pack-manifest"]),
         ])),
         ("motions.yaml", card("motions", CardKind::Motions, "Approved motions", "GTM workflows this pack can support as context.", &["GTM Engineering", "PMM"], &["motion", "workflow"], vec![
             entry_with_evidence("copy-brief", "Copy brief", "Route persona, pain, hook, avoid-rules, CTA policy, and copy-pattern cards to produce a grounded brief, not final unsupervised sending.", &["PMM"], &["mdp-reference-contract"]),
@@ -762,6 +762,20 @@ pub(crate) fn starter_source_ledger(_template: &str) -> Value {
                 ],
                 "interpretations": [
                     "Use this source for category boundaries, not for third-party customer proof."
+                ],
+                "gaps": []
+            },
+            {
+                "id": "mdp-pack-manifest",
+                "kind": "pack-manifest",
+                "locator": ".mdp/manifest.yaml",
+                "freshness": "pack-current",
+                "confidence": "high",
+                "direct_claims": [
+                    "This MDP pack declares its version and card references in the pack manifest."
+                ],
+                "interpretations": [
+                    "Use this source only for the pack's declared version and manifest-addressed card structure."
                 ],
                 "gaps": []
             },
@@ -1639,7 +1653,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     &["evidence-proof", "boundaries"],
                     &["outbound-copy-review"]
                 ),
-                "text": "MDP is a local offline CLI that stores versionable message context in a manifest plus modular cards.",
+                "text": "MDP is a local offline CLI. Each pack declares a version in its manifest alongside modular card references.",
                 "expect_valid": true
             }),
         ),

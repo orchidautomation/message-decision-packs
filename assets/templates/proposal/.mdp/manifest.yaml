@@ -354,6 +354,7 @@ jobs:
     - alternatives
     - proof-boundaries
     - bid-no-bid-review-offer
+    - bid-no-bid-review-motion
     - narrative-posture
     optional:
     - known-gaps
@@ -380,6 +381,7 @@ jobs:
     - proof-boundaries
     - terminology
     - compliance-review-offer
+    - compliance-review-motion
     - narrative-posture
     optional:
     - known-gaps
@@ -408,6 +410,7 @@ jobs:
     - proof-boundaries
     - differentiators
     - proof-review-offer
+    - proof-review-motion
     - narrative-posture
     optional:
     - known-gaps
@@ -438,6 +441,7 @@ jobs:
     - proof-boundaries
     - terminology
     - red-team-review-offer
+    - red-team-review-motion
     - calls-to-action
     - narrative-posture
     optional:

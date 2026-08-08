@@ -28,11 +28,11 @@ entries:
   - mdp-reference-contract
   avoid: []
 - id: versionable-context
-  title: Modular message context
-  body: The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.
+  title: Version-declared context
+  body: Each MDP pack declares a version in its manifest alongside the card references for its modular message context.
   applies_to:
   - GTM Engineering
   - PMM
   evidence:
-  - mdp-reference-contract
+  - mdp-pack-manifest
   avoid: []

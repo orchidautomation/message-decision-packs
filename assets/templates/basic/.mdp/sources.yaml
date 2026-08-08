@@ -18,6 +18,16 @@ sources:
   - Use this source for category boundaries, not for third-party customer proof.
   kind: repo-doc
   locator: .mdp/cards/positioning.yaml
+- confidence: high
+  direct_claims:
+  - This MDP pack declares its version and card references in the pack manifest.
+  freshness: pack-current
+  gaps: []
+  id: mdp-pack-manifest
+  interpretations:
+  - Use this source only for the pack's declared version and manifest-addressed card structure.
+  kind: pack-manifest
+  locator: .mdp/manifest.yaml
 - confidence: demo-only
   direct_claims:
   - This row is fictional starter data for exercising fit, route, and brief commands.

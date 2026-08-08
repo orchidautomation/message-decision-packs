@@ -589,6 +589,23 @@ pub(crate) fn validation_errors_block_job(
     })
 }
 
+pub(crate) fn validation_issues_for_job(
+    manifest: &Manifest,
+    resolution: &ProductFoundationResolution,
+    issues: &[Value],
+) -> Vec<Value> {
+    issues
+        .iter()
+        .filter(|issue| {
+            issue["code"].as_str().is_none_or(|code| {
+                !is_product_foundation_validation_code(code)
+                    || product_foundation_issue_applies_to_job(manifest, resolution, issue)
+            })
+        })
+        .cloned()
+        .collect()
+}
+
 fn product_foundation_issue_applies_to_job(
     manifest: &Manifest,
     resolution: &ProductFoundationResolution,

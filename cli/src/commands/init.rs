@@ -1131,14 +1131,35 @@ mod tests {
 
         let manifest = read_manifest(&root).expect("manifest should parse");
         for job in &manifest.jobs {
+            let foundation = resolve_product_foundation_for_pack(&root, &manifest, &job.id)
+                .expect("foundation should resolve");
             assert_eq!(
-                resolve_product_foundation_for_pack(&root, &manifest, &job.id)
-                    .expect("foundation should resolve")
-                    .status,
+                foundation.status,
                 ProductFoundationStatus::Ready,
                 "{}",
                 job.id
             );
+            let facet_ids = foundation
+                .selected_facets
+                .iter()
+                .map(|facet| facet.id.as_str())
+                .collect::<BTreeSet<_>>();
+            let expected_offer = format!("{}-offer", job.id);
+            let expected_motion = format!("{}-motion", job.id);
+            assert!(facet_ids.contains(expected_offer.as_str()), "{}", job.id);
+            assert!(facet_ids.contains(expected_motion.as_str()), "{}", job.id);
+            for other_job in manifest.jobs.iter().filter(|other| other.id != job.id) {
+                assert!(
+                    !facet_ids.contains(format!("{}-offer", other_job.id).as_str()),
+                    "{} loaded another job's offer",
+                    job.id
+                );
+                assert!(
+                    !facet_ids.contains(format!("{}-motion", other_job.id).as_str()),
+                    "{} loaded another job's motion",
+                    job.id
+                );
+            }
         }
         let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
             .expect("orientation README should exist");
@@ -1277,6 +1298,31 @@ mod tests {
         assert!(normalization_prompt.contains("name: runtime_context"));
         assert!(normalization_prompt.contains("Do not hardcode fiscal year or infer customer-specific calendars from the current date."));
         assert!(normalization_prompt.contains("Invalid-value example:"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn generated_basic_version_claim_is_distinct_and_manifest_backed() {
+        let root = std::env::temp_dir().join(format!("mdp-version-claim-{}", nonce()));
+        init_pack(&root, "Basic MDP Template", "gtm", true, false)
+            .expect("starter pack should initialize");
+
+        let claims = std::fs::read_to_string(root.join(".mdp/cards/claims.yaml"))
+            .expect("claims card should be readable");
+        assert!(claims.contains("title: Version-declared context"));
+        assert!(claims.contains("evidence:\n  - mdp-pack-manifest"));
+        assert!(
+            !claims
+                .contains("Agents should load only the cards returned by route or brief commands.")
+        );
+
+        let sources = std::fs::read_to_string(root.join(".mdp/sources.yaml"))
+            .expect("source ledger should be readable");
+        assert!(sources.contains("id: mdp-pack-manifest"));
+        assert!(sources.contains(
+            "This MDP pack declares its version and card references in the pack manifest."
+        ));
 
         let _ = std::fs::remove_dir_all(root);
     }
