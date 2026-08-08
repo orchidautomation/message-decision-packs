@@ -119,10 +119,8 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     let mut issues = Vec::new();
     validate_manifest_shape(root, &mut issues);
     let mut card_ids = BTreeSet::new();
-    let mut card_entry_index: BTreeMap<
-        String,
-        (CardKind, BTreeSet<String>, BTreeSet<String>),
-    > = BTreeMap::new();
+    let mut card_entry_index: BTreeMap<String, (CardKind, BTreeSet<String>, BTreeSet<String>)> =
+        BTreeMap::new();
     let mut foundation_cards = Vec::new();
     let mut loaded_cards = Vec::new();
     let mut scoped_entry_count = 0usize;

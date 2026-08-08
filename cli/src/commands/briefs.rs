@@ -854,13 +854,8 @@ mod tests {
         let root = temp_pack("brief-invalid-foundation");
         set_foundation_facet_kind(&root, "unknown-foundation-kind");
 
-        let emitted = emit_brief(
-            &root,
-            "PMM",
-            None,
-            Some("prospect-fit-or-brief"),
-        )
-        .expect("emit brief should resolve invalid foundation");
+        let emitted = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
+            .expect("emit brief should resolve invalid foundation");
         assert_eq!(emitted["draft_status"], "blocked");
         assert_eq!(emitted["context"]["status"], "blocked");
         assert_eq!(emitted["product_foundation"]["status"], "blocked");

@@ -739,8 +739,7 @@ mod tests {
     fn duplicate_foundation_entry(root: &Path) {
         let card_path = root.join(".mdp/cards/positioning.yaml");
         let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
-        let mut card: serde_yaml::Value =
-            serde_yaml::from_str(&raw).expect("card should parse");
+        let mut card: serde_yaml::Value = serde_yaml::from_str(&raw).expect("card should parse");
         let first_entry = card["entries"][0].clone();
         card["entries"]
             .as_sequence_mut()
