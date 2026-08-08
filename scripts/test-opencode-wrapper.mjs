@@ -346,6 +346,23 @@ try {
     join(root, 'plugin/assets/templates/basic/.mdp/manifest.yaml'),
     join(selectedWorkspace, '.mdp/manifest.yaml'),
   )
+  run('git', ['init', '-q'], { cwd: selectedWorkspace, environment: process.env })
+  run('git', ['config', 'user.email', 'mdp-hook-proof@example.invalid'], {
+    cwd: selectedWorkspace,
+    environment: process.env,
+  })
+  run('git', ['config', 'user.name', 'MDP Hook Proof'], {
+    cwd: selectedWorkspace,
+    environment: process.env,
+  })
+  run('git', ['add', '.mdp/manifest.yaml'], {
+    cwd: selectedWorkspace,
+    environment: process.env,
+  })
+  run('git', ['commit', '-q', '-m', 'fixture baseline'], {
+    cwd: selectedWorkspace,
+    environment: process.env,
+  })
 
   const wrapper = await import(`${pathToFileURL(wrapperPath).href}?proof=${Date.now()}`)
   const pluginFactory = Object.values(wrapper).find((value) => typeof value === 'function')
@@ -353,14 +370,19 @@ try {
 
   let hookCommand = ''
   let hookOutput = ''
+  const hookInvocations = []
   const shell = (strings, ...values) => {
     assert(strings.length === 2 && strings[0] === 'bash -lc ', 'Hook must execute through bash -lc.')
     hookCommand = String(values[0])
     const result = run('bash', ['-lc', hookCommand], {
       cwd: launchRoot,
-      environment: process.env,
+      environment: {
+        ...process.env,
+        PATH: `${fakeBin}:${process.env.PATH}`,
+      },
     })
     hookOutput = result.stdout
+    hookInvocations.push({ command: hookCommand, output: hookOutput })
     return Promise.resolve(result)
   }
   const client = { app: { log: async () => undefined } }
@@ -385,6 +407,33 @@ try {
     'Installed wrapper must preserve the selected workspace root.',
   )
   assert(!existsSync(join(launchRoot, '.mdp')), 'Parent launch directory must remain a non-MDP workspace.')
+
+  hookInvocations.length = 0
+  await hooks['tool.execute.after']({ tool: 'read' }, {})
+  await hooks['tool.execute.after']({ tool: 'bash' }, {})
+  assert(
+    hookInvocations.length === 0,
+    'Read and shell tools must not invoke MDP post-edit validation.',
+  )
+
+  writeFileSync(join(selectedWorkspace, 'notes.txt'), 'irrelevant edit\n')
+  await hooks['tool.execute.after']({ tool: 'edit' }, {})
+  assert(
+    hookInvocations.length === 1 &&
+      !hookInvocations[0].output.includes('MDP post-edit validation: relevant changes detected.'),
+    'An irrelevant edit must invoke the scoped hook once and exit without pack validation.',
+  )
+
+  writeFileSync(
+    join(selectedWorkspace, '.mdp/manifest.yaml'),
+    `${readFileSync(join(selectedWorkspace, '.mdp/manifest.yaml'), 'utf8')}\n# relevant edit\n`,
+  )
+  await hooks['tool.execute.after']({ tool: 'apply_patch' }, {})
+  assert(
+    hookInvocations.length === 2 &&
+      hookInvocations[1].output.includes('MDP post-edit validation: relevant changes detected.'),
+    'A relevant MDP edit must invoke post-edit validation exactly once.',
+  )
 
   console.log(
     `Installed OpenCode wrapper proof passed: launch=${launchRoot} selected=${selectedWorkspace}`,
