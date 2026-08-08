@@ -1021,7 +1021,8 @@ mod tests {
         for heading in [
             "## Authority",
             "## Thesis",
-            "## Actors and ICP",
+            "## Actors",
+            "## ICP and Fit Authority",
             "## Supported Jobs",
             "## Decision Flow",
             "## Boundaries",
@@ -1039,7 +1040,7 @@ mod tests {
     }
 
     #[test]
-    fn targeted_gtm_init_selects_explicit_product_icp_and_proof_gaps() {
+    fn targeted_gtm_init_selects_job_specific_authority_gaps() {
         let root = std::env::temp_dir().join(format!("mdp-foundation-target-{}", nonce()));
         init_pack_targeted(
             &root,
@@ -1074,15 +1075,50 @@ mod tests {
                         .map(|reference| reference.entry_id.as_str())
                 })
                 .collect::<BTreeSet<_>>();
+            let facet_ids = foundation
+                .selected_facets
+                .iter()
+                .map(|facet| facet.id.as_str())
+                .collect::<BTreeSet<_>>();
             assert!(gap_ids.contains("product-facts-missing"));
             assert!(gap_ids.contains("icp-actors-missing"));
             assert!(gap_ids.contains("proof-missing"));
+            match job.id.as_str() {
+                "prospect-fit-or-brief" => {
+                    assert!(!facet_ids.contains("outcomes"));
+                    assert!(!facet_ids.contains("differentiators"));
+                    assert!(!facet_ids.contains("terminology"));
+                    assert!(!facet_ids.contains("alternatives"));
+                }
+                "outbound-copy-brief" => {
+                    assert!(facet_ids.contains("outcomes"));
+                    assert!(facet_ids.contains("differentiators"));
+                    assert!(facet_ids.contains("terminology"));
+                    assert!(gap_ids.contains("outcomes-missing"));
+                    assert!(gap_ids.contains("differentiators-missing"));
+                    assert!(gap_ids.contains("terminology-missing"));
+                    assert!(!facet_ids.contains("alternatives"));
+                }
+                "outbound-copy-review" => {
+                    assert!(facet_ids.contains("alternatives"));
+                    assert!(facet_ids.contains("terminology"));
+                    assert!(gap_ids.contains("alternatives-missing"));
+                    assert!(gap_ids.contains("terminology-missing"));
+                    assert!(!facet_ids.contains("outcomes"));
+                    assert!(!facet_ids.contains("differentiators"));
+                }
+                unexpected => panic!("unexpected targeted GTM job {unexpected}"),
+            }
         }
         let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
             .expect("orientation README should exist");
         assert!(readme.contains("Company B"));
         assert!(readme.contains("Product facts missing"));
         assert!(readme.contains("ICP and actor evidence missing"));
+        assert!(readme.contains("Outcome authority missing"));
+        assert!(readme.contains("Differentiator authority missing"));
+        assert!(readme.contains("Terminology authority missing"));
+        assert!(readme.contains("Alternative authority missing"));
         assert!(!readme.contains("Company B improves"));
         let _ = std::fs::remove_dir_all(root);
     }

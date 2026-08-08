@@ -21,15 +21,15 @@ entries:
   avoid: []
 - id: local-offline
   title: Local offline CLI
-  body: The MVP CLI runs locally/offline without auth and returns stable JSON for agent and script usage.
+  body: MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.
   applies_to:
   - GTM Engineering
   evidence:
   - mdp-reference-contract
   avoid: []
 - id: versionable-context
-  title: Versionable message context
-  body: A pack can live in a repo so teams can review, diff, test, and update messaging decisions over time.
+  title: Modular message context
+  body: The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.
   applies_to:
   - GTM Engineering
   - PMM

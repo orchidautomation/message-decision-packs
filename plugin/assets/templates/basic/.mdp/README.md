@@ -9,11 +9,15 @@ This README is orientation only. The manifest, referenced card entries, source l
 
 A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, output rules, and copy guidance.
 
-## Actors and ICP
+## Actors
 
 - GTM Engineering
 - PMM
 - PM
+
+## ICP and Fit Authority
+
+- `cards/fit-rules.yaml`: Fit rules
 
 ## Supported Jobs
 

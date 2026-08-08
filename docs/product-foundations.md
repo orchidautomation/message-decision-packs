@@ -50,16 +50,11 @@ jobs:
     product_foundation:
       required:
         - product-identity
-        - proof-boundaries
       conditional:
-        - facet_id: enterprise-proof
+        - facet_id: proof
           when:
             fact: job_id
             equals: outbound-copy-brief
-      optional:
-        - alternatives
-      excluded:
-        - proposal-compliance
 ```
 
 Each facet may be classified once per job. Conditions are static equality

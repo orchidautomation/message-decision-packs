@@ -36,9 +36,26 @@ pub(crate) fn render_pack_readme(
         );
     }
 
-    section(&mut out, "Actors and ICP");
+    section(&mut out, "Actors");
     for persona in &manifest.personas {
         bullet(&mut out, persona);
+    }
+
+    section(&mut out, "ICP and Fit Authority");
+    let mut fit_rule_ids = BTreeSet::new();
+    for card in cards.iter().filter(|card| card.kind == CardKind::FitRules) {
+        if fit_rule_ids.insert(&card.id) {
+            bullet(
+                &mut out,
+                &format!("`cards/{}.yaml`: {}", card.id, card.title),
+            );
+        }
+    }
+    if fit_rule_ids.is_empty() {
+        bullet(
+            &mut out,
+            "No `fit-rules` card is declared; use the profile's structured decision criteria and explicit gaps.",
+        );
     }
 
     section(&mut out, "Supported Jobs");

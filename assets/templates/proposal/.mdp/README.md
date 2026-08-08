@@ -10,11 +10,16 @@ This README is orientation only. The manifest, referenced card entries, source l
 A synthetic proposal-review decision pack for bid/no-bid, compliance, proof, red-team, and executive review workflows.
 This public sample is synthetic review support. It does not certify compliance, approve regulated-data handling, replace legal or procurement review, or authorize proposal submission.
 
-## Actors and ICP
+## Actors
 
 - Proposal Lead
 - Solution Owner
 - Executive Reviewer
+
+## ICP and Fit Authority
+
+- `cards/bid-no-bid-rules.yaml`: Bid/no-bid rules
+- `cards/evaluation-criteria.yaml`: Evaluation criteria
 
 ## Supported Jobs
 

@@ -14,7 +14,8 @@ use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
 use crate::product_foundation::{
-    ProductFoundationIndex, apply_validation_errors, resolution_json, resolve_product_foundation,
+    ProductFoundationIndex, apply_validation_errors_for_job, resolution_json,
+    resolve_product_foundation,
 };
 use crate::routing::select_cards;
 use crate::scope::valid_declared_identifier;
@@ -1568,6 +1569,16 @@ fn validate_product_foundation_entry_refs(
                     reference.card_id
                 ),
             ));
+        } else if !require_gap_card && card_kind == &CardKind::Gaps {
+            issues.push(issue(
+                "product_foundation_entry_card_kind_invalid",
+                "error",
+                format!("{ref_path}/card_id"),
+                format!(
+                    "authoritative entry reference card {} must not have kind gaps; declare unresolved authority under facet.gaps",
+                    reference.card_id
+                ),
+            ));
         }
         if duplicate_entry_ids.contains(&reference.entry_id) {
             issues.push(issue(
@@ -1918,7 +1929,7 @@ fn validate_profile_mapping(
         }
         let mut product_foundation =
             resolve_product_foundation(manifest, product_foundation_index, &job.id);
-        apply_validation_errors(&mut product_foundation, issues.as_slice());
+        apply_validation_errors_for_job(&mut product_foundation, manifest, issues.as_slice());
         let activation_ready = missing_job_primitives.is_empty()
             && !explicit_activation_blocks
             && !product_foundation.blocks_activation();
@@ -5759,6 +5770,32 @@ excluded: []
                 "missing {code} at {path}: {issues:?}"
             );
         }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_gaps_card_reference_as_authoritative_foundation_entry() {
+        let root = temp_pack("foundation-gap-as-entry");
+        opt_in_product_foundation(&root);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["entries"] =
+            serde_yaml::from_str("- card_id: gaps\n  entry_id: missing-company-proof\n")
+                .expect("entry reference should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let issues = product_foundation_issues(&root);
+
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "product_foundation_entry_card_kind_invalid"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/profile/product_foundation/facets/0/entries/0/card_id"
+        }));
         let _ = std::fs::remove_dir_all(root);
     }
 

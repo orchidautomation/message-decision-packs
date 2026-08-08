@@ -342,6 +342,34 @@ pub(crate) fn target_cards(target: &TargetIdentity) -> Vec<(&'static str, Card)>
                     "Claims, customer proof, quantified outcomes, certifications, integrations, and channel-specific evidence for {target_name} are not approved."
                 ),
             ),
+            gap_entry(
+                "outcomes-missing",
+                "Outcome authority missing",
+                &format!(
+                    "No customer or operator outcome is approved for {target_name}. Add structured outcome authority only when reviewed sources support the result and its limits."
+                ),
+            ),
+            gap_entry(
+                "differentiators-missing",
+                "Differentiator authority missing",
+                &format!(
+                    "No differentiator is approved for {target_name}. Add structured differentiation only when reviewed sources support the comparison and its boundaries."
+                ),
+            ),
+            gap_entry(
+                "terminology-missing",
+                "Terminology authority missing",
+                &format!(
+                    "Approved external terminology for {target_name} is unresolved. Add structured preferred and avoided language from reviewed sources before drafting or reviewing copy."
+                ),
+            ),
+            gap_entry(
+                "alternatives-missing",
+                "Alternative authority missing",
+                &format!(
+                    "Alternatives and objection comparisons for {target_name} are unresolved. Add structured alternative authority from reviewed sources before judging supplied copy."
+                ),
+            ),
         ]);
     }
     cards
@@ -381,6 +409,24 @@ fn target_product_foundation() -> ProductFoundationRegistry {
                 &[("gaps", "icp-actors-missing")],
             ),
             target_facet(
+                "outcomes",
+                ProductFoundationFacetKind::Outcomes,
+                &[],
+                &[("gaps", "outcomes-missing")],
+            ),
+            target_facet(
+                "differentiators",
+                ProductFoundationFacetKind::Differentiators,
+                &[],
+                &[("gaps", "differentiators-missing")],
+            ),
+            target_facet(
+                "alternatives",
+                ProductFoundationFacetKind::Alternatives,
+                &[],
+                &[("gaps", "alternatives-missing")],
+            ),
+            target_facet(
                 "claims",
                 ProductFoundationFacetKind::Claims,
                 &[("claims", "no-approved-claims")],
@@ -395,6 +441,12 @@ fn target_product_foundation() -> ProductFoundationRegistry {
                     ("output-rules", "no-filler"),
                 ],
                 &[("gaps", "proof-missing")],
+            ),
+            target_facet(
+                "terminology",
+                ProductFoundationFacetKind::Terminology,
+                &[],
+                &[("gaps", "terminology-missing")],
             ),
             target_facet(
                 "offers",
@@ -454,10 +506,24 @@ fn target_foundation_binding(job_id: &str) -> ProductFoundationBinding {
             "actors",
             "operating-context",
             "problems",
+            "outcomes",
+            "differentiators",
             "claims",
             "proof-boundaries",
+            "terminology",
             "offers",
             "motions",
+            "calls-to-action",
+            "narrative-posture",
+        ],
+        "outbound-copy-review" => vec![
+            "product-identity",
+            "product-exclusions",
+            "actors",
+            "alternatives",
+            "claims",
+            "proof-boundaries",
+            "terminology",
             "calls-to-action",
             "narrative-posture",
         ],

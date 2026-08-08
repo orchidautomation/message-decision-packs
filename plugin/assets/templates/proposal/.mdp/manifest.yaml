@@ -94,26 +94,44 @@ profile:
       entries:
       - card_id: requirements-matrix
         entry_id: requirement-status-labels
-    - id: offers
+    - id: bid-no-bid-review-offer
       kind: offers
       entries:
       - card_id: review-gates
         entry_id: bid-no-bid-review
+    - id: compliance-review-offer
+      kind: offers
+      entries:
       - card_id: review-gates
         entry_id: compliance-review
+    - id: proof-review-offer
+      kind: offers
+      entries:
       - card_id: review-gates
         entry_id: proof-review
+    - id: red-team-review-offer
+      kind: offers
+      entries:
       - card_id: review-gates
         entry_id: red-team-review
-    - id: motions
+    - id: bid-no-bid-review-motion
       kind: motions
       entries:
       - card_id: review-gates
         entry_id: bid-no-bid-review
+    - id: compliance-review-motion
+      kind: motions
+      entries:
       - card_id: review-gates
         entry_id: compliance-review
+    - id: proof-review-motion
+      kind: motions
+      entries:
       - card_id: review-gates
         entry_id: proof-review
+    - id: red-team-review-motion
+      kind: motions
+      entries:
       - card_id: review-gates
         entry_id: red-team-review
     - id: calls-to-action
@@ -335,7 +353,7 @@ jobs:
     - problems
     - alternatives
     - proof-boundaries
-    - offers
+    - bid-no-bid-review-offer
     - narrative-posture
     optional:
     - known-gaps
@@ -361,7 +379,7 @@ jobs:
     - problems
     - proof-boundaries
     - terminology
-    - offers
+    - compliance-review-offer
     - narrative-posture
     optional:
     - known-gaps
@@ -389,7 +407,7 @@ jobs:
     - claims
     - proof-boundaries
     - differentiators
-    - offers
+    - proof-review-offer
     - narrative-posture
     optional:
     - known-gaps
@@ -419,7 +437,7 @@ jobs:
     - claims
     - proof-boundaries
     - terminology
-    - offers
+    - red-team-review-offer
     - calls-to-action
     - narrative-posture
     optional:

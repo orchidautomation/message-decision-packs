@@ -221,8 +221,19 @@ pub(crate) fn resolve_product_foundation(
             ),
         );
     }
+    let mut diagnostics = Vec::new();
     let mut untriggered_facet_ids = Vec::new();
     for (conditional_index, conditional) in binding.conditional.iter().enumerate() {
+        if conditional.when.fact == ProductFoundationConditionFact::Unknown {
+            diagnostics.push(diagnostic(
+                "product_foundation_condition_fact_unknown",
+                format!(
+                    ".mdp/manifest.yaml#/jobs/{job_index}/product_foundation/conditional/{conditional_index}/when/fact"
+                ),
+                "conditional fact must be manifest_id, profile_id, or job_id".to_string(),
+            ));
+            continue;
+        }
         if condition_matches(manifest, job_id, &conditional.when) {
             selections.insert(
                 conditional.facet_id.clone(),
@@ -244,7 +255,6 @@ pub(crate) fn resolve_product_foundation(
     }
 
     let no_selected_authority = selections.is_empty();
-    let mut diagnostics = Vec::new();
     if no_selected_authority {
         diagnostics.push(diagnostic(
             "product_foundation_selected_authority_empty",
@@ -496,6 +506,25 @@ pub(crate) fn apply_validation_errors(
     resolution: &mut ProductFoundationResolution,
     issues: &[Value],
 ) {
+    apply_matching_validation_errors(resolution, issues, |_| true);
+}
+
+pub(crate) fn apply_validation_errors_for_job(
+    resolution: &mut ProductFoundationResolution,
+    manifest: &Manifest,
+    issues: &[Value],
+) {
+    let relevance = resolution.clone();
+    apply_matching_validation_errors(resolution, issues, |issue| {
+        product_foundation_issue_applies_to_job(manifest, &relevance, issue)
+    });
+}
+
+fn apply_matching_validation_errors(
+    resolution: &mut ProductFoundationResolution,
+    issues: &[Value],
+    applies: impl Fn(&Value) -> bool,
+) {
     if resolution.status == ProductFoundationStatus::Unassessed {
         return;
     }
@@ -508,7 +537,7 @@ pub(crate) fn apply_validation_errors(
         let Some(code) = issue["code"].as_str() else {
             continue;
         };
-        if !is_product_foundation_validation_code(code) {
+        if !is_product_foundation_validation_code(code) || !applies(issue) {
             continue;
         }
         let path = issue["path"]
@@ -541,6 +570,74 @@ pub(crate) fn apply_validation_errors(
             (&left.path, &left.code, &left.message).cmp(&(&right.path, &right.code, &right.message))
         });
     }
+}
+
+pub(crate) fn validation_errors_block_job(
+    manifest: &Manifest,
+    resolution: &ProductFoundationResolution,
+    issues: &[Value],
+) -> bool {
+    issues.iter().any(|issue| {
+        if issue["severity"] != "error" {
+            return false;
+        }
+        let Some(code) = issue["code"].as_str() else {
+            return true;
+        };
+        !is_product_foundation_validation_code(code)
+            || product_foundation_issue_applies_to_job(manifest, resolution, issue)
+    })
+}
+
+fn product_foundation_issue_applies_to_job(
+    manifest: &Manifest,
+    resolution: &ProductFoundationResolution,
+    issue: &Value,
+) -> bool {
+    if resolution.status == ProductFoundationStatus::Unassessed {
+        return false;
+    }
+
+    let path = issue["path"].as_str().unwrap_or(".mdp/manifest.yaml");
+    let Some(job_index) = manifest
+        .jobs
+        .iter()
+        .position(|job| job.id == resolution.job_id)
+    else {
+        return false;
+    };
+    let job_prefix = format!(".mdp/manifest.yaml#/jobs/{job_index}/product_foundation");
+    if path.starts_with(&job_prefix) {
+        return true;
+    }
+    if path.starts_with(".mdp/manifest.yaml#/jobs/") {
+        return false;
+    }
+
+    let facet_prefix = ".mdp/manifest.yaml#/profile/product_foundation/facets/";
+    if let Some(suffix) = path.strip_prefix(facet_prefix) {
+        let Some(index) = suffix
+            .split('/')
+            .next()
+            .and_then(|value| value.parse::<usize>().ok())
+        else {
+            return true;
+        };
+        let selected_ids = resolution
+            .selected_facets
+            .iter()
+            .map(|facet| facet.id.as_str())
+            .collect::<BTreeSet<_>>();
+        return manifest
+            .profile
+            .as_ref()
+            .and_then(|profile| profile.product_foundation.as_ref())
+            .and_then(|registry| registry.facets.get(index))
+            .is_some_and(|facet| selected_ids.contains(facet.id.as_str()));
+    }
+
+    path.starts_with(".mdp/manifest.yaml#/profile/product_foundation")
+        || path == ".mdp/manifest.yaml"
 }
 
 fn is_product_foundation_validation_code(code: &str) -> bool {
@@ -911,5 +1008,96 @@ mod tests {
             vec!["job", "manifest", "profile"]
         );
         assert_eq!(result.untriggered_facet_ids, vec!["false"]);
+    }
+
+    #[test]
+    fn unknown_conditional_fact_blocks_direct_resolution() {
+        let cards = vec![card(
+            "positioning",
+            CardKind::Positioning,
+            vec![entry("one", "One")],
+        )];
+        let index = ProductFoundationIndex::from_cards(&cards);
+        let mut manifest = manifest_with_foundation(vec![facet(
+            "identity",
+            vec![reference("positioning", "one")],
+        )]);
+        let job_id = manifest.jobs[0].id.clone();
+        manifest.jobs[0].product_foundation = Some(ProductFoundationBinding {
+            required: vec!["identity".to_string()],
+            conditional: vec![ProductFoundationConditionalFacet {
+                facet_id: "identity".to_string(),
+                when: ProductFoundationCondition {
+                    fact: ProductFoundationConditionFact::Unknown,
+                    equals: job_id.clone(),
+                },
+            }],
+            optional: Vec::new(),
+            excluded: Vec::new(),
+        });
+
+        let result = resolve_product_foundation(&manifest, &index, &job_id);
+
+        assert_eq!(result.status, ProductFoundationStatus::Blocked);
+        assert!(result.untriggered_facet_ids.is_empty());
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "product_foundation_condition_fact_unknown"
+                && diagnostic.path
+                    == ".mdp/manifest.yaml#/jobs/0/product_foundation/conditional/0/when/fact"
+        }));
+    }
+
+    #[test]
+    fn job_aware_validation_ignores_other_job_foundation_errors() {
+        let cards = vec![card(
+            "positioning",
+            CardKind::Positioning,
+            vec![entry("one", "One")],
+        )];
+        let index = ProductFoundationIndex::from_cards(&cards);
+        let mut manifest = manifest_with_foundation(vec![facet(
+            "identity",
+            vec![reference("positioning", "one")],
+        )]);
+        manifest.jobs[0].product_foundation = Some(binding(&["identity"]));
+        manifest.jobs[1].product_foundation = Some(binding(&["identity"]));
+        let mut selected = resolve_product_foundation(&manifest, &index, &manifest.jobs[0].id);
+        let unrelated_issue = json!({
+            "code": "product_foundation_condition_fact_unknown",
+            "severity": "error",
+            "path": ".mdp/manifest.yaml#/jobs/1/product_foundation/conditional/0/when/fact",
+            "message": "conditional fact is invalid"
+        });
+
+        apply_validation_errors_for_job(
+            &mut selected,
+            &manifest,
+            std::slice::from_ref(&unrelated_issue),
+        );
+
+        assert_eq!(selected.status, ProductFoundationStatus::Ready);
+        assert!(!validation_errors_block_job(
+            &manifest,
+            &selected,
+            std::slice::from_ref(&unrelated_issue)
+        ));
+
+        let selected_issue = json!({
+            "code": "product_foundation_condition_fact_unknown",
+            "severity": "error",
+            "path": ".mdp/manifest.yaml#/jobs/0/product_foundation/conditional/0/when/fact",
+            "message": "conditional fact is invalid"
+        });
+        apply_validation_errors_for_job(
+            &mut selected,
+            &manifest,
+            std::slice::from_ref(&selected_issue),
+        );
+        assert_eq!(selected.status, ProductFoundationStatus::Blocked);
+        assert!(validation_errors_block_job(
+            &manifest,
+            &selected,
+            std::slice::from_ref(&selected_issue)
+        ));
     }
 }
