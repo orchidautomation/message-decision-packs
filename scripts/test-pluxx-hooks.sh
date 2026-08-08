@@ -197,6 +197,11 @@ assert(opencodePlugin.includes('PLUXX_PLUGIN_ROOT: pluginRoot'), 'OpenCode hooks
 console.log('Pluxx hook fixture validation passed.')
 NODE
 
+if ! command -v git >/dev/null 2>&1; then
+  echo "Installed OpenCode wrapper proof requires git on PATH to exercise scoped edit detection." >&2
+  exit 1
+fi
+
 if [ "${PLUXX_CMD[0]}" = "pluxx" ]; then
   pluxx_bin="$(command -v pluxx)"
   node scripts/test-opencode-wrapper.mjs "$pluxx_bin"
