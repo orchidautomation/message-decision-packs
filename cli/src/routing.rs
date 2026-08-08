@@ -171,7 +171,7 @@ pub(crate) fn entry_route_scoped(
     let details = route_entry_details(root, manifest, persona, job, false, scope)?;
     let product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
     let product_foundation_load_order = foundation_load_order(&product_foundation);
-    let explicit_activation_blocks = profile_activation_blocks(manifest);
+    let explicit_activation_blocks = manifest.profile_eval.blocks_activation();
     let blocked = !details.scope_ready(scope)
         || product_foundation.blocks_activation()
         || explicit_activation_blocks;
@@ -229,7 +229,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
     let product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
     let product_foundation_load_order = foundation_load_order(&product_foundation);
     let foundation_blocked = product_foundation.blocks_activation();
-    let activation_blocked = profile_activation_blocks(manifest);
+    let activation_blocked = manifest.profile_eval.blocks_activation();
     if !draft_ready || scope_blocked || foundation_blocked || activation_blocked {
         let blocked_reason = if scope_blocked {
             "portfolio scope is missing or invalid"
@@ -316,13 +316,6 @@ pub(crate) fn entry_context_with_runtime_scoped(
         },
         "policy": if details.portfolio_sensitive { "Use scope-filtered context.entries only. Shared full cards are not scope-safe drafting context. Treat entry metadata as advisory context, not enforced CLI constraints." } else { "Use context.entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Open full_card_required paths only when present, or when the user asks for a full pack/card audit." }
     }))
-}
-
-fn profile_activation_blocks(manifest: &Manifest) -> bool {
-    matches!(
-        manifest.profile_eval.activation.status.as_deref(),
-        Some("needs-review" | "blocked")
-    )
 }
 
 fn foundation_load_order(resolution: &ProductFoundationResolution) -> Vec<Value> {

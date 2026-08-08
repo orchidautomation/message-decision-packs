@@ -1882,10 +1882,7 @@ fn validate_profile_mapping(
         }
     }
 
-    let explicit_activation_blocks = matches!(
-        manifest.profile_eval.activation.status.as_deref(),
-        Some("needs-review" | "blocked")
-    );
+    let explicit_activation_blocks = manifest.profile_eval.blocks_activation();
     let mut job_summaries = Vec::new();
     for job in &manifest.jobs {
         let mut missing_job_primitives = Vec::new();

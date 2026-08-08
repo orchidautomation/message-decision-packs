@@ -133,7 +133,7 @@ pub(crate) fn planned_directory(path: &Path) -> Value {
 }
 
 pub(crate) fn planned_yaml_write_after_dirs(path: &Path, force: bool) -> Value {
-    planned_file_write_with_parent(path, "yaml-file", force, true)
+    planned_file_write_after_dirs(path, "yaml-file", force)
 }
 
 pub(crate) fn planned_json_write(path: &Path) -> Value {
@@ -149,7 +149,11 @@ pub(crate) fn planned_json_write(path: &Path) -> Value {
 }
 
 pub(crate) fn planned_json_write_after_dirs(path: &Path, force: bool) -> Value {
-    planned_file_write_with_parent(path, "json-file", force, true)
+    planned_file_write_after_dirs(path, "json-file", force)
+}
+
+pub(crate) fn planned_file_write_after_dirs(path: &Path, kind: &str, force: bool) -> Value {
+    planned_file_write_with_parent(path, kind, force, true)
 }
 
 fn planned_file_write_with_parent(

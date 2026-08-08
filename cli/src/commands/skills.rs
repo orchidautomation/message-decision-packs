@@ -278,10 +278,7 @@ fn route_payload(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let explicit_activation_blocks = matches!(
-        manifest.profile_eval.activation.status.as_deref(),
-        Some("needs-review" | "blocked")
-    );
+    let explicit_activation_blocks = manifest.profile_eval.blocks_activation();
     let selected_facet_ids = product_foundation
         .selected_facets
         .iter()

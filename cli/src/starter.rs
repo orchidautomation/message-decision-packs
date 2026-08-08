@@ -610,7 +610,7 @@ fn gtm_product_foundation() -> ProductFoundationRegistry {
     }
 }
 
-fn foundation_binding(required: &[&str]) -> ProductFoundationBinding {
+pub(crate) fn foundation_binding(required: &[&str]) -> ProductFoundationBinding {
     ProductFoundationBinding {
         required: strings(required),
         conditional: Vec::new(),
@@ -633,7 +633,7 @@ fn foundation_facet(
     }
 }
 
-fn foundation_refs(values: &[(&str, &str)]) -> Vec<ProductFoundationEntryRef> {
+pub(crate) fn foundation_refs(values: &[(&str, &str)]) -> Vec<ProductFoundationEntryRef> {
     values
         .iter()
         .map(|(card_id, entry_id)| ProductFoundationEntryRef {

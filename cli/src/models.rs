@@ -428,6 +428,13 @@ impl ProfileEval {
     pub(crate) fn is_empty(&self) -> bool {
         self.required_categories.is_empty() && self.activation.is_empty()
     }
+
+    pub(crate) fn blocks_activation(&self) -> bool {
+        matches!(
+            self.activation.status.as_deref(),
+            Some("needs-review" | "blocked")
+        )
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]

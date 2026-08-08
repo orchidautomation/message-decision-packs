@@ -1,8 +1,8 @@
 use crate::constants::{DEFAULT_DIR, FORMAT_VERSION};
 use crate::models::{Card, Manifest, TargetIdentity};
 use crate::pack_io::{
-    planned_directory, planned_json_write_after_dirs, planned_yaml_write_after_dirs, read_manifest,
-    write_json_file, write_yaml,
+    planned_directory, planned_file_write_after_dirs, planned_json_write_after_dirs,
+    planned_yaml_write_after_dirs, read_manifest, write_json_file, write_yaml,
 };
 use crate::pack_readme::render_pack_readme;
 use crate::starter::{
@@ -611,7 +611,7 @@ fn init_gtm_pack_dry_run(
         planned_directory(&examples_dir),
         planned_yaml_write_after_dirs(&manifest_path, force),
         planned_yaml_write_after_dirs(&source_ledger_path, force),
-        planned_markdown_write_after_dirs(&readme_path, force),
+        planned_file_write_after_dirs(&readme_path, "markdown-file", force),
     ];
     let cards = target
         .map(target_cards)
@@ -785,8 +785,9 @@ fn init_proposal_pack_dry_run(root: &Path, name: &str, force: bool) -> Result<Va
         };
         write_plan.push(planned_write);
     }
-    write_plan.push(planned_markdown_write_after_dirs(
+    write_plan.push(planned_file_write_after_dirs(
         &root.join(DEFAULT_DIR).join("README.md"),
+        "markdown-file",
         force,
     ));
     if let Some(object) = payload.as_object_mut() {
@@ -844,23 +845,6 @@ fn refuse_existing_file(path: &Path, force: bool) -> Result<()> {
 fn write_text_file(path: &Path, contents: &str, force: bool) -> Result<()> {
     refuse_existing_file(path, force)?;
     fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
-}
-
-fn planned_markdown_write_after_dirs(path: &Path, force: bool) -> Value {
-    let action = if path.exists() && force {
-        "overwrite"
-    } else if path.exists() {
-        "blocked"
-    } else {
-        "create"
-    };
-    json!({
-        "kind": "markdown-file",
-        "path": path.display().to_string(),
-        "action": action,
-        "would_write": matches!(action, "create" | "overwrite"),
-        "parent_exists": true
-    })
 }
 
 fn proposal_readme(name: &str) -> Result<String> {

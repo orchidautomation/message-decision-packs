@@ -1,9 +1,8 @@
 use crate::models::{
     Card, CardKind, Entry, EntryConstraints, Manifest, PersonaMapping, ProductFoundationBinding,
-    ProductFoundationEntryRef, ProductFoundationFacet, ProductFoundationFacetKind,
-    ProductFoundationRegistry, TargetIdentity,
+    ProductFoundationFacet, ProductFoundationFacetKind, ProductFoundationRegistry, TargetIdentity,
 };
-use crate::starter::{starter_manifest, starter_prompts};
+use crate::starter::{foundation_binding, foundation_refs, starter_manifest, starter_prompts};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -472,12 +471,7 @@ fn target_foundation_binding(job_id: &str) -> ProductFoundationBinding {
             "narrative-posture",
         ],
     };
-    ProductFoundationBinding {
-        required: required.into_iter().map(str::to_string).collect(),
-        conditional: Vec::new(),
-        optional: vec!["known-gaps".to_string()],
-        excluded: Vec::new(),
-    }
+    foundation_binding(&required)
 }
 
 fn target_facet(
@@ -489,20 +483,10 @@ fn target_facet(
     ProductFoundationFacet {
         id: id.to_string(),
         kind,
-        entries: target_refs(entries),
-        gaps: target_refs(gaps),
+        entries: foundation_refs(entries),
+        gaps: foundation_refs(gaps),
         conflicts_with: Vec::new(),
     }
-}
-
-fn target_refs(values: &[(&str, &str)]) -> Vec<ProductFoundationEntryRef> {
-    values
-        .iter()
-        .map(|(card_id, entry_id)| ProductFoundationEntryRef {
-            card_id: (*card_id).to_string(),
-            entry_id: (*entry_id).to_string(),
-        })
-        .collect()
 }
 
 fn gap_entry(id: &str, title: &str, body: &str) -> Entry {
