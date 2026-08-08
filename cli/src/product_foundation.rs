@@ -3,9 +3,12 @@ use crate::models::{
     ProductFoundationConditionFact, ProductFoundationEntryRef, ProductFoundationFacet,
     ProductFoundationFacetKind,
 };
+use crate::pack_io::{read_card, resolve_pack_path};
+use anyhow::Result;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -306,6 +309,20 @@ pub(crate) fn resolve_product_foundation(
         untriggered_facet_ids: sorted(untriggered_facet_ids),
         diagnostics,
     }
+}
+
+pub(crate) fn resolve_product_foundation_for_pack(
+    root: &Path,
+    manifest: &Manifest,
+    job_id: &str,
+) -> Result<ProductFoundationResolution> {
+    let cards = manifest
+        .cards
+        .iter()
+        .map(|card_ref| read_card(&resolve_pack_path(root, &card_ref.path)?))
+        .collect::<Result<Vec<_>>>()?;
+    let index = ProductFoundationIndex::from_cards(&cards);
+    Ok(resolve_product_foundation(manifest, &index, job_id))
 }
 
 fn resolve_facet(

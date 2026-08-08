@@ -2301,7 +2301,7 @@ fn skills_schema() -> Value {
 fn job_route_schema() -> Value {
     json!({
         "type": "object",
-        "required": ["job_id", "skill_id", "pack_ready", "missing_primitives", "required_input_contracts"],
+        "required": ["job_id", "skill_id", "pack_ready", "missing_primitives", "required_input_contracts", "product_foundation", "readiness_policy"],
         "additionalProperties": false,
         "oneOf": canonical_job_skill_pairs("job_id"),
         "properties": {
@@ -2309,7 +2309,19 @@ fn job_route_schema() -> Value {
             "skill_id": canonical_skill_id_schema(),
             "pack_ready": {"type": "boolean"},
             "missing_primitives": string_array(),
-            "required_input_contracts": string_array()
+            "required_input_contracts": string_array(),
+            "product_foundation": {
+                "type": "object",
+                "required": ["status", "selected_facet_ids", "required_facet_ids", "diagnostics"],
+                "additionalProperties": false,
+                "properties": {
+                    "status": {"enum": ["unassessed", "ready", "blocked"]},
+                    "selected_facet_ids": string_array(),
+                    "required_facet_ids": string_array(),
+                    "diagnostics": {"type": "array", "items": {"type": "object"}}
+                }
+            },
+            "readiness_policy": {"type": "string"}
         }
     })
 }
@@ -3759,6 +3771,18 @@ mod tests {
                 .as_array()
                 .map(Vec::len),
             Some(7)
+        );
+        assert_eq!(
+            result["properties"]["job_routes"]["items"]["properties"]["product_foundation"]["properties"]
+                ["status"]["enum"],
+            json!(["unassessed", "ready", "blocked"])
+        );
+        assert!(
+            result["properties"]["job_routes"]["items"]["required"]
+                .as_array()
+                .expect("required route properties")
+                .iter()
+                .any(|field| field == "product_foundation")
         );
         assert_eq!(profile_schema()["additionalProperties"], false);
     }

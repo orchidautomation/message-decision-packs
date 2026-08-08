@@ -59,6 +59,8 @@ pub(crate) fn emit_brief_scoped(
         "draft_status": context["status"],
         "inputs": {"persona": resolved_persona, "requested_persona": persona, "motion": motion, "job": job_text},
         "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
+        "product_foundation": context["product_foundation"].clone(),
+        "product_foundation_load_order": context["product_foundation_load_order"].clone(),
         "context": context,
         "decision_trace": [
             {"step": "load_manifest", "reason": "discover pack metadata and card index"},
@@ -185,6 +187,8 @@ pub(crate) fn prospect_brief_from_value_with_context(
         "no_draft_reason": no_draft_reason,
         "job": job_text,
         "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
+        "product_foundation": context["product_foundation"].clone(),
+        "product_foundation_load_order": context["product_foundation_load_order"].clone(),
         "route": route,
         "decision_trace": [
             {"step": "read_prospect", "reason": "use supplied prospect/account JSON as task input"},
@@ -791,6 +795,13 @@ mod tests {
 
         assert_eq!(result["fit"]["status"], "insufficient-context");
         assert_eq!(result["draft_status"], "no-draft");
+        assert_eq!(result["product_foundation"]["status"], "unassessed");
+        assert!(
+            result["product_foundation_load_order"]
+                .as_array()
+                .expect("foundation load order")
+                .is_empty()
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -1,5 +1,9 @@
 use crate::models::{Manifest, ProfileJob};
 use crate::pack_io::read_manifest;
+use crate::product_foundation::{
+    ProductFoundationClassification, ProductFoundationResolution,
+    resolve_product_foundation_for_pack,
+};
 use crate::skill_catalog::{BOOTSTRAP_SKILL_IDS, JOB_ROUTE_SPECS, PACKAGED_SKILL_IDS, route_spec};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
@@ -55,7 +59,9 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
         }
     };
     let mut diagnostics = validation["issues"].as_array().cloned().unwrap_or_default();
-    if !validation["valid"].as_bool().unwrap_or(false) {
+    if !validation["valid"].as_bool().unwrap_or(false)
+        && !crate::commands::requirements::validation_has_only_foundation_errors(&validation)
+    {
         return bootstrap_payload(
             false,
             "unresolved",
@@ -88,17 +94,29 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
         );
     };
 
-    let mut routes = JOB_ROUTE_SPECS
+    let mut routes = Vec::new();
+    for spec in JOB_ROUTE_SPECS
         .iter()
         .filter(|spec| spec.profile_id == profile.id)
-        .filter_map(|spec| {
-            manifest
-                .jobs
-                .iter()
-                .find(|job| job.id == spec.job_id && job.skill_id == spec.skill_id)
-                .map(|job| route_payload(&manifest, job))
-        })
-        .collect::<Vec<_>>();
+    {
+        let Some(job) = manifest
+            .jobs
+            .iter()
+            .find(|job| job.id == spec.job_id && job.skill_id == spec.skill_id)
+        else {
+            continue;
+        };
+        match resolve_product_foundation_for_pack(root, &manifest, &job.id) {
+            Ok(product_foundation) => {
+                routes.push(route_payload(&manifest, job, &product_foundation));
+            }
+            Err(error) => diagnostics.push(diagnostic(
+                "product_foundation_resolution_failed",
+                ".mdp/manifest.yaml#/cards",
+                error.to_string(),
+            )),
+        }
+    }
 
     let recommendation = if let Some(job_id) = requested_job {
         if route_spec(&profile.id, job_id).is_none() {
@@ -244,7 +262,11 @@ fn profile_payload(manifest: &Manifest) -> Value {
     )
 }
 
-fn route_payload(manifest: &Manifest, job: &ProfileJob) -> Value {
+fn route_payload(
+    manifest: &Manifest,
+    job: &ProfileJob,
+    product_foundation: &ProductFoundationResolution,
+) -> Value {
     let missing_primitives = job
         .required_primitives
         .iter()
@@ -256,12 +278,36 @@ fn route_payload(manifest: &Manifest, job: &ProfileJob) -> Value {
         })
         .cloned()
         .collect::<Vec<_>>();
+    let explicit_activation_blocks = matches!(
+        manifest.profile_eval.activation.status.as_deref(),
+        Some("needs-review" | "blocked")
+    );
+    let selected_facet_ids = product_foundation
+        .selected_facets
+        .iter()
+        .map(|facet| facet.id.clone())
+        .collect::<Vec<_>>();
+    let required_facet_ids = product_foundation
+        .selected_facets
+        .iter()
+        .filter(|facet| facet.classification == ProductFoundationClassification::Required)
+        .map(|facet| facet.id.clone())
+        .collect::<Vec<_>>();
     json!({
         "job_id": job.id,
         "skill_id": job.skill_id,
-        "pack_ready": missing_primitives.is_empty(),
+        "pack_ready": missing_primitives.is_empty()
+            && !explicit_activation_blocks
+            && !product_foundation.blocks_activation(),
         "missing_primitives": missing_primitives,
-        "required_input_contracts": job.input_contracts
+        "required_input_contracts": job.input_contracts,
+        "product_foundation": {
+            "status": product_foundation.status,
+            "selected_facet_ids": selected_facet_ids,
+            "required_facet_ids": required_facet_ids,
+            "diagnostics": product_foundation.diagnostics
+        },
+        "readiness_policy": "Product foundation and explicit profile activation may only veto existing pack readiness; this field does not assert sufficient-for-job or self-standing status."
     })
 }
 
@@ -317,7 +363,41 @@ mod tests {
         assert_eq!(result["job_routes"][0]["job_id"], "prospect-fit-or-brief");
         assert_eq!(result["job_routes"][0]["skill_id"], "mdp-gtm-brief");
         assert_eq!(result["job_routes"][0]["pack_ready"], true);
+        assert_eq!(
+            result["job_routes"][0]["product_foundation"]["status"],
+            "unassessed"
+        );
         assert_eq!(result["recommendation"]["skill_id"], "mdp-gtm-brief");
+        jsonschema::draft202012::validate(
+            &crate::commands::schemas::schema(crate::cli::SchemaTarget::Skills),
+            &result,
+        )
+        .expect("skills output should satisfy its additive schema");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skills_needs_review_activation_vetoes_pack_ready() {
+        let root = temp_root("skills-needs-review");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile_eval"]["activation"]["status"] =
+            serde_yaml::Value::String("needs-review".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = skills(Some(&root), Some("prospect-fit-or-brief"));
+
+        assert_eq!(result["job_routes"][0]["pack_ready"], false);
+        assert_eq!(result["recommendation"]["pack_ready"], false);
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -1,6 +1,9 @@
 use crate::constants::DEFAULT_DIR;
 use crate::models::{CardKind, Entry, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
+use crate::product_foundation::{
+    ProductFoundationResolution, resolution_json, resolve_product_foundation_for_pack,
+};
 use crate::runtime_context::current_runtime_context;
 use crate::scope::{ScopeResolution, match_entry_scope};
 use anyhow::Result;
@@ -166,7 +169,12 @@ pub(crate) fn entry_route_scoped(
     scope: &ScopeResolution,
 ) -> Result<Value> {
     let details = route_entry_details(root, manifest, persona, job, false, scope)?;
-    let blocked = !details.scope_ready(scope);
+    let product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
+    let product_foundation_load_order = foundation_load_order(&product_foundation);
+    let explicit_activation_blocks = profile_activation_blocks(manifest);
+    let blocked = !details.scope_ready(scope)
+        || product_foundation.blocks_activation()
+        || explicit_activation_blocks;
 
     Ok(json!({
         "contract": "mdp.entry-route.v0",
@@ -175,6 +183,8 @@ pub(crate) fn entry_route_scoped(
         "job": job,
         "scope": scope,
         "portfolio_sensitive": details.portfolio_sensitive,
+        "product_foundation": resolution_json(&product_foundation),
+        "product_foundation_load_order": product_foundation_load_order,
         "matches": details.matches,
         "gaps": details.gaps,
         "policy": if details.portfolio_sensitive { "Use matched bounded entries only. Shared card paths are not scope-filtered drafting context. Resolve missing or invalid scope before drafting." } else { "Load matched entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Load the full card only when an entry is ambiguous, missing, or a guardrail card needs complete review." }
@@ -216,7 +226,20 @@ pub(crate) fn entry_context_with_runtime_scoped(
         .collect();
     let details = route_entry_details(root, manifest, persona, job, true, scope)?;
     let scope_blocked = !details.scope_ready(scope);
-    if !draft_ready || scope_blocked {
+    let product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
+    let product_foundation_load_order = foundation_load_order(&product_foundation);
+    let foundation_blocked = product_foundation.blocks_activation();
+    let activation_blocked = profile_activation_blocks(manifest);
+    if !draft_ready || scope_blocked || foundation_blocked || activation_blocked {
+        let blocked_reason = if scope_blocked {
+            "portfolio scope is missing or invalid"
+        } else if foundation_blocked {
+            "selected product foundation authority is blocked"
+        } else if activation_blocked {
+            "profile activation requires review or is blocked"
+        } else {
+            "draft_status no-draft"
+        };
         let entries: Vec<Value> = if scope_blocked {
             details
                 .context_entries
@@ -236,11 +259,13 @@ pub(crate) fn entry_context_with_runtime_scoped(
             "contract": "mdp.context.v0",
             "status": "blocked",
             "runtime_context": runtime_context,
-            "reason": if scope_blocked { "portfolio scope is missing or invalid" } else { "draft_status no-draft" },
+            "reason": blocked_reason,
             "persona": persona,
             "job": job,
             "scope": scope,
             "portfolio_sensitive": details.portfolio_sensitive,
+            "product_foundation": resolution_json(&product_foundation),
+            "product_foundation_load_order": product_foundation_load_order,
             "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
             "entries": entries,
             "gaps": details.gaps,
@@ -276,6 +301,8 @@ pub(crate) fn entry_context_with_runtime_scoped(
         "job": job,
         "scope": scope,
         "portfolio_sensitive": details.portfolio_sensitive,
+        "product_foundation": resolution_json(&product_foundation),
+        "product_foundation_load_order": product_foundation_load_order,
         "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
         "entries": details.context_entries,
         "gaps": details.gaps,
@@ -289,6 +316,38 @@ pub(crate) fn entry_context_with_runtime_scoped(
         },
         "policy": if details.portfolio_sensitive { "Use scope-filtered context.entries only. Shared full cards are not scope-safe drafting context. Treat entry metadata as advisory context, not enforced CLI constraints." } else { "Use context.entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Open full_card_required paths only when present, or when the user asks for a full pack/card audit." }
     }))
+}
+
+fn profile_activation_blocks(manifest: &Manifest) -> bool {
+    matches!(
+        manifest.profile_eval.activation.status.as_deref(),
+        Some("needs-review" | "blocked")
+    )
+}
+
+fn foundation_load_order(resolution: &ProductFoundationResolution) -> Vec<Value> {
+    let mut load_order = Vec::new();
+    for facet in &resolution.selected_facets {
+        for reference in &facet.entry_refs {
+            load_order.push(json!({
+                "facet_id": facet.id,
+                "classification": facet.classification,
+                "reference_kind": "entry",
+                "card_id": reference.card_id,
+                "entry_id": reference.entry_id
+            }));
+        }
+        for reference in &facet.gap_refs {
+            load_order.push(json!({
+                "facet_id": facet.id,
+                "classification": facet.classification,
+                "reference_kind": "gap",
+                "card_id": reference.card_id,
+                "entry_id": reference.entry_id
+            }));
+        }
+    }
+    load_order
 }
 
 fn route_entry_details(
