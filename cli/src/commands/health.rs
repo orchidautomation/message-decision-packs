@@ -13,6 +13,9 @@ use crate::models::{
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
 };
+use crate::product_foundation::{
+    ProductFoundationIndex, resolution_json, resolve_product_foundation,
+};
 use crate::routing::select_cards;
 use crate::scope::valid_declared_identifier;
 use crate::skill_catalog::{JOB_ROUTE_SPECS, is_packaged_skill, route_spec};
@@ -117,6 +120,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     validate_manifest_shape(root, &mut issues);
     let mut card_ids = BTreeSet::new();
     let mut card_entry_index = BTreeMap::new();
+    let mut foundation_cards = Vec::new();
     let mut loaded_cards = Vec::new();
     let mut scoped_entry_count = 0usize;
     if manifest.format != FORMAT_VERSION {
@@ -273,6 +277,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
                     ),
                 );
                 loaded_cards.push(json!({"id": card.id, "kind": card_ref.kind, "path": display_path, "entries": card.entries.len()}));
+                foundation_cards.push(card);
             }
             Err(err) => issues.push(issue(
                 "card_read_failed",
@@ -283,6 +288,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         }
     }
     validate_product_foundation(&manifest, &card_entry_index, &mut issues);
+    let product_foundation_index = ProductFoundationIndex::from_cards(&foundation_cards);
     let loaded_prompts = validate_prompts(root, &mut issues)?;
     let prompt_inventory = prompt_inventory(&loaded_prompts);
     validate_decision_input_contracts(&manifest, &prompt_inventory, &mut issues);
@@ -303,6 +309,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         &card_ids,
         &prompt_inventory,
         &eval_inventory,
+        &product_foundation_index,
         &mut issues,
     );
     validate_target_identity(root, &manifest, &mut issues)?;
@@ -1763,6 +1770,7 @@ fn validate_profile_mapping(
     card_ids: &BTreeSet<String>,
     prompt_inventory: &PromptInventory,
     eval_inventory: &EvalInventory,
+    product_foundation_index: &ProductFoundationIndex,
     issues: &mut Vec<Value>,
 ) -> Value {
     let activation_contract_present = !manifest.required_primitives.is_empty()
@@ -1874,6 +1882,10 @@ fn validate_profile_mapping(
         }
     }
 
+    let explicit_activation_blocks = matches!(
+        manifest.profile_eval.activation.status.as_deref(),
+        Some("needs-review" | "blocked")
+    );
     let mut job_summaries = Vec::new();
     for job in &manifest.jobs {
         let mut missing_job_primitives = Vec::new();
@@ -1892,12 +1904,18 @@ fn validate_profile_mapping(
                 ));
             }
         }
+        let product_foundation =
+            resolve_product_foundation(manifest, product_foundation_index, &job.id);
+        let activation_ready = missing_job_primitives.is_empty()
+            && !explicit_activation_blocks
+            && !product_foundation.blocks_activation();
         job_summaries.push(json!({
             "id": &job.id,
             "label": &job.label,
             "required_primitives": &job.required_primitives,
             "missing_required_primitives": missing_job_primitives,
-            "activation_ready": missing_job_primitives.is_empty()
+            "product_foundation": resolution_json(&product_foundation),
+            "activation_ready": activation_ready
         }));
     }
 
@@ -1911,6 +1929,7 @@ fn validate_profile_mapping(
         && missing_activation_sections.is_empty()
         && missing_required_primitives.is_empty()
         && missing_eval_categories.is_empty()
+        && !explicit_activation_blocks
         && job_summaries
             .iter()
             .all(|job| job["activation_ready"].as_bool() == Some(true));
@@ -1926,7 +1945,7 @@ fn validate_profile_mapping(
         "eval_categories": eval_categories,
         "missing_eval_categories": missing_eval_categories,
         "jobs": job_summaries,
-        "activation_policy": "Errors fail validation. Missing required primitive coverage and missing profile eval categories are warning-first by default, fail under --strict, and block profile activation."
+        "activation_policy": "Errors fail validation. Missing required primitive coverage and missing profile eval categories are warning-first by default, fail under --strict, and block profile activation. Explicit needs-review or blocked profile eval activation and blocked selected product foundation authority block job and profile activation."
     })
 }
 
@@ -5603,6 +5622,31 @@ excluded: []
     }
 
     #[test]
+    fn selected_product_foundation_gap_blocks_job_and_profile_activation() {
+        let root = temp_pack("foundation-gap-blocks-activation");
+        opt_in_product_foundation(&root);
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let selected_job = &result["profile"]["jobs"][0];
+
+        assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
+        assert_eq!(selected_job["product_foundation"]["status"], "blocked");
+        assert_eq!(selected_job["activation_ready"], false);
+        assert_eq!(result["profile"]["activation_ready"], false);
+        assert!(
+            selected_job["product_foundation"]["diagnostics"]
+                .as_array()
+                .expect("foundation diagnostics")
+                .iter()
+                .any(|diagnostic| {
+                    diagnostic["code"] == "product_foundation_selected_facet_has_gaps"
+                })
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn rejects_unknown_and_duplicate_product_foundation_facets() {
         let root = temp_pack("foundation-facet-shape");
         opt_in_product_foundation(&root);
@@ -6306,6 +6350,30 @@ excluded: []
         assert_eq!(
             result["prompts"].as_array().expect("prompts array").len(),
             10
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn targeted_starter_needing_review_is_not_activation_ready() {
+        let root = targeted_pack("Company B", &[]);
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(
+            result["profile"]["activation_ready"], false,
+            "needs-review activation must not appear ready: {}",
+            result["profile"]
+        );
+        assert!(
+            result["profile"]["jobs"]
+                .as_array()
+                .expect("jobs array")
+                .iter()
+                .all(|job| job["activation_ready"] == false),
+            "needs-review activation must block every job: {}",
+            result["profile"]["jobs"]
         );
 
         let _ = std::fs::remove_dir_all(root);
