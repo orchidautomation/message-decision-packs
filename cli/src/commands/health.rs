@@ -6,8 +6,9 @@ use crate::constants::{
 use crate::models::{
     Card, CardKind, DecisionInputAttemptStatus, DecisionInputContract, DecisionInputDecisionEffect,
     DecisionInputDisposition, DecisionInputRequirement, InputContract, Manifest, PrimitiveMapping,
-    Profile, ProfileEval, ProfileJob, PromptFile, QualificationGates, TargetIdentity,
-    ValueContract,
+    ProductFoundationBinding, ProductFoundationConditionFact, ProductFoundationEntryRef,
+    ProductFoundationFacetKind, Profile, ProfileEval, ProfileJob, PromptFile, QualificationGates,
+    TargetIdentity, ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
@@ -115,6 +116,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     let mut issues = Vec::new();
     validate_manifest_shape(root, &mut issues);
     let mut card_ids = BTreeSet::new();
+    let mut card_entry_index = BTreeMap::new();
     let mut loaded_cards = Vec::new();
     let mut scoped_entry_count = 0usize;
     if manifest.format != FORMAT_VERSION {
@@ -260,6 +262,16 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
                         "card has no entries",
                     ));
                 }
+                card_entry_index.insert(
+                    card_ref.id.clone(),
+                    (
+                        card.kind.clone(),
+                        card.entries
+                            .iter()
+                            .map(|entry| entry.id.clone())
+                            .collect::<BTreeSet<_>>(),
+                    ),
+                );
                 loaded_cards.push(json!({"id": card.id, "kind": card_ref.kind, "path": display_path, "entries": card.entries.len()}));
             }
             Err(err) => issues.push(issue(
@@ -270,6 +282,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
             )),
         }
     }
+    validate_product_foundation(&manifest, &card_entry_index, &mut issues);
     let loaded_prompts = validate_prompts(root, &mut issues)?;
     let prompt_inventory = prompt_inventory(&loaded_prompts);
     validate_decision_input_contracts(&manifest, &prompt_inventory, &mut issues);
@@ -1096,9 +1109,15 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "version",
             "context_dimensions",
             "context_dimension_dependencies",
+            "product_foundation",
         ],
         ".mdp/manifest.yaml#/profile",
         "manifest_profile_unknown_field",
+        issues,
+    );
+    validate_product_foundation_shapes(
+        yaml_get(profile, "product_foundation"),
+        ".mdp/manifest.yaml#/profile/product_foundation",
         issues,
     );
     validate_primitive_map_shape(
@@ -1135,11 +1154,13 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "required_primitives",
             "input_contracts",
             "decision_input_contracts",
+            "product_foundation",
         ],
         ".mdp/manifest.yaml#/jobs",
         "manifest_profile_job_unknown_field",
         issues,
     );
+    validate_profile_job_product_foundation_shapes(yaml_get(&value, "jobs"), issues);
     validate_object_keys(
         yaml_get(&value, "profile_eval").unwrap_or(&YamlValue::Null),
         &["required_categories", "activation"],
@@ -1240,6 +1261,406 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
         "manifest_provenance_unknown_field",
         issues,
     );
+}
+
+fn validate_product_foundation_shapes(
+    value: Option<&YamlValue>,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(registry) = value else {
+        return;
+    };
+    validate_object_keys_with_severity(
+        registry,
+        &["facets"],
+        path,
+        "manifest_product_foundation_unknown_field",
+        "error",
+        issues,
+    );
+    validate_required_object_keys(
+        registry,
+        &["facets"],
+        path,
+        "manifest_product_foundation_required_field_missing",
+        issues,
+    );
+    let Some(facets) = yaml_get(registry, "facets").and_then(YamlValue::as_sequence) else {
+        return;
+    };
+    for (facet_index, facet) in facets.iter().enumerate() {
+        let facet_path = format!("{path}/facets/{facet_index}");
+        validate_object_keys_with_severity(
+            facet,
+            &["id", "kind", "entries", "gaps", "conflicts_with"],
+            &facet_path,
+            "manifest_product_foundation_facet_unknown_field",
+            "error",
+            issues,
+        );
+        validate_required_object_keys(
+            facet,
+            &["id", "kind"],
+            &facet_path,
+            "manifest_product_foundation_facet_required_field_missing",
+            issues,
+        );
+        for refs_key in ["entries", "gaps"] {
+            let Some(refs) = yaml_get(facet, refs_key).and_then(YamlValue::as_sequence) else {
+                continue;
+            };
+            for (ref_index, reference) in refs.iter().enumerate() {
+                let ref_path = format!("{facet_path}/{refs_key}/{ref_index}");
+                validate_object_keys_with_severity(
+                    reference,
+                    &["card_id", "entry_id"],
+                    &ref_path,
+                    "manifest_product_foundation_reference_unknown_field",
+                    "error",
+                    issues,
+                );
+                validate_required_object_keys(
+                    reference,
+                    &["card_id", "entry_id"],
+                    &ref_path,
+                    "manifest_product_foundation_reference_required_field_missing",
+                    issues,
+                );
+            }
+        }
+    }
+}
+
+fn validate_profile_job_product_foundation_shapes(
+    value: Option<&YamlValue>,
+    issues: &mut Vec<Value>,
+) {
+    let Some(jobs) = value.and_then(YamlValue::as_sequence) else {
+        return;
+    };
+    for (job_index, job) in jobs.iter().enumerate() {
+        let Some(binding) = yaml_get(job, "product_foundation") else {
+            continue;
+        };
+        let path = format!(".mdp/manifest.yaml#/jobs/{job_index}/product_foundation");
+        validate_object_keys_with_severity(
+            binding,
+            &["required", "conditional", "optional", "excluded"],
+            &path,
+            "manifest_profile_job_product_foundation_unknown_field",
+            "error",
+            issues,
+        );
+        let Some(conditionals) = yaml_get(binding, "conditional").and_then(YamlValue::as_sequence)
+        else {
+            continue;
+        };
+        for (conditional_index, conditional) in conditionals.iter().enumerate() {
+            let conditional_path = format!("{path}/conditional/{conditional_index}");
+            validate_object_keys_with_severity(
+                conditional,
+                &["facet_id", "when"],
+                &conditional_path,
+                "manifest_product_foundation_conditional_unknown_field",
+                "error",
+                issues,
+            );
+            validate_required_object_keys(
+                conditional,
+                &["facet_id", "when"],
+                &conditional_path,
+                "manifest_product_foundation_conditional_required_field_missing",
+                issues,
+            );
+            let Some(condition) = yaml_get(conditional, "when") else {
+                continue;
+            };
+            validate_object_keys_with_severity(
+                condition,
+                &["fact", "equals"],
+                &format!("{conditional_path}/when"),
+                "manifest_product_foundation_condition_unknown_field",
+                "error",
+                issues,
+            );
+            validate_required_object_keys(
+                condition,
+                &["fact", "equals"],
+                &format!("{conditional_path}/when"),
+                "manifest_product_foundation_condition_required_field_missing",
+                issues,
+            );
+        }
+    }
+}
+
+fn validate_product_foundation(
+    manifest: &Manifest,
+    card_entry_index: &BTreeMap<String, (CardKind, BTreeSet<String>)>,
+    issues: &mut Vec<Value>,
+) {
+    let registry = manifest
+        .profile
+        .as_ref()
+        .and_then(|profile| profile.product_foundation.as_ref());
+    let opted_in = manifest
+        .jobs
+        .iter()
+        .any(|job| job.product_foundation.is_some());
+    let mut facet_ids = BTreeSet::new();
+
+    if let Some(registry) = registry {
+        for (facet_index, facet) in registry.facets.iter().enumerate() {
+            let path =
+                format!(".mdp/manifest.yaml#/profile/product_foundation/facets/{facet_index}");
+            if facet.id.trim().is_empty() || !valid_declared_identifier(&facet.id) {
+                issues.push(issue(
+                    "product_foundation_facet_id_invalid",
+                    "error",
+                    format!("{path}/id"),
+                    "product foundation facet ids must use lowercase kebab-case",
+                ));
+            } else if !facet_ids.insert(facet.id.clone()) {
+                issues.push(issue(
+                    "product_foundation_facet_duplicate",
+                    "error",
+                    format!("{path}/id"),
+                    format!("duplicate product foundation facet {}", facet.id),
+                ));
+            }
+            if facet.kind == ProductFoundationFacetKind::Unknown {
+                issues.push(issue(
+                    "product_foundation_facet_kind_unknown",
+                    "error",
+                    format!("{path}/kind"),
+                    "unknown product foundation facet kind",
+                ));
+            }
+        }
+    }
+
+    if !opted_in {
+        return;
+    }
+
+    let Some(registry) = registry else {
+        issues.push(issue(
+            "product_foundation_registry_missing",
+            "error",
+            ".mdp/manifest.yaml#/profile/product_foundation",
+            "a job product foundation binding requires profile.product_foundation",
+        ));
+        for (job_index, job) in manifest.jobs.iter().enumerate() {
+            if let Some(binding) = &job.product_foundation {
+                validate_product_foundation_binding(
+                    manifest, job_index, binding, &facet_ids, issues,
+                );
+            }
+        }
+        return;
+    };
+
+    for (facet_index, facet) in registry.facets.iter().enumerate() {
+        let path = format!(".mdp/manifest.yaml#/profile/product_foundation/facets/{facet_index}");
+        validate_product_foundation_entry_refs(
+            &facet.entries,
+            &format!("{path}/entries"),
+            false,
+            card_entry_index,
+            issues,
+        );
+        validate_product_foundation_entry_refs(
+            &facet.gaps,
+            &format!("{path}/gaps"),
+            true,
+            card_entry_index,
+            issues,
+        );
+        let mut conflicts = BTreeSet::new();
+        for (conflict_index, conflict) in facet.conflicts_with.iter().enumerate() {
+            let conflict_path = format!("{path}/conflicts_with/{conflict_index}");
+            if conflict == &facet.id {
+                issues.push(issue(
+                    "product_foundation_conflict_self",
+                    "error",
+                    &conflict_path,
+                    format!("facet {} cannot conflict with itself", facet.id),
+                ));
+            } else if !facet_ids.contains(conflict) {
+                issues.push(issue(
+                    "product_foundation_conflict_facet_missing",
+                    "error",
+                    &conflict_path,
+                    format!("conflict references missing facet {conflict}"),
+                ));
+            }
+            if !conflicts.insert(conflict) {
+                issues.push(issue(
+                    "product_foundation_conflict_duplicate",
+                    "error",
+                    conflict_path,
+                    format!("duplicate conflict reference {conflict}"),
+                ));
+            }
+        }
+    }
+
+    for (job_index, job) in manifest.jobs.iter().enumerate() {
+        if let Some(binding) = &job.product_foundation {
+            validate_product_foundation_binding(manifest, job_index, binding, &facet_ids, issues);
+        }
+    }
+}
+
+fn validate_product_foundation_entry_refs(
+    refs: &[ProductFoundationEntryRef],
+    path: &str,
+    require_gap_card: bool,
+    card_entry_index: &BTreeMap<String, (CardKind, BTreeSet<String>)>,
+    issues: &mut Vec<Value>,
+) {
+    let mut seen = BTreeSet::new();
+    for (index, reference) in refs.iter().enumerate() {
+        let ref_path = format!("{path}/{index}");
+        let key = (reference.card_id.as_str(), reference.entry_id.as_str());
+        if !seen.insert(key) {
+            issues.push(issue(
+                "product_foundation_reference_duplicate",
+                "error",
+                &ref_path,
+                format!(
+                    "duplicate product foundation reference {}#{}",
+                    reference.card_id, reference.entry_id
+                ),
+            ));
+        }
+        let Some((card_kind, entry_ids)) = card_entry_index.get(&reference.card_id) else {
+            issues.push(issue(
+                "product_foundation_card_missing",
+                "error",
+                format!("{ref_path}/card_id"),
+                format!(
+                    "product foundation references missing card {}",
+                    reference.card_id
+                ),
+            ));
+            continue;
+        };
+        if require_gap_card && card_kind != &CardKind::Gaps {
+            issues.push(issue(
+                "product_foundation_gap_card_kind_invalid",
+                "error",
+                format!("{ref_path}/card_id"),
+                format!(
+                    "gap reference card {} must have kind gaps",
+                    reference.card_id
+                ),
+            ));
+        }
+        if !entry_ids.contains(&reference.entry_id) {
+            issues.push(issue(
+                if require_gap_card {
+                    "product_foundation_gap_missing"
+                } else {
+                    "product_foundation_entry_missing"
+                },
+                "error",
+                format!("{ref_path}/entry_id"),
+                format!(
+                    "product foundation references missing entry {}#{}",
+                    reference.card_id, reference.entry_id
+                ),
+            ));
+        }
+    }
+}
+
+fn validate_product_foundation_binding(
+    manifest: &Manifest,
+    job_index: usize,
+    binding: &ProductFoundationBinding,
+    facet_ids: &BTreeSet<String>,
+    issues: &mut Vec<Value>,
+) {
+    let path = format!(".mdp/manifest.yaml#/jobs/{job_index}/product_foundation");
+    let mut classified = BTreeSet::new();
+    for (class, refs) in [
+        ("required", binding.required.as_slice()),
+        ("optional", binding.optional.as_slice()),
+        ("excluded", binding.excluded.as_slice()),
+    ] {
+        for (index, facet_id) in refs.iter().enumerate() {
+            validate_product_foundation_classification(
+                facet_id,
+                &format!("{path}/{class}/{index}"),
+                facet_ids,
+                &mut classified,
+                issues,
+            );
+        }
+    }
+    for (index, conditional) in binding.conditional.iter().enumerate() {
+        let conditional_path = format!("{path}/conditional/{index}");
+        validate_product_foundation_classification(
+            &conditional.facet_id,
+            &format!("{conditional_path}/facet_id"),
+            facet_ids,
+            &mut classified,
+            issues,
+        );
+        if conditional.when.fact == ProductFoundationConditionFact::Unknown {
+            issues.push(issue(
+                "product_foundation_condition_fact_unknown",
+                "error",
+                format!("{conditional_path}/when/fact"),
+                "conditional fact must be manifest_id, profile_id, or job_id",
+            ));
+        }
+        if conditional.when.equals.trim().is_empty() {
+            issues.push(issue(
+                "product_foundation_condition_value_empty",
+                "error",
+                format!("{conditional_path}/when/equals"),
+                "conditional equals value must not be empty",
+            ));
+        }
+        if conditional.when.fact == ProductFoundationConditionFact::ProfileId
+            && manifest.profile.is_none()
+        {
+            issues.push(issue(
+                "product_foundation_condition_fact_unavailable",
+                "error",
+                format!("{conditional_path}/when/fact"),
+                "profile_id is unavailable because the manifest has no profile",
+            ));
+        }
+    }
+}
+
+fn validate_product_foundation_classification(
+    facet_id: &str,
+    path: &str,
+    facet_ids: &BTreeSet<String>,
+    classified: &mut BTreeSet<String>,
+    issues: &mut Vec<Value>,
+) {
+    if !facet_ids.contains(facet_id) {
+        issues.push(issue(
+            "profile_job_product_foundation_facet_missing",
+            "error",
+            path,
+            format!("job product foundation references missing facet {facet_id}"),
+        ));
+    }
+    if !classified.insert(facet_id.to_string()) {
+        issues.push(issue(
+            "profile_job_product_foundation_facet_duplicate",
+            "error",
+            path,
+            format!("facet {facet_id} is classified more than once for this job"),
+        ));
+    }
 }
 
 fn validate_profile(profile: Option<&Profile>, issues: &mut Vec<Value>) {
@@ -5106,6 +5527,271 @@ mod tests {
         )
         .expect("targeted pack should initialize");
         root
+    }
+
+    fn opt_in_product_foundation(root: &Path) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"] = serde_yaml::from_str(
+            r#"
+facets:
+  - id: identity
+    kind: product_identity
+    entries:
+      - card_id: positioning
+        entry_id: decision-layer
+    gaps: []
+    conflicts_with: []
+  - id: missing-proof
+    kind: gaps
+    entries: []
+    gaps:
+      - card_id: gaps
+        entry_id: missing-company-proof
+    conflicts_with: []
+"#,
+        )
+        .expect("foundation should parse");
+        manifest["jobs"][0]["product_foundation"] = serde_yaml::from_str(
+            r#"
+required:
+  - identity
+conditional:
+  - facet_id: missing-proof
+    when:
+      fact: job_id
+      equals: prospect-fit-or-brief
+optional: []
+excluded: []
+"#,
+        )
+        .expect("binding should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn product_foundation_issues(root: &Path) -> Vec<Value> {
+        validate_pack(root).expect("validate should return diagnostics")["issues"]
+            .as_array()
+            .expect("issues array")
+            .clone()
+    }
+
+    #[test]
+    fn legacy_manifest_without_product_foundation_remains_valid() {
+        let root = temp_pack("foundation-legacy");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validates_opted_in_product_foundation_contract() {
+        let root = temp_pack("foundation-valid");
+        opt_in_product_foundation(&root);
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_unknown_and_duplicate_product_foundation_facets() {
+        let root = temp_pack("foundation-facet-shape");
+        opt_in_product_foundation(&root);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["kind"] =
+            YamlValue::String("invented_kind".to_string());
+        let duplicate = manifest["profile"]["product_foundation"]["facets"][0].clone();
+        manifest["profile"]["product_foundation"]["facets"]
+            .as_sequence_mut()
+            .expect("facets should be a sequence")
+            .push(duplicate);
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let issues = product_foundation_issues(&root);
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "product_foundation_facet_kind_unknown"
+                && issue["path"] == ".mdp/manifest.yaml#/profile/product_foundation/facets/0/kind"
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "product_foundation_facet_duplicate"
+                && issue["path"] == ".mdp/manifest.yaml#/profile/product_foundation/facets/2/id"
+        }));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_dangling_product_foundation_references() {
+        let root = temp_pack("foundation-dangling");
+        opt_in_product_foundation(&root);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        let facets = manifest["profile"]["product_foundation"]["facets"]
+            .as_sequence_mut()
+            .expect("facets should be a sequence");
+        facets[0]["entries"] = serde_yaml::from_str(
+            "- card_id: missing-card\n  entry_id: missing-entry\n- card_id: positioning\n  entry_id: missing-entry\n",
+        )
+        .expect("entry refs should parse");
+        facets[1]["gaps"] = serde_yaml::from_str(
+            "- card_id: positioning\n  entry_id: decision-layer\n- card_id: gaps\n  entry_id: missing-gap\n",
+        )
+        .expect("gap refs should parse");
+        facets[0]["conflicts_with"] =
+            serde_yaml::from_str("- missing-facet\n").expect("conflicts should parse");
+        manifest["jobs"][0]["product_foundation"]["optional"] =
+            serde_yaml::from_str("- missing-binding-facet\n").expect("optional should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let issues = product_foundation_issues(&root);
+        for (code, path) in [
+            (
+                "product_foundation_card_missing",
+                ".mdp/manifest.yaml#/profile/product_foundation/facets/0/entries/0/card_id",
+            ),
+            (
+                "product_foundation_entry_missing",
+                ".mdp/manifest.yaml#/profile/product_foundation/facets/0/entries/1/entry_id",
+            ),
+            (
+                "product_foundation_gap_card_kind_invalid",
+                ".mdp/manifest.yaml#/profile/product_foundation/facets/1/gaps/0/card_id",
+            ),
+            (
+                "product_foundation_gap_missing",
+                ".mdp/manifest.yaml#/profile/product_foundation/facets/1/gaps/1/entry_id",
+            ),
+            (
+                "product_foundation_conflict_facet_missing",
+                ".mdp/manifest.yaml#/profile/product_foundation/facets/0/conflicts_with/0",
+            ),
+            (
+                "profile_job_product_foundation_facet_missing",
+                ".mdp/manifest.yaml#/jobs/0/product_foundation/optional/0",
+            ),
+        ] {
+            assert!(
+                issues
+                    .iter()
+                    .any(|issue| issue["code"] == code && issue["path"] == path),
+                "missing {code} at {path}: {issues:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_product_foundation_inline_statements_and_unknown_fields() {
+        let root = temp_pack("foundation-inline");
+        opt_in_product_foundation(&root);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["statement"] =
+            YamlValue::String("Inline authority must be rejected".to_string());
+        manifest["jobs"][0]["product_foundation"]["runtime_context"] =
+            YamlValue::String("forbidden".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let issues = product_foundation_issues(&root);
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "manifest_product_foundation_facet_unknown_field"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/profile/product_foundation/facets/0/statement"
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "manifest_profile_job_product_foundation_unknown_field"
+                && issue["path"] == ".mdp/manifest.yaml#/jobs/0/product_foundation/runtime_context"
+        }));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_invalid_product_foundation_conditional_and_duplicate_classification() {
+        let root = temp_pack("foundation-condition");
+        opt_in_product_foundation(&root);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][0]["product_foundation"]["conditional"][0]["when"]["fact"] =
+            YamlValue::String("runtime_input".to_string());
+        let duplicate_conditional =
+            manifest["jobs"][0]["product_foundation"]["conditional"][0].clone();
+        manifest["jobs"][0]["product_foundation"]["conditional"]
+            .as_sequence_mut()
+            .expect("conditional should be a sequence")
+            .push(duplicate_conditional);
+        manifest["jobs"][0]["product_foundation"]["optional"] =
+            serde_yaml::from_str("- identity\n").expect("optional should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let issues = product_foundation_issues(&root);
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "product_foundation_condition_fact_unknown"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/jobs/0/product_foundation/conditional/0/when/fact"
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_job_product_foundation_facet_duplicate"
+                && issue["path"] == ".mdp/manifest.yaml#/jobs/0/product_foundation/optional/0"
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_job_product_foundation_facet_duplicate"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/jobs/0/product_foundation/conditional/1/facet_id"
+        }));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_product_foundation_self_conflict() {
+        let root = temp_pack("foundation-self-conflict");
+        opt_in_product_foundation(&root);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["conflicts_with"] =
+            serde_yaml::from_str("- identity\n").expect("conflicts should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let issues = product_foundation_issues(&root);
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "product_foundation_conflict_self"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/profile/product_foundation/facets/0/conflicts_with/0"
+        }));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn clay_example_root() -> PathBuf {

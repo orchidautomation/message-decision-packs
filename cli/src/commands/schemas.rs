@@ -2107,8 +2107,41 @@ fn profile_jobs_schema() -> Value {
                 "description": {"type": "string"},
                 "required_primitives": primitive_id_array_schema(),
                 "input_contracts": string_array(),
-                "decision_input_contracts": string_array()
+                "decision_input_contracts": string_array(),
+                "product_foundation": product_foundation_binding_schema()
             }
+        }
+    })
+}
+
+fn product_foundation_binding_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "required": string_array(),
+            "conditional": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["facet_id", "when"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "facet_id": non_blank_string_schema(),
+                        "when": {
+                            "type": "object",
+                            "required": ["fact", "equals"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "fact": {"enum": ["manifest_id", "profile_id", "job_id"]},
+                                "equals": non_blank_string_schema()
+                            }
+                        }
+                    }
+                }
+            },
+            "optional": string_array(),
+            "excluded": string_array()
         }
     })
 }
@@ -2156,7 +2189,59 @@ fn profile_schema() -> Value {
             "label": {"type": "string"},
             "version": {"const": "mdp.profile.v0"},
             "context_dimensions": scope_map_schema(),
-            "context_dimension_dependencies": scope_map_schema()
+            "context_dimension_dependencies": scope_map_schema(),
+            "product_foundation": product_foundation_registry_schema()
+        }
+    })
+}
+
+fn product_foundation_registry_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["facets"],
+        "additionalProperties": false,
+        "properties": {
+            "facets": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["id", "kind"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": non_blank_string_schema(),
+                        "kind": {
+                            "enum": [
+                                "product_identity", "product_exclusions", "actors",
+                                "operating_context", "problems", "outcomes",
+                                "differentiators", "alternatives", "claims",
+                                "proof_boundaries", "terminology", "offers", "motions",
+                                "calls_to_action", "narrative_posture", "gaps"
+                            ]
+                        },
+                        "entries": {
+                            "type": "array",
+                            "items": product_foundation_entry_ref_schema()
+                        },
+                        "gaps": {
+                            "type": "array",
+                            "items": product_foundation_entry_ref_schema()
+                        },
+                        "conflicts_with": string_array()
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn product_foundation_entry_ref_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["card_id", "entry_id"],
+        "additionalProperties": false,
+        "properties": {
+            "card_id": non_blank_string_schema(),
+            "entry_id": non_blank_string_schema()
         }
     })
 }
@@ -3676,5 +3761,45 @@ mod tests {
             Some(7)
         );
         assert_eq!(profile_schema()["additionalProperties"], false);
+    }
+
+    #[test]
+    fn manifest_schema_exposes_closed_product_foundation_contract() {
+        let result = schema(SchemaTarget::Manifest);
+        let foundation = &result["properties"]["profile"]["properties"]["product_foundation"];
+        let facet = &foundation["properties"]["facets"]["items"];
+        let job_binding =
+            &result["properties"]["jobs"]["items"]["properties"]["product_foundation"];
+
+        assert_eq!(foundation["additionalProperties"], false);
+        assert_eq!(facet["additionalProperties"], false);
+        assert_eq!(
+            facet["properties"]["kind"]["enum"],
+            json!([
+                "product_identity",
+                "product_exclusions",
+                "actors",
+                "operating_context",
+                "problems",
+                "outcomes",
+                "differentiators",
+                "alternatives",
+                "claims",
+                "proof_boundaries",
+                "terminology",
+                "offers",
+                "motions",
+                "calls_to_action",
+                "narrative_posture",
+                "gaps"
+            ])
+        );
+        assert!(facet["properties"].get("statement").is_none());
+        assert_eq!(job_binding["additionalProperties"], false);
+        assert_eq!(
+            job_binding["properties"]["conditional"]["items"]["properties"]["when"]["properties"]["fact"]
+                ["enum"],
+            json!(["manifest_id", "profile_id", "job_id"])
+        );
     }
 }

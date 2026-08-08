@@ -205,6 +205,7 @@ fn gtm_profile() -> Profile {
             ("capability".to_string(), strings(&["product"])),
             ("solution".to_string(), strings(&["product"])),
         ]),
+        product_foundation: None,
     }
 }
 
@@ -371,6 +372,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             ]),
             input_contracts: strings(&["prospect"]),
             decision_input_contracts: Vec::new(),
+            product_foundation: None,
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
@@ -392,6 +394,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             ]),
             input_contracts: strings(&["prospect"]),
             decision_input_contracts: Vec::new(),
+            product_foundation: None,
         },
         ProfileJob {
             id: "outbound-copy-review".to_string(),
@@ -413,6 +416,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             ]),
             input_contracts: strings(&["prospect"]),
             decision_input_contracts: Vec::new(),
+            product_foundation: None,
         },
     ]
 }
