@@ -4797,7 +4797,8 @@ fn validate_prompt_file(
             "prompt must declare input defaults and missing-data behavior",
         ));
     }
-    for input in &prompt.inputs {
+    let mut input_names = BTreeSet::new();
+    for (index, input) in prompt.inputs.iter().enumerate() {
         if input.name.trim().is_empty()
             || input.default.trim().is_empty()
             || input.missing_behavior.trim().is_empty()
@@ -4807,6 +4808,14 @@ fn validate_prompt_file(
                 "error",
                 format!("{path}#/inputs"),
                 "each prompt input must include name, default, and missing_behavior",
+            ));
+        }
+        if !input.name.trim().is_empty() && !input_names.insert(input.name.as_str()) {
+            issues.push(issue(
+                "prompt_input_name_duplicate",
+                "error",
+                format!("{path}#/inputs/{index}/name"),
+                format!("prompt input name {} must be unique", input.name),
             ));
         }
     }
@@ -6162,6 +6171,7 @@ prompt: normalize-prospect-row
                 "wrong-producer",
                 "governed_artifact_invocation_receipt_input_producer_invalid",
             ),
+            ("duplicate", "duplicate", "prompt_input_name_duplicate"),
         ] {
             let root = temp_pack(&format!("governed-receipt-input-{case}"));
             opt_in_generation_prompt(&root);
@@ -6182,6 +6192,11 @@ prompt: normalize-prospect-row
                 "optional" => inputs[receipt_index]["required"] = YamlValue::Bool(false),
                 "wrong-producer" => {
                     inputs[receipt_index]["producer"] = YamlValue::String("pack".to_string())
+                }
+                "duplicate" => {
+                    let mut duplicate = inputs[receipt_index].clone();
+                    duplicate["producer"] = YamlValue::String("pack".to_string());
+                    inputs.push(duplicate);
                 }
                 _ => unreachable!("test mutation is closed"),
             }
