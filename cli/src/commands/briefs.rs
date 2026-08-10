@@ -332,12 +332,29 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
     }
     out.push('\n');
 
-    out.push_str("## Evidence Receipts and Accepted Signals\n\n");
+    out.push_str("## Evidence Receipts and Signal Decisions\n\n");
     let mut wrote_evidence = false;
+    let signal_authority = &fit["signal_authority"];
+    bullet(
+        &mut out,
+        "signal_authority",
+        display_value(&signal_authority["authority_class"]),
+    );
+    bullet(
+        &mut out,
+        "projection_status",
+        display_value(&signal_authority["projection_status"]),
+    );
+    bullet(
+        &mut out,
+        "trust_boundary",
+        display_value(&signal_authority["trust_boundary"]),
+    );
+    out.push('\n');
     wrote_evidence |= list_named_items(
         &mut out,
         "Lineage-validated signal contributions",
-        &fit["signal_authority"]["accepted"],
+        &signal_authority["accepted"],
         |item| {
             format!(
                 "{}; roles: {}",
@@ -350,6 +367,26 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
                         .collect::<Vec<_>>()
                         .join(", "))
                     .unwrap_or_else(|| "none".to_string())
+            )
+        },
+    );
+    wrote_evidence |= list_named_items(
+        &mut out,
+        "Rejected signal contributions",
+        &signal_authority["rejected"],
+        |item| {
+            format!(
+                "{}; roles: {}; reason: {}",
+                display_value(&item["signal_id"]),
+                item["roles"]
+                    .as_array()
+                    .map(|roles| roles
+                        .iter()
+                        .map(display_value)
+                        .collect::<Vec<_>>()
+                        .join(", "))
+                    .unwrap_or_else(|| "none".to_string()),
+                display_value(&item["reason"])
             )
         },
     );
@@ -1250,7 +1287,8 @@ mod tests {
         assert!(!markdown.contains("<section"));
         assert!(markdown.contains("## Fit / Draft Readiness"));
         assert!(markdown.contains("- draft_status: ready"));
-        assert!(markdown.contains("## Evidence Receipts and Accepted Signals"));
+        assert!(markdown.contains("## Evidence Receipts and Signal Decisions"));
+        assert!(markdown.contains("- signal_authority: legacy"));
         assert!(markdown.contains("## Proposed Outreach Copy"));
         assert!(markdown.contains("No proposed outreach copy is included"));
 

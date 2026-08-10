@@ -881,6 +881,21 @@ fn validate_signal_observations(
         .flatten()
         .filter_map(|item| Some((item["qualified_projection_id"].as_str()?.to_string(), item)))
         .collect::<BTreeMap<_, _>>();
+    let request_attempts = source_attempt_request
+        .map(|(request, _, _)| {
+            request["attempts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|attempt| Some((attempt["attempt_id"].as_str()?.to_string(), attempt)))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let request_as_of = source_attempt_request.and_then(|(request, _, _)| {
+        request["as_of"]
+            .as_str()
+            .and_then(parse_utc_timestamp_seconds)
+    });
     let mut attempt_results = BTreeMap::new();
     if let Some((results, results_path, _)) = collected_attempt_results {
         for (index, result) in results["attempt_results"]
@@ -897,6 +912,48 @@ fn validate_signal_observations(
                     "decision_input_collected_attempt_id_duplicate",
                     format!("{results_path}#/attempt_results/{index}/attempt_id"),
                     "collected attempt result IDs must be unique",
+                ));
+            }
+            let result_path = format!("{results_path}#/attempt_results/{index}");
+            let Some(request_attempt) = request_attempts.get(id) else {
+                issues.push(decision_input_issue(
+                    "decision_input_collected_attempt_unknown",
+                    format!("{result_path}/attempt_id"),
+                    "collected attempt result is absent from the exact source-attempt request",
+                ));
+                continue;
+            };
+            for field in [
+                "decision_input_contract_id",
+                "attribute_id",
+                "source_class",
+                "source_locator",
+            ] {
+                if result[field] != request_attempt[field] {
+                    issues.push(decision_input_issue(
+                        "decision_input_collected_attempt_request_mismatch",
+                        format!("{result_path}/{field}"),
+                        format!("collected attempt result {field} must match its exact source-attempt request"),
+                    ));
+                }
+            }
+            let observed_at = result["observed_at"]
+                .as_str()
+                .and_then(parse_utc_timestamp_seconds);
+            let requested_at = request_attempt["requested_at"]
+                .as_str()
+                .and_then(parse_utc_timestamp_seconds);
+            if observed_at
+                .zip(requested_at)
+                .is_some_and(|(observed, requested)| observed < requested)
+                || observed_at
+                    .zip(request_as_of)
+                    .is_some_and(|(observed, as_of)| observed > as_of)
+            {
+                issues.push(decision_input_issue(
+                    "decision_input_collected_attempt_observed_at_out_of_bounds",
+                    format!("{result_path}/observed_at"),
+                    "collected attempt observed_at must fall between requested_at and the trusted request as_of",
                 ));
             }
         }
@@ -1117,10 +1174,8 @@ fn validate_signal_observations(
     }
     let mut logical_signals = Vec::new();
     let mut status = "lineage-validated";
-    for (qualified, observations) in grouped {
-        let Some((_, projection)) = projection_index.get(&qualified).copied() else {
-            continue;
-        };
+    for (qualified, (_, projection)) in &projection_index {
+        let observations = grouped.remove(qualified).unwrap_or_default();
         let value_contract = serde_json::from_value::<ValueContract>(projection["value"].clone())
             .unwrap_or_default();
         let mut values = Vec::<(Value, Vec<String>)>::new();
@@ -1171,12 +1226,11 @@ fn validate_signal_observations(
                 format!("projection {qualified} has {logical_count} logical values outside [{min}, {max}]"),
             ));
         }
-        for (value, observation_ids) in values {
+        for (_, observation_ids) in values {
             logical_signals.push(json!({
                 "qualified_projection_id": qualified,
                 "kind": projection["kind"],
                 "roles": projection["roles"],
-                "value": value,
                 "observation_ids": observation_ids
             }));
         }
@@ -1185,8 +1239,29 @@ fn validate_signal_observations(
         left["qualified_projection_id"]
             .as_str()
             .cmp(&right["qualified_projection_id"].as_str())
-            .then_with(|| left["value"].to_string().cmp(&right["value"].to_string()))
+            .then_with(|| {
+                left["observation_ids"]
+                    .to_string()
+                    .cmp(&right["observation_ids"].to_string())
+            })
     });
+    let safe_observations = valid_observations
+        .iter()
+        .map(|observation| {
+            json!({
+                "id": observation["id"],
+                "qualified_projection_id": observation["qualified_projection_id"],
+                "kind": observation["kind"],
+                "roles": observation["roles"],
+                "contributor_attribute_ids": observation["contributor_attribute_ids"],
+                "attempt_ids": observation["attempt_ids"],
+                "source_class": observation["source_class"],
+                "observed_at": observation["observed_at"],
+                "confidence": observation["confidence"],
+                "receipt": observation["receipt"]
+            })
+        })
+        .collect::<Vec<_>>();
     let mut receipt = json!({
         "contract": "mdp.signal-projection-decision-receipt.v1",
         "status": if issues.len() == initial_issue_count { status } else { "blocked" },
@@ -1194,7 +1269,7 @@ fn validate_signal_observations(
         "source_binding_sha256": binding_sha256,
         "source_attempt_request_sha256": request_sha256,
         "collected_attempt_results_sha256": results_sha256,
-        "observations": valid_observations,
+        "observations": safe_observations,
         "logical_signals": logical_signals,
         "trust_boundary": "lineage identity only; does not attest host authenticity or source truth"
     });
@@ -2751,6 +2826,9 @@ mod tests {
             json!(["obs-a", "obs-b"])
         );
         assert_eq!(receipt["observations"].as_array().unwrap().len(), 2);
+        assert!(receipt["observations"][0].get("value").is_none());
+        assert!(receipt["observations"][0].get("source_locator").is_none());
+        assert!(receipt["logical_signals"][0].get("value").is_none());
         assert_eq!(receipt["normalized_output_sha256"], "d".repeat(64));
         assert!(fixture.output.get("normalized_output_sha256").is_none());
 
@@ -2843,6 +2921,40 @@ mod tests {
     }
 
     #[test]
+    fn signal_projection_validator_blocks_absent_required_projection() {
+        let mut fixture = signal_projection_fixture("projection-required-absent");
+        let manifest_path = fixture.root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should read");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["decision_input_contracts"][0]["signal_projections"][0]["cardinality"]["min"] =
+            serde_yaml::Value::Number(1.into());
+        std::fs::write(&manifest_path, serde_yaml::to_string(&manifest).unwrap()).unwrap();
+        fixture.output["signal_observations"] = json!([]);
+
+        let validation = validate_normalized_decision_input_with_projection(
+            &fixture.root,
+            &fixture.output,
+            "normalized.json",
+            &fixture.prompt_path,
+            Some((&fixture.binding, "binding.json", &fixture.binding_sha256)),
+            Some((&fixture.request, "request.json", &fixture.request_sha256)),
+            Some((&fixture.results, "results.json", &fixture.results_sha256)),
+            None,
+        )
+        .expect("signal validation should run");
+
+        assert!(validation.issues.iter().any(|issue| {
+            issue["code"] == "decision_input_signal_cardinality_mismatch"
+                && issue["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("has 0 logical values outside [1, 4]"))
+        }));
+        assert_eq!(validation.signal_projection.unwrap()["status"], "blocked");
+        let _ = std::fs::remove_dir_all(fixture.root);
+    }
+
+    #[test]
     fn signal_projection_validator_fails_closed_on_independent_lineage_mismatches() {
         let fixture = signal_projection_fixture("projection-mismatch");
         for (label, field, expected) in [
@@ -2884,6 +2996,44 @@ mod tests {
                 validation.issues
             );
         }
+    }
+
+    #[test]
+    fn signal_projection_validator_binds_attempt_results_to_the_exact_request() {
+        let mut fixture = signal_projection_fixture("projection-attempt-request-drift");
+        fixture.results["attempt_results"][0]["source_locator"] = json!("opaque:drift");
+        fixture.output["signal_observations"][1]["source_locator"] = json!("opaque:drift");
+        fixture.results_sha256 = canonical_json_sha256(&fixture.results).unwrap();
+        fixture.output["collected_attempt_results_sha256"] = json!(&fixture.results_sha256);
+        for observation in fixture.output["signal_observations"]
+            .as_array_mut()
+            .unwrap()
+        {
+            observation["receipt"]["collected_results_sha256"] = json!(&fixture.results_sha256);
+        }
+
+        let validation = validate_normalized_decision_input_with_projection(
+            &fixture.root,
+            &fixture.output,
+            "normalized.json",
+            &fixture.prompt_path,
+            Some((&fixture.binding, "binding.json", &fixture.binding_sha256)),
+            Some((&fixture.request, "request.json", &fixture.request_sha256)),
+            Some((&fixture.results, "results.json", &fixture.results_sha256)),
+            None,
+        )
+        .expect("signal validation should run");
+
+        assert!(
+            validation.issues.iter().any(|issue| {
+                issue["code"] == "decision_input_collected_attempt_request_mismatch"
+                    && issue["path"] == "results.json#/attempt_results/0/source_locator"
+            }),
+            "{:#?}",
+            validation.issues
+        );
+        assert_eq!(validation.signal_projection.unwrap()["status"], "blocked");
+        let _ = std::fs::remove_dir_all(fixture.root);
     }
 
     struct SignalProjectionFixture {

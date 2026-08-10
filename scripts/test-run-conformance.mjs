@@ -252,11 +252,14 @@ try {
       gtmRequest("gtm-disqualified", gtmDisqualifiedNormalized, gtmDisqualifiedResults),
       "gtm-disqualified",
     );
-    const run = expectInvalidJson(attempted.result, "GTM disqualified run");
-    assert.equal(run.terminal_state, "no-draft:output-invalid");
+    const run = expectOk(attempted.result, "GTM disqualified run");
+    assert.equal(run.terminal_state, "success");
     const receipt = JSON.parse(readFileSync(join(attempted.outDir, "run-receipt.json"), "utf8"));
-    assert.equal(receipt.decision, null);
-    assert.equal(existsSync(join(attempted.outDir, "artifacts", "output.json")), false);
+    assert.equal(receipt.decision.decision, "no-draft");
+    assert.deepEqual(receipt.decision.reason_codes, ["disqualified"]);
+    const context = JSON.parse(readFileSync(join(attempted.outDir, "artifacts", "compiled-context.json"), "utf8"));
+    assert.equal(context.qualification.status, "disqualified");
+    assert.equal(context.drafting_authority, "not-granted");
     assert.equal(expectOk(verify(attempted.outDir), "GTM disqualified verification").valid, true);
   }, { profile: "gtm", adapter: "direct-cli" });
 
@@ -295,10 +298,12 @@ try {
     const replies = invoked.stdout.trim().split("\n").map((line) => JSON.parse(line));
     assert.equal(replies[0].result.structuredContent.terminal_state, "success");
     assert.equal(replies[1].result.structuredContent.valid, true);
-    assert.equal(replies[2].result.structuredContent.terminal_state, "no-draft:output-invalid");
+    assert.equal(replies[2].result.structuredContent.terminal_state, "success");
     assert.equal(replies[3].result.structuredContent.valid, true);
     assert.equal(JSON.parse(readFileSync(join(qualifiedOut, "run-receipt.json"), "utf8")).decision.decision, "qualified");
-    assert.equal(JSON.parse(readFileSync(join(disqualifiedOut, "run-receipt.json"), "utf8")).decision, null);
+    const disqualifiedReceipt = JSON.parse(readFileSync(join(disqualifiedOut, "run-receipt.json"), "utf8"));
+    assert.equal(disqualifiedReceipt.decision.decision, "no-draft");
+    assert.deepEqual(disqualifiedReceipt.decision.reason_codes, ["disqualified"]);
   }, { profile: "gtm", adapter: "unified-stdio-mcp" });
 
   record("GTM rejects undeclared ambient fields before publication", () => {

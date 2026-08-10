@@ -9,8 +9,9 @@ use crate::constants::{
     PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
     PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
     PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, REQUIREMENTS_CONTRACT,
-    RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_BINDING_CONTRACT,
-    SOURCE_BINDING_VALIDATION_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    REQUIREMENTS_CONTRACT_V2, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT,
+    SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2, SOURCE_BINDING_VALIDATION_CONTRACT,
+    SOURCE_INTAKE_CONTRACT,
 };
 use crate::models::DecisionInputAttemptStatus;
 use crate::run_contracts::{
@@ -143,8 +144,10 @@ pub(crate) fn capabilities() -> Value {
         },
         "decision_input_contracts": {
             "requirements": REQUIREMENTS_CONTRACT,
+            "requirements_contracts": [REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2],
             "normalized_input": NORMALIZED_DECISION_INPUT_CONTRACT,
             "source_binding": SOURCE_BINDING_CONTRACT,
+            "source_binding_contracts": [SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2],
             "source_binding_validation": SOURCE_BINDING_VALIDATION_CONTRACT,
             "version_matrix": source_lineage_version_matrix(),
             "attempt_statuses": DecisionInputAttemptStatus::ALL,

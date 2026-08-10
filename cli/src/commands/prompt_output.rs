@@ -14,7 +14,10 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+
+const MAX_VALIDATION_ARTIFACT_BYTES: usize = 4 * 1024 * 1024;
 
 #[allow(dead_code)]
 pub(crate) fn validate_prompt_output_file(
@@ -85,7 +88,7 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
 
     let (prompt, resolved_prompt_path) = resolve_prompt(root, prompt_path, prompt_id)?;
     let artifact_path = display_path(file);
-    let raw_bytes = fs::read(file)?;
+    let raw_bytes = read_bounded_bytes(file, "prompt output")?;
     let prompt_output_sha256 = sha256_hex(&raw_bytes);
     let raw = std::str::from_utf8(&raw_bytes)
         .map_err(|err| anyhow!("prompt output file must be valid UTF-8: {err}"))?;
@@ -1085,7 +1088,7 @@ struct PromptSourceRef {
 }
 
 fn read_json_file_with_hash(path: &Path, artifact_name: &str) -> Result<(Value, String)> {
-    let raw = fs::read(path)?;
+    let raw = read_bounded_bytes(path, artifact_name)?;
     let sha256 = sha256_hex(&raw);
     let text = std::str::from_utf8(&raw)
         .map_err(|err| anyhow!("{artifact_name} file must be valid UTF-8: {err}"))?;
@@ -1094,6 +1097,20 @@ fn read_json_file_with_hash(path: &Path, artifact_name: &str) -> Result<(Value, 
             .map_err(|_| anyhow!("{artifact_name} file must contain valid JSON"))?,
         sha256,
     ))
+}
+
+pub(crate) fn read_bounded_bytes(path: &Path, artifact_name: &str) -> Result<Vec<u8>> {
+    let mut file = fs::File::open(path)?;
+    let mut raw = Vec::new();
+    file.by_ref()
+        .take((MAX_VALIDATION_ARTIFACT_BYTES + 1) as u64)
+        .read_to_end(&mut raw)?;
+    if raw.len() > MAX_VALIDATION_ARTIFACT_BYTES {
+        return Err(anyhow!(
+            "{artifact_name} exceeds the {MAX_VALIDATION_ARTIFACT_BYTES} byte validation limit"
+        ));
+    }
+    Ok(raw)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -2875,6 +2892,24 @@ mod tests {
             .parent()
             .expect("CLI crate should have a repository parent")
             .join("examples/clay-audiences-self-serve-enterprise-expansion")
+    }
+
+    #[test]
+    fn bounded_validation_reader_rejects_oversized_artifacts() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-bounded-validation-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("oversized.json");
+        std::fs::write(&path, vec![b' '; MAX_VALIDATION_ARTIFACT_BYTES + 1]).unwrap();
+
+        let error = read_json_file_with_hash(&path, "lineage artifact").unwrap_err();
+        assert!(error.to_string().contains("byte validation limit"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn write_output(root: &Path, name: &str, body: &str) -> PathBuf {

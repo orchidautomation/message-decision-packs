@@ -491,8 +491,11 @@ where
                 None,
             )?
         };
-        let ready = result["valid"].as_bool() == Some(true)
-            && normalized_value["outcome"].as_str() == Some("ready");
+        let ready = governed_normalization_outcome(
+            result["valid"].as_bool() == Some(true),
+            signal_aware,
+            normalized_value["outcome"].as_str(),
+        );
         validation = Some(result);
         if ready {
             let prospect = &normalized_value["normalized_prospect"];
@@ -678,6 +681,10 @@ fn gtm_lineage_schema_ids(signal_aware: bool) -> (&'static str, &'static str) {
             "mdp.collected-attempt-results.v1",
         )
     }
+}
+
+fn governed_normalization_outcome(valid: bool, signal_aware: bool, outcome: Option<&str>) -> bool {
+    valid && (outcome == Some("ready") || (signal_aware && outcome == Some("disqualified")))
 }
 
 fn gtm_success_artifacts(
@@ -1282,7 +1289,8 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        execute_run_inner, gtm_lineage_schema_ids, gtm_success_artifacts, validate_request,
+        execute_run_inner, governed_normalization_outcome, gtm_lineage_schema_ids,
+        gtm_success_artifacts, validate_request,
     };
     use crate::commands::init::init_pack;
     use crate::run_contracts::{
@@ -1417,6 +1425,25 @@ mod tests {
                 "mdp.collected-attempt-results.v2"
             )
         );
+    }
+
+    #[test]
+    fn gtm_signal_aware_disqualification_is_a_governed_outcome() {
+        assert!(governed_normalization_outcome(
+            true,
+            true,
+            Some("disqualified")
+        ));
+        assert!(!governed_normalization_outcome(
+            true,
+            false,
+            Some("disqualified")
+        ));
+        assert!(!governed_normalization_outcome(
+            false,
+            true,
+            Some("disqualified")
+        ));
     }
 
     #[test]

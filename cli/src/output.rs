@@ -229,6 +229,15 @@ fn summarize(command: &str, data: &Value) -> Value {
             "scope": data["scope"],
             "portfolio_sensitive": data["portfolio_sensitive"],
             "fit_status": data["fit"]["status"],
+            "signal_authority": {
+                "authority_class": data["fit"]["signal_authority"]["authority_class"],
+                "aggregate_authority": data["fit"]["signal_authority"]["aggregate_authority"],
+                "projection_status": data["fit"]["signal_authority"]["projection_status"],
+                "roles": data["fit"]["signal_authority"]["roles"],
+                "accepted": data["fit"]["signal_authority"]["accepted"],
+                "rejected": data["fit"]["signal_authority"]["rejected"],
+                "trust_boundary": data["fit"]["signal_authority"]["trust_boundary"]
+            },
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
             "product_foundation": product_foundation_summary(&data["product_foundation"]),

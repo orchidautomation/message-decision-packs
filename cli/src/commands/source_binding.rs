@@ -731,7 +731,12 @@ fn issue(code: &str, path: impl Into<String>, message: impl Into<String>) -> Val
 }
 
 pub(crate) fn source_binding_schema() -> Value {
-    source_binding_schema_v1()
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Source Binding Contract Family",
+        "description": "Version-discriminated source-binding contracts. Use the exact schema embedded by requirements for the selected job.",
+        "oneOf": [source_binding_schema_v1(), source_binding_schema_v2()]
+    })
 }
 
 fn source_binding_schema_v1() -> Value {
@@ -960,22 +965,27 @@ pub(crate) fn source_lineage_version_matrix() -> Value {
 mod tests {
     use super::{source_binding_schema, validate_source_binding_value};
     use crate::commands::requirements::requirements;
+    use crate::constants::SOURCE_BINDING_CONTRACT_V2;
     use serde_json::{Value, json};
     use std::path::PathBuf;
 
     #[test]
     fn schema_fixes_status_translation_and_keeps_provider_names_open() {
         let schema = source_binding_schema();
+        let v1 = &schema["oneOf"][0];
         assert_eq!(
-            schema["properties"]["status_translation"]["properties"]["runtime_failure"]["const"],
+            v1["properties"]["status_translation"]["properties"]["runtime_failure"]["const"],
             "error"
         );
         assert_eq!(
-            schema["properties"]["bindings"]["items"]["properties"]["source"]["properties"]["system_of_record"]
+            v1["properties"]["bindings"]["items"]["properties"]["source"]["properties"]["system_of_record"]
                 ["type"],
             "string"
         );
-        assert!(schema.get("oneOf").is_none(), "v1 schema stays legacy-only");
+        assert_eq!(
+            schema["oneOf"][1]["properties"]["contract"]["const"],
+            SOURCE_BINDING_CONTRACT_V2
+        );
     }
 
     #[test]

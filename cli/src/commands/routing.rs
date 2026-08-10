@@ -1,5 +1,7 @@
 use crate::artifact_hash::{canonical_json_sha256, sha256_hex};
-use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
+use crate::commands::prompt_output::{
+    read_bounded_bytes, validate_prompt_output_file_with_lineage_inputs,
+};
 use crate::commands::requirements::requirements;
 use crate::models::{CardKind, QualificationGates};
 use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
@@ -142,7 +144,7 @@ pub(crate) fn fit_normalized(
     collected_attempt_results_path: &Path,
     expected_job: Option<&str>,
 ) -> Result<Value> {
-    let normalized_bytes = fs::read(normalized_path)?;
+    let normalized_bytes = read_bounded_bytes(normalized_path, "normalized decision input")?;
     let normalized: Value = serde_json::from_slice(&normalized_bytes)
         .with_context(|| format!("parsing {}", normalized_path.display()))?;
     let job_id = normalized["job_id"]
