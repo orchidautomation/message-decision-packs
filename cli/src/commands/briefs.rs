@@ -377,7 +377,7 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
                         .collect::<Vec<_>>()
                         .join(", "))
                     .unwrap_or_else(|| "none".to_string()),
-                display_value(&item["observation_receipts"])
+                render_observation_receipts(&item["observation_receipts"])
             )
         },
     );
@@ -774,6 +774,28 @@ fn bullet(out: &mut String, label: &str, value: impl AsRef<str>) {
     out.push_str(": ");
     out.push_str(value.as_ref());
     out.push('\n');
+}
+
+fn render_observation_receipts(receipts: &Value) -> String {
+    let Some(receipts) = receipts.as_array() else {
+        return "none".to_string();
+    };
+    if receipts.is_empty() {
+        return "none".to_string();
+    }
+    receipts
+        .iter()
+        .map(|receipt| {
+            format!(
+                "{}@{} confidence={} attempts={}",
+                display_value(&receipt["id"]),
+                display_value(&receipt["observed_at"]),
+                display_value(&receipt["confidence"]),
+                display_value(&receipt["attempt_ids"])
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn display_value(value: &Value) -> String {

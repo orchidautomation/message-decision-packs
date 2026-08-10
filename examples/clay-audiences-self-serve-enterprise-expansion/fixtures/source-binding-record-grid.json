@@ -5,11 +5,11 @@
   "pack": {
     "id": "clay-audiences-self-serve-enterprise-expansion",
     "version": "0.1.0",
-    "sha256": "1c800db98c7c79221a4b233e65cb787a8cda9ebb09caaee0259ca57ca344a0d8"
+    "sha256": "b9f06eedfb90af206c5f70ec8829ea226440a4018ffadcfc83b334994f449354"
   },
   "requirements": {
     "contract": "mdp.requirements.v2",
-    "sha256": "d2ead9ccce0098f54e68ccd409e95f2d9d8b82542081462dd509a45261146c40",
+    "sha256": "19fb30bb8de6bebff230776e603832e5c1387457ce4b36e419c9c5fc5ad4564f",
     "decision_input_contracts": [
       {
         "id": "clay.audiences.self_serve_enterprise_expansion",

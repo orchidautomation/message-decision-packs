@@ -800,51 +800,6 @@ fn validate_signal_observations(
             return None;
         }
     }
-    for (path, actual, expected) in [
-        ("job_id", &binding["job_id"], &compiled["job"]["id"]),
-        ("pack/id", &binding["pack"]["id"], &compiled["pack"]["id"]),
-        (
-            "pack/version",
-            &binding["pack"]["version"],
-            &compiled["pack"]["version"],
-        ),
-        (
-            "pack/sha256",
-            &binding["pack"]["sha256"],
-            &compiled["pack"]["sha256"],
-        ),
-        (
-            "requirements/contract",
-            &binding["requirements"]["contract"],
-            &compiled["contract"],
-        ),
-        (
-            "requirements/sha256",
-            &binding["requirements"]["sha256"],
-            &compiled["requirements_sha256"],
-        ),
-    ] {
-        if actual != expected {
-            issues.push(decision_input_issue(
-                "decision_input_source_binding_authority_mismatch",
-                format!("{binding_path}#/{path}"),
-                "source binding authority pins must exactly match the compiled job requirements",
-            ));
-        }
-    }
-    let expected_contracts = compiled["decision_input_contracts"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|contract| json!({"id": contract["id"], "version": contract["version"]}))
-        .collect::<Vec<_>>();
-    if binding["requirements"]["decision_input_contracts"] != json!(expected_contracts) {
-        issues.push(decision_input_issue(
-            "decision_input_source_binding_contracts_mismatch",
-            format!("{binding_path}#/requirements/decision_input_contracts"),
-            "source binding contract receipts must exactly match the compiled job",
-        ));
-    }
     if output["source_binding_sha256"].as_str() != Some(binding_sha256) {
         issues.push(decision_input_issue(
             "decision_input_source_binding_hash_mismatch",

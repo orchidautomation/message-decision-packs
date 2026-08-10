@@ -549,7 +549,7 @@ fn list_proof(artifact: &Value) -> String {
                         .collect::<Vec<_>>()
                         .join(","))
                     .unwrap_or_else(|| "none".to_string()),
-                display_value(&signal["observation_receipts"])
+                render_observation_receipts(&signal["observation_receipts"])
             ));
         }
         for signal in artifact["fit"]["signal_authority"]["rejected"]
@@ -869,6 +869,28 @@ fn clean(value: Option<&str>) -> Option<&str> {
     } else {
         Some(text)
     }
+}
+
+fn render_observation_receipts(receipts: &Value) -> String {
+    let Some(receipts) = receipts.as_array() else {
+        return "none".to_string();
+    };
+    if receipts.is_empty() {
+        return "none".to_string();
+    }
+    receipts
+        .iter()
+        .map(|receipt| {
+            format!(
+                "{}@{} confidence={} attempts={}",
+                display_value(&receipt["id"]),
+                display_value(&receipt["observed_at"]),
+                display_value(&receipt["confidence"]),
+                display_value(&receipt["attempt_ids"])
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn display_value(value: &Value) -> String {

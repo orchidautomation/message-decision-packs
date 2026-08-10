@@ -229,19 +229,7 @@ fn summarize(command: &str, data: &Value) -> Value {
             "scope": data["scope"],
             "portfolio_sensitive": data["portfolio_sensitive"],
             "fit_status": data["fit"]["status"],
-            "signal_authority": {
-                "authority_class": data["fit"]["signal_authority"]["authority_class"],
-                "aggregate_authority": data["fit"]["signal_authority"]["aggregate_authority"],
-                "projection_status": data["fit"]["signal_authority"]["projection_status"],
-                "roles": data["fit"]["signal_authority"]["roles"],
-                "accepted": data["fit"]["signal_authority"]["accepted"],
-                "rejected": data["fit"]["signal_authority"]["rejected"],
-                "source_binding_sha256": data["fit"]["signal_authority"]["source_binding_sha256"],
-                "source_attempt_request_sha256": data["fit"]["signal_authority"]["source_attempt_request_sha256"],
-                "collected_attempt_results_sha256": data["fit"]["signal_authority"]["collected_attempt_results_sha256"],
-                "normalized_output_sha256": data["fit"]["signal_authority"]["normalized_output_sha256"],
-                "trust_boundary": data["fit"]["signal_authority"]["trust_boundary"]
-            },
+            "signal_authority": signal_authority_summary(&data["fit"]["signal_authority"]),
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
             "product_foundation": product_foundation_summary(&data["product_foundation"]),
@@ -320,6 +308,29 @@ fn print_summary(command: &str, summary: &Value) -> Result<()> {
     println!("{command}: summary");
     println!("{}", serde_json::to_string_pretty(summary)?);
     Ok(())
+}
+
+fn signal_authority_summary(authority: &Value) -> Value {
+    let mut summary = json!({
+        "authority_class": authority["authority_class"],
+        "aggregate_authority": authority["aggregate_authority"],
+        "projection_status": authority["projection_status"],
+        "roles": authority["roles"],
+        "accepted": authority["accepted"],
+        "rejected": authority["rejected"],
+        "trust_boundary": authority["trust_boundary"]
+    });
+    for field in [
+        "source_binding_sha256",
+        "source_attempt_request_sha256",
+        "collected_attempt_results_sha256",
+        "normalized_output_sha256",
+    ] {
+        if !authority[field].is_null() {
+            summary[field] = authority[field].clone();
+        }
+    }
+    summary
 }
 
 fn array_len(value: &Value) -> usize {

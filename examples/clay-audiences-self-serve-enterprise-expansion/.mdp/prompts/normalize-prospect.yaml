@@ -388,9 +388,9 @@ output_contract:
         {
           "contract": "mdp.signal-observation.v2",
           "id": "obs-buyer-role",
-          "contract_id": "clay.audiences.self_serve_enterprise-expansion",
+          "contract_id": "clay.audiences.self_serve_enterprise_expansion",
           "projection_id": "buyer-role",
-          "qualified_projection_id": "clay.audiences.self_serve_enterprise-expansion#buyer-role",
+          "qualified_projection_id": "clay.audiences.self_serve_enterprise_expansion#buyer-role",
           "kind": "revenue_operations_buyer",
           "roles": ["person-resolution"],
           "value": "VP Revenue Operations",
@@ -409,7 +409,7 @@ output_contract:
         {
           "contract": "mdp.signal-observation.v2",
           "id": "obs-trigger",
-          "contract_id": "clay.audiences.self_serve_enterprise-expansion",
+          "contract_id": "clay.audiences.self_serve_enterprise_expansion",
           "projection_id": "buying-window",
           "qualified_projection_id": "clay.audiences.self_serve_enterprise_expansion#buying-window",
           "kind": "expansion_timing",
