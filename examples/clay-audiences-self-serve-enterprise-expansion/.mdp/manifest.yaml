@@ -62,11 +62,7 @@ lead_input_requirements:
   - company
   - company_domain
   - trigger
-  - persona
-  - segment
-  - signals
-  required_signal_fields:
-  - source
+  required_signal_fields: []
   required_attributes:
   - customer_motion
   - enterprise_eligibility
@@ -229,13 +225,72 @@ decision_input_contracts:
   normalization:
     prompt: prompts/normalize-prospect.yaml
     prompt_version: clay-self-serve-enterprise-expansion.v4
-    normalized_schema_ref: mdp.normalized-decision-input.v1
+    normalized_schema_ref: mdp.normalized-decision-input.v2
   source_classes:
   - user_provided
   - customer_system
   - reviewed_internal
   - public_web
   - synthetic_fixture
+  signal_projections:
+  - id: account-fit
+    kind: enterprise_expansion_fit
+    roles:
+    - fit
+    contributor_attribute_ids:
+    - enterprise_eligibility
+    value:
+      type: string
+      enum:
+      - eligible
+      - ineligible
+      - needs-review
+    cardinality:
+      min: 1
+      max: 2
+    conflict_policy: require-agreement
+    decision_effects:
+    - readiness
+    - fit
+    - gaps
+    - no-draft
+  - id: buyer-role
+    kind: revenue_operations_buyer
+    roles:
+    - person-resolution
+    contributor_attribute_ids:
+    - person_title
+    value:
+      type: string
+    cardinality:
+      min: 1
+      max: 2
+    conflict_policy: require-agreement
+    decision_effects:
+    - readiness
+    - fit
+    - routing
+    - brief
+    - gaps
+    - no-draft
+  - id: buying-window
+    kind: expansion_timing
+    roles:
+    - why-now
+    contributor_attribute_ids:
+    - expansion_trigger_summary
+    value:
+      type: string
+    cardinality:
+      min: 1
+      max: 4
+    conflict_policy: require-agreement
+    decision_effects:
+    - readiness
+    - fit
+    - brief
+    - gaps
+    - no-draft
   attributes:
   - id: company_name
     question: What is the reviewed company name for this customer account?

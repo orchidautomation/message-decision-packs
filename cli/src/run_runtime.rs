@@ -424,16 +424,18 @@ where
             return Err(anyhow!("declared input schema or media type mismatch"));
         }
         let signal_aware = normalized.authority.schema_id == "mdp.normalized-decision-input.v2";
+        let (source_attempt_schema, collected_results_schema) =
+            gtm_lineage_schema_ids(signal_aware);
         let source_attempt = required_typed_input(
             &staged,
             "source-attempt-request",
-            "mdp.source-attempt-request.v1",
+            source_attempt_schema,
             "application/json",
         )?;
         let attempt_results = required_typed_input(
             &staged,
             "collected-attempt-results",
-            "mdp.collected-attempt-results.v1",
+            collected_results_schema,
             "application/json",
         )?;
         let bound_prompt =
@@ -657,6 +659,20 @@ where
         ));
     }
     Ok((bundle_sha256, receipt))
+}
+
+fn gtm_lineage_schema_ids(signal_aware: bool) -> (&'static str, &'static str) {
+    if signal_aware {
+        (
+            "mdp.source-attempt-request.v2",
+            "mdp.collected-attempt-results.v2",
+        )
+    } else {
+        (
+            "mdp.source-attempt-request.v1",
+            "mdp.collected-attempt-results.v1",
+        )
+    }
 }
 
 fn gtm_success_artifacts(
@@ -1260,7 +1276,9 @@ fn unique_suffix() -> u128 {
 
 #[cfg(test)]
 mod tests {
-    use super::{execute_run_inner, gtm_success_artifacts, validate_request};
+    use super::{
+        execute_run_inner, gtm_lineage_schema_ids, gtm_success_artifacts, validate_request,
+    };
     use crate::commands::init::init_pack;
     use crate::run_contracts::{
         ExecutionPolicy, LocalArtifactInput, PackAuthority, RunBundleV1, RunMode, RunRequestV1,
@@ -1352,10 +1370,10 @@ mod tests {
             "mdp.gtm-qualification-decision.v1"
         );
         assert_eq!(receipt["compiled_context"].is_object(), true);
-        assert_eq!(receipt["decision"]["decision"], "no-draft");
+        assert_eq!(receipt["decision"]["decision"], "qualified");
         assert_eq!(
             receipt["decision"]["reason_codes"],
-            serde_json::json!(["insufficient-context"])
+            serde_json::json!(["ready"])
         );
         assert!(receipt["assurance"].as_array().unwrap().iter().any(|item| {
             item["dimension"] == "declared-input-isolation" && item["state"] == "observed"
@@ -1376,6 +1394,24 @@ mod tests {
         request.execution_id = "run-gtm-reuse".into();
         assert!(execute_run_inner(&request, &run, || Ok(())).is_err());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn gtm_lineage_input_versions_follow_the_normalized_contract() {
+        assert_eq!(
+            gtm_lineage_schema_ids(false),
+            (
+                "mdp.source-attempt-request.v1",
+                "mdp.collected-attempt-results.v1"
+            )
+        );
+        assert_eq!(
+            gtm_lineage_schema_ids(true),
+            (
+                "mdp.source-attempt-request.v2",
+                "mdp.collected-attempt-results.v2"
+            )
+        );
     }
 
     #[test]
@@ -1757,17 +1793,22 @@ mod tests {
                 input(
                     "normalized-decision-input",
                     fixtures.join("normalized-response-ready.json"),
-                    "mdp.normalized-decision-input.v1",
+                    "mdp.normalized-decision-input.v2",
+                ),
+                input(
+                    "source-binding",
+                    fixtures.join("source-binding-clay-adapter.json"),
+                    "mdp.source-binding.v2",
                 ),
                 input(
                     "source-attempt-request",
                     fixtures.join("source-attempt-request.json"),
-                    "mdp.source-attempt-request.v1",
+                    "mdp.source-attempt-request.v2",
                 ),
                 input(
                     "collected-attempt-results",
                     fixtures.join("collected-attempt-results.json"),
-                    "mdp.collected-attempt-results.v1",
+                    "mdp.collected-attempt-results.v2",
                 ),
                 LocalArtifactInput {
                     logical_name: "bound-prompt".into(),

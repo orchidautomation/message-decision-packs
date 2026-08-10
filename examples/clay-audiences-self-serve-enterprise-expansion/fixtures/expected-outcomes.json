@@ -1,5 +1,5 @@
 {
-  "contract": "mdp.decision-input-expected-outcomes.v1",
+  "contract": "mdp.decision-input-expected-outcomes.v2",
   "cases": [
     {
       "id": "ready",
@@ -42,6 +42,48 @@
       "expected_outcome": "provider-error",
       "draft_allowed": false,
       "next_action": "Preserve the provider error; retry or escalate in the host."
+    },
+    {
+      "id": "duplicate-agreement",
+      "synthetic_change": "obs-trigger-a and obs-trigger-b project the same meaningful value from distinct attempts.",
+      "expected_outcome": "lineage-validated",
+      "draft_allowed": false,
+      "next_action": "Count one logical why-now signal and retain both sorted observation receipts."
+    },
+    {
+      "id": "preserved-conflict",
+      "synthetic_change": "obs-trigger-b and its collected attempt result contain a different trigger value.",
+      "expected_outcome": "human-review",
+      "draft_allowed": false,
+      "next_action": "Retain both observations and stop because buying-window requires agreement."
+    },
+    {
+      "id": "stale-observation",
+      "synthetic_change": "A signal contributor exceeds its compiled freshness maximum.",
+      "expected_outcome": "blocked",
+      "draft_allowed": false,
+      "next_action": "Keep the receipt inspectable and reject its qualification role."
+    },
+    {
+      "id": "weak-observation",
+      "synthetic_change": "A signal contributor falls below its compiled confidence minimum.",
+      "expected_outcome": "blocked",
+      "draft_allowed": false,
+      "next_action": "Keep the receipt inspectable and reject its qualification role."
+    },
+    {
+      "id": "forged-lineage",
+      "synthetic_change": "An observation value or attempt ID does not exist in the exact collected results.",
+      "expected_outcome": "malformed",
+      "draft_allowed": false,
+      "next_action": "Reject with a stable lineage diagnostic; hashes do not attest source truth."
+    },
+    {
+      "id": "missing-receipt",
+      "synthetic_change": "The source binding or one required binding, request, results, or observation receipt is absent.",
+      "expected_outcome": "malformed",
+      "draft_allowed": false,
+      "next_action": "Fail closed before qualification."
     }
   ]
 }
