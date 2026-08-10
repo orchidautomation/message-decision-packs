@@ -3,6 +3,8 @@ use crate::constants::{
     PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
     PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
+
+const NORMALIZED_DECISION_INPUT_CONTRACT_V2: &str = "mdp.normalized-decision-input.v2";
 use crate::models::{
     Card, CardKind, DecisionInputAttemptStatus, DecisionInputContract, DecisionInputDecisionEffect,
     DecisionInputDisposition, DecisionInputRequirement, InputContract, MAX_SIGNAL_CONTRIBUTORS,
@@ -2964,9 +2966,14 @@ fn validate_decision_input_contracts(
                     ),
                 ));
             }
-            if prompt.contract.as_deref() != Some(NORMALIZED_DECISION_INPUT_CONTRACT)
+            let expected_normalized_contract = if contract.signal_projections.is_empty() {
+                NORMALIZED_DECISION_INPUT_CONTRACT
+            } else {
+                NORMALIZED_DECISION_INPUT_CONTRACT_V2
+            };
+            if prompt.contract.as_deref() != Some(expected_normalized_contract)
                 || prompt.output_kind.as_deref() != Some("decision-input-normalization")
-                || prompt.schema_ref.as_deref() != Some(NORMALIZED_DECISION_INPUT_CONTRACT)
+                || prompt.schema_ref.as_deref() != Some(expected_normalized_contract)
             {
                 issues.push(issue(
                     "decision_input_normalization_prompt_contract_mismatch",
@@ -2974,7 +2981,7 @@ fn validate_decision_input_contracts(
                     format!("{path}/normalization/prompt"),
                     format!(
                         "decision input contract {} must bind a decision-input-normalization prompt whose contract and schema_ref are {}",
-                        contract.id, NORMALIZED_DECISION_INPUT_CONTRACT
+                        contract.id, expected_normalized_contract
                     ),
                 ));
             }
@@ -3000,12 +3007,17 @@ fn validate_decision_input_contracts(
                 "decision input normalization must declare a prompt version",
             ));
         }
-        if contract.normalization.normalized_schema_ref != NORMALIZED_DECISION_INPUT_CONTRACT {
+        let expected_normalized_contract = if contract.signal_projections.is_empty() {
+            NORMALIZED_DECISION_INPUT_CONTRACT
+        } else {
+            NORMALIZED_DECISION_INPUT_CONTRACT_V2
+        };
+        if contract.normalization.normalized_schema_ref != expected_normalized_contract {
             issues.push(issue(
                 "decision_input_normalized_schema_unknown",
                 "error",
                 format!("{path}/normalization/normalized_schema_ref"),
-                format!("normalized_schema_ref must be {NORMALIZED_DECISION_INPUT_CONTRACT}"),
+                format!("normalized_schema_ref must be {expected_normalized_contract}"),
             ));
         }
         if contract.source_classes.is_empty() {
@@ -5144,7 +5156,10 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     let contract = &prompt.output_contract;
     let output_kind = contract.output_kind.as_deref().unwrap_or("card-patches");
     let is_decision_input_normalization = output_kind == "decision-input-normalization"
-        || contract.contract == NORMALIZED_DECISION_INPUT_CONTRACT;
+        || matches!(
+            contract.contract.as_str(),
+            NORMALIZED_DECISION_INPUT_CONTRACT | NORMALIZED_DECISION_INPUT_CONTRACT_V2
+        );
     if !matches!(
         output_kind,
         "card-patches"
@@ -5162,7 +5177,10 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
         ));
     }
     let expected_contract = if is_decision_input_normalization {
-        NORMALIZED_DECISION_INPUT_CONTRACT
+        contract
+            .schema_ref
+            .as_deref()
+            .unwrap_or(NORMALIZED_DECISION_INPUT_CONTRACT)
     } else {
         PROMPT_OUTPUT_CONTRACT
     };
@@ -5190,13 +5208,16 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
                 "decision-input-normalization prompts must declare a non-blank version",
             ));
         }
-        if contract.schema_ref.as_deref() != Some(NORMALIZED_DECISION_INPUT_CONTRACT) {
+        if !matches!(
+            contract.schema_ref.as_deref(),
+            Some(NORMALIZED_DECISION_INPUT_CONTRACT | NORMALIZED_DECISION_INPUT_CONTRACT_V2)
+        ) {
             issues.push(issue(
                 "decision_input_prompt_schema_ref_required",
                 "error",
                 format!("{path}#/output_contract/schema_ref"),
                 format!(
-                    "decision-input-normalization prompts must use schema_ref {NORMALIZED_DECISION_INPUT_CONTRACT}"
+                    "decision-input-normalization prompts must use schema_ref {NORMALIZED_DECISION_INPUT_CONTRACT} or {NORMALIZED_DECISION_INPUT_CONTRACT_V2}"
                 ),
             ));
         }
@@ -5471,7 +5492,7 @@ fn validate_prompt_schema_ref(
     };
     let expected = match output_kind {
         "prospect-normalization" => PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-        "decision-input-normalization" => NORMALIZED_DECISION_INPUT_CONTRACT,
+        "decision-input-normalization" => prompt.output_contract.contract.as_str(),
         _ => PROMPT_CARD_PATCH_SCHEMA_REF,
     };
     if schema_ref != expected {
@@ -5500,14 +5521,13 @@ fn validate_decision_input_prompt_example(
             ));
         }
     }
-    if example["contract"].as_str() != Some(NORMALIZED_DECISION_INPUT_CONTRACT) {
+    let expected_contract = prompt.output_contract.contract.as_str();
+    if example["contract"].as_str() != Some(expected_contract) {
         issues.push(issue(
             "prompt_example_contract",
             "error",
             format!("{path}#/output_contract/example/contract"),
-            format!(
-                "decision-input normalization example contract must be {NORMALIZED_DECISION_INPUT_CONTRACT}"
-            ),
+            format!("decision-input normalization example contract must be {expected_contract}"),
         ));
     }
     if example["draft_allowed"].as_bool() != Some(false) {
@@ -8770,6 +8790,47 @@ output_contract:
         validate_decision_input_signal_projections(contract, "test", &mut issues);
 
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
+    }
+
+    #[test]
+    fn signal_aware_contract_requires_v2_normalized_schema_discriminator() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let contract = &mut manifest.decision_input_contracts[0];
+        contract
+            .signal_projections
+            .push(crate::models::DecisionInputSignalProjection {
+                id: "signal-v2".to_string(),
+                kind: "profile_signal".to_string(),
+                roles: vec![crate::models::DecisionInputSignalRole::Fit],
+                contributor_attribute_ids: vec![contract.attributes[0].id.clone()],
+                value: ValueContract {
+                    value_type: Some("string".to_string()),
+                    ..ValueContract::default()
+                },
+                cardinality: crate::models::DecisionInputSignalCardinality { min: 0, max: 2 },
+                conflict_policy: crate::models::DecisionInputSignalConflictPolicy::RequireAgreement,
+                decision_effects: vec![DecisionInputDecisionEffect::Fit],
+            });
+
+        let mut issues = Vec::new();
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+        assert!(
+            issues
+                .iter()
+                .any(|issue| { issue["code"] == "decision_input_normalized_schema_unknown" })
+        );
+
+        manifest.decision_input_contracts[0]
+            .normalization
+            .normalized_schema_ref = NORMALIZED_DECISION_INPUT_CONTRACT_V2.to_string();
+        issues.clear();
+        validate_decision_input_contracts(&manifest, &PromptInventory::default(), &mut issues);
+        assert!(
+            issues
+                .iter()
+                .all(|issue| { issue["code"] != "decision_input_normalized_schema_unknown" })
+        );
     }
 
     #[test]

@@ -90,7 +90,10 @@ pub(crate) enum Commands {
         dir: PathBuf,
         #[arg(long, help = "Closed profile job id to validate")]
         job: String,
-        #[arg(long, help = "mdp.source-binding.v1 JSON file")]
+        #[arg(
+            long,
+            help = "Version-compatible mdp.source-binding.v1 or signal-aware v2 JSON file"
+        )]
         file: PathBuf,
     },
     #[command(about = "Validate manifest and card references")]
@@ -667,6 +670,18 @@ mod tests {
                 if dir == PathBuf::from("example-pack")
                     && job == "prospect-fit-or-brief"
                     && file == PathBuf::from("binding.json")
+        ));
+    }
+
+    #[test]
+    fn source_binding_schema_target_discovers_versioned_contract_family() {
+        let parsed = Cli::try_parse_from(["mdp", "schema", "source-binding"])
+            .expect("source-binding schema target should parse");
+        assert!(matches!(
+            parsed.command,
+            Commands::Schema {
+                target: SchemaTarget::SourceBinding
+            }
         ));
     }
 

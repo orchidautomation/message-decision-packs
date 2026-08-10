@@ -2,6 +2,7 @@ use crate::commands::decision_trace::{
     DECISION_TRACE_V1, MAX_MERMAID_BYTES, MAX_TRACE_EDGES, MAX_TRACE_LABEL_BYTES, MAX_TRACE_NODES,
     MAX_TRACE_SOURCE_BYTES,
 };
+use crate::commands::source_binding::source_lineage_version_matrix;
 use crate::constants::{
     DEFAULT_DIR, FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT,
     NORMALIZED_DECISION_INPUT_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
@@ -145,6 +146,7 @@ pub(crate) fn capabilities() -> Value {
             "normalized_input": NORMALIZED_DECISION_INPUT_CONTRACT,
             "source_binding": SOURCE_BINDING_CONTRACT,
             "source_binding_validation": SOURCE_BINDING_VALIDATION_CONTRACT,
+            "version_matrix": source_lineage_version_matrix(),
             "attempt_statuses": DecisionInputAttemptStatus::ALL,
             "requirement_classes": ["required", "optional", "conditional", "hard-gate"],
             "boundary": "The pack and CLI own questions and deterministic decisions. The customer or host owns source collection, provider access, model calls, copy generation, and sequencing."
@@ -266,6 +268,14 @@ mod tests {
         assert_eq!(
             result["decision_input_contracts"]["source_binding"],
             SOURCE_BINDING_CONTRACT
+        );
+        assert_eq!(
+            result["decision_input_contracts"]["version_matrix"]["signal_aware_v2"]["requirements"],
+            "mdp.requirements.v2"
+        );
+        assert_eq!(
+            result["decision_input_contracts"]["version_matrix"]["scalar_v1"]["normalized_output"],
+            NORMALIZED_DECISION_INPUT_CONTRACT
         );
         assert!(
             result["commands"]

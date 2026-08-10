@@ -2,6 +2,8 @@ use crate::artifact_hash::{canonical_json_sha256, pack_content_sha256};
 use crate::cli::SchemaTarget;
 use crate::commands::health::validate_pack;
 use crate::commands::schemas::schema;
+use crate::commands::schemas::signal_observation_v2_schema;
+use crate::commands::source_binding::{source_binding_schema_v2, source_lineage_version_matrix};
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT, REQUIREMENTS_CONTRACT,
 };
@@ -182,6 +184,9 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let normalized_schema = normalized_envelope_schema(job_id, &selected_contracts);
     let source_attempt_schema = source_attempt_request_schema(job_id, &selected_contracts);
     let collected_results_schema = collected_attempt_results_schema(job_id, &selected_contracts);
+    let signal_aware = selected_contracts
+        .iter()
+        .any(|contract| !contract.signal_projections.is_empty());
     let foundation_blocked = product_foundation["status"] == "blocked";
     let activation_blocked = manifest.profile_eval.blocks_activation();
     let model_task_blocked = model_task["status"] == "blocked";
@@ -253,6 +258,12 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         },
         "diagnostics": diagnostics
     });
+    if signal_aware {
+        response["contract"] = json!("mdp.requirements.v2");
+        response["runtime_contract_version"] = json!("v2");
+        response["source_binding_schema"] = source_binding_schema_v2();
+        response["contract_version_matrix"] = source_lineage_version_matrix();
+    }
     if drafting_blocked {
         response["draft_allowed"] = json!(false);
     }
@@ -1069,7 +1080,7 @@ fn compile_contract(contract: &DecisionInputContract) -> Value {
             })
         })
         .collect::<Vec<_>>();
-    json!({
+    let mut compiled = json!({
         "id": &contract.id,
         "version": &contract.version,
         "description": &contract.description,
@@ -1077,7 +1088,18 @@ fn compile_contract(contract: &DecisionInputContract) -> Value {
         "source_classes": source_classes,
         "attempt_statuses": DecisionInputAttemptStatus::ALL,
         "attributes": attributes
-    })
+    });
+    if !contract.signal_projections.is_empty() {
+        compiled["signal_projections"] = serde_json::to_value(&contract.signal_projections)
+            .expect("signal projections should serialize");
+    }
+    compiled
+}
+
+fn signal_aware(contracts: &[&DecisionInputContract]) -> bool {
+    contracts
+        .iter()
+        .any(|contract| !contract.signal_projections.is_empty())
 }
 
 fn effective_status_behavior(
@@ -1200,6 +1222,13 @@ fn effective_status_behavior(
 }
 
 fn source_attempt_request_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
+    if signal_aware(contracts) {
+        return source_attempt_request_schema_v2(job_id, contracts);
+    }
+    source_attempt_request_schema_v1(job_id, contracts)
+}
+
+fn source_attempt_request_schema_v1(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
     let attribute_ids = contracts
         .iter()
         .flat_map(|contract| {
@@ -1292,7 +1321,78 @@ fn source_attempt_request_schema(job_id: &str, contracts: &[&DecisionInputContra
     })
 }
 
+fn source_attempt_request_schema_v2(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
+    let mut schema = source_attempt_request_schema_v1(job_id, contracts);
+    schema["title"] = json!("MDP Source Attempt Request v2");
+    schema["properties"]["contract"]["const"] = json!("mdp.source-attempt-request.v2");
+    schema["required"]
+        .as_array_mut()
+        .expect("required should be an array")
+        .insert(3, json!("source_binding_sha256"));
+    schema["properties"]["source_binding_sha256"] = sha256_schema(
+        "SHA-256 of the exact validated mdp.source-binding.v2 artifact used to create this request.",
+    );
+    let qualified_attributes = contracts
+        .iter()
+        .flat_map(|contract| {
+            contract
+                .attributes
+                .iter()
+                .map(|attribute| (contract.id.as_str(), attribute.id.as_str()))
+        })
+        .collect::<Vec<_>>();
+    for (variant, (contract_id, _)) in schema["properties"]["attempts"]["items"]["oneOf"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+        .zip(qualified_attributes.iter())
+    {
+        variant["required"]
+            .as_array_mut()
+            .expect("attempt required should be an array")
+            .insert(1, json!("decision_input_contract_id"));
+        variant["properties"]["decision_input_contract_id"] = json!({"const": *contract_id});
+    }
+    schema["properties"]["attempts"]["allOf"] = json!(
+        qualified_attributes
+            .iter()
+            .map(|(contract_id, attribute_id)| json!({
+                "contains": {
+                    "type": "object",
+                    "required": ["decision_input_contract_id", "attribute_id"],
+                    "properties": {
+                        "decision_input_contract_id": {"const": contract_id},
+                        "attribute_id": {"const": attribute_id}
+                    }
+                },
+                "minContains": 1
+            }))
+            .collect::<Vec<_>>()
+    );
+    schema
+}
+
 fn collected_attempt_results_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
+    if signal_aware(contracts) {
+        let mut schema = collected_attempt_results_schema_v1(job_id, contracts);
+        schema["title"] = json!("MDP Collected Attempt Results v2");
+        schema["properties"]["contract"]["const"] = json!("mdp.collected-attempt-results.v2");
+        schema["required"]
+            .as_array_mut()
+            .expect("required should be an array")
+            .insert(3, json!("source_binding_sha256"));
+        schema["properties"]["source_binding_sha256"] = sha256_schema(
+            "SHA-256 of the exact source binding already bound by the source-attempt request.",
+        );
+        return schema;
+    }
+    collected_attempt_results_schema_v1(job_id, contracts)
+}
+
+fn collected_attempt_results_schema_v1(
+    job_id: &str,
+    contracts: &[&DecisionInputContract],
+) -> Value {
     let mut properties = Map::new();
     let mut required = Vec::new();
     for contract in contracts {
@@ -1355,6 +1455,41 @@ fn collected_attempt_result_schema(attribute: &DecisionInputAttribute) -> Value 
 }
 
 fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
+    if signal_aware(contracts) {
+        let mut schema = normalized_envelope_schema_v1(job_id, contracts);
+        schema["title"] = json!("MDP Normalized Decision Input v2");
+        schema["properties"]["contract"]["const"] = json!("mdp.normalized-decision-input.v2");
+        schema["required"]
+            .as_array_mut()
+            .expect("required should be an array")
+            .insert(4, json!("source_binding_sha256"));
+        schema["required"]
+            .as_array_mut()
+            .expect("required should be an array")
+            .push(json!("signal_observations"));
+        schema["properties"]["source_binding_sha256"] = sha256_schema(
+            "SHA-256 of the exact source binding bound through request and collected results.",
+        );
+        let mut observations = signal_observation_v2_schema();
+        observations
+            .as_object_mut()
+            .expect("observation schema object")
+            .remove("$schema");
+        observations
+            .as_object_mut()
+            .expect("observation schema object")
+            .remove("title");
+        schema["properties"]["signal_observations"] = json!({
+            "type": "array",
+            "maxItems": crate::models::MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE,
+            "items": observations
+        });
+        return schema;
+    }
+    normalized_envelope_schema_v1(job_id, contracts)
+}
+
+fn normalized_envelope_schema_v1(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
     let mut properties = Map::new();
     let mut required = Vec::new();
     let mut ready_outcome_guards = Vec::new();
@@ -1472,6 +1607,14 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
             },
             "draft_allowed": {"const": false, "description": "Normalization never drafts. A downstream copy step may run only after deterministic MDP evaluation returns ready."}
         }
+    })
+}
+
+fn sha256_schema(description: &str) -> Value {
+    json!({
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$",
+        "description": description
     })
 }
 
@@ -1827,8 +1970,11 @@ mod tests {
     use super::*;
     use crate::commands::init::init_pack;
     use crate::models::{
-        DecisionInputConfidencePolicy, DecisionInputFreshnessPolicy, DecisionInputProvenanceField,
-        DecisionInputProvenancePolicy, DecisionInputSensitivity, DecisionInputSourceClass,
+        DecisionInputConfidencePolicy, DecisionInputDecisionEffect, DecisionInputFreshnessPolicy,
+        DecisionInputProvenanceField, DecisionInputProvenancePolicy, DecisionInputSensitivity,
+        DecisionInputSignalCardinality, DecisionInputSignalConflictPolicy,
+        DecisionInputSignalProjection, DecisionInputSignalRole, DecisionInputSourceClass,
+        ValueContract,
     };
     use jsonschema::draft202012;
     use std::path::PathBuf;
@@ -1839,6 +1985,157 @@ mod tests {
             .parent()
             .expect("CLI crate should have a repository parent")
             .join("examples/clay-audiences-self-serve-enterprise-expansion")
+    }
+
+    fn signal_aware_contract() -> DecisionInputContract {
+        let manifest = read_manifest(&clay_example_root()).expect("clay manifest should load");
+        let mut contract = manifest.decision_input_contracts[0].clone();
+        contract
+            .signal_projections
+            .push(DecisionInputSignalProjection {
+                id: "buying-window".to_string(),
+                kind: "profile_buying_window".to_string(),
+                roles: vec![DecisionInputSignalRole::WhyNow],
+                contributor_attribute_ids: vec!["last_meaningful_touch".to_string()],
+                value: ValueContract {
+                    value_type: Some("string".to_string()),
+                    format: Some("date-time".to_string()),
+                    ..ValueContract::default()
+                },
+                cardinality: DecisionInputSignalCardinality { min: 0, max: 4 },
+                conflict_policy: DecisionInputSignalConflictPolicy::RequireAgreement,
+                decision_effects: vec![
+                    DecisionInputDecisionEffect::Brief,
+                    DecisionInputDecisionEffect::NoDraft,
+                ],
+            });
+        contract
+    }
+
+    fn signal_aware_clay_example(name: &str) -> PathBuf {
+        let root = temporary_clay_example(name);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should read");
+        let mut manifest: serde_yaml::Value = serde_yaml::from_str(&raw).expect("manifest parses");
+        manifest["decision_input_contracts"][0]["normalization"]["normalized_schema_ref"] =
+            serde_yaml::Value::String("mdp.normalized-decision-input.v2".to_string());
+        manifest["decision_input_contracts"][0]["signal_projections"] = serde_yaml::from_str(
+            r#"
+- id: buying-window
+  kind: profile_buying_window
+  roles: [why-now]
+  contributor_attribute_ids: [last_meaningful_touch]
+  value: {type: string, format: date-time}
+  cardinality: {min: 0, max: 4}
+  conflict_policy: require-agreement
+  decision_effects: [brief, no-draft]
+"#,
+        )
+        .expect("projection yaml parses");
+        std::fs::write(&manifest_path, serde_yaml::to_string(&manifest).unwrap()).unwrap();
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let prompt = std::fs::read_to_string(&prompt_path)
+            .expect("normalization prompt should read")
+            .replace(
+                "mdp.normalized-decision-input.v1",
+                "mdp.normalized-decision-input.v2",
+            );
+        std::fs::write(prompt_path, prompt).unwrap();
+        root
+    }
+
+    #[test]
+    fn scalar_runtime_schema_characterization_stays_v1() {
+        let root = clay_example_root();
+        let compiled = requirements(&root, "prospect-fit-or-brief")
+            .expect("scalar requirements should compile");
+
+        assert_eq!(
+            canonical_json_sha256(&compiled["source_attempt_request_schema"]).unwrap(),
+            "81793f07da26d4e83a3dde7ab79dc1305d155092766422a18fef18eb14de883c"
+        );
+        assert_eq!(
+            canonical_json_sha256(&compiled["collected_attempt_results_schema"]).unwrap(),
+            "2adf1bc04d6f3edf1d108487cb80770439efe340023c3516d0cf8b094e7a19a4"
+        );
+        assert_eq!(
+            canonical_json_sha256(&compiled["normalized_output_schema"]).unwrap(),
+            "b1fcb6541565f6da0eeeb3a75dd4eeae9e6d328e980c9f8cc36170da09ab86ef"
+        );
+        assert!(compiled.get("runtime_contract_version").is_none());
+    }
+
+    #[test]
+    fn signal_aware_runtime_schemas_bind_source_binding_and_exclude_output_self_hash() {
+        let contract = signal_aware_contract();
+        let contracts = vec![&contract];
+        let request = source_attempt_request_schema("signal-job", &contracts);
+        let results = collected_attempt_results_schema("signal-job", &contracts);
+        let normalized = normalized_envelope_schema("signal-job", &contracts);
+
+        assert_eq!(
+            request["properties"]["contract"]["const"],
+            "mdp.source-attempt-request.v2"
+        );
+        assert!(
+            request["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("source_binding_sha256"))
+        );
+        assert!(
+            results["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("source_binding_sha256"))
+        );
+        assert!(
+            normalized["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("source_binding_sha256"))
+        );
+        assert_eq!(
+            results["properties"]["contract"]["const"],
+            "mdp.collected-attempt-results.v2"
+        );
+        assert_eq!(
+            normalized["properties"]["contract"]["const"],
+            "mdp.normalized-decision-input.v2"
+        );
+        assert!(
+            normalized["properties"]
+                .get("normalized_output_sha256")
+                .is_none()
+        );
+        assert_eq!(
+            normalized["properties"]["signal_observations"]["maxItems"],
+            crate::models::MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE
+        );
+    }
+
+    #[test]
+    fn signal_aware_requirements_publish_v2_matrix_and_binding_schema() {
+        let root = signal_aware_clay_example("v2-requirements");
+        let compiled = requirements(&root, "prospect-fit-or-brief")
+            .expect("signal-aware requirements should compile");
+
+        assert_eq!(compiled["contract"], "mdp.requirements.v2", "{compiled:#}");
+        assert_eq!(compiled["runtime_contract_version"], "v2");
+        assert_eq!(
+            compiled["source_binding_schema"]["properties"]["contract"]["const"],
+            "mdp.source-binding.v2"
+        );
+        assert_eq!(
+            compiled["contract_version_matrix"]["signal_aware_v2"]["normalized_output"],
+            "mdp.normalized-decision-input.v2"
+        );
+        assert!(
+            compiled["requirements_sha256"]
+                .as_str()
+                .is_some_and(|sha| sha.len() == 64)
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn copy_tree(source: &Path, destination: &Path) {
