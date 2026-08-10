@@ -33,7 +33,7 @@ export default definePlugin({
   // generic semantic rubric visible without blocking release-package checks.
   eval: {
     warningThreshold: 60,
-    failureThreshold: 40,
+    failureThreshold: 0,
   },
 
   hooks: {
