@@ -1,7 +1,10 @@
 use crate::artifact_hash::{canonical_json_sha256, sha256_hex};
 use crate::commands::requirements::requirements;
+use crate::commands::schemas::decision_input_source_class_schema;
 use crate::constants::{
-    REQUIREMENTS_CONTRACT, SOURCE_BINDING_CONTRACT, SOURCE_BINDING_VALIDATION_CONTRACT,
+    COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+    REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+    SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2, SOURCE_BINDING_VALIDATION_CONTRACT,
 };
 use crate::models::{
     MAX_SIGNAL_CONTRIBUTORS, MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_LOCATOR_LEN,
@@ -14,8 +17,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-const SOURCE_BINDING_CONTRACT_V2: &str = "mdp.source-binding.v2";
-const REQUIREMENTS_CONTRACT_V2: &str = "mdp.requirements.v2";
 const MAX_SOURCE_BINDING_BYTES: usize = 1_048_576;
 
 #[derive(Debug, Deserialize)]
@@ -815,7 +816,7 @@ fn source_binding_schema_v1() -> Value {
                             "required": ["field_key", "source_class", "system_of_record", "acquisition_mode"],
                             "properties": {
                                 "field_key": non_blank(),
-                                "source_class": {"enum": ["user_provided", "customer_system", "reviewed_internal", "public_web", "synthetic_fixture"]},
+                                "source_class": decision_input_source_class_schema(),
                                 "system_of_record": non_blank(),
                                 "acquisition_mode": non_blank()
                             }
@@ -940,9 +941,9 @@ pub(crate) fn source_lineage_version_matrix() -> Value {
         "signal_aware_v2": {
             "requirements": REQUIREMENTS_CONTRACT_V2,
             "source_binding": SOURCE_BINDING_CONTRACT_V2,
-            "source_attempt_request": "mdp.source-attempt-request.v2",
-            "collected_attempt_results": "mdp.collected-attempt-results.v2",
-            "normalized_output": "mdp.normalized-decision-input.v2",
+            "source_attempt_request": SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+            "collected_attempt_results": COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
+            "normalized_output": NORMALIZED_DECISION_INPUT_CONTRACT_V2,
             "post_validation_projection_decision_receipt": "mdp.signal-projection-decision-receipt.v1",
             "normalized_output_sha256_location": "post-validation receipt only; never inside the normalized output being hashed"
         },
@@ -1090,7 +1091,7 @@ mod tests {
 
     #[test]
     fn complete_binding_validates_and_field_keys_may_repeat() {
-        let root = example_root();
+        let root = scalar_example_root("complete-binding");
         let compiled =
             requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
         let value = complete_binding(&compiled);
@@ -1098,11 +1099,12 @@ mod tests {
             validate_source_binding_value(&root, "prospect-fit-or-brief", &value, "binding.json")
                 .expect("binding validation should run");
         assert_eq!(result["valid"], true, "{result:#}");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn stale_digest_and_missing_binding_fail_closed() {
-        let root = example_root();
+        let root = scalar_example_root("stale-binding");
         let compiled =
             requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
         let mut value = complete_binding(&compiled);
@@ -1119,11 +1121,12 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(codes.contains(&"source_binding_pack_sha256_mismatch"));
         assert!(codes.contains(&"source_binding_requirement_missing"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn duplicate_unknown_and_incompatible_bindings_fail() {
-        let root = example_root();
+        let root = scalar_example_root("invalid-binding");
         let compiled =
             requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
         let mut value = complete_binding(&compiled);
@@ -1145,6 +1148,7 @@ mod tests {
         assert!(codes.contains(&"source_binding_unknown_requirement"));
         assert!(codes.contains(&"source_binding_source_class_incompatible"));
         assert!(codes.contains(&"source_binding_requirement_missing"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1318,5 +1322,54 @@ mod tests {
     fn example_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../examples/clay-audiences-self-serve-enterprise-expansion")
+    }
+
+    fn scalar_example_root(name: &str) -> PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        fn copy_tree(source: &std::path::Path, destination: &std::path::Path) {
+            std::fs::create_dir_all(destination).unwrap();
+            for entry in std::fs::read_dir(source).unwrap() {
+                let entry = entry.unwrap();
+                let destination_path = destination.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    copy_tree(&entry.path(), &destination_path);
+                } else {
+                    std::fs::copy(entry.path(), destination_path).unwrap();
+                }
+            }
+        }
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-source-binding-{name}-{nonce}"));
+        copy_tree(&example_root(), &root);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).unwrap();
+        let mut manifest: serde_yaml::Value = serde_yaml::from_str(&raw).unwrap();
+        manifest["decision_input_contracts"][0]["signal_projections"] =
+            serde_yaml::Value::Sequence(Vec::new());
+        manifest["decision_input_contracts"][0]["normalization"]["normalized_schema_ref"] =
+            serde_yaml::Value::String("mdp.normalized-decision-input.v1".to_string());
+        std::fs::write(&manifest_path, serde_yaml::to_string(&manifest).unwrap()).unwrap();
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let prompt = std::fs::read_to_string(&prompt_path).unwrap().replace(
+            "mdp.normalized-decision-input.v2",
+            "mdp.normalized-decision-input.v1",
+        );
+        let mut prompt: serde_yaml::Value = serde_yaml::from_str(&prompt).unwrap();
+        let example = prompt["output_contract"]["example"]
+            .as_mapping_mut()
+            .unwrap();
+        example.remove(&serde_yaml::Value::String(
+            "source_binding_sha256".to_string(),
+        ));
+        example.remove(&serde_yaml::Value::String(
+            "signal_observations".to_string(),
+        ));
+        std::fs::write(prompt_path, serde_yaml::to_string(&prompt).unwrap()).unwrap();
+        root
     }
 }

@@ -1,10 +1,9 @@
 use crate::constants::{
     DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, NORMALIZED_DECISION_INPUT_CONTRACT,
-    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V2, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
+    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 
-const NORMALIZED_DECISION_INPUT_CONTRACT_V2: &str = "mdp.normalized-decision-input.v2";
 use crate::models::{
     Card, CardKind, DecisionInputAttemptStatus, DecisionInputContract, DecisionInputDecisionEffect,
     DecisionInputDisposition, DecisionInputRequirement, InputContract, MAX_SIGNAL_CONTRIBUTORS,
@@ -8140,7 +8139,7 @@ output_contract:
         std::fs::write(
             &prompt_path,
             raw.replace(
-                "  schema_ref: mdp.normalized-decision-input.v1\n",
+                "  schema_ref: mdp.normalized-decision-input.v2\n",
                 "  schema:\n    type: object\n    additionalProperties: false\n    properties: {}\n    required: []\n",
             ),
         )
@@ -8797,6 +8796,8 @@ output_contract:
         let mut manifest =
             read_manifest(&clay_example_root()).expect("Clay example manifest should load");
         let contract = &mut manifest.decision_input_contracts[0];
+        contract.normalization.normalized_schema_ref =
+            NORMALIZED_DECISION_INPUT_CONTRACT.to_string();
         contract
             .signal_projections
             .push(crate::models::DecisionInputSignalProjection {

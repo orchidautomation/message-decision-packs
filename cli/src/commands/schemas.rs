@@ -2236,7 +2236,7 @@ fn decision_input_attribute_schema() -> Value {
     })
 }
 
-fn decision_input_source_class_schema() -> Value {
+pub(crate) fn decision_input_source_class_schema() -> Value {
     json!({"enum": ["user_provided", "customer_system", "reviewed_internal", "public_web", "synthetic_fixture"]})
 }
 
@@ -3426,14 +3426,23 @@ mod tests {
             .parent()
             .expect("CLI crate should have a repository parent")
             .join("examples/clay-audiences-self-serve-enterprise-expansion");
-        let fixture: Value = serde_json::from_str(
+        let mut fixture: Value = serde_json::from_str(
             &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
                 .expect("official normalized response fixture should load"),
         )
         .expect("official normalized response fixture should parse");
+        fixture["contract"] = json!(NORMALIZED_DECISION_INPUT_CONTRACT);
+        fixture
+            .as_object_mut()
+            .expect("fixture should be an object")
+            .remove("source_binding_sha256");
+        fixture
+            .as_object_mut()
+            .expect("fixture should be an object")
+            .remove("signal_observations");
 
         draft202012::validate(&decision_input_envelope_schema(), &fixture)
-            .expect("generic decision input schema should accept the official fixture");
+            .expect("generic v1 decision input schema should accept the v1 projection");
     }
 
     #[test]

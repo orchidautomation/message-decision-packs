@@ -2993,6 +2993,11 @@ mod tests {
         let results: Value = serde_json::from_slice(&results_raw)
             .expect("collected-results fixture should be valid JSON");
         let results_sha256 = sha256_hex(&results_raw);
+        let binding_raw = std::fs::read(root.join("fixtures/source-binding-clay-adapter.json"))
+            .expect("source-binding fixture bytes should load");
+        let binding: Value = serde_json::from_slice(&binding_raw)
+            .expect("source-binding fixture should be valid JSON");
+        let binding_sha256 = sha256_hex(&binding_raw);
         let mut response: Value = serde_json::from_str(
             &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
                 .expect("normalized response fixture should load"),
@@ -3007,7 +3012,7 @@ mod tests {
             Some("normalize-prospect-row"),
             None,
             None,
-            None,
+            Some((&binding, "synthetic-binding", &binding_sha256)),
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
             None,
@@ -3041,7 +3046,7 @@ mod tests {
             Some("normalize-prospect-row"),
             None,
             None,
-            None,
+            Some((&binding, "synthetic-binding", &binding_sha256)),
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
             None,

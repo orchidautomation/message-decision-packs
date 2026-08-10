@@ -3,6 +3,11 @@ use crate::commands::prompt_output::{
     validate_prompt_output_file_with_inputs, validate_prompt_output_file_with_lineage_inputs,
 };
 use crate::commands::routing::{fit, fit_normalized};
+use crate::constants::{
+    COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, NORMALIZED_DECISION_INPUT_CONTRACT,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V2, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+    SOURCE_BINDING_CONTRACT_V2,
+};
 use crate::pack_io::{read_manifest, resolve_pack_path};
 use crate::run_contracts::{
     ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState, DecisionAuthority,
@@ -418,12 +423,12 @@ where
         if normalized.authority.media_type != "application/json"
             || !matches!(
                 normalized.authority.schema_id.as_str(),
-                "mdp.normalized-decision-input.v1" | "mdp.normalized-decision-input.v2"
+                NORMALIZED_DECISION_INPUT_CONTRACT | NORMALIZED_DECISION_INPUT_CONTRACT_V2
             )
         {
             return Err(anyhow!("declared input schema or media type mismatch"));
         }
-        let signal_aware = normalized.authority.schema_id == "mdp.normalized-decision-input.v2";
+        let signal_aware = normalized.authority.schema_id == NORMALIZED_DECISION_INPUT_CONTRACT_V2;
         let (source_attempt_schema, collected_results_schema) =
             gtm_lineage_schema_ids(signal_aware);
         let source_attempt = required_typed_input(
@@ -456,7 +461,7 @@ where
             Some(required_typed_input(
                 &staged,
                 "source-binding",
-                "mdp.source-binding.v2",
+                SOURCE_BINDING_CONTRACT_V2,
                 "application/json",
             )?)
         } else {
@@ -664,8 +669,8 @@ where
 fn gtm_lineage_schema_ids(signal_aware: bool) -> (&'static str, &'static str) {
     if signal_aware {
         (
-            "mdp.source-attempt-request.v2",
-            "mdp.collected-attempt-results.v2",
+            SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+            COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
         )
     } else {
         (

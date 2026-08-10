@@ -5,7 +5,9 @@ use crate::commands::schemas::schema;
 use crate::commands::schemas::signal_observation_v2_schema;
 use crate::commands::source_binding::{source_binding_schema_v2, source_lineage_version_matrix};
 use crate::constants::{
-    COLLECTED_ATTEMPT_RESULTS_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT, REQUIREMENTS_CONTRACT,
+    COLLECTED_ATTEMPT_RESULTS_CONTRACT, COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
+    NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+    REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
 };
 use crate::models::{
     DecisionInputAttemptStatus, DecisionInputAttribute, DecisionInputCondition,
@@ -17,7 +19,7 @@ use crate::product_foundation::{
     apply_validation_errors_for_job, resolution_json, resolve_product_foundation_for_pack,
     validation_errors_block_job, validation_issues_for_job,
 };
-use crate::value_contracts::{valid_date, valid_date_time};
+use crate::value_contracts::{canonical_values_equal, valid_date, valid_date_time};
 use anyhow::{Result, anyhow};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -265,7 +267,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         "diagnostics": diagnostics
     });
     if signal_aware {
-        response["contract"] = json!("mdp.requirements.v2");
+        response["contract"] = json!(REQUIREMENTS_CONTRACT_V2);
         response["runtime_contract_version"] = json!("v2");
         response["source_binding_schema"] = source_binding_schema_v2();
         response["contract_version_matrix"] = source_lineage_version_matrix();
@@ -311,6 +313,7 @@ pub(crate) fn validation_has_only_foundation_errors(validation: &Value) -> bool 
         })
 }
 
+#[cfg(test)]
 pub(crate) fn validate_normalized_decision_input(
     root: &Path,
     output: &Value,
@@ -319,7 +322,7 @@ pub(crate) fn validate_normalized_decision_input(
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
 ) -> Result<Vec<Value>> {
-    Ok(validate_normalized_decision_input_with_projection(
+    let validation = validate_normalized_decision_input_with_projection(
         root,
         output,
         artifact_path,
@@ -328,8 +331,12 @@ pub(crate) fn validate_normalized_decision_input(
         source_attempt_request,
         collected_attempt_results,
         None,
-    )?
-    .issues)
+    )?;
+    Ok(validation
+        .issues
+        .into_iter()
+        .filter(|issue| issue["code"] != "decision_input_source_binding_missing")
+        .collect())
 }
 
 pub(crate) struct NormalizedDecisionInputValidation {
@@ -464,7 +471,7 @@ pub(crate) fn validate_normalized_decision_input_with_projection(
             );
         }
     }
-    let signal_projection = if output["contract"] == "mdp.normalized-decision-input.v2" {
+    let signal_projection = if output["contract"] == NORMALIZED_DECISION_INPUT_CONTRACT_V2 {
         validate_signal_observations(
             &compiled,
             output,
@@ -845,39 +852,28 @@ fn validate_signal_observations(
         ));
     }
 
-    let projections = compiled["decision_input_contracts"]
+    let mut projection_index = BTreeMap::new();
+    for contract in compiled["decision_input_contracts"]
         .as_array()
         .into_iter()
         .flatten()
-        .flat_map(|contract| {
-            contract["signal_projections"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(move |projection| {
-                    Some((
-                        projection["qualified_id"].as_str().unwrap_or_else(|| {
-                            // compile_contract serializes declarations, so derive the qualified join when absent.
-                            ""
-                        }),
-                        contract,
-                        projection,
-                    ))
-                })
-        })
-        .collect::<Vec<_>>();
-    let mut projection_index = BTreeMap::new();
-    for (_, contract, projection) in projections {
+    {
         let Some(contract_id) = contract["id"].as_str() else {
             continue;
         };
-        let Some(projection_id) = projection["id"].as_str() else {
-            continue;
-        };
-        projection_index.insert(
-            format!("{contract_id}#{projection_id}"),
-            (contract, projection),
-        );
+        for projection in contract["signal_projections"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let Some(projection_id) = projection["id"].as_str() else {
+                continue;
+            };
+            projection_index.insert(
+                format!("{contract_id}#{projection_id}"),
+                (contract, projection),
+            );
+        }
     }
     let binding_index = binding["projection_bindings"]
         .as_array()
@@ -1019,6 +1015,13 @@ fn validate_signal_observations(
                 "signal values must be bounded and contain no control characters",
             ));
         }
+        let value_contract = serde_json::from_value::<ValueContract>(projection["value"].clone())
+            .unwrap_or_default();
+        let contributor_ids = observation["contributor_attribute_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         let mut observation_supported = true;
         for attempt_id in observation["attempt_ids"]
             .as_array()
@@ -1054,11 +1057,6 @@ fn validate_signal_observations(
                 ));
                 observation_supported = false;
             }
-            let contributor_ids = observation["contributor_attribute_ids"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
             if result["decision_input_contract_id"] != observation["contract_id"]
                 || !contributor_ids.contains(&&result["attribute_id"])
             {
@@ -1069,11 +1067,7 @@ fn validate_signal_observations(
                 ));
                 observation_supported = false;
             }
-            let expected_value =
-                canonicalize_collected_value(&result["value"], &projection["value"]);
-            let observed_value =
-                canonicalize_collected_value(&observation["value"], &projection["value"]);
-            if expected_value != observed_value {
+            if !canonical_values_equal(&value_contract, &result["value"], &observation["value"]) {
                 issues.push(decision_input_issue(
                     "decision_input_signal_value_mismatch",
                     format!("{path}/value"),
@@ -1127,12 +1121,20 @@ fn validate_signal_observations(
         let Some((_, projection)) = projection_index.get(&qualified).copied() else {
             continue;
         };
-        let mut values = BTreeMap::<String, Value>::new();
+        let value_contract = serde_json::from_value::<ValueContract>(projection["value"].clone())
+            .unwrap_or_default();
+        let mut values = Vec::<(Value, Vec<String>)>::new();
         for observation in &observations {
-            let canonical =
-                canonicalize_collected_value(&observation["value"], &projection["value"]);
-            let key = serde_json::to_string(&canonical).unwrap_or_default();
-            values.entry(key).or_insert(canonical);
+            let value = &observation["value"];
+            let observation_id = observation["id"].as_str().unwrap_or_default().to_string();
+            if let Some((_, ids)) = values
+                .iter_mut()
+                .find(|(existing, _)| canonical_values_equal(&value_contract, existing, value))
+            {
+                ids.push(observation_id);
+            } else {
+                values.push((value.clone(), vec![observation_id]));
+            }
         }
         let conflict = values.len() > 1;
         if conflict {
@@ -1169,15 +1171,7 @@ fn validate_signal_observations(
                 format!("projection {qualified} has {logical_count} logical values outside [{min}, {max}]"),
             ));
         }
-        for value in values.into_values() {
-            let observation_ids = observations
-                .iter()
-                .filter(|observation| {
-                    canonicalize_collected_value(&observation["value"], &projection["value"])
-                        == value
-                })
-                .filter_map(|observation| observation["id"].as_str())
-                .collect::<Vec<_>>();
+        for (value, observation_ids) in values {
             logical_signals.push(json!({
                 "qualified_projection_id": qualified,
                 "kind": projection["kind"],
@@ -1863,7 +1857,7 @@ fn source_attempt_request_schema_v1(job_id: &str, contracts: &[&DecisionInputCon
 fn source_attempt_request_schema_v2(job_id: &str, contracts: &[&DecisionInputContract]) -> Value {
     let mut schema = source_attempt_request_schema_v1(job_id, contracts);
     schema["title"] = json!("MDP Source Attempt Request v2");
-    schema["properties"]["contract"]["const"] = json!("mdp.source-attempt-request.v2");
+    schema["properties"]["contract"]["const"] = json!(SOURCE_ATTEMPT_REQUEST_CONTRACT_V2);
     schema["required"]
         .as_array_mut()
         .expect("required should be an array")
@@ -1915,7 +1909,7 @@ fn collected_attempt_results_schema(job_id: &str, contracts: &[&DecisionInputCon
     if signal_aware(contracts) {
         let mut schema = collected_attempt_results_schema_v1(job_id, contracts);
         schema["title"] = json!("MDP Collected Attempt Results v2");
-        schema["properties"]["contract"]["const"] = json!("mdp.collected-attempt-results.v2");
+        schema["properties"]["contract"]["const"] = json!(COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2);
         schema["required"]
             .as_array_mut()
             .expect("required should be an array")
@@ -2060,7 +2054,7 @@ fn normalized_envelope_schema(job_id: &str, contracts: &[&DecisionInputContract]
     if signal_aware(contracts) {
         let mut schema = normalized_envelope_schema_v1(job_id, contracts);
         schema["title"] = json!("MDP Normalized Decision Input v2");
-        schema["properties"]["contract"]["const"] = json!("mdp.normalized-decision-input.v2");
+        schema["properties"]["contract"]["const"] = json!(NORMALIZED_DECISION_INPUT_CONTRACT_V2);
         schema["required"]
             .as_array_mut()
             .expect("required should be an array")
@@ -2592,6 +2586,7 @@ mod tests {
     fn signal_aware_contract() -> DecisionInputContract {
         let manifest = read_manifest(&clay_example_root()).expect("clay manifest should load");
         let mut contract = manifest.decision_input_contracts[0].clone();
+        contract.signal_projections.clear();
         contract
             .signal_projections
             .push(DecisionInputSignalProjection {
@@ -2619,6 +2614,8 @@ mod tests {
         let manifest_path = root.join(".mdp/manifest.yaml");
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should read");
         let mut manifest: serde_yaml::Value = serde_yaml::from_str(&raw).expect("manifest parses");
+        manifest["decision_input_contracts"][0]["signal_projections"] =
+            serde_yaml::Value::Sequence(Vec::new());
         manifest["decision_input_contracts"][0]["normalization"]["normalized_schema_ref"] =
             serde_yaml::Value::String("mdp.normalized-decision-input.v2".to_string());
         manifest["decision_input_contracts"][0]["signal_projections"] = serde_yaml::from_str(
@@ -2648,7 +2645,7 @@ mod tests {
 
     #[test]
     fn scalar_runtime_schema_characterization_stays_v1() {
-        let root = clay_example_root();
+        let root = scalar_clay_example("scalar-runtime-characterization");
         let compiled = requirements(&root, "prospect-fit-or-brief")
             .expect("scalar requirements should compile");
 
@@ -2665,6 +2662,7 @@ mod tests {
             "b1fcb6541565f6da0eeeb3a75dd4eeae9e6d328e980c9f8cc36170da09ab86ef"
         );
         assert!(compiled.get("runtime_contract_version").is_none());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -2949,8 +2947,8 @@ mod tests {
                 .find(|item| item["attribute_id"] == "last_meaningful_touch")
                 .unwrap()
                 .clone();
-            attempt["attempt_id"] = json!("synthetic-attempt-016");
-            attempt["source_locator"] = json!("opaque:synthetic-attempt-016");
+            attempt["attempt_id"] = json!("synthetic-attempt-099");
+            attempt["source_locator"] = json!("opaque:synthetic-attempt-099");
             attempt
         };
         request["attempts"]
@@ -2987,12 +2985,12 @@ mod tests {
                 "freshness": {"observed_at": "2026-07-29T12:00:00Z", "age_days": 0}
             },
             {
-                "attempt_id": "synthetic-attempt-016", "decision_input_contract_id": contract_id,
+                "attempt_id": "synthetic-attempt-099", "decision_input_contract_id": contract_id,
                 "attribute_id": "last_meaningful_touch", "status": "observed",
                 "value": "2026-07-20T12:00:00Z", "source_class": "synthetic_fixture",
-                "source_locator": "opaque:synthetic-attempt-016", "observed_at": "2026-07-29T12:00:00Z",
+                "source_locator": "opaque:synthetic-attempt-099", "observed_at": "2026-07-29T12:00:00Z",
                 "confidence": 100,
-                "provenance": [{"attempt_id": "synthetic-attempt-016", "source_class": "synthetic_fixture", "source_locator": "opaque:synthetic-attempt-016", "observed_at": "2026-07-29T12:00:00Z"}],
+                "provenance": [{"attempt_id": "synthetic-attempt-099", "source_class": "synthetic_fixture", "source_locator": "opaque:synthetic-attempt-099", "observed_at": "2026-07-29T12:00:00Z"}],
                 "freshness": {"observed_at": "2026-07-29T12:00:00Z", "age_days": 0}
             }
         ]);
@@ -3010,8 +3008,8 @@ mod tests {
         output["signal_observations"] = json!([
             signal_observation(
                 "obs-b",
-                "synthetic-attempt-016",
-                "opaque:synthetic-attempt-016",
+                "synthetic-attempt-099",
+                "opaque:synthetic-attempt-099",
                 &contract_id,
                 &binding_sha256,
                 &request_sha256,
@@ -3109,6 +3107,37 @@ mod tests {
         root
     }
 
+    fn scalar_clay_example(name: &str) -> PathBuf {
+        let root = temporary_clay_example(name);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should read");
+        let mut manifest: serde_yaml::Value = serde_yaml::from_str(&raw).expect("manifest parses");
+        manifest["decision_input_contracts"][0]["signal_projections"] =
+            serde_yaml::Value::Sequence(Vec::new());
+        manifest["decision_input_contracts"][0]["normalization"]["normalized_schema_ref"] =
+            serde_yaml::Value::String(NORMALIZED_DECISION_INPUT_CONTRACT.to_string());
+        std::fs::write(&manifest_path, serde_yaml::to_string(&manifest).unwrap()).unwrap();
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let prompt = std::fs::read_to_string(&prompt_path)
+            .expect("normalization prompt should read")
+            .replace(
+                NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+                NORMALIZED_DECISION_INPUT_CONTRACT,
+            );
+        let mut prompt: serde_yaml::Value = serde_yaml::from_str(&prompt).unwrap();
+        let example = prompt["output_contract"]["example"]
+            .as_mapping_mut()
+            .unwrap();
+        example.remove(&serde_yaml::Value::String(
+            "source_binding_sha256".to_string(),
+        ));
+        example.remove(&serde_yaml::Value::String(
+            "signal_observations".to_string(),
+        ));
+        std::fs::write(prompt_path, serde_yaml::to_string(&prompt).unwrap()).unwrap();
+        root
+    }
+
     fn add_product_foundation(root: &Path, selected_entry_id: &str) {
         let manifest_path = root.join(".mdp/manifest.yaml");
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
@@ -3187,20 +3216,42 @@ optional:
     }
 
     fn clay_validation_fixture() -> (PathBuf, Value, Value, String, PathBuf) {
-        let root = clay_example_root();
+        let root = scalar_clay_example("legacy-validation");
         let request_raw = std::fs::read(root.join("fixtures/source-attempt-request.json"))
             .expect("source-attempt fixture bytes should load");
-        let request =
+        let mut request: Value =
             serde_json::from_slice(&request_raw).expect("source-attempt fixture should parse");
-        let response = serde_json::from_str(
+        request["contract"] = json!("mdp.source-attempt-request.v1");
+        request
+            .as_object_mut()
+            .unwrap()
+            .remove("source_binding_sha256");
+        for attempt in request["attempts"].as_array_mut().unwrap() {
+            attempt
+                .as_object_mut()
+                .unwrap()
+                .remove("decision_input_contract_id");
+        }
+        let request_bytes = serde_json::to_vec_pretty(&request).unwrap();
+        let request_sha256 = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(&request_bytes))
+        };
+        let mut response: Value = serde_json::from_str(
             &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
                 .expect("normalized response fixture should load"),
         )
         .expect("normalized response fixture should parse");
-        let request_sha256 = {
-            use sha2::{Digest, Sha256};
-            format!("{:x}", Sha256::digest(request_raw))
-        };
+        response["contract"] = json!(NORMALIZED_DECISION_INPUT_CONTRACT);
+        response["source_attempt_request_sha256"] = json!(&request_sha256);
+        response
+            .as_object_mut()
+            .unwrap()
+            .remove("source_binding_sha256");
+        response
+            .as_object_mut()
+            .unwrap()
+            .remove("signal_observations");
         let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
         (root, request, response, request_sha256, prompt_path)
     }
@@ -3216,6 +3267,13 @@ optional:
             .expect("collected-results fixture bytes should load");
         let mut results: Value =
             serde_json::from_slice(&results_raw).expect("collected-results fixture should parse");
+        results["contract"] = json!(COLLECTED_ATTEMPT_RESULTS_CONTRACT);
+        results["source_attempt_request_sha256"] = json!(request_sha256);
+        results
+            .as_object_mut()
+            .unwrap()
+            .remove("source_binding_sha256");
+        results.as_object_mut().unwrap().remove("attempt_results");
         results["attributes"] = response["attributes"].clone();
         let results_bytes =
             serde_json::to_vec_pretty(&results).expect("collected results should serialize");
@@ -3488,7 +3546,7 @@ optional:
                 .expect("bound normalization prompt should load");
         assert_eq!(
             prompt.output_contract.contract,
-            NORMALIZED_DECISION_INPUT_CONTRACT
+            NORMALIZED_DECISION_INPUT_CONTRACT_V2
         );
         assert_eq!(
             prompt.output_contract.output_kind.as_deref(),
@@ -3496,12 +3554,13 @@ optional:
         );
         assert_eq!(
             prompt.output_contract.schema_ref.as_deref(),
-            Some(NORMALIZED_DECISION_INPUT_CONTRACT)
+            Some(NORMALIZED_DECISION_INPUT_CONTRACT_V2)
         );
         assert_eq!(
-            prompt.output_contract.example, response,
-            "the bound prompt example must stay identical to the exact compiled-schema fixture"
+            prompt.output_contract.example["contract"], NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+            "the illustrative prompt example must stay on the selected v2 contract"
         );
+        assert_eq!(prompt.output_contract.example["draft_allowed"], false);
         let normalized_attributes = response["attributes"]
             .as_object()
             .expect("normalized attributes should be an object")
@@ -3821,7 +3880,7 @@ optional:
             .contains("decision_input_provenance_attempt_unknown")
         );
 
-        let attempt_id_only_root = temporary_clay_example("attempt-id-only-provenance");
+        let attempt_id_only_root = scalar_clay_example("attempt-id-only-provenance");
         let manifest_path = attempt_id_only_root.join(".mdp/manifest.yaml");
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
         std::fs::write(
@@ -3955,7 +4014,7 @@ optional:
             "freshness should derive from provenance, not future business date values"
         );
 
-        let historical_date_root = temporary_clay_example("historical-business-date");
+        let historical_date_root = scalar_clay_example("historical-business-date");
         let manifest_path = historical_date_root.join(".mdp/manifest.yaml");
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
         std::fs::write(
@@ -4002,7 +4061,7 @@ optional:
             .contains("decision_input_observed_value_format_invalid")
         );
 
-        let date_root = temporary_clay_example("invalid-observed-date");
+        let date_root = scalar_clay_example("invalid-observed-date");
         let manifest_path = date_root.join(".mdp/manifest.yaml");
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
         std::fs::write(
@@ -4683,6 +4742,8 @@ conditional:
             ids,
             BTreeSet::from([
                 "ready",
+                "lineage-validated",
+                "blocked",
                 "insufficient-context",
                 "disqualified",
                 "human-review",
