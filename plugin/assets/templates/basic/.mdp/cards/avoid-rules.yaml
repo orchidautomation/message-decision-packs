@@ -18,7 +18,7 @@ entries:
   - PMM
   - PM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid:
   - AI SDR
   - sequencer

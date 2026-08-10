@@ -97,6 +97,26 @@ mdp --json skills --dir <pack-root> --job <job-id>
 
 Proceed only when `data.recommendation` names the expected skill and `pack_ready` is true. Unknown and profile-crossing job IDs do not have fallbacks.
 
+Inspect `data.recommendation.product_foundation` before opening pack prose. It
+is the compact exact-job summary: `unassessed`, `ready`, or `blocked`, plus
+selected/required facet IDs and diagnostics. Then use the same exact canonical
+job ID with `requirements` to retrieve the complete resolved facets, exact
+entry/gap refs, bounded entry content, and optional/excluded/untriggered IDs.
+Never substitute a natural-language job approximation or use keyword routing
+to infer product-foundation authority.
+
+Treat `.mdp/README.md` as secondary navigation only, after CLI-resolved
+foundation output. README prose cannot satisfy a facet, close a gap, resolve a
+conflict, or override structured authority. Never invent missing product,
+ICP, proof, certification, compliance, or outcome facts; preserve the CLI gap
+or blocked diagnostic and ask for reviewed sources.
+
+Foundation readiness only vetoes broader readiness. `ready` never promotes an
+otherwise unready job and never establishes sufficient-for-job or self-standing
+status. `unassessed` preserves legacy compatibility without claiming
+sufficiency. Explicit profile activation `needs-review` or `blocked` still
+prevents activation.
+
 For a bound job, retrieve its attempted-complete collector and normalization handoff before sourcing or normalizing data:
 
 ```bash
@@ -176,6 +196,8 @@ capturing it.
 - MDP stores and validates decision context. It is not a CRM, sequencer, enrichment provider, scraper, BI tool, proposal writer, or generic automation system.
 - Do not enrich prospects, send outreach, mutate CRM records, scrape gated sources, submit proposals, or approve compliance through this skill.
 - Preserve missing or unsupported information as gaps. Never smooth a failed CLI decision into a plausible answer.
+- Do not create an eleventh primitive, a new product `CardKind`, or a company
+  wiki. Product-foundation facets only index existing structured authority.
 - When a GTM manifest declares `target`, keep all external positioning on that exact company, product, or project. The target name alone does not prove product claims or fit.
 - Prefer user-approved local sources. Keep restricted material out of public artifacts and committed fixtures.
 

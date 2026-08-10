@@ -10,13 +10,24 @@ sources:
   direct_claims:
   - MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.
   - MDP stores decision context and routing contracts; it is not execution infrastructure.
+  - The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.
   freshness: repo-current
   gaps: []
-  id: mdp-readme
+  id: mdp-reference-contract
   interpretations:
   - Use this source for category boundaries, not for third-party customer proof.
   kind: repo-doc
-  locator: README.md
+  locator: .mdp/cards/positioning.yaml
+- confidence: high
+  direct_claims:
+  - This MDP pack declares its version and card references in the pack manifest.
+  freshness: pack-current
+  gaps: []
+  id: mdp-pack-manifest
+  interpretations:
+  - Use this source only for the pack's declared version and manifest-addressed card structure.
+  kind: pack-manifest
+  locator: .mdp/manifest.yaml
 - confidence: demo-only
   direct_claims:
   - This row is fictional starter data for exercising fit, route, and brief commands.

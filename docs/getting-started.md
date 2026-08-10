@@ -136,6 +136,25 @@ mdp-demo/
 
 ## Route Context
 
+Before routing a profile-sensitive job, use its exact canonical manifest ID
+and inspect the resolved product foundation:
+
+```bash
+mdp --json skills --dir ./mdp-demo --job prospect-fit-or-brief
+mdp --json requirements --dir ./mdp-demo --job prospect-fit-or-brief
+```
+
+Read the CLI result before `.mdp/README.md`. Foundation status is
+`unassessed`, `ready`, or `blocked`; selected gaps, missing references, empty
+facets, and selected explicit conflicts block. `ready` only clears this one
+veto and never proves the pack sufficient-for-job or self-standing. A targeted
+starter normally remains `needs-review` with explicit product/ICP/proof gaps
+until reviewed sources replace those gaps. Never invent the missing facts.
+
+The README is secondary orientation. Editing it changes the portable pack hash
+because it lives under `.mdp/`, but it cannot change resolver or readiness
+authority. See [Product Foundations](product-foundations.md).
+
 Ask which cards matter for a persona and job:
 
 ```bash

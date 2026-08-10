@@ -73,6 +73,59 @@ pub(crate) struct Profile {
     pub(crate) context_dimensions: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) context_dimension_dependencies: BTreeMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) product_foundation: Option<ProductFoundationRegistry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProductFoundationRegistry {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) facets: Vec<ProductFoundationFacet>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProductFoundationFacet {
+    #[serde(default)]
+    pub(crate) id: String,
+    pub(crate) kind: ProductFoundationFacetKind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) entries: Vec<ProductFoundationEntryRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) gaps: Vec<ProductFoundationEntryRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) conflicts_with: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ProductFoundationFacetKind {
+    #[default]
+    ProductIdentity,
+    ProductExclusions,
+    Actors,
+    OperatingContext,
+    Problems,
+    Outcomes,
+    Differentiators,
+    Alternatives,
+    Claims,
+    ProofBoundaries,
+    Terminology,
+    Offers,
+    Motions,
+    CallsToAction,
+    NarrativePosture,
+    Gaps,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProductFoundationEntryRef {
+    #[serde(default)]
+    pub(crate) card_id: String,
+    #[serde(default)]
+    pub(crate) entry_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -131,6 +184,46 @@ pub(crate) struct ProfileJob {
     pub(crate) input_contracts: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) decision_input_contracts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) product_foundation: Option<ProductFoundationBinding>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProductFoundationBinding {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) required: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) conditional: Vec<ProductFoundationConditionalFacet>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) optional: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) excluded: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProductFoundationConditionalFacet {
+    #[serde(default)]
+    pub(crate) facet_id: String,
+    #[serde(default)]
+    pub(crate) when: ProductFoundationCondition,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProductFoundationCondition {
+    pub(crate) fact: ProductFoundationConditionFact,
+    #[serde(default)]
+    pub(crate) equals: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ProductFoundationConditionFact {
+    #[default]
+    ManifestId,
+    ProfileId,
+    JobId,
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -334,6 +427,13 @@ pub(crate) struct ProfileEval {
 impl ProfileEval {
     pub(crate) fn is_empty(&self) -> bool {
         self.required_categories.is_empty() && self.activation.is_empty()
+    }
+
+    pub(crate) fn blocks_activation(&self) -> bool {
+        matches!(
+            self.activation.status.as_deref(),
+            Some("needs-review" | "blocked")
+        )
     }
 }
 

@@ -3,6 +3,13 @@
 One GTM Message Decision Pack can hold shared company messaging decisions plus product-, capability-, solution-, and segment-specific decisions.
 These are applicability dimensions, not new MDP primitives.
 
+Portfolio scope and product foundation answer different questions. Scope asks
+which entries are eligible for the selected product/capability/solution/segment.
+Product foundation asks which exact existing authority one canonical job needs
+before it may proceed. Neither adds an eleventh primitive or a new `CardKind`,
+and neither turns the manifest or `.mdp/README.md` into a company wiki. See
+[Product Foundations](product-foundations.md).
+
 The distinction is:
 
 - a primitive says what kind of decision an entry contains;
@@ -160,6 +167,12 @@ For portfolio-sensitive routes, use bounded `entry_route.matches` or `context.en
 `load_order` and `required_load_order` are empty because shared card files may contain entries for several products.
 The `route` array still records audit metadata about how cards were considered; it is not a scope-filtered drafting payload.
 `skills --dir <pack>` exposes the active profile's declared dimensions, dependencies, eligibility, and deterministic job routes. `--summary` preserves scope plus draft/check blocking state without including full entry bodies.
+For an exact canonical job, `skills --job` also exposes the compact foundation
+status, while `requirements --job` and bounded route/context/brief output carry
+the exact selected foundation references. Optional, excluded, unrelated-job,
+and untriggered facet content must not leak into the scoped drafting context.
+Foundation `ready` only removes a veto; scope, fit, profile activation, and all
+other gates still apply.
 
 ## Prospect-Driven Fit and Briefs
 

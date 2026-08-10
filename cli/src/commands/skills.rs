@@ -1,5 +1,10 @@
 use crate::models::{Manifest, ProfileJob};
 use crate::pack_io::read_manifest;
+use crate::product_foundation::{
+    ProductFoundationClassification, ProductFoundationResolution, apply_validation_errors,
+    apply_validation_errors_for_job, resolve_product_foundation_for_pack,
+    validation_errors_block_job, validation_issues_for_job,
+};
 use crate::skill_catalog::{BOOTSTRAP_SKILL_IDS, JOB_ROUTE_SPECS, PACKAGED_SKILL_IDS, route_spec};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
@@ -54,8 +59,11 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
             );
         }
     };
+    let pack_valid = validation["valid"].as_bool().unwrap_or(false);
     let mut diagnostics = validation["issues"].as_array().cloned().unwrap_or_default();
-    if !validation["valid"].as_bool().unwrap_or(false) {
+    if !pack_valid
+        && !crate::commands::requirements::validation_has_only_foundation_errors(&validation)
+    {
         return bootstrap_payload(
             false,
             "unresolved",
@@ -88,17 +96,60 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
         );
     };
 
-    let mut routes = JOB_ROUTE_SPECS
+    if let Some(job_id) = requested_job
+        && let Some(job) = manifest.jobs.iter().find(|job| job.id == job_id)
+        && let Ok(resolution) = resolve_product_foundation_for_pack(root, &manifest, &job.id)
+    {
+        diagnostics = validation_issues_for_job(&manifest, &resolution, &diagnostics);
+    }
+
+    let mut routes = Vec::new();
+    for spec in JOB_ROUTE_SPECS
         .iter()
         .filter(|spec| spec.profile_id == profile.id)
-        .filter_map(|spec| {
-            manifest
-                .jobs
-                .iter()
-                .find(|job| job.id == spec.job_id && job.skill_id == spec.skill_id)
-                .map(|job| route_payload(&manifest, job))
-        })
-        .collect::<Vec<_>>();
+    {
+        let Some(job) = manifest
+            .jobs
+            .iter()
+            .find(|job| job.id == spec.job_id && job.skill_id == spec.skill_id)
+        else {
+            continue;
+        };
+        match resolve_product_foundation_for_pack(root, &manifest, &job.id) {
+            Ok(mut product_foundation) => {
+                if let Some(issues) = validation["issues"].as_array() {
+                    if requested_job.is_some() {
+                        apply_validation_errors_for_job(&mut product_foundation, &manifest, issues);
+                    } else {
+                        apply_validation_errors(&mut product_foundation, issues);
+                    }
+                }
+                let route_pack_valid = if requested_job.is_some() {
+                    !validation_errors_block_job(
+                        &manifest,
+                        &product_foundation,
+                        validation["issues"]
+                            .as_array()
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[]),
+                    )
+                } else {
+                    pack_valid
+                };
+                routes.push(route_payload(
+                    &manifest,
+                    job,
+                    &product_foundation,
+                    route_pack_valid,
+                ));
+            }
+            Err(error) => diagnostics.push(diagnostic(
+                "product_foundation_resolution_failed",
+                ".mdp/manifest.yaml#/cards",
+                error.to_string(),
+            )),
+        }
+    }
 
     let recommendation = if let Some(job_id) = requested_job {
         if route_spec(&profile.id, job_id).is_none() {
@@ -244,7 +295,12 @@ fn profile_payload(manifest: &Manifest) -> Value {
     )
 }
 
-fn route_payload(manifest: &Manifest, job: &ProfileJob) -> Value {
+fn route_payload(
+    manifest: &Manifest,
+    job: &ProfileJob,
+    product_foundation: &ProductFoundationResolution,
+    pack_valid: bool,
+) -> Value {
     let missing_primitives = job
         .required_primitives
         .iter()
@@ -256,12 +312,34 @@ fn route_payload(manifest: &Manifest, job: &ProfileJob) -> Value {
         })
         .cloned()
         .collect::<Vec<_>>();
+    let explicit_activation_blocks = manifest.profile_eval.blocks_activation();
+    let selected_facet_ids = product_foundation
+        .selected_facets
+        .iter()
+        .map(|facet| facet.id.clone())
+        .collect::<Vec<_>>();
+    let required_facet_ids = product_foundation
+        .selected_facets
+        .iter()
+        .filter(|facet| facet.classification == ProductFoundationClassification::Required)
+        .map(|facet| facet.id.clone())
+        .collect::<Vec<_>>();
     json!({
         "job_id": job.id,
         "skill_id": job.skill_id,
-        "pack_ready": missing_primitives.is_empty(),
+        "pack_ready": missing_primitives.is_empty()
+            && pack_valid
+            && !explicit_activation_blocks
+            && !product_foundation.blocks_activation(),
         "missing_primitives": missing_primitives,
-        "required_input_contracts": job.input_contracts
+        "required_input_contracts": job.input_contracts,
+        "product_foundation": {
+            "status": product_foundation.status,
+            "selected_facet_ids": selected_facet_ids,
+            "required_facet_ids": required_facet_ids,
+            "diagnostics": product_foundation.diagnostics
+        },
+        "readiness_policy": "Product foundation and explicit profile activation may only veto existing pack readiness; this field does not assert sufficient-for-job or self-standing status."
     })
 }
 
@@ -317,7 +395,134 @@ mod tests {
         assert_eq!(result["job_routes"][0]["job_id"], "prospect-fit-or-brief");
         assert_eq!(result["job_routes"][0]["skill_id"], "mdp-gtm-brief");
         assert_eq!(result["job_routes"][0]["pack_ready"], true);
+        assert_eq!(
+            result["job_routes"][0]["product_foundation"]["status"],
+            "ready"
+        );
         assert_eq!(result["recommendation"]["skill_id"], "mdp-gtm-brief");
+        jsonschema::draft202012::validate(
+            &crate::commands::schemas::schema(crate::cli::SchemaTarget::Skills),
+            &result,
+        )
+        .expect("skills output should satisfy its additive schema");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skills_needs_review_activation_vetoes_pack_ready() {
+        let root = temp_root("skills-needs-review");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile_eval"]["activation"]["status"] =
+            serde_yaml::Value::String("needs-review".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = skills(Some(&root), Some("prospect-fit-or-brief"));
+
+        assert_eq!(result["job_routes"][0]["pack_ready"], false);
+        assert_eq!(result["recommendation"]["pack_ready"], false);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skills_foundation_validation_errors_veto_every_pack_ready_projection() {
+        let root = temp_root("skills-invalid-foundation");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["kind"] =
+            serde_yaml::Value::String("unknown_foundation_kind".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let all_routes = skills(Some(&root), None);
+
+        assert_eq!(all_routes["valid"], false);
+        assert_eq!(all_routes["status"], "unresolved");
+        assert!(
+            all_routes["job_routes"]
+                .as_array()
+                .expect("job routes")
+                .iter()
+                .all(|route| route["pack_ready"] == false)
+        );
+        assert!(
+            all_routes["job_routes"]
+                .as_array()
+                .expect("job routes")
+                .iter()
+                .all(|route| route["product_foundation"]["status"] == "blocked")
+        );
+        assert!(
+            all_routes["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "product_foundation_facet_kind_unknown")
+        );
+
+        let selected = skills(Some(&root), Some("prospect-fit-or-brief"));
+        assert_eq!(selected["recommendation"]["pack_ready"], false);
+        assert_eq!(selected["job_routes"][0]["pack_ready"], false);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skills_selected_job_ignores_other_job_foundation_errors() {
+        let root = temp_root("skills-unrelated-foundation-error");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][1]["product_foundation"]["conditional"] = serde_yaml::from_str(
+            r#"
+- facet_id: product-identity
+  when:
+    fact: unsupported_fact
+    equals: outbound-copy-brief
+"#,
+        )
+        .expect("conditional binding should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = skills(Some(&root), Some("prospect-fit-or-brief"));
+
+        assert_eq!(result["valid"], true);
+        assert_eq!(result["status"], "ready");
+        assert_eq!(result["recommendation"]["pack_ready"], true);
+        assert_eq!(result["job_routes"][0]["pack_ready"], true);
+        assert!(
+            result["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .all(|diagnostic| {
+                    diagnostic["code"] != "product_foundation_condition_fact_unknown"
+                })
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

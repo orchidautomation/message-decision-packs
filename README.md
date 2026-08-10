@@ -144,6 +144,21 @@ A pack is a local folder:
 
 Agents should load the manifest first, preserve source provenance, and use routed entries instead of reading every card. For prompt outputs, `source_summary.inputs_used` names declared prompt inputs only; field paths, snippets, URLs, PDF/page locators, and review notes belong in evidence/provenance fields such as `signals[].source`, entry `provenance`, and normalization trace. For GTM rows, normalize supplied data before running the deterministic fit gate. Proposal normalization keeps `normalized_prospect` for compatibility and may include `normalized_opportunity` only as an exact alias. Draft only from `brief --context` output, then run `check-claims`. For source-bound generated output, use `author-proof-output` to compile draft segments when helpful, then use `mdp.proof-output.v0` and `verify-output` before treating cited IDs as proof.
 
+Profiles may declare a product-foundation registry whose facets reference exact
+existing card entries and explicit gaps, then classify those facets per
+canonical job as required, conditional, optional, or excluded. Resolve the
+exact job through `skills --job` and `requirements --job`; never infer
+foundation authority from free-text jobs. Status is `unassessed`, `ready`, or
+`blocked`. Foundation readiness is veto-only: it can block broader readiness,
+but it never establishes sufficient-for-job or self-standing status. See
+[Product Foundations](docs/product-foundations.md).
+
+Each initialized pack also carries `.mdp/README.md` as human orientation.
+Treat it as secondary navigation after CLI-resolved structured authority. It
+cannot satisfy a facet or gap. Because it is a regular `.mdp/` file, changing
+it changes the portable pack hash even though it does not change resolver or
+readiness authority.
+
 Jobs that need an attempted-complete data policy can bind versioned
 `decision_input_contracts`. `mdp --json requirements --job <job-id>` compiles
 their exact data questions, requirement levels, applicability, source policy,
@@ -200,6 +215,7 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 
 - [Getting Started](docs/getting-started.md): install, create, route, fit, brief, and validate.
 - [Portfolio-Aware GTM Scope](docs/portfolio-scope.md): product, capability, solution, and segment scoping inside one pack.
+- [Product Foundations](docs/product-foundations.md): exact per-job product authority, readiness, compatibility, and README orientation.
 - [Conceptual Decision Flow](docs/conceptual-decision-flow.md): layer ownership and deterministic decision boundaries.
 - [Prompt Contracts](docs/prompt-extraction-contract.md): normalization and extraction schemas.
 - [Decision Input Contracts](docs/decision-input-contracts.md): attempted-complete data questions, source-attempt policy, normalization envelopes, and no-draft outcomes.

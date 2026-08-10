@@ -15,7 +15,7 @@ entries:
   applies_to:
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: evidence-before-action
   title: Evidence before action
@@ -23,7 +23,7 @@ entries:
   applies_to:
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: one-context-many-agents
   title: One context, many agents
@@ -32,6 +32,6 @@ entries:
   - PMM
   - GTM Engineering
   evidence:
-  - README.md
+  - mdp-reference-contract
   - examples/clay-row.json
   avoid: []

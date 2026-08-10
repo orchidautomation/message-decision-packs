@@ -1,6 +1,11 @@
+use crate::commands::health::validate_pack;
 use crate::constants::DEFAULT_DIR;
 use crate::models::{CardKind, Entry, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
+use crate::product_foundation::{
+    ProductFoundationResolution, apply_validation_errors_for_job, resolution_json,
+    resolve_product_foundation_for_pack, validation_errors_block_job,
+};
 use crate::runtime_context::current_runtime_context;
 use crate::scope::{ScopeResolution, match_entry_scope};
 use anyhow::Result;
@@ -165,8 +170,22 @@ pub(crate) fn entry_route_scoped(
     job: &str,
     scope: &ScopeResolution,
 ) -> Result<Value> {
+    let validation = validate_pack(root)?;
+    let mut product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
+    let validation_issues = validation["issues"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    apply_validation_errors_for_job(&mut product_foundation, manifest, validation_issues);
+    let validation_blocked =
+        validation_errors_block_job(manifest, &product_foundation, validation_issues);
     let details = route_entry_details(root, manifest, persona, job, false, scope)?;
-    let blocked = !details.scope_ready(scope);
+    let product_foundation_load_order = foundation_load_order(&product_foundation);
+    let explicit_activation_blocks = manifest.profile_eval.blocks_activation();
+    let blocked = validation_blocked
+        || !details.scope_ready(scope)
+        || product_foundation.blocks_activation()
+        || explicit_activation_blocks;
 
     Ok(json!({
         "contract": "mdp.entry-route.v0",
@@ -175,6 +194,8 @@ pub(crate) fn entry_route_scoped(
         "job": job,
         "scope": scope,
         "portfolio_sensitive": details.portfolio_sensitive,
+        "product_foundation": resolution_json(&product_foundation),
+        "product_foundation_load_order": product_foundation_load_order,
         "matches": details.matches,
         "gaps": details.gaps,
         "policy": if details.portfolio_sensitive { "Use matched bounded entries only. Shared card paths are not scope-filtered drafting context. Resolve missing or invalid scope before drafting." } else { "Load matched entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Load the full card only when an entry is ambiguous, missing, or a guardrail card needs complete review." }
@@ -214,9 +235,37 @@ pub(crate) fn entry_context_with_runtime_scoped(
         .iter()
         .filter_map(|value| value["path"].as_str().map(|path| json!(path)))
         .collect();
+    let validation = validate_pack(root)?;
+    let mut product_foundation = resolve_product_foundation_for_pack(root, manifest, job)?;
+    let validation_issues = validation["issues"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    apply_validation_errors_for_job(&mut product_foundation, manifest, validation_issues);
+    let validation_blocked =
+        validation_errors_block_job(manifest, &product_foundation, validation_issues);
     let details = route_entry_details(root, manifest, persona, job, true, scope)?;
     let scope_blocked = !details.scope_ready(scope);
-    if !draft_ready || scope_blocked {
+    let product_foundation_load_order = foundation_load_order(&product_foundation);
+    let foundation_blocked = product_foundation.blocks_activation();
+    let activation_blocked = manifest.profile_eval.blocks_activation();
+    if validation_blocked
+        || !draft_ready
+        || scope_blocked
+        || foundation_blocked
+        || activation_blocked
+    {
+        let blocked_reason = if validation_blocked {
+            "pack validation failed for this job"
+        } else if scope_blocked {
+            "portfolio scope is missing or invalid"
+        } else if foundation_blocked {
+            "selected product foundation authority is blocked"
+        } else if activation_blocked {
+            "profile activation requires review or is blocked"
+        } else {
+            "draft_status no-draft"
+        };
         let entries: Vec<Value> = if scope_blocked {
             details
                 .context_entries
@@ -236,11 +285,13 @@ pub(crate) fn entry_context_with_runtime_scoped(
             "contract": "mdp.context.v0",
             "status": "blocked",
             "runtime_context": runtime_context,
-            "reason": if scope_blocked { "portfolio scope is missing or invalid" } else { "draft_status no-draft" },
+            "reason": blocked_reason,
             "persona": persona,
             "job": job,
             "scope": scope,
             "portfolio_sensitive": details.portfolio_sensitive,
+            "product_foundation": resolution_json(&product_foundation),
+            "product_foundation_load_order": product_foundation_load_order,
             "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
             "entries": entries,
             "gaps": details.gaps,
@@ -276,6 +327,8 @@ pub(crate) fn entry_context_with_runtime_scoped(
         "job": job,
         "scope": scope,
         "portfolio_sensitive": details.portfolio_sensitive,
+        "product_foundation": resolution_json(&product_foundation),
+        "product_foundation_load_order": product_foundation_load_order,
         "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
         "entries": details.context_entries,
         "gaps": details.gaps,
@@ -289,6 +342,31 @@ pub(crate) fn entry_context_with_runtime_scoped(
         },
         "policy": if details.portfolio_sensitive { "Use scope-filtered context.entries only. Shared full cards are not scope-safe drafting context. Treat entry metadata as advisory context, not enforced CLI constraints." } else { "Use context.entries first. Treat entry metadata as advisory context, not enforced CLI constraints. Open full_card_required paths only when present, or when the user asks for a full pack/card audit." }
     }))
+}
+
+fn foundation_load_order(resolution: &ProductFoundationResolution) -> Vec<Value> {
+    let mut load_order = Vec::new();
+    for facet in &resolution.selected_facets {
+        for reference in &facet.entry_refs {
+            load_order.push(json!({
+                "facet_id": facet.id,
+                "classification": facet.classification,
+                "reference_kind": "entry",
+                "card_id": reference.card_id,
+                "entry_id": reference.entry_id
+            }));
+        }
+        for reference in &facet.gap_refs {
+            load_order.push(json!({
+                "facet_id": facet.id,
+                "classification": facet.classification,
+                "reference_kind": "gap",
+                "card_id": reference.card_id,
+                "entry_id": reference.entry_id
+            }));
+        }
+    }
+    load_order
 }
 
 fn route_entry_details(
@@ -608,7 +686,110 @@ fn has_token(tokens: &[String], needle: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::init::init_pack;
     use crate::models::{CardRef, LeadInputRequirements, Policy, Provenance};
+    use crate::pack_io::read_manifest;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_pack(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-routing-{name}-{nonce}"));
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        root
+    }
+
+    fn add_selected_foundation_gap(root: &Path) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["gaps"] =
+            serde_yaml::from_str("- card_id: gaps\n  entry_id: missing-company-proof\n")
+                .expect("gap reference should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn set_profile_activation(root: &Path, status: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile_eval"]["activation"]["status"] =
+            serde_yaml::Value::String(status.to_string());
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn set_foundation_facet_kind(root: &Path, kind: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["kind"] =
+            serde_yaml::Value::String(kind.to_string());
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn duplicate_foundation_entry(root: &Path) {
+        let card_path = root.join(".mdp/cards/positioning.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        let mut card: serde_yaml::Value = serde_yaml::from_str(&raw).expect("card should parse");
+        let first_entry = card["entries"][0].clone();
+        card["entries"]
+            .as_sequence_mut()
+            .expect("card entries")
+            .push(first_entry);
+        std::fs::write(
+            card_path,
+            serde_yaml::to_string(&card).expect("card should serialize"),
+        )
+        .expect("card should be writable");
+    }
+
+    fn set_unrelated_job_condition_fact(root: &Path, fact: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][1]["product_foundation"]["conditional"] = serde_yaml::from_str(&format!(
+            "- facet_id: known-gaps\n  when:\n    fact: {fact}\n    equals: outbound-copy-brief\n"
+        ))
+        .expect("conditional should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn duplicate_job_id(root: &Path) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][1]["id"] = manifest["jobs"][0]["id"].clone();
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
 
     fn manifest(max_cards_per_route: usize) -> Manifest {
         Manifest {
@@ -816,5 +997,213 @@ mod tests {
         );
 
         assert_eq!(value["metadata"]["segment_hint"], "enterprise");
+    }
+
+    #[test]
+    fn selected_foundation_gap_blocks_route_and_drafting_context() {
+        let root = temp_pack("foundation-gap");
+        add_selected_foundation_gap(&root);
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let scope = ScopeResolution::default();
+
+        let route = entry_route_scoped(&root, &manifest, "PMM", "prospect-fit-or-brief", &scope)
+            .expect("entry route should resolve");
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            true,
+            &scope,
+        )
+        .expect("entry context should resolve");
+
+        for output in [&route, &context] {
+            assert_eq!(output["status"], "blocked");
+            assert_eq!(output["product_foundation"]["status"], "blocked");
+            assert!(
+                output["product_foundation"]["diagnostics"]
+                    .as_array()
+                    .expect("foundation diagnostics")
+                    .iter()
+                    .any(|diagnostic| diagnostic["code"]
+                        == "product_foundation_selected_facet_has_gaps")
+            );
+            assert!(
+                output["product_foundation_load_order"]
+                    .as_array()
+                    .expect("foundation load order")
+                    .iter()
+                    .any(|reference| {
+                        reference["reference_kind"] == "gap"
+                            && reference["card_id"] == "gaps"
+                            && reference["entry_id"] == "missing-company-proof"
+                    })
+            );
+        }
+        assert_eq!(
+            context["reason"],
+            "selected product foundation authority is blocked"
+        );
+        assert!(
+            context["entries"]
+                .as_array()
+                .expect("context entries")
+                .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invalid_foundation_blocks_route_and_drafting_context() {
+        let root = temp_pack("invalid-foundation");
+        set_foundation_facet_kind(&root, "unknown-foundation-kind");
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let scope = ScopeResolution::default();
+
+        let route = entry_route_scoped(&root, &manifest, "PMM", "prospect-fit-or-brief", &scope)
+            .expect("entry route should resolve");
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            true,
+            &scope,
+        )
+        .expect("entry context should resolve");
+
+        for output in [&route, &context] {
+            assert_eq!(output["status"], "blocked");
+            assert_eq!(output["product_foundation"]["status"], "blocked");
+            assert!(
+                output["product_foundation"]["diagnostics"]
+                    .as_array()
+                    .expect("foundation diagnostics")
+                    .iter()
+                    .any(|diagnostic| diagnostic["code"]
+                        == "product_foundation_facet_kind_unknown")
+            );
+        }
+        assert_eq!(context["reason"], "pack validation failed for this job");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unrelated_job_foundation_validation_does_not_block_selected_job() {
+        let root = temp_pack("unrelated-invalid-foundation");
+        set_unrelated_job_condition_fact(&root, "unknown-fact");
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let route = entry_route_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            &ScopeResolution::default(),
+        )
+        .expect("entry route should resolve");
+
+        assert_eq!(route["status"], "ready");
+        assert_eq!(route["product_foundation"]["status"], "ready");
+        assert!(
+            route["product_foundation"]["diagnostics"]
+                .as_array()
+                .expect("foundation diagnostics")
+                .is_empty()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn non_foundation_validation_error_has_specific_context_reason() {
+        let root = temp_pack("non-foundation-validation");
+        duplicate_job_id(&root);
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            true,
+            &ScopeResolution::default(),
+        )
+        .expect("entry context should resolve");
+
+        assert_eq!(context["status"], "blocked");
+        assert_eq!(context["reason"], "pack validation failed for this job");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ambiguous_foundation_entry_blocks_route_instead_of_selecting_last_duplicate() {
+        let root = temp_pack("ambiguous-foundation-entry");
+        duplicate_foundation_entry(&root);
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let route = entry_route_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            &ScopeResolution::default(),
+        )
+        .expect("entry route should resolve");
+
+        assert_eq!(route["status"], "blocked");
+        assert_eq!(route["product_foundation"]["status"], "blocked");
+        assert!(
+            route["product_foundation"]["diagnostics"]
+                .as_array()
+                .expect("foundation diagnostics")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "product_foundation_entry_ambiguous")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn needs_review_profile_blocks_route_and_drafting_context() {
+        let root = temp_pack("needs-review");
+        set_profile_activation(&root, "needs-review");
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let scope = ScopeResolution::default();
+
+        let route = entry_route_scoped(&root, &manifest, "PMM", "prospect-fit-or-brief", &scope)
+            .expect("entry route should resolve");
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            true,
+            &scope,
+        )
+        .expect("entry context should resolve");
+
+        assert_eq!(route["status"], "blocked");
+        assert_eq!(context["status"], "blocked");
+        assert_eq!(context["product_foundation"]["status"], "ready");
+        assert_eq!(
+            context["reason"],
+            "profile activation requires review or is blocked"
+        );
+        assert!(
+            !context["product_foundation_load_order"]
+                .as_array()
+                .expect("foundation load order")
+                .is_empty()
+        );
+        assert!(
+            context["entries"]
+                .as_array()
+                .expect("context entries")
+                .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

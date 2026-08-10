@@ -16,7 +16,7 @@ entries:
   applies_to:
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: claim-gap
   title: Claim gap
@@ -25,7 +25,7 @@ entries:
   - PMM
   - PM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: trigger-hypothesis-proof-gap-angle-cta
   title: Trigger/hypothesis -> proof gap -> angle -> CTA
@@ -33,6 +33,6 @@ entries:
   applies_to:
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   - examples/clay-row.json
   avoid: []

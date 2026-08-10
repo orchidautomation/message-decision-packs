@@ -338,6 +338,7 @@ mod tests {
                     "capability".to_string(),
                     vec!["product".to_string()],
                 )]),
+                product_foundation: None,
             }),
             personas: vec![],
             target_personas: vec![],

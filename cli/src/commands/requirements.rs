@@ -11,6 +11,10 @@ use crate::models::{
     DecisionInputRequirement, DecisionInputSourceClass, Manifest, ValueContract,
 };
 use crate::pack_io::{read_manifest, resolve_pack_path};
+use crate::product_foundation::{
+    apply_validation_errors_for_job, resolution_json, resolve_product_foundation_for_pack,
+    validation_errors_block_job, validation_issues_for_job,
+};
 use crate::value_contracts::{valid_date, valid_date_time};
 use anyhow::{Result, anyhow};
 use serde_json::{Map, Value, json};
@@ -19,29 +23,63 @@ use std::path::Path;
 
 pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let manifest = read_manifest(root)?;
-    let pack_sha256 = pack_content_sha256(root)?;
-    let validation = validate_pack(root)?;
-    if validation["valid"] != true {
-        return finalize_requirements(json!({
-            "contract": REQUIREMENTS_CONTRACT,
-            "status": "invalid",
-            "valid": false,
-            "available": false,
-            "pack": pack_summary(&manifest, &pack_sha256),
-            "job": {
-                "id": job_id,
-                "input_contracts": [],
-                "decision_input_contracts": []
-            },
-            "decision_input_contracts": [],
-            "diagnostics": validation["issues"]
-        }));
-    }
     let job = manifest
         .jobs
         .iter()
         .find(|job| job.id == job_id)
         .ok_or_else(|| anyhow!("unknown profile job {job_id}"))?;
+    let pack_sha256 = pack_content_sha256(root)?;
+    let validation = validate_pack(root)?;
+    let mut product_foundation_resolution =
+        resolve_product_foundation_for_pack(root, &manifest, job_id);
+    if validation["valid"] != true {
+        let product_foundation = match product_foundation_resolution.as_mut() {
+            Ok(mut resolution) => {
+                if let Some(issues) = validation["issues"].as_array() {
+                    apply_validation_errors_for_job(&mut resolution, &manifest, issues);
+                }
+                resolution_json(&resolution)
+            }
+            Err(_) => blocked_product_foundation_resolution(job_id),
+        };
+        let validation_issues = product_foundation_resolution.as_ref().map_or_else(
+            |_| validation["issues"].as_array().cloned().unwrap_or_default(),
+            |resolution| {
+                validation_issues_for_job(
+                    &manifest,
+                    resolution,
+                    validation["issues"]
+                        .as_array()
+                        .map(Vec::as_slice)
+                        .unwrap_or(&[]),
+                )
+            },
+        );
+        let validation_blocks_job = product_foundation_resolution
+            .as_ref()
+            .map_or(true, |resolution| {
+                validation_errors_block_job(&manifest, resolution, &validation_issues)
+            });
+        if validation_blocks_job {
+            return finalize_requirements(json!({
+                "contract": REQUIREMENTS_CONTRACT,
+                "status": "invalid",
+                "valid": false,
+                "available": false,
+                "pack": pack_summary(&manifest, &pack_sha256),
+                "job": {
+                    "id": &job.id,
+                    "skill_id": &job.skill_id,
+                    "input_contracts": &job.input_contracts,
+                    "decision_input_contracts": &job.decision_input_contracts
+                },
+                "product_foundation": product_foundation,
+                "decision_input_contracts": [],
+                "diagnostics": validation_issues
+            }));
+        }
+    }
+    let product_foundation = resolution_json(&product_foundation_resolution?);
     let selected_input_contracts = job
         .input_contracts
         .iter()
@@ -85,6 +123,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
                 "skill_id": &job.skill_id,
                 "input_contracts": &job.input_contracts
             },
+            "product_foundation": product_foundation,
             "decision_input_contracts": [],
             "diagnostics": [{
                 "code": "decision_input_contract_not_bound",
@@ -101,9 +140,24 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let normalized_schema = normalized_envelope_schema(job_id, &selected_contracts);
     let source_attempt_schema = source_attempt_request_schema(job_id, &selected_contracts);
     let collected_results_schema = collected_attempt_results_schema(job_id, &selected_contracts);
-    finalize_requirements(json!({
+    let foundation_blocked = product_foundation["status"] == "blocked";
+    let activation_blocked = manifest.profile_eval.blocks_activation();
+    let drafting_blocked = foundation_blocked || activation_blocked;
+    let mut diagnostics = product_foundation["diagnostics"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    if activation_blocked {
+        diagnostics.push(json!({
+            "code": "profile_activation_blocks_drafting",
+            "severity": "error",
+            "path": ".mdp/manifest.yaml#/profile_eval/activation/status",
+            "message": "profile activation is needs-review or blocked; compiled requirements remain inspectable but drafting is blocked"
+        }));
+    }
+    let mut response = json!({
         "contract": REQUIREMENTS_CONTRACT,
-        "status": "ready",
+        "status": if drafting_blocked { "blocked" } else { "ready" },
         "valid": true,
         "available": true,
         "pack": pack_summary(&manifest, &pack_sha256),
@@ -114,6 +168,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
             "resolved_input_contracts": selected_input_contracts,
             "decision_input_contracts": selected_ids
         },
+        "product_foundation": product_foundation,
         "decision_input_contracts": compiled_contracts,
         "source_attempt_request_schema": source_attempt_schema,
         "collected_attempt_results_schema": collected_results_schema,
@@ -152,8 +207,47 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
             "network_calls": false,
             "model_calls": false
         },
-        "diagnostics": []
-    }))
+        "diagnostics": diagnostics
+    });
+    if drafting_blocked {
+        response["draft_allowed"] = json!(false);
+    }
+    finalize_requirements(response)
+}
+
+fn blocked_product_foundation_resolution(job_id: &str) -> Value {
+    json!({
+        "job_id": job_id,
+        "status": "blocked",
+        "selected_facets": [],
+        "optional_facet_ids": [],
+        "excluded_facet_ids": [],
+        "untriggered_facet_ids": [],
+        "diagnostics": [{
+            "code": "product_foundation_resolution_failed",
+            "severity": "error",
+            "path": ".mdp/manifest.yaml#/cards",
+            "message": "product foundation could not be resolved from declared card authority"
+        }]
+    })
+}
+
+pub(crate) fn validation_has_only_foundation_errors(validation: &Value) -> bool {
+    let errors = validation["issues"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|issue| issue["severity"] == "error")
+        .collect::<Vec<_>>();
+    !errors.is_empty()
+        && errors.iter().all(|issue| {
+            issue["code"].as_str().is_some_and(|code| {
+                code.starts_with("product_foundation_")
+                    || code.starts_with("profile_job_product_foundation_")
+                    || code.starts_with("manifest_product_foundation_")
+                    || code.starts_with("manifest_profile_job_product_foundation_")
+            })
+        })
 }
 
 pub(crate) fn validate_normalized_decision_input(
@@ -1631,6 +1725,43 @@ mod tests {
         root
     }
 
+    fn add_product_foundation(root: &Path, selected_entry_id: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"] = serde_yaml::from_str(&format!(
+            r#"
+facets:
+  - id: selected-identity
+    kind: product_identity
+    entries:
+      - card_id: positioning
+        entry_id: {selected_entry_id}
+  - id: optional-gap
+    kind: gaps
+    gaps:
+      - card_id: gaps
+        entry_id: target-foundation-gaps
+"#
+        ))
+        .expect("foundation should parse");
+        manifest["jobs"][0]["product_foundation"] = serde_yaml::from_str(
+            r#"
+required:
+  - selected-identity
+optional:
+  - optional-gap
+"#,
+        )
+        .expect("binding should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
     fn clay_validation_fixture() -> (PathBuf, Value, Value, String, PathBuf) {
         let root = clay_example_root();
         let request_raw = std::fs::read(root.join("fixtures/source-attempt-request.json"))
@@ -2816,12 +2947,53 @@ mod tests {
         assert_eq!(compiled["valid"], false);
         assert_eq!(compiled["status"], "invalid");
         assert_eq!(compiled["available"], false);
+        assert_eq!(compiled["product_foundation"]["status"], "unassessed");
         assert!(
             compiled["diagnostics"]
                 .as_array()
                 .expect("diagnostics should be an array")
                 .iter()
                 .any(|issue| issue["code"] == "decision_input_normalization_prompt_missing")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invalid_pack_preserves_json_when_foundation_cards_are_unreadable() {
+        let root = temporary_clay_example("missing-foundation-card");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["cards"][0]["path"] =
+            serde_yaml::Value::String("cards/missing-declared-card.yaml".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let compiled =
+            requirements(&root, "prospect-fit-or-brief").expect("invalid pack should respond");
+
+        assert_eq!(compiled["valid"], false);
+        assert_eq!(compiled["status"], "invalid");
+        assert_eq!(compiled["available"], false);
+        assert_eq!(compiled["product_foundation"]["status"], "blocked");
+        assert!(
+            compiled["product_foundation"]["diagnostics"]
+                .as_array()
+                .expect("foundation diagnostics should be an array")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "product_foundation_resolution_failed")
+        );
+        assert!(
+            compiled["diagnostics"]
+                .as_array()
+                .expect("validation diagnostics should be an array")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "card_read_failed")
         );
 
         let _ = std::fs::remove_dir_all(root);
@@ -2870,6 +3042,202 @@ mod tests {
                 .iter()
                 .all(Value::is_object)
         );
+        assert_eq!(compiled["product_foundation"]["status"], "unassessed");
+    }
+
+    #[test]
+    fn requirements_exposes_complete_selected_foundation_without_optional_leakage() {
+        let root = temporary_clay_example("selected-foundation");
+        add_product_foundation(&root, "target-identity");
+
+        let compiled =
+            requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
+
+        assert_eq!(compiled["product_foundation"]["status"], "ready");
+        assert_eq!(
+            compiled["product_foundation"]["selected_facets"][0]["id"],
+            "selected-identity"
+        );
+        assert_eq!(
+            compiled["product_foundation"]["selected_facets"][0]["entry_refs"][0],
+            json!({"card_id": "positioning", "entry_id": "target-identity"})
+        );
+        assert!(
+            compiled["product_foundation"]["selected_facets"][0]["entries"][0]["body"]
+                .as_str()
+                .is_some_and(|body| !body.is_empty())
+        );
+        assert_eq!(
+            compiled["product_foundation"]["optional_facet_ids"],
+            json!(["optional-gap"])
+        );
+        assert_eq!(
+            compiled["product_foundation"]["selected_facets"]
+                .as_array()
+                .expect("selected facets")
+                .len(),
+            1
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn requirements_preserves_blocked_resolution_for_foundation_only_invalidity() {
+        let root = temporary_clay_example("invalid-foundation");
+        add_product_foundation(&root, "missing-entry");
+
+        let compiled =
+            requirements(&root, "prospect-fit-or-brief").expect("requirements should respond");
+
+        assert_eq!(compiled["valid"], false);
+        assert_eq!(compiled["status"], "invalid");
+        assert_eq!(compiled["product_foundation"]["status"], "blocked");
+        assert_eq!(
+            compiled["product_foundation"]["selected_facets"][0]["entry_refs"][0],
+            json!({"card_id": "positioning", "entry_id": "missing-entry"})
+        );
+        assert!(
+            compiled["product_foundation"]["diagnostics"]
+                .as_array()
+                .expect("foundation diagnostics")
+                .iter()
+                .any(|diagnostic| {
+                    diagnostic["code"] == "product_foundation_selected_reference_dangling"
+                })
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn requirements_selected_job_ignores_other_job_foundation_errors() {
+        let root = temporary_clay_example("unrelated-foundation-error");
+        add_product_foundation(&root, "target-identity");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][1]["product_foundation"] = serde_yaml::from_str(
+            r#"
+required:
+  - selected-identity
+conditional:
+  - facet_id: selected-identity
+    when:
+      fact: unsupported_fact
+      equals: outbound-copy-brief
+"#,
+        )
+        .expect("foundation binding should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let compiled =
+            requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
+
+        assert_eq!(compiled["valid"], true);
+        assert_ne!(compiled["status"], "invalid");
+        assert_eq!(compiled["available"], true);
+        assert_eq!(compiled["product_foundation"]["status"], "ready");
+        assert!(
+            compiled["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .all(|diagnostic| {
+                    diagnostic["code"] != "product_foundation_condition_fact_unknown"
+                })
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn requirements_unknown_job_preserves_error_contract() {
+        let root = clay_example_root();
+
+        let error = requirements(&root, "write something persuasive")
+            .expect_err("unknown canonical job should remain an error");
+
+        assert_eq!(
+            error.to_string(),
+            "unknown profile job write something persuasive"
+        );
+    }
+
+    #[test]
+    fn blocked_foundation_preserves_contracts_but_blocks_drafting() {
+        let root = temporary_clay_example("selected-gap");
+        add_product_foundation(&root, "target-identity");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][0]["product_foundation"]["required"] =
+            serde_yaml::from_str("- selected-identity\n- optional-gap\n")
+                .expect("required facets should parse");
+        manifest["jobs"][0]["product_foundation"]["optional"] =
+            serde_yaml::from_str("[]\n").expect("optional facets should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let compiled =
+            requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
+
+        assert_eq!(compiled["valid"], true);
+        assert_eq!(compiled["available"], true);
+        assert_eq!(compiled["status"], "blocked");
+        assert_eq!(compiled["draft_allowed"], false);
+        assert_eq!(compiled["product_foundation"]["status"], "blocked");
+        assert!(
+            compiled["decision_input_contracts"]
+                .as_array()
+                .is_some_and(|contracts| !contracts.is_empty())
+        );
+        assert!(compiled["normalized_output_schema"].is_object());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn profile_activation_blocks_drafting_without_hiding_contracts() {
+        let root = temporary_clay_example("activation-blocked");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile_eval"]["activation"]["status"] =
+            serde_yaml::Value::String("needs-review".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let compiled =
+            requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
+
+        assert_eq!(compiled["valid"], true);
+        assert_eq!(compiled["available"], true);
+        assert_eq!(compiled["status"], "blocked");
+        assert_eq!(compiled["draft_allowed"], false);
+        assert!(compiled["normalized_output_schema"].is_object());
+        assert!(
+            compiled["diagnostics"]
+                .as_array()
+                .expect("diagnostics should be an array")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "profile_activation_blocks_drafting")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

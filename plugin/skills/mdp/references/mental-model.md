@@ -11,6 +11,12 @@ Read this when explaining what belongs in MDP or deciding which layer owns a beh
 - Pack: approved decision context, one `skill_id` per agent-routable job, evidence, boundaries, output contracts, gaps, and fixtures.
 - Prompt: extraction or normalization from supplied inputs into strict prompt-output JSON. `source_summary.inputs_used` names declared inputs only; source paths, snippets, page locators, URLs, and proof notes belong in evidence/provenance, `signals[].source`, or normalization trace.
 - Manifest: allowed values, required fields/signals/attributes, profile job bindings, and pack-owned readiness policy.
+- Product foundation: a profile/job index over exact existing card entries and
+  gaps. It selects required and triggered conditional authority for one
+  canonical job; it is not an eleventh primitive, card kind, or company wiki.
+- `.mdp/README.md`: human orientation and secondary navigation. Its bytes
+  participate in portable pack identity, but its prose has no decision or
+  readiness authority.
 - Skill: trigger boundary, workflow, mode selection, safety, and command orchestration.
 - Agent host: skill discovery and loading.
 - External systems: source collection, outreach, CRM, proposal submission, and other side effects.
@@ -24,6 +30,9 @@ Use `actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evid
 
 - Fix invalid structure or stop.
 - Record missing evidence as a gap.
+- Inspect CLI-resolved product foundation before README prose. Preserve
+  `unassessed` and `blocked` honestly; `ready` only removes this one veto and
+  never establishes sufficient-for-job or self-standing status.
 - Reject unsupported job bindings; do not choose a nearby skill.
 - State that host discovery is unobserved and host-managed.
 - Keep side effects outside MDP.

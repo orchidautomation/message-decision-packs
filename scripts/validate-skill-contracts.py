@@ -33,6 +33,29 @@ AUTHORING_GUARDRAILS = {
     "no_compliance_overclaim": "It does not certify compliance",
     "no_proposal_submission": "submit proposals",
 }
+FOUNDATION_GUARDRAILS = {
+    "mdp": {
+        "cli_first": "Inspect `data.recommendation.product_foundation` before opening pack prose.",
+        "readme_secondary": "Treat `.mdp/README.md` as secondary navigation only",
+        "exact_job": "Never substitute a natural-language job approximation",
+        "no_invention": "Never invent missing product,",
+        "veto_only": "Foundation readiness only vetoes broader readiness.",
+    },
+    "mdp-pack-builder": {
+        "existing_authority": "index exact existing card/entry refs",
+        "exact_job": "Use exact canonical job IDs.",
+        "readme_secondary": "only as concise secondary navigation",
+        "no_invention": "never invent them to make a job ready",
+        "veto_only": "Foundation `ready` is veto-only",
+    },
+    "mdp-pack-review": {
+        "cli_first": "CLI-resolved foundation before `.mdp/README.md`",
+        "exact_job": "For each exact canonical job ID",
+        "no_leakage": "must not leak into selected context",
+        "no_invention": "Never invent product facts,",
+        "veto_only": "Foundation readiness only vetoes broader readiness",
+    },
+}
 
 
 def error(errors: list[dict[str, str]], code: str, path: Path | str, message: str) -> None:
@@ -110,6 +133,18 @@ def validate(root: Path, source: Path) -> dict:
     for guardrail, phrase in AUTHORING_GUARDRAILS.items():
         if phrase not in authoring_text:
             error(errors, f"proposal_authoring_guardrail_missing:{guardrail}", authoring, f"required authoring phrase is missing: {phrase}")
+
+    for skill_id, guardrails in FOUNDATION_GUARDRAILS.items():
+        skill_path = source / skill_id / "SKILL.md"
+        skill_text = skill_path.read_text(encoding="utf-8") if skill_path.is_file() else ""
+        for guardrail, phrase in guardrails.items():
+            if phrase not in skill_text:
+                error(
+                    errors,
+                    f"foundation_guardrail_missing:{skill_id}:{guardrail}",
+                    skill_path,
+                    f"required product-foundation phrase is missing: {phrase}",
+                )
 
     return {"model": MODEL, "source": str(source.relative_to(root)) if inside(source, root) else str(source), "skills": skills, "valid": not errors, "errors": errors}
 

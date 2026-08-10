@@ -34,6 +34,11 @@ mdp --json eval --strict --dir PACK_ROOT
 Run `requirements` for each job that binds a decision-input contract. A legacy
 job may report the contract as unavailable without becoming invalid.
 
+Also run `skills --job` and `requirements --job` for every exact canonical job
+that declares or should declare a product-foundation binding. Inspect the
+CLI-resolved foundation before `.mdp/README.md`; the README is secondary
+navigation and cannot supply authority.
+
 When a source binding is supplied, also run:
 
 ```bash
@@ -59,6 +64,25 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
 
 - Treat CLI errors as findings, not prose to reinterpret away.
 - Verify every agent-routable `jobs[]` entry has one canonical `skill_id` and a supported closed pair.
+- Audit `profile.product_foundation.facets` as indexes over exact existing card
+  entries and gap entries, never copied product prose. Reject an eleventh
+  primitive, a new product `CardKind`, or a company-wiki registry/README.
+- For each exact canonical job ID, compare `skills --job`, `requirements --job`,
+  route/context/brief load order, and activation. Required and triggered
+  conditional facets must agree; optional, excluded, unrelated-job, and false
+  conditional content must not leak into selected context.
+- Treat selected empty facets, explicit gaps, dangling refs, and explicit
+  selected-facet conflicts as blocking. Do not infer prose conflicts or choose
+  a precedence winner. Conditions may only compare `manifest_id`, `profile_id`,
+  or `job_id` for exact equality.
+- Require status semantics to remain exact: legacy/unbound is `unassessed`,
+  complete selected authority is `ready`, and selected insufficiency is
+  `blocked`. Foundation readiness only vetoes broader readiness; it never
+  establishes sufficient-for-job or self-standing status, and explicit
+  `needs-review`/`blocked` activation still vetoes.
+- Verify target and proposal gaps remain explicit. Never invent product facts,
+  ICP detail, proof, certifications, compliance status, RFP requirements,
+  pricing, past performance, or approval to clear a finding.
 - Check source receipts, freshness, confidence, approved claims/proof, avoid rules, output rules, and gaps for internal consistency.
 - For each decision-input contract, verify that every attribute states an answerable question, requirement class, output path, value contract, decision effects, allowed source classes, provenance, confidence, freshness, sensitivity, and effective behavior for all five attempt statuses. Hard gates must map every status explicitly and include no-draft behavior.
 - Verify that required and hard-gate output paths agree with `lead_input_requirements`, that conditional dependencies resolve, and that the compiled source request attempts every declared attribute.

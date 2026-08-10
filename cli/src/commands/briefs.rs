@@ -1,4 +1,4 @@
-use crate::models::Prospect;
+use crate::models::{Manifest, Prospect};
 use crate::pack_io::{read_manifest, read_prospect};
 use crate::routing::{entry_context_with_runtime_scoped, select_cards};
 use crate::runtime_context::current_runtime_context;
@@ -28,11 +28,11 @@ pub(crate) fn emit_brief_scoped(
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let runtime_context = current_runtime_context()?;
-    let job_text = job.unwrap_or("unspecified GTM decision task");
+    let job_text = brief_job(&manifest, job, "unspecified GTM decision task");
     let persona_resolution = resolve_persona_label(&manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution);
     let scope = resolve_runtime_scope(&manifest, parse_scope_selectors(scope_selectors)?);
-    let selected = select_cards(&manifest, Some(resolved_persona), Some(job_text));
+    let selected = select_cards(&manifest, Some(resolved_persona), Some(&job_text));
     let load_order: Vec<String> = selected
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
@@ -41,7 +41,7 @@ pub(crate) fn emit_brief_scoped(
         root,
         &manifest,
         resolved_persona,
-        job_text,
+        &job_text,
         true,
         &runtime_context,
         &scope,
@@ -59,6 +59,8 @@ pub(crate) fn emit_brief_scoped(
         "draft_status": context["status"],
         "inputs": {"persona": resolved_persona, "requested_persona": persona, "motion": motion, "job": job_text},
         "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
+        "product_foundation": context["product_foundation"].clone(),
+        "product_foundation_load_order": context["product_foundation_load_order"].clone(),
         "context": context,
         "decision_trace": [
             {"step": "load_manifest", "reason": "discover pack metadata and card index"},
@@ -122,30 +124,50 @@ pub(crate) fn prospect_brief_from_value_with_context(
         .clone()
         .unwrap_or_else(|| "prospect-json".to_string());
     let prospect_is_synthetic = prospect.synthetic;
-    let default_job;
-    let job_text = match job {
-        Some(value) => value,
-        None => {
-            default_job = format!("write {channel} outbound message");
-            &default_job
-        }
-    };
-    let route = select_cards(&manifest, Some(&persona), Some(job_text));
+    let job_text = brief_job(&manifest, job, &format!("write {channel} outbound message"));
+    let routing_task = brief_routing_task(job, &job_text, channel);
+    let route = select_cards(&manifest, Some(&persona), Some(&routing_task));
     let load_order: Vec<String> = route
         .iter()
         .filter_map(|v| v["path"].as_str().map(str::to_string))
         .collect();
     let fit_draft_ready = fit_status == "fit";
     let initial_draft_status = if fit_draft_ready { "ready" } else { "no-draft" };
-    let context = entry_context_with_runtime_scoped(
+    let mut context = entry_context_with_runtime_scoped(
         root,
         &manifest,
         &persona,
-        job_text,
+        &routing_task,
         fit_draft_ready,
         &runtime_context,
         &scope,
     )?;
+    if routing_task != job_text {
+        let foundation_context = entry_context_with_runtime_scoped(
+            root,
+            &manifest,
+            &persona,
+            &job_text,
+            fit_draft_ready,
+            &runtime_context,
+            &scope,
+        )?;
+        context["product_foundation"] = foundation_context["product_foundation"].clone();
+        context["product_foundation_load_order"] =
+            foundation_context["product_foundation_load_order"].clone();
+        if foundation_context["product_foundation"]["status"] == "blocked"
+            || foundation_context["reason"] == "pack validation failed for this job"
+        {
+            context["status"] = json!("blocked");
+            context["reason"] = foundation_context["reason"].clone();
+            context["entries"] = json!([]);
+            context["full_card_required"] = json!([]);
+            context["summary"]["entry_count"] = json!(0);
+            context["summary"]["required_entry_count"] = json!(0);
+            context["summary"]["supporting_entry_count"] = json!(0);
+            context["summary"]["guardrail_entry_count"] = json!(0);
+        }
+    }
     let portfolio_sensitive = context["portfolio_sensitive"].as_bool().unwrap_or(false);
     let bounded_context = include_context || portfolio_sensitive;
     let draft_status = if initial_draft_status == "ready" && context["status"] == "ready" {
@@ -185,6 +207,8 @@ pub(crate) fn prospect_brief_from_value_with_context(
         "no_draft_reason": no_draft_reason,
         "job": job_text,
         "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
+        "product_foundation": context["product_foundation"].clone(),
+        "product_foundation_load_order": context["product_foundation_load_order"].clone(),
         "route": route,
         "decision_trace": [
             {"step": "read_prospect", "reason": "use supplied prospect/account JSON as task input"},
@@ -204,6 +228,27 @@ pub(crate) fn prospect_brief_from_value_with_context(
         payload["context"] = context;
     }
     Ok(payload)
+}
+
+fn brief_job(manifest: &Manifest, explicit_job: Option<&str>, legacy_default: &str) -> String {
+    explicit_job
+        .map(str::to_string)
+        .or_else(|| {
+            manifest
+                .jobs
+                .iter()
+                .any(|job| job.id == "outbound-copy-brief")
+                .then(|| "outbound-copy-brief".to_string())
+        })
+        .unwrap_or_else(|| legacy_default.to_string())
+}
+
+fn brief_routing_task(explicit_job: Option<&str>, foundation_job: &str, channel: &str) -> String {
+    if explicit_job.is_some() {
+        foundation_job.to_string()
+    } else {
+        format!("write {channel} outbound message")
+    }
 }
 
 fn brief_no_draft_reason(fit_result: &Value) -> String {
@@ -776,6 +821,65 @@ mod tests {
         root
     }
 
+    fn add_selected_foundation_gap(root: &Path) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["gaps"] =
+            serde_yaml::from_str("- card_id: gaps\n  entry_id: missing-company-proof\n")
+                .expect("gap reference should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn set_profile_activation(root: &Path, status: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile_eval"]["activation"]["status"] =
+            serde_yaml::Value::String(status.to_string());
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn set_foundation_facet_kind(root: &Path, kind: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"]["facets"][0]["kind"] =
+            serde_yaml::Value::String(kind.to_string());
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn remove_canonical_brief_job(root: &Path) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        let jobs = manifest["jobs"]
+            .as_sequence_mut()
+            .expect("jobs should be a sequence");
+        jobs.retain(|job| job["id"].as_str() != Some("outbound-copy-brief"));
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
     #[test]
     fn brief_marks_no_draft_when_fit_is_insufficient() {
         let root = temp_pack("brief-no-draft");
@@ -791,6 +895,133 @@ mod tests {
 
         assert_eq!(result["fit"]["status"], "insufficient-context");
         assert_eq!(result["draft_status"], "no-draft");
+        assert_eq!(result["job"], "outbound-copy-brief");
+        assert_eq!(result["product_foundation"]["status"], "ready");
+        assert!(
+            !result["product_foundation_load_order"]
+                .as_array()
+                .expect("foundation load order")
+                .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn default_brief_workflows_use_canonical_outbound_job() {
+        let root = temp_pack("canonical-default-brief-job");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let prospect = prospect_brief(&root, &prospect_path, "email", None)
+            .expect("prospect brief should resolve canonical default");
+        let emitted = emit_brief(&root, "PMM", None, None)
+            .expect("emit brief should resolve canonical default");
+
+        assert_eq!(prospect["job"], "outbound-copy-brief");
+        assert_eq!(emitted["inputs"]["job"], "outbound-copy-brief");
+        assert_ne!(prospect["product_foundation"]["status"], "unassessed");
+        assert_ne!(emitted["product_foundation"]["status"], "unassessed");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn canonical_default_preserves_channel_specific_entry_routing() {
+        let root = temp_pack("canonical-default-channel-routing");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result = prospect_brief_with_context(&root, &prospect_path, "linkedin", None, true)
+            .expect("prospect brief should preserve channel routing");
+        let channel_entry_ids = result["context"]["entries"]
+            .as_array()
+            .expect("context entries should be an array")
+            .iter()
+            .filter(|entry| entry["card_id"] == "channel-policies")
+            .filter_map(|entry| entry["entry_id"].as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(result["job"], "outbound-copy-brief");
+        assert_eq!(
+            result["product_foundation"]["job_id"],
+            "outbound-copy-brief"
+        );
+        assert!(channel_entry_ids.contains(&"linkedin-initial-touch"));
+        assert!(
+            channel_entry_ids
+                .iter()
+                .all(|entry_id| !entry_id.starts_with("email-"))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_brief_job_wins_over_canonical_default() {
+        let root = temp_pack("explicit-brief-job");
+        let result = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
+            .expect("explicit job should resolve");
+
+        assert_eq!(result["inputs"]["job"], "prospect-fit-or-brief");
+        assert_eq!(result["product_foundation"]["status"], "ready");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn brief_workflows_preserve_legacy_free_text_defaults() {
+        let root = temp_pack("legacy-default-brief-job");
+        remove_canonical_brief_job(&root);
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let prospect = prospect_brief(&root, &prospect_path, "linkedin", None)
+            .expect("legacy prospect brief should resolve");
+        let emitted =
+            emit_brief(&root, "PMM", None, None).expect("legacy emit brief should resolve");
+
+        assert_eq!(prospect["job"], "write linkedin outbound message");
+        assert_eq!(emitted["inputs"]["job"], "unspecified GTM decision task");
+        assert_eq!(prospect["product_foundation"]["status"], "unassessed");
+        assert_eq!(emitted["product_foundation"]["status"], "unassessed");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn canonical_default_preserves_blocked_foundation() {
+        let root = temp_pack("blocked-default-brief-job");
+        add_selected_foundation_gap(&root);
+
+        let result = emit_brief(&root, "PMM", None, None)
+            .expect("canonical default should resolve blocked foundation");
+
+        assert_eq!(result["inputs"]["job"], "outbound-copy-brief");
+        assert_eq!(result["draft_status"], "blocked");
+        assert_eq!(result["product_foundation"]["status"], "blocked");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn briefs_block_invalid_foundation_before_drafting() {
+        let root = temp_pack("brief-invalid-foundation");
+        set_foundation_facet_kind(&root, "unknown-foundation-kind");
+
+        let emitted = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
+            .expect("emit brief should resolve invalid foundation");
+        assert_eq!(emitted["draft_status"], "blocked");
+        assert_eq!(emitted["context"]["status"], "blocked");
+        assert_eq!(emitted["product_foundation"]["status"], "blocked");
+
+        let prospect_path = root.join("examples").join("clay-row.json");
+        let prospect = prospect_brief(
+            &root,
+            &prospect_path,
+            "linkedin",
+            Some("prospect-fit-or-brief"),
+        )
+        .expect("prospect brief should resolve invalid foundation");
+        assert_eq!(prospect["draft_status"], "no-draft");
+        assert_eq!(prospect["product_foundation"]["status"], "blocked");
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1130,6 +1361,81 @@ mod tests {
                 .expect("load order should be an array")
                 .iter()
                 .any(|path| path == ".mdp/cards/ctas.yaml")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn emit_brief_preserves_blocked_foundation_without_drafting_entries() {
+        let root = temp_pack("emit-brief-foundation-gap");
+        add_selected_foundation_gap(&root);
+
+        let result = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
+            .expect("brief should resolve blocked foundation");
+
+        assert_eq!(result["draft_status"], "blocked");
+        assert_eq!(result["context"]["status"], "blocked");
+        assert_eq!(result["product_foundation"]["status"], "blocked");
+        assert_eq!(
+            result["context"]["reason"],
+            "selected product foundation authority is blocked"
+        );
+        assert!(
+            result["context"]["entries"]
+                .as_array()
+                .expect("context entries")
+                .is_empty()
+        );
+        assert!(
+            result["product_foundation"]["diagnostics"]
+                .as_array()
+                .expect("foundation diagnostics")
+                .iter()
+                .any(
+                    |diagnostic| diagnostic["code"] == "product_foundation_selected_facet_has_gaps"
+                )
+        );
+        assert!(
+            result["product_foundation_load_order"]
+                .as_array()
+                .expect("foundation load order")
+                .iter()
+                .any(|reference| {
+                    reference["reference_kind"] == "gap"
+                        && reference["entry_id"] == "missing-company-proof"
+                })
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn emit_brief_honors_needs_review_activation_veto() {
+        let root = temp_pack("emit-brief-needs-review");
+        set_profile_activation(&root, "needs-review");
+
+        let result = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
+            .expect("brief should honor activation veto");
+
+        assert_eq!(result["draft_status"], "blocked");
+        assert_eq!(result["context"]["status"], "blocked");
+        assert_eq!(result["product_foundation"]["status"], "ready");
+        assert_eq!(
+            result["context"]["reason"],
+            "profile activation requires review or is blocked"
+        );
+        assert!(
+            result["context"]["entries"]
+                .as_array()
+                .expect("context entries")
+                .is_empty()
+        );
+        assert!(
+            !result["product_foundation_load_order"]
+                .as_array()
+                .expect("foundation load order")
+                .is_empty()
         );
 
         let _ = std::fs::remove_dir_all(root);

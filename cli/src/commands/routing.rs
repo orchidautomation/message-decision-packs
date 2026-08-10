@@ -70,6 +70,8 @@ pub(crate) fn route_scoped(
             "base policy cards included for guardrails"
         ],
         "load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
+        "product_foundation": routed_entries["product_foundation"].clone(),
+        "product_foundation_load_order": routed_entries["product_foundation_load_order"].clone(),
         "portfolio_sensitive": portfolio_sensitive,
         "draft_status": if routed_entries["status"] == "blocked" { "blocked" } else { "ready" }
     });
@@ -1922,6 +1924,43 @@ mod tests {
         root
     }
 
+    fn add_route_product_foundation(root: &Path) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile"]["product_foundation"] = serde_yaml::from_str(
+            r#"
+facets:
+  - id: selected-identity
+    kind: product_identity
+    entries:
+      - card_id: positioning
+        entry_id: decision-layer
+  - id: optional-gap
+    kind: gaps
+    gaps:
+      - card_id: gaps
+        entry_id: missing-company-proof
+"#,
+        )
+        .expect("foundation should parse");
+        manifest["jobs"][0]["product_foundation"] = serde_yaml::from_str(
+            r#"
+required:
+  - selected-identity
+optional:
+  - optional-gap
+"#,
+        )
+        .expect("binding should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
     fn rename_manifest_card_ids(root: &Path, replacements: &[(&str, &str)]) {
         let manifest_path = root.join(".mdp").join("manifest.yaml");
         let mut manifest =
@@ -2036,6 +2075,46 @@ mod tests {
         );
         assert!(load_order.contains(&".mdp/cards/ctas.yaml"));
         assert!(load_order.len() <= 13);
+        assert_eq!(result["product_foundation"]["status"], "unassessed");
+        assert!(
+            result["product_foundation_load_order"]
+                .as_array()
+                .expect("foundation load order")
+                .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn canonical_route_exposes_only_exact_selected_foundation_refs() {
+        let root = temp_pack("route-foundation");
+        add_route_product_foundation(&root);
+
+        let result = route(
+            &root,
+            "GTM Engineering",
+            "prospect-fit-or-brief",
+            false,
+            false,
+        )
+        .expect("route should succeed");
+
+        assert_eq!(result["product_foundation"]["status"], "ready");
+        assert_eq!(
+            result["product_foundation_load_order"],
+            json!([{
+                "facet_id": "selected-identity",
+                "classification": "required",
+                "reference_kind": "entry",
+                "card_id": "positioning",
+                "entry_id": "decision-layer"
+            }])
+        );
+        assert_eq!(
+            result["product_foundation"]["optional_facet_ids"],
+            json!(["optional-gap"])
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

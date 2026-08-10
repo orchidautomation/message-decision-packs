@@ -53,6 +53,40 @@ mdp --json gaps --dir PACK_ROOT
 
 Do not read every reference by default.
 
+## Author Product Foundation
+
+Use the ten existing primitives and card kinds as authority. Under
+`profile.product_foundation.facets`, index exact existing card/entry refs and
+explicit gap refs; do not copy product claims into the manifest. Under each
+exact canonical `jobs[].id`, classify facet IDs as `required`, `conditional`,
+`optional`, or `excluded`. Static conditional facts are limited to exact
+`manifest_id`, `profile_id`, or `job_id` equality. Record only explicit
+structural `conflicts_with`; never infer semantic conflicts or choose a
+precedence winner from prose.
+
+After each job binding, inspect the CLI-resolved foundation first:
+
+```bash
+mdp --json skills --dir PACK_ROOT --job JOB_ID
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
+```
+
+Use exact canonical job IDs. Confirm required and triggered facets are the only
+selected context and optional, excluded, unrelated-job, and false conditional
+facets do not leak. Preserve unsupported target, ICP, claims, proof,
+certification, integration, outcome, RFP, and past-performance facts as gaps;
+never invent them to make a job ready.
+
+Scaffold or update `.mdp/README.md` only as concise secondary navigation over
+structured authority. It cannot satisfy readiness. Because it is inside
+`.mdp/`, changing it changes the portable pack hash even when foundation
+resolution is unchanged. Do not turn it, the registry, or a new card kind into
+a company wiki or an eleventh primitive.
+
+Foundation `ready` is veto-only: it never establishes sufficient-for-job or
+self-standing status and never overrides another failed gate or explicit
+`profile_eval.activation.status: needs-review|blocked`.
+
 ## Authoring Loop
 
 1. Preserve source receipts: source ID, file or URL, snippet, observed/as-of date, confidence, and approval class.

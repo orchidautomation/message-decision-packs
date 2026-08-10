@@ -20,7 +20,7 @@ entries:
   - Solution Owner
   - Executive Reviewer
   evidence:
-  - AGENTS.md
+  - proposal-safety-boundary
   avoid:
   - raw RFP
   - customer artifact
@@ -34,7 +34,7 @@ entries:
   - Proposal Lead
   - Executive Reviewer
   evidence:
-  - AGENTS.md
+  - proposal-safety-boundary
   avoid:
   - CMMC compliant
   - NIST compliant
@@ -49,7 +49,7 @@ entries:
   - Proposal Lead
   - Executive Reviewer
   evidence:
-  - docs/plans/2026-07-01-007-docs-proposal-privacy-public-repo-guardrails-plan.md
+  - proposal-safety-boundary
   avoid:
   - submit proposal
   - manage approvals

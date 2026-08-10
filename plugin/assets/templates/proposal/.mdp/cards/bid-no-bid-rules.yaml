@@ -41,7 +41,7 @@ entries:
   applies_to:
   - Executive Reviewer
   evidence:
-  - AGENTS.md
+  - proposal-safety-boundary
   avoid:
   - policy bypass
   metadata:

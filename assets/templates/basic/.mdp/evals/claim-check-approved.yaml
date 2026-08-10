@@ -8,4 +8,4 @@ profile_eval:
   primitives:
   - evidence-proof
   - boundaries
-text: MDP is a local offline CLI that stores versionable message context in a manifest plus modular cards.
+text: MDP is a local offline CLI. Each pack declares a version in its manifest alongside modular card references.

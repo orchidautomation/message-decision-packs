@@ -42,7 +42,7 @@ entries:
   - Proposal Lead
   - Executive Reviewer
   evidence:
-  - AGENTS.md
+  - proposal-safety-boundary
   avoid:
   - public leak
   metadata:

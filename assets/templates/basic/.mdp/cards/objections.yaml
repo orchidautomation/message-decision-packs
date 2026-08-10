@@ -17,7 +17,7 @@ entries:
   - PMM
   - GTM Engineering
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: why-not-sequencer
   title: Why not a sequencer?
@@ -26,5 +26,5 @@ entries:
   - PMM
   - GTM Engineering
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []

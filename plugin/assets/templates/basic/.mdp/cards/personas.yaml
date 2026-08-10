@@ -15,7 +15,7 @@ entries:
   applies_to:
   - GTM Engineering
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: pmm
   title: PMM
@@ -23,7 +23,7 @@ entries:
   applies_to:
   - PMM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []
 - id: pm
   title: PM
@@ -31,5 +31,5 @@ entries:
   applies_to:
   - PM
   evidence:
-  - README.md
+  - mdp-reference-contract
   avoid: []

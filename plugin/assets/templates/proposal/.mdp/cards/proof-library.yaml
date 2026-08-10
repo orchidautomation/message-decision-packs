@@ -33,7 +33,7 @@ entries:
   - Solution Owner
   - Executive Reviewer
   evidence:
-  - AGENTS.md
+  - proposal-safety-boundary
   avoid:
   - CMMC compliant
   - NIST compliant

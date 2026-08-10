@@ -222,6 +222,8 @@ fn summarize(command: &str, data: &Value) -> Value {
             "fit_status": data["fit"]["status"],
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
+            "product_foundation": product_foundation_summary(&data["product_foundation"]),
+            "product_foundation_load_order": data["product_foundation_load_order"],
             "context": context_summary(&data["context"]),
             "prospect_source": data["prospect_source"],
             "input_artifact": data["input_artifact"],
@@ -240,6 +242,8 @@ fn summarize(command: &str, data: &Value) -> Value {
             "draft_status": data["draft_status"],
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
+            "product_foundation": product_foundation_summary(&data["product_foundation"]),
+            "product_foundation_load_order": data["product_foundation_load_order"],
             "context": context_summary(&data["context"]),
             "artifact": data["artifact"],
             "dry_run": data["dry_run"],
@@ -317,6 +321,16 @@ fn context_summary(context: &Value) -> Value {
         "gap_count": array_len(&context["gaps"]),
         "gaps": context["gaps"],
         "full_card_required": context["full_card_required"]
+    })
+}
+
+fn product_foundation_summary(foundation: &Value) -> Value {
+    if !foundation.is_object() {
+        return Value::Null;
+    }
+    json!({
+        "status": foundation["status"],
+        "diagnostics": foundation["diagnostics"]
     })
 }
 
@@ -513,6 +527,14 @@ mod tests {
                 "portfolio_sensitive": true,
                 "fit": {"status": "fit"},
                 "required_load_order": [".mdp/cards/personas.yaml", ".mdp/cards/claims.yaml"],
+                "product_foundation": {
+                    "status": "blocked",
+                    "diagnostics": [{"code": "product_foundation_selected_facet_has_gaps"}],
+                    "selected_facets": [{"entries": [{"body": "must not leak"}]}]
+                },
+                "product_foundation_load_order": [
+                    {"facet_id": "identity", "card_id": "claims", "entry_id": "identity"}
+                ],
                 "prospect_source": {"kind": "synthetic-example", "synthetic": true},
                 "input_artifact": {"kind": "prospect", "path": "examples/clay-row.json"},
                 "artifact": {"status": "stdout-only", "kind": "stdout", "path": null}
@@ -523,6 +545,61 @@ mod tests {
         assert_eq!(summary["required_card_count"], 2);
         assert_eq!(summary["prospect_source"]["kind"], "synthetic-example");
         assert_eq!(summary["artifact"]["status"], "stdout-only");
+        assert_eq!(summary["product_foundation"]["status"], "blocked");
+        assert_eq!(
+            summary["product_foundation"]["diagnostics"][0]["code"],
+            "product_foundation_selected_facet_has_gaps"
+        );
+        assert_eq!(
+            summary["product_foundation_load_order"][0]["entry_id"],
+            "identity"
+        );
+        assert!(
+            summary["product_foundation"]
+                .get("selected_facets")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn emit_brief_summary_exposes_compact_foundation_and_exact_load_order() {
+        let summary = summarize(
+            "emit-brief",
+            &json!({
+                "contract": "mdp.brief.v0",
+                "inputs": {"persona": "PMM", "requested_persona": "PMM", "job": "outbound-copy-brief"},
+                "persona_resolution": {"source": "exact"},
+                "scope": {},
+                "portfolio_sensitive": false,
+                "draft_status": "blocked",
+                "required_load_order": [],
+                "product_foundation": {
+                    "status": "blocked",
+                    "diagnostics": [{"code": "product_foundation_selected_facet_has_gaps"}],
+                    "selected_facets": [{"entries": [{"body": "must not leak"}]}]
+                },
+                "product_foundation_load_order": [
+                    {"facet_id": "identity", "reference_kind": "gap", "card_id": "gaps", "entry_id": "missing-proof"}
+                ],
+                "context": {"contract": "mdp.context.v0", "status": "blocked", "summary": {}, "gaps": [], "full_card_required": []},
+                "artifact": {"status": "stdout-only"}
+            }),
+        );
+
+        assert_eq!(summary["product_foundation"]["status"], "blocked");
+        assert_eq!(
+            summary["product_foundation"]["diagnostics"][0]["code"],
+            "product_foundation_selected_facet_has_gaps"
+        );
+        assert_eq!(
+            summary["product_foundation_load_order"][0]["entry_id"],
+            "missing-proof"
+        );
+        assert!(
+            summary["product_foundation"]
+                .get("selected_facets")
+                .is_none()
+        );
     }
 
     #[test]

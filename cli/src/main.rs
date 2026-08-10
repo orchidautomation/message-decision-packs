@@ -8,6 +8,8 @@ mod constants;
 mod models;
 mod output;
 mod pack_io;
+mod pack_readme;
+mod product_foundation;
 mod prospect_validation;
 mod routing;
 mod run_contracts;
