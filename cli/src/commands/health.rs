@@ -4979,6 +4979,7 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             "prompt_id",
             "prompt_version",
             "prompt_sha256",
+            "invocation_receipt_sha256",
             "source_summary",
             "selected_authority",
             "artifact",
@@ -5978,6 +5979,7 @@ required_top_level:
   - prompt_id
   - prompt_version
   - prompt_sha256
+  - invocation_receipt_sha256
   - source_summary
   - selected_authority
   - artifact
@@ -5986,13 +5988,14 @@ required_top_level:
 schema:
   type: object
   additionalProperties: false
-  required: [contract, job_id, prompt_id, prompt_version, prompt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
+  required: [contract, job_id, prompt_id, prompt_version, prompt_sha256, invocation_receipt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
   properties:
     contract: {const: mdp.prompt-output.v0}
     job_id: {const: prospect-fit-or-brief}
     prompt_id: {const: normalize-prospect-row}
     prompt_version: {const: "1"}
     prompt_sha256: {type: string, minLength: 64, maxLength: 64}
+    invocation_receipt_sha256: {type: string, minLength: 64, maxLength: 64}
     source_summary:
       type: object
       additionalProperties: false
@@ -6011,6 +6014,7 @@ example:
   prompt_id: normalize-prospect-row
   prompt_version: "1"
   prompt_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  invocation_receipt_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   source_summary: {inputs_used: []}
   selected_authority: [positioning/decision-layer]
   artifact: {message_body: "Hello"}
@@ -6074,7 +6078,7 @@ prompt: normalize-prospect-row
         prompt["output_contract"]["required_top_level"]
             .as_sequence_mut()
             .expect("required fields should be a sequence")
-            .retain(|field| field.as_str() != Some("prompt_sha256"));
+            .retain(|field| field.as_str() != Some("invocation_receipt_sha256"));
         std::fs::write(
             &prompt_path,
             serde_yaml::to_string(&prompt).expect("prompt should serialize"),

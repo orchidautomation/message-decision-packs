@@ -2407,6 +2407,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
             "normalized_prospect",
             "runtime_context",
             "prompt_receipt",
+            "invocation_receipt_sha256",
             "supplied_draft"
         ])
     } else {
@@ -2414,7 +2415,8 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
             "product_foundation",
             "normalized_prospect",
             "runtime_context",
-            "prompt_receipt"
+            "prompt_receipt",
+            "invocation_receipt_sha256"
         ])
     };
     schema_properties.insert(
@@ -2464,7 +2466,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
         "procedure": ["Confirm the job, prompt version, declared inputs, and selected authority.", "Apply the pack-owned selection and evidence rules.", "Return the exact governed artifact schema."],
         "selection_rules": ["Choose only angle, CTA, claim, and evidence identifiers present in selected authority.", "Select at most one card-qualified authority reference for each bare artifact identifier.", "Never load the whole pack or borrow authority from another job."],
         "ambiguity_policy": ["Represent missing or conflicting facts in gaps and use a bounded non-success status."],
-        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Echo invocation_receipt_sha256 from the host-provided prompt_receipt; do not calculate or invent it."],
+        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash."],
         "evidence_policy": ["Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output."],
         "negative_examples": ["Do not invent customer proof, integrations, outcomes, timing, or recipient facts.", "Do not silently choose an undeclared claim or CTA."],
         "final_checklist": ["Output is strict JSON.", "The prompt and invocation receipt hashes exactly match the host-provided prompt_receipt.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
@@ -2486,6 +2488,7 @@ fn outbound_model_task_inputs(is_review: bool) -> Value {
         json!({"name": "normalized_prospect", "description": "Validated prospect or account context.", "required": true, "default": "N/A", "missing_behavior": "Return a gap; do not invent a recipient, company, trigger, or persona.", "producer": "prior-step"}),
         json!({"name": "runtime_context", "description": "Optional bounded date and channel metadata.", "required": false, "default": "N/A", "missing_behavior": "Avoid time-sensitive framing that is not supplied.", "producer": "runtime"}),
         json!({"name": "prompt_receipt", "description": "Host-produced mdp.prompt-invocation.v1 receipt binding the canonical prompt and per-input SHA-256 values.", "required": true, "default": "N/A", "missing_behavior": "Return a gap or refusal; never invent prompt or input receipt hashes.", "producer": "host"}),
+        json!({"name": "invocation_receipt_sha256", "description": "Host-produced detached SHA-256 of the exact prompt_receipt bytes, supplied separately because a receipt cannot contain its own hash.", "required": true, "default": "N/A", "missing_behavior": "Return a gap or refusal; never calculate or invent the detached receipt hash.", "producer": "host"}),
     ];
     if is_review {
         inputs.push(json!({"name": "supplied_draft", "description": "Copy supplied for review.", "required": true, "default": "N/A", "missing_behavior": "Return a gap when no draft is supplied.", "producer": "host"}));

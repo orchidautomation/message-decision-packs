@@ -50,9 +50,12 @@ schema. The customer-selected host owns the model call. Validate the returned
 governed artifact with `--invocation-receipt PROMPT_INVOCATION_JSON`, then run
 `mdp check-claims` on generated or supplied copy. The host receipt must bind
 the exact job, prompt ID/version/SHA-256, and per-declared-input SHA-256 values.
-If `data.model_task` is missing, `unassessed`, or `blocked`, report its exact
-diagnostics and stop no-draft. Never enter the legacy prompt-output path or
-replace the contract with skill-implied writing or review instructions.
+If `data.model_task` is absent, state that no job-owned model task is declared,
+include any available product-foundation diagnostics, and stop no-draft; do not
+invent a model-task status or diagnostics. If `data.model_task` is present but
+its status is not `ready`, report its exact diagnostics and stop no-draft.
+Never enter the legacy prompt-output path or replace the contract with
+skill-implied writing or review instructions.
 
 5. For `prospect-fit-or-brief` normalization only, branch on
    Decision Input `data.available`:

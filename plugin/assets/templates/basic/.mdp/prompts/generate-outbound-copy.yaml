@@ -36,6 +36,12 @@ inputs:
   name: prompt_receipt
   producer: host
   required: true
+- default: N/A
+  description: Host-produced detached SHA-256 of the exact prompt_receipt bytes, supplied separately because a receipt cannot contain its own hash.
+  missing_behavior: Return a gap or refusal; never calculate or invent the detached receipt hash.
+  name: invocation_receipt_sha256
+  producer: host
+  required: true
 instructions:
 - Use only declared inputs and the exact selected product-foundation entries for this job.
 - Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.
@@ -204,6 +210,7 @@ output_contract:
               - normalized_prospect
               - runtime_context
               - prompt_receipt
+              - invocation_receipt_sha256
             type: array
         required:
         - inputs_used
@@ -228,7 +235,7 @@ procedure:
 - Return the exact governed artifact schema.
 provenance_policy:
 - Retain the exact authority identifiers used to produce or review the artifact.
-- Echo invocation_receipt_sha256 from the host-provided prompt_receipt; do not calculate or invent it.
+- Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash.
 role: Governed outbound copy writer
 selection_rules:
 - Choose only angle, CTA, claim, and evidence identifiers present in selected authority.

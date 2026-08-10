@@ -1237,16 +1237,26 @@ mod tests {
                 "{} must not require the optional proposal readability alias",
                 job.id
             );
-            let prompt_receipt = prompt_value["inputs"]
-                .as_array()
-                .and_then(|inputs| {
-                    inputs
+            for host_input_name in ["prompt_receipt", "invocation_receipt_sha256"] {
+                let host_input = prompt_value["inputs"]
+                    .as_array()
+                    .and_then(|inputs| inputs.iter().find(|input| input["name"] == host_input_name))
+                    .unwrap_or_else(|| {
+                        panic!("proposal prompt must declare {host_input_name} input")
+                    });
+                assert_eq!(host_input["required"], true, "{}", job.id);
+                assert_eq!(host_input["producer"], "host", "{}", job.id);
+                assert!(
+                    prompt_value["output_contract"]["schema"]["properties"]
+                        ["source_summary"]["properties"]["inputs_used"]["items"]["enum"]
+                        .as_array()
+                        .expect("inputs_used enum should be an array")
                         .iter()
-                        .find(|input| input["name"] == "prompt_receipt")
-                })
-                .expect("proposal prompt must declare a prompt_receipt input");
-            assert_eq!(prompt_receipt["required"], true, "{}", job.id);
-            assert_eq!(prompt_receipt["producer"], "host", "{}", job.id);
+                        .any(|name| name == host_input_name),
+                    "{} must allow {host_input_name} in inputs_used",
+                    job.id
+                );
+            }
             for required_path in [
                 &prompt_value["output_contract"]["required_top_level"],
                 &prompt_value["output_contract"]["schema"]["required"],
@@ -1275,6 +1285,92 @@ mod tests {
                 "{} must example invocation_receipt_sha256",
                 job.id
             );
+
+            let artifact_schema =
+                &prompt_value["output_contract"]["schema"]["properties"]["artifact"];
+            match job.id.as_str() {
+                "compliance-review" => {
+                    assert_eq!(
+                        artifact_schema["properties"]["human_review_required"]["const"],
+                        true
+                    );
+                    assert_eq!(artifact_schema["properties"]["requirements"]["minItems"], 1);
+                    let ready = &artifact_schema["allOf"][0]["then"]["properties"];
+                    assert_eq!(ready["review_status"]["const"], "ready-for-human-review");
+                    assert_eq!(ready["missing_requirements_or_sources"]["maxItems"], 0);
+                    assert_eq!(ready["requirements"]["minItems"], 1);
+
+                    let schema = &prompt_value["output_contract"]["schema"];
+                    let mut ready_example = prompt_value["output_contract"]["example"].clone();
+                    ready_example["artifact"]["status"] = json!("ready");
+                    ready_example["artifact"]["review_status"] = json!("ready-for-human-review");
+                    ready_example["artifact"]["missing_requirements_or_sources"] = json!([]);
+                    ready_example["artifact"]["requirements"][0]["coverage_status"] =
+                        json!("supported");
+                    ready_example["artifact"]["requirements"][0]["source"] =
+                        json!("synthetic-requirements");
+                    ready_example["artifact"]["requirements"][0]["gap"] = json!("N/A");
+                    assert!(
+                        jsonschema::draft202012::validate(schema, &ready_example).is_ok(),
+                        "ready compliance example should satisfy the bounded schema"
+                    );
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["requirements"][0]["coverage_status"] = json!("partial");
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["missing_requirements_or_sources"] =
+                        json!(["missing source"]);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["human_review_required"] = json!(false);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["requirements"] = json!([]);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["requirements"][0]["source"] = json!("N/A");
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                }
+                "red-team-review" => {
+                    assert_eq!(
+                        artifact_schema["properties"]["human_review_required"]["const"],
+                        true
+                    );
+                    let ready = &artifact_schema["allOf"][0]["then"]["properties"];
+                    assert_eq!(ready["review_status"]["const"], "ready-for-human-review");
+                    assert_eq!(ready["gaps"]["maxItems"], 0);
+
+                    let schema = &prompt_value["output_contract"]["schema"];
+                    let mut ready_example = prompt_value["output_contract"]["example"].clone();
+                    ready_example["artifact"]["status"] = json!("ready");
+                    ready_example["artifact"]["review_status"] = json!("ready-for-human-review");
+                    ready_example["artifact"]["gaps"] = json!([]);
+                    assert!(
+                        jsonschema::draft202012::validate(schema, &ready_example).is_ok(),
+                        "ready red-team example should satisfy the bounded schema"
+                    );
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["gaps"] = json!([{
+                        "severity": "blocker",
+                        "issue_type": "missing-source",
+                        "issue": "Required review material is missing.",
+                        "affected_section": "N/A",
+                        "evidence": [],
+                        "pack_reference": "N/A",
+                        "confidence": "unknown",
+                        "owner_or_question": "Who owns the missing material?",
+                        "next_action": "Supply the material."
+                    }]);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["human_review_required"] = json!(false);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["review_status"] = json!("needs-more-info");
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                }
+                _ => {}
+            }
 
             let shared_keys = [
                 "role",

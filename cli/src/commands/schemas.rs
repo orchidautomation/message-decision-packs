@@ -3989,6 +3989,18 @@ mod tests {
                 .iter()
                 .any(|field| field == "runtime_context")
         );
+        assert!(
+            required_fields
+                .iter()
+                .any(|field| field == "invocation_receipt_sha256")
+        );
+        assert!(
+            governed_artifact_example_schema()["required"]
+                .as_array()
+                .expect("governed artifact required fields should be an array")
+                .iter()
+                .any(|field| field == "invocation_receipt_sha256")
+        );
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["output_kind"]["enum"][1],
             "prospect-normalization"

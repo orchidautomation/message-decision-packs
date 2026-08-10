@@ -581,6 +581,7 @@ fn validate_governed_artifact_authority(
         ));
     }
     let mut selected_ids = BTreeSet::new();
+    let mut selected_refs = BTreeSet::new();
     let mut selected_refs_by_id = BTreeMap::<&str, &str>::new();
     for (index, value) in selected.into_iter().flatten().enumerate() {
         let Some(reference) = value.as_str() else {
@@ -600,6 +601,7 @@ fn validate_governed_artifact_authority(
                 format!("authority {reference} is not selected for job {}", job.id),
             ));
         } else if let Some((_, entry_id)) = reference.split_once('/') {
+            selected_refs.insert(reference);
             if let Some(previous) = selected_refs_by_id.insert(entry_id, reference) {
                 issues.push(issue(
                     "governed_artifact_selected_authority_identifier_ambiguous",
@@ -615,6 +617,25 @@ fn validate_governed_artifact_authority(
     }
     let artifact = &output["artifact"];
     let ready = artifact["status"].as_str() == Some("ready");
+    let mut inputs_used = BTreeSet::new();
+    for (index, value) in output["source_summary"]["inputs_used"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let Some(name) = value.as_str() else {
+            continue;
+        };
+        if !inputs_used.insert(name) {
+            issues.push(issue(
+                "governed_artifact_inputs_used_duplicate",
+                "error",
+                format!("{path}#/source_summary/inputs_used/{index}"),
+                format!("source_summary.inputs_used must not repeat {name}"),
+            ));
+        }
+    }
     if ready && selected.is_none_or(|values| values.is_empty()) {
         issues.push(issue(
             "governed_artifact_ready_without_authority",
@@ -624,17 +645,11 @@ fn validate_governed_artifact_authority(
         ));
     }
     if ready {
-        let inputs_used = output["source_summary"]["inputs_used"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .collect::<BTreeSet<_>>();
-        for input in prompt
-            .inputs
-            .iter()
-            .filter(|input| input.required && input.name != "prompt_receipt")
-        {
+        for input in prompt.inputs.iter().filter(|input| {
+            input.required
+                && input.name != "prompt_receipt"
+                && input.name != "invocation_receipt_sha256"
+        }) {
             if !received_inputs.contains(input.name.as_str()) {
                 issues.push(issue(
                     "governed_artifact_required_input_receipt_missing",
@@ -654,13 +669,14 @@ fn validate_governed_artifact_authority(
             .iter()
             .map(String::as_str)
             .chain(std::iter::once("prompt_receipt"))
+            .chain(std::iter::once("invocation_receipt_sha256"))
             .collect::<BTreeSet<_>>();
         if inputs_used != expected_reported {
             issues.push(issue(
                 "governed_artifact_inputs_used_receipt_mismatch",
                 "error",
                 format!("{path}#/source_summary/inputs_used"),
-                "ready artifact inputs_used must exactly match the host invocation receipt inputs plus prompt_receipt",
+                "ready artifact inputs_used must exactly match the host invocation receipt inputs plus prompt_receipt and invocation_receipt_sha256",
             ));
         }
         if output["gaps"]
@@ -718,6 +734,31 @@ fn validate_governed_artifact_authority(
                         ));
                     }
                 }
+            }
+        }
+    }
+
+    if let Some(gaps) = artifact.get("gaps").and_then(Value::as_array) {
+        for (index, gap) in gaps.iter().enumerate() {
+            let Some(reference) = gap.get("pack_reference") else {
+                continue;
+            };
+            let Some(reference) = reference.as_str() else {
+                issues.push(issue(
+                    "governed_artifact_gap_pack_reference_type",
+                    "error",
+                    format!("{path}#/artifact/gaps/{index}/pack_reference"),
+                    "artifact gap pack_reference must be N/A or an exact selected_authority card_id/entry_id string",
+                ));
+                continue;
+            };
+            if reference != "N/A" && !selected_refs.contains(reference) {
+                issues.push(issue(
+                    "governed_artifact_gap_pack_reference_unselected",
+                    "error",
+                    format!("{path}#/artifact/gaps/{index}/pack_reference"),
+                    format!("artifact gap pack_reference {reference} is not present in selected_authority"),
+                ));
             }
         }
     }
@@ -800,7 +841,7 @@ fn validate_governed_invocation_receipt(
     let declared = prompt
         .inputs
         .iter()
-        .filter(|input| input.name != "prompt_receipt")
+        .filter(|input| input.name != "prompt_receipt" && input.name != "invocation_receipt_sha256")
         .map(|input| input.name.as_str())
         .collect::<BTreeSet<_>>();
     let Some(inputs) = receipt["inputs"].as_array() else {
@@ -873,9 +914,11 @@ fn validate_substantive_generation_artifact(artifact: &Value, path: &str, issues
     for field in ["claim_ids", "evidence_ids", "subject_options"] {
         if artifact[field].as_array().is_none_or(|values| {
             values.is_empty()
-                || values
-                    .iter()
-                    .any(|value| value.as_str().is_none_or(|text| text.trim().is_empty()))
+                || values.iter().any(|value| {
+                    value
+                        .as_str()
+                        .is_none_or(|text| text.trim().is_empty() || text == "N/A")
+                })
         }) {
             issues.push(issue(
                 "governed_artifact_ready_generation_collection_empty",
@@ -2804,6 +2847,7 @@ mod tests {
     fn ready_governed_example(prompt: &PromptFile) -> Value {
         let mut output = governed_example(prompt);
         output["source_summary"]["inputs_used"] = json!([
+            "invocation_receipt_sha256",
             "normalized_prospect",
             "product_foundation",
             "prompt_receipt"
@@ -4677,7 +4721,11 @@ mod tests {
         let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
             .expect("generated prompt should load");
         let mut output = ready_governed_example(&prompt);
-        output["source_summary"]["inputs_used"] = json!(["product_foundation", "prompt_receipt"]);
+        output["source_summary"]["inputs_used"] = json!([
+            "invocation_receipt_sha256",
+            "product_foundation",
+            "prompt_receipt"
+        ]);
         output["gaps"] = json!(["Missing normalized prospect context."]);
         let result =
             validate_governed_with_receipt(&root, &prompt, output, &["product_foundation"]);
@@ -4811,8 +4859,8 @@ mod tests {
         let mut output = ready_governed_example(&prompt);
         output["artifact"]["cta_id"] = json!("N/A");
         output["artifact"]["claim_ids"] = json!([]);
-        output["artifact"]["evidence_ids"] = json!([]);
-        output["artifact"]["subject_options"] = json!([]);
+        output["artifact"]["evidence_ids"] = json!(["N/A"]);
+        output["artifact"]["subject_options"] = json!(["N/A"]);
         output["artifact"]["message_body"] = json!("  ");
         let result = validate_governed_with_receipt(
             &root,
@@ -4828,6 +4876,81 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(codes.contains("governed_artifact_ready_generation_field_empty"));
         assert!(codes.contains("governed_artifact_ready_generation_collection_empty"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_rejects_duplicate_inputs_used_before_set_comparison() {
+        let root = temp_pack("governed-artifact-duplicate-inputs-used");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["source_summary"]["inputs_used"] = json!([
+            "product_foundation",
+            "normalized_prospect",
+            "prompt_receipt",
+            "invocation_receipt_sha256",
+            "normalized_prospect"
+        ]);
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| { issue["code"] == "governed_artifact_inputs_used_duplicate" })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_gap_pack_reference_must_be_exact_selected_authority() {
+        let root = temp_pack_with_template("governed-artifact-gap-reference", "proposal");
+        let prompt = read_prompt(&root.join(".mdp/prompts/review-proposal-red-team.yaml"))
+            .expect("generated prompt should load");
+        let mut output = governed_example(&prompt);
+        output["selected_authority"] = json!(["positioning/proposal-private-review"]);
+        output["artifact"]["gaps"][0]["pack_reference"] = json!("claims/local-customer-controlled");
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "governed_artifact_gap_pack_reference_unselected"
+                })
+        );
+
+        let mut allowed = governed_example(&prompt);
+        allowed["artifact"]["gaps"][0]["pack_reference"] = json!("N/A");
+        let allowed = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            allowed,
+            &["product_foundation", "normalized_prospect"],
+        );
+        assert!(
+            !allowed["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| {
+                    issue["code"].as_str().is_some_and(|code| {
+                        code.starts_with("governed_artifact_gap_pack_reference")
+                    })
+                })
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

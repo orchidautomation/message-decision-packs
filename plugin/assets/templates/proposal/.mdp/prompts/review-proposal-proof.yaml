@@ -45,9 +45,15 @@ inputs:
   default: N/A
   missing_behavior: Return a gap or refusal; never invent prompt or input receipt hashes.
   producer: host
+- name: invocation_receipt_sha256
+  description: Host-computed SHA-256 of the exact detached prompt_receipt bytes supplied to this model call.
+  required: true
+  default: N/A
+  missing_behavior: Return a gap or refusal; echo this host value and never calculate or invent it.
+  producer: host
 instructions:
 - Use only declared inputs and the exact selected product-foundation entries for this job.
-- Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.
+- Return strict JSON only, preserve exact selected authority identifiers, and echo invocation_receipt_sha256 exactly from the separately declared host input.
 - Surface missing proof, requirements, or review authority as structured gaps instead of inventing facts.
 procedure:
 - Confirm the canonical job, prompt version, declared inputs, and selected authority.
@@ -60,7 +66,7 @@ ambiguity_policy:
 - Represent missing or conflicting facts in gaps and use a bounded non-success status.
 provenance_policy:
 - Retain exact authority identifiers for every selected claim, proof item, and review gate.
-- Echo invocation_receipt_sha256 from the host-provided prompt_receipt; do not calculate or invent it.
+- Echo invocation_receipt_sha256 from the host-computed detached hash input for the exact prompt_receipt bytes; do not calculate or invent it.
 evidence_policy:
 - Unsupported certifications, compliance status, past performance, pricing, or customer proof must be rejected or escalated.
 negative_examples:
@@ -102,7 +108,7 @@ output_contract:
         properties:
           inputs_used:
             type: array
-            items: {enum: [product_foundation, normalized_prospect, supplied_material, runtime_context, prompt_receipt]}
+            items: {enum: [product_foundation, normalized_prospect, supplied_material, runtime_context, prompt_receipt, invocation_receipt_sha256]}
       selected_authority: {type: array, items: {type: string}}
       artifact:
         type: object
