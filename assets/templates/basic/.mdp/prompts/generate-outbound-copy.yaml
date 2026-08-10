@@ -5,7 +5,8 @@ evidence_policy:
 - Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output.
 final_checklist:
 - Output is strict JSON.
-- The prompt and invocation receipt hashes exactly match the host-provided prompt_receipt.
+- prompt_sha256 matches the host-provided canonical prompt hash.
+- invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.
 - All selected identifiers are declared and unambiguous.
 - Gaps and rejected claims are explicit.
 - Generated copy is substantive before status is ready and remains ready for separate verify-output validation.

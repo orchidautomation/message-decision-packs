@@ -1285,6 +1285,28 @@ mod tests {
                 "{} must example invocation_receipt_sha256",
                 job.id
             );
+            let final_checklist = prompt_value["final_checklist"]
+                .as_array()
+                .expect("governed proposal prompt should declare a final checklist");
+            for required_check in [
+                "prompt_sha256 matches the host-provided canonical prompt hash.",
+                "invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.",
+            ] {
+                assert!(
+                    final_checklist.iter().any(|check| check == required_check),
+                    "{} must state the detached hash boundary exactly",
+                    job.id
+                );
+            }
+            assert!(
+                final_checklist.iter().all(|check| {
+                    check.as_str().is_none_or(|text| {
+                        !text.contains("invocation receipt hashes exactly match")
+                    })
+                }),
+                "{} must not imply invocation_receipt_sha256 is stored inside prompt_receipt",
+                job.id
+            );
 
             let artifact_schema =
                 &prompt_value["output_contract"]["schema"]["properties"]["artifact"];

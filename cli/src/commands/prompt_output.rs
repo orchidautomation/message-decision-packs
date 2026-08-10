@@ -901,7 +901,7 @@ fn validate_substantive_generation_artifact(artifact: &Value, path: &str, issues
     for field in ["angle_id", "cta_id", "message_body"] {
         if artifact[field]
             .as_str()
-            .is_none_or(|value| value.trim().is_empty() || value == "N/A")
+            .is_none_or(|value| value.trim().is_empty() || value.trim() == "N/A")
         {
             issues.push(issue(
                 "governed_artifact_ready_generation_field_empty",
@@ -917,7 +917,7 @@ fn validate_substantive_generation_artifact(artifact: &Value, path: &str, issues
                 || values.iter().any(|value| {
                     value
                         .as_str()
-                        .is_none_or(|text| text.trim().is_empty() || text == "N/A")
+                        .is_none_or(|text| text.trim().is_empty() || text.trim() == "N/A")
                 })
         }) {
             issues.push(issue(
@@ -4875,6 +4875,29 @@ mod tests {
             .filter_map(|issue| issue["code"].as_str())
             .collect::<BTreeSet<_>>();
         assert!(codes.contains("governed_artifact_ready_generation_field_empty"));
+        assert!(codes.contains("governed_artifact_ready_generation_collection_empty"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ready_generation_artifact_rejects_whitespace_padded_na_collection_values() {
+        let root = temp_pack("governed-artifact-whitespace-na");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["artifact"]["claim_ids"] = json!(["  N/A  "]);
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+        let codes = result["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
         assert!(codes.contains("governed_artifact_ready_generation_collection_empty"));
         let _ = std::fs::remove_dir_all(root);
     }

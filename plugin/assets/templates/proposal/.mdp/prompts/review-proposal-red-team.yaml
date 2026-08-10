@@ -76,7 +76,8 @@ negative_examples:
 - Do not invent past performance, customer results, certifications, or requirement coverage.
 final_checklist:
 - Output is strict JSON.
-- The prompt and invocation receipt hashes exactly match the host-provided prompt_receipt.
+- prompt_sha256 matches the host-provided canonical prompt hash.
+- invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.
 - All selected identifiers are declared.
 - Every red-team gap has an allowed severity and a concrete owner or question and next action.
 - Missing requirements and unsupported claims are explicit.

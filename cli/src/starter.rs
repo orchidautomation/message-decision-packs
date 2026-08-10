@@ -2469,7 +2469,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
         "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash."],
         "evidence_policy": ["Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output."],
         "negative_examples": ["Do not invent customer proof, integrations, outcomes, timing, or recipient facts.", "Do not silently choose an undeclared claim or CTA."],
-        "final_checklist": ["Output is strict JSON.", "The prompt and invocation receipt hashes exactly match the host-provided prompt_receipt.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
+        "final_checklist": ["Output is strict JSON.", "prompt_sha256 matches the host-provided canonical prompt hash.", "invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
         "output_contract": {
             "contract": PROMPT_OUTPUT_CONTRACT,
             "output_kind": "governed-artifact",

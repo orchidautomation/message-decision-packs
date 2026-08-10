@@ -4973,6 +4973,37 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     }
 
     if output_kind == "governed-artifact" {
+        match prompt
+            .inputs
+            .iter()
+            .enumerate()
+            .find(|(_, input)| input.name == "invocation_receipt_sha256")
+        {
+            None => issues.push(issue(
+                "governed_artifact_invocation_receipt_input_missing",
+                "error",
+                format!("{path}#/inputs"),
+                "governed-artifact prompts must declare invocation_receipt_sha256 as a required host-produced input",
+            )),
+            Some((index, input)) => {
+                if !input.required {
+                    issues.push(issue(
+                        "governed_artifact_invocation_receipt_input_optional",
+                        "error",
+                        format!("{path}#/inputs/{index}/required"),
+                        "governed-artifact prompt input invocation_receipt_sha256 must be required",
+                    ));
+                }
+                if input.producer.as_deref() != Some("host") {
+                    issues.push(issue(
+                        "governed_artifact_invocation_receipt_input_producer_invalid",
+                        "error",
+                        format!("{path}#/inputs/{index}/producer"),
+                        "governed-artifact prompt input invocation_receipt_sha256 must be produced by the host",
+                    ));
+                }
+            }
+        }
         for field in [
             "contract",
             "job_id",
@@ -5968,6 +5999,22 @@ mod tests {
         {
             input["producer"] = YamlValue::String("host".to_string());
         }
+        prompt["inputs"]
+            .as_sequence_mut()
+            .expect("inputs should be a sequence")
+            .push(
+                serde_yaml::from_str(
+                    r#"
+name: invocation_receipt_sha256
+description: Detached SHA-256 of the exact host invocation receipt bytes.
+required: true
+default: N/A
+missing_behavior: Return a gap or refusal; never invent the receipt hash.
+producer: host
+"#,
+                )
+                .expect("receipt input should parse"),
+            );
         prompt["output_contract"]["output_kind"] =
             YamlValue::String("governed-artifact".to_string());
         prompt["output_contract"]["schema_ref"] = YamlValue::Null;
@@ -6003,7 +6050,7 @@ schema:
       properties:
         inputs_used:
           type: array
-          items: {enum: [raw_row, company_domain, existing_pack_context, runtime_context, source_kind]}
+          items: {enum: [raw_row, company_domain, existing_pack_context, runtime_context, source_kind, invocation_receipt_sha256]}
     selected_authority: {type: array, items: {type: string}}
     artifact: {type: object}
     gaps: {type: array, items: {type: string}}
@@ -6095,6 +6142,68 @@ prompt: normalize-prospect-row
                 .any(|issue| issue["code"] == "prompt_output_required_field_missing")
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_prompt_requires_host_produced_invocation_receipt_input() {
+        for (case, mutation, expected_code) in [
+            (
+                "missing",
+                "missing",
+                "governed_artifact_invocation_receipt_input_missing",
+            ),
+            (
+                "optional",
+                "optional",
+                "governed_artifact_invocation_receipt_input_optional",
+            ),
+            (
+                "wrong-producer",
+                "wrong-producer",
+                "governed_artifact_invocation_receipt_input_producer_invalid",
+            ),
+        ] {
+            let root = temp_pack(&format!("governed-receipt-input-{case}"));
+            opt_in_generation_prompt(&root);
+            let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+            let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+            let mut prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+            let inputs = prompt["inputs"]
+                .as_sequence_mut()
+                .expect("inputs should be a sequence");
+            let receipt_index = inputs
+                .iter()
+                .position(|input| input["name"].as_str() == Some("invocation_receipt_sha256"))
+                .expect("receipt input should exist");
+            match mutation {
+                "missing" => {
+                    inputs.remove(receipt_index);
+                }
+                "optional" => inputs[receipt_index]["required"] = YamlValue::Bool(false),
+                "wrong-producer" => {
+                    inputs[receipt_index]["producer"] = YamlValue::String("pack".to_string())
+                }
+                _ => unreachable!("test mutation is closed"),
+            }
+            std::fs::write(
+                &prompt_path,
+                serde_yaml::to_string(&prompt).expect("prompt should serialize"),
+            )
+            .expect("prompt should be writable");
+
+            let result = validate_pack(&root).expect("validate should return diagnostics");
+
+            assert!(
+                result["issues"]
+                    .as_array()
+                    .expect("issues")
+                    .iter()
+                    .any(|issue| issue["code"] == expected_code),
+                "{case} should emit {expected_code}: {}",
+                result["issues"]
+            );
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     #[test]
