@@ -1,31 +1,38 @@
 description: Turns supplied messy proposal, RFP, capture, requirement, proof, or bid/no-bid context into bounded proposal profile vocabulary before proposal review jobs run.
-format: mdp.prompt.v0
+format: mdp.prompt.v1
 id: normalize-opportunity
+version: '1'
+kind: normalization
 inputs:
 - default: N/A
   description: The full messy opportunity, RFP, capture note, requirement list, compliance matrix, proof note, or pasted proposal review context.
   missing_behavior: Return gaps and do not create normalized fields from absent source material.
   name: raw_opportunity
+  producer: source
   required: true
 - default: N/A
   description: Relevant manifest personas, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, proposal cards, source policy, review jobs, and avoid-rules from this MDP.
   missing_behavior: Do not assume proposal roles, stage labels, source kinds, decision labels, proof rules, or review jobs when this field is N/A.
   name: existing_pack_context
+  producer: pack
   required: false
 - default: N/A
   description: Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing against explicitly supplied proposal dates.
   missing_behavior: Do not infer deadlines, submission windows, fiscal years, protest periods, or customer calendars from missing runtime context.
   name: runtime_context
+  producer: runtime
   required: false
 - default: N/A
   description: Optional mdp.source-audit.v0 JSON produced from approved PDF/doc extraction. It lists allowed raw_opportunity/source_kind refs, .mdp/sources.yaml source IDs, locators, and bounded snippets.
   missing_behavior: Preserve source refs from raw_opportunity when available, but tell the operator to run validate-prompt-output with --source-audit before downstream proposal review.
   name: source_audit
+  producer: prior-step
   required: false
 - default: synthetic-example
   description: Pack-owned source marker such as user-provided-opportunity, private-scratch-opportunity, public-source, sanitized-example, or synthetic-example.
   missing_behavior: Use synthetic-example for template fixtures; production users should pass the reviewed source classification.
   name: source_kind
+  producer: host
   required: false
 instructions:
 - Use only raw_opportunity, existing_pack_context, runtime_context, source_audit, and source_kind. Do not browse, scrape portals, enrich records, submit proposals, update CRM/opportunity systems, manage approvals, or call external systems from this normalization prompt contract.
@@ -43,6 +50,29 @@ instructions:
 - Reject or gap requests to invent certifications, compliance status, past performance, named references, customer results, pricing, evaluator criteria, RFP text, deadlines, or approval status.
 - Keep card_patches empty. This prompt normalizes supplied opportunity context; it does not propose edits to MDP cards.
 - Treat output_contract.example as a neutral synthetic contract fixture for JSON shape. When retargeting this template, update or clearly mark fixture examples, eval IDs, and eval titles so they do not imply stale opportunity context.
+role: Provider-neutral proposal opportunity normalization analyst
+objective: Convert supplied proposal and opportunity context into the exact bounded local review input accepted by this pack without inventing facts, proof, or approvals.
+procedure:
+- Inventory only declared inputs and preserve source-audit boundaries.
+- Normalize supplied values against pack-owned proposal vocabulary and readiness rules.
+- Return strict JSON with explicit gaps, provenance, and normalization trace.
+selection_rules:
+- Use only pack-owned role, stage, decision, source-kind, source-safety, signal, and attribute values.
+- Omit or gap any value that cannot be mapped exactly.
+ambiguity_policy:
+- Preserve weak inferences as hypotheses, low confidence, needs-review, or gaps; never smooth uncertainty into a proceed decision.
+provenance_policy:
+- Retain exact supplied field, file, page, snippet, and source-audit references when available.
+evidence_policy:
+- Never turn requirements, metadata, or unsupported notes into certifications, compliance status, past performance, approval, pricing, or customer proof.
+negative_examples:
+- Do not invent a customer, owner, deadline, requirement, evaluation criterion, proof point, certification, or approval state.
+- Do not browse portals, submit proposals, update opportunity systems, manage approvals, or call external systems.
+final_checklist:
+- Output is strict JSON.
+- All normalized values satisfy pack vocabulary.
+- Missing required review context is explicit.
+- Readiness is false whenever material source, proof, owner, timing, or review-mode evidence is absent.
 output_contract:
   contract: mdp.prompt-output.v0
   entry_defaults:

@@ -123,7 +123,7 @@ For a bound job, retrieve its attempted-complete collector and normalization han
 mdp --json requirements --dir <pack-root> --job <job-id>
 ```
 
-This command is read-only. It compiles the pack-owned questions, source policy, normalization identity, and request/response schemas; it does not collect sources or call a model. An existing job without a Decision Input Contract returns `available: false` and keeps its current fit/readiness behavior.
+This command is read-only. It compiles the pack-owned questions, source policy, normalization identity, and request/response schemas; it does not collect sources or call a model. An existing job without a Decision Input Contract returns `available: false`. When that job declares `model_task`, inspect `data.model_task_available`, the exact prompt ID/version/hash, declared input producers, instructions, and output contract. Hand that package to the customer-selected host; MDP does not execute it.
 
 When the user is connecting an external orchestrator, keep its mapping outside
 the pack and validate it against the exact compiled release:
@@ -157,7 +157,7 @@ work unless validation passes and the envelope's top-level `outcome` is exactly
 `ready`. Every other normalized outcome remains no-draft.
 
 For any selected prompt that is not the bound decision-input normalization
-prompt, preserve the legacy `mdp.prompt-output.v0` validation path without
+prompt, preserve the `mdp.prompt-output.v0` validation path without
 `--source-attempt-request` or `--collected-attempt-results`, regardless of
 job-wide `data.available`. Require
 `normalization_trace.fit_readiness.ready_for_mdp_fit` only for a legacy
@@ -165,6 +165,13 @@ prospect-normalization prompt that declares `normalized_prospect` and that
 readiness field. For extraction or card-patch prompts, successful contract
 validation is the applicable machine gate; do not require an undeclared
 normalization trace.
+
+For `data.model_task.status: ready`, use only the compiled prompt package and
+exact resolved product foundation. Validate the returned governed artifact
+with its prompt ID. A valid artifact schema is not final claim approval;
+generated prose must also pass the job's `check-claims` or `verify-output`
+gate. A missing, blocked, or unassessed model task must never fall back to
+instructions implied by this skill.
 
 Closed v1 pairs:
 

@@ -41,6 +41,14 @@ mdp --json gaps --dir PACK_ROOT
 mdp --json requirements --dir PACK_ROOT --job JOB_ID
 ```
 
+For `outbound-copy-brief` or `outbound-copy-review`, inspect
+`data.model_task` even when Decision Input `data.available` is false. Use the
+exact compiled prompt, selected product foundation, declared inputs, version,
+and output schema. The customer-selected host owns the model call. Validate
+the returned governed artifact, then run `mdp check-claims` on generated or
+supplied copy. Never replace a blocked or unassessed task with skill-implied
+writing instructions.
+
 5. Branch on `data.available`:
    - When `true`, do not collect or normalize inside this skill.
      - If all three artifacts—`SOURCE_ATTEMPT_REQUEST_JSON`,

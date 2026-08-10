@@ -1,6 +1,6 @@
 use crate::constants::{
     DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, NORMALIZED_DECISION_INPUT_CONTRACT,
-    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
     PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
@@ -1165,12 +1165,24 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "input_contracts",
             "decision_input_contracts",
             "product_foundation",
+            "model_task",
         ],
         ".mdp/manifest.yaml#/jobs",
         "manifest_profile_job_unknown_field",
         issues,
     );
     validate_profile_job_product_foundation_shapes(yaml_get(&value, "jobs"), issues);
+    if let Some(jobs) = yaml_get(&value, "jobs").and_then(YamlValue::as_sequence) {
+        for (index, job) in jobs.iter().enumerate() {
+            validate_object_keys(
+                yaml_get(job, "model_task").unwrap_or(&YamlValue::Null),
+                &["kind", "prompt"],
+                &format!(".mdp/manifest.yaml#/jobs/{index}/model_task"),
+                "manifest_profile_job_model_task_unknown_field",
+                issues,
+            );
+        }
+    }
     validate_object_keys(
         yaml_get(&value, "profile_eval").unwrap_or(&YamlValue::Null),
         &["required_categories", "activation"],
@@ -1857,6 +1869,7 @@ fn validate_profile_mapping(
         &known_primitives,
         &input_contract_ids,
         &decision_input_contract_ids,
+        prompt_inventory,
         ".mdp/manifest.yaml#/jobs",
         issues,
     );
@@ -1930,15 +1943,18 @@ fn validate_profile_mapping(
         let mut product_foundation =
             resolve_product_foundation(manifest, product_foundation_index, &job.id);
         apply_validation_errors_for_job(&mut product_foundation, manifest, issues.as_slice());
+        let model_task = model_task_summary(job, prompt_inventory);
         let activation_ready = missing_job_primitives.is_empty()
             && !explicit_activation_blocks
-            && !product_foundation.blocks_activation();
+            && !product_foundation.blocks_activation()
+            && model_task["status"] != "blocked";
         job_summaries.push(json!({
             "id": &job.id,
             "label": &job.label,
             "required_primitives": &job.required_primitives,
             "missing_required_primitives": missing_job_primitives,
             "product_foundation": resolution_json(&product_foundation),
+            "model_task": model_task,
             "activation_ready": activation_ready
         }));
     }
@@ -2139,16 +2155,141 @@ fn validate_input_contracts(
     seen
 }
 
+fn validate_job_model_task(
+    job: &ProfileJob,
+    prompt_inventory: &PromptInventory,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(binding) = job.model_task.as_ref() else {
+        return;
+    };
+    if !matches!(binding.kind.as_str(), "generation" | "review") {
+        issues.push(issue(
+            "profile_job_model_task_kind_invalid",
+            "error",
+            format!("{path}/model_task/kind"),
+            "job model_task kind must be generation or review",
+        ));
+    }
+    if binding.prompt.trim().is_empty() {
+        issues.push(issue(
+            "profile_job_model_task_prompt_empty",
+            "error",
+            format!("{path}/model_task/prompt"),
+            "job model_task prompt must not be empty",
+        ));
+        return;
+    }
+    let Some(prompt) = prompt_inventory.get(&binding.prompt) else {
+        issues.push(issue(
+            "profile_job_model_task_prompt_missing",
+            "error",
+            format!("{path}/model_task/prompt"),
+            format!(
+                "job {} references missing model-task prompt {}",
+                job.id, binding.prompt
+            ),
+        ));
+        return;
+    };
+    if prompt.format.as_deref() != Some(PROMPT_FORMAT_V1) {
+        issues.push(issue(
+            "profile_job_model_task_prompt_format_invalid",
+            "error",
+            format!("{path}/model_task/prompt"),
+            format!(
+                "job-owned model-task prompt {} must use {PROMPT_FORMAT_V1}",
+                binding.prompt
+            ),
+        ));
+    }
+    if prompt.id.as_deref() != Some(binding.prompt.as_str()) {
+        issues.push(issue(
+            "profile_job_model_task_prompt_reference_invalid",
+            "error",
+            format!("{path}/model_task/prompt"),
+            "job model_task must reference the canonical prompt id, not a file path or alias",
+        ));
+    }
+    if prompt.kind.as_deref() != Some(binding.kind.as_str()) {
+        issues.push(issue(
+            "profile_job_model_task_kind_mismatch",
+            "error",
+            format!("{path}/model_task/kind"),
+            format!(
+                "job model_task kind {} does not match prompt kind",
+                binding.kind
+            ),
+        ));
+    }
+    if prompt.output_kind.as_deref() != Some("governed-artifact") {
+        issues.push(issue(
+            "profile_job_model_task_output_kind_invalid",
+            "error",
+            format!("{path}/model_task/prompt"),
+            "generation and review model-task prompts must use output_kind governed-artifact",
+        ));
+    }
+    if prompt
+        .version
+        .as_deref()
+        .is_none_or(|value| value.trim().is_empty())
+    {
+        issues.push(issue(
+            "profile_job_model_task_prompt_version_missing",
+            "error",
+            format!("{path}/model_task/prompt"),
+            "job-owned model-task prompt must declare a non-blank version",
+        ));
+    }
+}
+
+fn model_task_summary(job: &ProfileJob, prompt_inventory: &PromptInventory) -> Value {
+    let Some(binding) = job.model_task.as_ref() else {
+        return json!({
+            "status": "unassessed",
+            "reason": "job does not declare a pack-owned model task"
+        });
+    };
+    let Some(prompt) = prompt_inventory.get(&binding.prompt) else {
+        return json!({
+            "status": "blocked",
+            "kind": binding.kind,
+            "prompt": binding.prompt,
+            "reason": "declared prompt is missing"
+        });
+    };
+    let ready = matches!(binding.kind.as_str(), "generation" | "review")
+        && prompt.format.as_deref() == Some(PROMPT_FORMAT_V1)
+        && prompt.id.as_deref() == Some(binding.prompt.as_str())
+        && prompt.kind.as_deref() == Some(binding.kind.as_str())
+        && prompt.output_kind.as_deref() == Some("governed-artifact")
+        && prompt
+            .version
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty());
+    json!({
+        "status": if ready { "ready" } else { "blocked" },
+        "kind": binding.kind,
+        "prompt": binding.prompt,
+        "prompt_path": prompt.canonical_path,
+        "prompt_version": prompt.version
+    })
+}
+
 fn validate_profile_jobs(
     jobs: &[ProfileJob],
     profile_id: &str,
     known_primitives: &BTreeSet<&str>,
     input_contract_ids: &BTreeSet<String>,
     decision_input_contract_ids: &BTreeSet<String>,
+    prompt_inventory: &PromptInventory,
     path: &str,
     issues: &mut Vec<Value>,
 ) -> BTreeSet<String> {
     let mut seen = BTreeSet::new();
+    let mut model_task_prompt_owners = BTreeMap::new();
     for (index, job) in jobs.iter().enumerate() {
         let job_path = format!("{path}/{index}");
         if job.id.trim().is_empty() {
@@ -2222,6 +2363,22 @@ fn validate_profile_jobs(
             "input contract",
             issues,
         );
+        validate_job_model_task(job, prompt_inventory, &job_path, issues);
+        if let Some(binding) = job.model_task.as_ref()
+            && !binding.prompt.trim().is_empty()
+            && let Some(first_job_id) =
+                model_task_prompt_owners.insert(binding.prompt.clone(), job.id.clone())
+        {
+            issues.push(issue(
+                "profile_job_model_task_prompt_reused",
+                "error",
+                format!("{job_path}/model_task/prompt"),
+                format!(
+                    "model-task prompt {} is already bound to job {}; each generation or review job must own one prompt",
+                    binding.prompt, first_job_id
+                ),
+            ));
+        }
         validate_reference_list(
             &job.decision_input_contracts,
             decision_input_contract_ids,
@@ -4244,6 +4401,9 @@ struct PromptInventory {
 
 #[derive(Clone, Debug, Default)]
 struct PromptInventoryEntry {
+    id: Option<String>,
+    format: Option<String>,
+    kind: Option<String>,
     contract: Option<String>,
     output_kind: Option<String>,
     schema_ref: Option<String>,
@@ -4265,6 +4425,9 @@ fn prompt_inventory(loaded_prompts: &[Value]) -> PromptInventory {
     let mut inventory = PromptInventory::default();
     for prompt in loaded_prompts {
         let entry = PromptInventoryEntry {
+            id: prompt["id"].as_str().map(ToOwned::to_owned),
+            format: prompt["format"].as_str().map(ToOwned::to_owned),
+            kind: prompt["kind"].as_str().map(ToOwned::to_owned),
             contract: prompt["output_contract"]["contract"]
                 .as_str()
                 .map(ToOwned::to_owned),
@@ -4468,8 +4631,10 @@ fn validate_prompts(root: &Path, issues: &mut Vec<Value>) -> Result<Vec<Value>> 
             Ok(prompt) => {
                 validate_prompt_file(&prompt, &display_path, &mut prompt_ids, issues);
                 loaded_prompts.push(json!({
+                    "format": prompt.format,
                     "id": prompt.id,
                     "version": prompt.version,
+                    "kind": prompt.kind,
                     "path": display_path,
                     "target_card_kinds": prompt.target_card_kinds,
                     "inputs": prompt.inputs.len(),
@@ -4506,12 +4671,22 @@ fn validate_prompt_shape(path: &Path, display_path: &str, issues: &mut Vec<Value
             "format",
             "id",
             "version",
+            "kind",
             "title",
             "description",
             "target_card_kinds",
             "tags",
             "inputs",
             "instructions",
+            "role",
+            "objective",
+            "procedure",
+            "selection_rules",
+            "ambiguity_policy",
+            "provenance_policy",
+            "evidence_policy",
+            "negative_examples",
+            "final_checklist",
             "output_contract",
         ],
         display_path,
@@ -4526,6 +4701,7 @@ fn validate_prompt_shape(path: &Path, display_path: &str, issues: &mut Vec<Value
             "required",
             "default",
             "missing_behavior",
+            "producer",
         ],
         &format!("{display_path}#/inputs"),
         "prompt_input_unknown_field",
@@ -4573,16 +4749,22 @@ fn validate_prompt_file(
     prompt_ids: &mut BTreeSet<String>,
     issues: &mut Vec<Value>,
 ) {
-    if prompt.format != PROMPT_FORMAT_VERSION {
+    if !matches!(
+        prompt.format.as_str(),
+        PROMPT_FORMAT_VERSION | PROMPT_FORMAT_V1
+    ) {
         issues.push(issue(
             "prompt_format",
             "error",
             format!("{path}#/format"),
             format!(
-                "prompt format must be {PROMPT_FORMAT_VERSION}, found {}",
+                "prompt format must be {PROMPT_FORMAT_VERSION} or {PROMPT_FORMAT_V1}, found {}",
                 prompt.format
             ),
         ));
+    }
+    if prompt.format == PROMPT_FORMAT_V1 {
+        validate_prompt_v1(prompt, path, issues);
     }
     if prompt.id.trim().is_empty() {
         issues.push(issue(
@@ -4645,6 +4827,73 @@ fn validate_prompt_file(
     validate_prompt_output_contract(prompt, path, issues);
 }
 
+fn validate_prompt_v1(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
+    if prompt
+        .version
+        .as_deref()
+        .is_none_or(|value| value.trim().is_empty())
+    {
+        issues.push(issue(
+            "prompt_v1_version_required",
+            "error",
+            format!("{path}#/version"),
+            "mdp.prompt.v1 prompts must declare a non-blank version",
+        ));
+    }
+    if !matches!(
+        prompt.kind.as_deref(),
+        Some("normalization" | "generation" | "review")
+    ) {
+        issues.push(issue(
+            "prompt_v1_kind_required",
+            "error",
+            format!("{path}#/kind"),
+            "mdp.prompt.v1 prompts must declare normalization, generation, or review",
+        ));
+    }
+    for (field, value) in [("role", &prompt.role), ("objective", &prompt.objective)] {
+        if value.as_deref().is_none_or(|value| value.trim().is_empty()) {
+            issues.push(issue(
+                "prompt_v1_text_required",
+                "error",
+                format!("{path}#/{field}"),
+                format!("mdp.prompt.v1 prompts must declare a non-blank {field}"),
+            ));
+        }
+    }
+    for (field, values) in [
+        ("procedure", &prompt.procedure),
+        ("selection_rules", &prompt.selection_rules),
+        ("ambiguity_policy", &prompt.ambiguity_policy),
+        ("provenance_policy", &prompt.provenance_policy),
+        ("evidence_policy", &prompt.evidence_policy),
+        ("negative_examples", &prompt.negative_examples),
+        ("final_checklist", &prompt.final_checklist),
+    ] {
+        if values.is_empty() || values.iter().any(|value| value.trim().is_empty()) {
+            issues.push(issue(
+                "prompt_v1_rules_required",
+                "error",
+                format!("{path}#/{field}"),
+                format!("mdp.prompt.v1 prompts must declare non-empty {field}"),
+            ));
+        }
+    }
+    for (index, input) in prompt.inputs.iter().enumerate() {
+        if !matches!(
+            input.producer.as_deref(),
+            Some("host" | "pack" | "runtime" | "source" | "prior-step")
+        ) {
+            issues.push(issue(
+                "prompt_v1_input_producer_required",
+                "error",
+                format!("{path}#/inputs/{index}/producer"),
+                "mdp.prompt.v1 inputs must declare host, pack, runtime, source, or prior-step as producer",
+            ));
+        }
+    }
+}
+
 fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
     let contract = &prompt.output_contract;
     let output_kind = contract.output_kind.as_deref().unwrap_or("card-patches");
@@ -4652,14 +4901,17 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
         || contract.contract == NORMALIZED_DECISION_INPUT_CONTRACT;
     if !matches!(
         output_kind,
-        "card-patches" | "prospect-normalization" | "decision-input-normalization"
+        "card-patches"
+            | "prospect-normalization"
+            | "decision-input-normalization"
+            | "governed-artifact"
     ) {
         issues.push(issue(
             "prompt_output_kind_unknown",
             "error",
             format!("{path}#/output_contract/output_kind"),
             format!(
-                "prompt output_kind must be card-patches, prospect-normalization, or decision-input-normalization, found {output_kind}"
+                "prompt output_kind must be card-patches, prospect-normalization, decision-input-normalization, or governed-artifact, found {output_kind}"
             ),
         ));
     }
@@ -4718,6 +4970,51 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
             format!("{path}#/output_contract/strict_json_only"),
             "prompt outputs must be strict JSON only",
         ));
+    }
+
+    if output_kind == "governed-artifact" {
+        for field in [
+            "contract",
+            "prompt_id",
+            "source_summary",
+            "selected_authority",
+            "artifact",
+            "gaps",
+            "rejected_claims",
+        ] {
+            if !contract
+                .required_top_level
+                .iter()
+                .any(|value| value == field)
+            {
+                issues.push(issue(
+                    "prompt_output_required_field_missing",
+                    "error",
+                    format!("{path}#/output_contract/required_top_level"),
+                    format!("governed-artifact prompt output contract must require {field}"),
+                ));
+            }
+        }
+        if let Some(schema) = contract.schema.as_ref() {
+            validate_prompt_output_schema(prompt, schema, path, output_kind, issues);
+            validate_governed_artifact_schema(prompt, schema, path, issues);
+            if jsonschema::draft202012::validate(schema, &contract.example).is_err() {
+                issues.push(issue(
+                    "prompt_output_example_schema_mismatch",
+                    "error",
+                    format!("{path}#/output_contract/example"),
+                    "governed-artifact example must satisfy the declared inline JSON Schema",
+                ));
+            }
+        } else {
+            issues.push(issue(
+                "prompt_output_schema_missing",
+                "error",
+                format!("{path}#/output_contract/schema"),
+                "governed-artifact prompts must declare an inline JSON Schema",
+            ));
+        }
+        return;
     }
 
     let required = if is_decision_input_normalization {
@@ -4812,6 +5109,61 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     }
     if output_kind == "prospect-normalization" {
         validate_prompt_normalization_example(prompt, path, issues);
+    }
+}
+
+fn validate_governed_artifact_schema(
+    prompt: &PromptFile,
+    schema: &Value,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    let source_summary = &schema["properties"]["source_summary"];
+    if source_summary["type"].as_str() != Some("object")
+        || source_summary["additionalProperties"].as_bool() != Some(false)
+        || !schema_array_contains(&source_summary["required"], "inputs_used")
+    {
+        issues.push(issue(
+            "governed_artifact_source_summary_schema_invalid",
+            "error",
+            format!("{path}#/output_contract/schema/properties/source_summary"),
+            "governed-artifact source_summary must be closed and require inputs_used",
+        ));
+    }
+    let declared = prompt
+        .inputs
+        .iter()
+        .map(|input| input.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let input_enum = &source_summary["properties"]["inputs_used"]["items"]["enum"];
+    let Some(values) = input_enum.as_array() else {
+        issues.push(issue(
+            "governed_artifact_inputs_used_schema_invalid",
+            "error",
+            format!("{path}#/output_contract/schema/properties/source_summary/properties/inputs_used/items/enum"),
+            "governed-artifact inputs_used must enumerate declared prompt input names",
+        ));
+        return;
+    };
+    for (index, value) in values.iter().enumerate() {
+        if value.as_str().is_none_or(|value| !declared.contains(value)) {
+            issues.push(issue(
+                "governed_artifact_inputs_used_undeclared",
+                "error",
+                format!("{path}#/output_contract/schema/properties/source_summary/properties/inputs_used/items/enum/{index}"),
+                "governed-artifact inputs_used may enumerate declared prompt inputs only",
+            ));
+        }
+    }
+    if schema["properties"]["selected_authority"]["type"].as_str() != Some("array")
+        || schema["properties"]["artifact"]["type"].as_str() != Some("object")
+    {
+        issues.push(issue(
+            "governed_artifact_trace_schema_invalid",
+            "error",
+            format!("{path}#/output_contract/schema/properties"),
+            "governed-artifact schema must define selected_authority as an array and artifact as an object",
+        ));
     }
 }
 
@@ -4973,7 +5325,7 @@ fn validate_prompt_output_schema(
 
     if output_kind == "prospect-normalization" {
         validate_prompt_normalization_output_schema(schema, path, issues);
-    } else {
+    } else if output_kind == "card-patches" {
         validate_prompt_card_patch_output_schema(prompt, schema, path, issues);
     }
 }
@@ -5570,6 +5922,151 @@ mod tests {
         )
         .expect("targeted pack should initialize");
         root
+    }
+
+    fn opt_in_generation_prompt(root: &Path) {
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        let mut prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+        prompt["format"] = YamlValue::String(PROMPT_FORMAT_V1.to_string());
+        prompt["version"] = YamlValue::String("1".to_string());
+        prompt["kind"] = YamlValue::String("generation".to_string());
+        prompt["role"] = YamlValue::String("Grounded outbound copy writer".to_string());
+        prompt["objective"] =
+            YamlValue::String("Produce one governed outbound draft artifact.".to_string());
+        for field in [
+            "procedure",
+            "selection_rules",
+            "ambiguity_policy",
+            "provenance_policy",
+            "evidence_policy",
+            "negative_examples",
+            "final_checklist",
+        ] {
+            prompt[field] =
+                YamlValue::Sequence(vec![YamlValue::String(format!("Explicit {field} rule"))]);
+        }
+        for input in prompt["inputs"]
+            .as_sequence_mut()
+            .expect("inputs should be a sequence")
+        {
+            input["producer"] = YamlValue::String("host".to_string());
+        }
+        prompt["output_contract"]["output_kind"] =
+            YamlValue::String("governed-artifact".to_string());
+        prompt["output_contract"]["schema_ref"] = YamlValue::Null;
+        let output_contract: YamlValue = serde_yaml::from_str(
+            r#"
+required_top_level:
+  - contract
+  - prompt_id
+  - source_summary
+  - selected_authority
+  - artifact
+  - gaps
+  - rejected_claims
+schema:
+  type: object
+  additionalProperties: false
+  required: [contract, prompt_id, source_summary, selected_authority, artifact, gaps, rejected_claims]
+  properties:
+    contract: {const: mdp.prompt-output.v0}
+    prompt_id: {const: normalize-prospect-row}
+    source_summary:
+      type: object
+      additionalProperties: false
+      required: [inputs_used]
+      properties:
+        inputs_used:
+          type: array
+          items: {enum: [raw_row, company_domain, existing_pack_context, runtime_context, source_kind]}
+    selected_authority: {type: array, items: {type: string}}
+    artifact: {type: object}
+    gaps: {type: array, items: {type: string}}
+    rejected_claims: {type: array, items: {type: string}}
+example:
+  contract: mdp.prompt-output.v0
+  prompt_id: normalize-prospect-row
+  source_summary: {inputs_used: []}
+  selected_authority: [positioning/decision-layer]
+  artifact: {message_body: "Hello"}
+  gaps: []
+  rejected_claims: []
+"#,
+        )
+        .expect("output contract should parse");
+        for field in ["required_top_level", "schema", "example"] {
+            prompt["output_contract"][field] = output_contract[field].clone();
+        }
+        std::fs::write(
+            &prompt_path,
+            serde_yaml::to_string(&prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][0]["model_task"] = serde_yaml::from_str(
+            r#"
+kind: generation
+prompt: normalize-prospect-row
+"#,
+        )
+        .expect("model task should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    #[test]
+    fn opted_in_job_owned_generation_prompt_is_ready() {
+        let root = temp_pack("job-owned-generation-prompt");
+        opt_in_generation_prompt(&root);
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
+        assert_eq!(
+            result["profile"]["jobs"][0]["model_task"]["status"],
+            "ready"
+        );
+        assert_eq!(
+            result["profile"]["jobs"][0]["model_task"]["prompt_version"],
+            "1"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn opted_in_job_owned_prompt_kind_mismatch_fails_closed() {
+        let root = temp_pack("job-owned-prompt-kind-mismatch");
+        opt_in_generation_prompt(&root);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace("kind: generation", "kind: review"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| { issue["code"] == "profile_job_model_task_kind_mismatch" })
+        );
+        assert_eq!(
+            result["profile"]["jobs"][0]["model_task"]["status"],
+            "blocked"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn opt_in_product_foundation(root: &Path) {
@@ -6405,7 +6902,7 @@ excluded: []
         assert_eq!(result["profile"]["activation_ready"], true);
         assert_eq!(
             result["prompts"].as_array().expect("prompts array").len(),
-            10
+            12
         );
 
         let _ = std::fs::remove_dir_all(root);

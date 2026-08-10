@@ -286,6 +286,30 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/prompts/review-bid-no-bid.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-bid-no-bid.yaml"
+        ),
+    ),
+    (
+        ".mdp/prompts/review-proposal-compliance.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-proposal-compliance.yaml"
+        ),
+    ),
+    (
+        ".mdp/prompts/review-proposal-proof.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-proposal-proof.yaml"
+        ),
+    ),
+    (
+        ".mdp/prompts/review-proposal-red-team.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-proposal-red-team.yaml"
+        ),
+    ),
+    (
         "examples/proof-output/claim-source-ref-missing.json",
         include_str!(
             "../../../plugin/assets/templates/proposal/examples/proof-output/claim-source-ref-missing.json"
@@ -1015,6 +1039,27 @@ mod tests {
                 job.id
             );
             assert!(!foundation.selected_facets.is_empty());
+            if job.id == "prospect-fit-or-brief" {
+                assert!(job.model_task.is_none());
+            } else {
+                let binding = job.model_task.as_ref().expect("model task should be bound");
+                let prompt_path = root
+                    .join(".mdp/prompts")
+                    .join(if binding.kind == "generation" {
+                        "generate-outbound-copy.yaml"
+                    } else {
+                        "review-outbound-copy.yaml"
+                    });
+                let prompt = crate::pack_io::read_prompt(&prompt_path)
+                    .expect("job-owned prompt should parse");
+                assert_eq!(prompt.id, binding.prompt);
+                assert_eq!(prompt.kind.as_deref(), Some(binding.kind.as_str()));
+                assert_eq!(prompt.version.as_deref(), Some("1"));
+                assert_eq!(
+                    prompt.output_contract.output_kind.as_deref(),
+                    Some("governed-artifact")
+                );
+            }
         }
         let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
             .expect("orientation README should exist");
@@ -1160,6 +1205,19 @@ mod tests {
                     job.id
                 );
             }
+            let binding = job
+                .model_task
+                .as_ref()
+                .expect("proposal job should own a prompt");
+            assert_eq!(binding.kind, "review");
+            let prompt_path = root
+                .join(".mdp/prompts")
+                .join(format!("{}.yaml", binding.prompt.trim_end_matches("-v1")));
+            let prompt = crate::pack_io::read_prompt(&prompt_path)
+                .expect("proposal job-owned prompt should parse");
+            assert_eq!(prompt.id, binding.prompt);
+            assert_eq!(prompt.kind.as_deref(), Some("review"));
+            assert_eq!(prompt.version.as_deref(), Some("1"));
         }
         let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
             .expect("orientation README should exist");
@@ -1293,6 +1351,10 @@ mod tests {
                 .join("normalize-prospect.yaml"),
         )
         .expect("normalization prompt should be readable");
+        assert!(normalization_prompt.contains("format: mdp.prompt.v1"));
+        assert!(normalization_prompt.contains("kind: normalization"));
+        assert!(normalization_prompt.contains("version: '1'"));
+        assert!(normalization_prompt.contains("producer: source"));
         assert!(normalization_prompt.contains("lead_input_requirements.value_contracts"));
         assert!(normalization_prompt.contains("lead_input_requirements.attribute_definitions"));
         assert!(normalization_prompt.contains("name: runtime_context"));
@@ -1389,6 +1451,19 @@ mod tests {
                 .expect("plugin template file should be readable");
             assert_eq!(generated, checked_in, "template drift in {relative}");
         }
+
+        let normalization =
+            crate::pack_io::read_prompt(&root.join(".mdp/prompts/normalize-opportunity.yaml"))
+                .expect("proposal normalization prompt should parse");
+        assert_eq!(normalization.format, "mdp.prompt.v1");
+        assert_eq!(normalization.kind.as_deref(), Some("normalization"));
+        assert_eq!(normalization.version.as_deref(), Some("1"));
+        assert!(
+            normalization
+                .inputs
+                .iter()
+                .all(|input| input.producer.is_some())
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

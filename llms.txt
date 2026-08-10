@@ -16,7 +16,7 @@ Use `--cli` for the CLI only or `--codex`, `--claude-code`, `--cursor`, or `--op
 
 1. Load `.mdp/manifest.yaml` first.
 2. Preserve facts, interpretations, and gaps in `.mdp/sources.yaml`.
-3. Use optional prompt contracts to normalize supplied rows or extract reviewable card patches.
+3. Use prompt contracts to normalize supplied rows, extract reviewable card patches, or compile a canonical job's versioned generation/review task for a customer-selected host.
 4. For audit-grade proposal/document normalization, use a runner that makes a fresh/stateless model call and records `mdp run-receipt` with a valid `mdp.runner-audit.v0` for production proposal pilots. The local proposal runner surface is `scripts/mdp-proposal-runner.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed bundles; MCP-capable hosts can use the bundled local stdio wrapper `scripts/mdp-proposal-mcp-server.mjs` / `${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs`. This is not a hosted or remote MCP service, and MCP transport alone is not audit-grade. The lower-level reference runner is `scripts/mdp-native-normalize-openai.mjs`; dry-run/mock validation needs no API key, while real native model calls require the operator's `OPENAI_API_KEY`.
 5. Run `mdp --json validate --dir <pack>`.
 5. Use `skills`, `route --entries`, `fit`, and `brief --context` to load only eligible context. Let pack-owned `qualification_gates` decide required person and source-backed signal coverage.
@@ -81,6 +81,7 @@ MDP ships exactly five skills: `mdp`, `mdp-pack-builder`, `mdp-pack-review`, `md
 - [Conceptual Decision Flow](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/conceptual-decision-flow.md)
 - [Portfolio-Aware GTM Scope](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/portfolio-scope.md)
 - [Prompt Contracts](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md)
+- [Job-owned Prompt Contracts](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/job-prompt-contracts.md)
 - [Local Proposal Runner Surface](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/proposal-runner.md)
 - [Native API Normalization Runner](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/native-api-normalization-runner.md)
 - [Proof Output Drafting](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/proof-output-drafting.md)

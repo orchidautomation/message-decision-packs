@@ -218,6 +218,7 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Product Foundations](docs/product-foundations.md): exact per-job product authority, readiness, compatibility, and README orientation.
 - [Conceptual Decision Flow](docs/conceptual-decision-flow.md): layer ownership and deterministic decision boundaries.
 - [Prompt Contracts](docs/prompt-extraction-contract.md): normalization and extraction schemas.
+- [Job-owned Prompt Contracts](docs/job-prompt-contracts.md): versioned generation/review instructions, declared input producers, compiled host packages, and exact governed-artifact schemas.
 - [Decision Input Contracts](docs/decision-input-contracts.md): attempted-complete data questions, source-attempt policy, normalization envelopes, and no-draft outcomes.
 - [Decision Traces](docs/decision-traces.md): bounded JSON and Mermaid projections of existing decision authority.
 - [Runner Receipts](docs/run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.

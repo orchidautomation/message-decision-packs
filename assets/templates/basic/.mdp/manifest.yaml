@@ -409,6 +409,9 @@ jobs:
     - narrative-posture
     optional:
     - known-gaps
+  model_task:
+    kind: generation
+    prompt: generate-outbound-copy-v1
 - id: outbound-copy-review
   skill_id: mdp-gtm-brief
   label: Supplied outbound copy review
@@ -436,6 +439,9 @@ jobs:
     - narrative-posture
     optional:
     - known-gaps
+  model_task:
+    kind: review
+    prompt: review-outbound-copy-v1
 profile_eval:
   required_categories:
   - proceed

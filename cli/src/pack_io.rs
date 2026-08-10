@@ -24,6 +24,39 @@ pub(crate) fn read_prompt(path: &Path) -> Result<PromptFile> {
     serde_yaml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
 }
 
+pub(crate) fn read_canonical_prompt_by_id(
+    root: &Path,
+    id: &str,
+) -> Result<Option<(PathBuf, PromptFile)>> {
+    let prompts_dir = root.join(DEFAULT_DIR).join("prompts");
+    let mut paths = match fs::read_dir(&prompts_dir) {
+        Ok(entries) => entries
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error).with_context(|| format!("reading {}", prompts_dir.display()));
+        }
+    };
+    paths.sort();
+
+    let mut matches = Vec::new();
+    for path in paths {
+        let prompt = read_prompt(&path)?;
+        if prompt.id == id {
+            matches.push((path, prompt));
+        }
+    }
+    match matches.len() {
+        0 => Ok(None),
+        1 => Ok(matches.pop()),
+        count => Err(anyhow!(
+            "prompt id {id} is ambiguous under {DEFAULT_DIR}/prompts ({count} files)"
+        )),
+    }
+}
+
 pub(crate) fn resolve_pack_path(root: &Path, manifest_path: &str) -> Result<PathBuf> {
     let path = Path::new(manifest_path);
     if path.is_absolute() {

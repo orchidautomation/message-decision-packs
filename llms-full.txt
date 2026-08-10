@@ -60,7 +60,7 @@ mdp --json capabilities
   manifest.yaml
   sources.yaml
   source-strategy.json   # optional reviewed discovery plan
-  prompts/*.yaml         # optional normalization/extraction contracts
+  prompts/*.yaml         # normalization, extraction, generation, and review contracts
   cards/*.yaml
   briefs/
   evals/*.yaml
@@ -161,10 +161,11 @@ Generated starter rows carry `source_kind: synthetic-example` and `synthetic: tr
 
 ## Prompt And Source-Strategy Contracts
 
-Prompt files use `format: mdp.prompt.v0` and return `contract: mdp.prompt-output.v0`:
+Legacy prompt files use `format: mdp.prompt.v0`. Job-owned generation and review tasks use versioned `mdp.prompt.v1`. Both retain validated local output contracts:
 
 - normalization prompts turn messy supplied rows into validated prospect or opportunity context;
 - extraction prompts propose reviewable card patches, gaps, rejected claims, confidence, and provenance.
+- generation/review prompts declare every input producer, procedure, selection/evidence rules, negative examples, and an exact `governed-artifact` schema. `jobs[].model_task` binds one prompt to one canonical job. `requirements --job` compiles the prompt/version/hash and selected product foundation; the customer-selected host makes the model call.
 
 `source_summary.inputs_used` names exact declared prompt inputs only, such as `raw_row`, `raw_opportunity`, `existing_pack_context`, or `source_kind`. Field paths, snippets, URLs, PDF/page locators, and review notes belong in source/provenance locators such as `signals[].source`, entry `evidence`/`provenance`, and normalization trace. Proposal normalization keeps `normalized_prospect` for compatibility and may include `normalized_opportunity` only as an exact alias.
 
@@ -218,6 +219,7 @@ The example:
 - Conceptual Decision Flow: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/conceptual-decision-flow.md>
 - Portfolio-Aware GTM Scope: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/portfolio-scope.md>
 - Prompt Contracts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/prompt-extraction-contract.md>
+- Job-owned Prompt Contracts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/job-prompt-contracts.md>
 - Runner Receipts: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/run-receipts.md>
 - Local Proposal Runner Surface: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/proposal-runner.md>
 - Headless Normalization Runners: <https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md>

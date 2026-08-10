@@ -1,6 +1,6 @@
 use crate::constants::{
-    FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION,
+    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
     Card, CardKind, CardRef, CountConstraint, Entry, EntryConstraints, InputContract,
@@ -383,6 +383,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 "claims",
                 "proof-boundaries",
             ])),
+            model_task: None,
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
@@ -419,6 +420,10 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 "calls-to-action",
                 "narrative-posture",
             ])),
+            model_task: Some(crate::models::JobModelTask {
+                kind: "generation".to_string(),
+                prompt: "generate-outbound-copy-v1".to_string(),
+            }),
         },
         ProfileJob {
             id: "outbound-copy-review".to_string(),
@@ -450,6 +455,10 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 "calls-to-action",
                 "narrative-posture",
             ])),
+            model_task: Some(crate::models::JobModelTask {
+                kind: "review".to_string(),
+                prompt: "review-outbound-copy-v1".to_string(),
+            }),
         },
     ]
 }
@@ -1798,6 +1807,18 @@ pub(crate) fn starter_prompts(include_output_schemas: bool) -> Vec<(&'static str
             prospect_normalization_prompt_contract(include_output_schemas),
         ),
         (
+            "generate-outbound-copy.yaml",
+            outbound_model_task_prompt(
+                "outbound-copy-brief",
+                "generate-outbound-copy-v1",
+                "generation",
+            ),
+        ),
+        (
+            "review-outbound-copy.yaml",
+            outbound_model_task_prompt("outbound-copy-review", "review-outbound-copy-v1", "review"),
+        ),
+        (
             "icp-persona.yaml",
             prompt_contract(
                 "extract-icp-persona",
@@ -2296,10 +2317,147 @@ fn initial_email_constraints() -> EntryConstraints {
     }
 }
 
+fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
+    let is_review = kind == "review";
+    let objective = if is_review {
+        "Evaluate supplied outbound copy against the exact routed product foundation, selected claims and evidence, CTA, and output constraints."
+    } else {
+        "Produce one structured outbound copy draft from the exact routed product foundation and declared runtime inputs."
+    };
+    let artifact_schema = if is_review {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "decision", "issues", "accepted_claim_ids", "accepted_evidence_ids"],
+            "properties": {
+                "status": {"enum": ["ready", "gap", "refused"]},
+                "decision": {"enum": ["approve", "revise", "reject"]},
+                "issues": {"type": "array", "items": {"type": "string"}},
+                "accepted_claim_ids": {"type": "array", "items": {"type": "string"}},
+                "accepted_evidence_ids": {"type": "array", "items": {"type": "string"}}
+            }
+        })
+    } else {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "angle_id", "cta_id", "claim_ids", "evidence_ids", "subject_options", "message_body"],
+            "properties": {
+                "status": {"enum": ["ready", "gap", "refused"]},
+                "angle_id": {"type": "string"},
+                "cta_id": {"type": "string"},
+                "claim_ids": {"type": "array", "items": {"type": "string"}},
+                "evidence_ids": {"type": "array", "items": {"type": "string"}},
+                "subject_options": {"type": "array", "items": {"type": "string"}},
+                "message_body": {"type": "string"}
+            }
+        })
+    };
+    let example_artifact = if is_review {
+        json!({
+            "status": "gap",
+            "decision": "revise",
+            "issues": ["The supplied draft uses a claim that is not selected authority."],
+            "accepted_claim_ids": [],
+            "accepted_evidence_ids": []
+        })
+    } else {
+        json!({
+            "status": "gap",
+            "angle_id": "N/A",
+            "cta_id": "N/A",
+            "claim_ids": [],
+            "evidence_ids": [],
+            "subject_options": [],
+            "message_body": "N/A"
+        })
+    };
+    let mut schema_properties = serde_json::Map::new();
+    schema_properties.insert(
+        "contract".to_string(),
+        json!({"const": PROMPT_OUTPUT_CONTRACT}),
+    );
+    schema_properties.insert("prompt_id".to_string(), json!({"const": id}));
+    schema_properties.insert("job_id".to_string(), json!({"const": job_id}));
+    schema_properties.insert("prompt_version".to_string(), json!({"const": "1"}));
+    schema_properties.insert(
+        "prompt_sha256".to_string(),
+        json!({"type": "string", "pattern": "^[0-9a-f]{64}$"}),
+    );
+    schema_properties.insert(
+        "source_summary".to_string(),
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["inputs_used"],
+            "properties": {
+                "inputs_used": {
+                    "type": "array",
+                    "items": {"enum": ["product_foundation", "normalized_prospect", "runtime_context", "supplied_draft"]}
+                }
+            }
+        }),
+    );
+    schema_properties.insert(
+        "selected_authority".to_string(),
+        json!({"type": "array", "items": {"type": "string"}}),
+    );
+    schema_properties.insert("artifact".to_string(), artifact_schema);
+    schema_properties.insert(
+        "gaps".to_string(),
+        json!({"type": "array", "items": {"type": "string"}}),
+    );
+    schema_properties.insert(
+        "rejected_claims".to_string(),
+        json!({"type": "array", "items": {"type": "string"}}),
+    );
+    json!({
+        "format": PROMPT_FORMAT_V1,
+        "id": id,
+        "version": "1",
+        "kind": kind,
+        "title": if is_review { "Review outbound copy" } else { "Generate outbound copy" },
+        "description": objective,
+        "role": if is_review { "Governed outbound copy reviewer" } else { "Governed outbound copy writer" },
+        "objective": objective,
+        "target_card_kinds": ["positioning", "personas", "pains", "claims", "avoid-rules", "output-rules", "ctas"],
+        "tags": ["prompt", "model-task", "outbound", kind],
+        "inputs": [
+            {"name": "product_foundation", "description": "Exact product-foundation resolution returned for this canonical job.", "required": true, "default": "N/A", "missing_behavior": "Return a gap or refusal; never load unrelated pack entries.", "producer": "pack"},
+            {"name": "normalized_prospect", "description": "Validated prospect or account context.", "required": true, "default": "N/A", "missing_behavior": "Return a gap; do not invent a recipient, company, trigger, or persona.", "producer": "prior-step"},
+            {"name": "runtime_context", "description": "Optional bounded date and channel metadata.", "required": false, "default": "N/A", "missing_behavior": "Avoid time-sensitive framing that is not supplied.", "producer": "runtime"},
+            {"name": "supplied_draft", "description": "Copy supplied for review; generation tasks leave this N/A.", "required": is_review, "default": "N/A", "missing_behavior": "Review tasks must return a gap when no draft is supplied.", "producer": "host"}
+        ],
+        "instructions": [
+            "Use only declared inputs and the exact selected product-foundation entries for this job.",
+            "Return strict JSON only and preserve exact selected authority identifiers.",
+            "If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts."
+        ],
+        "procedure": ["Confirm the job, prompt version, declared inputs, and selected authority.", "Apply the pack-owned selection and evidence rules.", "Return the exact governed artifact schema."],
+        "selection_rules": ["Choose only angle, CTA, claim, and evidence identifiers present in selected authority.", "Never load the whole pack or borrow authority from another job."],
+        "ambiguity_policy": ["Represent missing or conflicting facts in gaps and use a bounded non-success status."],
+        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact."],
+        "evidence_policy": ["Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output."],
+        "negative_examples": ["Do not invent customer proof, integrations, outcomes, timing, or recipient facts.", "Do not silently choose an undeclared claim or CTA."],
+        "final_checklist": ["Output is strict JSON.", "All selected identifiers are declared.", "Gaps and rejected claims are explicit.", "Generated copy is ready for separate verify-output validation."],
+        "output_contract": {
+            "contract": PROMPT_OUTPUT_CONTRACT,
+            "output_kind": "governed-artifact",
+            "strict_json_only": true,
+            "required_top_level": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"],
+            "entry_defaults": {"body": "N/A", "applies_to": [], "evidence": [], "avoid": [], "confidence": "unknown", "provenance": []},
+            "schema": {"type": "object", "additionalProperties": false, "required": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"], "properties": schema_properties},
+            "example": {"contract": PROMPT_OUTPUT_CONTRACT, "prompt_id": id, "job_id": job_id, "prompt_version": "1", "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "source_summary": {"inputs_used": []}, "selected_authority": [], "artifact": example_artifact, "gaps": if is_review { json!(["Supplied draft needs revision before approval."]) } else { json!(["Insufficient selected evidence for a claim-backed draft."]) }, "rejected_claims": []}
+        }
+    })
+}
+
 fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value {
     let mut prompt = json!({
-        "format": PROMPT_FORMAT_VERSION,
+        "format": PROMPT_FORMAT_V1,
         "id": "normalize-prospect-row",
+        "version": "1",
+        "kind": "normalization",
         "title": "Normalize prospect row",
         "description": "Turns a supplied messy person, company, account, CRM, CSV, Clay, Deepline, spreadsheet, or research row into provider-neutral MDP prospect JSON before mdp fit or brief runs.",
         "target_card_kinds": ["personas", "fit-rules", "signals"],
@@ -2310,35 +2468,40 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
                 "description": "The full messy source row, note, webhook payload, CSV row, CRM export row, Clay/Deepline row, spreadsheet row, or pasted research record.",
                 "required": true,
                 "default": "N/A",
-                "missing_behavior": "Return gaps and do not create normalized_prospect fields from absent source material."
+                "missing_behavior": "Return gaps and do not create normalized_prospect fields from absent source material.",
+                "producer": "source"
             },
             {
                 "name": "company_domain",
                 "description": "Company domain when available.",
                 "required": false,
                 "default": "N/A",
-                "missing_behavior": "Use N/A and do not infer company identity from absent data."
+                "missing_behavior": "Use N/A and do not infer company identity from absent data.",
+                "producer": "host"
             },
             {
                 "name": "existing_pack_context",
                 "description": "Relevant manifest personas, persona_mappings, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, fit rules, signal definitions, avoid-rules, output rules, and source policy from this MDP.",
                 "required": false,
                 "default": "N/A",
-                "missing_behavior": "Do not assume pack-owned persona mappings, value domains, fit rules, attributes, or signal names when this field is N/A."
+                "missing_behavior": "Do not assume pack-owned persona mappings, value domains, fit rules, attributes, or signal names when this field is N/A.",
+                "producer": "pack"
             },
             {
                 "name": "runtime_context",
                 "description": "Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing; fiscal year, renewal dates, event dates, and campaign windows remain pack-declared or supplied metadata.",
                 "required": false,
                 "default": "N/A",
-                "missing_behavior": "Do not infer fiscal years, renewal windows, event timing, or local business calendar facts from missing runtime context."
+                "missing_behavior": "Do not infer fiscal years, renewal windows, event timing, or local business calendar facts from missing runtime context.",
+                "producer": "runtime"
             },
             {
                 "name": "source_kind",
                 "description": "Provider-neutral source marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example.",
                 "required": false,
                 "default": "user-provided-row",
-                "missing_behavior": "Use user-provided-row unless the caller supplies a more specific source kind."
+                "missing_behavior": "Use user-provided-row unless the caller supplies a more specific source kind.",
+                "producer": "host"
             }
         ],
         "instructions": [
@@ -2361,6 +2524,15 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "Invalid-value example: if the row says segment enterprise but value_contracts.segment only allows agent-assisted GTM, do not output segment enterprise; add a gap asking for a reviewed pack segment or manifest update.",
             "Keep card_patches empty. This prompt normalizes runtime prospect input; it does not propose edits to MDP cards."
         ],
+        "role": "Provider-neutral prospect normalization analyst",
+        "objective": "Convert supplied messy prospect context into the exact bounded prospect JSON accepted by this pack without inventing facts.",
+        "procedure": ["Inventory only declared inputs and preserve their source boundaries.", "Normalize values against pack-owned vocabularies and readiness rules.", "Return strict JSON with explicit gaps and normalization trace."],
+        "selection_rules": ["Use only pack-owned persona, segment, signal, source-kind, and attribute values.", "Omit or gap any value that cannot be mapped exactly."],
+        "ambiguity_policy": ["Preserve weak inferences as hypotheses, low confidence, needs-review, or gaps."],
+        "provenance_policy": ["Keep supplied field paths and source notes in signal sources and normalization trace."],
+        "evidence_policy": ["Attributes are metadata, not proof; never convert them into adoption, outcome, compliance, or capability claims."],
+        "negative_examples": ["Do not invent a person, title, company domain, persona, segment, trigger, or signal.", "Do not browse, scrape, enrich, send, sequence, or update external systems."],
+        "final_checklist": ["Output is strict JSON.", "All normalized values satisfy pack vocabulary.", "Missing required context is explicit.", "Fit readiness is false whenever required evidence is absent."],
         "output_contract": {
             "contract": PROMPT_OUTPUT_CONTRACT,
             "output_kind": "prospect-normalization",

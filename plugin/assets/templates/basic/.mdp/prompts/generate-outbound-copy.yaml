@@ -1,0 +1,200 @@
+ambiguity_policy:
+- Represent missing or conflicting facts in gaps and use a bounded non-success status.
+description: Produce one structured outbound copy draft from the exact routed product foundation and declared runtime inputs.
+evidence_policy:
+- Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output.
+final_checklist:
+- Output is strict JSON.
+- All selected identifiers are declared.
+- Gaps and rejected claims are explicit.
+- Generated copy is ready for separate verify-output validation.
+format: mdp.prompt.v1
+id: generate-outbound-copy-v1
+inputs:
+- default: N/A
+  description: Exact product-foundation resolution returned for this canonical job.
+  missing_behavior: Return a gap or refusal; never load unrelated pack entries.
+  name: product_foundation
+  producer: pack
+  required: true
+- default: N/A
+  description: Validated prospect or account context.
+  missing_behavior: Return a gap; do not invent a recipient, company, trigger, or persona.
+  name: normalized_prospect
+  producer: prior-step
+  required: true
+- default: N/A
+  description: Optional bounded date and channel metadata.
+  missing_behavior: Avoid time-sensitive framing that is not supplied.
+  name: runtime_context
+  producer: runtime
+  required: false
+- default: N/A
+  description: Copy supplied for review; generation tasks leave this N/A.
+  missing_behavior: Review tasks must return a gap when no draft is supplied.
+  name: supplied_draft
+  producer: host
+  required: false
+instructions:
+- Use only declared inputs and the exact selected product-foundation entries for this job.
+- Return strict JSON only and preserve exact selected authority identifiers.
+- If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts.
+kind: generation
+negative_examples:
+- Do not invent customer proof, integrations, outcomes, timing, or recipient facts.
+- Do not silently choose an undeclared claim or CTA.
+objective: Produce one structured outbound copy draft from the exact routed product foundation and declared runtime inputs.
+output_contract:
+  contract: mdp.prompt-output.v0
+  entry_defaults:
+    applies_to: []
+    avoid: []
+    body: N/A
+    confidence: unknown
+    evidence: []
+    provenance: []
+  example:
+    artifact:
+      angle_id: N/A
+      claim_ids: []
+      cta_id: N/A
+      evidence_ids: []
+      message_body: N/A
+      status: gap
+      subject_options: []
+    contract: mdp.prompt-output.v0
+    gaps:
+    - Insufficient selected evidence for a claim-backed draft.
+    job_id: outbound-copy-brief
+    prompt_id: generate-outbound-copy-v1
+    prompt_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    prompt_version: '1'
+    rejected_claims: []
+    selected_authority: []
+    source_summary:
+      inputs_used: []
+  output_kind: governed-artifact
+  required_top_level:
+  - contract
+  - prompt_id
+  - job_id
+  - prompt_version
+  - prompt_sha256
+  - source_summary
+  - selected_authority
+  - artifact
+  - gaps
+  - rejected_claims
+  schema:
+    additionalProperties: false
+    properties:
+      artifact:
+        additionalProperties: false
+        properties:
+          angle_id:
+            type: string
+          claim_ids:
+            items:
+              type: string
+            type: array
+          cta_id:
+            type: string
+          evidence_ids:
+            items:
+              type: string
+            type: array
+          message_body:
+            type: string
+          status:
+            enum:
+            - ready
+            - gap
+            - refused
+          subject_options:
+            items:
+              type: string
+            type: array
+        required:
+        - status
+        - angle_id
+        - cta_id
+        - claim_ids
+        - evidence_ids
+        - subject_options
+        - message_body
+        type: object
+      contract:
+        const: mdp.prompt-output.v0
+      gaps:
+        items:
+          type: string
+        type: array
+      job_id:
+        const: outbound-copy-brief
+      prompt_id:
+        const: generate-outbound-copy-v1
+      prompt_sha256:
+        pattern: ^[0-9a-f]{64}$
+        type: string
+      prompt_version:
+        const: '1'
+      rejected_claims:
+        items:
+          type: string
+        type: array
+      selected_authority:
+        items:
+          type: string
+        type: array
+      source_summary:
+        additionalProperties: false
+        properties:
+          inputs_used:
+            items:
+              enum:
+              - product_foundation
+              - normalized_prospect
+              - runtime_context
+              - supplied_draft
+            type: array
+        required:
+        - inputs_used
+        type: object
+    required:
+    - contract
+    - prompt_id
+    - job_id
+    - prompt_version
+    - prompt_sha256
+    - source_summary
+    - selected_authority
+    - artifact
+    - gaps
+    - rejected_claims
+    type: object
+  strict_json_only: true
+procedure:
+- Confirm the job, prompt version, declared inputs, and selected authority.
+- Apply the pack-owned selection and evidence rules.
+- Return the exact governed artifact schema.
+provenance_policy:
+- Retain the exact authority identifiers used to produce or review the artifact.
+role: Governed outbound copy writer
+selection_rules:
+- Choose only angle, CTA, claim, and evidence identifiers present in selected authority.
+- Never load the whole pack or borrow authority from another job.
+tags:
+- prompt
+- model-task
+- outbound
+- generation
+target_card_kinds:
+- positioning
+- personas
+- pains
+- claims
+- avoid-rules
+- output-rules
+- ctas
+title: Generate outbound copy
+version: '1'

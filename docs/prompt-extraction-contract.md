@@ -1,11 +1,11 @@
 # MDP Prompt Contracts
 
-MDP prompt files are local, reusable prompt contracts for two jobs:
+MDP prompt files are local, reusable prompt contracts. This document covers two legacy-compatible `mdp.prompt.v0` jobs:
 
 - Normalize messy supplied rows into provider-neutral MDP prospect JSON before the CLI runs.
 - Classify supplied person, company, account, domain, row, or research context into strict JSON candidate data for MDP cards.
 
-They live under `.mdp/prompts/*.yaml` and use `format: mdp.prompt.v0`. They are not scrapers, enrichers, senders, hosted ingestion jobs, or execution workflows. They define how an agent should transform supplied context into reviewable, source-preserving JSON that either feeds the CLI or proposes pack edits.
+They live under `.mdp/prompts/*.yaml` and use `format: mdp.prompt.v0`. Versioned generation and review behavior uses `mdp.prompt.v1` and `jobs[].model_task`; see [Job-owned Prompt Contracts](job-prompt-contracts.md). Prompt files are not scrapers, enrichers, senders, hosted ingestion jobs, or execution workflows. They define how an agent should transform supplied context into reviewable, source-preserving JSON that either feeds the CLI or proposes pack edits.
 
 The prompts work at both person and company/account level. A full ICP extraction can use `person_data`, `company_data`, and `account_data` together to propose persona, fit, pain, hook, CTA, avoid-rule, claim, and gap candidates.
 

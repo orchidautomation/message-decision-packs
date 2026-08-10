@@ -48,6 +48,8 @@ A modular message decision pack for agent-readable ICP, pains, triggers, proof, 
 ## Prompts
 
 - `normalize-prospect-row`
+- `generate-outbound-copy-v1`
+- `review-outbound-copy-v1`
 - `extract-icp-persona`
 - `extract-pains`
 - `extract-hooks`

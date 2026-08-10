@@ -1,0 +1,126 @@
+format: mdp.prompt.v1
+id: review-proposal-proof-v1
+version: "1"
+kind: review
+title: Review proposal proof
+description: Evaluate proposed proof and win themes against selected claims, evidence, and proof boundaries.
+role: Governed proposal review analyst
+objective: Evaluate proposed proof and win themes against selected claims, evidence, and proof boundaries.
+target_card_kinds:
+- signals
+- output-rules
+- avoid-rules
+- fit-rules
+- claims
+- gaps
+tags: [prompt, model-task, proposal, review]
+inputs:
+- name: product_foundation
+  description: Exact product-foundation resolution returned for this canonical proposal job.
+  required: true
+  default: N/A
+  missing_behavior: Return a gap or refusal; never load unrelated proposal authority.
+  producer: pack
+- name: normalized_opportunity
+  description: Validated opportunity and requirement context.
+  required: true
+  default: N/A
+  missing_behavior: Return a gap; do not invent opportunity, requirement, proof, or compliance facts.
+  producer: prior-step
+- name: supplied_material
+  description: Bounded synthetic, sanitized, public-safe, or customer-controlled material selected by the host.
+  required: false
+  default: N/A
+  missing_behavior: Review only the declared context and report missing material.
+  producer: source
+- name: runtime_context
+  description: Optional bounded date metadata.
+  required: false
+  default: N/A
+  missing_behavior: Avoid time-sensitive conclusions that are not supplied.
+  producer: runtime
+instructions:
+- Use only declared inputs and the exact selected product-foundation entries for this job.
+- Return strict JSON only and preserve exact selected authority identifiers.
+- Surface missing proof, requirements, or review authority as structured gaps instead of inventing facts.
+procedure:
+- Confirm the canonical job, prompt version, declared inputs, and selected authority.
+- Apply the pack-owned review gates and evidence boundaries.
+- Return the exact governed artifact schema.
+selection_rules:
+- Select only claims, proof, requirements, and review gates present in the job's selected authority.
+- Never borrow an offer or motion from another proposal job.
+ambiguity_policy:
+- Represent missing or conflicting facts in gaps and use a bounded non-success status.
+provenance_policy:
+- Retain exact authority identifiers for every selected claim, proof item, and review gate.
+evidence_policy:
+- Unsupported certifications, compliance status, past performance, pricing, or customer proof must be rejected or escalated.
+negative_examples:
+- Do not claim CMMC, NIST, legal, procurement, or CUI approval.
+- Do not invent past performance, customer results, certifications, or requirement coverage.
+final_checklist:
+- Output is strict JSON.
+- All selected identifiers are declared.
+- Missing requirements and unsupported claims are explicit.
+- No external submission, send, CRM update, or model call is implied.
+output_contract:
+  contract: mdp.prompt-output.v0
+  output_kind: governed-artifact
+  strict_json_only: true
+  required_top_level: [contract, prompt_id, job_id, prompt_version, prompt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
+  entry_defaults:
+    body: N/A
+    applies_to: []
+    evidence: []
+    avoid: []
+    confidence: unknown
+    provenance: []
+  schema:
+    type: object
+    additionalProperties: false
+    required: [contract, prompt_id, job_id, prompt_version, prompt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
+    properties:
+      contract: {const: mdp.prompt-output.v0}
+      prompt_id: {const: review-proposal-proof-v1}
+      job_id: {const: proof-review}
+      prompt_version: {const: "1"}
+      prompt_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+      source_summary:
+        type: object
+        additionalProperties: false
+        required: [inputs_used]
+        properties:
+          inputs_used:
+            type: array
+            items: {enum: [product_foundation, normalized_opportunity, supplied_material, runtime_context]}
+      selected_authority: {type: array, items: {type: string}}
+      artifact:
+        type: object
+        additionalProperties: false
+        required: [status, decision, findings, selected_claim_ids, selected_evidence_ids]
+        properties:
+          status: {enum: [ready, gap, refused]}
+          decision: {enum: [supported, unsupported, needs-review]}
+          findings: {type: array, items: {type: string}}
+          selected_claim_ids: {type: array, items: {type: string}}
+          selected_evidence_ids: {type: array, items: {type: string}}
+      gaps: {type: array, items: {type: string}}
+      rejected_claims: {type: array, items: {type: string}}
+  example:
+    contract: mdp.prompt-output.v0
+    prompt_id: review-proposal-proof-v1
+    job_id: proof-review
+    prompt_version: "1"
+    prompt_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    source_summary:
+      inputs_used: []
+    selected_authority: []
+    artifact:
+      status: gap
+      decision: needs-review
+      findings: []
+      selected_claim_ids: []
+      selected_evidence_ids: []
+    gaps: [Required review material is missing.]
+    rejected_claims: []

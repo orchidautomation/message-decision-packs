@@ -22,6 +22,10 @@ Read this for pack shape, evidence, and content quality.
 - Require hard gates to define all five statuses explicitly, align required
   normalized fields with `lead_input_requirements`, and enforce no-draft for
   unresolved or unsafe outcomes.
+- For self-standing generation/review jobs, require one matching versioned
+  `jobs[].model_task` / `mdp.prompt.v1` binding. Audit every declared input
+  producer, exact prompt hash, selected authority, governed-artifact schema,
+  gap/refusal behavior, and downstream claim/proof validation.
 
 ## Target Identity
 
