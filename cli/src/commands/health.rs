@@ -5,10 +5,11 @@ use crate::constants::{
 };
 use crate::models::{
     Card, CardKind, DecisionInputAttemptStatus, DecisionInputContract, DecisionInputDecisionEffect,
-    DecisionInputDisposition, DecisionInputRequirement, InputContract, Manifest, PrimitiveMapping,
-    ProductFoundationBinding, ProductFoundationConditionFact, ProductFoundationEntryRef,
-    ProductFoundationFacetKind, Profile, ProfileEval, ProfileJob, PromptFile, QualificationGates,
-    TargetIdentity, ValueContract,
+    DecisionInputDisposition, DecisionInputRequirement, InputContract, MAX_SIGNAL_CONTRIBUTORS,
+    MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN, MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE,
+    MAX_SIGNAL_PROJECTIONS_PER_CONTRACT, Manifest, PrimitiveMapping, ProductFoundationBinding,
+    ProductFoundationConditionFact, ProductFoundationEntryRef, ProductFoundationFacetKind, Profile,
+    ProfileEval, ProfileJob, PromptFile, QualificationGates, TargetIdentity, ValueContract,
 };
 use crate::pack_io::{
     display_pack_path, read_card, read_card_by_id, read_manifest, read_prompt, resolve_pack_path,
@@ -3029,6 +3030,174 @@ fn validate_decision_input_contracts(
             ));
         }
         validate_decision_input_attributes(manifest, contract, &declared_sources, &path, issues);
+        validate_decision_input_signal_projections(contract, &path, issues);
+    }
+}
+
+fn validate_decision_input_signal_projections(
+    contract: &DecisionInputContract,
+    path: &str,
+    issues: &mut Vec<Value>,
+) {
+    if contract.signal_projections.len() > MAX_SIGNAL_PROJECTIONS_PER_CONTRACT {
+        issues.push(issue(
+            "decision_input_signal_projection_limit_exceeded",
+            "error",
+            format!("{path}/signal_projections"),
+            format!(
+                "decision input contracts may declare at most {MAX_SIGNAL_PROJECTIONS_PER_CONTRACT} signal projections"
+            ),
+        ));
+    }
+
+    let mut seen_ids = BTreeSet::new();
+    for (projection_index, projection) in contract.signal_projections.iter().enumerate() {
+        let projection_path = format!("{path}/signal_projections/{projection_index}");
+        if !valid_attribute_key(&projection.id) || projection.id.len() > MAX_SIGNAL_IDENTIFIER_LEN {
+            issues.push(issue(
+                "decision_input_signal_projection_id_invalid",
+                "error",
+                format!("{projection_path}/id"),
+                "signal projection ids must use the bounded manifest identifier format",
+            ));
+        } else if !seen_ids.insert(projection.id.to_ascii_lowercase()) {
+            issues.push(issue(
+                "decision_input_signal_projection_duplicate",
+                "error",
+                format!("{projection_path}/id"),
+                format!(
+                    "duplicate qualified signal projection {}",
+                    projection.qualified_id(&contract.id)
+                ),
+            ));
+        }
+
+        if !valid_attribute_key(&projection.kind) || projection.kind.len() > MAX_SIGNAL_KIND_LEN {
+            issues.push(issue(
+                "decision_input_signal_kind_invalid",
+                "error",
+                format!("{projection_path}/kind"),
+                "signal kinds are profile-defined but must use the bounded manifest identifier format",
+            ));
+        }
+        if projection.roles.iter().collect::<BTreeSet<_>>().len() != projection.roles.len() {
+            issues.push(issue(
+                "decision_input_signal_role_duplicate",
+                "error",
+                format!("{projection_path}/roles"),
+                "signal projection roles must be unique",
+            ));
+        }
+
+        if projection.contributor_attribute_ids.is_empty() {
+            issues.push(issue(
+                "decision_input_signal_contributors_empty",
+                "error",
+                format!("{projection_path}/contributor_attribute_ids"),
+                "signal projections require at least one contributing scalar attribute",
+            ));
+        } else if projection.contributor_attribute_ids.len() > MAX_SIGNAL_CONTRIBUTORS {
+            issues.push(issue(
+                "decision_input_signal_contributor_limit_exceeded",
+                "error",
+                format!("{projection_path}/contributor_attribute_ids"),
+                format!(
+                    "signal projections may declare at most {MAX_SIGNAL_CONTRIBUTORS} contributing attributes"
+                ),
+            ));
+        }
+        let mut seen_contributors = BTreeSet::new();
+        for (contributor_index, contributor) in
+            projection.contributor_attribute_ids.iter().enumerate()
+        {
+            if !seen_contributors.insert(contributor.to_ascii_lowercase()) {
+                issues.push(issue(
+                    "decision_input_signal_contributor_duplicate",
+                    "error",
+                    format!("{projection_path}/contributor_attribute_ids/{contributor_index}"),
+                    format!("duplicate contributing attribute {contributor}"),
+                ));
+            }
+            let matches = contract
+                .attributes
+                .iter()
+                .filter(|attribute| attribute.id.eq_ignore_ascii_case(contributor))
+                .count();
+            let (code, message) = match matches {
+                0 => (
+                    "decision_input_signal_contributor_undeclared",
+                    format!(
+                        "contributing attribute {contributor} must be declared by the same decision input contract"
+                    ),
+                ),
+                1 => continue,
+                _ => (
+                    "decision_input_signal_contributor_ambiguous",
+                    format!(
+                        "contributing attribute {contributor} is ambiguous because its declaration is duplicated"
+                    ),
+                ),
+            };
+            issues.push(issue(
+                code,
+                "error",
+                format!("{projection_path}/contributor_attribute_ids/{contributor_index}"),
+                message,
+            ));
+        }
+
+        validate_value_contract(
+            &projection.value,
+            &format!("{projection_path}/value"),
+            issues,
+        );
+        if projection.cardinality.max == 0
+            || projection.cardinality.min > projection.cardinality.max
+            || projection.cardinality.max > MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE
+        {
+            issues.push(issue(
+                "decision_input_signal_cardinality_invalid",
+                "error",
+                format!("{projection_path}/cardinality"),
+                format!(
+                    "signal cardinality must satisfy 0 <= min <= max <= {MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE}"
+                ),
+            ));
+        }
+        if projection.decision_effects.is_empty() {
+            issues.push(issue(
+                "decision_input_signal_decision_effects_empty",
+                "error",
+                format!("{projection_path}/decision_effects"),
+                "signal projections must declare at least one deterministic decision effect",
+            ));
+        } else if projection
+            .decision_effects
+            .iter()
+            .collect::<BTreeSet<_>>()
+            .len()
+            != projection.decision_effects.len()
+        {
+            issues.push(issue(
+                "decision_input_signal_decision_effect_duplicate",
+                "error",
+                format!("{projection_path}/decision_effects"),
+                "signal projection decision effects must be unique",
+            ));
+        }
+        if projection.conflict_policy
+            == crate::models::DecisionInputSignalConflictPolicy::AnyDisqualifies
+            && !projection
+                .roles
+                .contains(&crate::models::DecisionInputSignalRole::Disqualifier)
+        {
+            issues.push(issue(
+                "decision_input_signal_conflict_policy_role_mismatch",
+                "error",
+                format!("{projection_path}/conflict_policy"),
+                "any-disqualifies requires the closed disqualifier role",
+            ));
+        }
     }
 }
 
@@ -4110,6 +4279,7 @@ fn validate_decision_input_contract_shapes(
                 "normalization",
                 "source_classes",
                 "attributes",
+                "signal_projections",
             ],
             &contract_path,
             "manifest_decision_input_contract_unknown_field",
@@ -4145,6 +4315,72 @@ fn validate_decision_input_contract_shapes(
                 "manifest_decision_input_normalization_required_field_missing",
                 issues,
             );
+        }
+        if let Some(projections) =
+            yaml_get(contract, "signal_projections").and_then(YamlValue::as_sequence)
+        {
+            for (projection_index, projection) in projections.iter().enumerate() {
+                let projection_path =
+                    format!("{contract_path}/signal_projections/{projection_index}");
+                validate_object_keys_with_severity(
+                    projection,
+                    &[
+                        "id",
+                        "kind",
+                        "roles",
+                        "contributor_attribute_ids",
+                        "value",
+                        "cardinality",
+                        "conflict_policy",
+                        "decision_effects",
+                    ],
+                    &projection_path,
+                    "manifest_decision_input_signal_projection_unknown_field",
+                    "error",
+                    issues,
+                );
+                validate_required_object_keys(
+                    projection,
+                    &[
+                        "id",
+                        "kind",
+                        "roles",
+                        "contributor_attribute_ids",
+                        "value",
+                        "cardinality",
+                        "conflict_policy",
+                        "decision_effects",
+                    ],
+                    &projection_path,
+                    "manifest_decision_input_signal_projection_required_field_missing",
+                    issues,
+                );
+                validate_object_keys_with_severity(
+                    yaml_get(projection, "value").unwrap_or(&YamlValue::Null),
+                    &["type", "format", "enum", "required", "description"],
+                    &format!("{projection_path}/value"),
+                    "manifest_decision_input_signal_value_unknown_field",
+                    "error",
+                    issues,
+                );
+                validate_object_keys_with_severity(
+                    yaml_get(projection, "cardinality").unwrap_or(&YamlValue::Null),
+                    &["min", "max"],
+                    &format!("{projection_path}/cardinality"),
+                    "manifest_decision_input_signal_cardinality_unknown_field",
+                    "error",
+                    issues,
+                );
+                if let Some(cardinality) = yaml_get(projection, "cardinality") {
+                    validate_required_object_keys(
+                        cardinality,
+                        &["min", "max"],
+                        &format!("{projection_path}/cardinality"),
+                        "manifest_decision_input_signal_cardinality_required_field_missing",
+                        issues,
+                    );
+                }
+            }
         }
         let Some(attributes) = yaml_get(contract, "attributes").and_then(YamlValue::as_sequence)
         else {
@@ -8467,9 +8703,107 @@ output_contract:
     #[test]
     fn decision_input_output_path_rejects_composite_signals() {
         assert!(!valid_decision_input_output_path("signals"));
+        assert!(!valid_decision_input_output_path("signals.0"));
         assert!(valid_decision_input_output_path(
             "attributes.reviewed_signal"
         ));
+    }
+
+    #[test]
+    fn signal_projection_validation_rejects_duplicate_ids_unknown_contributors_and_invalid_bounds()
+    {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let contract = &mut manifest.decision_input_contracts[0];
+        let mut projection = crate::models::DecisionInputSignalProjection {
+            id: "hiring-change".to_string(),
+            kind: "hiring_change".to_string(),
+            roles: vec![crate::models::DecisionInputSignalRole::WhyNow],
+            contributor_attribute_ids: vec!["missing_attribute".to_string()],
+            value: ValueContract {
+                value_type: Some("boolean".to_string()),
+                ..ValueContract::default()
+            },
+            cardinality: crate::models::DecisionInputSignalCardinality { min: 2, max: 1 },
+            conflict_policy: crate::models::DecisionInputSignalConflictPolicy::RequireAgreement,
+            decision_effects: vec![DecisionInputDecisionEffect::Brief],
+        };
+        contract.signal_projections.push(projection.clone());
+        projection.kind = "other_kind".to_string();
+        contract.signal_projections.push(projection);
+        let mut issues = Vec::new();
+
+        validate_decision_input_signal_projections(contract, "test", &mut issues);
+        let codes = issues
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+
+        assert!(codes.contains("decision_input_signal_projection_duplicate"));
+        assert!(codes.contains("decision_input_signal_contributor_undeclared"));
+        assert!(codes.contains("decision_input_signal_cardinality_invalid"));
+    }
+
+    #[test]
+    fn signal_projection_validation_accepts_profile_defined_kind_and_zero_minimum() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let contract = &mut manifest.decision_input_contracts[0];
+        let contributor = contract.attributes[0].id.clone();
+        contract
+            .signal_projections
+            .push(crate::models::DecisionInputSignalProjection {
+                id: "hiring-change".to_string(),
+                kind: "profile_specific_hiring_change".to_string(),
+                roles: vec![crate::models::DecisionInputSignalRole::WhyNow],
+                contributor_attribute_ids: vec![contributor],
+                value: ValueContract {
+                    value_type: Some("boolean".to_string()),
+                    ..ValueContract::default()
+                },
+                cardinality: crate::models::DecisionInputSignalCardinality { min: 0, max: 4 },
+                conflict_policy: crate::models::DecisionInputSignalConflictPolicy::RequireAgreement,
+                decision_effects: vec![DecisionInputDecisionEffect::Brief],
+            });
+        let mut issues = Vec::new();
+
+        validate_decision_input_signal_projections(contract, "test", &mut issues);
+
+        assert!(issues.is_empty(), "unexpected issues: {issues:?}");
+    }
+
+    #[test]
+    fn signal_projection_validation_rejects_ambiguous_contributors() {
+        let mut manifest =
+            read_manifest(&clay_example_root()).expect("Clay example manifest should load");
+        let contract = &mut manifest.decision_input_contracts[0];
+        let duplicate = contract.attributes[0].clone();
+        let contributor = duplicate.id.clone();
+        contract.attributes.push(duplicate);
+        contract
+            .signal_projections
+            .push(crate::models::DecisionInputSignalProjection {
+                id: "ambiguous-projection".to_string(),
+                kind: "profile_specific_kind".to_string(),
+                roles: Vec::new(),
+                contributor_attribute_ids: vec![contributor],
+                value: ValueContract {
+                    value_type: Some("string".to_string()),
+                    ..ValueContract::default()
+                },
+                cardinality: crate::models::DecisionInputSignalCardinality { min: 0, max: 2 },
+                conflict_policy: crate::models::DecisionInputSignalConflictPolicy::RequireAgreement,
+                decision_effects: vec![DecisionInputDecisionEffect::HumanReview],
+            });
+        let mut issues = Vec::new();
+
+        validate_decision_input_signal_projections(contract, "test", &mut issues);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "decision_input_signal_contributor_ambiguous")
+        );
     }
 
     #[test]
