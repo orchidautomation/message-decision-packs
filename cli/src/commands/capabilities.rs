@@ -165,7 +165,7 @@ pub(crate) fn capabilities() -> Value {
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
             command("validate-source-binding", SOURCE_BINDING_VALIDATION_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--file"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
-            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-attempt-request", "--collected-attempt-results", "--invocation-receipt", "--prompt", "--prompt-id", "--strict"]),
+            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--invocation-receipt", "--prompt", "--prompt-id", "--strict"]),
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
             command("verify-run", RUN_VERIFICATION_V1, "read-only", false, false, false, &["--bundle", "--receipt", "--artifact-root"]),
             command("trace", DECISION_TRACE_V1, "read-only-unless-out", false, true, false, &["--file", "--bundle", "--receipt", "--artifact-root", "--format", "--out"]),
@@ -177,11 +177,11 @@ pub(crate) fn capabilities() -> Value {
             command("explain", "mdp.explain.v0", "read-only", false, false, false, &["--dir", "--persona"]),
             command("route", "mdp.route.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--scope", "--entries", "--eval-fixture"]),
             command("sample-leads", "mdp.sample-leads.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--count", "--seed", "--format"]),
-            command("fit", "mdp.fit.v0", "read-only", false, false, false, &["--dir", "--prospect"]),
+            command("fit", "mdp.fit.v0", "read-only", false, false, false, &["--dir", "--prospect", "--normalized-input", "--prompt", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--job"]),
             command("check-claims", "mdp.claim-check.v0", "read-only", false, false, true, &["--dir", "--text", "--file", "--subject", "--persona", "--job", "--scope", "--strict"]),
             command("gaps", "mdp.gaps.v0", "read-only", false, false, false, &["--dir"]),
             command("eval", "mdp.eval.v0", "read-only", false, false, true, &["--dir", "--strict"]),
-            command("brief", "mdp.message-brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--prospect", "--channel", "--job", "--context", "--out", "--dry-run"]),
+            command("brief", "mdp.message-brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--prospect", "--normalized-input", "--prompt", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--channel", "--job", "--context", "--readable", "--out", "--dry-run"]),
             command("copy", "mdp.copy-demo.v0", "writes-files-with-out", false, true, false, &["--dir", "--prospect", "--channel", "--out"]),
             command("emit-brief", "mdp.brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--persona", "--motion", "--job", "--scope", "--out", "--dry-run"]),
             command("pack", "mdp.pack.v0", "writes-files-with-out", true, true, false, &["--dir", "--out", "--dry-run"]),
@@ -286,6 +286,34 @@ mod tests {
                     && command["output_contract"] == SOURCE_BINDING_VALIDATION_CONTRACT
                     && command["supports_strict"] == false)
         );
+        for command_name in ["validate-prompt-output", "fit", "brief"] {
+            let args = result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .find(|command| command["name"] == command_name)
+                .and_then(|command| command["args"].as_array())
+                .expect("command args");
+            for required in [
+                "--source-binding",
+                "--source-attempt-request",
+                "--collected-attempt-results",
+            ] {
+                assert!(args.iter().any(|arg| arg == required));
+            }
+        }
+        for command_name in ["fit", "brief"] {
+            let args = result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .find(|command| command["name"] == command_name)
+                .and_then(|command| command["args"].as_array())
+                .expect("command args");
+            assert!(args.iter().any(|arg| arg == "--normalized-input"));
+            assert!(args.iter().any(|arg| arg == "--prompt"));
+            assert!(args.iter().any(|arg| arg == "--job"));
+        }
         assert_eq!(
             result["proposal_evidence_contracts"]["native_normalize_request"]["schema_target"],
             "native-normalize-request"

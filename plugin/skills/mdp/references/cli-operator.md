@@ -6,6 +6,7 @@ Read this when selecting an MDP command.
 
 ```bash
 mdp --version
+mdp --json capabilities
 mdp --json skills
 mdp --json skills --dir PACK_ROOT
 mdp --json doctor --dir PACK_ROOT
@@ -40,11 +41,20 @@ veto-only result and never means sufficient-for-job or self-standing.
 
 `requirements` is the read-only, job-bound handoff to collectors and customer-selected hosts. It compiles Decision Input questions and schemas when present, plus any declared job-owned model task: exact prompt/version/hash, input producers, instructions, selected product foundation, and output schema. It never performs research or a model call. Existing jobs without a Decision Input Contract keep `available: false`; inspect `model_task_available` separately.
 
-`validate-source-binding` checks one integration-owned
-`mdp.source-binding.v1` mapping against the exact pack and requirements
+`validate-source-binding` checks one integration-owned version-compatible
+`mdp.source-binding.v1` or signal-aware `mdp.source-binding.v2` mapping against the exact pack and requirements
 digests, job, contract versions, and qualified attributes. It rejects stale,
 missing, duplicate, unknown, or incompatible mappings, permits external
 field-key reuse, and performs no source access or execution.
+
+Inspect the requirements version matrix before choosing artifacts. V1 is
+scalar-only; v2 adds structured repeated observations and exact
+binding/request/results lineage. Validate the full v2 chain and pass it to
+`fit` or `brief` with `--normalized-input` and all lineage flags. Detached
+prospects remain legacy/unassessed. Explicit roles never come from keywords,
+and `lineage-validated` proves internal consistency only, not authenticity or
+truth. Preserve conflicts and stop no-draft unless the compiled conservative
+policy deterministically disqualifies.
 
 ## Deterministic Gates
 

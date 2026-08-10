@@ -15,7 +15,8 @@ Read this for pack shape, evidence, and content quality.
 - Treat `.mdp/README.md` as orientation only. It participates in the portable
   pack hash but cannot satisfy foundation readiness.
 - Reject obsolete surface metadata, old skill IDs, duplicate jobs, custom routable IDs, and profile-crossing bindings.
-- For jobs with decision-input bindings, compile `mdp.requirements.v1` and audit
+- For jobs with decision-input bindings, compile the version-compatible
+  requirements contract and audit
   the exact questions, requirement classes, output paths, source policy,
   applicability, attempt statuses, provenance, confidence, freshness,
   sensitivity, and status dispositions.
@@ -39,6 +40,19 @@ Read this for pack shape, evidence, and content quality.
 
 - Trace material claims and decisions to approved source receipts.
 - Flag stale, weak, conflicting, or source-free signals.
+- For signal-aware jobs, require the exact v2 matrix and complete
+  binding/request/results/prompt/normalized chain. Structured observations
+  must exist only in the v2 envelope; detached or legacy signals remain
+  legacy/unassessed and cannot gain roles from keywords.
+- Confirm duplicate agreement preserves all observation receipts while
+  cardinality counts one logical signal. Confirm conflicts use only
+  `require-agreement` or `any-disqualifies`, preserve every receipt, and stop
+  no-draft when unresolved.
+- Treat `lineage-validated` as internal consistency only. Flag claims of host
+  authenticity, authorization, signer identity, non-repudiation, or truth.
+- Check input ceilings, bounded diagnostics, field allowlists,
+  control-character rejection, renderer escaping, locator non-dereference, and
+  absence of raw provider records or credentials.
 - Check that gaps remain explicit and are not contradicted by confident prose elsewhere.
 - Check that privacy, access, no-invention, human-review, and no-execution boundaries are concrete.
 

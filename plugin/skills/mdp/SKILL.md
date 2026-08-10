@@ -13,6 +13,7 @@ Coordinate explicit MDP work and use the CLI as the source of truth.
 2. Inspect the installed contract before reading pack YAML:
 
 ```bash
+mdp --json capabilities
 mdp --json skills
 mdp --json skills --dir <pack-root>
 ```
@@ -125,6 +126,14 @@ mdp --json requirements --dir <pack-root> --job <job-id>
 
 This command is read-only. It compiles the pack-owned questions, source policy, normalization identity, and request/response schemas; it does not collect sources or call a model. An existing job without a Decision Input Contract returns `available: false`. When that job declares `model_task`, inspect `data.model_task_available`, the exact prompt ID/version/hash, declared input producers, instructions, and output contract. Hand that package to the customer-selected host; MDP does not execute it.
 
+Inspect `data.runtime_contract_version`, `data.contract_version_matrix`, and
+`data.decision_input_contracts[].signal_projections` before accepting any
+artifact. Scalar v1 and signal-aware v2 artifacts cannot be mixed. Structured
+repeated observations belong only in `mdp.normalized-decision-input.v2`.
+Legacy or detached prospect signals are readable context with `legacy` or
+`unassessed` authority; titles, source strings, provider fields, and keywords
+cannot grant an explicit qualification role.
+
 When the user is connecting an external orchestrator, keep its mapping outside
 the pack and validate it against the exact compiled release:
 
@@ -134,7 +143,8 @@ mdp --json validate-source-binding --dir <pack-root> \
   --job <job-id> --file <source-binding.json>
 ```
 
-Require `data.valid: true` before integration activation. The command validates
+Require `data.valid: true` before integration activation. Use the v1 or v2
+contract selected by requirements. The command validates
 portable pack/requirements pins, complete and unique qualified attribute
 coverage, requirement classes, allowed source classes, release receipts, and
 fixed status translation. It does not access the source system or run
@@ -142,11 +152,13 @@ normalization. A job with `available: false` cannot be source-bound.
 
 When `requirements` returns `data.available: true`, validate the bound
 normalization with the exact source-attempt request and exact host-collected
-attempt-results ledger:
+attempt-results ledger. The command below is the v2 form; for scalar v1 omit
+`--source-binding` and use only its matching v1 artifacts:
 
 ```bash
 mdp --json validate-prompt-output --dir <pack-root> \
   --prompt <bound-prompt> \
+  --source-binding <source-binding.json> \
   --source-attempt-request <source-attempt-request.json> \
   --collected-attempt-results <collected-attempt-results.json> \
   --file <normalized-output.json>
@@ -155,6 +167,26 @@ mdp --json validate-prompt-output --dir <pack-root> \
 Do not extract or pass `normalized_prospect` to fit, routing, brief, or copy
 work unless validation passes and the envelope's top-level `outcome` is exactly
 `ready`. Every other normalized outcome remains no-draft.
+
+For a signal-aware v2 job, continue with the exact envelope rather than a
+detached prospect:
+
+```bash
+mdp --json fit --dir <pack-root> --job <job-id> \
+  --normalized-input <normalized-output.json> --prompt <bound-prompt> \
+  --source-binding <source-binding.json> \
+  --source-attempt-request <source-attempt-request.json> \
+  --collected-attempt-results <collected-attempt-results.json>
+```
+
+`brief` uses the same lineage flags. Require the CLI result to distinguish
+`lineage-validated`, `legacy`, and `unassessed` contributions. Explain accepted
+and rejected projection IDs, roles, eligibility diagnostics, and every visible
+conflict. `require-agreement` conflicts stop human-review/no-draft;
+`any-disqualifies` may only resolve by disqualifying. Never choose a positive
+winner. `lineage-validated` proves only internal consistency of the submitted
+binding/request/results/output chain. It does not prove host authenticity,
+authorization, signer identity, non-repudiation, or observation truth.
 
 For any selected prompt that is not the bound decision-input normalization
 prompt, preserve the `mdp.prompt-output.v0` validation path without
@@ -213,6 +245,9 @@ capturing it.
 
 - MDP stores and validates decision context. It is not a CRM, sequencer, enrichment provider, scraper, BI tool, proposal writer, or generic automation system.
 - Do not enrich prospects, send outreach, mutate CRM records, scrape gated sources, submit proposals, or approve compliance through this skill.
+- Do not dereference host-supplied locators. Preserve engine-owned limits,
+  bounded diagnostics, output allowlists, and renderer escaping; raw provider
+  records remain host-owned.
 - Preserve missing or unsupported information as gaps. Never smooth a failed CLI decision into a plausible answer.
 - Do not create an eleventh primitive, a new product `CardKind`, or a company
   wiki. Product-foundation facets only index existing structured authority.

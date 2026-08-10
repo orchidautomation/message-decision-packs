@@ -181,7 +181,7 @@ Portfolio terms do not add primitives. A GTM profile may declare `profile.contex
 
 Use repeatable `--scope dimension=value` selectors on `route`, `emit-brief`, and route-scoped `check-claims`. Prospect-driven `fit` and `brief` derive declared scope from scalar `attributes`; a declared `segment` dimension uses the top-level prospect `segment`. Portfolio-sensitive outputs draft from bounded `entry_route.matches` or `context.entries`, not shared card files. Missing/invalid scope blocks drafting, and `verify-output` returns `proof_output_scope_unsupported` for scoped packs until proof artifacts can carry scope. See [Portfolio-Aware GTM Scope](../docs/portfolio-scope.md) for the complete contract and rollout checklist.
 
-Use `mdp --json schema prompt` to inspect the reusable prompt definition contract. Prompt outputs must match the runtime contract named by each prompt's `output_contract.schema_ref`: legacy extraction and normalization prompts use `contract: mdp.prompt-output.v0`, while bound decision-input normalization prompts must use `schema_ref: mdp.normalized-decision-input.v1` with the job-compiled requirements schema. `mdp.prompt.v1` adds versioned normalization, generation, and review tasks with explicit input producers, role, objective, procedure, selection and evidence rules, negative examples, and a final checklist. Canonical generation/review jobs bind one prompt through `jobs[].model_task`; `requirements --job` compiles the exact prompt and hash without making a model call. `governed-artifact` prompts retain the `mdp.prompt-output.v0` envelope and declare an exact inline schema for the job artifact. Validate them with `--invocation-receipt <receipt.json>`: the host-created `mdp.prompt-invocation.v1` receipt binds the exact job and canonical prompt identity/hash to per-input SHA-256 values. The host supplies the exact receipt content as `prompt_receipt` and its detached byte hash as the separate `invocation_receipt_sha256` input because the receipt cannot contain its own hash; neither metadata input appears in the receipt's `inputs` array. Legacy starter prompts can inline their full JSON Schema with `mdp init --include-output-schemas`; decision-input normalization does not accept an inline replacement for its job-compiled schema. Extraction prompts preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance; legacy normalization prompts preserve `normalized_prospect`, `normalization_trace`, gaps, and empty `card_patches`. Proposal normalization may also include `normalized_opportunity` as an exact alias of `normalized_prospect`, but existing consumers should continue to read `normalized_prospect`. Prompt files are local decision contracts, not browsing, scraping, enrichment, sending, sequencing, or CRM-update workflows. See [Job-owned Prompt Contracts](../docs/job-prompt-contracts.md).
+Use `mdp --json schema prompt` to inspect the reusable prompt definition contract. Prompt outputs must match the runtime contract named by each prompt's `output_contract.schema_ref`: legacy extraction and normalization prompts use `contract: mdp.prompt-output.v0`; scalar bound normalization uses `mdp.normalized-decision-input.v1`; and signal-aware jobs use the job-compiled `mdp.normalized-decision-input.v2` schema. Structured repeated observations are valid only in the v2 envelope, never in the legacy prospect signal array. `mdp.prompt.v1` adds versioned normalization, generation, and review tasks with explicit input producers, role, objective, procedure, selection and evidence rules, negative examples, and a final checklist. Canonical generation/review jobs bind one prompt through `jobs[].model_task`; `requirements --job` compiles the exact prompt and hash without making a model call. `governed-artifact` prompts retain the `mdp.prompt-output.v0` envelope and declare an exact inline schema for the job artifact. Validate them with `--invocation-receipt <receipt.json>`: the host-created `mdp.prompt-invocation.v1` receipt binds the exact job and canonical prompt identity/hash to per-input SHA-256 values. The host supplies the exact receipt content as `prompt_receipt` and its detached byte hash as the separate `invocation_receipt_sha256` input because the receipt cannot contain its own hash; neither metadata input appears in the receipt's `inputs` array. Legacy starter prompts can inline their full JSON Schema with `mdp init --include-output-schemas`; decision-input normalization does not accept an inline replacement for its job-compiled schema. Extraction prompts preserve `card_patches`, `gaps`, `rejected_claims`, confidence, and provenance; legacy normalization prompts preserve `normalized_prospect`, `normalization_trace`, gaps, and empty `card_patches`. Proposal normalization may also include `normalized_opportunity` as an exact alias of `normalized_prospect`, but existing consumers should continue to read `normalized_prospect`. Prompt files are local decision contracts, not browsing, scraping, enrichment, sending, sequencing, or CRM-update workflows. See [Job-owned Prompt Contracts](../docs/job-prompt-contracts.md).
 
 Treat model-produced prompt output as untrusted review input. Run `mdp --json validate-prompt-output` before copying reviewed `card_patches` into cards or saving `normalized_prospect` for `mdp fit` and `mdp brief`. `source_summary.inputs_used` must name exact declared prompt inputs; source paths, snippets, PDF/page locators, URLs, and field-level provenance belong in candidate `evidence`/`provenance`, `signals[].source`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. For proposal PDF/doc normalization, pass `--source-audit <source-audit.json>` to check source refs and ref-plus-snippet citations against a bounded `mdp.source-audit.v0` extraction ledger backed by `.mdp/sources.yaml` source IDs. The validator rejects markdown-wrapped JSON, wrong prompt identity, undeclared input references, wrong card kinds, fake-person normalization, candidate ID collisions with existing card entries, normalized opportunity aliases that diverge from `normalized_prospect`, normalized values outside pack-owned value contracts, missing or non-boolean `normalization_trace.fit_readiness.ready_for_mdp_fit`, prompt outputs that claim `ready_for_mdp_fit: true` while missing manifest `lead_input_requirements.required_fields`, `required_signal_fields`, or `required_attributes`, and audited source refs/snippets that do not exist in the supplied source audit.
 
@@ -197,7 +197,10 @@ normalization:
 mdp --json requirements --dir PACK_ROOT --job JOB_ID
 ```
 
-The `mdp.requirements.v1` result includes:
+The result is `mdp.requirements.v1` for scalar-only jobs and
+`mdp.requirements.v2` for jobs with signal projections. Inspect
+`data.runtime_contract_version` and `data.contract_version_matrix`; never mix
+artifacts across those rows. It includes:
 
 - the exact question, output path, and value contract for every attribute;
 - `required`, `optional`, `conditional`, or `hard-gate` classification;
@@ -210,6 +213,8 @@ The `mdp.requirements.v1` result includes:
 - explicit no-draft outcomes and host/MDP ownership boundaries.
 - a portable `.mdp` content digest and canonical requirements digest for
   integration release pinning.
+- for v2, the exact repeated signal projections, profile-defined kinds, closed
+  roles, contributor rules, cardinality, conflict policy, and v2 schemas.
 
 Legacy jobs without a decision-input binding return `available: false` and
 remain compatible with existing `lead_input_requirements` behavior.
@@ -230,12 +235,43 @@ mdp --json validate-source-binding \
   --file SOURCE_BINDING.json
 ```
 
-`mdp.source-binding.v1` is provider-neutral. It requires exact pack,
+The compiled requirements select provider-neutral `mdp.source-binding.v1` or
+signal-aware `mdp.source-binding.v2`. Each requires exact pack,
 requirements, job, and Decision Input Contract pins; complete and unique
 qualified attribute coverage; compatible requirement/source classes; binding
 and normalization release IDs; and the fixed missing/error status translation.
 External field keys may be reused. The command makes no provider or model
 calls, and legacy jobs with `available: false` cannot be source-bound.
+
+Signal-aware v2 adds projection mappings and binds the exact source-binding
+hash through `mdp.source-attempt-request.v2`,
+`mdp.collected-attempt-results.v2`, and
+`mdp.normalized-decision-input.v2`. Validate all four artifacts together, then
+use the lineage-aware qualification path:
+
+```bash
+mdp --json validate-prompt-output --strict --dir PACK_ROOT \
+  --prompt BOUND_PROMPT \
+  --source-binding SOURCE_BINDING.json \
+  --source-attempt-request SOURCE_ATTEMPT_REQUEST.json \
+  --collected-attempt-results COLLECTED_ATTEMPT_RESULTS.json \
+  --file NORMALIZED_INPUT.json
+
+mdp --json fit --dir PACK_ROOT --job JOB_ID \
+  --normalized-input NORMALIZED_INPUT.json \
+  --prompt BOUND_PROMPT \
+  --source-binding SOURCE_BINDING.json \
+  --source-attempt-request SOURCE_ATTEMPT_REQUEST.json \
+  --collected-attempt-results COLLECTED_ATTEMPT_RESULTS.json
+```
+
+`brief` accepts the same lineage arguments. Detached `--prospect` remains the
+legacy path and cannot retain `lineage-validated` authority. That label proves
+only that the submitted chain is internally consistent with pack policy;
+hashes do not authenticate the host or prove that an observation is true.
+Conflicts stay visible. `require-agreement` stops for human review;
+`any-disqualifies` may deterministically disqualify. No positive
+newest/highest-confidence winner policy exists.
 
 Prospect input keeps a compatibility path for `name`, `title`, and `company`, but new lead workflows should prefer `company_domain` as the account key. `mdp fit` canonicalizes supplied domain-like values such as `https://www.apple.com/` to `apple.com`; it does not infer a domain from a company name. Packs can declare deterministic readiness requirements in `manifest.yaml`:
 

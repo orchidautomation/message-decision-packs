@@ -12,6 +12,7 @@ Review an existing pack and produce evidence-backed findings. Do not silently re
 Identify the exact pack root and inspect its policy state:
 
 ```bash
+mdp --json capabilities
 mdp --json skills --dir PACK_ROOT
 mdp --json doctor --dir PACK_ROOT
 ```
@@ -33,6 +34,12 @@ mdp --json eval --strict --dir PACK_ROOT
 
 Run `requirements` for each job that binds a decision-input contract. A legacy
 job may report the contract as unavailable without becoming invalid.
+
+For every available result, inspect `runtime_contract_version`, the public
+`contract_version_matrix`, and compiled signal projections before reviewing
+artifacts. Reject mixed v1/v2 chains. Structured repeated observations belong
+only in the v2 normalized envelope. Confirm roles are explicit pack authority,
+not inferred from titles, IDs, provider fields, attributes, or source prose.
 
 Also run `skills --job` and `requirements --job` for every exact canonical job
 that declares or should declare a product-foundation binding. Inspect the
@@ -58,6 +65,14 @@ unknown attributes, requirement-class drift, incompatible source classes, or
 non-fixed status translation as blocking integration findings. External field
 keys may repeat. Review the integration release receipts, but do not claim that
 schema validation proves source access, provider execution, or normalization.
+
+For a v2 chain, validate the exact source binding, request, collected results,
+prompt, and normalized envelope together. Then exercise `fit` or `brief` with
+`--normalized-input` and the same lineage artifacts. Compare accepted/rejected
+projection IDs, roles, authority classes, conflicts, and diagnostics across
+JSON and human output. Detached `--prospect` input must remain legacy or
+unassessed. `lineage-validated` may claim internal consistency only, never host
+authenticity, authorization, non-repudiation, or observation truth.
 
 Preview a portable compilation when needed:
 
@@ -94,6 +109,13 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
 - For each decision-input contract, verify that every attribute states an answerable question, requirement class, output path, value contract, decision effects, allowed source classes, provenance, confidence, freshness, sensitivity, and effective behavior for all five attempt statuses. Hard gates must map every status explicitly and include no-draft behavior.
 - Verify that required and hard-gate output paths agree with `lead_input_requirements`, that conditional dependencies resolve, and that the compiled source request attempts every declared attribute.
 - Verify normalization prompt identity/version, the normalized JSON envelope, explicit `draft_allowed: false`, and synthetic coverage for ready, insufficient-context, disqualified, human-review, malformed, and provider-error.
+- Require conservative signal conflict behavior: agreement may coalesce while
+  keeping every receipt; `require-agreement` stops human-review/no-draft and
+  `any-disqualifies` may only disqualify. Reject positive winner selection.
+- Check engine-owned signal resource limits and egress rules: bounded artifacts
+  and diagnostics, safe field allowlists, control-character rejection,
+  renderer escaping, opaque locator non-dereference, and no raw provider
+  records.
 - When `manifest.target` exists, verify target kind/name, source IDs, aliases, supported external terms, exclusions, and internal vocabulary boundaries. Treat target contamination as a high-severity wrong-product risk.
 - Distinguish structural validity from commercial readiness or human approval.
 - Sample representative routes and deterministic claim/output gates when the pack changed those decisions.
