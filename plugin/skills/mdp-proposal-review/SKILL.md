@@ -76,11 +76,17 @@ mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file O
 
 Before any canonical proposal review model step, run
 `mdp --json requirements --dir PACK_ROOT --job JOB_ID`. Use only its exact
-`data.model_task` prompt package and selected product foundation; the
-customer-selected host owns execution. Validate the returned
-`governed-artifact`, then preserve the existing proof-output and run-receipt
-gates. A valid review artifact cannot certify compliance, invent proof, approve
-submission, or prove that a model invocation was isolated.
+`data.model_task` prompt package and selected product foundation, and proceed
+only when `data.model_task.status` is exactly `ready`; the customer-selected
+host owns execution. If `data.model_task` is missing, `unassessed`, or
+`blocked`, report its exact diagnostics and stop with `assurance: blocked`.
+Never substitute this skill's mode references, legacy normalization prompt, or
+implied review instructions for a non-ready canonical review task. Validate the
+returned `governed-artifact` with
+`--invocation-receipt PROMPT_INVOCATION_JSON`; the host receipt must bind the
+exact job, prompt ID/version/SHA-256, and per-declared-input SHA-256 values.
+Then preserve the existing proof-output and run-receipt gates. A valid review artifact cannot certify compliance, invent
+proof, approve submission, or prove that a model invocation was isolated.
 
 For `normalize-opportunity`, keep `normalized_prospect` as the required compatibility object. If `normalized_opportunity` is present, treat it as a proposal-readable alias that must match exactly, not as a separate opportunity schema. `source_summary.inputs_used` names declared prompt inputs only; source locators and proof notes belong in `signals[].source`, provenance, gaps, and normalization trace.
 

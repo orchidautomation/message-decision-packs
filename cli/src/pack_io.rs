@@ -31,8 +31,19 @@ pub(crate) fn read_canonical_prompt_by_id(
     let prompts_dir = root.join(DEFAULT_DIR).join("prompts");
     let mut paths = match fs::read_dir(&prompts_dir) {
         Ok(entries) => entries
-            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-            .filter(|path| path.is_file())
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let file_type = entry.file_type().ok()?;
+                let path = entry.path();
+                let is_yaml = path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| {
+                        extension.eq_ignore_ascii_case("yaml")
+                            || extension.eq_ignore_ascii_case("yml")
+                    });
+                (file_type.is_file() && !file_type.is_symlink() && is_yaml).then_some(path)
+            })
             .collect::<Vec<_>>(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
@@ -227,7 +238,7 @@ fn json_plan(
 
 #[cfg(test)]
 mod tests {
-    use super::{planned_directory, planned_json_write};
+    use super::{planned_directory, planned_json_write, read_canonical_prompt_by_id};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -267,6 +278,28 @@ mod tests {
         assert_eq!(plan["action"], "parent-missing");
         assert_eq!(plan["parent_exists"], false);
         assert_eq!(plan["would_write"], false);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_prompt_lookup_ignores_symlinks_and_non_yaml_files() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("mdp-canonical-prompt-{}", nonce()));
+        let prompts = root.join(".mdp/prompts");
+        std::fs::create_dir_all(&prompts).expect("prompts dir should be created");
+        let outside = root.join("outside.yaml");
+        let prompt = "format: mdp.prompt.v0\nid: ignored-prompt\ntitle: Ignored\ndescription: Ignored\ntarget_card_kinds: [positioning]\ninputs: []\ninstructions: []\noutput_contract: {}\n";
+        std::fs::write(&outside, prompt).expect("outside prompt should be written");
+        symlink(&outside, prompts.join("linked.yaml")).expect("prompt symlink should be created");
+        std::fs::write(prompts.join("notes.txt"), prompt)
+            .expect("non-yaml prompt-shaped file should be written");
+
+        let found = read_canonical_prompt_by_id(&root, "ignored-prompt")
+            .expect("canonical lookup should succeed");
+
+        assert!(found.is_none());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn nonce() -> u128 {

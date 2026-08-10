@@ -34,22 +34,28 @@ mdp --json validate --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 ```
 
-4. Before using a pack normalization prompt, inspect the selected job's
-   Decision Input Contract handoff:
+4. Before using any pack-owned prompt, inspect the selected job's compiled
+   requirements handoff:
 
 ```bash
 mdp --json requirements --dir PACK_ROOT --job JOB_ID
 ```
 
-For `outbound-copy-brief` or `outbound-copy-review`, inspect
-`data.model_task` even when Decision Input `data.available` is false. Use the
-exact compiled prompt, selected product foundation, declared inputs, version,
-and output schema. The customer-selected host owns the model call. Validate
-the returned governed artifact, then run `mdp check-claims` on generated or
-supplied copy. Never replace a blocked or unassessed task with skill-implied
-writing instructions.
+For `outbound-copy-brief` or `outbound-copy-review`, ignore Decision Input
+`data.available`; that field describes the normalization handoff, not whether
+the selected generation or review job is runnable. Require
+`data.model_task.status` to be exactly `ready`, then use only its exact compiled
+prompt, selected product foundation, declared inputs, version, and output
+schema. The customer-selected host owns the model call. Validate the returned
+governed artifact with `--invocation-receipt PROMPT_INVOCATION_JSON`, then run
+`mdp check-claims` on generated or supplied copy. The host receipt must bind
+the exact job, prompt ID/version/SHA-256, and per-declared-input SHA-256 values.
+If `data.model_task` is missing, `unassessed`, or `blocked`, report its exact
+diagnostics and stop no-draft. Never enter the legacy prompt-output path or
+replace the contract with skill-implied writing or review instructions.
 
-5. Branch on `data.available`:
+5. For `prospect-fit-or-brief` normalization only, branch on
+   Decision Input `data.available`:
    - When `true`, do not collect or normalize inside this skill.
      - If all three artifacts—`SOURCE_ATTEMPT_REQUEST_JSON`,
        `COLLECTED_ATTEMPT_RESULTS_JSON`, and `OUTPUT_JSON`—are already supplied,
@@ -91,7 +97,9 @@ writing instructions.
      Continue only when validation passes and the top-level `outcome` is exactly
      `ready`. Every other outcome stops no-draft before extracting
      `normalized_prospect`.
-   - When `false`, retain the legacy `mdp.prompt-output.v0` path. Validate
+   - When `false`, retain the legacy `mdp.prompt-output.v0` normalization path.
+     This compatibility path never authorizes `outbound-copy-brief` or
+     `outbound-copy-review`. Validate
      without a source-attempt request:
 
      ```bash

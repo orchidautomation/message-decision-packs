@@ -2323,6 +2323,10 @@ fn job_route_schema() -> Value {
                 "type": "object",
                 "required": ["status"],
                 "additionalProperties": false,
+                "allOf": [{
+                    "if": {"properties": {"status": {"const": "declared"}}},
+                    "then": {"required": ["kind", "prompt", "inspect_with"]}
+                }],
                 "properties": {
                     "status": {"enum": ["unassessed", "declared"]},
                     "kind": {"enum": ["generation", "review"]},
@@ -2940,6 +2944,17 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                             "contract": {"const": PROMPT_OUTPUT_CONTRACT}
                         }
                     }
+                }, {
+                    "if": {
+                        "required": ["output_kind"],
+                        "properties": {
+                            "output_kind": {"const": "governed-artifact"}
+                        }
+                    },
+                    "then": {
+                        "required": ["schema"],
+                        "not": {"required": ["schema_ref"]}
+                    }
                 }],
                 "properties": {
                     "contract": {
@@ -2967,6 +2982,7 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 "job_id",
                                 "prompt_version",
                                 "prompt_sha256",
+                                "invocation_receipt_sha256",
                                 "decision_input_contracts",
                                 "normalization",
                                 "attributes",
@@ -3024,7 +3040,8 @@ fn governed_artifact_example_schema() -> Value {
         "additionalProperties": false,
         "required": [
             "contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256",
-            "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"
+            "invocation_receipt_sha256", "source_summary", "selected_authority", "artifact",
+            "gaps", "rejected_claims"
         ],
         "properties": {
             "contract": {"const": PROMPT_OUTPUT_CONTRACT},
@@ -3032,6 +3049,7 @@ fn governed_artifact_example_schema() -> Value {
             "job_id": {"type": "string", "minLength": 1},
             "prompt_version": {"type": "string", "minLength": 1},
             "prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "invocation_receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "source_summary": {
                 "type": "object",
                 "required": ["inputs_used"],
@@ -3981,7 +3999,26 @@ mod tests {
             .find(|(path, _)| *path == "generate-outbound-copy.yaml")
             .expect("starter should include governed generation prompt")
             .1;
-        assert!(jsonschema::draft202012::validate(&result, &governed_prompt).is_ok());
+        let governed_validation = jsonschema::draft202012::validate(&result, &governed_prompt);
+        assert!(
+            governed_validation.is_ok(),
+            "starter governed prompt must satisfy exported schema: {governed_validation:?}"
+        );
+        let inline_schema = governed_prompt["output_contract"]["schema"].clone();
+        governed_prompt["output_contract"]
+            .as_object_mut()
+            .expect("output contract should be an object")
+            .remove("schema");
+        governed_prompt["output_contract"]["schema_ref"] = json!(PROMPT_CARD_PATCH_SCHEMA_REF);
+        assert!(
+            jsonschema::draft202012::validate(&result, &governed_prompt).is_err(),
+            "governed-artifact prompts must use an inline schema and reject schema_ref"
+        );
+        governed_prompt["output_contract"]
+            .as_object_mut()
+            .expect("output contract should be an object")
+            .remove("schema_ref");
+        governed_prompt["output_contract"]["schema"] = inline_schema;
         governed_prompt["output_contract"]["example"]
             .as_object_mut()
             .expect("example should be an object")
@@ -4031,6 +4068,17 @@ mod tests {
                 .any(|field| field == "product_foundation")
         );
         assert_eq!(profile_schema()["additionalProperties"], false);
+
+        let route_model_task =
+            &result["properties"]["job_routes"]["items"]["properties"]["model_task"];
+        let declared_without_details = json!({"status": "declared"});
+        assert!(
+            jsonschema::draft202012::validate(route_model_task, &declared_without_details).is_err()
+        );
+        assert!(
+            jsonschema::draft202012::validate(route_model_task, &json!({"status": "unassessed"}))
+                .is_ok()
+        );
     }
 
     #[test]

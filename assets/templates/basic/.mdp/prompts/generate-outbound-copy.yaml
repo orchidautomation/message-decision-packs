@@ -5,9 +5,10 @@ evidence_policy:
 - Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output.
 final_checklist:
 - Output is strict JSON.
-- All selected identifiers are declared.
+- The prompt and invocation receipt hashes exactly match the host-provided prompt_receipt.
+- All selected identifiers are declared and unambiguous.
 - Gaps and rejected claims are explicit.
-- Generated copy is ready for separate verify-output validation.
+- Generated copy is substantive before status is ready and remains ready for separate verify-output validation.
 format: mdp.prompt.v1
 id: generate-outbound-copy-v1
 inputs:
@@ -30,14 +31,14 @@ inputs:
   producer: runtime
   required: false
 - default: N/A
-  description: Copy supplied for review; generation tasks leave this N/A.
-  missing_behavior: Review tasks must return a gap when no draft is supplied.
-  name: supplied_draft
+  description: Host-produced mdp.prompt-invocation.v1 receipt binding the canonical prompt and per-input SHA-256 values.
+  missing_behavior: Return a gap or refusal; never invent prompt or input receipt hashes.
+  name: prompt_receipt
   producer: host
-  required: false
+  required: true
 instructions:
 - Use only declared inputs and the exact selected product-foundation entries for this job.
-- Return strict JSON only and preserve exact selected authority identifiers.
+- Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.
 - If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts.
 kind: generation
 negative_examples:
@@ -65,6 +66,7 @@ output_contract:
     contract: mdp.prompt-output.v0
     gaps:
     - Insufficient selected evidence for a claim-backed draft.
+    invocation_receipt_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
     job_id: outbound-copy-brief
     prompt_id: generate-outbound-copy-v1
     prompt_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
@@ -80,6 +82,7 @@ output_contract:
   - job_id
   - prompt_version
   - prompt_sha256
+  - invocation_receipt_sha256
   - source_summary
   - selected_authority
   - artifact
@@ -90,6 +93,48 @@ output_contract:
     properties:
       artifact:
         additionalProperties: false
+        allOf:
+        - if:
+            properties:
+              status:
+                const: ready
+            required:
+            - status
+          then:
+            properties:
+              angle_id:
+                minLength: 1
+                not:
+                  const: N/A
+                type: string
+              claim_ids:
+                items:
+                  minLength: 1
+                  type: string
+                minItems: 1
+                type: array
+              cta_id:
+                minLength: 1
+                not:
+                  const: N/A
+                type: string
+              evidence_ids:
+                items:
+                  minLength: 1
+                  type: string
+                minItems: 1
+                type: array
+              message_body:
+                minLength: 1
+                not:
+                  const: N/A
+                type: string
+              subject_options:
+                items:
+                  minLength: 1
+                  type: string
+                minItems: 1
+                type: array
         properties:
           angle_id:
             type: string
@@ -129,6 +174,9 @@ output_contract:
         items:
           type: string
         type: array
+      invocation_receipt_sha256:
+        pattern: ^[0-9a-f]{64}$
+        type: string
       job_id:
         const: outbound-copy-brief
       prompt_id:
@@ -155,7 +203,7 @@ output_contract:
               - product_foundation
               - normalized_prospect
               - runtime_context
-              - supplied_draft
+              - prompt_receipt
             type: array
         required:
         - inputs_used
@@ -166,6 +214,7 @@ output_contract:
     - job_id
     - prompt_version
     - prompt_sha256
+    - invocation_receipt_sha256
     - source_summary
     - selected_authority
     - artifact
@@ -179,9 +228,11 @@ procedure:
 - Return the exact governed artifact schema.
 provenance_policy:
 - Retain the exact authority identifiers used to produce or review the artifact.
+- Echo invocation_receipt_sha256 from the host-provided prompt_receipt; do not calculate or invent it.
 role: Governed outbound copy writer
 selection_rules:
 - Choose only angle, CTA, claim, and evidence identifiers present in selected authority.
+- Select at most one card-qualified authority reference for each bare artifact identifier.
 - Never load the whole pack or borrow authority from another job.
 tags:
 - prompt

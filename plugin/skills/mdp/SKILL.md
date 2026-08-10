@@ -168,7 +168,18 @@ normalization trace.
 
 For `data.model_task.status: ready`, use only the compiled prompt package and
 exact resolved product foundation. Validate the returned governed artifact
-with its prompt ID. A valid artifact schema is not final claim approval;
+with its prompt ID and the exact host-created invocation receipt:
+
+```bash
+mdp --json validate-prompt-output --dir PACK_ROOT \
+  --prompt-id PROMPT_ID \
+  --invocation-receipt PROMPT_INVOCATION_JSON \
+  --file OUTPUT_JSON
+```
+
+The receipt must use `mdp.prompt-invocation.v1` and bind the job, canonical
+prompt ID/version/SHA-256, and per-declared-input SHA-256 values. A valid
+artifact schema is not final claim approval;
 generated prose must also pass the job's `check-claims` or `verify-output`
 gate. A missing, blocked, or unassessed model task must never fall back to
 instructions implied by this skill.

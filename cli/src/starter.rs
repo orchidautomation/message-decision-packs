@@ -2350,7 +2350,20 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
                 "evidence_ids": {"type": "array", "items": {"type": "string"}},
                 "subject_options": {"type": "array", "items": {"type": "string"}},
                 "message_body": {"type": "string"}
-            }
+            },
+            "allOf": [{
+                "if": {"properties": {"status": {"const": "ready"}}, "required": ["status"]},
+                "then": {
+                    "properties": {
+                        "angle_id": {"type": "string", "minLength": 1, "not": {"const": "N/A"}},
+                        "cta_id": {"type": "string", "minLength": 1, "not": {"const": "N/A"}},
+                        "claim_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+                        "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+                        "subject_options": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+                        "message_body": {"type": "string", "minLength": 1, "not": {"const": "N/A"}}
+                    }
+                }
+            }]
         })
     };
     let example_artifact = if is_review {
@@ -2385,6 +2398,26 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
         json!({"type": "string", "pattern": "^[0-9a-f]{64}$"}),
     );
     schema_properties.insert(
+        "invocation_receipt_sha256".to_string(),
+        json!({"type": "string", "pattern": "^[0-9a-f]{64}$"}),
+    );
+    let declared_input_names = if is_review {
+        json!([
+            "product_foundation",
+            "normalized_prospect",
+            "runtime_context",
+            "prompt_receipt",
+            "supplied_draft"
+        ])
+    } else {
+        json!([
+            "product_foundation",
+            "normalized_prospect",
+            "runtime_context",
+            "prompt_receipt"
+        ])
+    };
+    schema_properties.insert(
         "source_summary".to_string(),
         json!({
             "type": "object",
@@ -2393,7 +2426,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
             "properties": {
                 "inputs_used": {
                     "type": "array",
-                    "items": {"enum": ["product_foundation", "normalized_prospect", "runtime_context", "supplied_draft"]}
+                    "items": {"enum": declared_input_names}
                 }
             }
         }),
@@ -2422,34 +2455,42 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
         "objective": objective,
         "target_card_kinds": ["positioning", "personas", "pains", "claims", "avoid-rules", "output-rules", "ctas"],
         "tags": ["prompt", "model-task", "outbound", kind],
-        "inputs": [
-            {"name": "product_foundation", "description": "Exact product-foundation resolution returned for this canonical job.", "required": true, "default": "N/A", "missing_behavior": "Return a gap or refusal; never load unrelated pack entries.", "producer": "pack"},
-            {"name": "normalized_prospect", "description": "Validated prospect or account context.", "required": true, "default": "N/A", "missing_behavior": "Return a gap; do not invent a recipient, company, trigger, or persona.", "producer": "prior-step"},
-            {"name": "runtime_context", "description": "Optional bounded date and channel metadata.", "required": false, "default": "N/A", "missing_behavior": "Avoid time-sensitive framing that is not supplied.", "producer": "runtime"},
-            {"name": "supplied_draft", "description": "Copy supplied for review; generation tasks leave this N/A.", "required": is_review, "default": "N/A", "missing_behavior": "Review tasks must return a gap when no draft is supplied.", "producer": "host"}
-        ],
+        "inputs": outbound_model_task_inputs(is_review),
         "instructions": [
             "Use only declared inputs and the exact selected product-foundation entries for this job.",
-            "Return strict JSON only and preserve exact selected authority identifiers.",
+            "Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.",
             "If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts."
         ],
         "procedure": ["Confirm the job, prompt version, declared inputs, and selected authority.", "Apply the pack-owned selection and evidence rules.", "Return the exact governed artifact schema."],
-        "selection_rules": ["Choose only angle, CTA, claim, and evidence identifiers present in selected authority.", "Never load the whole pack or borrow authority from another job."],
+        "selection_rules": ["Choose only angle, CTA, claim, and evidence identifiers present in selected authority.", "Select at most one card-qualified authority reference for each bare artifact identifier.", "Never load the whole pack or borrow authority from another job."],
         "ambiguity_policy": ["Represent missing or conflicting facts in gaps and use a bounded non-success status."],
-        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact."],
+        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Echo invocation_receipt_sha256 from the host-provided prompt_receipt; do not calculate or invent it."],
         "evidence_policy": ["Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output."],
         "negative_examples": ["Do not invent customer proof, integrations, outcomes, timing, or recipient facts.", "Do not silently choose an undeclared claim or CTA."],
-        "final_checklist": ["Output is strict JSON.", "All selected identifiers are declared.", "Gaps and rejected claims are explicit.", "Generated copy is ready for separate verify-output validation."],
+        "final_checklist": ["Output is strict JSON.", "The prompt and invocation receipt hashes exactly match the host-provided prompt_receipt.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
         "output_contract": {
             "contract": PROMPT_OUTPUT_CONTRACT,
             "output_kind": "governed-artifact",
             "strict_json_only": true,
-            "required_top_level": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"],
+            "required_top_level": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "invocation_receipt_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"],
             "entry_defaults": {"body": "N/A", "applies_to": [], "evidence": [], "avoid": [], "confidence": "unknown", "provenance": []},
-            "schema": {"type": "object", "additionalProperties": false, "required": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"], "properties": schema_properties},
-            "example": {"contract": PROMPT_OUTPUT_CONTRACT, "prompt_id": id, "job_id": job_id, "prompt_version": "1", "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "source_summary": {"inputs_used": []}, "selected_authority": [], "artifact": example_artifact, "gaps": if is_review { json!(["Supplied draft needs revision before approval."]) } else { json!(["Insufficient selected evidence for a claim-backed draft."]) }, "rejected_claims": []}
+            "schema": {"type": "object", "additionalProperties": false, "required": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "invocation_receipt_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"], "properties": schema_properties},
+            "example": {"contract": PROMPT_OUTPUT_CONTRACT, "prompt_id": id, "job_id": job_id, "prompt_version": "1", "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "invocation_receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "source_summary": {"inputs_used": []}, "selected_authority": [], "artifact": example_artifact, "gaps": if is_review { json!(["Supplied draft needs revision before approval."]) } else { json!(["Insufficient selected evidence for a claim-backed draft."]) }, "rejected_claims": []}
         }
     })
+}
+
+fn outbound_model_task_inputs(is_review: bool) -> Value {
+    let mut inputs = vec![
+        json!({"name": "product_foundation", "description": "Exact product-foundation resolution returned for this canonical job.", "required": true, "default": "N/A", "missing_behavior": "Return a gap or refusal; never load unrelated pack entries.", "producer": "pack"}),
+        json!({"name": "normalized_prospect", "description": "Validated prospect or account context.", "required": true, "default": "N/A", "missing_behavior": "Return a gap; do not invent a recipient, company, trigger, or persona.", "producer": "prior-step"}),
+        json!({"name": "runtime_context", "description": "Optional bounded date and channel metadata.", "required": false, "default": "N/A", "missing_behavior": "Avoid time-sensitive framing that is not supplied.", "producer": "runtime"}),
+        json!({"name": "prompt_receipt", "description": "Host-produced mdp.prompt-invocation.v1 receipt binding the canonical prompt and per-input SHA-256 values.", "required": true, "default": "N/A", "missing_behavior": "Return a gap or refusal; never invent prompt or input receipt hashes.", "producer": "host"}),
+    ];
+    if is_review {
+        inputs.push(json!({"name": "supplied_draft", "description": "Copy supplied for review.", "required": true, "default": "N/A", "missing_behavior": "Return a gap when no draft is supplied.", "producer": "host"}));
+    }
+    Value::Array(inputs)
 }
 
 fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value {

@@ -121,6 +121,11 @@ pub(crate) enum Commands {
             help = "Exact mdp.collected-attempt-results.v1 JSON file for immutable execution-fact binding and raw-value normalization"
         )]
         collected_attempt_results: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Exact mdp.prompt-invocation.v1 JSON receipt binding a governed artifact to the host-supplied prompt and declared inputs"
+        )]
+        invocation_receipt: Option<PathBuf>,
         #[arg(long, help = "Prompt file path to validate against")]
         prompt: Option<PathBuf>,
         #[arg(long, help = "Prompt id to validate against")]

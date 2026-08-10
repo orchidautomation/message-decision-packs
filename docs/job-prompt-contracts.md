@@ -52,12 +52,15 @@ Generation and review prompts use `output_kind: governed-artifact`. Their output
 mdp --json validate-prompt-output \
   --dir PACK_ROOT \
   --prompt-id generate-outbound-copy-v1 \
+  --invocation-receipt PROMPT_INVOCATION.json \
   --file MODEL_OUTPUT.json
 ```
 
-The validator accepts governed artifacts only against the canonical prompt under `.mdp/prompts`; an external same-ID file cannot replace it. Every result carries `job_id`, `prompt_version`, and `prompt_sha256`, so stale output from an older prompt fails closed. A prompt may bind to only one canonical job.
+Before the model call, the customer-selected host creates an `mdp.prompt-invocation.v1` receipt. It names the exact job, prompt ID/version/SHA-256, and every supplied declared input with a SHA-256. The prompt receives that receipt as its host-produced `prompt_receipt` input, and the model output echoes the exact receipt-file hash as `invocation_receipt_sha256`. MDP does not make the call; it verifies the host's immutable boundary afterward.
 
-The validator also rejects malformed JSON, the wrong prompt or contract, missing fields, unexpected fields, and artifact values outside the prompt schema. Artifact identifiers must occur in the result's exact `selected_authority` subset, not merely somewhere in the job foundation. A `ready` result must report every required prompt input in `source_summary.inputs_used`, select at least one authority reference, and carry no gaps. `selected_authority`, `gaps`, and `rejected_claims` remain explicit for non-success results.
+The validator accepts governed artifacts only against the canonical prompt under `.mdp/prompts`; an external same-ID file cannot replace it. Every result carries `job_id`, `prompt_version`, `prompt_sha256`, and `invocation_receipt_sha256`, so stale output or a changed host receipt fails closed. Duplicate, undeclared, malformed, or missing required ready-state input receipts are rejected. A prompt may bind to only one canonical job.
+
+The validator also rejects malformed JSON, the wrong prompt or contract, missing fields, unexpected fields, and artifact values outside the prompt schema. Artifact identifiers must occur in the result's exact `selected_authority` subset, not merely somewhere in the job foundation; duplicate bare identifiers across selected card-qualified references are ambiguous and rejected. A `ready` result must have host receipts for every required prompt input, report the same inputs plus `prompt_receipt` in `source_summary.inputs_used`, select at least one authority reference, carry no gaps, and contain substantive generation fields. `selected_authority`, `gaps`, and `rejected_claims` remain explicit for non-success results.
 
 For generated prose, shape validation is not claim approval. Run the existing `check-claims` or `verify-output` path required by the job before treating the wording as governed output.
 

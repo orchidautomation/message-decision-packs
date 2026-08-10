@@ -4975,7 +4975,10 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     if output_kind == "governed-artifact" {
         for field in [
             "contract",
+            "job_id",
             "prompt_id",
+            "prompt_version",
+            "prompt_sha256",
             "source_summary",
             "selected_authority",
             "artifact",
@@ -5154,6 +5157,18 @@ fn validate_governed_artifact_schema(
                 "governed-artifact inputs_used may enumerate declared prompt inputs only",
             ));
         }
+    }
+    let enumerated = values
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    for input in declared.difference(&enumerated) {
+        issues.push(issue(
+            "governed_artifact_inputs_used_declared_input_missing",
+            "error",
+            format!("{path}#/output_contract/schema/properties/source_summary/properties/inputs_used/items/enum"),
+            format!("governed-artifact inputs_used enum must include declared prompt input {input}"),
+        ));
     }
     if schema["properties"]["selected_authority"]["type"].as_str() != Some("array")
         || schema["properties"]["artifact"]["type"].as_str() != Some("object")
@@ -5959,7 +5974,10 @@ mod tests {
             r#"
 required_top_level:
   - contract
+  - job_id
   - prompt_id
+  - prompt_version
+  - prompt_sha256
   - source_summary
   - selected_authority
   - artifact
@@ -5968,10 +5986,13 @@ required_top_level:
 schema:
   type: object
   additionalProperties: false
-  required: [contract, prompt_id, source_summary, selected_authority, artifact, gaps, rejected_claims]
+  required: [contract, job_id, prompt_id, prompt_version, prompt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
   properties:
     contract: {const: mdp.prompt-output.v0}
+    job_id: {const: prospect-fit-or-brief}
     prompt_id: {const: normalize-prospect-row}
+    prompt_version: {const: "1"}
+    prompt_sha256: {type: string, minLength: 64, maxLength: 64}
     source_summary:
       type: object
       additionalProperties: false
@@ -5986,7 +6007,10 @@ schema:
     rejected_claims: {type: array, items: {type: string}}
 example:
   contract: mdp.prompt-output.v0
+  job_id: prospect-fit-or-brief
   prompt_id: normalize-prospect-row
+  prompt_version: "1"
+  prompt_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   source_summary: {inputs_used: []}
   selected_authority: [positioning/decision-layer]
   artifact: {message_body: "Hello"}
@@ -6036,6 +6060,67 @@ prompt: normalize-prospect-row
         assert_eq!(
             result["profile"]["jobs"][0]["model_task"]["prompt_version"],
             "1"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_prompt_requires_receipt_fields_in_required_top_level() {
+        let root = temp_pack("governed-required-receipts");
+        opt_in_generation_prompt(&root);
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        let mut prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+        prompt["output_contract"]["required_top_level"]
+            .as_sequence_mut()
+            .expect("required fields should be a sequence")
+            .retain(|field| field.as_str() != Some("prompt_sha256"));
+        std::fs::write(
+            &prompt_path,
+            serde_yaml::to_string(&prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "prompt_output_required_field_missing")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_prompt_inputs_used_enum_must_cover_every_declared_input() {
+        let root = temp_pack("governed-input-enum-coverage");
+        opt_in_generation_prompt(&root);
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        let mut prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+        prompt["output_contract"]["schema"]["properties"]["source_summary"]["properties"]
+            ["inputs_used"]["items"]["enum"]
+            .as_sequence_mut()
+            .expect("inputs_used enum should be a sequence")
+            .retain(|input| input.as_str() != Some("raw_row"));
+        std::fs::write(
+            &prompt_path,
+            serde_yaml::to_string(&prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "governed_artifact_inputs_used_declared_input_missing"
+                })
         );
         let _ = std::fs::remove_dir_all(root);
     }

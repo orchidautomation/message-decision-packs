@@ -1175,6 +1175,7 @@ mod tests {
             .expect("proposal pack should initialize");
 
         let manifest = read_manifest(&root).expect("manifest should parse");
+        let mut shared_prompt_policy: Option<Value> = None;
         for job in &manifest.jobs {
             let foundation = resolve_product_foundation_for_pack(&root, &manifest, &job.id)
                 .expect("foundation should resolve");
@@ -1218,6 +1219,89 @@ mod tests {
             assert_eq!(prompt.id, binding.prompt);
             assert_eq!(prompt.kind.as_deref(), Some("review"));
             assert_eq!(prompt.version.as_deref(), Some("1"));
+            let prompt_value =
+                serde_json::to_value(&prompt).expect("proposal job-owned prompt should serialize");
+            let input_names = prompt_value["inputs"]
+                .as_array()
+                .expect("proposal prompt inputs should be an array")
+                .iter()
+                .filter_map(|input| input["name"].as_str())
+                .collect::<BTreeSet<_>>();
+            assert!(
+                input_names.contains("normalized_prospect"),
+                "{} must consume the canonical normalized_prospect output",
+                job.id
+            );
+            assert!(
+                !input_names.contains("normalized_opportunity"),
+                "{} must not require the optional proposal readability alias",
+                job.id
+            );
+            let prompt_receipt = prompt_value["inputs"]
+                .as_array()
+                .and_then(|inputs| {
+                    inputs
+                        .iter()
+                        .find(|input| input["name"] == "prompt_receipt")
+                })
+                .expect("proposal prompt must declare a prompt_receipt input");
+            assert_eq!(prompt_receipt["required"], true, "{}", job.id);
+            assert_eq!(prompt_receipt["producer"], "host", "{}", job.id);
+            for required_path in [
+                &prompt_value["output_contract"]["required_top_level"],
+                &prompt_value["output_contract"]["schema"]["required"],
+            ] {
+                assert!(
+                    required_path
+                        .as_array()
+                        .expect("governed prompt required fields should be an array")
+                        .iter()
+                        .any(|field| field == "invocation_receipt_sha256"),
+                    "{} must require invocation_receipt_sha256",
+                    job.id
+                );
+            }
+            assert!(
+                prompt_value["output_contract"]["schema"]["properties"]
+                    ["invocation_receipt_sha256"]
+                    .is_object(),
+                "{} must schema invocation_receipt_sha256",
+                job.id
+            );
+            assert!(
+                prompt_value["output_contract"]["example"]["invocation_receipt_sha256"]
+                    .as_str()
+                    .is_some_and(|hash| hash.len() == 64),
+                "{} must example invocation_receipt_sha256",
+                job.id
+            );
+
+            let shared_keys = [
+                "role",
+                "target_card_kinds",
+                "inputs",
+                "instructions",
+                "selection_rules",
+                "ambiguity_policy",
+                "provenance_policy",
+                "evidence_policy",
+                "negative_examples",
+            ];
+            let shared = Value::Object(
+                shared_keys
+                    .into_iter()
+                    .map(|key| (key.to_string(), prompt_value[key].clone()))
+                    .collect(),
+            );
+            if let Some(expected) = &shared_prompt_policy {
+                assert_eq!(
+                    &shared, expected,
+                    "{} drifted from the proposal prompts' shared policy contract",
+                    job.id
+                );
+            } else {
+                shared_prompt_policy = Some(shared);
+            }
         }
         let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
             .expect("orientation README should exist");
