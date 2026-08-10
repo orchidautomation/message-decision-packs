@@ -4810,7 +4810,8 @@ fn validate_prompt_file(
                 "each prompt input must include name, default, and missing_behavior",
             ));
         }
-        if !input.name.trim().is_empty() && !input_names.insert(input.name.as_str()) {
+        let input_name = input.name.trim();
+        if !input_name.is_empty() && !input_names.insert(input_name) {
             issues.push(issue(
                 "prompt_input_name_duplicate",
                 "error",
@@ -6195,6 +6196,7 @@ prompt: normalize-prospect-row
                 }
                 "duplicate" => {
                     let mut duplicate = inputs[receipt_index].clone();
+                    duplicate["name"] = YamlValue::String("invocation_receipt_sha256 ".to_string());
                     duplicate["producer"] = YamlValue::String("pack".to_string());
                     inputs.push(duplicate);
                 }
