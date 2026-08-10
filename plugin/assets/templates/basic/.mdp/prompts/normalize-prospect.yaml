@@ -1,31 +1,45 @@
+ambiguity_policy:
+- Preserve weak inferences as hypotheses, low confidence, needs-review, or gaps.
 description: Turns a supplied messy person, company, account, CRM, CSV, Clay, Deepline, spreadsheet, or research row into provider-neutral MDP prospect JSON before mdp fit or brief runs.
-format: mdp.prompt.v0
+evidence_policy:
+- Attributes are metadata, not proof; never convert them into adoption, outcome, compliance, or capability claims.
+final_checklist:
+- Output is strict JSON.
+- All normalized values satisfy pack vocabulary.
+- Missing required context is explicit.
+- Fit readiness is false whenever required evidence is absent.
+format: mdp.prompt.v1
 id: normalize-prospect-row
 inputs:
 - default: N/A
   description: The full messy source row, note, webhook payload, CSV row, CRM export row, Clay/Deepline row, spreadsheet row, or pasted research record.
   missing_behavior: Return gaps and do not create normalized_prospect fields from absent source material.
   name: raw_row
+  producer: source
   required: true
 - default: N/A
   description: Company domain when available.
   missing_behavior: Use N/A and do not infer company identity from absent data.
   name: company_domain
+  producer: host
   required: false
 - default: N/A
   description: Relevant manifest personas, persona_mappings, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, fit rules, signal definitions, avoid-rules, output rules, and source policy from this MDP.
   missing_behavior: Do not assume pack-owned persona mappings, value domains, fit rules, attributes, or signal names when this field is N/A.
   name: existing_pack_context
+  producer: pack
   required: false
 - default: N/A
   description: Optional MDP runtime context with now_utc, date_utc, timezone UTC, and local_time_policy. Use it only for temporal framing; fiscal year, renewal dates, event dates, and campaign windows remain pack-declared or supplied metadata.
   missing_behavior: Do not infer fiscal years, renewal windows, event timing, or local business calendar facts from missing runtime context.
   name: runtime_context
+  producer: runtime
   required: false
 - default: user-provided-row
   description: Provider-neutral source marker such as user-provided-row, csv-row, crm-export-row, clay-row, deepline-row, private-scratch-row, sanitized-example, or synthetic-example.
   missing_behavior: Use user-provided-row unless the caller supplies a more specific source kind.
   name: source_kind
+  producer: host
   required: false
 instructions:
 - Use only raw_row, company_domain, existing_pack_context, runtime_context, and source_kind. Do not browse, scrape, enrich, send, sequence, update a CRM, or call external systems from this normalization prompt contract.
@@ -46,6 +60,11 @@ instructions:
 - 'Missing-field example: if the row has company but no person title, do not fabricate a title; add {"field":"title","reason":"not_available_in_source","source_evidence":"Raw row contained no person title."} to normalization_trace.missing_required and set ready_for_mdp_fit false.'
 - 'Invalid-value example: if the row says segment enterprise but value_contracts.segment only allows agent-assisted GTM, do not output segment enterprise; add a gap asking for a reviewed pack segment or manifest update.'
 - Keep card_patches empty. This prompt normalizes runtime prospect input; it does not propose edits to MDP cards.
+kind: normalization
+negative_examples:
+- Do not invent a person, title, company domain, persona, segment, trigger, or signal.
+- Do not browse, scrape, enrich, send, sequence, or update external systems.
+objective: Convert supplied messy prospect context into the exact bounded prospect JSON accepted by this pack without inventing facts.
 output_contract:
   contract: mdp.prompt-output.v0
   entry_defaults:
@@ -127,6 +146,16 @@ output_contract:
   - rejected_claims
   schema_ref: mdp.prompt-output.prospect-normalization.v0
   strict_json_only: true
+procedure:
+- Inventory only declared inputs and preserve their source boundaries.
+- Normalize values against pack-owned vocabularies and readiness rules.
+- Return strict JSON with explicit gaps and normalization trace.
+provenance_policy:
+- Keep supplied field paths and source notes in signal sources and normalization trace.
+role: Provider-neutral prospect normalization analyst
+selection_rules:
+- Use only pack-owned persona, segment, signal, source-kind, and attribute values.
+- Omit or gap any value that cannot be mapped exactly.
 tags:
 - prompt
 - normalization
@@ -138,3 +167,4 @@ target_card_kinds:
 - fit-rules
 - signals
 title: Normalize prospect row
+version: '1'

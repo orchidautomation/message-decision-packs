@@ -1,0 +1,220 @@
+ambiguity_policy:
+- Represent missing or conflicting facts in gaps and use a bounded non-success status.
+description: Evaluate supplied outbound copy against the exact routed product foundation, selected claims and evidence, CTA, and output constraints.
+evidence_policy:
+- Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output.
+final_checklist:
+- Output is strict JSON.
+- prompt_sha256 matches the host-provided canonical prompt hash.
+- invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.
+- All selected identifiers are declared and unambiguous.
+- Gaps and rejected claims are explicit.
+- Generated copy is substantive before status is ready and remains ready for separate verify-output validation.
+format: mdp.prompt.v1
+id: review-outbound-copy-v1
+inputs:
+- default: N/A
+  description: Exact product-foundation resolution returned for this canonical job.
+  missing_behavior: Return a gap or refusal; never load unrelated pack entries.
+  name: product_foundation
+  producer: pack
+  required: true
+- default: N/A
+  description: Validated prospect or account context.
+  missing_behavior: Return a gap; do not invent a recipient, company, trigger, or persona.
+  name: normalized_prospect
+  producer: prior-step
+  required: true
+- default: N/A
+  description: Optional bounded date and channel metadata.
+  missing_behavior: Avoid time-sensitive framing that is not supplied.
+  name: runtime_context
+  producer: runtime
+  required: false
+- default: N/A
+  description: Host-produced mdp.prompt-invocation.v1 receipt binding the canonical prompt and per-input SHA-256 values.
+  missing_behavior: Return a gap or refusal; never invent prompt or input receipt hashes.
+  name: prompt_receipt
+  producer: host
+  required: true
+- default: N/A
+  description: Host-produced detached SHA-256 of the exact prompt_receipt bytes, supplied separately because a receipt cannot contain its own hash.
+  missing_behavior: Return a gap or refusal; never calculate or invent the detached receipt hash.
+  name: invocation_receipt_sha256
+  producer: host
+  required: true
+- default: N/A
+  description: Copy supplied for review.
+  missing_behavior: Return a gap when no draft is supplied.
+  name: supplied_draft
+  producer: host
+  required: true
+instructions:
+- Use only declared inputs and the exact selected product-foundation entries for this job.
+- Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.
+- If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts.
+kind: review
+negative_examples:
+- Do not invent customer proof, integrations, outcomes, timing, or recipient facts.
+- Do not silently choose an undeclared claim or CTA.
+objective: Evaluate supplied outbound copy against the exact routed product foundation, selected claims and evidence, CTA, and output constraints.
+output_contract:
+  contract: mdp.prompt-output.v0
+  entry_defaults:
+    applies_to: []
+    avoid: []
+    body: N/A
+    confidence: unknown
+    evidence: []
+    provenance: []
+  example:
+    artifact:
+      accepted_claim_ids: []
+      accepted_evidence_ids: []
+      decision: revise
+      issues:
+      - The supplied draft uses a claim that is not selected authority.
+      status: gap
+    contract: mdp.prompt-output.v0
+    gaps:
+    - Supplied draft needs revision before approval.
+    invocation_receipt_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    job_id: outbound-copy-review
+    prompt_id: review-outbound-copy-v1
+    prompt_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    prompt_version: '1'
+    rejected_claims: []
+    selected_authority: []
+    source_summary:
+      inputs_used: []
+  output_kind: governed-artifact
+  required_top_level:
+  - contract
+  - prompt_id
+  - job_id
+  - prompt_version
+  - prompt_sha256
+  - invocation_receipt_sha256
+  - source_summary
+  - selected_authority
+  - artifact
+  - gaps
+  - rejected_claims
+  schema:
+    additionalProperties: false
+    properties:
+      artifact:
+        additionalProperties: false
+        properties:
+          accepted_claim_ids:
+            items:
+              type: string
+            type: array
+          accepted_evidence_ids:
+            items:
+              type: string
+            type: array
+          decision:
+            enum:
+            - approve
+            - revise
+            - reject
+          issues:
+            items:
+              type: string
+            type: array
+          status:
+            enum:
+            - ready
+            - gap
+            - refused
+        required:
+        - status
+        - decision
+        - issues
+        - accepted_claim_ids
+        - accepted_evidence_ids
+        type: object
+      contract:
+        const: mdp.prompt-output.v0
+      gaps:
+        items:
+          type: string
+        type: array
+      invocation_receipt_sha256:
+        pattern: ^[0-9a-f]{64}$
+        type: string
+      job_id:
+        const: outbound-copy-review
+      prompt_id:
+        const: review-outbound-copy-v1
+      prompt_sha256:
+        pattern: ^[0-9a-f]{64}$
+        type: string
+      prompt_version:
+        const: '1'
+      rejected_claims:
+        items:
+          type: string
+        type: array
+      selected_authority:
+        items:
+          type: string
+        type: array
+      source_summary:
+        additionalProperties: false
+        properties:
+          inputs_used:
+            items:
+              enum:
+              - product_foundation
+              - normalized_prospect
+              - runtime_context
+              - prompt_receipt
+              - invocation_receipt_sha256
+              - supplied_draft
+            type: array
+        required:
+        - inputs_used
+        type: object
+    required:
+    - contract
+    - prompt_id
+    - job_id
+    - prompt_version
+    - prompt_sha256
+    - invocation_receipt_sha256
+    - source_summary
+    - selected_authority
+    - artifact
+    - gaps
+    - rejected_claims
+    type: object
+  strict_json_only: true
+procedure:
+- Confirm the job, prompt version, declared inputs, and selected authority.
+- Apply the pack-owned selection and evidence rules.
+- Return the exact governed artifact schema.
+provenance_policy:
+- Retain the exact authority identifiers used to produce or review the artifact.
+- Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash.
+role: Governed outbound copy reviewer
+selection_rules:
+- Choose only angle, CTA, claim, and evidence identifiers present in selected authority.
+- Select at most one card-qualified authority reference for each bare artifact identifier.
+- Never load the whole pack or borrow authority from another job.
+tags:
+- prompt
+- model-task
+- outbound
+- review
+target_card_kinds:
+- positioning
+- personas
+- pains
+- claims
+- avoid-rules
+- output-rules
+- ctas
+title: Review outbound copy
+version: '1'

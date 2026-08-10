@@ -1,0 +1,221 @@
+format: mdp.prompt.v1
+id: review-proposal-compliance-v1
+version: "1"
+kind: review
+title: Review proposal compliance
+description: Evaluate declared requirements and compliance-sensitive boundaries without making compliance claims.
+role: Governed proposal review analyst
+objective: Evaluate declared requirements and compliance-sensitive boundaries without making compliance claims.
+target_card_kinds:
+- signals
+- output-rules
+- avoid-rules
+- fit-rules
+- claims
+- gaps
+tags: [prompt, model-task, proposal, review]
+inputs:
+- name: product_foundation
+  description: Exact product-foundation resolution returned for this canonical proposal job.
+  required: true
+  default: N/A
+  missing_behavior: Return a gap or refusal; never load unrelated proposal authority.
+  producer: pack
+- name: normalized_prospect
+  description: Validated opportunity and requirement context.
+  required: true
+  default: N/A
+  missing_behavior: Return a gap; do not invent opportunity, requirement, proof, or compliance facts.
+  producer: prior-step
+- name: supplied_material
+  description: Bounded synthetic, sanitized, public-safe, or customer-controlled material selected by the host.
+  required: false
+  default: N/A
+  missing_behavior: Review only the declared context and report missing material.
+  producer: source
+- name: runtime_context
+  description: Optional bounded date metadata.
+  required: false
+  default: N/A
+  missing_behavior: Avoid time-sensitive conclusions that are not supplied.
+  producer: runtime
+- name: prompt_receipt
+  description: Host-produced mdp.prompt-invocation.v1 receipt binding the canonical prompt and per-input SHA-256 values.
+  required: true
+  default: N/A
+  missing_behavior: Return a gap or refusal; never invent prompt or input receipt hashes.
+  producer: host
+- name: invocation_receipt_sha256
+  description: Host-computed SHA-256 of the exact detached prompt_receipt bytes supplied to this model call.
+  required: true
+  default: N/A
+  missing_behavior: Return a gap or refusal; echo this host value and never calculate or invent it.
+  producer: host
+instructions:
+- Use only declared inputs and the exact selected product-foundation entries for this job.
+- Return strict JSON only, preserve exact selected authority identifiers, and echo invocation_receipt_sha256 exactly from the separately declared host input.
+- Surface missing proof, requirements, or review authority as structured gaps instead of inventing facts.
+procedure:
+- Confirm the canonical job, prompt version, declared inputs, and selected authority.
+- Evaluate each declared requirement separately and preserve its source, coverage outcome, proof, gap, owner, and question.
+- Apply the pack-owned review gates and evidence boundaries without certifying compliance.
+- Return the exact governed artifact schema.
+selection_rules:
+- Select only claims, proof, requirements, and review gates present in the job's selected authority.
+- Never borrow an offer or motion from another proposal job.
+ambiguity_policy:
+- Represent missing or conflicting facts in gaps and use a bounded non-success status.
+provenance_policy:
+- Retain exact authority identifiers for every selected claim, proof item, and review gate.
+- Echo invocation_receipt_sha256 from the host-computed detached hash input for the exact prompt_receipt bytes; do not calculate or invent it.
+evidence_policy:
+- Unsupported certifications, compliance status, past performance, pricing, or customer proof must be rejected or escalated.
+negative_examples:
+- Do not claim CMMC, NIST, legal, procurement, or CUI approval.
+- Do not invent past performance, customer results, certifications, or requirement coverage.
+final_checklist:
+- Output is strict JSON.
+- prompt_sha256 matches the host-provided canonical prompt hash.
+- invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.
+- All selected identifiers are declared.
+- Every reviewed requirement has a source, coverage status, proof list, explicit gap, owner, and question.
+- Missing requirements and unsupported claims are explicit.
+- The result is framed for human review and does not certify compliance.
+- No external submission, send, CRM update, or model call is implied.
+output_contract:
+  contract: mdp.prompt-output.v0
+  output_kind: governed-artifact
+  strict_json_only: true
+  required_top_level: [contract, prompt_id, job_id, prompt_version, prompt_sha256, invocation_receipt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
+  entry_defaults:
+    body: N/A
+    applies_to: []
+    evidence: []
+    avoid: []
+    confidence: unknown
+    provenance: []
+  schema:
+    type: object
+    additionalProperties: false
+    required: [contract, prompt_id, job_id, prompt_version, prompt_sha256, invocation_receipt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
+    properties:
+      contract: {const: mdp.prompt-output.v0}
+      prompt_id: {const: review-proposal-compliance-v1}
+      job_id: {const: compliance-review}
+      prompt_version: {const: "1"}
+      prompt_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+      invocation_receipt_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+      source_summary:
+        type: object
+        additionalProperties: false
+        required: [inputs_used]
+        properties:
+          inputs_used:
+            type: array
+            items: {enum: [product_foundation, normalized_prospect, supplied_material, runtime_context, prompt_receipt, invocation_receipt_sha256]}
+      selected_authority: {type: array, items: {type: string}}
+      artifact:
+        type: object
+        additionalProperties: false
+        required: [status, review_status, review_owner, scope_reviewed, source_notes, requirements, unsupported_or_risky_claims, missing_requirements_or_sources, human_review_required, next_questions, selected_claim_ids, selected_evidence_ids]
+        allOf:
+        - if:
+            properties:
+              status: {const: ready}
+            required: [status]
+          then:
+            properties:
+              review_status: {const: ready-for-human-review}
+              missing_requirements_or_sources: {type: array, maxItems: 0}
+              requirements:
+                type: array
+                minItems: 1
+                items:
+                  allOf:
+                  - properties:
+                      coverage_status: {enum: [supported, out-of-scope]}
+                      source: {type: string, minLength: 1, not: {const: N/A}}
+                    required: [coverage_status, source]
+                  - if:
+                      properties:
+                        coverage_status: {const: supported}
+                      required: [coverage_status]
+                    then:
+                      properties:
+                        gap: {const: N/A}
+                  - if:
+                      properties:
+                        coverage_status: {const: out-of-scope}
+                      required: [coverage_status]
+                    then:
+                      properties:
+                        gap: {type: string, minLength: 1, not: {const: N/A}}
+        properties:
+          status: {enum: [ready, gap, refused]}
+          review_status: {enum: [ready-for-human-review, needs-more-info, blocked]}
+          review_owner: {type: string}
+          scope_reviewed: {type: array, items: {type: string}}
+          source_notes: {type: array, items: {type: string}}
+          requirements:
+            type: array
+            minItems: 1
+            items:
+              type: object
+              additionalProperties: false
+              required: [requirement_id, requirement, source, obligation, supplied_answer, coverage_status, proof, gap, risk, owner, question]
+              properties:
+                requirement_id: {type: string}
+                requirement: {type: string}
+                source: {type: string}
+                obligation: {type: string}
+                supplied_answer: {type: string}
+                coverage_status: {enum: [supported, partial, missing, unsupported, out-of-scope, needs-human-review]}
+                proof: {type: array, items: {type: string}}
+                gap: {type: string}
+                risk: {type: string}
+                owner: {type: string}
+                question: {type: string}
+          unsupported_or_risky_claims: {type: array, items: {type: string}}
+          missing_requirements_or_sources: {type: array, items: {type: string}}
+          human_review_required: {const: true}
+          next_questions: {type: array, items: {type: string}}
+          selected_claim_ids: {type: array, items: {type: string}}
+          selected_evidence_ids: {type: array, items: {type: string}}
+      gaps: {type: array, items: {type: string}}
+      rejected_claims: {type: array, items: {type: string}}
+  example:
+    contract: mdp.prompt-output.v0
+    prompt_id: review-proposal-compliance-v1
+    job_id: compliance-review
+    prompt_version: "1"
+    prompt_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    invocation_receipt_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    source_summary:
+      inputs_used: []
+    selected_authority: []
+    artifact:
+      status: gap
+      review_status: needs-more-info
+      review_owner: N/A
+      scope_reviewed: []
+      source_notes: []
+      requirements:
+      - requirement_id: req-missing-001
+        requirement: Authoritative requirement text was not supplied.
+        source: N/A
+        obligation: N/A
+        supplied_answer: N/A
+        coverage_status: missing
+        proof: []
+        gap: Authoritative requirement text and source are missing.
+        risk: A human reviewer cannot assess requirement coverage.
+        owner: N/A
+        question: Where is the authoritative requirement source?
+      unsupported_or_risky_claims: []
+      missing_requirements_or_sources: [Required review material is missing.]
+      human_review_required: true
+      next_questions: ["Who owns the compliance review and where are the authoritative requirements?"]
+      selected_claim_ids: []
+      selected_evidence_ids: []
+    gaps: [Required review material is missing.]
+    rejected_claims: []

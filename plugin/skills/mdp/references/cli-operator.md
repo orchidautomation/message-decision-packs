@@ -38,7 +38,7 @@ Read `.mdp/README.md` only after the CLI projection and only for navigation.
 It cannot close a gap or override a diagnostic. Foundation `ready` is a
 veto-only result and never means sufficient-for-job or self-standing.
 
-`requirements` is the read-only, job-bound handoff to collectors and customer-funded normalization runners. It compiles the exact questions, permitted source classes, prompt/version identity, attempt ledger schema, and normalized envelope schema. It never performs research or a model call. Existing jobs without a Decision Input Contract return `available: false` without changing their current fit/readiness path.
+`requirements` is the read-only, job-bound handoff to collectors and customer-selected hosts. It compiles Decision Input questions and schemas when present, plus any declared job-owned model task: exact prompt/version/hash, input producers, instructions, selected product foundation, and output schema. It never performs research or a model call. Existing jobs without a Decision Input Contract keep `available: false`; inspect `model_task_available` separately.
 
 `validate-source-binding` checks one integration-owned
 `mdp.source-binding.v1` mapping against the exact pack and requirements
@@ -50,7 +50,7 @@ field-key reuse, and performs no source access or execution.
 
 Use [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix) for integration state. The only states are `verified`, `recipe-only`, `unsupported`, and `fixture/mock-only`; schema acceptance, a recipe, MCP availability, or one valid receipt does not promote a row.
 
-- `validate-prompt-output`: validate model-produced normalization output; pass `--source-audit` for proposal PDF/doc extraction ledgers when raw-field/snippet citations must resolve.
+- `validate-prompt-output`: validate model-produced normalization or governed-artifact output against the exact selected prompt. Governed artifacts require `--invocation-receipt` with the host-created `mdp.prompt-invocation.v1` job/prompt/input-hash receipt. Pass `--source-audit` for proposal PDF/doc extraction ledgers when raw-field/snippet citations must resolve. Generated prose still requires `check-claims` or `verify-output`.
 - `run-receipt`: record and gate the host-owned context boundary plus artifact hashes; audit-grade proposal review requires `--isolation isolated`, `--declared-inputs-only`, successful validation whose artifact hashes match the supplied prompt-output and source-audit files, a runner audit whose prompt-output hash matches the supplied prompt output and reports `tool_invocations_observed: 0`, source audit when documents/PDFs were normalized, and for production pilots `--runner-audit ... --require-runner-audit`.
 - `scripts/mdp-proposal-runner.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed bundles): host-neutral local proposal runner surface. Use `tools` to inspect local runner steps. Use `run --dry-run` for request hygiene, `run --mock-response` for fixture safety, and real `run --model ...` only when the operator chose a real native call.
 - Treat `scripts/lib/proposal-runner-*.mjs` as bundled internal implementation modules. Invoke the runner or MCP entrypoint rather than importing those modules as a public API.

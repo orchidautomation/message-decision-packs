@@ -8,9 +8,9 @@ use crate::constants::{
 use crate::models::{
     DecisionInputAttemptStatus, DecisionInputAttribute, DecisionInputCondition,
     DecisionInputConditionOperator, DecisionInputContract, DecisionInputDisposition,
-    DecisionInputRequirement, DecisionInputSourceClass, Manifest, ValueContract,
+    DecisionInputRequirement, DecisionInputSourceClass, Manifest, ProfileJob, ValueContract,
 };
-use crate::pack_io::{read_manifest, resolve_pack_path};
+use crate::pack_io::{read_canonical_prompt_by_id, read_manifest, resolve_pack_path};
 use crate::product_foundation::{
     apply_validation_errors_for_job, resolution_json, resolve_product_foundation_for_pack,
     validation_errors_block_job, validation_issues_for_job,
@@ -30,6 +30,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         .ok_or_else(|| anyhow!("unknown profile job {job_id}"))?;
     let pack_sha256 = pack_content_sha256(root)?;
     let validation = validate_pack(root)?;
+    let model_task = compile_model_task(root, job);
     let mut product_foundation_resolution =
         resolve_product_foundation_for_pack(root, &manifest, job_id);
     if validation["valid"] != true {
@@ -74,6 +75,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
                     "decision_input_contracts": &job.decision_input_contracts
                 },
                 "product_foundation": product_foundation,
+                "model_task": model_task,
                 "decision_input_contracts": [],
                 "diagnostics": validation_issues
             }));
@@ -111,7 +113,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
                 })
         })
         .collect::<Result<Vec<_>>>()?;
-    if selected_contracts.is_empty() {
+    if selected_contracts.is_empty() && model_task.is_null() {
         return finalize_requirements(json!({
             "contract": REQUIREMENTS_CONTRACT,
             "status": "unavailable",
@@ -121,15 +123,55 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
             "job": {
                 "id": &job.id,
                 "skill_id": &job.skill_id,
-                "input_contracts": &job.input_contracts
+                "input_contracts": &job.input_contracts,
+                "resolved_input_contracts": selected_input_contracts
             },
             "product_foundation": product_foundation,
+            "model_task": model_task,
             "decision_input_contracts": [],
             "diagnostics": [{
                 "code": "decision_input_contract_not_bound",
                 "severity": "info",
                 "message": "This job has no decision input contract. Existing fit/readiness behavior remains available through lead_input_requirements."
             }]
+        }));
+    }
+
+    if selected_contracts.is_empty() {
+        let foundation_blocked = product_foundation["status"] == "blocked";
+        let activation_blocked = manifest.profile_eval.blocks_activation();
+        let model_task_blocked = model_task["status"] == "blocked";
+        let drafting_blocked = foundation_blocked || activation_blocked || model_task_blocked;
+        let mut diagnostics = product_foundation["diagnostics"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        if activation_blocked {
+            diagnostics.push(json!({
+                "code": "profile_activation_blocks_drafting",
+                "severity": "error",
+                "path": ".mdp/manifest.yaml#/profile_eval/activation/status",
+                "message": "profile activation is needs-review or blocked; compiled prompt remains inspectable but drafting is blocked"
+            }));
+        }
+        return finalize_requirements(json!({
+            "contract": REQUIREMENTS_CONTRACT,
+            "status": if drafting_blocked { "blocked" } else { "ready" },
+            "valid": true,
+            "available": false,
+            "model_task_available": true,
+            "draft_allowed": !drafting_blocked,
+            "pack": pack_summary(&manifest, &pack_sha256),
+            "job": {
+                "id": &job.id,
+                "skill_id": &job.skill_id,
+                "input_contracts": &job.input_contracts,
+                "resolved_input_contracts": selected_input_contracts
+            },
+            "product_foundation": product_foundation,
+            "model_task": model_task,
+            "decision_input_contracts": [],
+            "diagnostics": diagnostics
         }));
     }
 
@@ -142,7 +184,8 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let collected_results_schema = collected_attempt_results_schema(job_id, &selected_contracts);
     let foundation_blocked = product_foundation["status"] == "blocked";
     let activation_blocked = manifest.profile_eval.blocks_activation();
-    let drafting_blocked = foundation_blocked || activation_blocked;
+    let model_task_blocked = model_task["status"] == "blocked";
+    let drafting_blocked = foundation_blocked || activation_blocked || model_task_blocked;
     let mut diagnostics = product_foundation["diagnostics"]
         .as_array()
         .cloned()
@@ -169,6 +212,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
             "decision_input_contracts": selected_ids
         },
         "product_foundation": product_foundation,
+        "model_task": model_task,
         "decision_input_contracts": compiled_contracts,
         "source_attempt_request_schema": source_attempt_schema,
         "collected_attempt_results_schema": collected_results_schema,
@@ -898,7 +942,102 @@ fn pack_summary(manifest: &Manifest, sha256: &str) -> Value {
     })
 }
 
+fn compile_model_task(root: &Path, job: &ProfileJob) -> Value {
+    let Some(binding) = job.model_task.as_ref() else {
+        return Value::Null;
+    };
+    let resolved = match read_canonical_prompt_by_id(root, &binding.prompt) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            return json!({
+                "status": "blocked",
+                "kind": binding.kind,
+                "prompt": binding.prompt,
+                "diagnostics": [{
+                    "code": "profile_job_model_task_prompt_read_failed",
+                    "severity": "error",
+                    "message": error.to_string()
+                }]
+            });
+        }
+    };
+    let Some((path, prompt)) = resolved else {
+        return json!({
+            "status": "blocked",
+            "kind": binding.kind,
+            "prompt": binding.prompt,
+            "diagnostics": [{
+                "code": "profile_job_model_task_prompt_missing",
+                "severity": "error",
+                "message": "declared model-task prompt is missing"
+            }]
+        });
+    };
+    let prompt_value = match serde_json::to_value(&prompt) {
+        Ok(value) => value,
+        Err(error) => {
+            return json!({
+                "status": "blocked",
+                "kind": binding.kind,
+                "prompt": binding.prompt,
+                "diagnostics": [{
+                    "code": "profile_job_model_task_prompt_compile_failed",
+                    "severity": "error",
+                    "message": error.to_string()
+                }]
+            });
+        }
+    };
+    let prompt_sha256 = match canonical_json_sha256(&prompt_value) {
+        Ok(sha256) => sha256,
+        Err(error) => {
+            return json!({
+                "status": "blocked",
+                "kind": binding.kind,
+                "prompt": binding.prompt,
+                "diagnostics": [{
+                    "code": "profile_job_model_task_prompt_hash_failed",
+                    "severity": "error",
+                    "message": error.to_string()
+                }]
+            });
+        }
+    };
+    json!({
+        "status": "ready",
+        "kind": binding.kind,
+        "prompt_id": prompt.id,
+        "prompt_version": prompt.version,
+        "prompt_path": path.strip_prefix(root).unwrap_or(&path).display().to_string(),
+        "prompt_sha256": prompt_sha256,
+        "declared_inputs": prompt.inputs,
+        "instructions": {
+            "instructions": prompt.instructions,
+            "role": prompt.role,
+            "objective": prompt.objective,
+            "procedure": prompt.procedure,
+            "selection_rules": prompt.selection_rules,
+            "ambiguity_policy": prompt.ambiguity_policy,
+            "provenance_policy": prompt.provenance_policy,
+            "evidence_policy": prompt.evidence_policy,
+            "negative_examples": prompt.negative_examples,
+            "final_checklist": prompt.final_checklist
+        },
+        "output_contract": prompt.output_contract,
+        "host_boundary": {
+            "executor": "customer-selected-host",
+            "mdp_role": "compile-and-validate",
+            "model_call_included": false
+        }
+    })
+}
+
 fn finalize_requirements(mut value: Value) -> Result<Value> {
+    if value["model_task"].is_null()
+        && let Some(object) = value.as_object_mut()
+    {
+        object.remove("model_task");
+    }
     let sha256 = canonical_json_sha256(&value)?;
     value["requirements_sha256"] = json!(sha256);
     Ok(value)
@@ -1686,6 +1825,7 @@ fn value_contract_json_schema(contract: &ValueContract) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::init::init_pack;
     use crate::models::{
         DecisionInputConfidencePolicy, DecisionInputFreshnessPolicy, DecisionInputProvenanceField,
         DecisionInputProvenancePolicy, DecisionInputSensitivity, DecisionInputSourceClass,
@@ -1760,6 +1900,46 @@ optional:
             serde_yaml::to_string(&manifest).expect("manifest should serialize"),
         )
         .expect("manifest should be writable");
+    }
+
+    #[test]
+    fn requirements_compiles_exact_job_owned_prompt_package() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-job-owned-prompt-{nonce}"));
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter should initialize");
+
+        let compiled =
+            requirements(&root, "outbound-copy-brief").expect("requirements should compile");
+
+        assert_eq!(compiled["model_task"]["status"], "ready");
+        assert_eq!(compiled["model_task"]["kind"], "generation");
+        assert_eq!(compiled["model_task"]["prompt_version"], "1");
+        assert_eq!(
+            compiled["model_task"]["host_boundary"]["model_call_included"],
+            false
+        );
+        assert!(
+            compiled["model_task"]["prompt_sha256"]
+                .as_str()
+                .is_some_and(|value| value.len() == 64)
+        );
+        assert_eq!(
+            compiled["model_task"]["declared_inputs"][0]["producer"],
+            "pack"
+        );
+        assert_eq!(
+            compiled["model_task"]["instructions"]["instructions"][0],
+            "Use only declared inputs and the exact selected product-foundation entries for this job."
+        );
+        assert_eq!(
+            compiled["job"]["resolved_input_contracts"][0]["prompt"],
+            "prompts/normalize-prospect.yaml"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn clay_validation_fixture() -> (PathBuf, Value, Value, String, PathBuf) {

@@ -122,6 +122,14 @@ and exact Decision Input Contract receipts.
    prompt's `output_contract.output_kind` and `output_contract.contract` before
    validating model-produced output:
 
+   - For every self-standing generation or review job, bind exactly one
+     `jobs[].model_task` to a versioned `mdp.prompt.v1` prompt. Declare its
+     kind, role, objective, ordered procedure, every input producer, selection
+     and evidence rules, ambiguity and provenance policy, negative examples,
+     final checklist, and exact `governed-artifact` JSON Schema. Use
+     `requirements --job` to inspect the compiled prompt/hash. Do not put this
+     behavior only in a skill, and do not add a model runner to MDP.
+
    - Only when the selected prompt is the job-bound
      `decision-input-normalization` prompt producing
      `mdp.normalized-decision-input.v1`, require `data.available` to be `true`
@@ -176,6 +184,10 @@ mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file O
      such as card-patch/extraction envelopes, successful contract validation is
      the applicable gate; do not require a normalization trace that the prompt
      does not declare.
+
+     For a `governed-artifact` result, successful schema validation proves the
+     declared artifact shape only. Generated prose must still pass the
+     applicable `check-claims` or `verify-output` gate.
 
 Legacy prompt output contracts use `source_summary.inputs_used` for exact declared input names only. Put source paths, snippets, page locators, URLs, and proof notes in candidate `evidence`/`provenance`, `signals[].source`, `normalization_trace.preserved_raw_fields`, or `normalization_trace.missing_required[].source_evidence`. The prompt owns extraction/normalization, the manifest owns allowed values and readiness policy, the CLI owns enforcement, and downstream writers own wording only.
 

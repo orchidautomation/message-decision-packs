@@ -301,6 +301,17 @@ fn route_payload(
     product_foundation: &ProductFoundationResolution,
     pack_valid: bool,
 ) -> Value {
+    let model_task = job.model_task.as_ref().map_or_else(
+        || json!({"status": "unassessed"}),
+        |binding| {
+            json!({
+                "status": "declared",
+                "kind": binding.kind,
+                "prompt": binding.prompt,
+                "inspect_with": format!("mdp --json requirements --job {}", job.id)
+            })
+        },
+    );
     let missing_primitives = job
         .required_primitives
         .iter()
@@ -333,13 +344,14 @@ fn route_payload(
             && !product_foundation.blocks_activation(),
         "missing_primitives": missing_primitives,
         "required_input_contracts": job.input_contracts,
+        "model_task": model_task,
         "product_foundation": {
             "status": product_foundation.status,
             "selected_facet_ids": selected_facet_ids,
             "required_facet_ids": required_facet_ids,
             "diagnostics": product_foundation.diagnostics
         },
-        "readiness_policy": "Product foundation and explicit profile activation may only veto existing pack readiness; this field does not assert sufficient-for-job or self-standing status."
+        "readiness_policy": "Product foundation, a declared model-task contract, pack validation, and explicit profile activation may veto readiness. Inspect the exact compiled prompt with mdp requirements --job."
     })
 }
 

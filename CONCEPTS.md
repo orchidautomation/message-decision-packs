@@ -23,6 +23,9 @@ review artifacts.
 - **Resolved product foundation** — the CLI's deterministic, exact-job
   projection of required and triggered conditional facets. Optional, excluded,
   and untriggered content is not selected.
+- **Job-owned model task** — one canonical job's explicit versioned prompt,
+  declared input producers, instructions, and exact structured output contract.
+  The customer's host executes it; MDP compiles and validates it.
 - **Decision Input Contract** — a versioned pack declaration of the attributes, source attempts, normalization evidence, and status behavior required before a job can make deterministic MDP decisions.
 - **Source binding** — an integration-owned, provider-neutral mapping from one
   exact compiled job's qualified Decision Input attributes to external fields,

@@ -51,6 +51,10 @@ This public sample is synthetic review support. It does not certify compliance, 
 ## Prompts
 
 - `normalize-opportunity`
+- `review-bid-no-bid-v1`
+- `review-proposal-compliance-v1`
+- `review-proposal-proof-v1`
+- `review-proposal-red-team-v1`
 
 ## Commands
 

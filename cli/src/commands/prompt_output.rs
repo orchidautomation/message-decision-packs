@@ -1,7 +1,11 @@
+use crate::artifact_hash::canonical_json_sha256;
 use crate::commands::requirements::validate_normalized_decision_input;
 use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, SOURCE_AUDIT_CONTRACT};
 use crate::models::{CardKind, Manifest, PromptFile};
-use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
+use crate::pack_io::{
+    read_canonical_prompt_by_id, read_card, read_manifest, read_prompt, resolve_pack_path,
+};
+use crate::product_foundation::{ProductFoundationStatus, resolve_product_foundation_for_pack};
 use crate::runtime_context::validate_runtime_context;
 use crate::utils::{normalize_supplied_company_domain, resolve_pack_persona_label};
 use crate::value_contracts::normalized_prospect_contract_violations;
@@ -37,6 +41,7 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
         source_audit_path,
         None,
         None,
+        None,
     )
 }
 
@@ -48,6 +53,7 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
     source_audit_path: Option<&Path>,
     source_attempt_request_path: Option<&Path>,
     collected_attempt_results_path: Option<&Path>,
+    invocation_receipt_path: Option<&Path>,
 ) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of --prompt and --prompt-id"));
@@ -105,6 +111,21 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
         },
         None => None,
     };
+    let invocation_receipt = match invocation_receipt_path {
+        Some(path) => match read_json_file_with_hash(path, "prompt invocation receipt") {
+            Ok((value, sha256)) => Some((value, display_path(path), sha256)),
+            Err(err) => {
+                issues.push(issue(
+                    "prompt_invocation_receipt_parse_failed",
+                    "error",
+                    display_path(path),
+                    err.to_string(),
+                ));
+                None
+            }
+        },
+        None => None,
+    };
     let (output, markdown_wrapped) = match parse_prompt_output(&raw) {
         Ok(parsed) => parsed,
         Err(err) => {
@@ -133,6 +154,12 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
                         .as_ref()
                         .map(|(_, path, _)| path.as_str()),
                     collected_attempt_results
+                        .as_ref()
+                        .map(|(_, _, sha256)| sha256.as_str()),
+                    invocation_receipt
+                        .as_ref()
+                        .map(|(_, path, _)| path.as_str()),
+                    invocation_receipt
                         .as_ref()
                         .map(|(_, _, sha256)| sha256.as_str())
                 ),
@@ -165,6 +192,9 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
         collected_attempt_results
+            .as_ref()
+            .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
+        invocation_receipt
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
     )
@@ -208,6 +238,7 @@ pub(crate) fn validate_prompt_output_value_with_source_audit(
         source_audit_path,
         None,
         None,
+        None,
     )
 }
 
@@ -221,6 +252,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
     source_audit_path: Option<&str>,
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
+    invocation_receipt: Option<(&Value, &str, &str)>,
 ) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of prompt or prompt_id"));
@@ -238,6 +270,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
         source_audit.map(|value| (value, source_audit_path.unwrap_or("source_audit"), None)),
         source_attempt_request,
         collected_attempt_results,
+        invocation_receipt,
     )
 }
 
@@ -252,6 +285,7 @@ fn validate_prompt_output_parsed(
     source_audit: Option<(&Value, &str, Option<&str>)>,
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
+    invocation_receipt: Option<(&Value, &str, &str)>,
 ) -> Result<Value> {
     if prompt.output_contract.output_kind.as_deref() == Some("decision-input-normalization") {
         if source_audit.is_some() {
@@ -282,7 +316,117 @@ fn validate_prompt_output_parsed(
                 source_attempt_request.as_ref().map(|(_, path, _)| *path),
                 source_attempt_request.as_ref().map(|(_, _, sha256)| *sha256),
                 collected_attempt_results.as_ref().map(|(_, path, _)| *path),
-                collected_attempt_results.as_ref().map(|(_, _, sha256)| *sha256)
+                collected_attempt_results.as_ref().map(|(_, _, sha256)| *sha256),
+                None,
+                None
+            ),
+            "issues": issues
+        }));
+    }
+
+    if prompt.output_contract.output_kind.as_deref() == Some("governed-artifact") {
+        if source_audit.is_some()
+            || source_attempt_request.is_some()
+            || collected_attempt_results.is_some()
+        {
+            issues.push(issue(
+                "governed_artifact_legacy_evidence_input_unsupported",
+                "error",
+                artifact_path,
+                "governed-artifact outputs use their declared inputs and selected_authority; legacy normalization audit inputs are not accepted",
+            ));
+        }
+        if output["contract"].as_str() != Some(PROMPT_OUTPUT_CONTRACT) {
+            issues.push(issue(
+                "prompt_output_contract_mismatch",
+                "error",
+                format!("{artifact_path}#/contract"),
+                format!("prompt output contract must be {PROMPT_OUTPUT_CONTRACT}"),
+            ));
+        }
+        if output["prompt_id"].as_str() != Some(prompt.id.as_str()) {
+            issues.push(issue(
+                "prompt_output_prompt_id_mismatch",
+                "error",
+                format!("{artifact_path}#/prompt_id"),
+                format!("prompt output prompt_id must be {}", prompt.id),
+            ));
+        }
+        let canonical_prompt = read_canonical_prompt_by_id(root, &prompt.id)?;
+        let canonical_prompt_sha256 = canonical_prompt
+            .as_ref()
+            .and_then(|(_, prompt)| serde_json::to_value(prompt).ok())
+            .and_then(|value| canonical_json_sha256(&value).ok());
+        match canonical_prompt.as_ref() {
+            Some((canonical_path, canonical)) => {
+                let same_path =
+                    canonical_path.canonicalize().ok() == resolved_prompt_path.canonicalize().ok();
+                let same_content = serde_json::to_value(canonical)
+                    .ok()
+                    .and_then(|value| canonical_json_sha256(&value).ok())
+                    == serde_json::to_value(prompt)
+                        .ok()
+                        .and_then(|value| canonical_json_sha256(&value).ok());
+                if !same_path || !same_content {
+                    issues.push(issue(
+                        "governed_artifact_prompt_not_canonical",
+                        "error",
+                        resolved_prompt_path.display().to_string(),
+                        "governed-artifact validation must use the exact canonical prompt under .mdp/prompts",
+                    ));
+                }
+            }
+            None => issues.push(issue(
+                "governed_artifact_prompt_not_canonical",
+                "error",
+                resolved_prompt_path.display().to_string(),
+                "governed-artifact prompt is not present under .mdp/prompts",
+            )),
+        }
+        match prompt.output_contract.schema.as_ref() {
+            Some(schema) => {
+                if let Err(error) = jsonschema::draft202012::validate(schema, output) {
+                    issues.push(issue(
+                        "governed_artifact_schema_mismatch",
+                        "error",
+                        artifact_path,
+                        format!("governed artifact does not satisfy the prompt schema: {error}"),
+                    ));
+                }
+            }
+            None => issues.push(issue(
+                "governed_artifact_schema_missing",
+                "error",
+                artifact_path,
+                "governed-artifact prompt has no inline output schema",
+            )),
+        }
+        let manifest = read_manifest(root)?;
+        validate_governed_artifact_authority(
+            root,
+            &manifest,
+            prompt,
+            output,
+            artifact_path,
+            canonical_prompt_sha256.as_deref(),
+            invocation_receipt,
+            &mut issues,
+        );
+        return Ok(json!({
+            "valid": issues.is_empty(),
+            "file": artifact_path,
+            "prompt": prompt_summary(prompt, root),
+            "artifacts": validation_artifacts_summary(
+                artifact_path,
+                prompt_output_sha256,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                invocation_receipt.as_ref().map(|(_, path, _)| *path),
+                invocation_receipt.as_ref().map(|(_, _, sha256)| *sha256)
             ),
             "issues": issues
         }));
@@ -317,6 +461,8 @@ fn validate_prompt_output_parsed(
             None,
             None,
             None,
+            None,
+            None,
             None
         ),
         "issues": issues
@@ -327,6 +473,461 @@ fn validate_prompt_output_parsed(
         }
     }
     Ok(result)
+}
+
+fn validate_governed_artifact_authority(
+    root: &Path,
+    manifest: &Manifest,
+    prompt: &PromptFile,
+    output: &Value,
+    path: &str,
+    canonical_prompt_sha256: Option<&str>,
+    invocation_receipt: Option<(&Value, &str, &str)>,
+    issues: &mut Vec<Value>,
+) {
+    let jobs = manifest
+        .jobs
+        .iter()
+        .filter(|job| {
+            job.model_task
+                .as_ref()
+                .is_some_and(|binding| binding.prompt == prompt.id)
+        })
+        .collect::<Vec<_>>();
+    if jobs.len() != 1 {
+        issues.push(issue(
+            if jobs.is_empty() {
+                "governed_artifact_job_binding_missing"
+            } else {
+                "governed_artifact_job_binding_ambiguous"
+            },
+            "error",
+            path,
+            if jobs.is_empty() {
+                "governed-artifact prompt is not bound to a canonical job"
+            } else {
+                "governed-artifact prompt is bound to more than one canonical job"
+            },
+        ));
+        return;
+    }
+    let job = jobs[0];
+    if output["job_id"].as_str() != Some(job.id.as_str()) {
+        issues.push(issue(
+            "governed_artifact_job_id_mismatch",
+            "error",
+            format!("{path}#/job_id"),
+            format!("governed artifact job_id must be {}", job.id),
+        ));
+    }
+    if output["prompt_version"].as_str() != prompt.version.as_deref() {
+        issues.push(issue(
+            "governed_artifact_prompt_version_mismatch",
+            "error",
+            format!("{path}#/prompt_version"),
+            format!(
+                "governed artifact prompt_version must be {}",
+                prompt.version.as_deref().unwrap_or("N/A")
+            ),
+        ));
+    }
+    if output["prompt_sha256"].as_str() != canonical_prompt_sha256 {
+        issues.push(issue(
+            "governed_artifact_prompt_sha256_mismatch",
+            "error",
+            format!("{path}#/prompt_sha256"),
+            "governed artifact prompt_sha256 must match the current canonical prompt",
+        ));
+    }
+    let received_inputs = validate_governed_invocation_receipt(
+        prompt,
+        &job.id,
+        canonical_prompt_sha256,
+        output,
+        path,
+        invocation_receipt,
+        issues,
+    );
+    let Ok(resolution) = resolve_product_foundation_for_pack(root, manifest, &job.id) else {
+        issues.push(issue(
+            "governed_artifact_foundation_unavailable",
+            "error",
+            path,
+            "selected job product foundation could not be resolved",
+        ));
+        return;
+    };
+    if resolution.status != ProductFoundationStatus::Ready {
+        issues.push(issue(
+            "governed_artifact_foundation_blocked",
+            "error",
+            path,
+            "selected job product foundation is not ready",
+        ));
+    }
+    let allowed_refs = resolution
+        .selected_facets
+        .iter()
+        .flat_map(|facet| facet.entry_refs.iter())
+        .map(|entry| format!("{}/{}", entry.card_id, entry.entry_id))
+        .collect::<BTreeSet<_>>();
+    let selected = output["selected_authority"].as_array();
+    if selected.is_none() {
+        issues.push(issue(
+            "governed_artifact_selected_authority_type",
+            "error",
+            format!("{path}#/selected_authority"),
+            "selected_authority must be an array of card_id/entry_id strings",
+        ));
+    }
+    let mut selected_ids = BTreeSet::new();
+    let mut selected_refs = BTreeSet::new();
+    let mut selected_refs_by_id = BTreeMap::<&str, &str>::new();
+    for (index, value) in selected.into_iter().flatten().enumerate() {
+        let Some(reference) = value.as_str() else {
+            issues.push(issue(
+                "governed_artifact_selected_authority_type",
+                "error",
+                format!("{path}#/selected_authority/{index}"),
+                "selected_authority values must be card_id/entry_id strings",
+            ));
+            continue;
+        };
+        if !allowed_refs.contains(reference) {
+            issues.push(issue(
+                "governed_artifact_authority_undeclared",
+                "error",
+                format!("{path}#/selected_authority/{index}"),
+                format!("authority {reference} is not selected for job {}", job.id),
+            ));
+        } else if let Some((_, entry_id)) = reference.split_once('/') {
+            selected_refs.insert(reference);
+            if let Some(previous) = selected_refs_by_id.insert(entry_id, reference) {
+                issues.push(issue(
+                    "governed_artifact_selected_authority_identifier_ambiguous",
+                    "error",
+                    format!("{path}#/selected_authority/{index}"),
+                    format!(
+                        "entry id {entry_id} is ambiguous between {previous} and {reference}; select at most one card-qualified authority reference for each artifact identifier"
+                    ),
+                ));
+            }
+            selected_ids.insert(entry_id);
+        }
+    }
+    let artifact = &output["artifact"];
+    let ready = artifact["status"].as_str() == Some("ready");
+    let mut inputs_used = BTreeSet::new();
+    for (index, value) in output["source_summary"]["inputs_used"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let Some(name) = value.as_str() else {
+            continue;
+        };
+        if !inputs_used.insert(name) {
+            issues.push(issue(
+                "governed_artifact_inputs_used_duplicate",
+                "error",
+                format!("{path}#/source_summary/inputs_used/{index}"),
+                format!("source_summary.inputs_used must not repeat {name}"),
+            ));
+        }
+    }
+    if ready && selected.is_none_or(|values| values.is_empty()) {
+        issues.push(issue(
+            "governed_artifact_ready_without_authority",
+            "error",
+            format!("{path}#/selected_authority"),
+            "a ready governed artifact must select at least one exact authority reference",
+        ));
+    }
+    if ready {
+        for input in prompt.inputs.iter().filter(|input| {
+            input.required
+                && input.name != "prompt_receipt"
+                && input.name != "invocation_receipt_sha256"
+        }) {
+            if !received_inputs.contains(input.name.as_str()) {
+                issues.push(issue(
+                    "governed_artifact_required_input_receipt_missing",
+                    "error",
+                    invocation_receipt.map_or_else(
+                        || path.to_string(),
+                        |(_, receipt_path, _)| format!("{receipt_path}#/inputs"),
+                    ),
+                    format!(
+                        "ready artifact requires a host receipt for declared input {}",
+                        input.name
+                    ),
+                ));
+            }
+        }
+        let expected_reported = received_inputs
+            .iter()
+            .map(String::as_str)
+            .chain(std::iter::once("prompt_receipt"))
+            .chain(std::iter::once("invocation_receipt_sha256"))
+            .collect::<BTreeSet<_>>();
+        if inputs_used != expected_reported {
+            issues.push(issue(
+                "governed_artifact_inputs_used_receipt_mismatch",
+                "error",
+                format!("{path}#/source_summary/inputs_used"),
+                "ready artifact inputs_used must exactly match the host invocation receipt inputs plus prompt_receipt and invocation_receipt_sha256",
+            ));
+        }
+        if output["gaps"]
+            .as_array()
+            .is_none_or(|gaps| !gaps.is_empty())
+        {
+            issues.push(issue(
+                "governed_artifact_ready_with_gaps",
+                "error",
+                format!("{path}#/gaps"),
+                "a ready governed artifact must have an empty gaps array",
+            ));
+        }
+    }
+    if artifact["decision"].as_str() == Some("approve") && !ready {
+        issues.push(issue(
+            "governed_artifact_approval_not_ready",
+            "error",
+            format!("{path}#/artifact/status"),
+            "an approved review artifact must have status ready",
+        ));
+    }
+    if let Some(object) = artifact.as_object() {
+        for (field, value) in object {
+            if field.ends_with("_id") {
+                if let Some(identifier) = value.as_str()
+                    && identifier != "N/A"
+                    && !selected_ids.contains(identifier)
+                {
+                    issues.push(issue(
+                        "governed_artifact_identifier_undeclared",
+                        "error",
+                        format!("{path}#/artifact/{field}"),
+                        format!(
+                            "{identifier} is not present in selected_authority for job {}",
+                            job.id
+                        ),
+                    ));
+                }
+            } else if field.ends_with("_ids")
+                && let Some(values) = value.as_array()
+            {
+                for (index, value) in values.iter().enumerate() {
+                    if let Some(identifier) = value.as_str()
+                        && !selected_ids.contains(identifier)
+                    {
+                        issues.push(issue(
+                            "governed_artifact_identifier_undeclared",
+                            "error",
+                            format!("{path}#/artifact/{field}/{index}"),
+                            format!(
+                                "{identifier} is not present in selected_authority for job {}",
+                                job.id
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(gaps) = artifact.get("gaps").and_then(Value::as_array) {
+        for (index, gap) in gaps.iter().enumerate() {
+            let Some(reference) = gap.get("pack_reference") else {
+                continue;
+            };
+            let Some(reference) = reference.as_str() else {
+                issues.push(issue(
+                    "governed_artifact_gap_pack_reference_type",
+                    "error",
+                    format!("{path}#/artifact/gaps/{index}/pack_reference"),
+                    "artifact gap pack_reference must be N/A or an exact selected_authority card_id/entry_id string",
+                ));
+                continue;
+            };
+            if reference != "N/A" && !selected_refs.contains(reference) {
+                issues.push(issue(
+                    "governed_artifact_gap_pack_reference_unselected",
+                    "error",
+                    format!("{path}#/artifact/gaps/{index}/pack_reference"),
+                    format!("artifact gap pack_reference {reference} is not present in selected_authority"),
+                ));
+            }
+        }
+    }
+
+    if ready && prompt.kind.as_deref() == Some("generation") {
+        validate_substantive_generation_artifact(artifact, path, issues);
+    }
+}
+
+fn validate_governed_invocation_receipt(
+    prompt: &PromptFile,
+    job_id: &str,
+    canonical_prompt_sha256: Option<&str>,
+    output: &Value,
+    output_path: &str,
+    invocation_receipt: Option<(&Value, &str, &str)>,
+    issues: &mut Vec<Value>,
+) -> BTreeSet<String> {
+    let Some((receipt, receipt_path, receipt_sha256)) = invocation_receipt else {
+        issues.push(issue(
+            "governed_artifact_invocation_receipt_missing",
+            "error",
+            output_path,
+            "governed-artifact validation requires --invocation-receipt with an exact mdp.prompt-invocation.v1 host receipt",
+        ));
+        return BTreeSet::new();
+    };
+    if receipt["contract"].as_str() != Some("mdp.prompt-invocation.v1") {
+        issues.push(issue(
+            "prompt_invocation_receipt_contract_mismatch",
+            "error",
+            format!("{receipt_path}#/contract"),
+            "prompt invocation receipt contract must be mdp.prompt-invocation.v1",
+        ));
+    }
+    if receipt["job_id"].as_str() != Some(job_id) {
+        issues.push(issue(
+            "prompt_invocation_receipt_job_mismatch",
+            "error",
+            format!("{receipt_path}#/job_id"),
+            format!("prompt invocation receipt job_id must be {job_id}"),
+        ));
+    }
+    if receipt["prompt"]["id"].as_str() != Some(prompt.id.as_str()) {
+        issues.push(issue(
+            "prompt_invocation_receipt_prompt_id_mismatch",
+            "error",
+            format!("{receipt_path}#/prompt/id"),
+            format!("prompt invocation receipt prompt.id must be {}", prompt.id),
+        ));
+    }
+    if receipt["prompt"]["version"].as_str() != prompt.version.as_deref() {
+        issues.push(issue(
+            "prompt_invocation_receipt_prompt_version_mismatch",
+            "error",
+            format!("{receipt_path}#/prompt/version"),
+            format!(
+                "prompt invocation receipt prompt.version must be {}",
+                prompt.version.as_deref().unwrap_or("N/A")
+            ),
+        ));
+    }
+    if receipt["prompt"]["sha256"].as_str() != canonical_prompt_sha256 {
+        issues.push(issue(
+            "prompt_invocation_receipt_prompt_sha256_mismatch",
+            "error",
+            format!("{receipt_path}#/prompt/sha256"),
+            "prompt invocation receipt prompt.sha256 must match the current canonical prompt",
+        ));
+    }
+    if output["invocation_receipt_sha256"].as_str() != Some(receipt_sha256) {
+        issues.push(issue(
+            "governed_artifact_invocation_receipt_sha256_mismatch",
+            "error",
+            format!("{output_path}#/invocation_receipt_sha256"),
+            "governed artifact invocation_receipt_sha256 must match the exact host receipt bytes",
+        ));
+    }
+
+    let declared = prompt
+        .inputs
+        .iter()
+        .filter(|input| input.name != "prompt_receipt" && input.name != "invocation_receipt_sha256")
+        .map(|input| input.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let Some(inputs) = receipt["inputs"].as_array() else {
+        issues.push(issue(
+            "prompt_invocation_receipt_inputs_type",
+            "error",
+            format!("{receipt_path}#/inputs"),
+            "prompt invocation receipt inputs must be an array",
+        ));
+        return BTreeSet::new();
+    };
+    let mut received = BTreeSet::new();
+    for (index, input) in inputs.iter().enumerate() {
+        let Some(name) = input["name"].as_str() else {
+            issues.push(issue(
+                "prompt_invocation_receipt_input_name_missing",
+                "error",
+                format!("{receipt_path}#/inputs/{index}/name"),
+                "each prompt invocation input receipt must have a string name",
+            ));
+            continue;
+        };
+        if !declared.contains(name) {
+            issues.push(issue(
+                "prompt_invocation_receipt_input_undeclared",
+                "error",
+                format!("{receipt_path}#/inputs/{index}/name"),
+                format!("prompt invocation receipt input {name} is not declared by the prompt"),
+            ));
+        }
+        if !received.insert(name.to_string()) {
+            issues.push(issue(
+                "prompt_invocation_receipt_input_duplicate",
+                "error",
+                format!("{receipt_path}#/inputs/{index}/name"),
+                format!("prompt invocation receipt input {name} is duplicated"),
+            ));
+        }
+        let sha256 = input["sha256"].as_str().unwrap_or_default();
+        if sha256.len() != 64
+            || !sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            issues.push(issue(
+                "prompt_invocation_receipt_input_sha256_invalid",
+                "error",
+                format!("{receipt_path}#/inputs/{index}/sha256"),
+                "each prompt invocation input receipt sha256 must be 64 lowercase hexadecimal characters",
+            ));
+        }
+    }
+    received
+}
+
+fn validate_substantive_generation_artifact(artifact: &Value, path: &str, issues: &mut Vec<Value>) {
+    for field in ["angle_id", "cta_id", "message_body"] {
+        if artifact[field]
+            .as_str()
+            .is_none_or(|value| value.trim().is_empty() || value.trim() == "N/A")
+        {
+            issues.push(issue(
+                "governed_artifact_ready_generation_field_empty",
+                "error",
+                format!("{path}#/artifact/{field}"),
+                format!("ready generation artifact {field} must be substantive"),
+            ));
+        }
+    }
+    for field in ["claim_ids", "evidence_ids", "subject_options"] {
+        if artifact[field].as_array().is_none_or(|values| {
+            values.is_empty()
+                || values.iter().any(|value| {
+                    value
+                        .as_str()
+                        .is_none_or(|text| text.trim().is_empty() || text.trim() == "N/A")
+                })
+        }) {
+            issues.push(issue(
+                "governed_artifact_ready_generation_collection_empty",
+                "error",
+                format!("{path}#/artifact/{field}"),
+                format!("ready generation artifact {field} must contain substantive values"),
+            ));
+        }
+    }
 }
 
 fn resolve_prompt(
@@ -343,23 +944,9 @@ fn resolve_prompt(
         .map(str::to_string)
         .ok_or_else(|| anyhow!("--prompt-id is required when --prompt is not provided"))?;
 
-    let prompts_dir = root.join(DEFAULT_DIR).join("prompts");
-    let mut prompt_paths = fs::read_dir(&prompts_dir)?
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| path.is_file())
-        .collect::<Vec<_>>();
-    prompt_paths.sort();
-
-    for path in prompt_paths {
-        let prompt = read_prompt(&path)?;
-        if prompt.id == resolved_id {
-            return Ok((prompt, path));
-        }
-    }
-
-    Err(anyhow!(
-        "prompt id {resolved_id} was not found under {DEFAULT_DIR}/prompts"
-    ))
+    read_canonical_prompt_by_id(root, &resolved_id)?
+        .map(|(path, prompt)| (prompt, path))
+        .ok_or_else(|| anyhow!("prompt id {resolved_id} was not found under {DEFAULT_DIR}/prompts"))
 }
 
 fn resolve_prompt_path(root: &Path, prompt_path: &Path) -> PathBuf {
@@ -467,6 +1054,8 @@ fn validation_artifacts_summary(
     source_attempt_request_sha256: Option<&str>,
     collected_attempt_results_path: Option<&str>,
     collected_attempt_results_sha256: Option<&str>,
+    invocation_receipt_path: Option<&str>,
+    invocation_receipt_sha256: Option<&str>,
 ) -> Value {
     let mut artifacts = serde_json::Map::new();
     artifacts.insert(
@@ -500,6 +1089,15 @@ fn validation_artifacts_summary(
             json!({
                 "path": collected_attempt_results_path,
                 "sha256": collected_attempt_results_sha256
+            }),
+        );
+    }
+    if invocation_receipt_path.is_some() || invocation_receipt_sha256.is_some() {
+        artifacts.insert(
+            "invocation_receipt".to_string(),
+            json!({
+                "path": invocation_receipt_path,
+                "sha256": invocation_receipt_sha256
             }),
         );
     }
@@ -2237,6 +2835,94 @@ mod tests {
         )
     }
 
+    fn governed_example(prompt: &PromptFile) -> Value {
+        let mut output = prompt.output_contract.example.clone();
+        let prompt_value = serde_json::to_value(prompt).expect("prompt should serialize");
+        output["prompt_sha256"] = Value::String(
+            canonical_json_sha256(&prompt_value).expect("prompt should hash canonically"),
+        );
+        output
+    }
+
+    fn ready_governed_example(prompt: &PromptFile) -> Value {
+        let mut output = governed_example(prompt);
+        output["source_summary"]["inputs_used"] = json!([
+            "invocation_receipt_sha256",
+            "normalized_prospect",
+            "product_foundation",
+            "prompt_receipt"
+        ]);
+        output["selected_authority"] = json!([
+            "positioning/decision-layer",
+            "ctas/soft-ask",
+            "claims/modular-pack-routing"
+        ]);
+        output["artifact"]["status"] = json!("ready");
+        output["artifact"]["angle_id"] = json!("decision-layer");
+        output["artifact"]["cta_id"] = json!("soft-ask");
+        output["artifact"]["claim_ids"] = json!(["modular-pack-routing"]);
+        output["artifact"]["evidence_ids"] = json!(["modular-pack-routing"]);
+        output["artifact"]["subject_options"] = json!(["A bounded messaging decision layer"]);
+        output["artifact"]["message_body"] =
+            json!("A grounded outbound message with explicit authority.");
+        output["gaps"] = json!([]);
+        output
+    }
+
+    fn write_governed_invocation_receipt(
+        root: &Path,
+        prompt: &PromptFile,
+        job_id: &str,
+        input_names: &[&str],
+    ) -> (PathBuf, String) {
+        let prompt_sha256 =
+            canonical_json_sha256(&serde_json::to_value(prompt).expect("prompt should serialize"))
+                .expect("prompt should hash");
+        let receipt = json!({
+            "contract": "mdp.prompt-invocation.v1",
+            "job_id": job_id,
+            "prompt": {
+                "id": prompt.id,
+                "version": prompt.version,
+                "sha256": prompt_sha256
+            },
+            "inputs": input_names.iter().map(|name| json!({
+                "name": name,
+                "sha256": sha256_hex(name.as_bytes())
+            })).collect::<Vec<_>>()
+        });
+        let path = write_json_output(root, "prompt-invocation-receipt.json", &receipt);
+        let sha256 = sha256_hex(&std::fs::read(&path).expect("receipt should load"));
+        (path, sha256)
+    }
+
+    fn validate_governed_with_receipt(
+        root: &Path,
+        prompt: &PromptFile,
+        mut output: Value,
+        input_names: &[&str],
+    ) -> Value {
+        let job_id = output["job_id"]
+            .as_str()
+            .expect("governed output should declare a job")
+            .to_string();
+        let (receipt_path, receipt_sha256) =
+            write_governed_invocation_receipt(root, prompt, &job_id, input_names);
+        output["invocation_receipt_sha256"] = json!(receipt_sha256);
+        let output_path = write_json_output(root, "governed-artifact.json", &output);
+        validate_prompt_output_file_with_inputs(
+            root,
+            &output_path,
+            None,
+            Some(prompt.id.as_str()),
+            None,
+            None,
+            None,
+            Some(&receipt_path),
+        )
+        .expect("validation should return diagnostics")
+    }
+
     #[test]
     fn validate_prompt_output_runs_decision_input_projection_checks() {
         let root = clay_example_root();
@@ -2267,6 +2953,7 @@ mod tests {
             None,
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
+            None,
         )
         .expect("decision-input prompt validation should run");
         assert_eq!(valid["valid"], true);
@@ -2299,6 +2986,7 @@ mod tests {
             None,
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
+            None,
         )
         .expect("decision-input prompt validation should run");
         assert_eq!(invalid["valid"], false);
@@ -3933,6 +4621,494 @@ mod tests {
                 .any(|issue| issue["code"] == "prompt_output_normalized_opportunity_mismatch")
         );
 
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validates_job_owned_governed_artifact_against_exact_prompt_schema() {
+        let root = temp_pack("governed-artifact-valid");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            governed_example(&prompt),
+            &["product_foundation", "normalized_prospect"],
+        );
+
+        assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_missing_declared_field_fails_closed() {
+        let root = temp_pack("governed-artifact-invalid");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = governed_example(&prompt);
+        output["artifact"]
+            .as_object_mut()
+            .expect("artifact should be an object")
+            .remove("message_body");
+        let path = write_json_output(&root, "governed-artifact-invalid.json", &output);
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("generate-outbound-copy-v1"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| { issue["code"] == "governed_artifact_schema_mismatch" })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_rejects_authority_from_outside_selected_job() {
+        let root = temp_pack("governed-artifact-authority-leak");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = governed_example(&prompt);
+        output["selected_authority"] = json!(["gaps/missing-company-proof"]);
+        let path = write_json_output(&root, "governed-artifact-authority-leak.json", &output);
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("generate-outbound-copy-v1"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| { issue["code"] == "governed_artifact_authority_undeclared" })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_identifiers_must_come_from_explicit_selected_authority() {
+        let root = temp_pack("governed-artifact-selected-subset");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["artifact"]["angle_id"] = json!("local-offline");
+        let path = write_json_output(&root, "governed-artifact-selected-subset.json", &output);
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("generate-outbound-copy-v1"))
+                .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "governed_artifact_identifier_undeclared")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ready_governed_artifact_requires_every_declared_input_and_no_gaps() {
+        let root = temp_pack("governed-artifact-ready-gates");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["source_summary"]["inputs_used"] = json!([
+            "invocation_receipt_sha256",
+            "product_foundation",
+            "prompt_receipt"
+        ]);
+        output["gaps"] = json!(["Missing normalized prospect context."]);
+        let result =
+            validate_governed_with_receipt(&root, &prompt, output, &["product_foundation"]);
+        let codes = result["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(codes.contains("governed_artifact_required_input_receipt_missing"));
+        assert!(codes.contains("governed_artifact_ready_with_gaps"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_requires_and_binds_exact_host_invocation_receipt() {
+        let root = temp_pack("governed-artifact-receipt-binding");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let output = governed_example(&prompt);
+        let output_path = write_json_output(&root, "receipt-missing-output.json", &output);
+        let missing = validate_prompt_output_file(
+            &root,
+            &output_path,
+            None,
+            Some("generate-outbound-copy-v1"),
+        )
+        .expect("validation should return diagnostics");
+        assert!(
+            missing["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| { issue["code"] == "governed_artifact_invocation_receipt_missing" })
+        );
+
+        let (receipt_path, receipt_sha256) = write_governed_invocation_receipt(
+            &root,
+            &prompt,
+            "outbound-copy-brief",
+            &["product_foundation", "normalized_prospect"],
+        );
+        let mut bound_output = governed_example(&prompt);
+        bound_output["invocation_receipt_sha256"] = json!(receipt_sha256);
+        let bound_output_path =
+            write_json_output(&root, "receipt-bound-output.json", &bound_output);
+        let mut receipt: Value =
+            serde_json::from_slice(&std::fs::read(&receipt_path).expect("receipt should load"))
+                .expect("receipt should parse");
+        receipt["inputs"][0]["sha256"] = json!(sha256_hex(b"tampered product foundation"));
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("receipt should serialize"),
+        )
+        .expect("receipt should be replaceable");
+        let tampered = validate_prompt_output_file_with_inputs(
+            &root,
+            &bound_output_path,
+            None,
+            Some("generate-outbound-copy-v1"),
+            None,
+            None,
+            None,
+            Some(&receipt_path),
+        )
+        .expect("validation should return diagnostics");
+        assert!(
+            tampered["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "governed_artifact_invocation_receipt_sha256_mismatch"
+                })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_invocation_receipt_rejects_duplicate_undeclared_and_malformed_inputs() {
+        let root = temp_pack("governed-artifact-invalid-receipt-inputs");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let prompt_sha256 =
+            canonical_json_sha256(&serde_json::to_value(&prompt).expect("prompt should serialize"))
+                .expect("prompt should hash");
+        let receipt = json!({
+            "contract": "mdp.prompt-invocation.v1",
+            "job_id": "outbound-copy-brief",
+            "prompt": {"id": prompt.id, "version": prompt.version, "sha256": prompt_sha256},
+            "inputs": [
+                {"name": "product_foundation", "sha256": "not-a-hash"},
+                {"name": "product_foundation", "sha256": sha256_hex(b"duplicate")},
+                {"name": "whole_pack", "sha256": sha256_hex(b"undeclared")}
+            ]
+        });
+        let receipt_path = write_json_output(&root, "invalid-invocation-receipt.json", &receipt);
+        let receipt_sha256 =
+            sha256_hex(&std::fs::read(&receipt_path).expect("receipt should load"));
+        let mut output = governed_example(&prompt);
+        output["invocation_receipt_sha256"] = json!(receipt_sha256);
+        let output_path = write_json_output(&root, "invalid-receipt-output.json", &output);
+        let result = validate_prompt_output_file_with_inputs(
+            &root,
+            &output_path,
+            None,
+            Some("generate-outbound-copy-v1"),
+            None,
+            None,
+            None,
+            Some(&receipt_path),
+        )
+        .expect("validation should return diagnostics");
+        let codes = result["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(codes.contains("prompt_invocation_receipt_input_sha256_invalid"));
+        assert!(codes.contains("prompt_invocation_receipt_input_duplicate"));
+        assert!(codes.contains("prompt_invocation_receipt_input_undeclared"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ready_generation_artifact_requires_substantive_copy_and_authority() {
+        let root = temp_pack("governed-artifact-substantive-generation");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["artifact"]["cta_id"] = json!("N/A");
+        output["artifact"]["claim_ids"] = json!([]);
+        output["artifact"]["evidence_ids"] = json!(["N/A"]);
+        output["artifact"]["subject_options"] = json!(["N/A"]);
+        output["artifact"]["message_body"] = json!("  ");
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+        let codes = result["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(codes.contains("governed_artifact_ready_generation_field_empty"));
+        assert!(codes.contains("governed_artifact_ready_generation_collection_empty"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ready_generation_artifact_rejects_whitespace_padded_na_collection_values() {
+        let root = temp_pack("governed-artifact-whitespace-na");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["artifact"]["claim_ids"] = json!(["  N/A  "]);
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+        let codes = result["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(codes.contains("governed_artifact_ready_generation_collection_empty"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_rejects_duplicate_inputs_used_before_set_comparison() {
+        let root = temp_pack("governed-artifact-duplicate-inputs-used");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["source_summary"]["inputs_used"] = json!([
+            "product_foundation",
+            "normalized_prospect",
+            "prompt_receipt",
+            "invocation_receipt_sha256",
+            "normalized_prospect"
+        ]);
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| { issue["code"] == "governed_artifact_inputs_used_duplicate" })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_gap_pack_reference_must_be_exact_selected_authority() {
+        let root = temp_pack_with_template("governed-artifact-gap-reference", "proposal");
+        let prompt = read_prompt(&root.join(".mdp/prompts/review-proposal-red-team.yaml"))
+            .expect("generated prompt should load");
+        let mut output = governed_example(&prompt);
+        output["selected_authority"] = json!(["positioning/proposal-private-review"]);
+        output["artifact"]["gaps"][0]["pack_reference"] = json!("claims/local-customer-controlled");
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "governed_artifact_gap_pack_reference_unselected"
+                })
+        );
+
+        let mut allowed = governed_example(&prompt);
+        allowed["artifact"]["gaps"][0]["pack_reference"] = json!("N/A");
+        let allowed = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            allowed,
+            &["product_foundation", "normalized_prospect"],
+        );
+        assert!(
+            !allowed["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| {
+                    issue["code"].as_str().is_some_and(|code| {
+                        code.starts_with("governed_artifact_gap_pack_reference")
+                    })
+                })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_rejects_ambiguous_bare_identifier_across_selected_cards() {
+        let root = temp_pack("governed-artifact-ambiguous-authority-id");
+        let ctas_path = root.join(".mdp/cards/ctas.yaml");
+        let mut ctas: serde_yaml::Value = serde_yaml::from_str(
+            &std::fs::read_to_string(&ctas_path).expect("CTA card should load"),
+        )
+        .expect("CTA card should parse");
+        let mut duplicate = ctas["entries"][0].clone();
+        duplicate["id"] = serde_yaml::Value::String("decision-layer".into());
+        ctas["entries"]
+            .as_sequence_mut()
+            .expect("CTA entries should be an array")
+            .push(duplicate);
+        std::fs::write(
+            &ctas_path,
+            serde_yaml::to_string(&ctas).expect("CTA card should serialize"),
+        )
+        .expect("CTA card should be writable");
+
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let mut manifest: serde_yaml::Value = serde_yaml::from_str(
+            &std::fs::read_to_string(&manifest_path).expect("manifest should load"),
+        )
+        .expect("manifest should parse");
+        let calls_to_action = manifest["profile"]["product_foundation"]["facets"]
+            .as_sequence_mut()
+            .expect("facets should be an array")
+            .iter_mut()
+            .find(|facet| facet["id"].as_str() == Some("calls-to-action"))
+            .expect("calls-to-action facet should exist");
+        calls_to_action["entries"]
+            .as_sequence_mut()
+            .expect("facet entries should be an array")
+            .push(
+                serde_yaml::from_str("card_id: ctas\nentry_id: decision-layer\n")
+                    .expect("reference should parse"),
+            );
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let mut output = governed_example(&prompt);
+        output["selected_authority"] = json!(["positioning/decision-layer", "ctas/decision-layer"]);
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "governed_artifact_selected_authority_identifier_ambiguous"
+                })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_rejects_noncanonical_prompt_path() {
+        let root = temp_pack("governed-artifact-external-prompt");
+        let canonical_path = root.join(".mdp/prompts/generate-outbound-copy.yaml");
+        let prompt = read_prompt(&canonical_path).expect("generated prompt should load");
+        let external_path = root.join("external-prompt.yaml");
+        std::fs::copy(&canonical_path, &external_path).expect("external prompt should copy");
+        let path = write_json_output(
+            &root,
+            "governed-artifact-external-prompt.json",
+            &governed_example(&prompt),
+        );
+
+        let result = validate_prompt_output_file(&root, &path, Some(&external_path), None)
+            .expect("validation should return diagnostics");
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "governed_artifact_prompt_not_canonical")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_rejects_prompt_bound_to_multiple_jobs() {
+        let root = temp_pack("governed-artifact-ambiguous-job");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should load");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][2]["model_task"]["prompt"] =
+            serde_yaml::Value::String("generate-outbound-copy-v1".into());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should write");
+        let pack_validation = crate::commands::health::validate_pack(&root)
+            .expect("pack validation should return diagnostics");
+        assert!(
+            pack_validation["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "profile_job_model_task_prompt_reused")
+        );
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("generated prompt should load");
+        let path = write_json_output(
+            &root,
+            "governed-artifact-ambiguous-job.json",
+            &governed_example(&prompt),
+        );
+
+        let result =
+            validate_prompt_output_file(&root, &path, None, Some("generate-outbound-copy-v1"))
+                .expect("validation should return diagnostics");
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "governed_artifact_job_binding_ambiguous")
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

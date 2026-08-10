@@ -39,6 +39,13 @@ that declares or should declare a product-foundation binding. Inspect the
 CLI-resolved foundation before `.mdp/README.md`; the README is secondary
 navigation and cannot supply authority.
 
+For every job that claims self-standing generation or review, require exactly
+one `model_task` binding to a matching, versioned `mdp.prompt.v1` prompt. Check
+the compiled prompt ID/version/hash, declared input producers, selected
+product foundation, exact governed-artifact schema, valid/refusal/gap fixtures,
+and separate claim/proof verification for generated prose. Legacy unbound jobs
+may remain valid only as `unassessed`; do not call them self-standing.
+
 When a source binding is supplied, also run:
 
 ```bash

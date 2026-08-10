@@ -393,6 +393,7 @@ where
             source_audit.map(|input| input.staged_path.as_path()),
             source_attempt.map(|input| input.staged_path.as_path()),
             attempt_results.map(|input| input.staged_path.as_path()),
+            None,
         )?;
         let valid = result["valid"].as_bool() == Some(true);
         validation = Some(result.clone());
@@ -451,6 +452,7 @@ where
             None,
             Some(&source_attempt.staged_path),
             Some(&attempt_results.staged_path),
+            None,
         )?;
         let ready = result["valid"].as_bool() == Some(true)
             && normalized_value["outcome"].as_str() == Some("ready");

@@ -358,6 +358,9 @@ jobs:
     - narrative-posture
     optional:
     - known-gaps
+  model_task:
+    kind: review
+    prompt: review-bid-no-bid-v1
 - id: compliance-review
   skill_id: mdp-proposal-review
   label: Compliance review
@@ -385,6 +388,9 @@ jobs:
     - narrative-posture
     optional:
     - known-gaps
+  model_task:
+    kind: review
+    prompt: review-proposal-compliance-v1
 - id: proof-review
   skill_id: mdp-proposal-review
   label: Proof or win theme review
@@ -414,6 +420,9 @@ jobs:
     - narrative-posture
     optional:
     - known-gaps
+  model_task:
+    kind: review
+    prompt: review-proposal-proof-v1
 - id: red-team-review
   skill_id: mdp-proposal-review
   label: Red-team gap review
@@ -446,6 +455,9 @@ jobs:
     - narrative-posture
     optional:
     - known-gaps
+  model_task:
+    kind: review
+    prompt: review-proposal-red-team-v1
 profile_eval:
   required_categories:
   - proceed

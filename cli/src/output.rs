@@ -68,8 +68,14 @@ fn summarize(command: &str, data: &Value) -> Value {
             "status": data["status"],
             "valid": data["valid"],
             "available": data["available"],
+            "model_task_available": data.get("model_task").is_some_and(|value| !value.is_null()),
             "pack_id": data["pack"]["id"],
             "job_id": data["job"]["id"],
+            "model_task_status": data["model_task"]["status"],
+            "model_task_kind": data["model_task"]["kind"],
+            "prompt_id": data["model_task"]["prompt_id"],
+            "prompt_version": data["model_task"]["prompt_version"],
+            "prompt_sha256": data["model_task"]["prompt_sha256"],
             "decision_input_contract_count": array_len(&data["decision_input_contracts"]),
             "diagnostics": data["diagnostics"]
         }),
@@ -711,6 +717,32 @@ mod tests {
         assert_eq!(summary["profile_id"], "gtm");
         assert_eq!(summary["route_count"], 1);
         assert_eq!(summary["recommendation"]["skill_id"], "mdp-gtm-brief");
+    }
+
+    #[test]
+    fn requirements_summary_derives_model_task_availability_from_compiled_task() {
+        let summary = summarize(
+            "requirements",
+            &json!({
+                "contract": "mdp.requirements.v0",
+                "status": "ready",
+                "valid": true,
+                "available": false,
+                "pack": {"id": "example"},
+                "job": {"id": "outbound-copy-brief"},
+                "model_task": {
+                    "status": "ready",
+                    "kind": "generation",
+                    "prompt_id": "generate-outbound-copy",
+                    "prompt_version": "1",
+                    "prompt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "decision_input_contracts": [],
+                "diagnostics": []
+            }),
+        );
+
+        assert_eq!(summary["model_task_available"], true);
     }
 
     #[test]

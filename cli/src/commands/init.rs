@@ -286,6 +286,30 @@ const PROPOSAL_TEMPLATE_FILES: &[(&str, &str)] = &[
         ),
     ),
     (
+        ".mdp/prompts/review-bid-no-bid.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-bid-no-bid.yaml"
+        ),
+    ),
+    (
+        ".mdp/prompts/review-proposal-compliance.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-proposal-compliance.yaml"
+        ),
+    ),
+    (
+        ".mdp/prompts/review-proposal-proof.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-proposal-proof.yaml"
+        ),
+    ),
+    (
+        ".mdp/prompts/review-proposal-red-team.yaml",
+        include_str!(
+            "../../../plugin/assets/templates/proposal/.mdp/prompts/review-proposal-red-team.yaml"
+        ),
+    ),
+    (
         "examples/proof-output/claim-source-ref-missing.json",
         include_str!(
             "../../../plugin/assets/templates/proposal/examples/proof-output/claim-source-ref-missing.json"
@@ -1015,6 +1039,27 @@ mod tests {
                 job.id
             );
             assert!(!foundation.selected_facets.is_empty());
+            if job.id == "prospect-fit-or-brief" {
+                assert!(job.model_task.is_none());
+            } else {
+                let binding = job.model_task.as_ref().expect("model task should be bound");
+                let prompt_path = root
+                    .join(".mdp/prompts")
+                    .join(if binding.kind == "generation" {
+                        "generate-outbound-copy.yaml"
+                    } else {
+                        "review-outbound-copy.yaml"
+                    });
+                let prompt = crate::pack_io::read_prompt(&prompt_path)
+                    .expect("job-owned prompt should parse");
+                assert_eq!(prompt.id, binding.prompt);
+                assert_eq!(prompt.kind.as_deref(), Some(binding.kind.as_str()));
+                assert_eq!(prompt.version.as_deref(), Some("1"));
+                assert_eq!(
+                    prompt.output_contract.output_kind.as_deref(),
+                    Some("governed-artifact")
+                );
+            }
         }
         let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
             .expect("orientation README should exist");
@@ -1130,6 +1175,7 @@ mod tests {
             .expect("proposal pack should initialize");
 
         let manifest = read_manifest(&root).expect("manifest should parse");
+        let mut shared_prompt_policy: Option<Value> = None;
         for job in &manifest.jobs {
             let foundation = resolve_product_foundation_for_pack(&root, &manifest, &job.id)
                 .expect("foundation should resolve");
@@ -1159,6 +1205,220 @@ mod tests {
                     "{} loaded another job's motion",
                     job.id
                 );
+            }
+            let binding = job
+                .model_task
+                .as_ref()
+                .expect("proposal job should own a prompt");
+            assert_eq!(binding.kind, "review");
+            let prompt_path = root
+                .join(".mdp/prompts")
+                .join(format!("{}.yaml", binding.prompt.trim_end_matches("-v1")));
+            let prompt = crate::pack_io::read_prompt(&prompt_path)
+                .expect("proposal job-owned prompt should parse");
+            assert_eq!(prompt.id, binding.prompt);
+            assert_eq!(prompt.kind.as_deref(), Some("review"));
+            assert_eq!(prompt.version.as_deref(), Some("1"));
+            let prompt_value =
+                serde_json::to_value(&prompt).expect("proposal job-owned prompt should serialize");
+            let input_names = prompt_value["inputs"]
+                .as_array()
+                .expect("proposal prompt inputs should be an array")
+                .iter()
+                .filter_map(|input| input["name"].as_str())
+                .collect::<BTreeSet<_>>();
+            assert!(
+                input_names.contains("normalized_prospect"),
+                "{} must consume the canonical normalized_prospect output",
+                job.id
+            );
+            assert!(
+                !input_names.contains("normalized_opportunity"),
+                "{} must not require the optional proposal readability alias",
+                job.id
+            );
+            for host_input_name in ["prompt_receipt", "invocation_receipt_sha256"] {
+                let host_input = prompt_value["inputs"]
+                    .as_array()
+                    .and_then(|inputs| inputs.iter().find(|input| input["name"] == host_input_name))
+                    .unwrap_or_else(|| {
+                        panic!("proposal prompt must declare {host_input_name} input")
+                    });
+                assert_eq!(host_input["required"], true, "{}", job.id);
+                assert_eq!(host_input["producer"], "host", "{}", job.id);
+                assert!(
+                    prompt_value["output_contract"]["schema"]["properties"]
+                        ["source_summary"]["properties"]["inputs_used"]["items"]["enum"]
+                        .as_array()
+                        .expect("inputs_used enum should be an array")
+                        .iter()
+                        .any(|name| name == host_input_name),
+                    "{} must allow {host_input_name} in inputs_used",
+                    job.id
+                );
+            }
+            for required_path in [
+                &prompt_value["output_contract"]["required_top_level"],
+                &prompt_value["output_contract"]["schema"]["required"],
+            ] {
+                assert!(
+                    required_path
+                        .as_array()
+                        .expect("governed prompt required fields should be an array")
+                        .iter()
+                        .any(|field| field == "invocation_receipt_sha256"),
+                    "{} must require invocation_receipt_sha256",
+                    job.id
+                );
+            }
+            assert!(
+                prompt_value["output_contract"]["schema"]["properties"]
+                    ["invocation_receipt_sha256"]
+                    .is_object(),
+                "{} must schema invocation_receipt_sha256",
+                job.id
+            );
+            assert!(
+                prompt_value["output_contract"]["example"]["invocation_receipt_sha256"]
+                    .as_str()
+                    .is_some_and(|hash| hash.len() == 64),
+                "{} must example invocation_receipt_sha256",
+                job.id
+            );
+            let final_checklist = prompt_value["final_checklist"]
+                .as_array()
+                .expect("governed proposal prompt should declare a final checklist");
+            for required_check in [
+                "prompt_sha256 matches the host-provided canonical prompt hash.",
+                "invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.",
+            ] {
+                assert!(
+                    final_checklist.iter().any(|check| check == required_check),
+                    "{} must state the detached hash boundary exactly",
+                    job.id
+                );
+            }
+            assert!(
+                final_checklist.iter().all(|check| {
+                    check.as_str().is_none_or(|text| {
+                        !text.contains("invocation receipt hashes exactly match")
+                    })
+                }),
+                "{} must not imply invocation_receipt_sha256 is stored inside prompt_receipt",
+                job.id
+            );
+
+            let artifact_schema =
+                &prompt_value["output_contract"]["schema"]["properties"]["artifact"];
+            match job.id.as_str() {
+                "compliance-review" => {
+                    assert_eq!(
+                        artifact_schema["properties"]["human_review_required"]["const"],
+                        true
+                    );
+                    assert_eq!(artifact_schema["properties"]["requirements"]["minItems"], 1);
+                    let ready = &artifact_schema["allOf"][0]["then"]["properties"];
+                    assert_eq!(ready["review_status"]["const"], "ready-for-human-review");
+                    assert_eq!(ready["missing_requirements_or_sources"]["maxItems"], 0);
+                    assert_eq!(ready["requirements"]["minItems"], 1);
+
+                    let schema = &prompt_value["output_contract"]["schema"];
+                    let mut ready_example = prompt_value["output_contract"]["example"].clone();
+                    ready_example["artifact"]["status"] = json!("ready");
+                    ready_example["artifact"]["review_status"] = json!("ready-for-human-review");
+                    ready_example["artifact"]["missing_requirements_or_sources"] = json!([]);
+                    ready_example["artifact"]["requirements"][0]["coverage_status"] =
+                        json!("supported");
+                    ready_example["artifact"]["requirements"][0]["source"] =
+                        json!("synthetic-requirements");
+                    ready_example["artifact"]["requirements"][0]["gap"] = json!("N/A");
+                    assert!(
+                        jsonschema::draft202012::validate(schema, &ready_example).is_ok(),
+                        "ready compliance example should satisfy the bounded schema"
+                    );
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["requirements"][0]["coverage_status"] = json!("partial");
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["missing_requirements_or_sources"] =
+                        json!(["missing source"]);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["human_review_required"] = json!(false);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["requirements"] = json!([]);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["requirements"][0]["source"] = json!("N/A");
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                }
+                "red-team-review" => {
+                    assert_eq!(
+                        artifact_schema["properties"]["human_review_required"]["const"],
+                        true
+                    );
+                    let ready = &artifact_schema["allOf"][0]["then"]["properties"];
+                    assert_eq!(ready["review_status"]["const"], "ready-for-human-review");
+                    assert_eq!(ready["gaps"]["maxItems"], 0);
+
+                    let schema = &prompt_value["output_contract"]["schema"];
+                    let mut ready_example = prompt_value["output_contract"]["example"].clone();
+                    ready_example["artifact"]["status"] = json!("ready");
+                    ready_example["artifact"]["review_status"] = json!("ready-for-human-review");
+                    ready_example["artifact"]["gaps"] = json!([]);
+                    assert!(
+                        jsonschema::draft202012::validate(schema, &ready_example).is_ok(),
+                        "ready red-team example should satisfy the bounded schema"
+                    );
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["gaps"] = json!([{
+                        "severity": "blocker",
+                        "issue_type": "missing-source",
+                        "issue": "Required review material is missing.",
+                        "affected_section": "N/A",
+                        "evidence": [],
+                        "pack_reference": "N/A",
+                        "confidence": "unknown",
+                        "owner_or_question": "Who owns the missing material?",
+                        "next_action": "Supply the material."
+                    }]);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["human_review_required"] = json!(false);
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                    let mut invalid = ready_example.clone();
+                    invalid["artifact"]["review_status"] = json!("needs-more-info");
+                    assert!(jsonschema::draft202012::validate(schema, &invalid).is_err());
+                }
+                _ => {}
+            }
+
+            let shared_keys = [
+                "role",
+                "target_card_kinds",
+                "inputs",
+                "instructions",
+                "selection_rules",
+                "ambiguity_policy",
+                "provenance_policy",
+                "evidence_policy",
+                "negative_examples",
+            ];
+            let shared = Value::Object(
+                shared_keys
+                    .into_iter()
+                    .map(|key| (key.to_string(), prompt_value[key].clone()))
+                    .collect(),
+            );
+            if let Some(expected) = &shared_prompt_policy {
+                assert_eq!(
+                    &shared, expected,
+                    "{} drifted from the proposal prompts' shared policy contract",
+                    job.id
+                );
+            } else {
+                shared_prompt_policy = Some(shared);
             }
         }
         let readme = std::fs::read_to_string(root.join(".mdp/README.md"))
@@ -1293,6 +1553,10 @@ mod tests {
                 .join("normalize-prospect.yaml"),
         )
         .expect("normalization prompt should be readable");
+        assert!(normalization_prompt.contains("format: mdp.prompt.v1"));
+        assert!(normalization_prompt.contains("kind: normalization"));
+        assert!(normalization_prompt.contains("version: '1'"));
+        assert!(normalization_prompt.contains("producer: source"));
         assert!(normalization_prompt.contains("lead_input_requirements.value_contracts"));
         assert!(normalization_prompt.contains("lead_input_requirements.attribute_definitions"));
         assert!(normalization_prompt.contains("name: runtime_context"));
@@ -1389,6 +1653,19 @@ mod tests {
                 .expect("plugin template file should be readable");
             assert_eq!(generated, checked_in, "template drift in {relative}");
         }
+
+        let normalization =
+            crate::pack_io::read_prompt(&root.join(".mdp/prompts/normalize-opportunity.yaml"))
+                .expect("proposal normalization prompt should parse");
+        assert_eq!(normalization.format, "mdp.prompt.v1");
+        assert_eq!(normalization.kind.as_deref(), Some("normalization"));
+        assert_eq!(normalization.version.as_deref(), Some("1"));
+        assert!(
+            normalization
+                .inputs
+                .iter()
+                .all(|input| input.producer.is_some())
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

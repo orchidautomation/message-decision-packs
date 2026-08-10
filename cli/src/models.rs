@@ -186,6 +186,16 @@ pub(crate) struct ProfileJob {
     pub(crate) decision_input_contracts: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) product_foundation: Option<ProductFoundationBinding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) model_task: Option<JobModelTask>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct JobModelTask {
+    #[serde(default)]
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) prompt: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -592,6 +602,8 @@ pub(crate) struct PromptFile {
     pub(crate) id: String,
     #[serde(default)]
     pub(crate) version: Option<String>,
+    #[serde(default)]
+    pub(crate) kind: Option<String>,
     pub(crate) title: String,
     pub(crate) description: String,
     pub(crate) target_card_kinds: Vec<CardKind>,
@@ -599,6 +611,24 @@ pub(crate) struct PromptFile {
     pub(crate) tags: Vec<String>,
     pub(crate) inputs: Vec<PromptInput>,
     pub(crate) instructions: Vec<String>,
+    #[serde(default)]
+    pub(crate) role: Option<String>,
+    #[serde(default)]
+    pub(crate) objective: Option<String>,
+    #[serde(default)]
+    pub(crate) procedure: Vec<String>,
+    #[serde(default)]
+    pub(crate) selection_rules: Vec<String>,
+    #[serde(default)]
+    pub(crate) ambiguity_policy: Vec<String>,
+    #[serde(default)]
+    pub(crate) provenance_policy: Vec<String>,
+    #[serde(default)]
+    pub(crate) evidence_policy: Vec<String>,
+    #[serde(default)]
+    pub(crate) negative_examples: Vec<String>,
+    #[serde(default)]
+    pub(crate) final_checklist: Vec<String>,
     pub(crate) output_contract: PromptOutputContract,
 }
 
@@ -609,6 +639,8 @@ pub(crate) struct PromptInput {
     pub(crate) required: bool,
     pub(crate) default: String,
     pub(crate) missing_behavior: String,
+    #[serde(default)]
+    pub(crate) producer: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

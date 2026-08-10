@@ -2,7 +2,7 @@ use crate::cli::SchemaTarget;
 use crate::commands::source_binding::source_binding_schema;
 use crate::constants::{
     FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
-    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
     PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
     PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
     PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
@@ -1692,7 +1692,7 @@ fn proof_segments_schema() -> Value {
                 "refs": {
                     "type": "array",
                     "items": {
-                        "oneOf": [
+                        "anyOf": [
                             proof_card_entry_ref_schema(),
                             proof_source_ref_schema(),
                             proof_prompt_input_ref_schema(),
@@ -2108,7 +2108,16 @@ fn profile_jobs_schema() -> Value {
                 "required_primitives": primitive_id_array_schema(),
                 "input_contracts": string_array(),
                 "decision_input_contracts": string_array(),
-                "product_foundation": product_foundation_binding_schema()
+                "product_foundation": product_foundation_binding_schema(),
+                "model_task": {
+                    "type": "object",
+                    "required": ["kind", "prompt"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {"enum": ["generation", "review"]},
+                        "prompt": non_blank_string_schema()
+                    }
+                }
             }
         }
     })
@@ -2301,7 +2310,7 @@ fn skills_schema() -> Value {
 fn job_route_schema() -> Value {
     json!({
         "type": "object",
-        "required": ["job_id", "skill_id", "pack_ready", "missing_primitives", "required_input_contracts", "product_foundation", "readiness_policy"],
+        "required": ["job_id", "skill_id", "pack_ready", "missing_primitives", "required_input_contracts", "model_task", "product_foundation", "readiness_policy"],
         "additionalProperties": false,
         "oneOf": canonical_job_skill_pairs("job_id"),
         "properties": {
@@ -2310,6 +2319,21 @@ fn job_route_schema() -> Value {
             "pack_ready": {"type": "boolean"},
             "missing_primitives": string_array(),
             "required_input_contracts": string_array(),
+            "model_task": {
+                "type": "object",
+                "required": ["status"],
+                "additionalProperties": false,
+                "allOf": [{
+                    "if": {"properties": {"status": {"const": "declared"}}},
+                    "then": {"required": ["kind", "prompt", "inspect_with"]}
+                }],
+                "properties": {
+                    "status": {"enum": ["unassessed", "declared"]},
+                    "kind": {"enum": ["generation", "review"]},
+                    "prompt": {"type": "string"},
+                    "inspect_with": {"type": "string"}
+                }
+            },
             "product_foundation": {
                 "type": "object",
                 "required": ["status", "selected_facet_ids", "required_facet_ids", "diagnostics"],
@@ -2541,6 +2565,14 @@ fn scope_resolution_schema() -> Value {
 
 fn string_array() -> Value {
     json!({"type": "array", "items": {"type": "string"}})
+}
+
+fn non_empty_string_array_schema() -> Value {
+    json!({
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "string", "minLength": 1}
+    })
 }
 
 fn missing_required_trace_schema() -> Value {
@@ -2782,7 +2814,7 @@ fn value_contract_schema() -> Value {
 fn prompt_schema(card_kinds: [&str; 15]) -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "title": "MDP Extraction Prompt Contract v0",
+        "title": "MDP Prompt Contract",
         "type": "object",
         "required": [
             "format",
@@ -2811,9 +2843,23 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     "version": {"type": "string", "minLength": 1}
                 }
             }
+        }, {
+            "if": {"properties": {"format": {"const": PROMPT_FORMAT_V1}}},
+            "then": {
+                "required": [
+                    "version", "kind", "role", "objective", "procedure",
+                    "selection_rules", "ambiguity_policy", "provenance_policy",
+                    "evidence_policy", "negative_examples", "final_checklist"
+                ],
+                "properties": {
+                    "inputs": {
+                        "items": {"required": ["producer"]}
+                    }
+                }
+            }
         }],
         "properties": {
-            "format": {"const": PROMPT_FORMAT_VERSION},
+            "format": {"enum": [PROMPT_FORMAT_VERSION, PROMPT_FORMAT_V1]},
             "id": {"type": "string"},
             "version": {
                 "type": "string",
@@ -2822,6 +2868,9 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
             },
             "title": {"type": "string"},
             "description": {"type": "string"},
+            "kind": {"enum": ["normalization", "generation", "review"]},
+            "role": {"type": "string", "minLength": 1},
+            "objective": {"type": "string", "minLength": 1},
             "target_card_kinds": {
                 "type": "array",
                 "minItems": 1,
@@ -2845,7 +2894,8 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                         "missing_behavior": {
                             "type": "string",
                             "description": "How the agent should represent missing input without inventing facts."
-                        }
+                        },
+                        "producer": {"enum": ["host", "pack", "runtime", "source", "prior-step"]}
                     }
                 }
             },
@@ -2854,6 +2904,13 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                 "minItems": 1,
                 "items": {"type": "string"}
             },
+            "procedure": non_empty_string_array_schema(),
+            "selection_rules": non_empty_string_array_schema(),
+            "ambiguity_policy": non_empty_string_array_schema(),
+            "provenance_policy": non_empty_string_array_schema(),
+            "evidence_policy": non_empty_string_array_schema(),
+            "negative_examples": non_empty_string_array_schema(),
+            "final_checklist": non_empty_string_array_schema(),
             "output_contract": {
                 "type": "object",
                 "required": [
@@ -2887,14 +2944,25 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                             "contract": {"const": PROMPT_OUTPUT_CONTRACT}
                         }
                     }
+                }, {
+                    "if": {
+                        "required": ["output_kind"],
+                        "properties": {
+                            "output_kind": {"const": "governed-artifact"}
+                        }
+                    },
+                    "then": {
+                        "required": ["schema"],
+                        "not": {"required": ["schema_ref"]}
+                    }
                 }],
                 "properties": {
                     "contract": {
                         "enum": [PROMPT_OUTPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT]
                     },
                     "output_kind": {
-                        "enum": ["card-patches", "prospect-normalization", "decision-input-normalization"],
-                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs the legacy prompt-output envelope; decision-input-normalization emits the exact versioned MDP normalized decision-input envelope."
+                        "enum": ["card-patches", "prospect-normalization", "decision-input-normalization", "governed-artifact"],
+                        "description": "card-patches proposes reviewed pack entries; prospect-normalization outputs the legacy prompt-output envelope; decision-input-normalization emits the exact versioned MDP normalized decision-input envelope; governed-artifact emits a job-specific structured result defined by the prompt's inline schema."
                     },
                     "strict_json_only": {"const": true},
                     "required_top_level": {
@@ -2912,11 +2980,16 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 "gaps",
                                 "rejected_claims",
                                 "job_id",
+                                "prompt_version",
+                                "prompt_sha256",
+                                "invocation_receipt_sha256",
                                 "decision_input_contracts",
                                 "normalization",
                                 "attributes",
                                 "outcome",
                                 "draft_allowed"
+                                ,"artifact"
+                                ,"selected_authority"
                             ]
                         }
                     },
@@ -2949,13 +3022,43 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                     },
                     "schema": prompt_response_schema_contract(),
                     "example": {
-                        "oneOf": [
+                        "anyOf": [
                             prompt_output_schema(card_kinds),
-                            decision_input_envelope_schema()
+                            decision_input_envelope_schema(),
+                            governed_artifact_example_schema()
                         ]
                     }
                 }
             }
+        }
+    })
+}
+
+fn governed_artifact_example_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256",
+            "invocation_receipt_sha256", "source_summary", "selected_authority", "artifact",
+            "gaps", "rejected_claims"
+        ],
+        "properties": {
+            "contract": {"const": PROMPT_OUTPUT_CONTRACT},
+            "prompt_id": {"type": "string", "minLength": 1},
+            "job_id": {"type": "string", "minLength": 1},
+            "prompt_version": {"type": "string", "minLength": 1},
+            "prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "invocation_receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "source_summary": {
+                "type": "object",
+                "required": ["inputs_used"],
+                "properties": {"inputs_used": {"type": "array", "items": {"type": "string"}}}
+            },
+            "selected_authority": {"type": "array", "items": {"type": "string"}},
+            "artifact": {"type": "object"},
+            "gaps": {"type": "array", "items": {"type": "string"}},
+            "rejected_claims": {"type": "array", "items": {"type": "string"}}
         }
     })
 }
@@ -3817,8 +3920,8 @@ mod tests {
         let result = schema(SchemaTarget::Prompt);
 
         assert_eq!(
-            result["properties"]["format"]["const"],
-            PROMPT_FORMAT_VERSION
+            result["properties"]["format"]["enum"],
+            json!([PROMPT_FORMAT_VERSION, PROMPT_FORMAT_V1])
         );
         assert_eq!(result["allOf"][0]["then"]["required"][0], "version");
         assert_eq!(
@@ -3826,7 +3929,7 @@ mod tests {
             true
         );
         assert_eq!(
-            result["properties"]["output_contract"]["properties"]["example"]["oneOf"][0]["required"]
+            result["properties"]["output_contract"]["properties"]["example"]["anyOf"][0]["required"]
                 [0],
             "contract"
         );
@@ -3886,9 +3989,55 @@ mod tests {
                 .iter()
                 .any(|field| field == "runtime_context")
         );
+        assert!(
+            required_fields
+                .iter()
+                .any(|field| field == "invocation_receipt_sha256")
+        );
+        assert!(
+            governed_artifact_example_schema()["required"]
+                .as_array()
+                .expect("governed artifact required fields should be an array")
+                .iter()
+                .any(|field| field == "invocation_receipt_sha256")
+        );
         assert_eq!(
             result["properties"]["output_contract"]["properties"]["output_kind"]["enum"][1],
             "prospect-normalization"
+        );
+
+        let mut governed_prompt = crate::starter::starter_prompts(false)
+            .into_iter()
+            .find(|(path, _)| *path == "generate-outbound-copy.yaml")
+            .expect("starter should include governed generation prompt")
+            .1;
+        let governed_validation = jsonschema::draft202012::validate(&result, &governed_prompt);
+        assert!(
+            governed_validation.is_ok(),
+            "starter governed prompt must satisfy exported schema: {governed_validation:?}"
+        );
+        let inline_schema = governed_prompt["output_contract"]["schema"].clone();
+        governed_prompt["output_contract"]
+            .as_object_mut()
+            .expect("output contract should be an object")
+            .remove("schema");
+        governed_prompt["output_contract"]["schema_ref"] = json!(PROMPT_CARD_PATCH_SCHEMA_REF);
+        assert!(
+            jsonschema::draft202012::validate(&result, &governed_prompt).is_err(),
+            "governed-artifact prompts must use an inline schema and reject schema_ref"
+        );
+        governed_prompt["output_contract"]
+            .as_object_mut()
+            .expect("output contract should be an object")
+            .remove("schema_ref");
+        governed_prompt["output_contract"]["schema"] = inline_schema;
+        governed_prompt["output_contract"]["example"]
+            .as_object_mut()
+            .expect("example should be an object")
+            .remove("contract");
+        assert!(
+            jsonschema::draft202012::validate(&result, &governed_prompt).is_err(),
+            "governed examples must not pass through an open object fallback"
         );
     }
 
@@ -3931,6 +4080,17 @@ mod tests {
                 .any(|field| field == "product_foundation")
         );
         assert_eq!(profile_schema()["additionalProperties"], false);
+
+        let route_model_task =
+            &result["properties"]["job_routes"]["items"]["properties"]["model_task"];
+        let declared_without_details = json!({"status": "declared"});
+        assert!(
+            jsonschema::draft202012::validate(route_model_task, &declared_without_details).is_err()
+        );
+        assert!(
+            jsonschema::draft202012::validate(route_model_task, &json!({"status": "unassessed"}))
+                .is_ok()
+        );
     }
 
     #[test]

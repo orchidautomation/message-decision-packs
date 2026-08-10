@@ -4,6 +4,8 @@ This guide defines how an external host can invoke the MDP clean-run boundary wi
 
 MDP remains a local/offline decision-context standard and deterministic authority. It does not become a scheduler, credential vault, model gateway, enrichment service, sequencer, or generalized production API. MDP Cloud's current gateway is bounded and synthetic; it is not the endpoint described by this guide.
 
+Job-owned `mdp.prompt.v1` contracts do not change this boundary. MDP may compile the exact prompt, declared input producers, selected product authority, output schema, version, and hash. The customer-selected host still owns model selection, invocation, isolation, credentials, transport, and runner evidence.
+
 ## Normative Authority
 
 The installed CLI is the authority for public contract shape, hashes, terminal-state validation, assurance derivation, and receipt verification. Hosts must consume the schemas instead of copying them into a second implementation:
