@@ -1,4 +1,5 @@
 use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
+use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
 use crate::commands::{
     RunReceiptOptions, TargetInitOptions, author_proof_output_file, capabilities,
     check_claims_scoped, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, fit, gaps,
@@ -95,6 +96,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             dir,
             file,
             source_audit,
+            source_binding,
             source_attempt_request,
             collected_attempt_results,
             invocation_receipt,
@@ -102,7 +104,19 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             prompt_id,
             strict,
         } => {
-            let data = apply_strict(
+            let validation = if source_binding.is_some() {
+                validate_prompt_output_file_with_lineage_inputs(
+                    &dir,
+                    &file,
+                    prompt.as_deref(),
+                    prompt_id.as_deref(),
+                    source_audit.as_deref(),
+                    source_binding.as_deref(),
+                    source_attempt_request.as_deref(),
+                    collected_attempt_results.as_deref(),
+                    invocation_receipt.as_deref(),
+                )?
+            } else {
                 validate_prompt_output_file_with_inputs(
                     &dir,
                     &file,
@@ -112,10 +126,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                     source_attempt_request.as_deref(),
                     collected_attempt_results.as_deref(),
                     invocation_receipt.as_deref(),
-                )?,
-                strict,
-                StrictWarningSource::Issues,
-            );
+                )?
+            };
+            let data = apply_strict(validation, strict, StrictWarningSource::Issues);
             print_checked(json_mode, summary_mode, "validate-prompt-output", data)
         }
         Commands::RunReceipt {

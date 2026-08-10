@@ -1,5 +1,5 @@
 use crate::artifact_hash::canonical_json_sha256;
-use crate::commands::requirements::validate_normalized_decision_input;
+use crate::commands::requirements::validate_normalized_decision_input_with_projection;
 use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, SOURCE_AUDIT_CONTRACT};
 use crate::models::{CardKind, Manifest, PromptFile};
 use crate::pack_io::{
@@ -55,6 +55,30 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
     collected_attempt_results_path: Option<&Path>,
     invocation_receipt_path: Option<&Path>,
 ) -> Result<Value> {
+    validate_prompt_output_file_with_lineage_inputs(
+        root,
+        file,
+        prompt_path,
+        prompt_id,
+        source_audit_path,
+        None,
+        source_attempt_request_path,
+        collected_attempt_results_path,
+        invocation_receipt_path,
+    )
+}
+
+pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
+    root: &Path,
+    file: &Path,
+    prompt_path: Option<&Path>,
+    prompt_id: Option<&str>,
+    source_audit_path: Option<&Path>,
+    source_binding_path: Option<&Path>,
+    source_attempt_request_path: Option<&Path>,
+    collected_attempt_results_path: Option<&Path>,
+    invocation_receipt_path: Option<&Path>,
+) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of --prompt and --prompt-id"));
     }
@@ -87,6 +111,21 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
             Err(err) => {
                 issues.push(issue(
                     "source_attempt_request_parse_failed",
+                    "error",
+                    display_path(path),
+                    err.to_string(),
+                ));
+                None
+            }
+        },
+        None => None,
+    };
+    let source_binding = match source_binding_path {
+        Some(path) => match read_json_file_with_hash(path, "source binding") {
+            Ok((value, sha256)) => Some((value, display_path(path), sha256)),
+            Err(err) => {
+                issues.push(issue(
+                    "source_binding_parse_failed",
                     "error",
                     display_path(path),
                     err.to_string(),
@@ -188,6 +227,9 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
         source_audit
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), Some(sha256.as_str()))),
+        source_binding
+            .as_ref()
+            .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
         source_attempt_request
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
@@ -239,6 +281,7 @@ pub(crate) fn validate_prompt_output_value_with_source_audit(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -250,6 +293,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
     prompt_id: Option<&str>,
     source_audit: Option<&Value>,
     source_audit_path: Option<&str>,
+    source_binding: Option<(&Value, &str, &str)>,
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
     invocation_receipt: Option<(&Value, &str, &str)>,
@@ -268,6 +312,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
         None,
         Vec::new(),
         source_audit.map(|value| (value, source_audit_path.unwrap_or("source_audit"), None)),
+        source_binding,
         source_attempt_request,
         collected_attempt_results,
         invocation_receipt,
@@ -283,6 +328,7 @@ fn validate_prompt_output_parsed(
     prompt_output_sha256: Option<&str>,
     mut issues: Vec<Value>,
     source_audit: Option<(&Value, &str, Option<&str>)>,
+    source_binding: Option<(&Value, &str, &str)>,
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
     invocation_receipt: Option<(&Value, &str, &str)>,
@@ -296,15 +342,18 @@ fn validate_prompt_output_parsed(
                 "decision-input normalization uses per-attribute provenance; do not attach a legacy prompt source audit",
             ));
         }
-        issues.extend(validate_normalized_decision_input(
+        let validation = validate_normalized_decision_input_with_projection(
             root,
             output,
             artifact_path,
             resolved_prompt_path,
+            source_binding,
             source_attempt_request,
             collected_attempt_results,
-        )?);
-        return Ok(json!({
+            prompt_output_sha256,
+        )?;
+        issues.extend(validation.issues);
+        let mut result = json!({
             "valid": issues.is_empty(),
             "file": artifact_path,
             "prompt": prompt_summary(prompt, root),
@@ -321,7 +370,14 @@ fn validate_prompt_output_parsed(
                 None
             ),
             "issues": issues
-        }));
+        });
+        if let Some(signal_projection) = validation.signal_projection {
+            result["signal_projection"] = signal_projection;
+        }
+        if let Some((_, path, sha256)) = source_binding {
+            result["artifacts"]["source_binding"] = json!({"path": path, "sha256": sha256});
+        }
+        return Ok(result);
     }
 
     if prompt.output_contract.output_kind.as_deref() == Some("governed-artifact") {
@@ -2951,6 +3007,7 @@ mod tests {
             Some("normalize-prospect-row"),
             None,
             None,
+            None,
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
             None,
@@ -2982,6 +3039,7 @@ mod tests {
             "synthetic-response",
             None,
             Some("normalize-prospect-row"),
+            None,
             None,
             None,
             Some((&request, "synthetic-request", &request_sha256)),

@@ -116,12 +116,17 @@ pub(crate) enum Commands {
         source_audit: Option<PathBuf>,
         #[arg(
             long,
-            help = "Exact mdp.source-attempt-request.v1 JSON file for decision-input normalization binding and freshness validation"
+            help = "Exact mdp.source-binding.v2 JSON artifact for signal-aware normalization lineage validation"
+        )]
+        source_binding: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Exact version-compatible source-attempt request JSON file for decision-input normalization binding and freshness validation"
         )]
         source_attempt_request: Option<PathBuf>,
         #[arg(
             long,
-            help = "Exact mdp.collected-attempt-results.v1 JSON file for immutable execution-fact binding and raw-value normalization"
+            help = "Exact version-compatible collected attempt-results JSON file for immutable execution-fact binding and raw-value normalization"
         )]
         collected_attempt_results: Option<PathBuf>,
         #[arg(
