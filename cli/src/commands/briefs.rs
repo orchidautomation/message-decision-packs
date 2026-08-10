@@ -110,11 +110,22 @@ pub(crate) fn prospect_brief_from_value_with_context(
     job: Option<&str>,
     include_context: bool,
 ) -> Result<Value> {
+    let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
+    prospect_brief_from_fit_with_context(root, prospect, fit_result, channel, job, include_context)
+}
+
+pub(crate) fn prospect_brief_from_fit_with_context(
+    root: &Path,
+    prospect: Prospect,
+    fit_result: Value,
+    channel: &str,
+    job: Option<&str>,
+    include_context: bool,
+) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let runtime_context = current_runtime_context()?;
     let persona_resolution = resolve_persona(&manifest, &prospect);
     let scope = scope_from_prospect(&manifest, &prospect);
-    let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
     let fit_status = fit_result["status"]
         .as_str()
         .unwrap_or("insufficient-context");
@@ -323,27 +334,45 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
 
     out.push_str("## Evidence Receipts and Accepted Signals\n\n");
     let mut wrote_evidence = false;
+    wrote_evidence |= list_named_items(
+        &mut out,
+        "Lineage-validated signal contributions",
+        &fit["signal_authority"]["accepted"],
+        |item| {
+            format!(
+                "{}; roles: {}",
+                display_value(&item["signal_id"]),
+                item["roles"]
+                    .as_array()
+                    .map(|roles| roles
+                        .iter()
+                        .map(display_value)
+                        .collect::<Vec<_>>()
+                        .join(", "))
+                    .unwrap_or_else(|| "none".to_string())
+            )
+        },
+    );
     wrote_evidence |= list_named_items(&mut out, "Accepted fit signals", &fit["matches"], |item| {
         titled_body(item, "title", "reason")
     });
-    wrote_evidence |= list_named_items(
-        &mut out,
-        "Supplied prospect signals",
-        &prospect["signals"],
-        |item| {
-            let mut parts = vec![display_value(&item["title"])];
-            if let Some(source) = optional_text(&item["source"]) {
-                parts.push(format!("source: {source}"));
-            }
-            if let Some(confidence) = optional_text(&item["confidence"]) {
-                parts.push(format!("confidence: {confidence}"));
-            }
-            if let Some(state_as) = optional_text(&item["state_as"]) {
-                parts.push(format!("state_as: {state_as}"));
-            }
-            parts.join("; ")
-        },
-    );
+    if fit["signal_authority"]["authority_class"] != "lineage-validated" {
+        wrote_evidence |= list_named_items(
+            &mut out,
+            "Legacy prospect signals (unassessed)",
+            &prospect["signals"],
+            |item| {
+                let mut parts = vec![display_value(&item["id"]), display_value(&item["title"])];
+                if let Some(confidence) = optional_text(&item["confidence"]) {
+                    parts.push(format!("confidence: {confidence}"));
+                }
+                if let Some(state_as) = optional_text(&item["state_as"]) {
+                    parts.push(format!("state_as: {state_as}"));
+                }
+                parts.join("; ")
+            },
+        );
+    }
     wrote_evidence |= list_context_entries(
         &mut out,
         "Routed evidence entries",

@@ -215,7 +215,10 @@ fn summarize(command: &str, data: &Value) -> Value {
             "company_domain": data["prospect"]["company_domain"],
             "missing_context": data["context"]["missing"],
             "missing_requirements": data["context"]["missing_requirements"],
-            "invalid_requirements": data["context"]["invalid_requirements"]
+            "invalid_requirements": data["context"]["invalid_requirements"],
+            "signal_authority_class": data["signal_authority"]["authority_class"],
+            "accepted_signal_ids": data["signal_authority"]["accepted"].as_array().map(|items| items.iter().filter_map(|item| item["signal_id"].as_str()).collect::<Vec<_>>()).unwrap_or_default(),
+            "rejected_signal_ids": data["signal_authority"]["rejected"].as_array().map(|items| items.iter().filter_map(|item| item["signal_id"].as_str()).collect::<Vec<_>>()).unwrap_or_default()
         }),
         "brief" => json!({
             "contract": data["contract"],
@@ -463,6 +466,12 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
         "fit" => {
             println!("fit: {}", data["status"].as_str().unwrap_or("unknown"));
             println!("{}", data["decision"].as_str().unwrap_or(""));
+            println!(
+                "signal authority: {}",
+                data["signal_authority"]["authority_class"]
+                    .as_str()
+                    .unwrap_or("unassessed")
+            );
             print_requirement_list("missing", &data["context"]["missing_requirements"]);
             print_requirement_list("invalid", &data["context"]["invalid_requirements"]);
         }

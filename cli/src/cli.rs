@@ -322,8 +322,20 @@ pub(crate) enum Commands {
     Fit {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
-        #[arg(long)]
-        prospect: PathBuf,
+        #[arg(long, required_unless_present = "normalized_input")]
+        prospect: Option<PathBuf>,
+        #[arg(long, conflicts_with = "prospect")]
+        normalized_input: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        prompt: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        source_binding: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        source_attempt_request: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        collected_attempt_results: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        job: Option<String>,
     },
     #[command(about = "Check draft copy or text against approved claims and guardrails")]
     CheckClaims {
@@ -367,8 +379,18 @@ pub(crate) enum Commands {
     Brief {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
-        #[arg(long)]
-        prospect: PathBuf,
+        #[arg(long, required_unless_present = "normalized_input")]
+        prospect: Option<PathBuf>,
+        #[arg(long, conflicts_with = "prospect")]
+        normalized_input: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        prompt: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        source_binding: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        source_attempt_request: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        collected_attempt_results: Option<PathBuf>,
         #[arg(long, default_value = "linkedin")]
         channel: String,
         #[arg(long)]

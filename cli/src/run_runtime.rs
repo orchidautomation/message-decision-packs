@@ -1,6 +1,8 @@
 use crate::artifact_hash::{canonical_json_sha256_for_domain, pack_content_snapshot, sha256_hex};
-use crate::commands::prompt_output::validate_prompt_output_file_with_inputs;
-use crate::commands::routing::fit;
+use crate::commands::prompt_output::{
+    validate_prompt_output_file_with_inputs, validate_prompt_output_file_with_lineage_inputs,
+};
+use crate::commands::routing::{fit, fit_normalized};
 use crate::pack_io::{read_manifest, resolve_pack_path};
 use crate::run_contracts::{
     ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState, DecisionAuthority,
@@ -412,12 +414,16 @@ where
             (TerminalState::NoDraftOutputInvalid, None)
         }
     } else if request.profile == GTM_PROFILE && request.operation == QUALIFY {
-        let normalized = required_typed_input(
-            &staged,
-            "normalized-decision-input",
-            "mdp.normalized-decision-input.v1",
-            "application/json",
-        )?;
+        let normalized = required_input(&staged, "normalized-decision-input")?;
+        if normalized.authority.media_type != "application/json"
+            || !matches!(
+                normalized.authority.schema_id.as_str(),
+                "mdp.normalized-decision-input.v1" | "mdp.normalized-decision-input.v2"
+            )
+        {
+            return Err(anyhow!("declared input schema or media type mismatch"));
+        }
+        let signal_aware = normalized.authority.schema_id == "mdp.normalized-decision-input.v2";
         let source_attempt = required_typed_input(
             &staged,
             "source-attempt-request",
@@ -444,16 +450,40 @@ where
                 "declared bound prompt does not match the prompt in the immutable pack snapshot"
             ));
         }
-        let result = validate_prompt_output_file_with_inputs(
-            &staged_pack,
-            &normalized.staged_path,
-            Some(&staged_bound_prompt),
-            None,
-            None,
-            Some(&source_attempt.staged_path),
-            Some(&attempt_results.staged_path),
-            None,
-        )?;
+        let source_binding = if signal_aware {
+            Some(required_typed_input(
+                &staged,
+                "source-binding",
+                "mdp.source-binding.v2",
+                "application/json",
+            )?)
+        } else {
+            None
+        };
+        let result = if signal_aware {
+            validate_prompt_output_file_with_lineage_inputs(
+                &staged_pack,
+                &normalized.staged_path,
+                Some(&staged_bound_prompt),
+                None,
+                None,
+                source_binding.map(|input| input.staged_path.as_path()),
+                Some(&source_attempt.staged_path),
+                Some(&attempt_results.staged_path),
+                None,
+            )?
+        } else {
+            validate_prompt_output_file_with_inputs(
+                &staged_pack,
+                &normalized.staged_path,
+                Some(&staged_bound_prompt),
+                None,
+                None,
+                Some(&source_attempt.staged_path),
+                Some(&attempt_results.staged_path),
+                None,
+            )?
+        };
         let ready = result["valid"].as_bool() == Some(true)
             && normalized_value["outcome"].as_str() == Some("ready");
         validation = Some(result);
@@ -464,7 +494,22 @@ where
             } else {
                 let prospect_path = private_dir.join("projected-prospect.json");
                 write_json_create_new(&prospect_path, prospect)?;
-                let fit_result = fit(&staged_pack, &prospect_path)?;
+                let fit_result = if signal_aware {
+                    fit_normalized(
+                        &staged_pack,
+                        &normalized.staged_path,
+                        &staged_bound_prompt,
+                        &source_binding.expect("v2 source binding").staged_path,
+                        &source_attempt.staged_path,
+                        &attempt_results.staged_path,
+                        request
+                            .job_identity
+                            .as_ref()
+                            .map(|identity| identity.job_id.as_str()),
+                    )?
+                } else {
+                    fit(&staged_pack, &prospect_path)?
+                };
                 (
                     TerminalState::Success,
                     Some(gtm_success_artifacts(
@@ -643,7 +688,8 @@ fn gtm_success_artifacts(
             "status": fit_status,
             "context": fit_result["context"],
             "matches": fit_result["matches"],
-            "disqualifiers": fit_result["disqualifiers"]
+            "disqualifiers": fit_result["disqualifiers"],
+            "signal_authority": fit_result["signal_authority"]
         },
         "drafting_authority": "not-granted"
     });

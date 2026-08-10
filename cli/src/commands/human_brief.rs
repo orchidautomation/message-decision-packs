@@ -532,11 +532,30 @@ fn list_fit(fit: &Value) -> String {
 
 fn list_proof(artifact: &Value) -> String {
     let mut parts = Vec::new();
-    if let Some(signals) = artifact["prospect"]["signals"].as_array() {
+    if artifact["fit"]["signal_authority"]["authority_class"] == "lineage-validated" {
+        for signal in artifact["fit"]["signal_authority"]["accepted"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            parts.push(format!(
+                "- signal_id={} roles={}",
+                display_value(&signal["signal_id"]),
+                signal["roles"]
+                    .as_array()
+                    .map(|roles| roles
+                        .iter()
+                        .map(display_value)
+                        .collect::<Vec<_>>()
+                        .join(","))
+                    .unwrap_or_else(|| "none".to_string())
+            ));
+        }
+    } else if let Some(signals) = artifact["prospect"]["signals"].as_array() {
         for signal in signals {
             parts.push(format!(
-                "- {}",
-                compact_item(signal, &["title", "source", "confidence", "state_as"])
+                "- legacy/unassessed signal_id={}",
+                display_value(&signal["id"])
             ));
         }
     }
