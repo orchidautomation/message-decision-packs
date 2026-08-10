@@ -126,7 +126,7 @@ class SkillContractTests(unittest.TestCase):
             "plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md",
         ]:
             text = Path(path).read_text()
-            supplied = text.index("If all three artifacts")
+            supplied = text.index("If all four artifacts")
             collected = text.index("`COLLECTED_ATTEMPT_RESULTS_JSON`", supplied)
             output = text.index("`OUTPUT_JSON`", collected)
             immediate = text.index("validate them immediately", supplied)

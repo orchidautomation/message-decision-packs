@@ -385,6 +385,7 @@ fn validate_prompt_output_parsed(
 
     if prompt.output_contract.output_kind.as_deref() == Some("governed-artifact") {
         if source_audit.is_some()
+            || source_binding.is_some()
             || source_attempt_request.is_some()
             || collected_attempt_results.is_some()
         {

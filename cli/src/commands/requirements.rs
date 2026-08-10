@@ -3,7 +3,9 @@ use crate::cli::SchemaTarget;
 use crate::commands::health::validate_pack;
 use crate::commands::schemas::schema;
 use crate::commands::schemas::signal_observation_v2_schema;
-use crate::commands::source_binding::{source_binding_schema_v2, source_lineage_version_matrix};
+use crate::commands::source_binding::{
+    source_binding_schema_v2, source_lineage_version_matrix, validate_source_binding_v2,
+};
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT, COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
@@ -778,6 +780,25 @@ fn validate_signal_observations(
             "source binding does not satisfy the exact compiled signal-aware schema",
         ));
         return None;
+    }
+    match validate_source_binding_v2(compiled, binding, binding_path) {
+        Ok(validation) if validation["valid"] == true => {}
+        Ok(validation) => {
+            issues.extend(
+                validation["diagnostics"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+        }
+        Err(error) => {
+            issues.push(decision_input_issue(
+                "decision_input_source_binding_semantic_validation_failed",
+                binding_path,
+                format!("source binding semantic validation failed: {error}"),
+            ));
+            return None;
+        }
     }
     for (path, actual, expected) in [
         ("job_id", &binding["job_id"], &compiled["job"]["id"]),
@@ -3284,6 +3305,19 @@ mod tests {
         example.remove(&serde_yaml::Value::String(
             "signal_observations".to_string(),
         ));
+        if let Some(required) = prompt["output_contract"]["required_top_level"].as_sequence_mut() {
+            required.retain(|field| {
+                !matches!(
+                    field.as_str(),
+                    Some(
+                        "source_binding_sha256"
+                            | "source_attempt_request_sha256"
+                            | "collected_attempt_results_sha256"
+                            | "signal_observations"
+                    )
+                )
+            });
+        }
         std::fs::write(prompt_path, serde_yaml::to_string(&prompt).unwrap()).unwrap();
         root
     }

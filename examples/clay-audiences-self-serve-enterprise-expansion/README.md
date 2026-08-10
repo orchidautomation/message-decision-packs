@@ -128,7 +128,7 @@ authentication, billing, Cloudflare infrastructure, or a production data path.
 ## Expected outcomes
 
 [`fixtures/expected-outcomes.json`](fixtures/expected-outcomes.json) defines the
-six synthetic acceptance cases:
+synthetic acceptance cases and signal-lineage contract matrix:
 
 | Outcome | Trigger | Draft behavior |
 |---|---|---|

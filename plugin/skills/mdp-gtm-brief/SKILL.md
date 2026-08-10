@@ -65,8 +65,9 @@ skill-implied writing or review instructions.
      `data.contract_version_matrix`, and every compiled signal projection. Do
      not mix v1/v2 artifacts or infer roles from prose. For v2, require the
      exact `SOURCE_BINDING_JSON` selected by requirements.
-     - If all three artifacts—`SOURCE_ATTEMPT_REQUEST_JSON`,
-       `COLLECTED_ATTEMPT_RESULTS_JSON`, and `OUTPUT_JSON`—are already supplied,
+     - If all four artifacts—`SOURCE_BINDING_JSON`,
+       `SOURCE_ATTEMPT_REQUEST_JSON`, `COLLECTED_ATTEMPT_RESULTS_JSON`, and
+       `OUTPUT_JSON`—are already supplied,
        validate them immediately with the returned bound prompt.
      - If any artifact is missing, hand the customer or host the exact
        complete `mdp --json requirements` result as

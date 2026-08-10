@@ -103,8 +103,9 @@ output_contract:
           "prompt_version": "clay-self-serve-enterprise-expansion.v4"
         }
       ],
-      "source_attempt_request_sha256": "b228884027f7754f5136bb9317d164fc8e4d702ea145891997f29c26913fa9df",
-      "collected_attempt_results_sha256": "4181b47b398318883538265ff9a3c0735f66ac401086757b9f5d14dd14ba67c7",
+      "source_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_attempt_request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "collected_attempt_results_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "attributes": {
         "company_name": {
           "status": "observed",
@@ -113,7 +114,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-001",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/company",
+              "source_locator": "opaque:synthetic-attempt-001",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -130,7 +131,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-002",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/company",
+              "source_locator": "opaque:synthetic-attempt-002",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -147,7 +148,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-003",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/person",
+              "source_locator": "opaque:synthetic-attempt-003",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -164,7 +165,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-004",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/person",
+              "source_locator": "opaque:synthetic-attempt-004",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -181,7 +182,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-005",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/trigger",
+              "source_locator": "opaque:synthetic-attempt-005",
               "observed_at": "2026-07-29T12:00:00Z",
               "excerpt": "Synthetic fixture says a reviewed usage threshold was reached."
             }
@@ -199,7 +200,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-006",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/account-state",
+              "source_locator": "opaque:synthetic-attempt-006",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -216,7 +217,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-007",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/account-state",
+              "source_locator": "opaque:synthetic-attempt-007",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -233,7 +234,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-008",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/account-state",
+              "source_locator": "opaque:synthetic-attempt-008",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -250,7 +251,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-009",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/eligibility",
+              "source_locator": "opaque:synthetic-attempt-009",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -267,7 +268,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-010",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/suppression",
+              "source_locator": "opaque:synthetic-attempt-010",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -284,7 +285,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-011",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/support",
+              "source_locator": "opaque:synthetic-attempt-011",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -301,7 +302,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-012",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/person",
+              "source_locator": "opaque:synthetic-attempt-012",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -317,7 +318,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-013",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/support",
+              "source_locator": "opaque:synthetic-attempt-013",
               "observed_at": "2026-07-29T12:00:00Z",
               "excerpt": "Synthetic fixture marks the support-context question not applicable."
             }
@@ -335,7 +336,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-014",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/company",
+              "source_locator": "opaque:synthetic-attempt-014",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -351,7 +352,7 @@ output_contract:
             {
               "attempt_id": "synthetic-attempt-015",
               "source_class": "synthetic_fixture",
-              "source_locator": "synthetic://clay-example/account-state",
+              "source_locator": "opaque:synthetic-attempt-015",
               "observed_at": "2026-07-29T12:00:00Z"
             }
           ],
@@ -362,6 +363,71 @@ output_contract:
           }
         }
       },
+      "signal_observations": [
+        {
+          "contract": "mdp.signal-observation.v2",
+          "id": "obs-account-fit",
+          "contract_id": "clay.audiences.self_serve_enterprise_expansion",
+          "projection_id": "account-fit",
+          "qualified_projection_id": "clay.audiences.self_serve_enterprise_expansion#account-fit",
+          "kind": "enterprise_expansion_fit",
+          "roles": ["fit"],
+          "value": "eligible",
+          "contributor_attribute_ids": ["enterprise_eligibility"],
+          "attempt_ids": ["synthetic-attempt-009"],
+          "source_class": "synthetic_fixture",
+          "source_locator": "opaque:synthetic-attempt-009",
+          "observed_at": "2026-07-29T12:00:00Z",
+          "confidence": 100,
+          "receipt": {
+            "source_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_attempt_request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "collected_results_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        },
+        {
+          "contract": "mdp.signal-observation.v2",
+          "id": "obs-buyer-role",
+          "contract_id": "clay.audiences.self_serve_enterprise-expansion",
+          "projection_id": "buyer-role",
+          "qualified_projection_id": "clay.audiences.self_serve_enterprise-expansion#buyer-role",
+          "kind": "revenue_operations_buyer",
+          "roles": ["person-resolution"],
+          "value": "VP Revenue Operations",
+          "contributor_attribute_ids": ["person_title"],
+          "attempt_ids": ["synthetic-attempt-004"],
+          "source_class": "synthetic_fixture",
+          "source_locator": "opaque:synthetic-attempt-004",
+          "observed_at": "2026-07-29T12:00:00Z",
+          "confidence": 100,
+          "receipt": {
+            "source_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_attempt_request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "collected_results_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        },
+        {
+          "contract": "mdp.signal-observation.v2",
+          "id": "obs-trigger",
+          "contract_id": "clay.audiences.self_serve_enterprise-expansion",
+          "projection_id": "buying-window",
+          "qualified_projection_id": "clay.audiences.self_serve_enterprise_expansion#buying-window",
+          "kind": "expansion_timing",
+          "roles": ["why-now"],
+          "value": "Synthetic usage threshold reached in the reviewed fixture.",
+          "contributor_attribute_ids": ["expansion_trigger_summary"],
+          "attempt_ids": ["synthetic-attempt-005"],
+          "source_class": "synthetic_fixture",
+          "source_locator": "opaque:synthetic-attempt-005",
+          "observed_at": "2026-07-29T12:00:00Z",
+          "confidence": 100,
+          "receipt": {
+            "source_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_attempt_request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "collected_results_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        }
+      ],
       "normalized_prospect": {
         "name": "Avery Example",
         "title": "VP Revenue Operations",
@@ -390,7 +456,11 @@ output_contract:
   - job_id
   - decision_input_contracts
   - normalization
+  - source_binding_sha256
+  - source_attempt_request_sha256
+  - collected_attempt_results_sha256
   - attributes
+  - signal_observations
   - normalized_prospect
   - outcome
   - draft_allowed

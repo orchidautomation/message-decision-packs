@@ -71,7 +71,7 @@ Relevant results:
 
 - Codex hook manifest generation, OpenCode plugin-root separation, and `PLUXX_HOOK_WORKSPACE_ROOT` propagation are covered by `scripts/test-pluxx-hooks.sh` and pass with `0.1.36`.
 - The hook fixture now builds real release assets, installs the generated top-level OpenCode wrapper into an isolated location, launches it from a parent directory, selects a different MDP workspace, and proves activation preserves both the installed plugin root and selected workspace root.
-- Pluxx's generic semantic rubric is retained as a warning gate (`warningThreshold: 60`, `failureThreshold: 40`) because MDP is a migrated/manual plugin with repo-owned skill evals in `plugin/skill-evals/`.
+- Pluxx's generic semantic rubric is retained as an advisory warning (`warningThreshold: 60`, `failureThreshold: 0`) because MDP is a migrated/manual plugin with repo-owned skill evals in `plugin/skill-evals/`; release-package checks remain governed by MDP's repo-owned evals.
 - Migrated scaffold hook metadata now uses the current `safe` mode values. MDP is a plugin-migrated project; the repo ships its own local stdio MCP script, but does not use Pluxx as the source of truth for generated MCP tools, so `pluxx sync` is not a supported maintenance path unless MDP later adopts a Pluxx-managed MCP source.
 - New Claude Code description-length diagnostics identified five skills whose discovery descriptions exceeded the 250-character display limit; the root and `plugin/skills/` copies were shortened together.
 - CI now runs the MDP-specific Pluxx hook fixture, rejects future skill-description truncation, and checks that eval fixtures with `description_under_test` stay aligned with their skill frontmatter.

@@ -26,8 +26,9 @@ belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
      Inspect the runtime version matrix and compiled signal projections first.
      For v2, require the exact `SOURCE_BINDING_JSON`; structured observations
      belong only in the v2 envelope and roles never come from keywords.
-     - If all three artifacts—`SOURCE_ATTEMPT_REQUEST_JSON`,
-       `COLLECTED_ATTEMPT_RESULTS_JSON`, and `OUTPUT_JSON`—are already supplied,
+     - If all four artifacts—`SOURCE_BINDING_JSON`,
+       `SOURCE_ATTEMPT_REQUEST_JSON`, `COLLECTED_ATTEMPT_RESULTS_JSON`, and
+       `OUTPUT_JSON`—are already supplied,
        validate them immediately with the bound prompt.
      - If any artifact is missing, hand the customer or host the exact
        complete `mdp --json requirements` result as

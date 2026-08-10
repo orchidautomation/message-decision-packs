@@ -258,6 +258,8 @@ try {
     assert.equal(receipt.decision.decision, "no-draft");
     assert.deepEqual(receipt.decision.reason_codes, ["disqualified"]);
     const context = JSON.parse(readFileSync(join(attempted.outDir, "artifacts", "compiled-context.json"), "utf8"));
+    const output = JSON.parse(readFileSync(join(attempted.outDir, "artifacts", "output.json"), "utf8"));
+    assert.equal(output.status, "disqualified");
     assert.equal(context.qualification.status, "disqualified");
     assert.equal(context.drafting_authority, "not-granted");
     assert.equal(expectOk(verify(attempted.outDir), "GTM disqualified verification").valid, true);

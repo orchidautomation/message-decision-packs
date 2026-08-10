@@ -350,6 +350,16 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
         "trust_boundary",
         display_value(&signal_authority["trust_boundary"]),
     );
+    for field in [
+        "source_binding_sha256",
+        "source_attempt_request_sha256",
+        "collected_attempt_results_sha256",
+        "normalized_output_sha256",
+    ] {
+        if !signal_authority[field].is_null() {
+            bullet(&mut out, field, display_value(&signal_authority[field]));
+        }
+    }
     out.push('\n');
     wrote_evidence |= list_named_items(
         &mut out,
@@ -357,7 +367,7 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
         &signal_authority["accepted"],
         |item| {
             format!(
-                "{}; roles: {}",
+                "{}; roles: {}; observations: {}",
                 display_value(&item["signal_id"]),
                 item["roles"]
                     .as_array()
@@ -366,7 +376,8 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
                         .map(display_value)
                         .collect::<Vec<_>>()
                         .join(", "))
-                    .unwrap_or_else(|| "none".to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                display_value(&item["observation_receipts"])
             )
         },
     );

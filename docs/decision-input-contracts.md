@@ -89,7 +89,7 @@ legacy prospect `signals` array does not upgrade them.
 Every accepted observation remains separately inspectable and deterministically
 ordered. Equal meaningful typed values may form one logical signal for
 cardinality while retaining all observation receipts. Differing supported
-values remain a conflict. The v1 conflict algebra is deliberately conservative:
+values remain a conflict. The v2 conflict algebra is deliberately conservative:
 
 - `require-agreement` routes disagreement to `human-review` and no-draft;
 - `any-disqualifies` may resolve a conflict only by deterministically

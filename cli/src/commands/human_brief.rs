@@ -539,7 +539,7 @@ fn list_proof(artifact: &Value) -> String {
             .flatten()
         {
             parts.push(format!(
-                "- signal_id={} roles={}",
+                "- signal_id={} roles={} observations={}",
                 display_value(&signal["signal_id"]),
                 signal["roles"]
                     .as_array()
@@ -548,7 +548,8 @@ fn list_proof(artifact: &Value) -> String {
                         .map(display_value)
                         .collect::<Vec<_>>()
                         .join(","))
-                    .unwrap_or_else(|| "none".to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                display_value(&signal["observation_receipts"])
             ));
         }
         for signal in artifact["fit"]["signal_authority"]["rejected"]
@@ -574,6 +575,20 @@ fn list_proof(artifact: &Value) -> String {
             "- signal_trust_boundary={}",
             display_value(&artifact["fit"]["signal_authority"]["trust_boundary"])
         ));
+        for field in [
+            "source_binding_sha256",
+            "source_attempt_request_sha256",
+            "collected_attempt_results_sha256",
+            "normalized_output_sha256",
+        ] {
+            if !artifact["fit"]["signal_authority"][field].is_null() {
+                parts.push(format!(
+                    "- signal_{}={}",
+                    field,
+                    display_value(&artifact["fit"]["signal_authority"][field])
+                ));
+            }
+        }
     } else if let Some(signals) = artifact["prospect"]["signals"].as_array() {
         for signal in signals {
             parts.push(format!(

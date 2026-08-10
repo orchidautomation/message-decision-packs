@@ -387,7 +387,7 @@ struct ExpectedProjection {
     source_classes: BTreeSet<String>,
 }
 
-fn validate_source_binding_v2(
+pub(crate) fn validate_source_binding_v2(
     compiled: &Value,
     value: &Value,
     artifact_path: &str,
@@ -1379,6 +1379,19 @@ mod tests {
         example.remove(&serde_yaml::Value::String(
             "signal_observations".to_string(),
         ));
+        if let Some(required) = prompt["output_contract"]["required_top_level"].as_sequence_mut() {
+            required.retain(|field| {
+                !matches!(
+                    field.as_str(),
+                    Some(
+                        "source_binding_sha256"
+                            | "source_attempt_request_sha256"
+                            | "collected_attempt_results_sha256"
+                            | "signal_observations"
+                    )
+                )
+            });
+        }
         std::fs::write(prompt_path, serde_yaml::to_string(&prompt).unwrap()).unwrap();
         root
     }

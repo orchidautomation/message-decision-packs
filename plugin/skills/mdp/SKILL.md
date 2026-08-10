@@ -126,9 +126,11 @@ mdp --json requirements --dir <pack-root> --job <job-id>
 
 This command is read-only. It compiles the pack-owned questions, source policy, normalization identity, and request/response schemas; it does not collect sources or call a model. An existing job without a Decision Input Contract returns `available: false`. When that job declares `model_task`, inspect `data.model_task_available`, the exact prompt ID/version/hash, declared input producers, instructions, and output contract. Hand that package to the customer-selected host; MDP does not execute it.
 
-Inspect `data.runtime_contract_version`, `data.contract_version_matrix`, and
+For signal-aware v2 jobs, inspect `data.runtime_contract_version`,
+`data.contract_version_matrix`, and
 `data.decision_input_contracts[].signal_projections` before accepting any
-artifact. Scalar v1 and signal-aware v2 artifacts cannot be mixed. Structured
+artifact. Their absence is expected for scalar v1 jobs. Scalar v1 and
+signal-aware v2 artifacts cannot be mixed. Structured
 repeated observations belong only in `mdp.normalized-decision-input.v2`.
 Legacy or detached prospect signals are readable context with `legacy` or
 `unassessed` authority; titles, source strings, provider fields, and keywords

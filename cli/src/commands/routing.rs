@@ -521,10 +521,12 @@ fn legacy_signal_authority() -> Value {
         "contract": "mdp.signal-qualification-authority.v1",
         "authority_class": "legacy",
         "aggregate_authority": "unassessed",
+        "projection_status": "unassessed",
         "eligible_signal_count": 0,
         "roles": {"fit": false, "why-now": false, "person-resolution": false, "disqualifier": false},
         "accepted": [],
         "rejected": [],
+        "trust_boundary": "detached prospect input; no immutable lineage-validated handoff",
         "reason": "detached prospect input has no immutable lineage-validated handoff"
     })
 }
@@ -560,6 +562,22 @@ pub(crate) fn signal_eligibility(projection_receipt: &Value) -> Value {
                 )
             })
             .collect::<BTreeSet<_>>();
+        let observation_receipts = projection_receipt["observations"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|observation| observation_ids.contains(&observation["id"]))
+            .map(|observation| {
+                json!({
+                    "id": observation["id"],
+                    "attempt_ids": observation["attempt_ids"],
+                    "source_class": observation["source_class"],
+                    "observed_at": observation["observed_at"],
+                    "confidence": observation["confidence"],
+                    "receipt": observation["receipt"]
+                })
+            })
+            .collect::<Vec<_>>();
         if receipt_eligible && !declared_roles.is_empty() {
             roles.extend(declared_roles.iter().copied());
             accepted.push(json!({
@@ -567,6 +585,7 @@ pub(crate) fn signal_eligibility(projection_receipt: &Value) -> Value {
                 "qualified_projection_id": id,
                 "roles": declared_roles,
                 "observation_ids": observation_ids,
+                "observation_receipts": observation_receipts,
                 "authority_class": "lineage-validated",
                 "decision": "accepted"
             }));
@@ -576,6 +595,7 @@ pub(crate) fn signal_eligibility(projection_receipt: &Value) -> Value {
                 "qualified_projection_id": id,
                 "roles": declared_roles,
                 "observation_ids": observation_ids,
+                "observation_receipts": observation_receipts,
                 "authority_class": if receipt_eligible { "unassessed" } else { "lineage-validated" },
                 "decision": "rejected",
                 "reason": if receipt_eligible { "no-declared-qualification-role" } else { receipt_status }
@@ -595,6 +615,10 @@ pub(crate) fn signal_eligibility(projection_receipt: &Value) -> Value {
         },
         "accepted": accepted,
         "rejected": rejected,
+        "source_binding_sha256": projection_receipt["source_binding_sha256"],
+        "source_attempt_request_sha256": projection_receipt["source_attempt_request_sha256"],
+        "collected_attempt_results_sha256": projection_receipt["collected_attempt_results_sha256"],
+        "normalized_output_sha256": projection_receipt["normalized_output_sha256"],
         "trust_boundary": "lineage identity only; does not attest host authenticity or source truth"
     })
 }

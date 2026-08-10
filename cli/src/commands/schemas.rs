@@ -2,11 +2,11 @@ use crate::cli::SchemaTarget;
 use crate::commands::source_binding::source_binding_schema;
 use crate::constants::{
     FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
-    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
-    PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
-    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
-    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V2, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
+    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
+    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
+    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::models::{
     DecisionInputAttemptStatus, MAX_SIGNAL_ATTEMPTS, MAX_SIGNAL_CONTRIBUTORS,
@@ -1969,6 +1969,30 @@ fn decision_input_contracts_schema() -> Value {
             "type": "object",
             "required": ["id", "version", "normalization", "source_classes", "attributes"],
             "additionalProperties": false,
+            "allOf": [{
+                "if": {
+                    "required": ["signal_projections"],
+                    "properties": {"signal_projections": {"minItems": 1}}
+                },
+                "then": {
+                    "properties": {
+                        "normalization": {
+                            "properties": {
+                                "normalized_schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT_V2}
+                            }
+                        }
+                    }
+                },
+                "else": {
+                    "properties": {
+                        "normalization": {
+                            "properties": {
+                                "normalized_schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT}
+                            }
+                        }
+                    }
+                }
+            }],
             "properties": {
                 "id": non_blank_string_schema(),
                 "version": non_blank_string_schema(),
@@ -1980,7 +2004,7 @@ fn decision_input_contracts_schema() -> Value {
                     "properties": {
                         "prompt": non_blank_string_schema(),
                         "prompt_version": non_blank_string_schema(),
-                        "normalized_schema_ref": {"const": NORMALIZED_DECISION_INPUT_CONTRACT}
+                        "normalized_schema_ref": {"enum": [NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2]}
                     }
                 },
                 "source_classes": {

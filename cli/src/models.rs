@@ -891,38 +891,6 @@ pub(crate) struct Signal {
     pub(crate) state_as: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub(crate) struct SignalObservation {
-    pub(crate) contract: SignalObservationContract,
-    pub(crate) id: String,
-    pub(crate) contract_id: String,
-    pub(crate) projection_id: String,
-    pub(crate) qualified_projection_id: String,
-    pub(crate) kind: String,
-    pub(crate) roles: Vec<DecisionInputSignalRole>,
-    pub(crate) value: serde_json::Value,
-    pub(crate) contributor_attribute_ids: Vec<String>,
-    pub(crate) attempt_ids: Vec<String>,
-    pub(crate) source_class: DecisionInputSourceClass,
-    pub(crate) source_locator: String,
-    pub(crate) observed_at: String,
-    pub(crate) confidence: u8,
-    pub(crate) receipt: SignalObservationReceipt,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SignalObservationContract {
-    #[serde(rename = "mdp.signal-observation.v2")]
-    V2,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub(crate) struct SignalObservationReceipt {
-    pub(crate) source_binding_sha256: String,
-    pub(crate) source_attempt_request_sha256: String,
-    pub(crate) collected_results_sha256: String,
-}
-
 #[cfg(test)]
 mod sourced_signal_tests {
     use super::*;
@@ -943,62 +911,5 @@ mod sourced_signal_tests {
         assert_eq!(serialized["source"], "legacy-import");
         assert!(serialized.get("contract").is_none());
         assert!(serialized.get("roles").is_none());
-    }
-
-    #[test]
-    fn structured_signal_observation_has_a_closed_role_and_receipt_shape() {
-        let observation: SignalObservation = serde_json::from_value(json!({
-            "contract": SIGNAL_OBSERVATION_CONTRACT_V2,
-            "id": "obs-1",
-            "contract_id": "account-research",
-            "projection_id": "hiring-change",
-            "qualified_projection_id": "account-research#hiring-change",
-            "kind": "hiring_change",
-            "roles": ["why-now"],
-            "value": true,
-            "contributor_attribute_ids": ["hiring_status"],
-            "attempt_ids": ["attempt-1"],
-            "source_class": "public_web",
-            "source_locator": "opaque:job-board",
-            "observed_at": "2026-08-10T12:00:00Z",
-            "confidence": 92,
-            "receipt": {
-                "source_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "source_attempt_request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "collected_results_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-            }
-        }))
-        .expect("structured observation should deserialize");
-
-        assert_eq!(observation.roles, vec![DecisionInputSignalRole::WhyNow]);
-        assert_eq!(observation.value, json!(true));
-    }
-
-    #[test]
-    fn structured_signal_observation_rejects_unknown_roles() {
-        let error = serde_json::from_value::<SignalObservation>(json!({
-            "contract": SIGNAL_OBSERVATION_CONTRACT_V2,
-            "id": "obs-1",
-            "contract_id": "account-research",
-            "projection_id": "hiring-change",
-            "qualified_projection_id": "account-research#hiring-change",
-            "kind": "hiring_change",
-            "roles": ["urgent-ish"],
-            "value": true,
-            "contributor_attribute_ids": ["hiring_status"],
-            "attempt_ids": ["attempt-1"],
-            "source_class": "public_web",
-            "source_locator": "opaque:job-board",
-            "observed_at": "2026-08-10T12:00:00Z",
-            "confidence": 92,
-            "receipt": {
-                "source_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "source_attempt_request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "collected_results_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-            }
-        }))
-        .expect_err("unknown roles must fail closed");
-
-        assert!(error.to_string().contains("unknown variant"));
     }
 }

@@ -3132,7 +3132,7 @@ fn validate_decision_input_signal_projections(
             let matches = contract
                 .attributes
                 .iter()
-                .filter(|attribute| attribute.id.eq_ignore_ascii_case(contributor))
+                .filter(|attribute| attribute.id == *contributor)
                 .count();
             let (code, message) = match matches {
                 0 => (
