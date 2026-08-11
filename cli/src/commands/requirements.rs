@@ -1605,6 +1605,8 @@ fn compile_model_task(root: &Path, job: &ProfileJob) -> Value {
         "prompt_version": prompt.version,
         "prompt_path": path.strip_prefix(root).unwrap_or(&path).display().to_string(),
         "prompt_sha256": prompt_sha256,
+        "context_budget": job.context_budget,
+        "routed_context_required": prompt.inputs.iter().any(|input| input.required && input.name == "routed_context"),
         "declared_inputs": prompt.inputs,
         "instructions": {
             "instructions": prompt.instructions,

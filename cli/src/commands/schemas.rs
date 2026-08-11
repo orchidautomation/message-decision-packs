@@ -2613,8 +2613,49 @@ fn human_brief_schema() -> Value {
     })
 }
 
-fn context_schema() -> Value {
+fn context_schema_base() -> Value {
     json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "scope", "evidence", "avoid", "constraints", "metadata", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+}
+
+fn context_schema() -> Value {
+    let mut schema = context_schema_base();
+    schema["properties"]["entries"]["items"]["properties"]["selection_class"] =
+        json!({"enum": ["persona_or_job_match", "universal_guardrail"]});
+    schema["properties"]["entries"]["items"]["properties"]["reason_codes"] = json!({"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": [
+        "persona_applicability", "job_match", "persona_text_match", "fit_guardrail",
+        "output_rule_guardrail", "avoid_rule_guardrail"
+    ]}});
+    schema["properties"]["minimality"] = json!({
+        "type": "object",
+        "required": ["status", "context_sha256", "budget", "excluded", "diagnostics"],
+        "additionalProperties": false,
+        "properties": {
+            "status": {"enum": ["ready", "blocked", "unassessed"]},
+            "context_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+            "budget": {"type": ["object", "null"]},
+            "selected_count": {"type": "integer", "minimum": 0},
+            "excluded_count": {"type": "integer", "minimum": 0},
+            "excluded": {"type": "array", "items": {
+                "type": "object", "required": ["card_id", "card_kind", "entry_id", "reason_code"],
+                "additionalProperties": false,
+                "properties": {
+                    "card_id": {"type": "string"}, "card_kind": {"type": "string"},
+                    "entry_id": {"type": "string"},
+                    "reason_code": {"enum": ["policy_incompatible", "not_applicable", "scope_incompatible"]}
+                }
+            }},
+            "diagnostics": {"type": "array", "items": {"enum": [
+                "canonical_job_not_declared", "context_budget_not_declared",
+                "full_card_fallback_required", "context_entry_budget_exceeded",
+                "context_byte_budget_exceeded"
+            ]}}
+        }
+    });
+    schema["properties"]["model_context"] = json!({
+        "type": ["object", "null"],
+        "description": "Exact model-visible mdp.routed-context.v1 projection when minimality is ready."
+    });
+    schema
 }
 
 fn product_foundation_resolution_schema() -> Value {
