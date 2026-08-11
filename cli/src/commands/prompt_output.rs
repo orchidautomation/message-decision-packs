@@ -1020,6 +1020,7 @@ fn validate_governed_artifact_authority(
                     ));
                 } else if let Some(identifier) = value.as_str()
                     && identifier != "N/A"
+                    && requires_routed_context
                     && !identifier_kind_allowed(field, selected_kind_by_id.get(identifier))
                 {
                     issues.push(issue(
@@ -1034,6 +1035,7 @@ fn validate_governed_artifact_authority(
             {
                 for (index, value) in values.iter().enumerate() {
                     if let Some(identifier) = value.as_str()
+                        && requires_routed_context
                         && is_evidence_identifier_field(field)
                         && !selected_evidence_ids.contains(identifier)
                     {
@@ -1047,7 +1049,7 @@ fn validate_governed_artifact_authority(
                             ),
                         ));
                     } else if let Some(identifier) = value.as_str()
-                        && !is_evidence_identifier_field(field)
+                        && (!requires_routed_context || !is_evidence_identifier_field(field))
                         && !selected_ids.contains(identifier)
                     {
                         issues.push(issue(
@@ -1060,6 +1062,7 @@ fn validate_governed_artifact_authority(
                             ),
                         ));
                     } else if let Some(identifier) = value.as_str()
+                        && requires_routed_context
                         && !is_evidence_identifier_field(field)
                         && !identifier_kind_allowed(field, selected_kind_by_id.get(identifier))
                     {
@@ -3377,6 +3380,36 @@ mod tests {
         .expect("validation should return diagnostics")
     }
 
+    fn rewrite_governed_job_as_legacy(root: &Path) -> PromptFile {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let mut manifest = read_manifest(root).expect("manifest should load");
+        manifest
+            .jobs
+            .iter_mut()
+            .find(|job| job.id == "outbound-copy-brief")
+            .expect("governed job should exist")
+            .context_budget = None;
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should write");
+
+        let prompt_path = root.join(".mdp/prompts/generate-outbound-copy.yaml");
+        let mut prompt = read_prompt(&prompt_path).expect("governed prompt should load");
+        prompt
+            .inputs
+            .iter_mut()
+            .find(|input| input.name == "routed_context")
+            .expect("routed context input should exist")
+            .name = "product_foundation".to_string();
+        let legacy_prompt = serde_yaml::to_string(&prompt)
+            .expect("prompt should serialize")
+            .replace("routed_context", "product_foundation");
+        std::fs::write(&prompt_path, legacy_prompt).expect("prompt should write");
+        read_prompt(&prompt_path).expect("legacy governed prompt should reload")
+    }
+
     #[test]
     fn validate_prompt_output_runs_decision_input_projection_checks() {
         let root = clay_example_root();
@@ -5106,6 +5139,30 @@ mod tests {
                 .map(str::len),
             Some(64)
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ready_legacy_governed_artifact_without_context_budget_remains_valid() {
+        let root = temp_pack("governed-artifact-legacy-valid");
+        let prompt = rewrite_governed_job_as_legacy(&root);
+        let mut output = ready_governed_example(&prompt);
+        output["source_summary"]["inputs_used"] = json!([
+            "invocation_receipt_sha256",
+            "normalized_prospect",
+            "product_foundation",
+            "prompt_receipt"
+        ]);
+        output["artifact"]["evidence_ids"] = json!(["modular-pack-routing"]);
+
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+
+        assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
         let _ = std::fs::remove_dir_all(root);
     }
 

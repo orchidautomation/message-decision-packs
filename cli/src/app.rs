@@ -452,6 +452,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             out,
             dry_run,
         } => {
+            ensure_distinct_output_paths(out.as_deref(), routed_context_out.as_deref())?;
             let include_context = context
                 || routed_context_out.is_some()
                 || (readable && !json_mode && !summary_mode);
@@ -558,6 +559,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             out,
             dry_run,
         } => {
+            ensure_distinct_output_paths(out.as_deref(), routed_context_out.as_deref())?;
             let mut data =
                 emit_brief_scoped(&dir, &persona, motion.as_deref(), job.as_deref(), &scope)?;
             if let Some(path) = routed_context_out {
@@ -721,6 +723,44 @@ fn export_routed_context(mut data: Value, path: &Path, dry_run: bool) -> Result<
         );
     }
     Ok(data)
+}
+
+fn ensure_distinct_output_paths(
+    out: Option<&Path>,
+    routed_context_out: Option<&Path>,
+) -> Result<()> {
+    let (Some(out), Some(routed_context_out)) = (out, routed_context_out) else {
+        return Ok(());
+    };
+    let resolved_out = resolve_output_path(out)?;
+    let resolved_routed_context_out = resolve_output_path(routed_context_out)?;
+    if resolved_out == resolved_routed_context_out {
+        return Err(anyhow!(
+            "--out and --routed-context-out must resolve to different paths"
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_output_path(path: &Path) -> Result<PathBuf> {
+    if let Ok(canonical) = path.canonicalize() {
+        return Ok(canonical);
+    }
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let Some(file_name) = absolute.file_name() else {
+        return Ok(absolute);
+    };
+    let Some(parent) = absolute.parent() else {
+        return Ok(absolute);
+    };
+    Ok(parent
+        .canonicalize()
+        .unwrap_or_else(|_| parent.to_path_buf())
+        .join(file_name))
 }
 
 fn attach_dry_run_artifact(mut data: Value, path: &Path) -> Value {
@@ -909,6 +949,129 @@ mod tests {
                 .expect("routed context should serialize canonically")
         );
         assert!(!routed_bytes.ends_with(b"\n"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn brief_rejects_aliased_output_paths_without_overwriting_routed_context() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-brief-aliased-out-{nonce}"));
+        init_pack(&root, "Brief Aliased Out Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let prospect = root.join("examples").join("clay-row.json");
+        let routed_context_out = root.join(".mdp").join("briefs").join("routed-context.json");
+
+        run(Cli {
+            json: true,
+            summary: true,
+            command: Commands::Brief {
+                dir: root.clone(),
+                prospect: Some(prospect.clone()),
+                normalized_input: None,
+                prompt: None,
+                source_binding: None,
+                source_attempt_request: None,
+                collected_attempt_results: None,
+                channel: "linkedin".to_string(),
+                job: Some("outbound-copy-brief".to_string()),
+                context: true,
+                routed_context_out: Some(routed_context_out.clone()),
+                readable: false,
+                out: None,
+                dry_run: false,
+            },
+        })
+        .expect("routed context should export");
+        let canonical_bytes = std::fs::read(&routed_context_out)
+            .expect("canonical routed context should be readable");
+        let aliased_out = routed_context_out
+            .parent()
+            .expect("routed context should have a parent")
+            .join(".")
+            .join("routed-context.json");
+
+        let error = run(Cli {
+            json: true,
+            summary: true,
+            command: Commands::Brief {
+                dir: root.clone(),
+                prospect: Some(prospect),
+                normalized_input: None,
+                prompt: None,
+                source_binding: None,
+                source_attempt_request: None,
+                collected_attempt_results: None,
+                channel: "linkedin".to_string(),
+                job: Some("outbound-copy-brief".to_string()),
+                context: true,
+                routed_context_out: Some(routed_context_out.clone()),
+                readable: false,
+                out: Some(aliased_out),
+                dry_run: false,
+            },
+        })
+        .expect_err("aliased outputs should be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("--out and --routed-context-out must resolve to different paths")
+        );
+        assert_eq!(
+            std::fs::read(&routed_context_out)
+                .expect("routed context should remain readable after rejection"),
+            canonical_bytes
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn emit_brief_dry_run_rejects_aliased_output_paths() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-emit-brief-aliased-out-{nonce}"));
+        init_pack(&root, "Emit Brief Aliased Out Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let out = root.join(".mdp").join("briefs").join("brief.json");
+        std::fs::write(&out, b"existing artifact").expect("fixture artifact should write");
+        let aliased_routed_context_out = out
+            .parent()
+            .expect("brief should have a parent")
+            .join(".")
+            .join("brief.json");
+
+        let error = run(Cli {
+            json: true,
+            summary: true,
+            command: Commands::EmitBrief {
+                dir: root.clone(),
+                persona: "Growth Engineer".to_string(),
+                motion: None,
+                job: Some("outbound-copy-brief".to_string()),
+                scope: Vec::new(),
+                routed_context_out: Some(aliased_routed_context_out),
+                out: Some(out.clone()),
+                dry_run: true,
+            },
+        })
+        .expect_err("aliased dry-run outputs should be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("--out and --routed-context-out must resolve to different paths")
+        );
+        assert_eq!(
+            std::fs::read(&out).expect("fixture artifact should remain readable"),
+            b"existing artifact"
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -16,11 +16,11 @@ mdp --json brief --dir PACK_DIR --prospect PROSPECT_JSON --job JOB_ID --context 
 The brief JSON reports the saved path, byte count, and SHA-256 under `data.routed_context_artifact`. The host includes that exact SHA-256 in `mdp.prompt-invocation.v1`:
 
 ```bash
-mdp --json validate-prompt-output \\
-  --dir PACK_ROOT \\
-  --prompt-id PROMPT_ID \\
-  --file OUTPUT_JSON \\
-  --invocation-receipt PROMPT_RECEIPT_JSON \\
+mdp --json validate-prompt-output \
+  --dir PACK_ROOT \
+  --prompt-id PROMPT_ID \
+  --file OUTPUT_JSON \
+  --invocation-receipt PROMPT_RECEIPT_JSON \
   --routed-context ROUTED_CONTEXT_JSON
 ```
 

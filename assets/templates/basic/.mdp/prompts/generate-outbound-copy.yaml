@@ -7,6 +7,7 @@ final_checklist:
 - Output is strict JSON.
 - prompt_sha256 matches the host-provided canonical prompt hash.
 - invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.
+- context_sha256 exactly echoes the SHA-256 recorded for routed_context in prompt_receipt.inputs without recalculation or invention.
 - All selected identifiers are declared and unambiguous.
 - Gaps and rejected claims are explicit.
 - Generated copy is substantive before status is ready and remains ready for separate verify-output validation.
@@ -46,6 +47,7 @@ inputs:
 instructions:
 - Use only declared inputs and the exact mdp.routed-context.v1 authority for this job.
 - Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.
+- Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.
 - If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts.
 kind: generation
 negative_examples:
@@ -243,6 +245,7 @@ procedure:
 provenance_policy:
 - Retain the exact authority identifiers used to produce or review the artifact.
 - Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash.
+- Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.
 role: Governed outbound copy writer
 selection_rules:
 - Choose only angle, CTA, claim, and evidence identifiers present in selected authority.

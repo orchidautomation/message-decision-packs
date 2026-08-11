@@ -2332,7 +2332,7 @@ fn initial_email_constraints() -> EntryConstraints {
 fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
     let is_review = kind == "review";
     let objective = if is_review {
-        "Evaluate supplied outbound copy against the exact routed product foundation, selected claims and evidence, CTA, and output constraints."
+        "Evaluate supplied outbound copy against the exact routed context, selected claims and evidence, CTA, and output constraints."
     } else {
         "Produce one structured outbound copy draft from the exact routed product foundation and declared runtime inputs."
     };
@@ -2477,15 +2477,16 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
         "instructions": [
             "Use only declared inputs and the exact mdp.routed-context.v1 authority for this job.",
             "Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.",
+            "Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.",
             "If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts."
         ],
         "procedure": ["Confirm the job, prompt version, declared inputs, and selected authority.", "Apply the pack-owned selection and evidence rules.", "Return the exact governed artifact schema."],
         "selection_rules": ["Choose only angle, CTA, claim, and evidence identifiers present in selected authority.", "Select at most one card-qualified authority reference for each bare artifact identifier.", "Never load the whole pack or borrow authority from another job."],
         "ambiguity_policy": ["Represent missing or conflicting facts in gaps and use a bounded non-success status."],
-        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash."],
+        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash.", "Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it."],
         "evidence_policy": ["Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output."],
         "negative_examples": ["Do not invent customer proof, integrations, outcomes, timing, or recipient facts.", "Do not silently choose an undeclared claim or CTA."],
-        "final_checklist": ["Output is strict JSON.", "prompt_sha256 matches the host-provided canonical prompt hash.", "invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
+        "final_checklist": ["Output is strict JSON.", "prompt_sha256 matches the host-provided canonical prompt hash.", "invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.", "context_sha256 exactly echoes the SHA-256 recorded for routed_context in prompt_receipt.inputs without recalculation or invention.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
         "output_contract": {
             "contract": PROMPT_OUTPUT_CONTRACT,
             "output_kind": "governed-artifact",

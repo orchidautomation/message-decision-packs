@@ -1101,17 +1101,53 @@ mod tests {
             })
             .sum::<usize>();
 
-        for job_id in ["prospect-fit-or-brief", "outbound-copy-brief"] {
+        for (job_id, persona) in [
+            ("prospect-fit-or-brief", "PMM"),
+            ("outbound-copy-brief", "PMM"),
+            // Exercise review as supplied copy for the PM target persona, not as another
+            // PMM generation route with channel-specific drafting policy.
+            ("outbound-copy-review", "PM"),
+        ] {
+            let job = manifest
+                .jobs
+                .iter()
+                .find(|job| job.id == job_id)
+                .expect("synthetic GTM job should exist");
+            assert!(job.context_budget.is_some(), "{job_id} must be budgeted");
+            if job_id == "outbound-copy-review" {
+                assert_eq!(
+                    job.model_task.as_ref().map(|task| task.kind.as_str()),
+                    Some("review")
+                );
+            }
             let context = crate::routing::entry_context_scoped(
                 &root,
                 &manifest,
-                "PMM",
+                persona,
                 job_id,
                 true,
                 &crate::scope::ScopeResolution::default(),
             )
             .expect("context should compile");
-            assert_eq!(context["minimality"]["status"], "ready", "{job_id}");
+            assert_eq!(
+                context["minimality"]["status"], "ready",
+                "{job_id}: minimality={} gaps={}",
+                context["minimality"], context["gaps"]
+            );
+            assert_eq!(context["status"], "ready", "{job_id}");
+            assert_eq!(context["persona"], persona, "{job_id}");
+            assert_eq!(context["job"], job_id, "{job_id}");
+            assert_eq!(
+                context["runtime_context"]["contract"], "mdp.runtime-context.v0",
+                "{job_id} must use the governed runtime route"
+            );
+            assert_eq!(
+                context["model_context"]["contract"],
+                crate::constants::ROUTED_CONTEXT_CONTRACT,
+                "{job_id} must expose bounded model context"
+            );
+            assert_eq!(context["model_context"]["persona"], persona, "{job_id}");
+            assert_eq!(context["model_context"]["job"], job_id, "{job_id}");
             let selected = context["minimality"]["selected_count"]
                 .as_u64()
                 .expect("selected count") as usize;

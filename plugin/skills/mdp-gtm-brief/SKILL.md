@@ -45,12 +45,30 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 For `outbound-copy-brief` or `outbound-copy-review`, ignore Decision Input
 `data.available`; that field describes the normalization handoff, not whether
 the selected generation or review job is runnable. Require
-`data.model_task.status` to be exactly `ready`, then run `brief --context
---routed-context-out ROUTED_CONTEXT_JSON` and use only its exact compiled
-prompt, declared inputs, version, output schema, and a `ready` minimal-context
-receipt. Require the routed-context artifact to be saved; do not
-open excluded entries or the whole pack. The customer-selected host owns the
-model call. Validate the returned
+`data.model_task.status` to be exactly `ready`. Both modes require a supplied
+prospect artifact: review copy alone is insufficient to compile bounded
+context. With a prospect JSON file, run:
+
+```bash
+mdp --json brief --dir PACK_ROOT --prospect PROSPECT_JSON --job JOB_ID \
+  --channel CHANNEL --context --routed-context-out ROUTED_CONTEXT_JSON
+```
+
+With a validated v2 normalized artifact, use the same lineage inputs from step
+5:
+
+```bash
+mdp --json brief --dir PACK_ROOT --normalized-input OUTPUT_JSON \
+  --prompt BOUND_PROMPT_PATH --source-binding SOURCE_BINDING_JSON \
+  --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON \
+  --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON --job JOB_ID \
+  --channel CHANNEL --context --routed-context-out ROUTED_CONTEXT_JSON
+```
+
+Use only the exact compiled prompt, declared inputs, version, output schema,
+and a `ready` minimal-context receipt. Require the routed-context artifact to
+be saved; do not open excluded entries or the whole pack. The customer-selected
+host owns the model call. Validate the returned
 governed artifact with `--invocation-receipt PROMPT_INVOCATION_JSON` and
 `--routed-context ROUTED_CONTEXT_JSON`, then run
 `mdp check-claims` on generated or supplied copy. The host receipt must bind

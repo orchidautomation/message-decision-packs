@@ -2619,7 +2619,38 @@ fn context_schema_base() -> Value {
 }
 
 fn context_entries_schema() -> Value {
-    json!({"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "scope", "evidence", "avoid", "constraints", "metadata", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}, "selection_class": {"enum": ["product_foundation_requirement", "persona_or_job_match", "evidence_dependency", "output_requirement", "universal_guardrail", "bounded_fallback"]}, "reason_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["product_foundation_requirement", "persona_applicability", "job_match", "persona_text_match", "evidence_dependency", "output_requirement", "fit_guardrail", "output_rule_guardrail", "avoid_rule_guardrail"]}}}}})
+    context_entries_schema_with_authority(false)
+}
+
+fn routed_context_entries_schema() -> Value {
+    context_entries_schema_with_authority(true)
+}
+
+fn context_entries_schema_with_authority(require_selection_authority: bool) -> Value {
+    let mut required = json!([
+        "card_id",
+        "card_kind",
+        "card_path",
+        "entry_id",
+        "title",
+        "body",
+        "applies_to",
+        "scope",
+        "evidence",
+        "avoid",
+        "constraints",
+        "metadata",
+        "status",
+        "selection",
+        "reason"
+    ]);
+    if require_selection_authority {
+        required
+            .as_array_mut()
+            .expect("context entry required fields should be an array")
+            .extend([json!("selection_class"), json!("reason_codes")]);
+    }
+    json!({"type": "array", "items": {"type": "object", "required": required, "additionalProperties": false, "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}, "selection_class": {"enum": ["product_foundation_requirement", "persona_or_job_match", "evidence_dependency", "output_requirement", "universal_guardrail"]}, "reason_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["product_foundation_requirement", "persona_applicability", "job_match", "persona_text_match", "evidence_dependency", "output_requirement", "fit_guardrail", "output_rule_guardrail", "avoid_rule_guardrail"]}}}}})
 }
 
 fn context_schema() -> Value {
@@ -2688,7 +2719,7 @@ pub(crate) fn routed_context_schema() -> Value {
             "scope": scope_resolution_schema(),
             "product_foundation": product_foundation_resolution_schema(),
             "product_foundation_load_order": product_foundation_load_order_schema(),
-            "entries": context_entries_schema(),
+            "entries": routed_context_entries_schema(),
             "gaps": {"type": "array", "items": {"type": "object"}},
             "policy": {"type": "string", "minLength": 1}
         }
@@ -4305,6 +4336,19 @@ mod tests {
             "mdp.routed-context.v1"
         );
         assert_eq!(value["additionalProperties"], false);
+        assert_eq!(
+            value["properties"]["entries"]["items"]["additionalProperties"],
+            false
+        );
+        let entry_required = value["properties"]["entries"]["items"]["required"]
+            .as_array()
+            .expect("routed entry required fields should be an array");
+        assert!(
+            entry_required
+                .iter()
+                .any(|field| field == "selection_class")
+        );
+        assert!(entry_required.iter().any(|field| field == "reason_codes"));
         assert!(
             value["required"]
                 .as_array()
@@ -4314,6 +4358,60 @@ mod tests {
         );
         jsonschema::draft202012::meta::validate(&value)
             .expect("routed context schema should be valid draft 2020-12");
+    }
+
+    #[test]
+    fn routed_context_schema_validates_live_entries_and_rejects_malformed_entries() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("CLI crate should have a repository parent")
+            .join("plugin/assets/templates/basic");
+        let output = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
+            .expect("basic brief should emit");
+        let routed_context = output["context"]["model_context"].clone();
+        let schema = routed_context_schema();
+
+        draft202012::validate(&schema, &routed_context)
+            .expect("live routed entries should satisfy the standalone contract");
+
+        let mut unexpected_property = routed_context.clone();
+        unexpected_property["entries"][0]["unexpected"] = json!(true);
+        assert!(
+            draft202012::validate(&schema, &unexpected_property).is_err(),
+            "routed entries should reject undeclared properties"
+        );
+
+        let mut missing_reason_codes = routed_context;
+        missing_reason_codes["entries"][0]
+            .as_object_mut()
+            .expect("routed entry should be an object")
+            .remove("reason_codes");
+        assert!(
+            draft202012::validate(&schema, &missing_reason_codes).is_err(),
+            "standalone routed entries should require reason codes"
+        );
+    }
+
+    #[test]
+    fn legacy_context_entries_remain_compatible_but_closed() {
+        let entries = context_entries_schema();
+        let required = entries["items"]["required"]
+            .as_array()
+            .expect("context entry required fields should be an array");
+
+        assert_eq!(entries["items"]["additionalProperties"], false);
+        assert!(!required.iter().any(|field| field == "selection_class"));
+        assert!(!required.iter().any(|field| field == "reason_codes"));
+        assert_eq!(
+            entries["items"]["properties"]["selection_class"]["enum"],
+            json!([
+                "product_foundation_requirement",
+                "persona_or_job_match",
+                "evidence_dependency",
+                "output_requirement",
+                "universal_guardrail"
+            ])
+        );
     }
 
     #[test]

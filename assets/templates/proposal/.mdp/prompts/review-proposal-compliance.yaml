@@ -54,6 +54,7 @@ inputs:
 instructions:
 - Use only declared inputs and the exact mdp.routed-context.v1 authority for this job.
 - Return strict JSON only, preserve exact selected authority identifiers, and echo invocation_receipt_sha256 exactly from the separately declared host input.
+- Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.
 - Surface missing proof, requirements, or review authority as structured gaps instead of inventing facts.
 procedure:
 - Confirm the canonical job, prompt version, declared inputs, and selected authority.
@@ -68,6 +69,7 @@ ambiguity_policy:
 provenance_policy:
 - Retain exact authority identifiers for every selected claim, proof item, and review gate.
 - Echo invocation_receipt_sha256 from the host-computed detached hash input for the exact prompt_receipt bytes; do not calculate or invent it.
+- Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.
 evidence_policy:
 - Unsupported certifications, compliance status, past performance, pricing, or customer proof must be rejected or escalated.
 negative_examples:
@@ -77,6 +79,7 @@ final_checklist:
 - Output is strict JSON.
 - prompt_sha256 matches the host-provided canonical prompt hash.
 - invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.
+- context_sha256 exactly echoes the SHA-256 recorded for routed_context in prompt_receipt.inputs without recalculation or invention.
 - All selected identifiers are declared.
 - Every reviewed requirement has a source, coverage status, proof list, explicit gap, owner, and question.
 - Missing requirements and unsupported claims are explicit.
