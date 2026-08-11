@@ -1,5 +1,5 @@
 use crate::artifact_hash::canonical_json_sha256;
-use crate::commands::requirements::validate_normalized_decision_input;
+use crate::commands::requirements::validate_normalized_decision_input_with_projection;
 use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, SOURCE_AUDIT_CONTRACT};
 use crate::models::{CardKind, Manifest, PromptFile};
 use crate::pack_io::{
@@ -14,7 +14,10 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+
+const MAX_VALIDATION_ARTIFACT_BYTES: usize = 4 * 1024 * 1024;
 
 #[allow(dead_code)]
 pub(crate) fn validate_prompt_output_file(
@@ -55,13 +58,37 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
     collected_attempt_results_path: Option<&Path>,
     invocation_receipt_path: Option<&Path>,
 ) -> Result<Value> {
+    validate_prompt_output_file_with_lineage_inputs(
+        root,
+        file,
+        prompt_path,
+        prompt_id,
+        source_audit_path,
+        None,
+        source_attempt_request_path,
+        collected_attempt_results_path,
+        invocation_receipt_path,
+    )
+}
+
+pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
+    root: &Path,
+    file: &Path,
+    prompt_path: Option<&Path>,
+    prompt_id: Option<&str>,
+    source_audit_path: Option<&Path>,
+    source_binding_path: Option<&Path>,
+    source_attempt_request_path: Option<&Path>,
+    collected_attempt_results_path: Option<&Path>,
+    invocation_receipt_path: Option<&Path>,
+) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of --prompt and --prompt-id"));
     }
 
     let (prompt, resolved_prompt_path) = resolve_prompt(root, prompt_path, prompt_id)?;
     let artifact_path = display_path(file);
-    let raw_bytes = fs::read(file)?;
+    let raw_bytes = read_bounded_bytes(file, "prompt output")?;
     let prompt_output_sha256 = sha256_hex(&raw_bytes);
     let raw = std::str::from_utf8(&raw_bytes)
         .map_err(|err| anyhow!("prompt output file must be valid UTF-8: {err}"))?;
@@ -87,6 +114,21 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
             Err(err) => {
                 issues.push(issue(
                     "source_attempt_request_parse_failed",
+                    "error",
+                    display_path(path),
+                    err.to_string(),
+                ));
+                None
+            }
+        },
+        None => None,
+    };
+    let source_binding = match source_binding_path {
+        Some(path) => match read_json_file_with_hash(path, "source binding") {
+            Ok((value, sha256)) => Some((value, display_path(path), sha256)),
+            Err(err) => {
+                issues.push(issue(
+                    "source_binding_parse_failed",
                     "error",
                     display_path(path),
                     err.to_string(),
@@ -188,6 +230,9 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
         source_audit
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), Some(sha256.as_str()))),
+        source_binding
+            .as_ref()
+            .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
         source_attempt_request
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
@@ -239,6 +284,7 @@ pub(crate) fn validate_prompt_output_value_with_source_audit(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -250,6 +296,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
     prompt_id: Option<&str>,
     source_audit: Option<&Value>,
     source_audit_path: Option<&str>,
+    source_binding: Option<(&Value, &str, &str)>,
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
     invocation_receipt: Option<(&Value, &str, &str)>,
@@ -268,6 +315,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
         None,
         Vec::new(),
         source_audit.map(|value| (value, source_audit_path.unwrap_or("source_audit"), None)),
+        source_binding,
         source_attempt_request,
         collected_attempt_results,
         invocation_receipt,
@@ -283,6 +331,7 @@ fn validate_prompt_output_parsed(
     prompt_output_sha256: Option<&str>,
     mut issues: Vec<Value>,
     source_audit: Option<(&Value, &str, Option<&str>)>,
+    source_binding: Option<(&Value, &str, &str)>,
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
     invocation_receipt: Option<(&Value, &str, &str)>,
@@ -296,15 +345,18 @@ fn validate_prompt_output_parsed(
                 "decision-input normalization uses per-attribute provenance; do not attach a legacy prompt source audit",
             ));
         }
-        issues.extend(validate_normalized_decision_input(
+        let validation = validate_normalized_decision_input_with_projection(
             root,
             output,
             artifact_path,
             resolved_prompt_path,
+            source_binding,
             source_attempt_request,
             collected_attempt_results,
-        )?);
-        return Ok(json!({
+            prompt_output_sha256,
+        )?;
+        issues.extend(validation.issues);
+        let mut result = json!({
             "valid": issues.is_empty(),
             "file": artifact_path,
             "prompt": prompt_summary(prompt, root),
@@ -321,11 +373,19 @@ fn validate_prompt_output_parsed(
                 None
             ),
             "issues": issues
-        }));
+        });
+        if let Some(signal_projection) = validation.signal_projection {
+            result["signal_projection"] = signal_projection;
+        }
+        if let Some((_, path, sha256)) = source_binding {
+            result["artifacts"]["source_binding"] = json!({"path": path, "sha256": sha256});
+        }
+        return Ok(result);
     }
 
     if prompt.output_contract.output_kind.as_deref() == Some("governed-artifact") {
         if source_audit.is_some()
+            || source_binding.is_some()
             || source_attempt_request.is_some()
             || collected_attempt_results.is_some()
         {
@@ -1029,7 +1089,7 @@ struct PromptSourceRef {
 }
 
 fn read_json_file_with_hash(path: &Path, artifact_name: &str) -> Result<(Value, String)> {
-    let raw = fs::read(path)?;
+    let raw = read_bounded_bytes(path, artifact_name)?;
     let sha256 = sha256_hex(&raw);
     let text = std::str::from_utf8(&raw)
         .map_err(|err| anyhow!("{artifact_name} file must be valid UTF-8: {err}"))?;
@@ -1038,6 +1098,20 @@ fn read_json_file_with_hash(path: &Path, artifact_name: &str) -> Result<(Value, 
             .map_err(|_| anyhow!("{artifact_name} file must contain valid JSON"))?,
         sha256,
     ))
+}
+
+pub(crate) fn read_bounded_bytes(path: &Path, artifact_name: &str) -> Result<Vec<u8>> {
+    let mut file = fs::File::open(path)?;
+    let mut raw = Vec::new();
+    file.by_ref()
+        .take((MAX_VALIDATION_ARTIFACT_BYTES + 1) as u64)
+        .read_to_end(&mut raw)?;
+    if raw.len() > MAX_VALIDATION_ARTIFACT_BYTES {
+        return Err(anyhow!(
+            "{artifact_name} exceeds the {MAX_VALIDATION_ARTIFACT_BYTES} byte validation limit"
+        ));
+    }
+    Ok(raw)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -2821,6 +2895,24 @@ mod tests {
             .join("examples/clay-audiences-self-serve-enterprise-expansion")
     }
 
+    #[test]
+    fn bounded_validation_reader_rejects_oversized_artifacts() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-bounded-validation-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("oversized.json");
+        std::fs::write(&path, vec![b' '; MAX_VALIDATION_ARTIFACT_BYTES + 1]).unwrap();
+
+        let error = read_json_file_with_hash(&path, "lineage artifact").unwrap_err();
+        assert!(error.to_string().contains("byte validation limit"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     fn write_output(root: &Path, name: &str, body: &str) -> PathBuf {
         let path = root.join(name);
         std::fs::write(&path, body).expect("output fixture should be writable");
@@ -2937,6 +3029,11 @@ mod tests {
         let results: Value = serde_json::from_slice(&results_raw)
             .expect("collected-results fixture should be valid JSON");
         let results_sha256 = sha256_hex(&results_raw);
+        let binding_raw = std::fs::read(root.join("fixtures/source-binding-clay-adapter.json"))
+            .expect("source-binding fixture bytes should load");
+        let binding: Value = serde_json::from_slice(&binding_raw)
+            .expect("source-binding fixture should be valid JSON");
+        let binding_sha256 = sha256_hex(&binding_raw);
         let mut response: Value = serde_json::from_str(
             &std::fs::read_to_string(root.join("fixtures/normalized-response-ready.json"))
                 .expect("normalized response fixture should load"),
@@ -2951,6 +3048,7 @@ mod tests {
             Some("normalize-prospect-row"),
             None,
             None,
+            Some((&binding, "synthetic-binding", &binding_sha256)),
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
             None,
@@ -2984,6 +3082,7 @@ mod tests {
             Some("normalize-prospect-row"),
             None,
             None,
+            Some((&binding, "synthetic-binding", &binding_sha256)),
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
             None,

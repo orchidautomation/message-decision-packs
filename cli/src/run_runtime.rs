@@ -1,6 +1,13 @@
 use crate::artifact_hash::{canonical_json_sha256_for_domain, pack_content_snapshot, sha256_hex};
-use crate::commands::prompt_output::validate_prompt_output_file_with_inputs;
-use crate::commands::routing::fit;
+use crate::commands::prompt_output::{
+    validate_prompt_output_file_with_inputs, validate_prompt_output_file_with_lineage_inputs,
+};
+use crate::commands::routing::{fit, fit_normalized};
+use crate::constants::{
+    COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, NORMALIZED_DECISION_INPUT_CONTRACT,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V2, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+    SOURCE_BINDING_CONTRACT_V2,
+};
 use crate::pack_io::{read_manifest, resolve_pack_path};
 use crate::run_contracts::{
     ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState, DecisionAuthority,
@@ -412,22 +419,28 @@ where
             (TerminalState::NoDraftOutputInvalid, None)
         }
     } else if request.profile == GTM_PROFILE && request.operation == QUALIFY {
-        let normalized = required_typed_input(
-            &staged,
-            "normalized-decision-input",
-            "mdp.normalized-decision-input.v1",
-            "application/json",
-        )?;
+        let normalized = required_input(&staged, "normalized-decision-input")?;
+        if normalized.authority.media_type != "application/json"
+            || !matches!(
+                normalized.authority.schema_id.as_str(),
+                NORMALIZED_DECISION_INPUT_CONTRACT | NORMALIZED_DECISION_INPUT_CONTRACT_V2
+            )
+        {
+            return Err(anyhow!("declared input schema or media type mismatch"));
+        }
+        let signal_aware = normalized.authority.schema_id == NORMALIZED_DECISION_INPUT_CONTRACT_V2;
+        let (source_attempt_schema, collected_results_schema) =
+            gtm_lineage_schema_ids(signal_aware);
         let source_attempt = required_typed_input(
             &staged,
             "source-attempt-request",
-            "mdp.source-attempt-request.v1",
+            source_attempt_schema,
             "application/json",
         )?;
         let attempt_results = required_typed_input(
             &staged,
             "collected-attempt-results",
-            "mdp.collected-attempt-results.v1",
+            collected_results_schema,
             "application/json",
         )?;
         let bound_prompt =
@@ -444,18 +457,45 @@ where
                 "declared bound prompt does not match the prompt in the immutable pack snapshot"
             ));
         }
-        let result = validate_prompt_output_file_with_inputs(
-            &staged_pack,
-            &normalized.staged_path,
-            Some(&staged_bound_prompt),
-            None,
-            None,
-            Some(&source_attempt.staged_path),
-            Some(&attempt_results.staged_path),
-            None,
-        )?;
-        let ready = result["valid"].as_bool() == Some(true)
-            && normalized_value["outcome"].as_str() == Some("ready");
+        let source_binding = if signal_aware {
+            Some(required_typed_input(
+                &staged,
+                "source-binding",
+                SOURCE_BINDING_CONTRACT_V2,
+                "application/json",
+            )?)
+        } else {
+            None
+        };
+        let result = if signal_aware {
+            validate_prompt_output_file_with_lineage_inputs(
+                &staged_pack,
+                &normalized.staged_path,
+                Some(&staged_bound_prompt),
+                None,
+                None,
+                source_binding.map(|input| input.staged_path.as_path()),
+                Some(&source_attempt.staged_path),
+                Some(&attempt_results.staged_path),
+                None,
+            )?
+        } else {
+            validate_prompt_output_file_with_inputs(
+                &staged_pack,
+                &normalized.staged_path,
+                Some(&staged_bound_prompt),
+                None,
+                None,
+                Some(&source_attempt.staged_path),
+                Some(&attempt_results.staged_path),
+                None,
+            )?
+        };
+        let ready = governed_normalization_outcome(
+            result["valid"].as_bool() == Some(true),
+            signal_aware,
+            normalized_value["outcome"].as_str(),
+        );
         validation = Some(result);
         if ready {
             let prospect = &normalized_value["normalized_prospect"];
@@ -464,7 +504,22 @@ where
             } else {
                 let prospect_path = private_dir.join("projected-prospect.json");
                 write_json_create_new(&prospect_path, prospect)?;
-                let fit_result = fit(&staged_pack, &prospect_path)?;
+                let fit_result = if signal_aware {
+                    fit_normalized(
+                        &staged_pack,
+                        &normalized.staged_path,
+                        &staged_bound_prompt,
+                        &source_binding.expect("v2 source binding").staged_path,
+                        &source_attempt.staged_path,
+                        &attempt_results.staged_path,
+                        request
+                            .job_identity
+                            .as_ref()
+                            .map(|identity| identity.job_id.as_str()),
+                    )?
+                } else {
+                    fit(&staged_pack, &prospect_path)?
+                };
                 (
                     TerminalState::Success,
                     Some(gtm_success_artifacts(
@@ -614,6 +669,24 @@ where
     Ok((bundle_sha256, receipt))
 }
 
+fn gtm_lineage_schema_ids(signal_aware: bool) -> (&'static str, &'static str) {
+    if signal_aware {
+        (
+            SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+            COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
+        )
+    } else {
+        (
+            "mdp.source-attempt-request.v1",
+            "mdp.collected-attempt-results.v1",
+        )
+    }
+}
+
+fn governed_normalization_outcome(valid: bool, signal_aware: bool, outcome: Option<&str>) -> bool {
+    valid && (outcome == Some("ready") || (signal_aware && outcome == Some("disqualified")))
+}
+
 fn gtm_success_artifacts(
     request: &RunRequestV1,
     bundle: &RunBundleV1,
@@ -643,7 +716,8 @@ fn gtm_success_artifacts(
             "status": fit_status,
             "context": fit_result["context"],
             "matches": fit_result["matches"],
-            "disqualifiers": fit_result["disqualifiers"]
+            "disqualifiers": fit_result["disqualifiers"],
+            "signal_authority": fit_result["signal_authority"]
         },
         "drafting_authority": "not-granted"
     });
@@ -1214,7 +1288,10 @@ fn unique_suffix() -> u128 {
 
 #[cfg(test)]
 mod tests {
-    use super::{execute_run_inner, gtm_success_artifacts, validate_request};
+    use super::{
+        execute_run_inner, governed_normalization_outcome, gtm_lineage_schema_ids,
+        gtm_success_artifacts, validate_request,
+    };
     use crate::commands::init::init_pack;
     use crate::run_contracts::{
         ExecutionPolicy, LocalArtifactInput, PackAuthority, RunBundleV1, RunMode, RunRequestV1,
@@ -1306,10 +1383,10 @@ mod tests {
             "mdp.gtm-qualification-decision.v1"
         );
         assert_eq!(receipt["compiled_context"].is_object(), true);
-        assert_eq!(receipt["decision"]["decision"], "no-draft");
+        assert_eq!(receipt["decision"]["decision"], "qualified");
         assert_eq!(
             receipt["decision"]["reason_codes"],
-            serde_json::json!(["insufficient-context"])
+            serde_json::json!(["ready"])
         );
         assert!(receipt["assurance"].as_array().unwrap().iter().any(|item| {
             item["dimension"] == "declared-input-isolation" && item["state"] == "observed"
@@ -1330,6 +1407,43 @@ mod tests {
         request.execution_id = "run-gtm-reuse".into();
         assert!(execute_run_inner(&request, &run, || Ok(())).is_err());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn gtm_lineage_input_versions_follow_the_normalized_contract() {
+        assert_eq!(
+            gtm_lineage_schema_ids(false),
+            (
+                "mdp.source-attempt-request.v1",
+                "mdp.collected-attempt-results.v1"
+            )
+        );
+        assert_eq!(
+            gtm_lineage_schema_ids(true),
+            (
+                "mdp.source-attempt-request.v2",
+                "mdp.collected-attempt-results.v2"
+            )
+        );
+    }
+
+    #[test]
+    fn gtm_signal_aware_disqualification_is_a_governed_outcome() {
+        assert!(governed_normalization_outcome(
+            true,
+            true,
+            Some("disqualified")
+        ));
+        assert!(!governed_normalization_outcome(
+            true,
+            false,
+            Some("disqualified")
+        ));
+        assert!(!governed_normalization_outcome(
+            false,
+            true,
+            Some("disqualified")
+        ));
     }
 
     #[test]
@@ -1711,17 +1825,22 @@ mod tests {
                 input(
                     "normalized-decision-input",
                     fixtures.join("normalized-response-ready.json"),
-                    "mdp.normalized-decision-input.v1",
+                    "mdp.normalized-decision-input.v2",
+                ),
+                input(
+                    "source-binding",
+                    fixtures.join("source-binding-clay-adapter.json"),
+                    "mdp.source-binding.v2",
                 ),
                 input(
                     "source-attempt-request",
                     fixtures.join("source-attempt-request.json"),
-                    "mdp.source-attempt-request.v1",
+                    "mdp.source-attempt-request.v2",
                 ),
                 input(
                     "collected-attempt-results",
                     fixtures.join("collected-attempt-results.json"),
-                    "mdp.collected-attempt-results.v1",
+                    "mdp.collected-attempt-results.v2",
                 ),
                 LocalArtifactInput {
                     logical_name: "bound-prompt".into(),

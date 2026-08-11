@@ -1,5 +1,5 @@
 {
-  "contract": "mdp.source-attempt-request.v1",
+  "contract": "mdp.source-attempt-request.v2",
   "job_id": "prospect-fit-or-brief",
   "decision_input_contracts": [
     {
@@ -13,106 +13,130 @@
       "attempt_id": "synthetic-attempt-001",
       "attribute_id": "company_name",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/company",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-001",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-002",
       "attribute_id": "company_domain",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/company",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-002",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-003",
       "attribute_id": "person_name",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/person",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-003",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-004",
       "attribute_id": "person_title",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/person",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-004",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-005",
       "attribute_id": "expansion_trigger_summary",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/trigger",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-005",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-006",
       "attribute_id": "account_owner_state",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/account-state",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-006",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-007",
       "attribute_id": "last_meaningful_touch",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/account-state",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-007",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-008",
       "attribute_id": "customer_motion",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/account-state",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-008",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-009",
       "attribute_id": "enterprise_eligibility",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/eligibility",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-009",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-010",
       "attribute_id": "do_not_contact",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/suppression",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-010",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-011",
       "attribute_id": "open_support_escalation",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/support",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-011",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-012",
       "attribute_id": "current_working_country",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/person",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-012",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-013",
       "attribute_id": "latest_support_context",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/support",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-013",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-014",
       "attribute_id": "employee_band",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/company",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-014",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     },
     {
       "attempt_id": "synthetic-attempt-015",
       "attribute_id": "executive_sponsor",
       "source_class": "synthetic_fixture",
-      "source_locator": "synthetic://clay-example/account-state",
-      "requested_at": "2026-07-29T12:00:00Z"
+      "source_locator": "opaque:synthetic-attempt-015",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
+    },
+    {
+      "attempt_id": "synthetic-attempt-016",
+      "attribute_id": "expansion_trigger_summary",
+      "source_class": "synthetic_fixture",
+      "source_locator": "opaque:synthetic-attempt-016",
+      "requested_at": "2026-07-29T12:00:00Z",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion"
     }
-  ]
+  ],
+  "source_binding_sha256": "96cd919009c1f8dbd740a5d5d416beac77d0c60859ae973e0aae797e47b1fdcb"
 }

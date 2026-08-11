@@ -183,6 +183,42 @@ These rows are deterministic synthetic example fixtures with `source_kind: synth
 
 Keep private prospect data in ignored scratch unless you intentionally commit a sanitized example. A row can come from a user note, CSV, CRM export, Clay, Deepline, spreadsheet, or research workflow after it is normalized into MDP prospect JSON.
 
+Before choosing the legacy row path, inspect the installed CLI and the exact
+job contract:
+
+```bash
+mdp --json capabilities
+mdp --json requirements --dir ./mdp-demo --job prospect-fit-or-brief
+```
+
+If requirements returns `runtime_contract_version: v2`, use its exact public
+version matrix and schemas. Structured observations belong only in the v2
+normalized envelope. Preserve and validate the exact source-binding, request,
+collected-results, prompt, and normalized-output chain, then run:
+
+```bash
+mdp --json fit --dir PACK_ROOT --job JOB_ID \
+  --normalized-input NORMALIZED_INPUT.json \
+  --prompt BOUND_PROMPT \
+  --source-binding SOURCE_BINDING.json \
+  --source-attempt-request SOURCE_ATTEMPT_REQUEST.json \
+  --collected-attempt-results COLLECTED_ATTEMPT_RESULTS.json
+```
+
+`brief --context` accepts the same lineage arguments. Do not extract an edited
+prospect and pass it through `--prospect`; that is the legacy compatibility
+path and is reported as legacy/unassessed. Explicit `fit`, `why-now`,
+`person-resolution`, and `disqualifier` roles come from pack projections, not
+keywords. Stale, weak, blocked, errored, malformed, or unresolved-conflict
+observations stay ineligible and no-draft.
+
+For a complete synthetic Clay-shaped example, run the commands in
+[Clay Audiences self-serve enterprise expansion](../examples/clay-audiences-self-serve-enterprise-expansion/README.md).
+It demonstrates the v2 binding/request/results chain without browsing, Clay
+access, credentials, enrichment, CRM writes, drafting, sending, or scheduling.
+For a manual legacy-to-v2 conversion, follow
+[Decision Input Contracts](decision-input-contracts.md#manual-legacy-to-v2-adoption).
+
 For messy upstream rows, use the pack-owned runtime prompt contract:
 
 ```text

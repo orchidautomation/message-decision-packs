@@ -90,7 +90,10 @@ pub(crate) enum Commands {
         dir: PathBuf,
         #[arg(long, help = "Closed profile job id to validate")]
         job: String,
-        #[arg(long, help = "mdp.source-binding.v1 JSON file")]
+        #[arg(
+            long,
+            help = "Version-compatible mdp.source-binding.v1 or signal-aware v2 JSON file"
+        )]
         file: PathBuf,
     },
     #[command(about = "Validate manifest and card references")]
@@ -113,12 +116,17 @@ pub(crate) enum Commands {
         source_audit: Option<PathBuf>,
         #[arg(
             long,
-            help = "Exact mdp.source-attempt-request.v1 JSON file for decision-input normalization binding and freshness validation"
+            help = "Exact mdp.source-binding.v2 JSON artifact for signal-aware normalization lineage validation"
+        )]
+        source_binding: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Exact version-compatible source-attempt request JSON file for decision-input normalization binding and freshness validation"
         )]
         source_attempt_request: Option<PathBuf>,
         #[arg(
             long,
-            help = "Exact mdp.collected-attempt-results.v1 JSON file for immutable execution-fact binding and raw-value normalization"
+            help = "Exact version-compatible collected attempt-results JSON file for immutable execution-fact binding and raw-value normalization"
         )]
         collected_attempt_results: Option<PathBuf>,
         #[arg(
@@ -314,8 +322,20 @@ pub(crate) enum Commands {
     Fit {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
-        #[arg(long)]
-        prospect: PathBuf,
+        #[arg(long, required_unless_present = "normalized_input")]
+        prospect: Option<PathBuf>,
+        #[arg(long, conflicts_with = "prospect")]
+        normalized_input: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        prompt: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        source_binding: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        source_attempt_request: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        collected_attempt_results: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        job: Option<String>,
     },
     #[command(about = "Check draft copy or text against approved claims and guardrails")]
     CheckClaims {
@@ -359,8 +379,18 @@ pub(crate) enum Commands {
     Brief {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
-        #[arg(long)]
-        prospect: PathBuf,
+        #[arg(long, required_unless_present = "normalized_input")]
+        prospect: Option<PathBuf>,
+        #[arg(long, conflicts_with = "prospect")]
+        normalized_input: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        prompt: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        source_binding: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        source_attempt_request: Option<PathBuf>,
+        #[arg(long, requires = "normalized_input")]
+        collected_attempt_results: Option<PathBuf>,
         #[arg(long, default_value = "linkedin")]
         channel: String,
         #[arg(long)]
@@ -667,6 +697,18 @@ mod tests {
                 if dir == PathBuf::from("example-pack")
                     && job == "prospect-fit-or-brief"
                     && file == PathBuf::from("binding.json")
+        ));
+    }
+
+    #[test]
+    fn source_binding_schema_target_discovers_versioned_contract_family() {
+        let parsed = Cli::try_parse_from(["mdp", "schema", "source-binding"])
+            .expect("source-binding schema target should parse");
+        assert!(matches!(
+            parsed.command,
+            Commands::Schema {
+                target: SchemaTarget::SourceBinding
+            }
         ));
     }
 

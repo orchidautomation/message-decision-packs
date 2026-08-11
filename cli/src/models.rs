@@ -250,6 +250,59 @@ pub(crate) struct DecisionInputContract {
     pub(crate) source_classes: Vec<DecisionInputSourceClass>,
     #[serde(default)]
     pub(crate) attributes: Vec<DecisionInputAttribute>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) signal_projections: Vec<DecisionInputSignalProjection>,
+}
+
+pub(crate) const MAX_SIGNAL_PROJECTIONS_PER_CONTRACT: usize = 32;
+pub(crate) const MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE: usize = 128;
+pub(crate) const MAX_SIGNAL_CONTRIBUTORS: usize = 16;
+pub(crate) const MAX_SIGNAL_ATTEMPTS: usize = 32;
+pub(crate) const MAX_SIGNAL_IDENTIFIER_LEN: usize = 64;
+pub(crate) const MAX_SIGNAL_QUALIFIED_ID_LEN: usize = MAX_SIGNAL_IDENTIFIER_LEN * 2 + 1;
+pub(crate) const MAX_SIGNAL_KIND_LEN: usize = 64;
+pub(crate) const MAX_SIGNAL_LOCATOR_LEN: usize = 512;
+pub(crate) const SIGNAL_OBSERVATION_CONTRACT_V2: &str = "mdp.signal-observation.v2";
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub(crate) struct DecisionInputSignalProjection {
+    pub(crate) id: String,
+    pub(crate) kind: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) roles: Vec<DecisionInputSignalRole>,
+    pub(crate) contributor_attribute_ids: Vec<String>,
+    pub(crate) value: ValueContract,
+    pub(crate) cardinality: DecisionInputSignalCardinality,
+    pub(crate) conflict_policy: DecisionInputSignalConflictPolicy,
+    pub(crate) decision_effects: Vec<DecisionInputDecisionEffect>,
+}
+
+impl DecisionInputSignalProjection {
+    pub(crate) fn qualified_id(&self, contract_id: &str) -> String {
+        format!("{contract_id}#{}", self.id)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DecisionInputSignalRole {
+    Fit,
+    WhyNow,
+    PersonResolution,
+    Disqualifier,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DecisionInputSignalCardinality {
+    pub(crate) min: usize,
+    pub(crate) max: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DecisionInputSignalConflictPolicy {
+    RequireAgreement,
+    AnyDisqualifies,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -836,4 +889,27 @@ pub(crate) struct Signal {
     pub(crate) freshness: Option<String>,
     #[serde(default)]
     pub(crate) state_as: Option<String>,
+}
+
+#[cfg(test)]
+mod sourced_signal_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn legacy_signal_shape_remains_unchanged() {
+        let signal: Signal = serde_json::from_value(json!({
+            "id": "urgent-fit",
+            "title": "Strong fit and urgent timing",
+            "source": "legacy-import",
+            "confidence": "high",
+            "freshness": "recent"
+        }))
+        .expect("legacy signal should deserialize");
+
+        let serialized = serde_json::to_value(signal).expect("legacy signal should serialize");
+        assert_eq!(serialized["source"], "legacy-import");
+        assert!(serialized.get("contract").is_none());
+        assert!(serialized.get("roles").is_none());
+    }
 }

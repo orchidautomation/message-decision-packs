@@ -110,11 +110,22 @@ pub(crate) fn prospect_brief_from_value_with_context(
     job: Option<&str>,
     include_context: bool,
 ) -> Result<Value> {
+    let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
+    prospect_brief_from_fit_with_context(root, prospect, fit_result, channel, job, include_context)
+}
+
+pub(crate) fn prospect_brief_from_fit_with_context(
+    root: &Path,
+    prospect: Prospect,
+    fit_result: Value,
+    channel: &str,
+    job: Option<&str>,
+    include_context: bool,
+) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let runtime_context = current_runtime_context()?;
     let persona_resolution = resolve_persona(&manifest, &prospect);
     let scope = scope_from_prospect(&manifest, &prospect);
-    let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
     let fit_status = fit_result["status"]
         .as_str()
         .unwrap_or("insufficient-context");
@@ -321,29 +332,95 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
     }
     out.push('\n');
 
-    out.push_str("## Evidence Receipts and Accepted Signals\n\n");
+    out.push_str("## Evidence Receipts and Signal Decisions\n\n");
     let mut wrote_evidence = false;
+    let signal_authority = &fit["signal_authority"];
+    bullet(
+        &mut out,
+        "signal_authority",
+        display_value(&signal_authority["authority_class"]),
+    );
+    bullet(
+        &mut out,
+        "projection_status",
+        display_value(&signal_authority["projection_status"]),
+    );
+    bullet(
+        &mut out,
+        "trust_boundary",
+        display_value(&signal_authority["trust_boundary"]),
+    );
+    for field in [
+        "source_binding_sha256",
+        "source_attempt_request_sha256",
+        "collected_attempt_results_sha256",
+        "normalized_output_sha256",
+    ] {
+        if !signal_authority[field].is_null() {
+            bullet(&mut out, field, display_value(&signal_authority[field]));
+        }
+    }
+    out.push('\n');
+    wrote_evidence |= list_named_items(
+        &mut out,
+        "Lineage-validated signal contributions",
+        &signal_authority["accepted"],
+        |item| {
+            format!(
+                "{}; roles: {}; observations: {}",
+                display_value(&item["signal_id"]),
+                item["roles"]
+                    .as_array()
+                    .map(|roles| roles
+                        .iter()
+                        .map(display_value)
+                        .collect::<Vec<_>>()
+                        .join(", "))
+                    .unwrap_or_else(|| "none".to_string()),
+                render_observation_receipts(&item["observation_receipts"])
+            )
+        },
+    );
+    wrote_evidence |= list_named_items(
+        &mut out,
+        "Rejected signal contributions",
+        &signal_authority["rejected"],
+        |item| {
+            format!(
+                "{}; roles: {}; reason: {}",
+                display_value(&item["signal_id"]),
+                item["roles"]
+                    .as_array()
+                    .map(|roles| roles
+                        .iter()
+                        .map(display_value)
+                        .collect::<Vec<_>>()
+                        .join(", "))
+                    .unwrap_or_else(|| "none".to_string()),
+                display_value(&item["reason"])
+            )
+        },
+    );
     wrote_evidence |= list_named_items(&mut out, "Accepted fit signals", &fit["matches"], |item| {
         titled_body(item, "title", "reason")
     });
-    wrote_evidence |= list_named_items(
-        &mut out,
-        "Supplied prospect signals",
-        &prospect["signals"],
-        |item| {
-            let mut parts = vec![display_value(&item["title"])];
-            if let Some(source) = optional_text(&item["source"]) {
-                parts.push(format!("source: {source}"));
-            }
-            if let Some(confidence) = optional_text(&item["confidence"]) {
-                parts.push(format!("confidence: {confidence}"));
-            }
-            if let Some(state_as) = optional_text(&item["state_as"]) {
-                parts.push(format!("state_as: {state_as}"));
-            }
-            parts.join("; ")
-        },
-    );
+    if fit["signal_authority"]["authority_class"] != "lineage-validated" {
+        wrote_evidence |= list_named_items(
+            &mut out,
+            "Legacy prospect signals (unassessed)",
+            &prospect["signals"],
+            |item| {
+                let mut parts = vec![display_value(&item["id"]), display_value(&item["title"])];
+                if let Some(confidence) = optional_text(&item["confidence"]) {
+                    parts.push(format!("confidence: {confidence}"));
+                }
+                if let Some(state_as) = optional_text(&item["state_as"]) {
+                    parts.push(format!("state_as: {state_as}"));
+                }
+                parts.join("; ")
+            },
+        );
+    }
     wrote_evidence |= list_context_entries(
         &mut out,
         "Routed evidence entries",
@@ -697,6 +774,28 @@ fn bullet(out: &mut String, label: &str, value: impl AsRef<str>) {
     out.push_str(": ");
     out.push_str(value.as_ref());
     out.push('\n');
+}
+
+fn render_observation_receipts(receipts: &Value) -> String {
+    let Some(receipts) = receipts.as_array() else {
+        return "none".to_string();
+    };
+    if receipts.is_empty() {
+        return "none".to_string();
+    }
+    receipts
+        .iter()
+        .map(|receipt| {
+            format!(
+                "{}@{} confidence={} attempts={}",
+                display_value(&receipt["id"]),
+                display_value(&receipt["observed_at"]),
+                display_value(&receipt["confidence"]),
+                display_value(&receipt["attempt_ids"])
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn display_value(value: &Value) -> String {
@@ -1221,7 +1320,8 @@ mod tests {
         assert!(!markdown.contains("<section"));
         assert!(markdown.contains("## Fit / Draft Readiness"));
         assert!(markdown.contains("- draft_status: ready"));
-        assert!(markdown.contains("## Evidence Receipts and Accepted Signals"));
+        assert!(markdown.contains("## Evidence Receipts and Signal Decisions"));
+        assert!(markdown.contains("- signal_authority: legacy"));
         assert!(markdown.contains("## Proposed Outreach Copy"));
         assert!(markdown.contains("No proposed outreach copy is included"));
 

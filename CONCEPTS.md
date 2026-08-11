@@ -27,10 +27,22 @@ review artifacts.
   declared input producers, instructions, and exact structured output contract.
   The customer's host executes it; MDP compiles and validates it.
 - **Decision Input Contract** — a versioned pack declaration of the attributes, source attempts, normalization evidence, and status behavior required before a job can make deterministic MDP decisions.
+- **Signal projection** — a pack-owned, repeated Decision Input projection that
+  assigns a profile-defined signal kind and closed qualification roles to
+  observations contributed by declared attributes. It is not inferred from
+  titles, prose, provider fields, or legacy signal strings.
 - **Source binding** — an integration-owned, provider-neutral mapping from one
-  exact compiled job's qualified Decision Input attributes to external fields,
+  exact compiled job's qualified Decision Input attributes and signal
+  projections to external fields,
   pinned to portable pack and requirements digests. It is not stored in the
   pack and does not execute collection.
+- **Lineage-validated** — the submitted v2 source binding, request, collected
+  results, normalized observations, and hashes are internally consistent with
+  the compiled pack policy. It does not establish host authenticity,
+  authorization, signer identity, non-repudiation, or observation truth.
+- **Legacy signal** — readable prospect context without the compiled v2
+  projection and receipt chain. It is `legacy` or `unassessed`, never
+  first-class sourced proof for an explicit role.
 - **Gap** — missing or unsupported context kept explicit rather than inferred.
 - **Eval** — a deterministic fixture that tests routing or policy behavior.
 - **Decision trace** — a bounded, read-only `mdp.decision-trace.v1`
@@ -63,6 +75,7 @@ review artifacts.
 - **Per-run decision:** `audit-grade`, `advisory`, `blocked`, or `not-run`.
 - **Readiness:** `ready`, `advisory`, or `blocked`.
 - **Product-foundation status:** `unassessed`, `ready`, or `blocked`.
+- **Signal authority:** `lineage-validated`, `legacy`, or `unassessed`.
 
 Product-foundation readiness is veto-only. `blocked` prevents broader
 activation, but `ready` never establishes sufficient-for-job, self-standing,

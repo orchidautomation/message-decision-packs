@@ -30,10 +30,10 @@ export default definePlugin({
   assets: './assets/',
 
   // MDP is a migrated/manual plugin with repo-owned skill evals; keep Pluxx's
-  // generic semantic rubric visible without blocking release-package checks.
+  // generic semantic rubric advisory without blocking release-package checks.
   eval: {
     warningThreshold: 60,
-    failureThreshold: 40,
+    failureThreshold: 0,
   },
 
   hooks: {

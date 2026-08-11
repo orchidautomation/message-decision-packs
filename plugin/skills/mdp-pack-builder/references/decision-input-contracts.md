@@ -21,6 +21,10 @@ deterministic decision.
 10. Run `mdp --json requirements --dir PACK_ROOT --job JOB_ID` and inspect the
     compiled request, collected-results, and normalized-output schemas before
     authoring the prompt.
+11. When repeated sourced observations affect the decision, declare
+    `signal_projections` with stable IDs, profile-owned kinds, explicit closed
+    roles, attribute contributors, bounded cardinality, conflict policy, and
+    decision effects. Use v2 normalization; do not widen the v1 envelope.
 
 The contract owns the questions. The prompt normalizes answers supplied by the
 host. A collector may use customer-approved systems or permitted public
@@ -82,6 +86,12 @@ behavior from the compiler. Optional attributes remain visible without
 blocking ordinary missing/not-applicable cases. Hard gates have no defaults:
 authors must make every outcome explicit.
 
+Signal roles are limited to `fit`, `why-now`, `person-resolution`, and
+`disqualifier`. They never come from signal titles, provider field names,
+source prose, or legacy keywords. Use only `require-agreement` or
+`any-disqualifies`; unresolved disagreement is human-review/no-draft and no
+positive winner-selection policy is allowed.
+
 ## No-Draft Boundary
 
 Normalization never drafts. The normalized envelope must set
@@ -120,3 +130,10 @@ unbound.
 
 Keep hosted APIs, provider credentials, auth, billing, live data access, model
 calls, copy generation, CRM writes, and sequencing outside the pack.
+
+For manual adoption, preserve v1 fixtures, change only the opted-in contract to
+`mdp.normalized-decision-input.v2`, compile `requirements --job`, validate the
+integration-owned v2 binding, request, collected results, and normalized
+output, then run fit/brief through `--normalized-input`. Use the synthetic Clay
+example as the reference. `lineage-validated` proves internal linkage only,
+not host authenticity or observation truth.

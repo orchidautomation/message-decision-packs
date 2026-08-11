@@ -1,6 +1,14 @@
+use crate::artifact_hash::{canonical_json_sha256, sha256_hex};
 use crate::commands::requirements::requirements;
+use crate::commands::schemas::decision_input_source_class_schema;
 use crate::constants::{
-    REQUIREMENTS_CONTRACT, SOURCE_BINDING_CONTRACT, SOURCE_BINDING_VALIDATION_CONTRACT,
+    COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+    REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+    SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2, SOURCE_BINDING_VALIDATION_CONTRACT,
+};
+use crate::models::{
+    MAX_SIGNAL_CONTRIBUTORS, MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_LOCATOR_LEN,
+    MAX_SIGNAL_PROJECTIONS_PER_CONTRACT, MAX_SIGNAL_QUALIFIED_ID_LEN,
 };
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -8,6 +16,8 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+
+const MAX_SOURCE_BINDING_BYTES: usize = 1_048_576;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -117,10 +127,29 @@ pub(crate) fn validate_source_binding_file(
             )],
         ));
     }
-    let raw = fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+    let raw = fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+    if raw.len() > MAX_SOURCE_BINDING_BYTES {
+        let compiled = requirements(root, job_id)?;
+        return Ok(validation_result(
+            false,
+            compiled["available"] == true,
+            "invalid",
+            &compiled,
+            vec![issue(
+                "source_binding_size_limit_exceeded",
+                file.display().to_string(),
+                format!("source binding exceeds {MAX_SOURCE_BINDING_BYTES} byte limit"),
+            )],
+        ));
+    }
     let value: Value =
-        serde_json::from_str(&raw).with_context(|| format!("parsing {}", file.display()))?;
-    validate_source_binding_value(root, job_id, &value, &file.display().to_string())
+        serde_json::from_slice(&raw).with_context(|| format!("parsing {}", file.display()))?;
+    let mut result =
+        validate_source_binding_value(root, job_id, &value, &file.display().to_string())?;
+    if result["valid"] == true {
+        result["source_binding_sha256"] = json!(sha256_hex(&raw));
+    }
+    Ok(result)
 }
 
 fn binding_is_inside_pack(root: &Path, file: &Path) -> bool {
@@ -154,7 +183,24 @@ fn validate_source_binding_value(
         ));
     }
 
-    if let Err(error) = jsonschema::draft202012::validate(&source_binding_schema(), value) {
+    if value["contract"].as_str() == Some(SOURCE_BINDING_CONTRACT_V2) {
+        return validate_source_binding_v2(&compiled, value, artifact_path);
+    }
+    if compiled["contract"] == REQUIREMENTS_CONTRACT_V2 {
+        return Ok(validation_result(
+            false,
+            true,
+            "invalid",
+            &compiled,
+            vec![issue(
+                "source_binding_version_mixed",
+                format!("{artifact_path}#/contract"),
+                "signal-aware mdp.requirements.v2 requires mdp.source-binding.v2",
+            )],
+        ));
+    }
+
+    if let Err(error) = jsonschema::draft202012::validate(&source_binding_schema_v1(), value) {
         return Ok(validation_result(
             false,
             true,
@@ -335,6 +381,270 @@ fn validate_source_binding_value(
     Ok(result)
 }
 
+#[derive(Debug)]
+struct ExpectedProjection {
+    contributor_attribute_ids: Vec<String>,
+    source_classes: BTreeSet<String>,
+}
+
+pub(crate) fn validate_source_binding_v2(
+    compiled: &Value,
+    value: &Value,
+    artifact_path: &str,
+) -> Result<Value> {
+    if compiled["contract"] != REQUIREMENTS_CONTRACT_V2 {
+        return Ok(validation_result(
+            false,
+            true,
+            "invalid",
+            compiled,
+            vec![issue(
+                "source_binding_version_mixed",
+                format!("{artifact_path}#/contract"),
+                "mdp.source-binding.v2 requires mdp.requirements.v2 from a signal-aware job",
+            )],
+        ));
+    }
+    if let Err(error) = jsonschema::draft202012::validate(&source_binding_schema_v2(), value) {
+        return Ok(validation_result(
+            false,
+            true,
+            "invalid",
+            compiled,
+            vec![issue(
+                "source_binding_schema_invalid",
+                artifact_path,
+                format!("source binding does not match mdp.source-binding.v2: {error}"),
+            )],
+        ));
+    }
+
+    let mut diagnostics = Vec::new();
+    for (code, path, actual, expected, label) in [
+        (
+            "source_binding_job_mismatch",
+            "job_id",
+            &value["job_id"],
+            &compiled["job"]["id"],
+            "job id",
+        ),
+        (
+            "source_binding_pack_id_mismatch",
+            "pack/id",
+            &value["pack"]["id"],
+            &compiled["pack"]["id"],
+            "pack id",
+        ),
+        (
+            "source_binding_pack_version_mismatch",
+            "pack/version",
+            &value["pack"]["version"],
+            &compiled["pack"]["version"],
+            "pack version",
+        ),
+        (
+            "source_binding_pack_sha256_mismatch",
+            "pack/sha256",
+            &value["pack"]["sha256"],
+            &compiled["pack"]["sha256"],
+            "portable pack digest",
+        ),
+        (
+            "source_binding_requirements_contract_mismatch",
+            "requirements/contract",
+            &value["requirements"]["contract"],
+            &compiled["contract"],
+            "requirements contract",
+        ),
+        (
+            "source_binding_requirements_sha256_mismatch",
+            "requirements/sha256",
+            &value["requirements"]["sha256"],
+            &compiled["requirements_sha256"],
+            "requirements digest",
+        ),
+    ] {
+        if actual != expected {
+            diagnostics.push(issue(
+                code,
+                format!("{artifact_path}#/{path}"),
+                format!("{label} must match the exact compiled signal-aware requirements"),
+            ));
+        }
+    }
+
+    let expected_contracts = compiled["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|contract| json!({"id": contract["id"], "version": contract["version"]}))
+        .collect::<Vec<_>>();
+    if value["requirements"]["decision_input_contracts"] != json!(expected_contracts) {
+        diagnostics.push(issue(
+            "source_binding_contract_receipts_mismatch",
+            format!("{artifact_path}#/requirements/decision_input_contracts"),
+            "Decision Input Contract ID/version receipts must exactly match the selected job",
+        ));
+    }
+
+    let expected = expected_projections(compiled);
+    let mut seen = BTreeSet::new();
+    for (index, binding) in value["projection_bindings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let qualified = binding["qualified_projection_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        let item_path = format!("{artifact_path}#/projection_bindings/{index}");
+        if !seen.insert(qualified.clone()) {
+            diagnostics.push(issue(
+                "source_binding_duplicate_projection",
+                item_path,
+                format!("duplicate binding for {qualified}"),
+            ));
+            continue;
+        }
+        let Some(projection) = expected.get(&qualified) else {
+            diagnostics.push(issue(
+                "source_binding_unknown_projection",
+                item_path,
+                format!("unknown signal projection {qualified}"),
+            ));
+            continue;
+        };
+        let expected_contract_id = qualified
+            .split_once('#')
+            .map(|item| item.0)
+            .unwrap_or_default();
+        let expected_projection_id = qualified
+            .split_once('#')
+            .map(|item| item.1)
+            .unwrap_or_default();
+        if binding["decision_input_contract_id"] != expected_contract_id
+            || binding["projection_id"] != expected_projection_id
+        {
+            diagnostics.push(issue(
+                "source_binding_projection_identity_mismatch",
+                item_path.clone(),
+                "contract_id, projection_id, and qualified_projection_id must identify the same compiled projection",
+            ));
+        }
+        if binding["contributor_attribute_ids"] != json!(projection.contributor_attribute_ids) {
+            diagnostics.push(issue(
+                "source_binding_projection_contributors_mismatch",
+                format!("{item_path}/contributor_attribute_ids"),
+                "projection contributors must exactly match pack-owned compiled contributors",
+            ));
+        }
+        let source_class = binding["source"]["source_class"]
+            .as_str()
+            .unwrap_or_default();
+        if !projection.source_classes.contains(source_class) {
+            diagnostics.push(issue(
+                "source_binding_source_class_incompatible",
+                format!("{item_path}/source/source_class"),
+                format!(
+                    "source class {source_class} is incompatible with the projection contributors"
+                ),
+            ));
+        }
+    }
+    for qualified in expected
+        .keys()
+        .filter(|qualified| !seen.contains(*qualified))
+    {
+        diagnostics.push(issue(
+            "source_binding_projection_missing",
+            format!("{artifact_path}#/projection_bindings"),
+            format!("missing binding for signal projection {qualified}"),
+        ));
+    }
+
+    let valid = diagnostics.is_empty();
+    let mut result = validation_result(
+        valid,
+        true,
+        if valid { "ready" } else { "invalid" },
+        compiled,
+        diagnostics,
+    );
+    result["source_binding_sha256"] = json!(canonical_json_sha256(value)?);
+    result["coverage"] = json!({
+        "required_projection_count": expected.len(),
+        "received_projection_count": value["projection_bindings"].as_array().map_or(0, Vec::len),
+        "unique_projection_count": seen.len()
+    });
+    result["trust_boundary"] = json!({
+        "meaning": "lineage identity only",
+        "does_not_attest": ["host authenticity", "authorization", "source truth", "non-repudiation"]
+    });
+    Ok(result)
+}
+
+fn expected_projections(compiled: &Value) -> BTreeMap<String, ExpectedProjection> {
+    let mut expected = BTreeMap::new();
+    for contract in compiled["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let attributes = contract["attributes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|attribute| {
+                Some((
+                    attribute["id"].as_str()?.to_string(),
+                    attribute["source_classes"]
+                        .as_array()?
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect::<BTreeSet<_>>(),
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        for projection in contract["signal_projections"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let contributors = projection["contributor_attribute_ids"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            let mut classes: Option<BTreeSet<String>> = None;
+            for contributor in &contributors {
+                if let Some(candidate) = attributes.get(contributor) {
+                    classes = Some(match classes {
+                        None => candidate.clone(),
+                        Some(current) => current.intersection(candidate).cloned().collect(),
+                    });
+                }
+            }
+            let qualified = projection["id"]
+                .as_str()
+                .map(|id| format!("{}#{id}", contract["id"].as_str().unwrap_or_default()))
+                .unwrap_or_default();
+            expected.insert(
+                qualified,
+                ExpectedProjection {
+                    contributor_attribute_ids: contributors,
+                    source_classes: classes.unwrap_or_default(),
+                },
+            );
+        }
+    }
+    expected
+}
+
 fn expected_attributes(compiled: &Value) -> BTreeMap<(String, String), ExpectedAttribute> {
     let mut expected = BTreeMap::new();
     for contract in compiled["decision_input_contracts"]
@@ -421,6 +731,15 @@ fn issue(code: &str, path: impl Into<String>, message: impl Into<String>) -> Val
 }
 
 pub(crate) fn source_binding_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Source Binding Contract Family",
+        "description": "Version-discriminated source-binding contracts. Use the exact schema embedded by requirements for the selected job.",
+        "oneOf": [source_binding_schema_v1(), source_binding_schema_v2()]
+    })
+}
+
+fn source_binding_schema_v1() -> Value {
     let non_blank = || json!({"type": "string", "minLength": 1, "pattern": ".*\\S.*"});
     let sha256 = || json!({"type": "string", "pattern": "^[0-9a-f]{64}$"});
     json!({
@@ -502,7 +821,7 @@ pub(crate) fn source_binding_schema() -> Value {
                             "required": ["field_key", "source_class", "system_of_record", "acquisition_mode"],
                             "properties": {
                                 "field_key": non_blank(),
-                                "source_class": {"enum": ["user_provided", "customer_system", "reviewed_internal", "public_web", "synthetic_fixture"]},
+                                "source_class": decision_input_source_class_schema(),
                                 "system_of_record": non_blank(),
                                 "acquisition_mode": non_blank()
                             }
@@ -514,30 +833,275 @@ pub(crate) fn source_binding_schema() -> Value {
     })
 }
 
+pub(crate) fn source_binding_schema_v2() -> Value {
+    let identifier = || {
+        json!({
+            "type": "string",
+            "minLength": 1,
+            "maxLength": MAX_SIGNAL_IDENTIFIER_LEN,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        })
+    };
+    let qualified = || {
+        json!({
+            "type": "string",
+            "minLength": 3,
+            "maxLength": MAX_SIGNAL_QUALIFIED_ID_LEN,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*#[A-Za-z][A-Za-z0-9_-]*$"
+        })
+    };
+    let safe_text = |max: usize| {
+        json!({
+            "type": "string",
+            "minLength": 1,
+            "maxLength": max,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        })
+    };
+    let opaque_reference = || {
+        json!({
+            "type": "string",
+            "minLength": 1,
+            "maxLength": MAX_SIGNAL_LOCATOR_LEN,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "not": {"pattern": "^[A-Za-z][A-Za-z0-9+.-]*://"}
+        })
+    };
+    let sha256 = || json!({"type": "string", "pattern": "^[0-9a-f]{64}$"});
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Source Binding v2",
+        "description": "Integration-owned, provider-neutral mapping for every compiled signal projection. Hashes establish artifact linkage, not source authenticity or truth.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "binding_release", "job_id", "pack", "requirements", "normalization_release", "adapter", "transformation", "projection_bindings"],
+        "properties": {
+            "contract": {"const": SOURCE_BINDING_CONTRACT_V2},
+            "binding_release": safe_text(128),
+            "job_id": identifier(),
+            "pack": {
+                "type": "object", "additionalProperties": false,
+                "required": ["id", "version", "sha256"],
+                "properties": {"id": identifier(), "version": safe_text(64), "sha256": sha256()}
+            },
+            "requirements": {
+                "type": "object", "additionalProperties": false,
+                "required": ["contract", "sha256", "decision_input_contracts"],
+                "properties": {
+                    "contract": {"const": REQUIREMENTS_CONTRACT_V2},
+                    "sha256": sha256(),
+                    "decision_input_contracts": {
+                        "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+                        "items": {"type": "object", "additionalProperties": false, "required": ["id", "version"], "properties": {"id": identifier(), "version": safe_text(64)}}
+                    }
+                }
+            },
+            "normalization_release": safe_text(128),
+            "adapter": {
+                "type": "object", "additionalProperties": false, "required": ["profile", "version"],
+                "properties": {"profile": identifier(), "version": safe_text(64)}
+            },
+            "transformation": {
+                "type": "object", "additionalProperties": false, "required": ["id"],
+                "properties": {"id": identifier()}
+            },
+            "projection_bindings": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": MAX_SIGNAL_PROJECTIONS_PER_CONTRACT * 64,
+                "items": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["decision_input_contract_id", "projection_id", "qualified_projection_id", "contributor_attribute_ids", "source"],
+                    "properties": {
+                        "decision_input_contract_id": identifier(),
+                        "projection_id": identifier(),
+                        "qualified_projection_id": qualified(),
+                        "contributor_attribute_ids": {"type": "array", "minItems": 1, "maxItems": MAX_SIGNAL_CONTRIBUTORS, "uniqueItems": true, "items": identifier()},
+                        "source": {
+                            "type": "object", "additionalProperties": false,
+                            "required": ["logical_source_id", "source_class", "acquisition_mode", "upstream_reference"],
+                            "properties": {
+                                "logical_source_id": identifier(),
+                                "source_class": {"enum": ["user_provided", "customer_system", "reviewed_internal", "public_web", "synthetic_fixture"]},
+                                "acquisition_mode": safe_text(64),
+                                "upstream_reference": opaque_reference()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
+pub(crate) fn source_lineage_version_matrix() -> Value {
+    json!({
+        "scalar_v1": {
+            "requirements": "mdp.requirements.v1",
+            "source_binding": "mdp.source-binding.v1",
+            "source_attempt_request": "mdp.source-attempt-request.v1",
+            "collected_attempt_results": "mdp.collected-attempt-results.v1",
+            "normalized_output": "mdp.normalized-decision-input.v1"
+        },
+        "signal_aware_v2": {
+            "requirements": REQUIREMENTS_CONTRACT_V2,
+            "source_binding": SOURCE_BINDING_CONTRACT_V2,
+            "source_attempt_request": SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
+            "collected_attempt_results": COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2,
+            "normalized_output": NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+            "post_validation_projection_decision_receipt": "mdp.signal-projection-decision-receipt.v1",
+            "normalized_output_sha256_location": "post-validation receipt only; never inside the normalized output being hashed"
+        },
+        "rejected_mixed_combinations": [
+            "v1 requirements with any v2 lineage artifact",
+            "v2 requirements with any v1 source binding, request, results, or normalized output",
+            "v1 source binding hash inside a v2 request",
+            "different source binding hashes across v2 request, results, and normalized output"
+        ]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{source_binding_schema, validate_source_binding_value};
     use crate::commands::requirements::requirements;
+    use crate::constants::SOURCE_BINDING_CONTRACT_V2;
     use serde_json::{Value, json};
     use std::path::PathBuf;
 
     #[test]
     fn schema_fixes_status_translation_and_keeps_provider_names_open() {
         let schema = source_binding_schema();
+        let v1 = &schema["oneOf"][0];
         assert_eq!(
-            schema["properties"]["status_translation"]["properties"]["runtime_failure"]["const"],
+            v1["properties"]["status_translation"]["properties"]["runtime_failure"]["const"],
             "error"
         );
         assert_eq!(
-            schema["properties"]["bindings"]["items"]["properties"]["source"]["properties"]["system_of_record"]
+            v1["properties"]["bindings"]["items"]["properties"]["source"]["properties"]["system_of_record"]
                 ["type"],
             "string"
+        );
+        assert_eq!(
+            schema["oneOf"][1]["properties"]["contract"]["const"],
+            SOURCE_BINDING_CONTRACT_V2
         );
     }
 
     #[test]
+    fn complete_v2_binding_covers_every_projection_and_emits_exact_digest() {
+        let compiled = signal_compiled();
+        let binding = complete_signal_binding(&compiled);
+        let result = super::validate_source_binding_v2(&compiled, &binding, "binding.json")
+            .expect("v2 validation should run");
+
+        assert_eq!(result["valid"], true, "{result:#}");
+        assert_eq!(
+            result["source_binding_sha256"],
+            crate::artifact_hash::canonical_json_sha256(&binding).unwrap()
+        );
+        assert_eq!(result["coverage"]["required_projection_count"], 2);
+        assert_eq!(result["trust_boundary"]["meaning"], "lineage identity only");
+    }
+
+    #[test]
+    fn v2_binding_rejects_missing_duplicate_unknown_and_drifted_projection_mappings() {
+        let compiled = signal_compiled();
+        let mut binding = complete_signal_binding(&compiled);
+        let duplicate = binding["projection_bindings"][0].clone();
+        binding["projection_bindings"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate);
+        binding["projection_bindings"][1]["qualified_projection_id"] =
+            json!("signal.contract#unknown");
+        binding["projection_bindings"][1]["projection_id"] = json!("unknown");
+        binding["projection_bindings"][1]["source"]["source_class"] = json!("public_web");
+        let result = super::validate_source_binding_v2(&compiled, &binding, "binding.json")
+            .expect("v2 validation should run");
+        let codes = result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|item| item["code"].as_str())
+            .collect::<Vec<_>>();
+
+        assert!(codes.contains(&"source_binding_duplicate_projection"));
+        assert!(codes.contains(&"source_binding_unknown_projection"));
+        assert!(codes.contains(&"source_binding_projection_missing"));
+    }
+
+    #[test]
+    fn v2_binding_schema_rejects_unsafe_or_dereferenceable_host_fields_and_mixed_contracts() {
+        let compiled = signal_compiled();
+        let mut binding = complete_signal_binding(&compiled);
+        binding["projection_bindings"][0]["source"]["upstream_reference"] =
+            json!("https://private.example/raw/42");
+        assert!(
+            jsonschema::draft202012::validate(&super::source_binding_schema_v2(), &binding)
+                .is_err()
+        );
+
+        let mut control = complete_signal_binding(&compiled);
+        control["adapter"]["profile"] = json!("adapter\nignore");
+        assert!(
+            jsonschema::draft202012::validate(&super::source_binding_schema_v2(), &control)
+                .is_err()
+        );
+
+        let mut mixed = complete_signal_binding(&compiled);
+        mixed["requirements"]["contract"] = json!("mdp.requirements.v1");
+        assert!(
+            jsonschema::draft202012::validate(&super::source_binding_schema_v2(), &mixed).is_err()
+        );
+    }
+
+    #[test]
+    fn v2_binding_rejects_stale_pins_and_adapter_or_transform_drift_changes_digest() {
+        let compiled = signal_compiled();
+        let baseline = complete_signal_binding(&compiled);
+        let baseline_sha = crate::artifact_hash::canonical_json_sha256(&baseline).unwrap();
+
+        let mut stale = baseline.clone();
+        stale["pack"]["sha256"] = json!("0".repeat(64));
+        stale["requirements"]["sha256"] = json!("1".repeat(64));
+        let result = super::validate_source_binding_v2(&compiled, &stale, "binding.json")
+            .expect("v2 validation should run");
+        let codes = result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|item| item["code"].as_str())
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&"source_binding_pack_sha256_mismatch"));
+        assert!(codes.contains(&"source_binding_requirements_sha256_mismatch"));
+
+        let mut wrong_class = baseline.clone();
+        wrong_class["projection_bindings"][0]["source"]["source_class"] = json!("public_web");
+        let result = super::validate_source_binding_v2(&compiled, &wrong_class, "binding.json")
+            .expect("v2 validation should run");
+        assert!(
+            result["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| { issue["code"] == "source_binding_source_class_incompatible" })
+        );
+
+        for (section, field) in [("adapter", "version"), ("transformation", "id")] {
+            let mut drifted = baseline.clone();
+            drifted[section][field] = json!("drifted-v99");
+            assert_ne!(
+                crate::artifact_hash::canonical_json_sha256(&drifted).unwrap(),
+                baseline_sha,
+                "{section}.{field} drift must change the exact source-binding digest"
+            );
+        }
+    }
+
+    #[test]
     fn complete_binding_validates_and_field_keys_may_repeat() {
-        let root = example_root();
+        let root = scalar_example_root("complete-binding");
         let compiled =
             requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
         let value = complete_binding(&compiled);
@@ -545,11 +1109,12 @@ mod tests {
             validate_source_binding_value(&root, "prospect-fit-or-brief", &value, "binding.json")
                 .expect("binding validation should run");
         assert_eq!(result["valid"], true, "{result:#}");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn stale_digest_and_missing_binding_fail_closed() {
-        let root = example_root();
+        let root = scalar_example_root("stale-binding");
         let compiled =
             requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
         let mut value = complete_binding(&compiled);
@@ -566,11 +1131,12 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(codes.contains(&"source_binding_pack_sha256_mismatch"));
         assert!(codes.contains(&"source_binding_requirement_missing"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn duplicate_unknown_and_incompatible_bindings_fail() {
-        let root = example_root();
+        let root = scalar_example_root("invalid-binding");
         let compiled =
             requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
         let mut value = complete_binding(&compiled);
@@ -592,6 +1158,7 @@ mod tests {
         assert!(codes.contains(&"source_binding_unknown_requirement"));
         assert!(codes.contains(&"source_binding_source_class_incompatible"));
         assert!(codes.contains(&"source_binding_requirement_missing"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -707,8 +1274,125 @@ mod tests {
         })
     }
 
+    fn signal_compiled() -> Value {
+        json!({
+            "contract": "mdp.requirements.v2",
+            "available": true,
+            "pack": {"id": "signal-pack", "version": "1.0.0", "sha256": "a".repeat(64)},
+            "job": {"id": "signal-job"},
+            "requirements_sha256": "b".repeat(64),
+            "decision_input_contracts": [{
+                "id": "signal.contract",
+                "version": "1.0.0",
+                "attributes": [
+                    {"id": "timing", "source_classes": ["customer_system", "synthetic_fixture"]},
+                    {"id": "fit", "source_classes": ["reviewed_internal", "synthetic_fixture"]}
+                ],
+                "signal_projections": [
+                    {"id": "buying-window", "contributor_attribute_ids": ["timing"]},
+                    {"id": "account-fit", "contributor_attribute_ids": ["fit"]}
+                ]
+            }]
+        })
+    }
+
+    fn complete_signal_binding(compiled: &Value) -> Value {
+        json!({
+            "contract": "mdp.source-binding.v2",
+            "binding_release": "binding-2",
+            "job_id": compiled["job"]["id"],
+            "pack": compiled["pack"],
+            "requirements": {
+                "contract": compiled["contract"],
+                "sha256": compiled["requirements_sha256"],
+                "decision_input_contracts": [{"id": "signal.contract", "version": "1.0.0"}]
+            },
+            "normalization_release": "normalizer-2",
+            "adapter": {"profile": "synthetic_adapter", "version": "2.0.0"},
+            "transformation": {"id": "identity_v2"},
+            "projection_bindings": [
+                {
+                    "decision_input_contract_id": "signal.contract",
+                    "projection_id": "buying-window",
+                    "qualified_projection_id": "signal.contract#buying-window",
+                    "contributor_attribute_ids": ["timing"],
+                    "source": {"logical_source_id": "crm_timing", "source_class": "customer_system", "acquisition_mode": "host_export", "upstream_reference": "opaque:crm:timing"}
+                },
+                {
+                    "decision_input_contract_id": "signal.contract",
+                    "projection_id": "account-fit",
+                    "qualified_projection_id": "signal.contract#account-fit",
+                    "contributor_attribute_ids": ["fit"],
+                    "source": {"logical_source_id": "reviewed_fit", "source_class": "reviewed_internal", "acquisition_mode": "reviewed_import", "upstream_reference": "opaque:review:fit"}
+                }
+            ]
+        })
+    }
+
     fn example_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../examples/clay-audiences-self-serve-enterprise-expansion")
+    }
+
+    fn scalar_example_root(name: &str) -> PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        fn copy_tree(source: &std::path::Path, destination: &std::path::Path) {
+            std::fs::create_dir_all(destination).unwrap();
+            for entry in std::fs::read_dir(source).unwrap() {
+                let entry = entry.unwrap();
+                let destination_path = destination.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    copy_tree(&entry.path(), &destination_path);
+                } else {
+                    std::fs::copy(entry.path(), destination_path).unwrap();
+                }
+            }
+        }
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-source-binding-{name}-{nonce}"));
+        copy_tree(&example_root(), &root);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).unwrap();
+        let mut manifest: serde_yaml::Value = serde_yaml::from_str(&raw).unwrap();
+        manifest["decision_input_contracts"][0]["signal_projections"] =
+            serde_yaml::Value::Sequence(Vec::new());
+        manifest["decision_input_contracts"][0]["normalization"]["normalized_schema_ref"] =
+            serde_yaml::Value::String("mdp.normalized-decision-input.v1".to_string());
+        std::fs::write(&manifest_path, serde_yaml::to_string(&manifest).unwrap()).unwrap();
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let prompt = std::fs::read_to_string(&prompt_path).unwrap().replace(
+            "mdp.normalized-decision-input.v2",
+            "mdp.normalized-decision-input.v1",
+        );
+        let mut prompt: serde_yaml::Value = serde_yaml::from_str(&prompt).unwrap();
+        let example = prompt["output_contract"]["example"]
+            .as_mapping_mut()
+            .unwrap();
+        example.remove(&serde_yaml::Value::String(
+            "source_binding_sha256".to_string(),
+        ));
+        example.remove(&serde_yaml::Value::String(
+            "signal_observations".to_string(),
+        ));
+        if let Some(required) = prompt["output_contract"]["required_top_level"].as_sequence_mut() {
+            required.retain(|field| {
+                !matches!(
+                    field.as_str(),
+                    Some(
+                        "source_binding_sha256"
+                            | "source_attempt_request_sha256"
+                            | "collected_attempt_results_sha256"
+                            | "signal_observations"
+                    )
+                )
+            });
+        }
+        std::fs::write(prompt_path, serde_yaml::to_string(&prompt).unwrap()).unwrap();
+        root
     }
 }

@@ -379,6 +379,64 @@ fn value_matches_type(value: &Value, expected_type: &str) -> bool {
     }
 }
 
+pub(crate) fn canonical_values_equal(
+    contract: &ValueContract,
+    left: &Value,
+    right: &Value,
+) -> bool {
+    match contract.value_type.as_deref() {
+        Some("string") => left
+            .as_str()
+            .zip(right.as_str())
+            .is_some_and(|(a, b)| a == b),
+        Some("boolean") => left
+            .as_bool()
+            .zip(right.as_bool())
+            .is_some_and(|(a, b)| a == b),
+        Some("integer") => canonical_integer(left)
+            .zip(canonical_integer(right))
+            .is_some_and(|(a, b)| a == b),
+        Some("number") => canonical_number(left)
+            .zip(canonical_number(right))
+            .is_some_and(|(a, b)| canonical_numbers_equal(a, b)),
+        Some(_) => false,
+        None => left == right,
+    }
+}
+
+fn canonical_integer(value: &Value) -> Option<i128> {
+    value
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| value.as_u64().map(i128::from))
+}
+
+#[derive(Clone, Copy)]
+enum CanonicalNumber {
+    Integer(i128),
+    Float(f64),
+}
+
+fn canonical_number(value: &Value) -> Option<CanonicalNumber> {
+    canonical_integer(value)
+        .map(CanonicalNumber::Integer)
+        .or_else(|| value.as_f64().map(CanonicalNumber::Float))
+}
+
+fn canonical_numbers_equal(left: CanonicalNumber, right: CanonicalNumber) -> bool {
+    match (left, right) {
+        (CanonicalNumber::Integer(left), CanonicalNumber::Integer(right)) => left == right,
+        (CanonicalNumber::Float(left), CanonicalNumber::Float(right)) => left == right,
+        (CanonicalNumber::Integer(integer), CanonicalNumber::Float(float))
+        | (CanonicalNumber::Float(float), CanonicalNumber::Integer(integer)) => {
+            float.is_finite()
+                && float.fract() == 0.0
+                && (float as i128) == integer
+                && (integer as f64) == float
+        }
+    }
+}
+
 fn required_violation(scope: &'static str, field: &str, path: &str) -> ContractViolation {
     ContractViolation {
         code: "value_contract_required_missing",
@@ -505,6 +563,7 @@ fn leap_year(year: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn date_validation_rejects_invalid_calendar_dates() {
@@ -520,5 +579,43 @@ mod tests {
         assert!(valid_date_time("2026-07-02T03:45:00-04:00"));
         assert!(!valid_date_time("2026-07-02 03:45:00"));
         assert!(!valid_date_time("2026-07-02T25:45:00Z"));
+    }
+
+    #[test]
+    fn canonical_equality_is_typed_and_does_not_coerce_values() {
+        let string_contract = ValueContract {
+            value_type: Some("string".to_string()),
+            ..ValueContract::default()
+        };
+        let number_contract = ValueContract {
+            value_type: Some("number".to_string()),
+            ..ValueContract::default()
+        };
+
+        assert!(canonical_values_equal(
+            &string_contract,
+            &Value::String("7".to_string()),
+            &Value::String("7".to_string())
+        ));
+        assert!(!canonical_values_equal(
+            &string_contract,
+            &Value::String("7".to_string()),
+            &json!(7)
+        ));
+        assert!(canonical_values_equal(
+            &number_contract,
+            &json!(7),
+            &json!(7.0)
+        ));
+        assert!(!canonical_values_equal(
+            &number_contract,
+            &json!(7),
+            &Value::String("7".to_string())
+        ));
+        assert!(!canonical_values_equal(
+            &number_contract,
+            &json!(9_007_199_254_740_993_u64),
+            &json!(9_007_199_254_740_992_f64)
+        ));
     }
 }

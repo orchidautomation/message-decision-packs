@@ -26,7 +26,6 @@ const keep = process.argv.includes("--keep");
 const root = mkdtempSync(join(tmpdir(), "mdp-run-conformance-"));
 const pack = join(root, "pack");
 const gtmPack = join(root, "gtm-pack");
-const gtmQualifiedPack = join(root, "gtm-qualified-pack");
 const validOutput = join(root, "valid-output.json");
 const invalidOutput = join(root, "invalid-output.json");
 const gtmDisqualifiedNormalized = join(root, "gtm-disqualified-normalized.json");
@@ -145,11 +144,12 @@ function gtmRequest(
   value.operation = "qualify";
   value.pack_dir = packRoot;
   value.pack_release_id = "synthetic-gtm-release-1";
-  value.job_identity = { job_id: executionId, idempotency_key: `${executionId}-v1` };
+  value.job_identity = { job_id: "prospect-fit-or-brief", idempotency_key: `${executionId}-v1` };
   value.inputs = [
-    { logical_name: "normalized-decision-input", source_path: normalizedPath, schema_id: "mdp.normalized-decision-input.v1", media_type: "application/json", provenance_refs: [] },
-    { logical_name: "source-attempt-request", source_path: join(gtmPack, "fixtures", "source-attempt-request.json"), schema_id: "mdp.source-attempt-request.v1", media_type: "application/json", provenance_refs: [] },
-    { logical_name: "collected-attempt-results", source_path: resultsPath, schema_id: "mdp.collected-attempt-results.v1", media_type: "application/json", provenance_refs: [] },
+    { logical_name: "normalized-decision-input", source_path: normalizedPath, schema_id: "mdp.normalized-decision-input.v2", media_type: "application/json", provenance_refs: [] },
+    { logical_name: "source-binding", source_path: join(gtmPack, "fixtures", "source-binding-clay-adapter.json"), schema_id: "mdp.source-binding.v2", media_type: "application/json", provenance_refs: [] },
+    { logical_name: "source-attempt-request", source_path: join(gtmPack, "fixtures", "source-attempt-request.json"), schema_id: "mdp.source-attempt-request.v2", media_type: "application/json", provenance_refs: [] },
+    { logical_name: "collected-attempt-results", source_path: resultsPath, schema_id: "mdp.collected-attempt-results.v2", media_type: "application/json", provenance_refs: [] },
     { logical_name: "bound-prompt", source_path: join(gtmPack, ".mdp", "prompts", "normalize-prospect.yaml"), schema_id: "mdp.prompt.v0", media_type: "application/yaml", provenance_refs: [] },
   ];
   return value;
@@ -198,34 +198,23 @@ try {
   assert.ok(existsSync(mdp), `compiled CLI not found at ${mdp}; run cargo build --manifest-path cli/Cargo.toml`);
   cpSync(join(repoRoot, "plugin", "assets", "templates", "proposal"), pack, { recursive: true });
   cpSync(join(repoRoot, "examples", "clay-audiences-self-serve-enterprise-expansion"), gtmPack, { recursive: true });
-  cpSync(gtmPack, gtmQualifiedPack, { recursive: true });
-  const qualifiedManifest = join(gtmQualifiedPack, ".mdp", "manifest.yaml");
-  writeFileSync(
-    qualifiedManifest,
-    readFileSync(qualifiedManifest, "utf8").replace(
-      /  required_fields:\n(?:  - .*\n)+  required_signal_fields:\n(?:  - .*\n)+/,
-      "  required_fields:\n  - name\n  - title\n  - company\n  - company_domain\n  - trigger\n  required_signal_fields: []\n",
-    ),
-  );
-  const qualifiedFitRules = join(gtmQualifiedPack, ".mdp", "cards", "fit-rules.yaml");
-  writeFileSync(
-    qualifiedFitRules,
-    readFileSync(qualifiedFitRules, "utf8").replace(
-      "  - self-serve-enterprise-expansion\n  evidence:",
-      "  - self-serve-enterprise-expansion\n  - self-serve\n  evidence:",
-    ),
-  );
   copyFileSync(join(repoRoot, "examples", "proposal-flow-video", "fixtures", "normalize-opportunity-output.json"), validOutput);
   writeJson(invalidOutput, { contract: "mdp.prompt-output.v0", prompt_id: "normalize-opportunity" });
   const disqualifiedResults = JSON.parse(readFileSync(join(gtmPack, "fixtures", "collected-attempt-results.json"), "utf8"));
   disqualifiedResults.attributes.enterprise_eligibility.value = "ineligible";
+  disqualifiedResults.attempt_results.find((item) => item.attribute_id === "enterprise_eligibility").value = "ineligible";
   writeJson(gtmDisqualifiedResults, disqualifiedResults);
   const disqualifiedNormalized = JSON.parse(readFileSync(join(gtmPack, "fixtures", "normalized-response-ready.json"), "utf8"));
   disqualifiedNormalized.attributes.enterprise_eligibility.value = "ineligible";
   disqualifiedNormalized.normalized_prospect.attributes.enterprise_eligibility = "ineligible";
+  disqualifiedNormalized.signal_observations.find((item) => item.projection_id === "account-fit").value = "ineligible";
+  disqualifiedNormalized.outcome = "disqualified";
   disqualifiedNormalized.collected_attempt_results_sha256 = createHash("sha256")
     .update(readFileSync(gtmDisqualifiedResults))
     .digest("hex");
+  for (const observation of disqualifiedNormalized.signal_observations) {
+    observation.receipt.collected_results_sha256 = disqualifiedNormalized.collected_attempt_results_sha256;
+  }
   writeJson(gtmDisqualifiedNormalized, disqualifiedNormalized);
 
   let baseline;
@@ -243,7 +232,7 @@ try {
         "gtm-success",
         join(gtmPack, "fixtures", "normalized-response-ready.json"),
         join(gtmPack, "fixtures", "collected-attempt-results.json"),
-        gtmQualifiedPack,
+        gtmPack,
       ),
       "gtm-success",
     );
@@ -258,7 +247,7 @@ try {
     assert.equal(expectOk(verify(attempted.outDir), "GTM baseline verification").valid, true);
   }, { profile: "gtm", adapter: "direct-cli" });
 
-  record("GTM disqualifying hard-gate evidence returns a verified no-draft decision", () => {
+  record("GTM disqualifying normalized evidence returns a verified no-draft transaction", () => {
     const attempted = runRequest(
       gtmRequest("gtm-disqualified", gtmDisqualifiedNormalized, gtmDisqualifiedResults),
       "gtm-disqualified",
@@ -268,9 +257,9 @@ try {
     const receipt = JSON.parse(readFileSync(join(attempted.outDir, "run-receipt.json"), "utf8"));
     assert.equal(receipt.decision.decision, "no-draft");
     assert.deepEqual(receipt.decision.reason_codes, ["disqualified"]);
+    const context = JSON.parse(readFileSync(join(attempted.outDir, "artifacts", "compiled-context.json"), "utf8"));
     const output = JSON.parse(readFileSync(join(attempted.outDir, "artifacts", "output.json"), "utf8"));
     assert.equal(output.status, "disqualified");
-    const context = JSON.parse(readFileSync(join(attempted.outDir, "artifacts", "compiled-context.json"), "utf8"));
     assert.equal(context.qualification.status, "disqualified");
     assert.equal(context.drafting_authority, "not-granted");
     assert.equal(expectOk(verify(attempted.outDir), "GTM disqualified verification").valid, true);
@@ -287,7 +276,7 @@ try {
         "mcp-gtm-qualified",
         join(gtmPack, "fixtures", "normalized-response-ready.json"),
         join(gtmPack, "fixtures", "collected-attempt-results.json"),
-        gtmQualifiedPack,
+        gtmPack,
       ),
     );
     writeJson(
@@ -314,7 +303,9 @@ try {
     assert.equal(replies[2].result.structuredContent.terminal_state, "success");
     assert.equal(replies[3].result.structuredContent.valid, true);
     assert.equal(JSON.parse(readFileSync(join(qualifiedOut, "run-receipt.json"), "utf8")).decision.decision, "qualified");
-    assert.equal(JSON.parse(readFileSync(join(disqualifiedOut, "run-receipt.json"), "utf8")).decision.decision, "no-draft");
+    const disqualifiedReceipt = JSON.parse(readFileSync(join(disqualifiedOut, "run-receipt.json"), "utf8"));
+    assert.equal(disqualifiedReceipt.decision.decision, "no-draft");
+    assert.deepEqual(disqualifiedReceipt.decision.reason_codes, ["disqualified"]);
   }, { profile: "gtm", adapter: "unified-stdio-mcp" });
 
   record("GTM rejects undeclared ambient fields before publication", () => {

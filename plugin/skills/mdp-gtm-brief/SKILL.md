@@ -18,6 +18,7 @@ Map the explicit user intent to one job ID:
 Validate the selected route before doing any profile work:
 
 ```bash
+mdp --json capabilities
 mdp --json skills --dir PACK_ROOT --job JOB_ID
 ```
 
@@ -60,8 +61,13 @@ skill-implied writing or review instructions.
 5. For `prospect-fit-or-brief` normalization only, branch on
    Decision Input `data.available`:
    - When `true`, do not collect or normalize inside this skill.
-     - If all three artifacts—`SOURCE_ATTEMPT_REQUEST_JSON`,
-       `COLLECTED_ATTEMPT_RESULTS_JSON`, and `OUTPUT_JSON`—are already supplied,
+     Inspect `data.runtime_contract_version`,
+     `data.contract_version_matrix`, and every compiled signal projection. Do
+     not mix v1/v2 artifacts or infer roles from prose. For v2, require the
+     exact `SOURCE_BINDING_JSON` selected by requirements.
+     - If all four artifacts—`SOURCE_BINDING_JSON`,
+       `SOURCE_ATTEMPT_REQUEST_JSON`, `COLLECTED_ATTEMPT_RESULTS_JSON`, and
+       `OUTPUT_JSON`—are already supplied,
        validate them immediately with the returned bound prompt.
      - If any artifact is missing, hand the customer or host the exact
        complete `mdp --json requirements` result as
@@ -90,8 +96,12 @@ skill-implied writing or review instructions.
        and the normalized output.
      - For either the already-supplied or resumed path, validate:
 
+       The command below is the v2 form. For scalar v1, omit
+       `--source-binding` and keep every artifact on the v1 matrix row.
+
      ```bash
      mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_PROMPT_PATH \
+       --source-binding SOURCE_BINDING_JSON \
        --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON \
        --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON \
        --file OUTPUT_JSON
@@ -100,6 +110,23 @@ skill-implied writing or review instructions.
      Continue only when validation passes and the top-level `outcome` is exactly
      `ready`. Every other outcome stops no-draft before extracting
      `normalized_prospect`.
+     For v2, do not extract `normalized_prospect`. Run the lineage-aware path:
+
+     ```bash
+     mdp --json fit --dir PACK_ROOT --job prospect-fit-or-brief \
+       --normalized-input OUTPUT_JSON --prompt BOUND_PROMPT_PATH \
+       --source-binding SOURCE_BINDING_JSON \
+       --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON \
+       --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON
+     ```
+
+     Use the same lineage flags with `brief --context`. Report each accepted or
+     rejected projection ID, explicit role, authority class, and bounded
+     diagnostic. Preserve all conflict receipts. Unresolved
+     `require-agreement` conflicts stop human-review/no-draft;
+     `any-disqualifies` may only disqualify. Never choose a positive winner.
+     `lineage-validated` means internal chain consistency only, not host
+     authenticity or observation truth.
    - When `false`, retain the legacy `mdp.prompt-output.v0` normalization path.
      This compatibility path never authorizes `outbound-copy-brief` or
      `outbound-copy-review`. Validate
@@ -132,6 +159,9 @@ Load only the selected mode.
 - Supply every required portfolio `--scope` dimension; never silently choose a product, brand, region, or offer.
 - A passing claim check is not approval to send.
 - Preserve CLI diagnostics and gaps verbatim enough for the next reviewer to act.
+- Legacy or detached prospect signals remain `legacy` or `unassessed` and
+  cannot satisfy explicit `fit`, `why-now`, `person-resolution`, or
+  `disqualifier` roles through keywords or source prose.
 - When decision authority must be isolated from a context-rich authoring chat,
   create a deterministic `mdp.run-request.v1` and use `mdp run`; do not call a
   model driver. Verify the returned bundle and receipt before presenting the

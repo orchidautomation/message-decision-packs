@@ -1,4 +1,7 @@
 use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
+use crate::commands::briefs::prospect_brief_from_fit_with_context;
+use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
+use crate::commands::routing::fit_normalized;
 use crate::commands::{
     RunReceiptOptions, TargetInitOptions, author_proof_output_file, capabilities,
     check_claims_scoped, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, fit, gaps,
@@ -14,7 +17,7 @@ use crate::pack_io::{planned_json_write, write_json_file};
 use crate::run_replay::{
     LOCAL_LEDGER_DURABILITY_LIMITATION, ReplayConsumeRequest, compare_and_consume,
 };
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -95,6 +98,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             dir,
             file,
             source_audit,
+            source_binding,
             source_attempt_request,
             collected_attempt_results,
             invocation_receipt,
@@ -102,7 +106,19 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             prompt_id,
             strict,
         } => {
-            let data = apply_strict(
+            let validation = if source_binding.is_some() {
+                validate_prompt_output_file_with_lineage_inputs(
+                    &dir,
+                    &file,
+                    prompt.as_deref(),
+                    prompt_id.as_deref(),
+                    source_audit.as_deref(),
+                    source_binding.as_deref(),
+                    source_attempt_request.as_deref(),
+                    collected_attempt_results.as_deref(),
+                    invocation_receipt.as_deref(),
+                )?
+            } else {
                 validate_prompt_output_file_with_inputs(
                     &dir,
                     &file,
@@ -112,10 +128,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                     source_attempt_request.as_deref(),
                     collected_attempt_results.as_deref(),
                     invocation_receipt.as_deref(),
-                )?,
-                strict,
-                StrictWarningSource::Issues,
-            );
+                )?
+            };
+            let data = apply_strict(validation, strict, StrictWarningSource::Issues);
             print_checked(json_mode, summary_mode, "validate-prompt-output", data)
         }
         Commands::RunReceipt {
@@ -352,8 +367,43 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             let data = sample_leads(&dir, &persona, &job, count, seed)?;
             print_sample_leads(json_mode, summary_mode, format, data)
         }
-        Commands::Fit { dir, prospect } => {
-            print_output(json_mode, summary_mode, "fit", fit(&dir, &prospect)?)
+        Commands::Fit {
+            dir,
+            prospect,
+            normalized_input,
+            prompt,
+            source_binding,
+            source_attempt_request,
+            collected_attempt_results,
+            job,
+        } => {
+            let data = if let Some(normalized) = normalized_input {
+                fit_normalized(
+                    &dir,
+                    &normalized,
+                    prompt
+                        .as_deref()
+                        .ok_or_else(|| anyhow!("--prompt is required with --normalized-input"))?,
+                    source_binding.as_deref().ok_or_else(|| {
+                        anyhow!("--source-binding is required with --normalized-input")
+                    })?,
+                    source_attempt_request.as_deref().ok_or_else(|| {
+                        anyhow!("--source-attempt-request is required with --normalized-input")
+                    })?,
+                    collected_attempt_results.as_deref().ok_or_else(|| {
+                        anyhow!("--collected-attempt-results is required with --normalized-input")
+                    })?,
+                    job.as_deref(),
+                )?
+            } else {
+                fit(
+                    &dir,
+                    prospect
+                        .as_deref()
+                        .ok_or_else(|| anyhow!("--prospect is required"))?,
+                )?
+            };
+            print_output(json_mode, summary_mode, "fit", data)
         }
         Commands::CheckClaims {
             dir,
@@ -385,6 +435,11 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Commands::Brief {
             dir,
             prospect,
+            normalized_input,
+            prompt,
+            source_binding,
+            source_attempt_request,
+            collected_attempt_results,
             channel,
             job,
             context,
@@ -393,14 +448,52 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             dry_run,
         } => {
             let include_context = context || (readable && !json_mode && !summary_mode);
-            let mut data = prospect_brief_with_context(
-                &dir,
-                &prospect,
-                &channel,
-                job.as_deref(),
-                include_context,
-            )?;
-            data = attach_input_artifact(data, "prospect", &prospect);
+            let (mut data, input_kind, input_path) = if let Some(normalized) = normalized_input {
+                let fit_result = fit_normalized(
+                    &dir,
+                    &normalized,
+                    prompt
+                        .as_deref()
+                        .ok_or_else(|| anyhow!("--prompt is required with --normalized-input"))?,
+                    source_binding.as_deref().ok_or_else(|| {
+                        anyhow!("--source-binding is required with --normalized-input")
+                    })?,
+                    source_attempt_request.as_deref().ok_or_else(|| {
+                        anyhow!("--source-attempt-request is required with --normalized-input")
+                    })?,
+                    collected_attempt_results.as_deref().ok_or_else(|| {
+                        anyhow!("--collected-attempt-results is required with --normalized-input")
+                    })?,
+                    job.as_deref(),
+                )?;
+                let projected = serde_json::from_value(fit_result["prospect"].clone())?;
+                (
+                    prospect_brief_from_fit_with_context(
+                        &dir,
+                        projected,
+                        fit_result,
+                        &channel,
+                        job.as_deref(),
+                        include_context,
+                    )?,
+                    "normalized-decision-input",
+                    normalized,
+                )
+            } else {
+                let prospect = prospect.ok_or_else(|| anyhow!("--prospect is required"))?;
+                (
+                    prospect_brief_with_context(
+                        &dir,
+                        &prospect,
+                        &channel,
+                        job.as_deref(),
+                        include_context,
+                    )?,
+                    "prospect",
+                    prospect,
+                )
+            };
+            data = attach_input_artifact(data, input_kind, &input_path);
             if readable && !json_mode && !summary_mode {
                 let markdown = render_readable_prospect_brief(&data);
                 if let Some(path) = out {
@@ -733,7 +826,12 @@ mod tests {
             summary: true,
             command: Commands::Brief {
                 dir: root.clone(),
-                prospect,
+                prospect: Some(prospect),
+                normalized_input: None,
+                prompt: None,
+                source_binding: None,
+                source_attempt_request: None,
+                collected_attempt_results: None,
                 channel: "linkedin".to_string(),
                 job: None,
                 context: true,
@@ -772,7 +870,12 @@ mod tests {
             summary: false,
             command: Commands::Brief {
                 dir: root.clone(),
-                prospect,
+                prospect: Some(prospect),
+                normalized_input: None,
+                prompt: None,
+                source_binding: None,
+                source_attempt_request: None,
+                collected_attempt_results: None,
                 channel: "linkedin".to_string(),
                 job: None,
                 context: false,

@@ -12,15 +12,16 @@ or update a CRM.
 
 ```mermaid
 flowchart LR
-    A["Clay Audiences segment"] --> B["Retrieve mdp.requirements.v1"]
+    A["Clay Audiences segment"] --> B["Retrieve mdp.requirements.v2"]
     B --> C["Attempt every declared attribute through customer-controlled sources"]
     C --> D["Source-attempt request + collected-results ledger"]
     B --> E["Retrieve versioned normalization prompt"]
     D --> F["Customer-funded normalization"]
     E --> F
-    F --> G["mdp.normalized-decision-input.v1"]
-    G --> V["validate-prompt-output: exact schemas, request/results hashes, prompt, time, and projection binding"]
-    V --> H["Deterministic fit, routing, brief, and gaps"]
+    F --> G["mdp.normalized-decision-input.v2"]
+    G --> V["validate-prompt-output: exact source binding, attempts, results, observations, prompt, and hashes"]
+    V --> P["Lineage-validated projection receipt"]
+    P --> H["Deterministic fit authority from declared roles"]
     H --> I{"Decision outcome"}
     I -->|"ready"| J["Compiled context column"]
     I -->|"all other outcomes"| K["No draft"]
@@ -61,19 +62,20 @@ by the host.
 
 [`fixtures/source-attempt-request.json`](fixtures/source-attempt-request.json)
 is an exact synthetic collector request. It contains one initial attempt for
-each declared attribute. A host may make additional attempts, but it must not
+each declared attribute plus a second attempt for the repeated why-now
+projection. A host may make additional attempts, but it must not
 omit an attribute. Its trusted `as_of` timestamp anchors freshness calculations.
 Every attempt has a unique ID, attribute ID, allowed source class, non-blank
 source locator, and request timestamp.
 
 [`fixtures/collected-attempt-results.json`](fixtures/collected-attempt-results.json)
-is the separate synthetic execution ledger. It binds to the exact request hash
-and preserves the host-observed status, value, evidence, timestamp, confidence,
-freshness, or error for every declared attribute. The normalizer may not change
-those facts.
+is the separate synthetic execution ledger. It binds to the exact v2 source
+binding and request hashes, preserves the scalar attribute map for compatibility,
+and includes one immutable result per signal-contributing attempt. The
+normalizer may not change those facts.
 
 [`fixtures/normalized-response-ready.json`](fixtures/normalized-response-ready.json)
-is an exact synthetic normalization envelope. Each attribute preserves one of
+is an exact synthetic v2 normalization envelope. Each attribute preserves one of
 five statuses:
 
 - `observed`: a source supplied a contract-valid value.
@@ -88,8 +90,11 @@ fabricate observation metadata; an `error` result instead requires its
 non-blank error detail. `blocked` and `error` are never collapsed into
 `not_found`; hard-gate absence is never inferred as safe.
 
-The normalized envelope includes the SHA-256 of both the exact source-attempt
-request and the exact collected-results ledger.
+The normalized envelope includes the SHA-256 of the exact source binding,
+source-attempt request, and collected-results ledger. Four observations project
+three logical signals: explicit `fit`, `person-resolution`, and `why-now` roles.
+The two agreeing why-now observations remain separately inspectable but count
+once in the projection receipt.
 Validation binds every provenance receipt back to a matching request attempt,
 requires normalized statuses, evidence, confidence, freshness, and errors to
 equal the collected ledger, allows raw collected values to canonicalize only
@@ -123,7 +128,7 @@ authentication, billing, Cloudflare infrastructure, or a production data path.
 ## Expected outcomes
 
 [`fixtures/expected-outcomes.json`](fixtures/expected-outcomes.json) defines the
-six synthetic acceptance cases:
+synthetic acceptance cases and signal-lineage contract matrix:
 
 | Outcome | Trigger | Draft behavior |
 |---|---|---|
@@ -133,6 +138,10 @@ six synthetic acceptance cases:
 | `human-review` | a hard gate is `blocked`, ambiguous, or unavailable | no draft; require a person to resolve it |
 | `malformed` | the request or response violates the compiled JSON Schema or prompt identity/version | no draft; reject the payload |
 | `provider-error` | the normalization provider fails or returns an error result | no draft; preserve the error and retry or escalate outside MDP |
+| `duplicate-agreement` | two attempts project the same meaningful why-now value | count one logical signal and retain both observation receipts |
+| `preserved-conflict` | two attempts project different values under `require-agreement` | human review; preserve both observations and no draft |
+| `stale-observation` / `weak-observation` | a linked observation misses freshness or confidence policy | keep the receipt but reject its role |
+| `forged-lineage` / `missing-receipt` | an observation invents evidence or omits a required receipt | malformed; fail closed before qualification |
 
 Pack eval fixtures exercise deterministic `ready`, `insufficient-context`, and
 `disqualified` behavior. The contract matrix covers the pre-evaluation
@@ -140,18 +149,18 @@ Pack eval fixtures exercise deterministic `ready`, `insufficient-context`, and
 
 ## Portable source-binding proof
 
-Two synthetic integration-owned bindings prove that the public contract is not
-Clay-specific:
+Two synthetic integration-owned v2 bindings prove that the public contract is
+not Clay-specific:
 
 - [`fixtures/source-binding-clay-adapter.json`](fixtures/source-binding-clay-adapter.json)
   uses synthetic table-column and approved-lookup field names.
 - [`fixtures/source-binding-record-grid.json`](fixtures/source-binding-record-grid.json)
   maps the same requirements to a generic record grid.
 
-Both keep credentials, provider calls, execution state, and row results outside
-MDP. The fixtures deliberately reuse one field key for two support-related
-requirements to prove that field-key reuse is allowed while each qualified
-requirement still appears exactly once.
+Both keep credentials, provider calls, execution state, and private row records
+outside MDP. They map each qualified projection exactly once and use only opaque,
+non-dereferenceable upstream references. A valid hash chain proves internal
+lineage consistency; it does not prove host authenticity or source truth.
 
 ## Local proof
 
@@ -174,7 +183,16 @@ mdp --json validate-source-binding \
 mdp --json validate-prompt-output --strict \
   --dir examples/clay-audiences-self-serve-enterprise-expansion \
   --prompt normalize-prospect.yaml \
+  --source-binding examples/clay-audiences-self-serve-enterprise-expansion/fixtures/source-binding-clay-adapter.json \
   --source-attempt-request examples/clay-audiences-self-serve-enterprise-expansion/fixtures/source-attempt-request.json \
   --collected-attempt-results examples/clay-audiences-self-serve-enterprise-expansion/fixtures/collected-attempt-results.json \
   --file examples/clay-audiences-self-serve-enterprise-expansion/fixtures/normalized-response-ready.json
+mdp --json fit \
+  --dir examples/clay-audiences-self-serve-enterprise-expansion \
+  --normalized-input examples/clay-audiences-self-serve-enterprise-expansion/fixtures/normalized-response-ready.json \
+  --prompt normalize-prospect.yaml \
+  --source-binding examples/clay-audiences-self-serve-enterprise-expansion/fixtures/source-binding-clay-adapter.json \
+  --source-attempt-request examples/clay-audiences-self-serve-enterprise-expansion/fixtures/source-attempt-request.json \
+  --collected-attempt-results examples/clay-audiences-self-serve-enterprise-expansion/fixtures/collected-attempt-results.json \
+  --job prospect-fit-or-brief
 ```

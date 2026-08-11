@@ -176,6 +176,30 @@ lead_input_requirements:
 
 Treat `lead_input_requirements` as the wire key for the pack's user-facing input readiness policy. A row can parse successfully and still return `insufficient-context` if it does not satisfy that policy or emits a value outside the pack's declared enum/type/date contracts. Packs can also declare `qualification_gates` for deterministic public-person resolution and source-backed fit/why-now signal coverage. The CLI owns those gates; discovery runtimes gather evidence but should not duplicate the pass/fail policy.
 
+Signal-aware jobs do not treat the legacy `signals[]` prose above as sourced
+qualification authority. Their Decision Input Contract declares repeated
+signal projections with profile-owned kinds and explicit closed roles. The
+host then supplies a v2 source binding, attempted-complete request, collected
+results, and structured normalized envelope. MDP validates the following chain
+without performing collection:
+
+```text
+pack projection -> source binding -> attempt request -> collected results
+     -> normalized observation -> projection decision receipt -> fit/brief
+```
+
+The accepted status is `lineage-validated`: every submitted identity, value,
+source class, locator, timestamp, confidence/freshness state, and hash is
+internally consistent with compiled policy. It is not a claim that the host is
+authentic or the observation is true. Legacy or detached signals remain
+`legacy`/`unassessed` and cannot acquire roles from keywords.
+
+Repeated observations remain visible. Agreement may count as one logical
+signal while preserving all receipts; disagreement follows only
+`require-agreement` or `any-disqualifies`. Unresolved conflicts stop at
+human-review/no-draft. The CLI does not choose the newest or
+highest-confidence positive observation.
+
 If the input is account-only and does not include a person name and title, do not invent a contact just to satisfy the prospect schema. Preserve the account facts, explain the absent person fields in `normalization_trace.missing_required`, and return an insufficient-context/no-draft decision until MDP has reviewed person context or a provider-neutral account input contract.
 
 ## Runtime Normalization Prompt

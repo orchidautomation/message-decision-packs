@@ -1,5 +1,5 @@
 {
-  "contract": "mdp.collected-attempt-results.v1",
+  "contract": "mdp.collected-attempt-results.v2",
   "job_id": "prospect-fit-or-brief",
   "decision_input_contracts": [
     {
@@ -7,7 +7,7 @@
       "version": "1.0.0"
     }
   ],
-  "source_attempt_request_sha256": "b228884027f7754f5136bb9317d164fc8e4d702ea145891997f29c26913fa9df",
+  "source_attempt_request_sha256": "6e5934a17157c15e37621642434903355246a16be5992410b0c7970ab6c6d3cf",
   "attributes": {
     "company_name": {
       "status": "observed",
@@ -16,7 +16,7 @@
         {
           "attempt_id": "synthetic-attempt-001",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/company",
+          "source_locator": "opaque:synthetic-attempt-001",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -33,7 +33,7 @@
         {
           "attempt_id": "synthetic-attempt-002",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/company",
+          "source_locator": "opaque:synthetic-attempt-002",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -50,7 +50,7 @@
         {
           "attempt_id": "synthetic-attempt-003",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/person",
+          "source_locator": "opaque:synthetic-attempt-003",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -67,7 +67,7 @@
         {
           "attempt_id": "synthetic-attempt-004",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/person",
+          "source_locator": "opaque:synthetic-attempt-004",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -84,7 +84,7 @@
         {
           "attempt_id": "synthetic-attempt-005",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/trigger",
+          "source_locator": "opaque:synthetic-attempt-005",
           "observed_at": "2026-07-29T12:00:00Z",
           "excerpt": "Synthetic fixture says a reviewed usage threshold was reached."
         }
@@ -102,7 +102,7 @@
         {
           "attempt_id": "synthetic-attempt-006",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/account-state",
+          "source_locator": "opaque:synthetic-attempt-006",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -119,7 +119,7 @@
         {
           "attempt_id": "synthetic-attempt-007",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/account-state",
+          "source_locator": "opaque:synthetic-attempt-007",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -136,7 +136,7 @@
         {
           "attempt_id": "synthetic-attempt-008",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/account-state",
+          "source_locator": "opaque:synthetic-attempt-008",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -153,7 +153,7 @@
         {
           "attempt_id": "synthetic-attempt-009",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/eligibility",
+          "source_locator": "opaque:synthetic-attempt-009",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -170,7 +170,7 @@
         {
           "attempt_id": "synthetic-attempt-010",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/suppression",
+          "source_locator": "opaque:synthetic-attempt-010",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -187,7 +187,7 @@
         {
           "attempt_id": "synthetic-attempt-011",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/support",
+          "source_locator": "opaque:synthetic-attempt-011",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -204,7 +204,7 @@
         {
           "attempt_id": "synthetic-attempt-012",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/person",
+          "source_locator": "opaque:synthetic-attempt-012",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -220,7 +220,7 @@
         {
           "attempt_id": "synthetic-attempt-013",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/support",
+          "source_locator": "opaque:synthetic-attempt-013",
           "observed_at": "2026-07-29T12:00:00Z",
           "excerpt": "Synthetic fixture marks the support-context question not applicable."
         }
@@ -238,7 +238,7 @@
         {
           "attempt_id": "synthetic-attempt-014",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/company",
+          "source_locator": "opaque:synthetic-attempt-014",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -254,7 +254,7 @@
         {
           "attempt_id": "synthetic-attempt-015",
           "source_class": "synthetic_fixture",
-          "source_locator": "synthetic://clay-example/account-state",
+          "source_locator": "opaque:synthetic-attempt-015",
           "observed_at": "2026-07-29T12:00:00Z"
         }
       ],
@@ -264,5 +264,102 @@
         "age_days": 0
       }
     }
-  }
+  },
+  "source_binding_sha256": "96cd919009c1f8dbd740a5d5d416beac77d0c60859ae973e0aae797e47b1fdcb",
+  "attempt_results": [
+    {
+      "attempt_id": "synthetic-attempt-004",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion",
+      "attribute_id": "person_title",
+      "status": "observed",
+      "value": "VP Revenue Operations",
+      "source_class": "synthetic_fixture",
+      "source_locator": "opaque:synthetic-attempt-004",
+      "observed_at": "2026-07-29T12:00:00Z",
+      "confidence": 100,
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-004",
+          "source_class": "synthetic_fixture",
+          "source_locator": "opaque:synthetic-attempt-004",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    {
+      "attempt_id": "synthetic-attempt-005",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion",
+      "attribute_id": "expansion_trigger_summary",
+      "status": "observed",
+      "value": "Synthetic usage threshold reached in the reviewed fixture.",
+      "source_class": "synthetic_fixture",
+      "source_locator": "opaque:synthetic-attempt-005",
+      "observed_at": "2026-07-29T12:00:00Z",
+      "confidence": 100,
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-005",
+          "source_class": "synthetic_fixture",
+          "source_locator": "opaque:synthetic-attempt-005",
+          "observed_at": "2026-07-29T12:00:00Z",
+          "excerpt": "Synthetic fixture says a reviewed usage threshold was reached."
+        }
+      ],
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    {
+      "attempt_id": "synthetic-attempt-016",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion",
+      "attribute_id": "expansion_trigger_summary",
+      "status": "observed",
+      "value": "Synthetic usage threshold reached in the reviewed fixture.",
+      "source_class": "synthetic_fixture",
+      "source_locator": "opaque:synthetic-attempt-016",
+      "observed_at": "2026-07-29T12:00:00Z",
+      "confidence": 100,
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-016",
+          "source_class": "synthetic_fixture",
+          "source_locator": "opaque:synthetic-attempt-016",
+          "observed_at": "2026-07-29T12:00:00Z",
+          "excerpt": "Synthetic fixture says a reviewed usage threshold was reached."
+        }
+      ],
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    },
+    {
+      "attempt_id": "synthetic-attempt-009",
+      "decision_input_contract_id": "clay.audiences.self_serve_enterprise_expansion",
+      "attribute_id": "enterprise_eligibility",
+      "status": "observed",
+      "value": "eligible",
+      "source_class": "synthetic_fixture",
+      "source_locator": "opaque:synthetic-attempt-009",
+      "observed_at": "2026-07-29T12:00:00Z",
+      "confidence": 100,
+      "provenance": [
+        {
+          "attempt_id": "synthetic-attempt-009",
+          "source_class": "synthetic_fixture",
+          "source_locator": "opaque:synthetic-attempt-009",
+          "observed_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "freshness": {
+        "observed_at": "2026-07-29T12:00:00Z",
+        "age_days": 0
+      }
+    }
+  ]
 }

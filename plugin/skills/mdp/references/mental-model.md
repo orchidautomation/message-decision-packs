@@ -10,7 +10,9 @@ Read this when explaining what belongs in MDP or deciding which layer owns a beh
   executing policy or replacing the source artifact.
 - Pack: approved decision context, one `skill_id` per agent-routable job, evidence, boundaries, output contracts, gaps, and fixtures.
 - Prompt: a versioned pack-owned normalization, generation, or review contract over declared inputs. `mdp.prompt.v1` names each input producer, the procedure and evidence rules, and an exact structured output schema. The host executes it; MDP compiles and validates it. `source_summary.inputs_used` names declared inputs only; source paths, snippets, page locators, URLs, and proof notes belong in evidence/provenance, `signals[].source`, or normalization trace.
-- Manifest: allowed values, required fields/signals/attributes, profile job bindings, and pack-owned readiness policy.
+- Manifest: allowed values, required fields/signals/attributes, profile job
+  bindings, pack-owned signal projections and explicit roles, conservative
+  conflict policy, and readiness policy.
 - Product foundation: a profile/job index over exact existing card entries and
   gaps. It selects required and triggered conditional authority for one
   canonical job; it is not an eleventh primitive, card kind, or company wiki.
@@ -36,3 +38,6 @@ Use `actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evid
 - Reject unsupported job bindings; do not choose a nearby skill.
 - State that host discovery is unobserved and host-managed.
 - Keep side effects outside MDP.
+- Keep legacy signals readable but non-authoritative. A v2
+  `lineage-validated` result means the host-submitted artifact chain is
+  internally consistent; it does not authenticate the host or prove truth.

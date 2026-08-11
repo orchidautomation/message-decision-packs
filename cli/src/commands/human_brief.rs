@@ -532,11 +532,68 @@ fn list_fit(fit: &Value) -> String {
 
 fn list_proof(artifact: &Value) -> String {
     let mut parts = Vec::new();
-    if let Some(signals) = artifact["prospect"]["signals"].as_array() {
+    if artifact["fit"]["signal_authority"]["authority_class"] == "lineage-validated" {
+        for signal in artifact["fit"]["signal_authority"]["accepted"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            parts.push(format!(
+                "- signal_id={} roles={} observations={}",
+                display_value(&signal["signal_id"]),
+                signal["roles"]
+                    .as_array()
+                    .map(|roles| roles
+                        .iter()
+                        .map(display_value)
+                        .collect::<Vec<_>>()
+                        .join(","))
+                    .unwrap_or_else(|| "none".to_string()),
+                render_observation_receipts(&signal["observation_receipts"])
+            ));
+        }
+        for signal in artifact["fit"]["signal_authority"]["rejected"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            parts.push(format!(
+                "- rejected_signal_id={} roles={} reason={}",
+                display_value(&signal["signal_id"]),
+                signal["roles"]
+                    .as_array()
+                    .map(|roles| roles
+                        .iter()
+                        .map(display_value)
+                        .collect::<Vec<_>>()
+                        .join(","))
+                    .unwrap_or_else(|| "none".to_string()),
+                display_value(&signal["reason"])
+            ));
+        }
+        parts.push(format!(
+            "- signal_trust_boundary={}",
+            display_value(&artifact["fit"]["signal_authority"]["trust_boundary"])
+        ));
+        for field in [
+            "source_binding_sha256",
+            "source_attempt_request_sha256",
+            "collected_attempt_results_sha256",
+            "normalized_output_sha256",
+        ] {
+            if !artifact["fit"]["signal_authority"][field].is_null() {
+                parts.push(format!(
+                    "- signal_{}={}",
+                    field,
+                    display_value(&artifact["fit"]["signal_authority"][field])
+                ));
+            }
+        }
+    } else if let Some(signals) = artifact["prospect"]["signals"].as_array() {
         for signal in signals {
             parts.push(format!(
-                "- {}",
-                compact_item(signal, &["title", "source", "confidence", "state_as"])
+                "- legacy/unassessed signal_id={}",
+                display_value(&signal["id"])
             ));
         }
     }
@@ -812,6 +869,28 @@ fn clean(value: Option<&str>) -> Option<&str> {
     } else {
         Some(text)
     }
+}
+
+fn render_observation_receipts(receipts: &Value) -> String {
+    let Some(receipts) = receipts.as_array() else {
+        return "none".to_string();
+    };
+    if receipts.is_empty() {
+        return "none".to_string();
+    }
+    receipts
+        .iter()
+        .map(|receipt| {
+            format!(
+                "{}@{} confidence={} attempts={}",
+                display_value(&receipt["id"]),
+                display_value(&receipt["observed_at"]),
+                display_value(&receipt["confidence"]),
+                display_value(&receipt["attempt_ids"])
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn display_value(value: &Value) -> String {

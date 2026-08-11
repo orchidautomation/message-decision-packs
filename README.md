@@ -160,21 +160,28 @@ it changes the portable pack hash even though it does not change resolver or
 readiness authority.
 
 Jobs that need an attempted-complete data policy can bind versioned
-`decision_input_contracts`. `mdp --json requirements --job <job-id>` compiles
-their exact data questions, requirement levels, applicability, source policy,
-attempt statuses, provenance, confidence, freshness, normalized JSON Schema,
-and no-draft boundary. The contract tells external collectors what to attempt;
-MDP does not perform collection or model calls. See
+`decision_input_contracts`. Start with `mdp --json capabilities`, then run
+`mdp --json requirements --dir <pack> --job <job-id>` before inspecting cards
+or collecting data. Requirements compiles the exact questions, source policy,
+attempt statuses, provenance, confidence, freshness, normalization schemas,
+signal projections, conflict rules, version matrix, and no-draft boundary.
+Structured repeated signal observations exist only in the opt-in v2 envelope;
+scalar-only v1 and detached prospect signals remain readable as legacy or
+unassessed context and cannot satisfy explicit roles. The contract tells an
+external host what to attempt; MDP performs no collection or model calls. See
 [Decision Input Contracts](docs/decision-input-contracts.md) and the synthetic
 [Clay Audiences example](examples/clay-audiences-self-serve-enterprise-expansion/README.md).
 
 External orchestrators can bind their fields to one exact compiled job through
-the provider-neutral `mdp.source-binding.v1` contract. Use `mdp --json schema
-source-binding`, then `mdp --json validate-source-binding --dir <pack> --job
-<job-id> --file <binding.json>`. The validator checks portable pack and
-requirements digests, exact contract/attribute coverage, requirement classes,
-and allowed source classes. Bindings remain integration-owned and outside
-`.mdp`; MDP still performs no provider calls or orchestration.
+the provider-neutral v1 or signal-aware v2 source-binding contract selected by
+the compiled requirements. Use `mdp --json schema source-binding`, then
+`mdp --json validate-source-binding --dir <pack> --job <job-id> --file
+<binding.json>`. For a v2 job, preserve the exact binding, request, collected
+results, prompt, and normalized envelope, validate the chain, and pass it to
+`fit` or `brief` through `--normalized-input`; do not extract and edit a
+detached prospect. `lineage-validated` means internal chain consistency only,
+not host authenticity or source truth. Bindings remain integration-owned and
+outside `.mdp`; MDP still performs no provider calls or orchestration.
 
 For audit-grade proposal normalization, the runner or host must make a fresh/stateless model call and pass only prompt-declared inputs. `scripts/mdp-proposal-runner.mjs` is the host-neutral local command surface that stages sources, preserves or creates source-audit inputs, calls the native runner, validates prompt output, creates the required receipt, and runs review-support probes. It is also exposed through `scripts/mdp-proposal-mcp-server.mjs`, a bundled local stdio MCP wrapper; neither surface is a hosted or remote MCP service. `mdp run-receipt` records the host-owned boundary plus local artifact hashes for the source audit, prompt output, validation result, runner audit, and downstream files, and blocks if the validation-result hashes do not match the supplied prompt-output/source-audit artifacts, if the runner-audit prompt-output hash does not match the supplied prompt output, or if the runner audit is marked demo/fixture/mock/synthetic. Same-conversation, dry-run, or mock normalization without a valid required runner-audit receipt is advisory or blocked even when the JSON validates.
 

@@ -14,10 +14,15 @@ pub(crate) const PROPOSAL_READINESS_REPORT_CONTRACT: &str = "mdp.proposal-readin
 pub(crate) const PROPOSAL_MCP_RUN_RESULT_CONTRACT: &str = "mdp.proposal-mcp-run-result.v0";
 pub(crate) const PROPOSAL_RUN_MANIFEST_CONTRACT: &str = "mdp.proposal-run-manifest.v0";
 pub(crate) const REQUIREMENTS_CONTRACT: &str = "mdp.requirements.v1";
+pub(crate) const REQUIREMENTS_CONTRACT_V2: &str = "mdp.requirements.v2";
 pub(crate) const SOURCE_BINDING_CONTRACT: &str = "mdp.source-binding.v1";
+pub(crate) const SOURCE_BINDING_CONTRACT_V2: &str = "mdp.source-binding.v2";
 pub(crate) const SOURCE_BINDING_VALIDATION_CONTRACT: &str = "mdp.source-binding-validation.v1";
 pub(crate) const COLLECTED_ATTEMPT_RESULTS_CONTRACT: &str = "mdp.collected-attempt-results.v1";
+pub(crate) const COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2: &str = "mdp.collected-attempt-results.v2";
 pub(crate) const NORMALIZED_DECISION_INPUT_CONTRACT: &str = "mdp.normalized-decision-input.v1";
+pub(crate) const NORMALIZED_DECISION_INPUT_CONTRACT_V2: &str = "mdp.normalized-decision-input.v2";
+pub(crate) const SOURCE_ATTEMPT_REQUEST_CONTRACT_V2: &str = "mdp.source-attempt-request.v2";
 pub(crate) const PROMPT_CARD_PATCH_SCHEMA_REF: &str = "mdp.prompt-output.card-patches.v0";
 pub(crate) const PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF: &str =
     "mdp.prompt-output.prospect-normalization.v0";

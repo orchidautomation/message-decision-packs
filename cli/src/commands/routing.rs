@@ -1,3 +1,8 @@
+use crate::artifact_hash::{canonical_json_sha256, sha256_hex};
+use crate::commands::prompt_output::{
+    read_bounded_bytes, validate_prompt_output_file_with_lineage_inputs,
+};
+use crate::commands::requirements::requirements;
 use crate::models::{CardKind, QualificationGates};
 use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
 use crate::routing::{entry_context_scoped, entry_route_scoped, select_cards};
@@ -130,7 +135,83 @@ pub(crate) fn fit(root: &Path, prospect_path: &Path) -> Result<Value> {
     fit_prospect(root, prospect)
 }
 
-pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -> Result<Value> {
+pub(crate) fn fit_normalized(
+    root: &Path,
+    normalized_path: &Path,
+    prompt_path: &Path,
+    source_binding_path: &Path,
+    source_attempt_request_path: &Path,
+    collected_attempt_results_path: &Path,
+    expected_job: Option<&str>,
+) -> Result<Value> {
+    let normalized_bytes = read_bounded_bytes(normalized_path, "normalized decision input")?;
+    let normalized: Value = serde_json::from_slice(&normalized_bytes)
+        .with_context(|| format!("parsing {}", normalized_path.display()))?;
+    let job_id = normalized["job_id"]
+        .as_str()
+        .ok_or_else(|| anyhow!("normalized decision input omits job_id"))?;
+    if expected_job.is_some_and(|expected| expected != job_id) {
+        return Err(anyhow!(
+            "normalized decision input job_id does not match --job"
+        ));
+    }
+    let validation = validate_prompt_output_file_with_lineage_inputs(
+        root,
+        normalized_path,
+        Some(prompt_path),
+        None,
+        None,
+        Some(source_binding_path),
+        Some(source_attempt_request_path),
+        Some(collected_attempt_results_path),
+        None,
+    )?;
+    if validation["valid"] != true {
+        return Err(anyhow!(
+            "normalized decision input failed lineage validation"
+        ));
+    }
+    let projection = validation["signal_projection"].clone();
+    if projection["status"] != "lineage-validated" && projection["status"] != "disqualified" {
+        return Err(anyhow!(
+            "normalized decision input is not qualification-eligible"
+        ));
+    }
+    let prospect: crate::models::Prospect =
+        serde_json::from_value(normalized["normalized_prospect"].clone())
+            .context("normalized_prospect does not satisfy the prospect contract")?;
+    let compiled = requirements(root, job_id)?;
+    let requirements_sha256 = canonical_json_sha256(&compiled)?;
+    let eligibility_policy = json!({
+        "version": "mdp.signal-eligibility.v1",
+        "qualification_gates": read_manifest(root)?.qualification_gates,
+        "signal_projections": compiled["decision_input_contracts"].as_array().into_iter().flatten()
+            .flat_map(|contract| contract["signal_projections"].as_array().into_iter().flatten())
+            .collect::<Vec<_>>()
+    });
+    let mut authority = signal_eligibility(&projection);
+    authority["contract"] = json!("mdp.signal-qualification-authority.v1");
+    authority["job_id"] = json!(job_id);
+    authority["pack_id"] = compiled["pack"]["id"].clone();
+    authority["pack_sha256"] = compiled["pack"]["sha256"].clone();
+    authority["requirements_sha256"] = json!(requirements_sha256);
+    authority["validator_version"] = json!(env!("CARGO_PKG_VERSION"));
+    authority["eligibility_policy_sha256"] = json!(canonical_json_sha256(&eligibility_policy)?);
+    authority["normalized_output_sha256"] = json!(sha256_hex(&normalized_bytes));
+    authority["projected_prospect_sha256"] =
+        json!(canonical_json_sha256(&normalized["normalized_prospect"])?);
+    fit_prospect_with_signal_authority(root, prospect, Some(authority))
+}
+
+pub(crate) fn fit_prospect(root: &Path, prospect: crate::models::Prospect) -> Result<Value> {
+    fit_prospect_with_signal_authority(root, prospect, None)
+}
+
+fn fit_prospect_with_signal_authority(
+    root: &Path,
+    mut prospect: crate::models::Prospect,
+    signal_authority: Option<Value>,
+) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let company_domain_normalization = normalize_company_domain_for_fit(&mut prospect);
     let fit_cards = read_cards_by_id_or_kind(root, "fit-rules", CardKind::FitRules)?;
@@ -146,10 +227,23 @@ pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -
         &prospect,
         &persona_resolution,
         company_domain_normalization,
+        signal_authority.as_ref(),
     );
     let scope = scope_from_prospect(&manifest, &prospect);
     let mut portfolio_sensitive = false;
     let mut compatible_scoped_entry_count = 0usize;
+
+    if signal_authority
+        .as_ref()
+        .is_some_and(|authority| authority["roles"]["disqualifier"] == true)
+    {
+        disqualifiers.push(json!({
+            "entry_id": "signal-role:disqualifier",
+            "title": "Declared sourced-signal disqualifier",
+            "term": "declared-role",
+            "reason": "lineage-validated-disqualifier"
+        }));
+    }
 
     for fit_card in &fit_cards {
         for entry in &fit_card.entries {
@@ -216,6 +310,7 @@ pub(crate) fn fit_prospect(root: &Path, mut prospect: crate::models::Prospect) -
         "context": context,
         "matches": matches,
         "disqualifiers": disqualifiers,
+        "signal_authority": signal_authority.unwrap_or_else(legacy_signal_authority),
         "decision": match status {
             "fit" => "Proceed to route/brief with stated assumptions.",
             "disqualified" => "Do not draft outbound copy unless the user overrides the disqualifier.",
@@ -229,6 +324,7 @@ fn fit_context(
     prospect: &crate::models::Prospect,
     persona_resolution: &crate::utils::PersonaResolution,
     company_domain_normalization: Value,
+    signal_authority: Option<&Value>,
 ) -> Value {
     let has_trigger = prospect
         .trigger
@@ -316,7 +412,12 @@ fn fit_context(
         }
     }
 
-    let qualification_gate = qualification_gate_context(&manifest.qualification_gates, prospect);
+    let qualification_gate = match signal_authority {
+        Some(authority) => {
+            signal_qualification_gate_context(&manifest.qualification_gates, prospect, authority)
+        }
+        None => qualification_gate_context(&manifest.qualification_gates, prospect),
+    };
     if let Some(gate) = manifest.qualification_gates.as_ref() {
         collect_qualification_gate_requirements(
             gate,
@@ -412,6 +513,161 @@ fn qualification_gate_context(
             .and_then(|gate| gate.fail_policy.as_ref())
             .map(|_| "insufficient_context")
             .unwrap_or("insufficient_context")
+    })
+}
+
+fn legacy_signal_authority() -> Value {
+    json!({
+        "contract": "mdp.signal-qualification-authority.v1",
+        "authority_class": "legacy",
+        "aggregate_authority": "unassessed",
+        "projection_status": "unassessed",
+        "eligible_signal_count": 0,
+        "roles": {"fit": false, "why-now": false, "person-resolution": false, "disqualifier": false},
+        "accepted": [],
+        "rejected": [],
+        "trust_boundary": "detached prospect input; no immutable lineage-validated handoff",
+        "reason": "detached prospect input has no immutable lineage-validated handoff"
+    })
+}
+
+pub(crate) fn signal_eligibility(projection_receipt: &Value) -> Value {
+    let receipt_status = projection_receipt["status"].as_str().unwrap_or("blocked");
+    let receipt_eligible = matches!(receipt_status, "lineage-validated" | "disqualified");
+    let mut accepted = Vec::new();
+    let mut rejected = Vec::new();
+    let mut roles = BTreeSet::new();
+    for signal in projection_receipt["logical_signals"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let id = signal["qualified_projection_id"]
+            .as_str()
+            .unwrap_or("unidentified-signal");
+        let mut observation_ids = signal["observation_ids"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        observation_ids.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+        let declared_roles = signal["roles"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .filter(|role| {
+                matches!(
+                    *role,
+                    "fit" | "why-now" | "person-resolution" | "disqualifier"
+                )
+            })
+            .collect::<BTreeSet<_>>();
+        let observation_receipts = projection_receipt["observations"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|observation| observation_ids.contains(&observation["id"]))
+            .map(|observation| {
+                json!({
+                    "id": observation["id"],
+                    "attempt_ids": observation["attempt_ids"],
+                    "source_class": observation["source_class"],
+                    "observed_at": observation["observed_at"],
+                    "confidence": observation["confidence"],
+                    "receipt": observation["receipt"]
+                })
+            })
+            .collect::<Vec<_>>();
+        if receipt_eligible && !declared_roles.is_empty() {
+            roles.extend(declared_roles.iter().copied());
+            accepted.push(json!({
+                "signal_id": id,
+                "qualified_projection_id": id,
+                "roles": declared_roles,
+                "observation_ids": observation_ids,
+                "observation_receipts": observation_receipts,
+                "authority_class": "lineage-validated",
+                "decision": "accepted"
+            }));
+        } else {
+            rejected.push(json!({
+                "signal_id": id,
+                "qualified_projection_id": id,
+                "roles": declared_roles,
+                "observation_ids": observation_ids,
+                "observation_receipts": observation_receipts,
+                "authority_class": if receipt_eligible { "unassessed" } else { "lineage-validated" },
+                "decision": "rejected",
+                "reason": if receipt_eligible { "no-declared-qualification-role" } else { receipt_status }
+            }));
+        }
+    }
+    json!({
+        "authority_class": if receipt_eligible { "lineage-validated" } else { "unassessed" },
+        "aggregate_authority": if receipt_eligible { "lineage-validated" } else { "unassessed" },
+        "projection_status": receipt_status,
+        "eligible_signal_count": accepted.len(),
+        "roles": {
+            "fit": roles.contains("fit"),
+            "why-now": roles.contains("why-now"),
+            "person-resolution": roles.contains("person-resolution"),
+            "disqualifier": roles.contains("disqualifier")
+        },
+        "accepted": accepted,
+        "rejected": rejected,
+        "source_binding_sha256": projection_receipt["source_binding_sha256"],
+        "source_attempt_request_sha256": projection_receipt["source_attempt_request_sha256"],
+        "collected_attempt_results_sha256": projection_receipt["collected_attempt_results_sha256"],
+        "normalized_output_sha256": projection_receipt["normalized_output_sha256"],
+        "trust_boundary": "lineage identity only; does not attest host authenticity or source truth"
+    })
+}
+
+fn signal_qualification_gate_context(
+    gate: &Option<QualificationGates>,
+    prospect: &crate::models::Prospect,
+    authority: &Value,
+) -> Value {
+    let accepted_ids = authority["accepted"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item["signal_id"].as_str())
+        .collect::<Vec<_>>();
+    let role_ids = |role: &str| {
+        authority["accepted"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|item| {
+                item["roles"]
+                    .as_array()
+                    .is_some_and(|roles| roles.contains(&json!(role)))
+            })
+            .filter_map(|item| item["signal_id"].as_str())
+            .collect::<Vec<_>>()
+    };
+    let person_ids = role_ids("person-resolution");
+    let public_person_url = prospect
+        .linkedin_url
+        .as_deref()
+        .is_some_and(public_person_url_present);
+    json!({
+        "enabled": gate.is_some(),
+        "authority_class": authority["authority_class"],
+        "person_resolution": {
+            "required": gate.as_ref().is_some_and(|gate| gate.require_person_resolution),
+            "resolved": present(&prospect.name) && present(&prospect.title) && (public_person_url || !person_ids.is_empty()),
+            "public_person_url": public_person_url,
+            "signal_ids": person_ids
+        },
+        "signals": {
+            "source_backed_count": accepted_ids.len(),
+            "accepted_signal_ids": accepted_ids,
+            "fit_signal_indexes": role_ids("fit"),
+            "why_now_signal_indexes": role_ids("why-now")
+        },
+        "fail_policy": "insufficient_context"
     })
 }
 
@@ -2314,8 +2570,113 @@ optional:
         assert_eq!(result["contract"], "mdp.fit.v0");
         assert_eq!(result["status"], "fit");
         assert_eq!(result["prospect"]["company_domain"], "example.com");
+        assert_eq!(result["signal_authority"]["authority_class"], "legacy");
+        assert_eq!(
+            result["signal_authority"]["aggregate_authority"],
+            "unassessed"
+        );
         assert!(result["matches"].as_array().expect("matches array").len() > 0);
 
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn signal_eligibility_uses_declared_roles_and_counts_a_dual_role_signal_once() {
+        let receipt = json!({
+            "contract": "mdp.signal-projection-decision-receipt.v1",
+            "status": "lineage-validated",
+            "logical_signals": [{
+                "qualified_projection_id": "buying::expansion",
+                "kind": "customer-expansion",
+                "roles": ["fit", "why-now"],
+                "value": "wording intentionally contains no qualification keywords",
+                "observation_ids": ["obs-2", "obs-1"]
+            }]
+        });
+
+        let eligibility = super::signal_eligibility(&receipt);
+
+        assert_eq!(eligibility["authority_class"], "lineage-validated");
+        assert_eq!(eligibility["eligible_signal_count"], 1);
+        assert_eq!(eligibility["roles"]["fit"], true);
+        assert_eq!(eligibility["roles"]["why-now"], true);
+        assert_eq!(
+            eligibility["accepted"][0]["observation_ids"],
+            json!(["obs-1", "obs-2"])
+        );
+        assert!(
+            eligibility
+                .to_string()
+                .find("wording intentionally")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn signal_eligibility_rejects_keywords_without_roles_and_blocked_receipts() {
+        let keyword_only = json!({
+            "status": "lineage-validated",
+            "logical_signals": [{
+                "qualified_projection_id": "buying::urgent-fit-trigger",
+                "kind": "urgent-fit-trigger",
+                "roles": [],
+                "value": "strong fit, urgent timing and launch",
+                "observation_ids": ["obs-keywords"]
+            }]
+        });
+        let blocked = json!({
+            "status": "human-review",
+            "logical_signals": [{
+                "qualified_projection_id": "buying::conflict",
+                "kind": "conflict",
+                "roles": ["fit", "why-now"],
+                "observation_ids": ["obs-conflict"]
+            }]
+        });
+
+        let keyword_result = super::signal_eligibility(&keyword_only);
+        assert_eq!(keyword_result["eligible_signal_count"], 0);
+        assert_eq!(keyword_result["roles"]["fit"], false);
+        assert_eq!(keyword_result["roles"]["why-now"], false);
+        assert_eq!(
+            keyword_result["rejected"][0]["reason"],
+            "no-declared-qualification-role"
+        );
+
+        let blocked_result = super::signal_eligibility(&blocked);
+        assert_eq!(blocked_result["authority_class"], "unassessed");
+        assert_eq!(blocked_result["eligible_signal_count"], 0);
+        assert_eq!(blocked_result["rejected"][0]["reason"], "human-review");
+    }
+
+    #[test]
+    fn signal_aware_fit_gates_use_roles_not_legacy_signal_prose() {
+        let root = temp_pack("signal-aware-role-gates");
+        let prospect = crate::pack_io::read_prospect(&root.join("examples/clay-row.json"))
+            .expect("prospect fixture");
+        let authority = super::signal_eligibility(&json!({
+            "status": "lineage-validated",
+            "logical_signals": [{
+                "qualified_projection_id": "buying::declared",
+                "kind": "opaque-profile-kind",
+                "roles": ["fit", "why-now", "person-resolution"],
+                "value": "opaque",
+                "observation_ids": ["obs-role"]
+            }]
+        }));
+
+        let result = super::fit_prospect_with_signal_authority(&root, prospect, Some(authority))
+            .expect("signal-aware fit");
+
+        assert_eq!(result["status"], "fit");
+        assert_eq!(
+            result["context"]["qualification_gate"]["signals"]["source_backed_count"],
+            1
+        );
+        assert_eq!(
+            result["signal_authority"]["accepted"][0]["signal_id"],
+            "buying::declared"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

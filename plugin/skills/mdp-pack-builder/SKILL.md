@@ -103,10 +103,20 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 
 The compiled contract, not a generic finder or the normalization prompt, states
 what data must be attempted. Keep collection and provider calls outside MDP.
+When the decision needs repeated sourced signals, declare
+`signal_projections` beside scalar attributes. Each projection needs a stable
+qualified ID, profile-owned kind, explicit closed roles, attribute
+contributors, bounded cardinality, conservative conflict policy, and decision
+effects. Use only `fit`, `why-now`, `person-resolution`, and `disqualifier`
+roles. Never derive roles from prose or provider fields, and never use
+last-write-wins, newest, highest-confidence, or another positive winner rule.
+Signal-aware normalization must declare `mdp.normalized-decision-input.v2`;
+structured observations never belong in the legacy prospect signal array.
 
 If an external orchestrator will consume the job, hand its integration owner
 the complete requirements result plus `mdp --json schema source-binding`.
-Keep the resulting `mdp.source-binding.v1` artifact outside `.mdp`, and require:
+Keep the resulting version-compatible `mdp.source-binding.v1` or
+`mdp.source-binding.v2` artifact outside `.mdp`, and require:
 
 ```bash
 mdp --json validate-source-binding --dir PACK_ROOT \
@@ -132,7 +142,8 @@ and exact Decision Input Contract receipts.
 
    - Only when the selected prompt is the job-bound
      `decision-input-normalization` prompt producing
-     `mdp.normalized-decision-input.v1`, require `data.available` to be `true`
+     `mdp.normalized-decision-input.v1` or
+     `mdp.normalized-decision-input.v2`, require `data.available` to be `true`
      and hand the customer or host the complete exact requirements result as
      `DECISION_INPUT_REQUIREMENTS_JSON`, including
      `data.source_attempt_request_schema`,
@@ -156,8 +167,12 @@ and exact Decision Input Contract receipts.
 
      Preserve both exact ledgers and pass them to validation:
 
+     The command below is the v2 form. For scalar v1, omit
+     `--source-binding` and keep every artifact on the v1 matrix row.
+
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_PROMPT_PATH \
+  --source-binding SOURCE_BINDING_JSON \
   --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON \
   --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON \
   --file OUTPUT_JSON
@@ -167,6 +182,11 @@ mdp --json validate-prompt-output --dir PACK_ROOT --prompt BOUND_PROMPT_PATH \
      succeeds and the envelope's top-level `outcome` is exactly `ready`.
      Preserve the exact request and collected-results bytes and both SHA-256
      receipts with the normalized result.
+     For v2, validate the complete binding/request/results/output chain and
+     pass it to `fit` or `brief` through `--normalized-input`; do not extract an
+     editable prospect and claim retained lineage. Preserve all observation
+     receipts and conflicts. `lineage-validated` means internal consistency,
+     not host authenticity, authorization, or source truth.
 
    - For every other prompt output kind or contract, retain the normal
      `mdp.prompt-output.v0` path without a source-attempt request, regardless of
@@ -224,6 +244,8 @@ Do not finish while normal validation has errors. Use strict validation as the f
 ## Boundaries
 
 - Build decision context, not source-collection infrastructure or execution automation.
+- Preserve engine-owned input/output limits, safe display-field allowlists,
+  control-character rejection, renderer escaping, and locator non-dereference.
 - Do not invent claims, contacts, personas, proof, certifications, compliance status, past performance, pricing, deadlines, or approvals.
 - Target identity proves only what is explicitly stated in its cited direct claim. Unsupported category, capability, ICP, outcome, or proof belongs in gaps.
 - Do not add old skill aliases, custom routable job IDs, obsolete surface metadata, or host visibility policy.
