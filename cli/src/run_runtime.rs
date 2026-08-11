@@ -401,6 +401,7 @@ where
             source_attempt.map(|input| input.staged_path.as_path()),
             attempt_results.map(|input| input.staged_path.as_path()),
             None,
+            None,
         )?;
         let valid = result["valid"].as_bool() == Some(true);
         validation = Some(result.clone());
@@ -478,6 +479,7 @@ where
                 Some(&source_attempt.staged_path),
                 Some(&attempt_results.staged_path),
                 None,
+                None,
             )?
         } else {
             validate_prompt_output_file_with_inputs(
@@ -488,6 +490,7 @@ where
                 None,
                 Some(&source_attempt.staged_path),
                 Some(&attempt_results.staged_path),
+                None,
                 None,
             )?
         };

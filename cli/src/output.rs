@@ -184,7 +184,8 @@ fn summarize(command: &str, data: &Value) -> Value {
             "load_order": data["load_order"],
             "entry_match_count": array_len(&data["entry_route"]["matches"]),
             "entry_gap_count": array_len(&data["entry_route"]["gaps"]),
-            "entry_gaps": data["entry_route"]["gaps"],
+        "entry_gaps": data["entry_route"]["gaps"],
+            "minimality": data["entry_route"]["minimality"],
             "eval_fixture": data["eval_fixture"]
         }),
         "sample-leads" => json!({
@@ -354,6 +355,15 @@ fn context_summary(context: &Value) -> Value {
         "gap_count": array_len(&context["gaps"]),
         "gaps": context["gaps"],
         "full_card_required": context["full_card_required"]
+        ,"minimality": {
+            "status": context["minimality"]["status"],
+            "context_sha256": context["minimality"]["context_sha256"],
+            "budget": context["minimality"]["budget"],
+            "selected_count": context["minimality"]["selected_count"],
+            "excluded_count": context["minimality"]["excluded_count"],
+            "excluded": context["minimality"]["excluded"],
+            "diagnostics": context["minimality"]["diagnostics"]
+        }
     })
 }
 
@@ -687,6 +697,15 @@ mod tests {
                     "gaps": [],
                     "entries": [{"body": "should not appear in summary"}],
                     "full_card_required": [],
+                    "minimality": {
+                        "status": "ready",
+                        "context_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "budget": {"max_entries": 8, "max_bytes": 4096, "actual_entries": 4, "actual_bytes": 1024},
+                        "selected_count": 4,
+                        "excluded_count": 1,
+                        "excluded": [{"card_id": "claims", "card_kind": "claims", "entry_id": "unselected", "reason_code": "not_applicable"}],
+                        "diagnostics": []
+                    },
                     "summary": {
                         "entry_count": 4,
                         "required_entry_count": 2,
@@ -702,6 +721,10 @@ mod tests {
 
         assert_eq!(summary["context"]["contract"], "mdp.context.v0");
         assert_eq!(summary["context"]["entry_count"], 4);
+        assert_eq!(summary["context"]["minimality"]["status"], "ready");
+        assert_eq!(summary["context"]["minimality"]["excluded_count"], 1);
+        assert!(summary.to_string().contains("unselected"));
+        assert!(!summary.to_string().contains("should not appear in summary"));
         assert_eq!(summary["portfolio_sensitive"], true);
         assert_eq!(summary["scope"]["selected"]["product"][0], "local-cli");
         assert!(summary["context"].get("entries").is_none());

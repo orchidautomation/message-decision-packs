@@ -5,6 +5,9 @@ Read this only for `outbound-copy-review` and only when the user supplies copy.
 ## Workflow
 
 1. Establish the prospect fit and bounded context used by the draft.
+   Require minimality `ready`, preserve the exact context digest, and use only
+   `context.model_context`. A blocked/unassessed budget or whole-card fallback
+   stops governed review.
 2. Run the deterministic check with the relevant route selectors:
 
 ```bash

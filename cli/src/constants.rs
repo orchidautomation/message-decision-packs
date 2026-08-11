@@ -4,6 +4,7 @@ pub(crate) const DEFAULT_DIR: &str = ".mdp";
 pub(crate) const PROMPT_FORMAT_VERSION: &str = "mdp.prompt.v0";
 pub(crate) const PROMPT_FORMAT_V1: &str = "mdp.prompt.v1";
 pub(crate) const PROMPT_OUTPUT_CONTRACT: &str = "mdp.prompt-output.v0";
+pub(crate) const ROUTED_CONTEXT_CONTRACT: &str = "mdp.routed-context.v1";
 pub(crate) const SOURCE_AUDIT_CONTRACT: &str = "mdp.source-audit.v0";
 pub(crate) const SOURCE_INTAKE_CONTRACT: &str = "mdp.source-intake.v0";
 pub(crate) const RUNNER_AUDIT_CONTRACT: &str = "mdp.runner-audit.v0";

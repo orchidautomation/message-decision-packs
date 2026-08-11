@@ -1,12 +1,13 @@
 ambiguity_policy:
 - Represent missing or conflicting facts in gaps and use a bounded non-success status.
-description: Evaluate supplied outbound copy against the exact routed product foundation, selected claims and evidence, CTA, and output constraints.
+description: Evaluate supplied outbound copy against the exact routed context, selected claims and evidence, CTA, and output constraints.
 evidence_policy:
 - Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output.
 final_checklist:
 - Output is strict JSON.
 - prompt_sha256 matches the host-provided canonical prompt hash.
 - invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.
+- context_sha256 exactly echoes the SHA-256 recorded for routed_context in prompt_receipt.inputs without recalculation or invention.
 - All selected identifiers are declared and unambiguous.
 - Gaps and rejected claims are explicit.
 - Generated copy is substantive before status is ready and remains ready for separate verify-output validation.
@@ -14,9 +15,9 @@ format: mdp.prompt.v1
 id: review-outbound-copy-v1
 inputs:
 - default: N/A
-  description: Exact product-foundation resolution returned for this canonical job.
+  description: Exact canonical mdp.routed-context.v1 object compiled for this job.
   missing_behavior: Return a gap or refusal; never load unrelated pack entries.
-  name: product_foundation
+  name: routed_context
   producer: pack
   required: true
 - default: N/A
@@ -50,14 +51,15 @@ inputs:
   producer: host
   required: true
 instructions:
-- Use only declared inputs and the exact selected product-foundation entries for this job.
+- Use only declared inputs and the exact mdp.routed-context.v1 authority for this job.
 - Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.
+- Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.
 - If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts.
 kind: review
 negative_examples:
 - Do not invent customer proof, integrations, outcomes, timing, or recipient facts.
 - Do not silently choose an undeclared claim or CTA.
-objective: Evaluate supplied outbound copy against the exact routed product foundation, selected claims and evidence, CTA, and output constraints.
+objective: Evaluate supplied outbound copy against the exact routed context, selected claims and evidence, CTA, and output constraints.
 output_contract:
   contract: mdp.prompt-output.v0
   entry_defaults:
@@ -75,6 +77,7 @@ output_contract:
       issues:
       - The supplied draft uses a claim that is not selected authority.
       status: gap
+    context_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
     contract: mdp.prompt-output.v0
     gaps:
     - Supplied draft needs revision before approval.
@@ -82,7 +85,7 @@ output_contract:
     job_id: outbound-copy-review
     prompt_id: review-outbound-copy-v1
     prompt_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
-    prompt_version: '1'
+    prompt_version: '2'
     rejected_claims: []
     selected_authority: []
     source_summary:
@@ -95,6 +98,7 @@ output_contract:
   - prompt_version
   - prompt_sha256
   - invocation_receipt_sha256
+  - context_sha256
   - source_summary
   - selected_authority
   - artifact
@@ -135,6 +139,9 @@ output_contract:
         - accepted_claim_ids
         - accepted_evidence_ids
         type: object
+      context_sha256:
+        pattern: ^[0-9a-f]{64}$
+        type: string
       contract:
         const: mdp.prompt-output.v0
       gaps:
@@ -152,7 +159,7 @@ output_contract:
         pattern: ^[0-9a-f]{64}$
         type: string
       prompt_version:
-        const: '1'
+        const: '2'
       rejected_claims:
         items:
           type: string
@@ -167,7 +174,7 @@ output_contract:
           inputs_used:
             items:
               enum:
-              - product_foundation
+              - routed_context
               - normalized_prospect
               - runtime_context
               - prompt_receipt
@@ -184,6 +191,7 @@ output_contract:
     - prompt_version
     - prompt_sha256
     - invocation_receipt_sha256
+    - context_sha256
     - source_summary
     - selected_authority
     - artifact
@@ -198,6 +206,7 @@ procedure:
 provenance_policy:
 - Retain the exact authority identifiers used to produce or review the artifact.
 - Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash.
+- Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.
 role: Governed outbound copy reviewer
 selection_rules:
 - Choose only angle, CTA, claim, and evidence identifiers present in selected authority.
@@ -217,4 +226,4 @@ target_card_kinds:
 - output-rules
 - ctas
 title: Review outbound copy
-version: '1'
+version: '2'

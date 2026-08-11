@@ -1,5 +1,9 @@
 # mdp usage
 
+## Minimal routed context
+
+Canonical `route --entries` and `brief --context` results include the same `minimality` receipt; `brief --context` also returns the exact `model_context` when ready. Use `brief --routed-context-out PATH` or `emit-brief --routed-context-out PATH` to write MDP's newline-free canonical bytes. Include the reported byte hash under the `routed_context` input in `mdp.prompt-invocation.v1`, and pass both `--invocation-receipt` and `--routed-context` to `validate-prompt-output`. Inspect the closed artifact schema with `mdp --json schema routed-context-v1`. A budget overflow, whole-card fallback, changed context, or out-of-context typed identifier fails closed. Jobs without `context_budget` remain readable with minimality `unassessed`.
+
 `mdp` creates and routes Message Decision Packs.
 
 A pack is a local `.mdp/` folder:

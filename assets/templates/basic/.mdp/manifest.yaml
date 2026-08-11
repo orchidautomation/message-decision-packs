@@ -377,6 +377,9 @@ jobs:
     - proof-boundaries
     optional:
     - known-gaps
+  context_budget:
+    max_entries: 48
+    max_bytes: 49152
 - id: outbound-copy-brief
   skill_id: mdp-gtm-brief
   label: Outbound copy brief
@@ -412,6 +415,9 @@ jobs:
   model_task:
     kind: generation
     prompt: generate-outbound-copy-v1
+  context_budget:
+    max_entries: 64
+    max_bytes: 65536
 - id: outbound-copy-review
   skill_id: mdp-gtm-brief
   label: Supplied outbound copy review
@@ -442,6 +448,9 @@ jobs:
   model_task:
     kind: review
     prompt: review-outbound-copy-v1
+  context_budget:
+    max_entries: 64
+    max_bytes: 65536
 profile_eval:
   required_categories:
   - proceed

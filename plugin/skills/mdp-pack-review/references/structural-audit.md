@@ -59,6 +59,10 @@ Read this for pack shape, evidence, and content quality.
 ## Content Shape
 
 - Separate account from person context and observed evidence from inference.
+- For every self-standing generation/review job, verify positive entry/byte
+  context budgets, closed selection/exclusion reason codes, stable digest
+  replay, guardrail preservation, blocked whole-card fallback, and exact
+  `routed_context` invocation/output binding.
 - Check portfolio scope and required dimensions when used.
 - Prefer atomic cards and entries over duplicated prose.
 - Verify output constraints are represented in fields the CLI can enforce when deterministic enforcement is intended.

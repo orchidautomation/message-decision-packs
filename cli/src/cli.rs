@@ -134,6 +134,11 @@ pub(crate) enum Commands {
             help = "Exact mdp.prompt-invocation.v1 JSON receipt binding a governed artifact to the host-supplied prompt and declared inputs"
         )]
         invocation_receipt: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Exact canonical mdp.routed-context.v1 JSON input used by a governed generation or review prompt"
+        )]
+        routed_context: Option<PathBuf>,
         #[arg(long, help = "Prompt file path to validate against")]
         prompt: Option<PathBuf>,
         #[arg(long, help = "Prompt id to validate against")]
@@ -399,6 +404,12 @@ pub(crate) enum Commands {
         context: bool,
         #[arg(
             long,
+            value_name = "PATH",
+            help = "Write exact canonical mdp.routed-context.v1 bytes for the selected job"
+        )]
+        routed_context_out: Option<PathBuf>,
+        #[arg(
+            long,
             help = "Emit a human-readable Markdown prospect brief instead of the JSON contract"
         )]
         readable: bool,
@@ -434,6 +445,12 @@ pub(crate) enum Commands {
             help = "Repeatable portfolio context selector"
         )]
         scope: Vec<String>,
+        #[arg(
+            long,
+            value_name = "PATH",
+            help = "Write exact canonical mdp.routed-context.v1 bytes for the selected job"
+        )]
+        routed_context_out: Option<PathBuf>,
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, help = "Show the output artifact write without writing it")]
@@ -486,6 +503,7 @@ pub(crate) enum SchemaTarget {
     Brief,
     HumanBrief,
     RuntimeContext,
+    RoutedContextV1,
     DecisionInput,
     SourceBinding,
     Prospect,
@@ -768,6 +786,7 @@ mod tests {
             ("run-verification-v1", SchemaTarget::RunVerificationV1),
             ("run-execution-v1", SchemaTarget::RunExecutionV1),
             ("decision-trace-v1", SchemaTarget::DecisionTraceV1),
+            ("routed-context-v1", SchemaTarget::RoutedContextV1),
             (
                 "canonical-authority-block-v1",
                 SchemaTarget::CanonicalAuthorityBlockV1,

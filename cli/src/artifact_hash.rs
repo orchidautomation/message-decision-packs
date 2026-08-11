@@ -56,8 +56,12 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 pub(crate) fn canonical_json_sha256(value: &Value) -> Result<String> {
+    Ok(sha256_hex(&canonical_json_bytes(value)?))
+}
+
+pub(crate) fn canonical_json_bytes(value: &Value) -> Result<Vec<u8>> {
     let canonical = canonicalize_json(value);
-    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+    Ok(serde_json::to_vec(&canonical)?)
 }
 
 pub(crate) fn canonical_json_sha256_for_domain(domain: &str, value: &Value) -> Result<String> {

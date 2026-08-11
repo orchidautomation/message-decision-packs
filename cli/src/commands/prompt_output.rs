@@ -1,17 +1,20 @@
-use crate::artifact_hash::canonical_json_sha256;
+use crate::artifact_hash::{canonical_json_sha256, sha256_hex};
 use crate::commands::requirements::validate_normalized_decision_input_with_projection;
-use crate::constants::{DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, SOURCE_AUDIT_CONTRACT};
+use crate::commands::schemas::routed_context_schema;
+use crate::constants::{
+    DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, ROUTED_CONTEXT_CONTRACT, SOURCE_AUDIT_CONTRACT,
+};
 use crate::models::{CardKind, Manifest, PromptFile};
 use crate::pack_io::{
     read_canonical_prompt_by_id, read_card, read_manifest, read_prompt, resolve_pack_path,
 };
 use crate::product_foundation::{ProductFoundationStatus, resolve_product_foundation_for_pack};
 use crate::runtime_context::validate_runtime_context;
+use crate::scope::{ContextScope, resolve_runtime_scope};
 use crate::utils::{normalize_supplied_company_domain, resolve_pack_persona_label};
 use crate::value_contracts::normalized_prospect_contract_violations;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
@@ -45,6 +48,7 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -57,6 +61,7 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
     source_attempt_request_path: Option<&Path>,
     collected_attempt_results_path: Option<&Path>,
     invocation_receipt_path: Option<&Path>,
+    routed_context_path: Option<&Path>,
 ) -> Result<Value> {
     validate_prompt_output_file_with_lineage_inputs(
         root,
@@ -68,6 +73,7 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
         source_attempt_request_path,
         collected_attempt_results_path,
         invocation_receipt_path,
+        routed_context_path,
     )
 }
 
@@ -81,6 +87,7 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
     source_attempt_request_path: Option<&Path>,
     collected_attempt_results_path: Option<&Path>,
     invocation_receipt_path: Option<&Path>,
+    routed_context_path: Option<&Path>,
 ) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of --prompt and --prompt-id"));
@@ -168,6 +175,21 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
         },
         None => None,
     };
+    let routed_context = match routed_context_path {
+        Some(path) => match read_json_file_with_hash(path, "routed context") {
+            Ok((value, sha256)) => Some((value, display_path(path), sha256)),
+            Err(err) => {
+                issues.push(issue(
+                    "routed_context_parse_failed",
+                    "error",
+                    display_path(path),
+                    err.to_string(),
+                ));
+                None
+            }
+        },
+        None => None,
+    };
     let (output, markdown_wrapped) = match parse_prompt_output(&raw) {
         Ok(parsed) => parsed,
         Err(err) => {
@@ -242,6 +264,9 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
         invocation_receipt
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
+        routed_context
+            .as_ref()
+            .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
     )
 }
 
@@ -285,6 +310,7 @@ pub(crate) fn validate_prompt_output_value_with_source_audit(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -300,6 +326,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
     invocation_receipt: Option<(&Value, &str, &str)>,
+    routed_context: Option<(&Value, &str, &str)>,
 ) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of prompt or prompt_id"));
@@ -319,6 +346,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
         source_attempt_request,
         collected_attempt_results,
         invocation_receipt,
+        routed_context,
     )
 }
 
@@ -335,6 +363,7 @@ fn validate_prompt_output_parsed(
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
     invocation_receipt: Option<(&Value, &str, &str)>,
+    routed_context: Option<(&Value, &str, &str)>,
 ) -> Result<Value> {
     if prompt.output_contract.output_kind.as_deref() == Some("decision-input-normalization") {
         if source_audit.is_some() {
@@ -470,9 +499,10 @@ fn validate_prompt_output_parsed(
             artifact_path,
             canonical_prompt_sha256.as_deref(),
             invocation_receipt,
+            routed_context,
             &mut issues,
         );
-        return Ok(json!({
+        let mut result = json!({
             "valid": issues.is_empty(),
             "file": artifact_path,
             "prompt": prompt_summary(prompt, root),
@@ -489,7 +519,14 @@ fn validate_prompt_output_parsed(
                 invocation_receipt.as_ref().map(|(_, _, sha256)| *sha256)
             ),
             "issues": issues
-        }));
+        });
+        if let Some((_, path, sha256)) = routed_context {
+            result["artifacts"]["routed_context"] = json!({
+                "path": path,
+                "sha256": sha256
+            });
+        }
+        return Ok(result);
     }
 
     let manifest = read_manifest(root)?;
@@ -543,6 +580,7 @@ fn validate_governed_artifact_authority(
     path: &str,
     canonical_prompt_sha256: Option<&str>,
     invocation_receipt: Option<(&Value, &str, &str)>,
+    routed_context: Option<(&Value, &str, &str)>,
     issues: &mut Vec<Value>,
 ) {
     let jobs = manifest
@@ -625,12 +663,206 @@ fn validate_governed_artifact_authority(
             "selected job product foundation is not ready",
         ));
     }
-    let allowed_refs = resolution
+    let foundation_refs = resolution
         .selected_facets
         .iter()
         .flat_map(|facet| facet.entry_refs.iter())
         .map(|entry| format!("{}/{}", entry.card_id, entry.entry_id))
         .collect::<BTreeSet<_>>();
+    let requires_routed_context = prompt
+        .inputs
+        .iter()
+        .any(|input| input.required && input.name == "routed_context");
+    let mut allowed_refs = if requires_routed_context {
+        BTreeSet::new()
+    } else {
+        foundation_refs
+    };
+    let mut selected_kind_by_ref = BTreeMap::<String, CardKind>::new();
+    let mut evidence_by_ref = BTreeMap::<String, BTreeSet<String>>::new();
+    let card_kind_by_id = manifest
+        .cards
+        .iter()
+        .map(|card| (card.id.as_str(), &card.kind))
+        .collect::<BTreeMap<_, _>>();
+    if requires_routed_context {
+        match routed_context {
+            Some((context, context_path, raw_sha256)) => {
+                let mut context_verified = true;
+                if let Err(error) =
+                    jsonschema::draft202012::validate(&routed_context_schema(), context)
+                {
+                    context_verified = false;
+                    issues.push(issue(
+                        "governed_artifact_routed_context_schema_mismatch",
+                        "error",
+                        context_path,
+                        format!(
+                            "routed context does not satisfy {ROUTED_CONTEXT_CONTRACT}: {error}"
+                        ),
+                    ));
+                }
+                if context["contract"] != ROUTED_CONTEXT_CONTRACT {
+                    context_verified = false;
+                    issues.push(issue(
+                        "governed_artifact_routed_context_contract_mismatch",
+                        "error",
+                        format!("{context_path}#/contract"),
+                        format!("routed context contract must be {ROUTED_CONTEXT_CONTRACT}"),
+                    ));
+                }
+                if context["job"].as_str() != Some(job.id.as_str()) {
+                    context_verified = false;
+                    issues.push(issue(
+                        "governed_artifact_routed_context_job_mismatch",
+                        "error",
+                        format!("{context_path}#/job"),
+                        format!("routed context job must be {}", job.id),
+                    ));
+                }
+                let canonical_sha256 = canonical_json_sha256(context).ok();
+                if canonical_sha256.as_deref() != Some(raw_sha256) {
+                    context_verified = false;
+                    issues.push(issue(
+                        "governed_artifact_routed_context_not_canonical",
+                        "error",
+                        context_path,
+                        "routed context file bytes must be canonical JSON",
+                    ));
+                }
+                if output["context_sha256"].as_str() != canonical_sha256.as_deref() {
+                    issues.push(issue(
+                        "governed_artifact_context_sha256_mismatch",
+                        "error",
+                        format!("{path}#/context_sha256"),
+                        "governed artifact context_sha256 must match the exact routed context",
+                    ));
+                }
+                let receipt_context_sha256 = invocation_receipt
+                    .and_then(|(receipt, _, _)| receipt["inputs"].as_array())
+                    .and_then(|inputs| {
+                        inputs.iter().find_map(|input| {
+                            (input["name"] == "routed_context")
+                                .then(|| input["sha256"].as_str())
+                                .flatten()
+                        })
+                    });
+                if receipt_context_sha256 != Some(raw_sha256) {
+                    issues.push(issue(
+                        "governed_artifact_routed_context_receipt_mismatch",
+                        "error",
+                        invocation_receipt.map_or(path, |(_, receipt_path, _)| receipt_path),
+                        "prompt invocation receipt must bind the exact routed context bytes",
+                    ));
+                }
+                let compiled_context = context["persona"]
+                    .as_str()
+                    .zip(
+                        serde_json::from_value::<ContextScope>(
+                            context["scope"]["requested"].clone(),
+                        )
+                        .ok(),
+                    )
+                    .and_then(|(persona, requested_scope)| {
+                        let scope = resolve_runtime_scope(manifest, requested_scope);
+                        if serde_json::to_value(&scope).ok().as_ref() != Some(&context["scope"]) {
+                            return None;
+                        }
+                        crate::routing::entry_context_scoped(
+                            root, manifest, persona, &job.id, true, &scope,
+                        )
+                        .ok()
+                    });
+                if compiled_context
+                    .as_ref()
+                    .and_then(|compiled| compiled.get("model_context"))
+                    != Some(context)
+                {
+                    context_verified = false;
+                    issues.push(issue(
+                        "governed_artifact_routed_context_not_compiled",
+                        "error",
+                        context_path,
+                        "routed context must exactly match MDP's compiled model context for the declared pack, job, persona, and scope",
+                    ));
+                }
+                for entry in context_verified
+                    .then_some(&context["entries"])
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    let (Some(card_id), Some(entry_id)) =
+                        (entry["card_id"].as_str(), entry["entry_id"].as_str())
+                    else {
+                        continue;
+                    };
+                    let qualified_ref = format!("{card_id}/{entry_id}");
+                    allowed_refs.insert(qualified_ref.clone());
+                    if let Ok(kind) = serde_json::from_value::<CardKind>(entry["card_kind"].clone())
+                    {
+                        selected_kind_by_ref.insert(qualified_ref.clone(), kind);
+                    }
+                    evidence_by_ref.insert(
+                        qualified_ref,
+                        entry["evidence"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                            .collect(),
+                    );
+                }
+                for reference in context_verified
+                    .then_some(&context["product_foundation_load_order"])
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter(|reference| reference["reference_kind"] == "entry")
+                {
+                    let (Some(card_id), Some(entry_id)) = (
+                        reference["card_id"].as_str(),
+                        reference["entry_id"].as_str(),
+                    ) else {
+                        continue;
+                    };
+                    let qualified_ref = format!("{card_id}/{entry_id}");
+                    allowed_refs.insert(qualified_ref.clone());
+                    if let Some(kind) = card_kind_by_id.get(card_id) {
+                        selected_kind_by_ref.insert(qualified_ref, (*kind).clone());
+                    }
+                }
+                for entry in context_verified
+                    .then_some(&context["product_foundation"]["selected_facets"])
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|facet| facet["entries"].as_array().into_iter().flatten())
+                {
+                    let (Some(card_id), Some(entry_id)) =
+                        (entry["card_id"].as_str(), entry["entry_id"].as_str())
+                    else {
+                        continue;
+                    };
+                    evidence_by_ref.insert(
+                        format!("{card_id}/{entry_id}"),
+                        entry["evidence"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                            .collect(),
+                    );
+                }
+            }
+            None => issues.push(issue(
+                "governed_artifact_routed_context_missing",
+                "error",
+                path,
+                "governed prompt requires the exact routed context input",
+            )),
+        }
+    }
     let selected = output["selected_authority"].as_array();
     if selected.is_none() {
         issues.push(issue(
@@ -642,6 +874,8 @@ fn validate_governed_artifact_authority(
     }
     let mut selected_ids = BTreeSet::new();
     let mut selected_refs = BTreeSet::new();
+    let mut selected_kind_by_id = BTreeMap::<String, CardKind>::new();
+    let mut selected_evidence_ids = BTreeSet::new();
     let mut selected_refs_by_id = BTreeMap::<&str, &str>::new();
     for (index, value) in selected.into_iter().flatten().enumerate() {
         let Some(reference) = value.as_str() else {
@@ -673,6 +907,15 @@ fn validate_governed_artifact_authority(
                 ));
             }
             selected_ids.insert(entry_id);
+            if let Some(kind) = selected_kind_by_ref.get(reference) {
+                selected_kind_by_id.insert(entry_id.to_string(), kind.clone());
+            }
+            selected_evidence_ids.extend(
+                evidence_by_ref
+                    .get(reference)
+                    .into_iter()
+                    .flat_map(|values| values.iter().cloned()),
+            );
         }
     }
     let artifact = &output["artifact"];
@@ -775,12 +1018,38 @@ fn validate_governed_artifact_authority(
                             job.id
                         ),
                     ));
+                } else if let Some(identifier) = value.as_str()
+                    && identifier != "N/A"
+                    && requires_routed_context
+                    && !identifier_kind_allowed(field, selected_kind_by_id.get(identifier))
+                {
+                    issues.push(issue(
+                        "governed_artifact_identifier_kind_mismatch",
+                        "error",
+                        format!("{path}#/artifact/{field}"),
+                        format!("{identifier} has the wrong selected card kind for {field}"),
+                    ));
                 }
             } else if field.ends_with("_ids")
                 && let Some(values) = value.as_array()
             {
                 for (index, value) in values.iter().enumerate() {
                     if let Some(identifier) = value.as_str()
+                        && requires_routed_context
+                        && is_evidence_identifier_field(field)
+                        && !selected_evidence_ids.contains(identifier)
+                    {
+                        issues.push(issue(
+                            "governed_artifact_evidence_identifier_undeclared",
+                            "error",
+                            format!("{path}#/artifact/{field}/{index}"),
+                            format!(
+                                "{identifier} is not evidence attached to selected_authority for job {}",
+                                job.id
+                            ),
+                        ));
+                    } else if let Some(identifier) = value.as_str()
+                        && !is_evidence_identifier_field(field)
                         && !selected_ids.contains(identifier)
                     {
                         issues.push(issue(
@@ -791,6 +1060,17 @@ fn validate_governed_artifact_authority(
                                 "{identifier} is not present in selected_authority for job {}",
                                 job.id
                             ),
+                        ));
+                    } else if let Some(identifier) = value.as_str()
+                        && requires_routed_context
+                        && !is_evidence_identifier_field(field)
+                        && !identifier_kind_allowed(field, selected_kind_by_id.get(identifier))
+                    {
+                        issues.push(issue(
+                            "governed_artifact_identifier_kind_mismatch",
+                            "error",
+                            format!("{path}#/artifact/{field}/{index}"),
+                            format!("{identifier} has the wrong selected card kind for {field}"),
                         ));
                     }
                 }
@@ -826,6 +1106,22 @@ fn validate_governed_artifact_authority(
     if ready && prompt.kind.as_deref() == Some("generation") {
         validate_substantive_generation_artifact(artifact, path, issues);
     }
+}
+
+fn identifier_kind_allowed(field: &str, kind: Option<&CardKind>) -> bool {
+    match field {
+        "angle_id" => matches!(
+            kind,
+            Some(CardKind::Positioning | CardKind::Hooks | CardKind::Motions)
+        ),
+        "cta_id" => matches!(kind, Some(CardKind::Ctas)),
+        "claim_ids" | "accepted_claim_ids" => matches!(kind, Some(CardKind::Claims)),
+        _ => true,
+    }
+}
+
+fn is_evidence_identifier_field(field: &str) -> bool {
+    matches!(field, "evidence_ids" | "accepted_evidence_ids")
 }
 
 fn validate_governed_invocation_receipt(
@@ -1112,11 +1408,6 @@ pub(crate) fn read_bounded_bytes(path: &Path, artifact_name: &str) -> Result<Vec
         ));
     }
     Ok(raw)
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let hash = Sha256::digest(bytes);
-    format!("{hash:x}")
 }
 
 fn validation_artifacts_summary(
@@ -2941,7 +3232,7 @@ mod tests {
         output["source_summary"]["inputs_used"] = json!([
             "invocation_receipt_sha256",
             "normalized_prospect",
-            "product_foundation",
+            "routed_context",
             "prompt_receipt"
         ]);
         output["selected_authority"] = json!([
@@ -2953,7 +3244,7 @@ mod tests {
         output["artifact"]["angle_id"] = json!("decision-layer");
         output["artifact"]["cta_id"] = json!("soft-ask");
         output["artifact"]["claim_ids"] = json!(["modular-pack-routing"]);
-        output["artifact"]["evidence_ids"] = json!(["modular-pack-routing"]);
+        output["artifact"]["evidence_ids"] = json!(["mdp-reference-contract"]);
         output["artifact"]["subject_options"] = json!(["A bounded messaging decision layer"]);
         output["artifact"]["message_body"] =
             json!("A grounded outbound message with explicit authority.");
@@ -2980,12 +3271,43 @@ mod tests {
             },
             "inputs": input_names.iter().map(|name| json!({
                 "name": name,
-                "sha256": sha256_hex(name.as_bytes())
+                "sha256": if *name == "routed_context" {
+                    sha256_hex(&std::fs::read(root.join("routed-context.json")).expect("routed context should load"))
+                } else {
+                    sha256_hex(name.as_bytes())
+                }
             })).collect::<Vec<_>>()
         });
         let path = write_json_output(root, "prompt-invocation-receipt.json", &receipt);
         let sha256 = sha256_hex(&std::fs::read(&path).expect("receipt should load"));
         (path, sha256)
+    }
+
+    fn write_ready_routed_context(root: &Path, job_id: &str) -> PathBuf {
+        let manifest = read_manifest(root).expect("manifest should load");
+        let context = crate::routing::entry_context_scoped(
+            root,
+            &manifest,
+            if manifest
+                .profile
+                .as_ref()
+                .is_some_and(|profile| profile.id == "proposal")
+            {
+                "Proposal Lead"
+            } else {
+                "PMM"
+            },
+            job_id,
+            true,
+            &crate::scope::ScopeResolution::default(),
+        )
+        .expect("routed context should compile");
+        assert_eq!(context["minimality"]["status"], "ready");
+        let bytes = crate::artifact_hash::canonical_json_bytes(&context["model_context"])
+            .expect("context should serialize canonically");
+        let path = root.join("routed-context.json");
+        std::fs::write(&path, bytes).expect("routed context should write");
+        path
     }
 
     fn validate_governed_with_receipt(
@@ -2994,12 +3316,54 @@ mod tests {
         mut output: Value,
         input_names: &[&str],
     ) -> Value {
+        let requires_routed_context = prompt
+            .inputs
+            .iter()
+            .any(|input| input.required && input.name == "routed_context");
+        let routed_context_path = requires_routed_context.then(|| {
+            let job_id = output["job_id"].as_str().expect("job id");
+            let path = write_ready_routed_context(root, job_id);
+            let bytes = std::fs::read(&path).expect("routed context should load");
+            if output["context_sha256"]
+                .as_str()
+                .is_none_or(|value| value.chars().all(|character| character == '0'))
+            {
+                output["context_sha256"] = json!(sha256_hex(&bytes));
+            }
+            path
+        });
+        let actual_input_names = input_names
+            .iter()
+            .map(|name| {
+                if requires_routed_context && *name == "product_foundation" {
+                    "routed_context"
+                } else {
+                    *name
+                }
+            })
+            .collect::<Vec<_>>();
+        if requires_routed_context {
+            output["source_summary"]["inputs_used"] = Value::Array(
+                output["source_summary"]["inputs_used"]
+                    .as_array()
+                    .expect("inputs used")
+                    .iter()
+                    .map(|value| {
+                        if value == "product_foundation" {
+                            json!("routed_context")
+                        } else {
+                            value.clone()
+                        }
+                    })
+                    .collect(),
+            );
+        }
         let job_id = output["job_id"]
             .as_str()
             .expect("governed output should declare a job")
             .to_string();
         let (receipt_path, receipt_sha256) =
-            write_governed_invocation_receipt(root, prompt, &job_id, input_names);
+            write_governed_invocation_receipt(root, prompt, &job_id, &actual_input_names);
         output["invocation_receipt_sha256"] = json!(receipt_sha256);
         let output_path = write_json_output(root, "governed-artifact.json", &output);
         validate_prompt_output_file_with_inputs(
@@ -3011,8 +3375,39 @@ mod tests {
             None,
             None,
             Some(&receipt_path),
+            routed_context_path.as_deref(),
         )
         .expect("validation should return diagnostics")
+    }
+
+    fn rewrite_governed_job_as_legacy(root: &Path) -> PromptFile {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let mut manifest = read_manifest(root).expect("manifest should load");
+        manifest
+            .jobs
+            .iter_mut()
+            .find(|job| job.id == "outbound-copy-brief")
+            .expect("governed job should exist")
+            .context_budget = None;
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should write");
+
+        let prompt_path = root.join(".mdp/prompts/generate-outbound-copy.yaml");
+        let mut prompt = read_prompt(&prompt_path).expect("governed prompt should load");
+        prompt
+            .inputs
+            .iter_mut()
+            .find(|input| input.name == "routed_context")
+            .expect("routed context input should exist")
+            .name = "product_foundation".to_string();
+        let legacy_prompt = serde_yaml::to_string(&prompt)
+            .expect("prompt should serialize")
+            .replace("routed_context", "product_foundation");
+        std::fs::write(&prompt_path, legacy_prompt).expect("prompt should write");
+        read_prompt(&prompt_path).expect("legacy governed prompt should reload")
     }
 
     #[test]
@@ -3052,6 +3447,7 @@ mod tests {
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
             None,
+            None,
         )
         .expect("decision-input prompt validation should run");
         assert_eq!(valid["valid"], true);
@@ -3085,6 +3481,7 @@ mod tests {
             Some((&binding, "synthetic-binding", &binding_sha256)),
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
+            None,
             None,
         )
         .expect("decision-input prompt validation should run");
@@ -4736,6 +5133,244 @@ mod tests {
         );
 
         assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
+        assert_eq!(
+            result["artifacts"]["routed_context"]["sha256"]
+                .as_str()
+                .map(str::len),
+            Some(64)
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ready_legacy_governed_artifact_without_context_budget_remains_valid() {
+        let root = temp_pack("governed-artifact-legacy-valid");
+        let prompt = rewrite_governed_job_as_legacy(&root);
+        let mut output = ready_governed_example(&prompt);
+        output["source_summary"]["inputs_used"] = json!([
+            "invocation_receipt_sha256",
+            "normalized_prospect",
+            "product_foundation",
+            "prompt_receipt"
+        ]);
+        output["artifact"]["evidence_ids"] = json!(["mdp-reference-contract"]);
+
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["product_foundation", "normalized_prospect"],
+        );
+
+        assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_rejects_wrong_context_digest_and_identifier_kind() {
+        let root = temp_pack("governed-context-binding");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["context_sha256"] = json!("f".repeat(64));
+        output["artifact"]["cta_id"] = json!("decision-layer");
+
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["routed_context", "normalized_prospect"],
+        );
+        let codes = result["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(codes.contains("governed_artifact_context_sha256_mismatch"));
+        assert!(codes.contains("governed_artifact_identifier_kind_mismatch"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_requires_the_declared_routed_context_file() {
+        let root = temp_pack("governed-context-missing");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("prompt should load");
+        let context_path = write_ready_routed_context(&root, "outbound-copy-brief");
+        let context_bytes = std::fs::read(&context_path).expect("context should load");
+        let mut output = ready_governed_example(&prompt);
+        output["context_sha256"] = json!(sha256_hex(&context_bytes));
+        let (receipt_path, receipt_sha256) = write_governed_invocation_receipt(
+            &root,
+            &prompt,
+            "outbound-copy-brief",
+            &["routed_context", "normalized_prospect"],
+        );
+        output["invocation_receipt_sha256"] = json!(receipt_sha256);
+        let output_path = write_json_output(&root, "governed-artifact.json", &output);
+
+        let result = validate_prompt_output_file_with_inputs(
+            &root,
+            &output_path,
+            None,
+            Some(prompt.id.as_str()),
+            None,
+            None,
+            None,
+            Some(&receipt_path),
+            None,
+        )
+        .expect("validation should return diagnostics");
+
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "governed_artifact_routed_context_missing")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_binds_receipt_to_exact_routed_context_bytes() {
+        let root = temp_pack("governed-context-receipt-mismatch");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("prompt should load");
+        let context_path = write_ready_routed_context(&root, "outbound-copy-brief");
+        let context_bytes = std::fs::read(&context_path).expect("context should load");
+        let mut output = ready_governed_example(&prompt);
+        output["context_sha256"] = json!(sha256_hex(&context_bytes));
+        let (receipt_path, _) = write_governed_invocation_receipt(
+            &root,
+            &prompt,
+            "outbound-copy-brief",
+            &["routed_context", "normalized_prospect"],
+        );
+        let mut receipt: Value =
+            serde_json::from_slice(&std::fs::read(&receipt_path).expect("receipt should load"))
+                .expect("receipt should parse");
+        let routed_input = receipt["inputs"]
+            .as_array_mut()
+            .expect("receipt inputs")
+            .iter_mut()
+            .find(|input| input["name"] == "routed_context")
+            .expect("routed context input");
+        routed_input["sha256"] = json!("f".repeat(64));
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("receipt should serialize"),
+        )
+        .expect("receipt should write");
+        output["invocation_receipt_sha256"] = json!(sha256_hex(
+            &std::fs::read(&receipt_path).expect("receipt should load")
+        ));
+        let output_path = write_json_output(&root, "governed-artifact.json", &output);
+
+        let result = validate_prompt_output_file_with_inputs(
+            &root,
+            &output_path,
+            None,
+            Some(prompt.id.as_str()),
+            None,
+            None,
+            None,
+            Some(&receipt_path),
+            Some(&context_path),
+        )
+        .expect("validation should return diagnostics");
+
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "governed_artifact_routed_context_receipt_mismatch")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_rejects_self_consistent_host_authored_context() {
+        let root = temp_pack("governed-host-authored-context");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("prompt should load");
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let compiled = crate::routing::entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "outbound-copy-brief",
+            true,
+            &crate::scope::ScopeResolution::default(),
+        )
+        .expect("context should compile");
+        let mut context = compiled["model_context"].clone();
+        context["policy"] = json!("Host-authored widened policy");
+        let context_bytes =
+            crate::artifact_hash::canonical_json_bytes(&context).expect("context should serialize");
+        let context_path = root.join("routed-context.json");
+        std::fs::write(&context_path, &context_bytes).expect("context should write");
+
+        let mut output = ready_governed_example(&prompt);
+        output["context_sha256"] = json!(sha256_hex(&context_bytes));
+        let (receipt_path, receipt_sha256) = write_governed_invocation_receipt(
+            &root,
+            &prompt,
+            "outbound-copy-brief",
+            &["routed_context", "normalized_prospect"],
+        );
+        output["invocation_receipt_sha256"] = json!(receipt_sha256);
+        let output_path = write_json_output(&root, "governed-artifact.json", &output);
+
+        let result = validate_prompt_output_file_with_inputs(
+            &root,
+            &output_path,
+            None,
+            Some(prompt.id.as_str()),
+            None,
+            None,
+            None,
+            Some(&receipt_path),
+            Some(&context_path),
+        )
+        .expect("validation should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "governed_artifact_routed_context_not_compiled")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_artifact_evidence_ids_must_be_attached_to_selected_authority() {
+        let root = temp_pack("governed-evidence-authority");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["artifact"]["evidence_ids"] = json!(["modular-pack-routing"]);
+
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["routed_context", "normalized_prospect"],
+        );
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue["code"] == "governed_artifact_evidence_identifier_undeclared")
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -4889,6 +5524,7 @@ mod tests {
             None,
             None,
             Some(&receipt_path),
+            None,
         )
         .expect("validation should return diagnostics");
         assert!(
@@ -4936,6 +5572,7 @@ mod tests {
             None,
             None,
             Some(&receipt_path),
+            None,
         )
         .expect("validation should return diagnostics");
         let codes = result["issues"]

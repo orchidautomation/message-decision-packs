@@ -165,6 +165,7 @@ pub(crate) fn fit_normalized(
         Some(source_attempt_request_path),
         Some(collected_attempt_results_path),
         None,
+        None,
     )?;
     if validation["valid"] != true {
         return Err(anyhow!(

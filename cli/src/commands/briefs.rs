@@ -332,6 +332,31 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
     }
     out.push('\n');
 
+    let minimality = &brief["context"]["minimality"];
+    if minimality.is_object() {
+        out.push_str("## Minimal Context Receipt\n\n");
+        bullet(&mut out, "status", display_value(&minimality["status"]));
+        bullet(
+            &mut out,
+            "context_sha256",
+            display_value(&minimality["context_sha256"]),
+        );
+        bullet(
+            &mut out,
+            "selected_count",
+            display_value(&minimality["selected_count"]),
+        );
+        bullet(
+            &mut out,
+            "excluded_count",
+            display_value(&minimality["excluded_count"]),
+        );
+        for diagnostic in minimality["diagnostics"].as_array().into_iter().flatten() {
+            bullet(&mut out, "diagnostic", display_value(diagnostic));
+        }
+        out.push('\n');
+    }
+
     out.push_str("## Evidence Receipts and Signal Decisions\n\n");
     let mut wrote_evidence = false;
     let signal_authority = &fit["signal_authority"];

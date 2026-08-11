@@ -1605,6 +1605,8 @@ fn compile_model_task(root: &Path, job: &ProfileJob) -> Value {
         "prompt_version": prompt.version,
         "prompt_path": path.strip_prefix(root).unwrap_or(&path).display().to_string(),
         "prompt_sha256": prompt_sha256,
+        "context_budget": job.context_budget,
+        "routed_context_required": prompt.inputs.iter().any(|input| input.required && input.name == "routed_context"),
         "declared_inputs": prompt.inputs,
         "instructions": {
             "instructions": prompt.instructions,
@@ -3329,7 +3331,7 @@ optional:
 
         assert_eq!(compiled["model_task"]["status"], "ready");
         assert_eq!(compiled["model_task"]["kind"], "generation");
-        assert_eq!(compiled["model_task"]["prompt_version"], "1");
+        assert_eq!(compiled["model_task"]["prompt_version"], "2");
         assert_eq!(
             compiled["model_task"]["host_boundary"]["model_call_included"],
             false
@@ -3345,7 +3347,7 @@ optional:
         );
         assert_eq!(
             compiled["model_task"]["instructions"]["instructions"][0],
-            "Use only declared inputs and the exact selected product-foundation entries for this job."
+            "Use only declared inputs and the exact mdp.routed-context.v1 authority for this job."
         );
         assert_eq!(
             compiled["job"]["resolved_input_contracts"][0]["prompt"],

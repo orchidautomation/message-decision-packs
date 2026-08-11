@@ -4,6 +4,10 @@ This glossary is the canonical public vocabulary for Message Decision Packs.
 Use the contract names below consistently in code, docs, skills, issues, and
 review artifacts.
 
+## Minimal Model Context
+
+Canonical jobs can own deterministic entry and byte budgets. MDP selects required job authority and guardrails first, reports safe exclusion metadata, and hashes the exact `mdp.routed-context.v1` projection. Budget overflow or a whole-card fallback blocks; legacy jobs without a budget remain `unassessed`. Governed outputs are receipt-bound to those exact context bytes and may cite only typed authority selected in that projection. See [Minimal context routing](docs/minimal-context-routing.md).
+
 ## Product Model
 
 - **Message Decision Pack (pack)** — a local `.mdp/` directory containing

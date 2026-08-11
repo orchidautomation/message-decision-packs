@@ -384,6 +384,10 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 "proof-boundaries",
             ])),
             model_task: None,
+            context_budget: Some(crate::models::JobContextBudget {
+                max_entries: 48,
+                max_bytes: 49_152,
+            }),
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
@@ -424,6 +428,10 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 kind: "generation".to_string(),
                 prompt: "generate-outbound-copy-v1".to_string(),
             }),
+            context_budget: Some(crate::models::JobContextBudget {
+                max_entries: 64,
+                max_bytes: 65_536,
+            }),
         },
         ProfileJob {
             id: "outbound-copy-review".to_string(),
@@ -458,6 +466,10 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             model_task: Some(crate::models::JobModelTask {
                 kind: "review".to_string(),
                 prompt: "review-outbound-copy-v1".to_string(),
+            }),
+            context_budget: Some(crate::models::JobContextBudget {
+                max_entries: 64,
+                max_bytes: 65_536,
             }),
         },
     ]
@@ -2320,9 +2332,9 @@ fn initial_email_constraints() -> EntryConstraints {
 fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
     let is_review = kind == "review";
     let objective = if is_review {
-        "Evaluate supplied outbound copy against the exact routed product foundation, selected claims and evidence, CTA, and output constraints."
+        "Evaluate supplied outbound copy against the exact routed context, selected claims and evidence, CTA, and output constraints."
     } else {
-        "Produce one structured outbound copy draft from the exact routed product foundation and declared runtime inputs."
+        "Produce one structured outbound copy draft from the exact routed context and declared runtime inputs."
     };
     let artifact_schema = if is_review {
         json!({
@@ -2392,7 +2404,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
     );
     schema_properties.insert("prompt_id".to_string(), json!({"const": id}));
     schema_properties.insert("job_id".to_string(), json!({"const": job_id}));
-    schema_properties.insert("prompt_version".to_string(), json!({"const": "1"}));
+    schema_properties.insert("prompt_version".to_string(), json!({"const": "2"}));
     schema_properties.insert(
         "prompt_sha256".to_string(),
         json!({"type": "string", "pattern": "^[0-9a-f]{64}$"}),
@@ -2401,9 +2413,13 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
         "invocation_receipt_sha256".to_string(),
         json!({"type": "string", "pattern": "^[0-9a-f]{64}$"}),
     );
+    schema_properties.insert(
+        "context_sha256".to_string(),
+        json!({"type": "string", "pattern": "^[0-9a-f]{64}$"}),
+    );
     let declared_input_names = if is_review {
         json!([
-            "product_foundation",
+            "routed_context",
             "normalized_prospect",
             "runtime_context",
             "prompt_receipt",
@@ -2412,7 +2428,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
         ])
     } else {
         json!([
-            "product_foundation",
+            "routed_context",
             "normalized_prospect",
             "runtime_context",
             "prompt_receipt",
@@ -2449,7 +2465,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
     json!({
         "format": PROMPT_FORMAT_V1,
         "id": id,
-        "version": "1",
+        "version": "2",
         "kind": kind,
         "title": if is_review { "Review outbound copy" } else { "Generate outbound copy" },
         "description": objective,
@@ -2459,32 +2475,33 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
         "tags": ["prompt", "model-task", "outbound", kind],
         "inputs": outbound_model_task_inputs(is_review),
         "instructions": [
-            "Use only declared inputs and the exact selected product-foundation entries for this job.",
+            "Use only declared inputs and the exact mdp.routed-context.v1 authority for this job.",
             "Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.",
+            "Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.",
             "If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts."
         ],
         "procedure": ["Confirm the job, prompt version, declared inputs, and selected authority.", "Apply the pack-owned selection and evidence rules.", "Return the exact governed artifact schema."],
         "selection_rules": ["Choose only angle, CTA, claim, and evidence identifiers present in selected authority.", "Select at most one card-qualified authority reference for each bare artifact identifier.", "Never load the whole pack or borrow authority from another job."],
         "ambiguity_policy": ["Represent missing or conflicting facts in gaps and use a bounded non-success status."],
-        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash."],
+        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash.", "Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it."],
         "evidence_policy": ["Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output."],
         "negative_examples": ["Do not invent customer proof, integrations, outcomes, timing, or recipient facts.", "Do not silently choose an undeclared claim or CTA."],
-        "final_checklist": ["Output is strict JSON.", "prompt_sha256 matches the host-provided canonical prompt hash.", "invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
+        "final_checklist": ["Output is strict JSON.", "prompt_sha256 matches the host-provided canonical prompt hash.", "invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.", "context_sha256 exactly echoes the SHA-256 recorded for routed_context in prompt_receipt.inputs without recalculation or invention.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
         "output_contract": {
             "contract": PROMPT_OUTPUT_CONTRACT,
             "output_kind": "governed-artifact",
             "strict_json_only": true,
-            "required_top_level": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "invocation_receipt_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"],
+            "required_top_level": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "invocation_receipt_sha256", "context_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"],
             "entry_defaults": {"body": "N/A", "applies_to": [], "evidence": [], "avoid": [], "confidence": "unknown", "provenance": []},
-            "schema": {"type": "object", "additionalProperties": false, "required": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "invocation_receipt_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"], "properties": schema_properties},
-            "example": {"contract": PROMPT_OUTPUT_CONTRACT, "prompt_id": id, "job_id": job_id, "prompt_version": "1", "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "invocation_receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "source_summary": {"inputs_used": []}, "selected_authority": [], "artifact": example_artifact, "gaps": if is_review { json!(["Supplied draft needs revision before approval."]) } else { json!(["Insufficient selected evidence for a claim-backed draft."]) }, "rejected_claims": []}
+            "schema": {"type": "object", "additionalProperties": false, "required": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "invocation_receipt_sha256", "context_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"], "properties": schema_properties},
+            "example": {"contract": PROMPT_OUTPUT_CONTRACT, "prompt_id": id, "job_id": job_id, "prompt_version": "2", "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "invocation_receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "context_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "source_summary": {"inputs_used": []}, "selected_authority": [], "artifact": example_artifact, "gaps": if is_review { json!(["Supplied draft needs revision before approval."]) } else { json!(["Insufficient selected evidence for a claim-backed draft."]) }, "rejected_claims": []}
         }
     })
 }
 
 fn outbound_model_task_inputs(is_review: bool) -> Value {
     let mut inputs = vec![
-        json!({"name": "product_foundation", "description": "Exact product-foundation resolution returned for this canonical job.", "required": true, "default": "N/A", "missing_behavior": "Return a gap or refusal; never load unrelated pack entries.", "producer": "pack"}),
+        json!({"name": "routed_context", "description": "Exact canonical mdp.routed-context.v1 object compiled for this job.", "required": true, "default": "N/A", "missing_behavior": "Return a gap or refusal; never load unrelated pack entries.", "producer": "pack"}),
         json!({"name": "normalized_prospect", "description": "Validated prospect or account context.", "required": true, "default": "N/A", "missing_behavior": "Return a gap; do not invent a recipient, company, trigger, or persona.", "producer": "prior-step"}),
         json!({"name": "runtime_context", "description": "Optional bounded date and channel metadata.", "required": false, "default": "N/A", "missing_behavior": "Avoid time-sensitive framing that is not supplied.", "producer": "runtime"}),
         json!({"name": "prompt_receipt", "description": "Host-produced mdp.prompt-invocation.v1 receipt binding the canonical prompt and per-input SHA-256 values.", "required": true, "default": "N/A", "missing_behavior": "Return a gap or refusal; never invent prompt or input receipt hashes.", "producer": "host"}),
