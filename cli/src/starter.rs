@@ -2334,7 +2334,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
     let objective = if is_review {
         "Evaluate supplied outbound copy against the exact routed context, selected claims and evidence, CTA, and output constraints."
     } else {
-        "Produce one structured outbound copy draft from the exact routed product foundation and declared runtime inputs."
+        "Produce one structured outbound copy draft from the exact routed context and declared runtime inputs."
     };
     let artifact_schema = if is_review {
         json!({

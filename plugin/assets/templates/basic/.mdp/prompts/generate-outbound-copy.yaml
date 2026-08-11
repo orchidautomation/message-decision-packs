@@ -1,6 +1,6 @@
 ambiguity_policy:
 - Represent missing or conflicting facts in gaps and use a bounded non-success status.
-description: Produce one structured outbound copy draft from the exact routed product foundation and declared runtime inputs.
+description: Produce one structured outbound copy draft from the exact routed context and declared runtime inputs.
 evidence_policy:
 - Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output.
 final_checklist:
@@ -53,7 +53,7 @@ kind: generation
 negative_examples:
 - Do not invent customer proof, integrations, outcomes, timing, or recipient facts.
 - Do not silently choose an undeclared claim or CTA.
-objective: Produce one structured outbound copy draft from the exact routed product foundation and declared runtime inputs.
+objective: Produce one structured outbound copy draft from the exact routed context and declared runtime inputs.
 output_contract:
   contract: mdp.prompt-output.v0
   entry_defaults:

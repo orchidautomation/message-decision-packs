@@ -1049,7 +1049,7 @@ fn validate_governed_artifact_authority(
                             ),
                         ));
                     } else if let Some(identifier) = value.as_str()
-                        && (!requires_routed_context || !is_evidence_identifier_field(field))
+                        && !is_evidence_identifier_field(field)
                         && !selected_ids.contains(identifier)
                     {
                         issues.push(issue(
@@ -5153,7 +5153,7 @@ mod tests {
             "product_foundation",
             "prompt_receipt"
         ]);
-        output["artifact"]["evidence_ids"] = json!(["modular-pack-routing"]);
+        output["artifact"]["evidence_ids"] = json!(["mdp-reference-contract"]);
 
         let result = validate_governed_with_receipt(
             &root,

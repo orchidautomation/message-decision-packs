@@ -734,7 +734,9 @@ fn ensure_distinct_output_paths(
     };
     let resolved_out = resolve_output_path(out)?;
     let resolved_routed_context_out = resolve_output_path(routed_context_out)?;
-    if resolved_out == resolved_routed_context_out {
+    if resolved_out == resolved_routed_context_out
+        || existing_paths_have_same_identity(out, routed_context_out)?
+    {
         return Err(anyhow!(
             "--out and --routed-context-out must resolve to different paths"
         ));
@@ -746,21 +748,89 @@ fn resolve_output_path(path: &Path) -> Result<PathBuf> {
     if let Ok(canonical) = path.canonicalize() {
         return Ok(canonical);
     }
-    let absolute = if path.is_absolute() {
+    let mut candidate = if path.is_absolute() {
         path.to_path_buf()
     } else {
         std::env::current_dir()?.join(path)
     };
-    let Some(file_name) = absolute.file_name() else {
-        return Ok(absolute);
+
+    // `canonicalize` cannot resolve a dangling symlink. Follow the output leaf
+    // explicitly so aliases still compare equal before either artifact is written.
+    for depth in 0..40 {
+        match fs::symlink_metadata(&candidate) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                if depth == 39 {
+                    return Err(anyhow!("output path has too many symbolic links"));
+                }
+                let target = fs::read_link(&candidate)?;
+                candidate = if target.is_absolute() {
+                    target
+                } else {
+                    candidate
+                        .parent()
+                        .unwrap_or_else(|| Path::new(""))
+                        .join(target)
+                };
+            }
+            Ok(_) => return Ok(candidate.canonicalize()?),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    let Some(file_name) = candidate.file_name() else {
+        return Ok(candidate);
     };
-    let Some(parent) = absolute.parent() else {
-        return Ok(absolute);
+    let Some(parent) = candidate.parent() else {
+        return Ok(candidate);
     };
     Ok(parent
         .canonicalize()
         .unwrap_or_else(|_| parent.to_path_buf())
         .join(file_name))
+}
+
+#[cfg(unix)]
+fn existing_paths_have_same_identity(left: &Path, right: &Path) -> Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+
+    let (Some(left), Some(right)) = (existing_metadata(left)?, existing_metadata(right)?) else {
+        return Ok(false);
+    };
+    Ok(left.dev() == right.dev() && left.ino() == right.ino())
+}
+
+#[cfg(windows)]
+fn existing_paths_have_same_identity(left: &Path, right: &Path) -> Result<bool> {
+    use std::os::windows::fs::MetadataExt;
+
+    let (Some(left), Some(right)) = (existing_metadata(left)?, existing_metadata(right)?) else {
+        return Ok(false);
+    };
+    Ok(matches!(
+        (
+            left.volume_serial_number(),
+            left.file_index(),
+            right.volume_serial_number(),
+            right.file_index(),
+        ),
+        (Some(left_volume), Some(left_index), Some(right_volume), Some(right_index))
+            if left_volume == right_volume && left_index == right_index
+    ))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn existing_paths_have_same_identity(_left: &Path, _right: &Path) -> Result<bool> {
+    Ok(false)
+}
+
+#[cfg(any(unix, windows))]
+fn existing_metadata(path: &Path) -> Result<Option<fs::Metadata>> {
+    match fs::metadata(path) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn attach_dry_run_artifact(mut data: Value, path: &Path) -> Value {
@@ -1025,6 +1095,114 @@ mod tests {
             std::fs::read(&routed_context_out)
                 .expect("routed context should remain readable after rejection"),
             canonical_bytes
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn brief_rejects_dangling_symlink_alias_without_writing_target() {
+        use std::os::unix::fs::symlink;
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-brief-dangling-alias-{nonce}"));
+        init_pack(&root, "Brief Dangling Alias Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let prospect = root.join("examples").join("clay-row.json");
+        let output_dir = root.join(".mdp").join("briefs");
+        let out = output_dir.join("brief.json");
+        let routed_context_out = output_dir.join("routed-context.json");
+        symlink("routed-context.json", &out).expect("dangling output alias should be created");
+
+        let error = run(Cli {
+            json: true,
+            summary: true,
+            command: Commands::Brief {
+                dir: root.clone(),
+                prospect: Some(prospect),
+                normalized_input: None,
+                prompt: None,
+                source_binding: None,
+                source_attempt_request: None,
+                collected_attempt_results: None,
+                channel: "linkedin".to_string(),
+                job: Some("outbound-copy-brief".to_string()),
+                context: true,
+                routed_context_out: Some(routed_context_out.clone()),
+                readable: false,
+                out: Some(out.clone()),
+                dry_run: false,
+            },
+        })
+        .expect_err("dangling symlink aliases should be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("--out and --routed-context-out must resolve to different paths")
+        );
+        assert!(
+            !routed_context_out.exists(),
+            "routed context target should not be written"
+        );
+        assert_eq!(
+            std::fs::read_link(&out).expect("output should remain a symlink"),
+            PathBuf::from("routed-context.json")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn emit_brief_rejects_hard_link_aliases_without_overwriting() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-emit-brief-hard-link-{nonce}"));
+        init_pack(&root, "Emit Brief Hard Link Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let output_dir = root.join(".mdp").join("briefs");
+        let out = output_dir.join("brief.json");
+        let routed_context_out = output_dir.join("routed-context.json");
+        let original = b"existing artifact";
+        std::fs::write(&out, original).expect("fixture artifact should write");
+        std::fs::hard_link(&out, &routed_context_out).expect("hard-link alias should be created");
+
+        let error = run(Cli {
+            json: true,
+            summary: true,
+            command: Commands::EmitBrief {
+                dir: root.clone(),
+                persona: "Growth Engineer".to_string(),
+                motion: None,
+                job: Some("outbound-copy-brief".to_string()),
+                scope: Vec::new(),
+                routed_context_out: Some(routed_context_out.clone()),
+                out: Some(out.clone()),
+                dry_run: false,
+            },
+        })
+        .expect_err("hard-link aliases should be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("--out and --routed-context-out must resolve to different paths")
+        );
+        assert_eq!(
+            std::fs::read(&out).expect("output should remain readable"),
+            original
+        );
+        assert_eq!(
+            std::fs::read(&routed_context_out)
+                .expect("routed context alias should remain readable"),
+            original
         );
 
         let _ = std::fs::remove_dir_all(root);
