@@ -1085,6 +1085,56 @@ mod tests {
     }
 
     #[test]
+    fn synthetic_gtm_jobs_prove_material_context_reduction() {
+        let root = std::env::temp_dir().join(format!("mdp-minimal-context-{}", nonce()));
+        init_pack(&root, "Basic MDP Template", "gtm", true, false)
+            .expect("generic GTM pack should initialize");
+        let manifest = read_manifest(&root).expect("manifest should parse");
+        let total_entries = manifest
+            .cards
+            .iter()
+            .map(|card_ref| {
+                crate::pack_io::read_card(&root.join(".mdp").join(&card_ref.path))
+                    .expect("card should parse")
+                    .entries
+                    .len()
+            })
+            .sum::<usize>();
+
+        for job_id in ["prospect-fit-or-brief", "outbound-copy-brief"] {
+            let context = crate::routing::entry_context_scoped(
+                &root,
+                &manifest,
+                "PMM",
+                job_id,
+                true,
+                &crate::scope::ScopeResolution::default(),
+            )
+            .expect("context should compile");
+            assert_eq!(context["minimality"]["status"], "ready", "{job_id}");
+            let selected = context["minimality"]["selected_count"]
+                .as_u64()
+                .expect("selected count") as usize;
+            assert!(selected > 0 && selected < total_entries, "{job_id}");
+            assert!(
+                context["summary"]["guardrail_entry_count"]
+                    .as_u64()
+                    .expect("guardrail count")
+                    > 0,
+                "{job_id} must retain guardrails"
+            );
+            assert_eq!(
+                context["minimality"]["context_sha256"]
+                    .as_str()
+                    .expect("context digest")
+                    .len(),
+                64
+            );
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn targeted_gtm_init_selects_job_specific_authority_gaps() {
         let root = std::env::temp_dir().join(format!("mdp-foundation-target-{}", nonce()));
         init_pack_targeted(
@@ -1218,7 +1268,7 @@ mod tests {
                 .expect("proposal job-owned prompt should parse");
             assert_eq!(prompt.id, binding.prompt);
             assert_eq!(prompt.kind.as_deref(), Some("review"));
-            assert_eq!(prompt.version.as_deref(), Some("1"));
+            assert_eq!(prompt.version.as_deref(), Some("2"));
             let prompt_value =
                 serde_json::to_value(&prompt).expect("proposal job-owned prompt should serialize");
             let input_names = prompt_value["inputs"]
@@ -1230,6 +1280,12 @@ mod tests {
             assert!(
                 input_names.contains("normalized_prospect"),
                 "{} must consume the canonical normalized_prospect output",
+                job.id
+            );
+            assert!(
+                input_names.contains("routed_context")
+                    && !input_names.contains("product_foundation"),
+                "{} must consume only the canonical routed context authority",
                 job.id
             );
             assert!(
@@ -1268,6 +1324,15 @@ mod tests {
                         .iter()
                         .any(|field| field == "invocation_receipt_sha256"),
                     "{} must require invocation_receipt_sha256",
+                    job.id
+                );
+                assert!(
+                    required_path
+                        .as_array()
+                        .expect("governed prompt required fields should be an array")
+                        .iter()
+                        .any(|field| field == "context_sha256"),
+                    "{} must require context_sha256",
                     job.id
                 );
             }

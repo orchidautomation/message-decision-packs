@@ -384,7 +384,10 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 "proof-boundaries",
             ])),
             model_task: None,
-            context_budget: None,
+            context_budget: Some(crate::models::JobContextBudget {
+                max_entries: 48,
+                max_bytes: 49_152,
+            }),
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),

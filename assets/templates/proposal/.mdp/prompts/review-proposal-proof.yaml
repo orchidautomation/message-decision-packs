@@ -1,6 +1,6 @@
 format: mdp.prompt.v1
 id: review-proposal-proof-v1
-version: "1"
+version: "2"
 kind: review
 title: Review proposal proof
 description: Evaluate proposed proof and win themes against selected claims, evidence, and proof boundaries.
@@ -15,8 +15,8 @@ target_card_kinds:
 - gaps
 tags: [prompt, model-task, proposal, review]
 inputs:
-- name: product_foundation
-  description: Exact product-foundation resolution returned for this canonical proposal job.
+- name: routed_context
+  description: Exact canonical mdp.routed-context.v1 object compiled for this proposal job.
   required: true
   default: N/A
   missing_behavior: Return a gap or refusal; never load unrelated proposal authority.
@@ -52,7 +52,7 @@ inputs:
   missing_behavior: Return a gap or refusal; echo this host value and never calculate or invent it.
   producer: host
 instructions:
-- Use only declared inputs and the exact selected product-foundation entries for this job.
+- Use only declared inputs and the exact mdp.routed-context.v1 authority for this job.
 - Return strict JSON only, preserve exact selected authority identifiers, and echo invocation_receipt_sha256 exactly from the separately declared host input.
 - Surface missing proof, requirements, or review authority as structured gaps instead of inventing facts.
 procedure:
@@ -83,7 +83,7 @@ output_contract:
   contract: mdp.prompt-output.v0
   output_kind: governed-artifact
   strict_json_only: true
-  required_top_level: [contract, prompt_id, job_id, prompt_version, prompt_sha256, invocation_receipt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
+  required_top_level: [contract, prompt_id, job_id, prompt_version, prompt_sha256, invocation_receipt_sha256, context_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
   entry_defaults:
     body: N/A
     applies_to: []
@@ -94,14 +94,15 @@ output_contract:
   schema:
     type: object
     additionalProperties: false
-    required: [contract, prompt_id, job_id, prompt_version, prompt_sha256, invocation_receipt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
+    required: [contract, prompt_id, job_id, prompt_version, prompt_sha256, invocation_receipt_sha256, context_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
     properties:
       contract: {const: mdp.prompt-output.v0}
       prompt_id: {const: review-proposal-proof-v1}
       job_id: {const: proof-review}
-      prompt_version: {const: "1"}
+      prompt_version: {const: "2"}
       prompt_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
       invocation_receipt_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+      context_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
       source_summary:
         type: object
         additionalProperties: false
@@ -109,7 +110,7 @@ output_contract:
         properties:
           inputs_used:
             type: array
-            items: {enum: [product_foundation, normalized_prospect, supplied_material, runtime_context, prompt_receipt, invocation_receipt_sha256]}
+            items: {enum: [routed_context, normalized_prospect, supplied_material, runtime_context, prompt_receipt, invocation_receipt_sha256]}
       selected_authority: {type: array, items: {type: string}}
       artifact:
         type: object
@@ -127,9 +128,10 @@ output_contract:
     contract: mdp.prompt-output.v0
     prompt_id: review-proposal-proof-v1
     job_id: proof-review
-    prompt_version: "1"
+    prompt_version: "2"
     prompt_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
     invocation_receipt_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    context_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
     source_summary:
       inputs_used: []
     selected_authority: []

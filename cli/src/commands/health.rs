@@ -2269,6 +2269,14 @@ fn validate_job_model_task(
             "job-owned model-task prompt must declare a non-blank version",
         ));
     }
+    if job.context_budget.is_some() && !prompt.required_inputs.contains("routed_context") {
+        issues.push(issue(
+            "profile_job_model_task_routed_context_input_missing",
+            "error",
+            format!("{path}/model_task/prompt"),
+            "a context-budgeted model task prompt must declare routed_context as a required input",
+        ));
+    }
 }
 
 fn model_task_summary(job: &ProfileJob, prompt_inventory: &PromptInventory) -> Value {
@@ -2294,7 +2302,8 @@ fn model_task_summary(job: &ProfileJob, prompt_inventory: &PromptInventory) -> V
         && prompt
             .version
             .as_deref()
-            .is_some_and(|value| !value.trim().is_empty());
+            .is_some_and(|value| !value.trim().is_empty())
+        && (job.context_budget.is_none() || prompt.required_inputs.contains("routed_context"));
     json!({
         "status": if ready { "ready" } else { "blocked" },
         "kind": binding.kind,
@@ -4680,6 +4689,7 @@ struct PromptInventoryEntry {
     schema_ref: Option<String>,
     version: Option<String>,
     canonical_path: Option<String>,
+    required_inputs: BTreeSet<String>,
 }
 
 impl PromptInventory {
@@ -4712,6 +4722,12 @@ fn prompt_inventory(loaded_prompts: &[Value]) -> PromptInventory {
             canonical_path: prompt["path"]
                 .as_str()
                 .map(|path| path.strip_prefix(".mdp/").unwrap_or(path).to_string()),
+            required_inputs: prompt["required_inputs"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                .collect(),
         };
         if let Some(id) = prompt["id"].as_str() {
             inventory.refs.insert(id.to_string(), entry.clone());
@@ -4909,6 +4925,10 @@ fn validate_prompts(root: &Path, issues: &mut Vec<Value>) -> Result<Vec<Value>> 
                     "path": display_path,
                     "target_card_kinds": prompt.target_card_kinds,
                     "inputs": prompt.inputs.len(),
+                    "required_inputs": prompt.inputs.iter()
+                        .filter(|input| input.required)
+                        .map(|input| input.name.as_str())
+                        .collect::<Vec<_>>(),
                     "output_contract": {
                         "contract": prompt.output_contract.contract,
                         "output_kind": prompt.output_contract.output_kind,
@@ -6294,6 +6314,22 @@ mod tests {
             .push(
                 serde_yaml::from_str(
                     r#"
+name: routed_context
+description: Exact MDP-compiled routed context.
+required: true
+default: N/A
+missing_behavior: Return a gap or refusal.
+producer: host
+"#,
+                )
+                .expect("routed context input should parse"),
+            );
+        prompt["inputs"]
+            .as_sequence_mut()
+            .expect("inputs should be a sequence")
+            .push(
+                serde_yaml::from_str(
+                    r#"
 name: invocation_receipt_sha256
 description: Detached SHA-256 of the exact host invocation receipt bytes.
 required: true
@@ -6315,6 +6351,7 @@ required_top_level:
   - prompt_id
   - prompt_version
   - prompt_sha256
+  - context_sha256
   - invocation_receipt_sha256
   - source_summary
   - selected_authority
@@ -6324,13 +6361,14 @@ required_top_level:
 schema:
   type: object
   additionalProperties: false
-  required: [contract, job_id, prompt_id, prompt_version, prompt_sha256, invocation_receipt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
+  required: [contract, job_id, prompt_id, prompt_version, prompt_sha256, context_sha256, invocation_receipt_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
   properties:
     contract: {const: mdp.prompt-output.v0}
     job_id: {const: prospect-fit-or-brief}
     prompt_id: {const: normalize-prospect-row}
     prompt_version: {const: "1"}
     prompt_sha256: {type: string, minLength: 64, maxLength: 64}
+    context_sha256: {type: string, minLength: 64, maxLength: 64}
     invocation_receipt_sha256: {type: string, minLength: 64, maxLength: 64}
     source_summary:
       type: object
@@ -6339,7 +6377,7 @@ schema:
       properties:
         inputs_used:
           type: array
-          items: {enum: [raw_row, company_domain, existing_pack_context, runtime_context, source_kind, invocation_receipt_sha256]}
+          items: {enum: [raw_row, company_domain, existing_pack_context, runtime_context, source_kind, routed_context, invocation_receipt_sha256]}
     selected_authority: {type: array, items: {type: string}}
     artifact: {type: object}
     gaps: {type: array, items: {type: string}}
@@ -6350,6 +6388,7 @@ example:
   prompt_id: normalize-prospect-row
   prompt_version: "1"
   prompt_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  context_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
   invocation_receipt_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   source_summary: {inputs_used: []}
   selected_authority: [positioning/decision-layer]
@@ -6400,6 +6439,42 @@ prompt: normalize-prospect-row
         assert_eq!(
             result["profile"]["jobs"][0]["model_task"]["prompt_version"],
             "1"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn context_budgeted_model_task_requires_routed_context_input() {
+        let root = temp_pack("job-owned-generation-without-routed-context");
+        opt_in_generation_prompt(&root);
+        let prompt_path = root.join(".mdp/prompts/normalize-prospect.yaml");
+        let raw = std::fs::read_to_string(&prompt_path).expect("prompt should be readable");
+        let mut prompt: YamlValue = serde_yaml::from_str(&raw).expect("prompt should parse");
+        prompt["inputs"]
+            .as_sequence_mut()
+            .expect("inputs should be a sequence")
+            .retain(|input| input["name"].as_str() != Some("routed_context"));
+        std::fs::write(
+            &prompt_path,
+            serde_yaml::to_string(&prompt).expect("prompt should serialize"),
+        )
+        .expect("prompt should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+
+        assert_eq!(result["valid"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .any(|issue| {
+                    issue["code"] == "profile_job_model_task_routed_context_input_missing"
+                })
+        );
+        assert_eq!(
+            result["profile"]["jobs"][0]["model_task"]["status"],
+            "blocked"
         );
         let _ = std::fs::remove_dir_all(root);
     }

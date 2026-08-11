@@ -114,6 +114,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
+        SchemaTarget::RoutedContextV1 => routed_context_schema(),
         SchemaTarget::DecisionInput => decision_input_envelope_schema(),
         SchemaTarget::SourceBinding => source_binding_schema(),
         SchemaTarget::Prospect => {
@@ -2614,17 +2615,16 @@ fn human_brief_schema() -> Value {
 }
 
 fn context_schema_base() -> Value {
-    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "scope", "evidence", "avoid", "constraints", "metadata", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}}}}, "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": context_entries_schema(), "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+}
+
+fn context_entries_schema() -> Value {
+    json!({"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "card_path", "entry_id", "title", "body", "applies_to", "scope", "evidence", "avoid", "constraints", "metadata", "status", "selection", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}, "selection_class": {"enum": ["product_foundation_requirement", "persona_or_job_match", "evidence_dependency", "output_requirement", "universal_guardrail", "bounded_fallback"]}, "reason_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["product_foundation_requirement", "persona_applicability", "job_match", "persona_text_match", "evidence_dependency", "output_requirement", "fit_guardrail", "output_rule_guardrail", "avoid_rule_guardrail"]}}}}})
 }
 
 fn context_schema() -> Value {
     let mut schema = context_schema_base();
-    schema["properties"]["entries"]["items"]["properties"]["selection_class"] =
-        json!({"enum": ["persona_or_job_match", "universal_guardrail"]});
-    schema["properties"]["entries"]["items"]["properties"]["reason_codes"] = json!({"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": [
-        "persona_applicability", "job_match", "persona_text_match", "fit_guardrail",
-        "output_rule_guardrail", "avoid_rule_guardrail"
-    ]}});
+    schema["additionalProperties"] = json!(false);
     schema["properties"]["minimality"] = json!({
         "type": "object",
         "required": ["status", "context_sha256", "budget", "excluded", "diagnostics"],
@@ -2632,7 +2632,20 @@ fn context_schema() -> Value {
         "properties": {
             "status": {"enum": ["ready", "blocked", "unassessed"]},
             "context_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
-            "budget": {"type": ["object", "null"]},
+            "budget": {"oneOf": [
+                {"type": "null"},
+                {
+                    "type": "object",
+                    "required": ["max_entries", "max_bytes", "actual_entries", "actual_bytes"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "max_entries": {"type": "integer", "minimum": 1},
+                        "max_bytes": {"type": "integer", "minimum": 1},
+                        "actual_entries": {"type": "integer", "minimum": 0},
+                        "actual_bytes": {"type": "integer", "minimum": 0}
+                    }
+                }
+            ]},
             "selected_count": {"type": "integer", "minimum": 0},
             "excluded_count": {"type": "integer", "minimum": 0},
             "excluded": {"type": "array", "items": {
@@ -2652,10 +2665,34 @@ fn context_schema() -> Value {
         }
     });
     schema["properties"]["model_context"] = json!({
-        "type": ["object", "null"],
-        "description": "Exact model-visible mdp.routed-context.v1 projection when minimality is ready."
+        "description": "Exact model-visible mdp.routed-context.v1 projection when minimality is ready.",
+        "oneOf": [
+            {"type": "null"},
+            routed_context_schema()
+        ]
     });
     schema
+}
+
+pub(crate) fn routed_context_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Routed Context v1",
+        "type": "object",
+        "required": ["contract", "job", "persona", "scope", "product_foundation", "product_foundation_load_order", "entries", "gaps", "policy"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": crate::constants::ROUTED_CONTEXT_CONTRACT},
+            "job": {"type": "string", "minLength": 1},
+            "persona": {"type": "string", "minLength": 1},
+            "scope": scope_resolution_schema(),
+            "product_foundation": product_foundation_resolution_schema(),
+            "product_foundation_load_order": product_foundation_load_order_schema(),
+            "entries": context_entries_schema(),
+            "gaps": {"type": "array", "items": {"type": "object"}},
+            "policy": {"type": "string", "minLength": 1}
+        }
+    })
 }
 
 fn product_foundation_resolution_schema() -> Value {
@@ -4258,6 +4295,25 @@ mod tests {
         assert_eq!(result["properties"]["now_utc"]["format"], "date-time");
         assert_eq!(result["properties"]["date_utc"]["format"], "date");
         assert_eq!(result["properties"]["timezone"]["const"], "UTC");
+    }
+
+    #[test]
+    fn routed_context_schema_is_closed_and_versioned() {
+        let value = schema(SchemaTarget::RoutedContextV1);
+        assert_eq!(
+            value["properties"]["contract"]["const"],
+            "mdp.routed-context.v1"
+        );
+        assert_eq!(value["additionalProperties"], false);
+        assert!(
+            value["required"]
+                .as_array()
+                .expect("required fields")
+                .iter()
+                .any(|field| field == "scope")
+        );
+        jsonschema::draft202012::meta::validate(&value)
+            .expect("routed context schema should be valid draft 2020-12");
     }
 
     #[test]

@@ -1,6 +1,6 @@
-use crate::artifact_hash::{canonical_json_bytes, canonical_json_sha256};
+use crate::artifact_hash::{canonical_json_bytes, sha256_hex};
 use crate::commands::health::validate_pack;
-use crate::constants::DEFAULT_DIR;
+use crate::constants::{DEFAULT_DIR, ROUTED_CONTEXT_CONTRACT};
 use crate::models::{CardKind, Entry, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
 use crate::product_foundation::{
@@ -181,24 +181,18 @@ pub(crate) fn entry_route_scoped(
     apply_validation_errors_for_job(&mut product_foundation, manifest, validation_issues);
     let validation_blocked =
         validation_errors_block_job(manifest, &product_foundation, validation_issues);
-    let details = route_entry_details(root, manifest, persona, job, true, scope)?;
+    let mut details = route_entry_details(root, manifest, persona, job, true, scope)?;
     let product_foundation_load_order = foundation_load_order(&product_foundation);
+    apply_selection_authority(&mut details.context_entries, &product_foundation_load_order);
     let explicit_activation_blocks = manifest.profile_eval.blocks_activation();
-    let policy = if details.portfolio_sensitive {
-        "Use scope-filtered context.entries only. Shared full cards are not scope-safe drafting context. Treat entry metadata as advisory context, not enforced CLI constraints."
-    } else {
-        "Use context.entries only. Canonical jobs must not open undeclared cards or whole-card fallbacks."
-    };
-    let model_visible_projection = json!({
-        "contract": "mdp.routed-context.v1",
-        "job": job,
-        "persona": persona,
-        "product_foundation": resolution_json(&product_foundation),
-        "product_foundation_load_order": product_foundation_load_order,
-        "entries": details.context_entries,
-        "gaps": details.gaps,
-        "policy": policy
-    });
+    let (policy, model_visible_projection) = routed_context_projection(
+        job,
+        persona,
+        scope,
+        &product_foundation,
+        &product_foundation_load_order,
+        &details,
+    );
     let minimality = context_minimality(
         manifest,
         job,
@@ -270,26 +264,20 @@ pub(crate) fn entry_context_with_runtime_scoped(
     apply_validation_errors_for_job(&mut product_foundation, manifest, validation_issues);
     let validation_blocked =
         validation_errors_block_job(manifest, &product_foundation, validation_issues);
-    let details = route_entry_details(root, manifest, persona, job, true, scope)?;
+    let mut details = route_entry_details(root, manifest, persona, job, true, scope)?;
     let scope_blocked = !details.scope_ready(scope);
     let product_foundation_load_order = foundation_load_order(&product_foundation);
+    apply_selection_authority(&mut details.context_entries, &product_foundation_load_order);
     let foundation_blocked = product_foundation.blocks_activation();
     let activation_blocked = manifest.profile_eval.blocks_activation();
-    let ready_policy = if details.portfolio_sensitive {
-        "Use scope-filtered context.entries only. Shared full cards are not scope-safe drafting context. Treat entry metadata as advisory context, not enforced CLI constraints."
-    } else {
-        "Use context.entries only. Canonical jobs must not open undeclared cards or whole-card fallbacks."
-    };
-    let model_visible_projection = json!({
-        "contract": "mdp.routed-context.v1",
-        "job": job,
-        "persona": persona,
-        "product_foundation": resolution_json(&product_foundation),
-        "product_foundation_load_order": product_foundation_load_order,
-        "entries": details.context_entries,
-        "gaps": details.gaps,
-        "policy": ready_policy
-    });
+    let (ready_policy, model_visible_projection) = routed_context_projection(
+        job,
+        persona,
+        scope,
+        &product_foundation,
+        &product_foundation_load_order,
+        &details,
+    );
     let minimality = context_minimality(
         manifest,
         job,
@@ -400,6 +388,33 @@ pub(crate) fn entry_context_with_runtime_scoped(
     }))
 }
 
+fn routed_context_projection(
+    job: &str,
+    persona: &str,
+    scope: &ScopeResolution,
+    product_foundation: &ProductFoundationResolution,
+    product_foundation_load_order: &[Value],
+    details: &EntryRouteDetails,
+) -> (&'static str, Value) {
+    let policy = if details.portfolio_sensitive {
+        "Use scope-filtered context.entries only. Shared full cards are not scope-safe drafting context. Treat entry metadata as advisory context, not enforced CLI constraints."
+    } else {
+        "Use context.entries only. Canonical jobs must not open undeclared cards or whole-card fallbacks."
+    };
+    let projection = json!({
+        "contract": ROUTED_CONTEXT_CONTRACT,
+        "job": job,
+        "persona": persona,
+        "scope": scope,
+        "product_foundation": resolution_json(product_foundation),
+        "product_foundation_load_order": product_foundation_load_order,
+        "entries": details.context_entries,
+        "gaps": details.gaps,
+        "policy": policy
+    });
+    (policy, projection)
+}
+
 fn context_minimality(
     manifest: &Manifest,
     job_id: &str,
@@ -426,11 +441,9 @@ fn context_minimality(
         }));
     };
 
-    let selected_count = model_visible_projection["entries"]
-        .as_array()
-        .map(Vec::len)
-        .unwrap_or_default();
-    let actual_bytes = canonical_json_bytes(model_visible_projection)?.len();
+    let selected_count = selected_authority_count(model_visible_projection);
+    let canonical_context = canonical_json_bytes(model_visible_projection)?;
+    let actual_bytes = canonical_context.len();
     let mut diagnostics = Vec::new();
     if !full_card_required.is_empty() {
         diagnostics.push("full_card_fallback_required");
@@ -443,7 +456,7 @@ fn context_minimality(
     }
     Ok(json!({
         "status": if diagnostics.is_empty() { "ready" } else { "blocked" },
-        "context_sha256": canonical_json_sha256(model_visible_projection)?,
+        "context_sha256": sha256_hex(&canonical_context),
         "budget": {
             "max_entries": budget.max_entries,
             "max_bytes": budget.max_bytes,
@@ -455,6 +468,78 @@ fn context_minimality(
         "excluded": excluded,
         "diagnostics": diagnostics
     }))
+}
+
+fn selected_authority_count(model_visible_projection: &Value) -> usize {
+    let mut selected = BTreeSet::new();
+    for entry in model_visible_projection["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        if let (Some(card_id), Some(entry_id)) =
+            (entry["card_id"].as_str(), entry["entry_id"].as_str())
+        {
+            selected.insert((card_id, entry_id));
+        }
+    }
+    for reference in model_visible_projection["product_foundation_load_order"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        if let (Some(card_id), Some(entry_id)) = (
+            reference["card_id"].as_str(),
+            reference["entry_id"].as_str(),
+        ) {
+            selected.insert((card_id, entry_id));
+        }
+    }
+    selected.len()
+}
+
+fn apply_selection_authority(entries: &mut [Value], foundation_load_order: &[Value]) {
+    let foundation_refs = foundation_load_order
+        .iter()
+        .filter_map(|reference| {
+            Some((
+                reference["card_id"].as_str()?,
+                reference["entry_id"].as_str()?,
+            ))
+        })
+        .collect::<BTreeSet<_>>();
+    for entry in entries {
+        let reference = (entry["card_id"].as_str(), entry["entry_id"].as_str());
+        let card_kind = serde_json::from_value::<CardKind>(entry["card_kind"].clone()).ok();
+        let (selection_class, reason_code) = if entry["selection"] == "guardrail" {
+            ("universal_guardrail", None)
+        } else if reference
+            .0
+            .zip(reference.1)
+            .is_some_and(|reference| foundation_refs.contains(&reference))
+        {
+            (
+                "product_foundation_requirement",
+                Some("product_foundation_requirement"),
+            )
+        } else if matches!(
+            card_kind,
+            Some(CardKind::Ctas | CardKind::CopyPatterns | CardKind::ChannelPolicies)
+        ) {
+            ("output_requirement", Some("output_requirement"))
+        } else if matches!(card_kind, Some(CardKind::Claims)) {
+            ("evidence_dependency", Some("evidence_dependency"))
+        } else {
+            ("persona_or_job_match", None)
+        };
+        entry["selection_class"] = json!(selection_class);
+        if let Some(reason_code) = reason_code
+            && let Some(reason_codes) = entry["reason_codes"].as_array_mut()
+            && !reason_codes.iter().any(|value| value == reason_code)
+        {
+            reason_codes.push(json!(reason_code));
+        }
+    }
 }
 
 fn foundation_load_order(resolution: &ProductFoundationResolution) -> Vec<Value> {
@@ -565,7 +650,7 @@ fn route_entry_details(
                     }
                 }
             }
-            if (matched || guardrail) && !scope_match.compatible {
+            if entry_allowed && (matched || guardrail) && !scope_match.compatible {
                 excluded.push(excluded_entry(
                     &card.id,
                     &card.kind,
@@ -962,10 +1047,11 @@ mod tests {
             .iter_mut()
             .find(|job| job["id"].as_str() == Some(job_id))
             .expect("job should exist");
-        job["context_budget"] = serde_yaml::from_str(&format!(
-            "max_entries: {max_entries}\nmax_bytes: {max_bytes}\n"
-        ))
-        .expect("budget should parse");
+        job["context_budget"] = serde_yaml::to_value(crate::models::JobContextBudget {
+            max_entries,
+            max_bytes,
+        })
+        .expect("budget should serialize");
         std::fs::write(
             manifest_path,
             serde_yaml::to_string(&manifest).expect("manifest should serialize"),
@@ -1103,13 +1189,21 @@ mod tests {
                 .iter()
                 .all(|entry| entry["reason_codes"].is_array())
         );
-        assert!(
-            first["minimality"]["excluded"]
-                .as_array()
-                .expect("excluded")
-                .iter()
-                .all(|entry| entry.get("body").is_none())
-        );
+        let excluded = first["minimality"]["excluded"]
+            .as_array()
+            .expect("excluded");
+        assert!(excluded.iter().all(|entry| entry.get("body").is_none()));
+        let unique_excluded = excluded
+            .iter()
+            .map(|entry| {
+                (
+                    entry["card_id"].as_str().expect("card id"),
+                    entry["entry_id"].as_str().expect("entry id"),
+                )
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(unique_excluded.len(), excluded.len());
+        assert_eq!(first["minimality"]["excluded_count"], excluded.len());
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1144,6 +1238,79 @@ mod tests {
                 .as_u64()
                 .expect("actual entries")
                 > 1
+        );
+        assert!(context["entries"].as_array().expect("entries").is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn context_byte_budget_overflow_blocks_and_hides_model_context() {
+        let root = temp_pack("minimality-byte-overflow");
+        set_context_budget(&root, "outbound-copy-brief", 100, 1);
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "outbound-copy-brief",
+            true,
+            &ScopeResolution::default(),
+        )
+        .expect("context should compile");
+
+        assert_eq!(context["status"], "blocked");
+        assert_eq!(context["model_context"], Value::Null);
+        assert!(
+            context["minimality"]["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .any(|code| code == "context_byte_budget_exceeded")
+        );
+        assert_eq!(context["minimality"]["budget"]["max_bytes"], 1);
+        assert!(context["entries"].as_array().expect("entries").is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn full_card_fallback_blocks_and_hides_model_context() {
+        let root = temp_pack("minimality-full-card");
+        set_context_budget(&root, "outbound-copy-brief", 100, 1_000_000);
+        let card_path = root.join(".mdp/cards/personas.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should load");
+        let mut card: serde_yaml::Value = serde_yaml::from_str(&raw).expect("card should parse");
+        for entry in card["entries"].as_sequence_mut().expect("entries") {
+            entry["title"] = serde_yaml::Value::String("Unrelated audience".into());
+            entry["body"] = serde_yaml::Value::String("Unrelated audience context".into());
+            entry["applies_to"] =
+                serde_yaml::from_str("- GTM Engineering\n").expect("applicability should parse");
+        }
+        std::fs::write(
+            &card_path,
+            serde_yaml::to_string(&card).expect("card should serialize"),
+        )
+        .expect("card should write");
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "outbound-copy-brief",
+            true,
+            &ScopeResolution::default(),
+        )
+        .expect("context should compile");
+
+        assert_eq!(context["status"], "blocked");
+        assert_eq!(context["model_context"], Value::Null);
+        assert!(
+            context["minimality"]["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .any(|code| code == "full_card_fallback_required")
         );
         assert!(context["entries"].as_array().expect("entries").is_empty());
         let _ = std::fs::remove_dir_all(root);

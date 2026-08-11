@@ -361,6 +361,7 @@ jobs:
   model_task:
     kind: review
     prompt: review-bid-no-bid-v1
+  context_budget: {max_entries: 64, max_bytes: 65536}
 - id: compliance-review
   skill_id: mdp-proposal-review
   label: Compliance review
@@ -391,6 +392,7 @@ jobs:
   model_task:
     kind: review
     prompt: review-proposal-compliance-v1
+  context_budget: {max_entries: 64, max_bytes: 65536}
 - id: proof-review
   skill_id: mdp-proposal-review
   label: Proof or win theme review
@@ -423,6 +425,7 @@ jobs:
   model_task:
     kind: review
     prompt: review-proposal-proof-v1
+  context_budget: {max_entries: 64, max_bytes: 65536}
 - id: red-team-review
   skill_id: mdp-proposal-review
   label: Red-team gap review
@@ -458,6 +461,7 @@ jobs:
   model_task:
     kind: review
     prompt: review-proposal-red-team-v1
+  context_budget: {max_entries: 64, max_bytes: 65536}
 profile_eval:
   required_categories:
   - proceed

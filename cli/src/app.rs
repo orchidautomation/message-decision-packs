@@ -1,3 +1,4 @@
+use crate::artifact_hash::{canonical_json_bytes, sha256_hex};
 use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
 use crate::commands::briefs::prospect_brief_from_fit_with_context;
 use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
@@ -446,11 +447,14 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             channel,
             job,
             context,
+            routed_context_out,
             readable,
             out,
             dry_run,
         } => {
-            let include_context = context || (readable && !json_mode && !summary_mode);
+            let include_context = context
+                || routed_context_out.is_some()
+                || (readable && !json_mode && !summary_mode);
             let (mut data, input_kind, input_path) = if let Some(normalized) = normalized_input {
                 let fit_result = fit_normalized(
                     &dir,
@@ -497,6 +501,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 )
             };
             data = attach_input_artifact(data, input_kind, &input_path);
+            if let Some(path) = routed_context_out {
+                data = export_routed_context(data, &path, dry_run)?;
+            }
             if readable && !json_mode && !summary_mode {
                 let markdown = render_readable_prospect_brief(&data);
                 if let Some(path) = out {
@@ -547,11 +554,15 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             motion,
             job,
             scope,
+            routed_context_out,
             out,
             dry_run,
         } => {
             let mut data =
                 emit_brief_scoped(&dir, &persona, motion.as_deref(), job.as_deref(), &scope)?;
+            if let Some(path) = routed_context_out {
+                data = export_routed_context(data, &path, dry_run)?;
+            }
             if let Some(path) = out {
                 if dry_run {
                     data = attach_dry_run_artifact(data, &path);
@@ -674,6 +685,42 @@ fn attach_artifact(mut data: Value, path: &Path) -> Value {
         );
     }
     data
+}
+
+fn export_routed_context(mut data: Value, path: &Path, dry_run: bool) -> Result<Value> {
+    if data
+        .pointer("/context/minimality/status")
+        .and_then(Value::as_str)
+        != Some("ready")
+    {
+        return Err(anyhow!(
+            "routed context is unavailable because minimality is not ready"
+        ));
+    }
+    let context = data
+        .pointer("/context/model_context")
+        .filter(|value| !value.is_null())
+        .ok_or_else(|| anyhow!("routed context is unavailable because minimality is not ready"))?;
+    let bytes = canonical_json_bytes(context)?;
+    let status = if dry_run {
+        "dry-run"
+    } else {
+        fs::write(path, &bytes)?;
+        "saved"
+    };
+    if let Some(object) = data.as_object_mut() {
+        object.insert(
+            "routed_context_artifact".to_string(),
+            json!({
+                "status": status,
+                "kind": "canonical-json-file",
+                "path": path.display().to_string(),
+                "sha256": sha256_hex(&bytes),
+                "bytes": bytes.len()
+            }),
+        );
+    }
+    Ok(data)
 }
 
 fn attach_dry_run_artifact(mut data: Value, path: &Path) -> Value {
@@ -823,6 +870,7 @@ mod tests {
         init_pack(&root, "Brief Out Pack", "gtm", true, false).expect("pack should initialize");
         let prospect = root.join("examples").join("clay-row.json");
         let out = root.join(".mdp").join("briefs").join("brief.json");
+        let routed_context_out = root.join(".mdp").join("briefs").join("routed-context.json");
 
         run(Cli {
             json: true,
@@ -836,8 +884,9 @@ mod tests {
                 source_attempt_request: None,
                 collected_attempt_results: None,
                 channel: "linkedin".to_string(),
-                job: None,
+                job: Some("outbound-copy-brief".to_string()),
                 context: true,
+                routed_context_out: Some(routed_context_out.clone()),
                 readable: false,
                 out: Some(out.clone()),
                 dry_run: false,
@@ -852,6 +901,14 @@ mod tests {
         assert_eq!(saved["artifact"]["status"], "saved");
         assert_eq!(saved["input_artifact"]["kind"], "prospect");
         assert_eq!(saved["context"]["contract"], "mdp.context.v0");
+        assert_eq!(saved["routed_context_artifact"]["status"], "saved");
+        let routed_bytes = std::fs::read(&routed_context_out).expect("routed context should exist");
+        assert_eq!(
+            routed_bytes,
+            canonical_json_bytes(&saved["context"]["model_context"])
+                .expect("routed context should serialize canonically")
+        );
+        assert!(!routed_bytes.ends_with(b"\n"));
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -882,6 +939,7 @@ mod tests {
                 channel: "linkedin".to_string(),
                 job: None,
                 context: false,
+                routed_context_out: None,
                 readable: true,
                 out: Some(out.clone()),
                 dry_run: false,

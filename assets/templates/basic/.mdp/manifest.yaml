@@ -377,6 +377,9 @@ jobs:
     - proof-boundaries
     optional:
     - known-gaps
+  context_budget:
+    max_entries: 48
+    max_bytes: 49152
 - id: outbound-copy-brief
   skill_id: mdp-gtm-brief
   label: Outbound copy brief

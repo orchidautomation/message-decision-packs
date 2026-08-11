@@ -9,9 +9,9 @@ use crate::constants::{
     PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
     PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
     PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, REQUIREMENTS_CONTRACT,
-    REQUIREMENTS_CONTRACT_V2, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT,
-    SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2, SOURCE_BINDING_VALIDATION_CONTRACT,
-    SOURCE_INTAKE_CONTRACT,
+    REQUIREMENTS_CONTRACT_V2, ROUTED_CONTEXT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
+    SOURCE_AUDIT_CONTRACT, SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2,
+    SOURCE_BINDING_VALIDATION_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::models::DecisionInputAttemptStatus;
 use crate::run_contracts::{
@@ -43,6 +43,7 @@ pub(crate) fn capabilities() -> Value {
             "job_owned_output_kind": "governed-artifact",
             "source_audit": SOURCE_AUDIT_CONTRACT,
             "runner_audit": RUNNER_AUDIT_CONTRACT,
+            "routed_context": {"contract": ROUTED_CONTEXT_CONTRACT, "schema_target": "routed-context-v1"},
             "card_patch_schema_ref": PROMPT_CARD_PATCH_SCHEMA_REF,
             "prospect_normalization_schema_ref": PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF
         },
@@ -168,7 +169,7 @@ pub(crate) fn capabilities() -> Value {
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
             command("validate-source-binding", SOURCE_BINDING_VALIDATION_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--file"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
-            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--invocation-receipt", "--prompt", "--prompt-id", "--strict"]),
+            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--invocation-receipt", "--routed-context", "--prompt", "--prompt-id", "--strict"]),
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
             command("verify-run", RUN_VERIFICATION_V1, "read-only", false, false, false, &["--bundle", "--receipt", "--artifact-root"]),
             command("trace", DECISION_TRACE_V1, "read-only-unless-out", false, true, false, &["--file", "--bundle", "--receipt", "--artifact-root", "--format", "--out"]),
@@ -184,9 +185,9 @@ pub(crate) fn capabilities() -> Value {
             command("check-claims", "mdp.claim-check.v0", "read-only", false, false, true, &["--dir", "--text", "--file", "--subject", "--persona", "--job", "--scope", "--strict"]),
             command("gaps", "mdp.gaps.v0", "read-only", false, false, false, &["--dir"]),
             command("eval", "mdp.eval.v0", "read-only", false, false, true, &["--dir", "--strict"]),
-            command("brief", "mdp.message-brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--prospect", "--normalized-input", "--prompt", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--channel", "--job", "--context", "--readable", "--out", "--dry-run"]),
+            command("brief", "mdp.message-brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--prospect", "--normalized-input", "--prompt", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--channel", "--job", "--context", "--routed-context-out", "--readable", "--out", "--dry-run"]),
             command("copy", "mdp.copy-demo.v0", "writes-files-with-out", false, true, false, &["--dir", "--prospect", "--channel", "--out"]),
-            command("emit-brief", "mdp.brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--persona", "--motion", "--job", "--scope", "--out", "--dry-run"]),
+            command("emit-brief", "mdp.brief.v0", "writes-files-with-out", true, true, false, &["--dir", "--persona", "--motion", "--job", "--scope", "--routed-context-out", "--out", "--dry-run"]),
             command("pack", "mdp.pack.v0", "writes-files-with-out", true, true, false, &["--dir", "--out", "--dry-run"]),
             command("schema", "mdp.schema.v0", "read-only", false, false, false, &["target"])
         ],
@@ -257,6 +258,14 @@ mod tests {
         );
         assert_eq!(result["profile_contracts"]["skills"], "mdp.skills.v1");
         assert_eq!(
+            result["prompt_contracts"]["routed_context"]["contract"],
+            ROUTED_CONTEXT_CONTRACT
+        );
+        assert_eq!(
+            result["prompt_contracts"]["routed_context"]["schema_target"],
+            "routed-context-v1"
+        );
+        assert_eq!(
             result["decision_input_contracts"]["requirements"],
             REQUIREMENTS_CONTRACT
         );
@@ -317,6 +326,24 @@ mod tests {
             assert!(args.iter().any(|arg| arg == "--prompt"));
             assert!(args.iter().any(|arg| arg == "--job"));
         }
+        for command_name in ["brief", "emit-brief"] {
+            let args = result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .find(|command| command["name"] == command_name)
+                .and_then(|command| command["args"].as_array())
+                .expect("command args");
+            assert!(args.iter().any(|arg| arg == "--routed-context-out"));
+        }
+        let validation_args = result["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .find(|command| command["name"] == "validate-prompt-output")
+            .and_then(|command| command["args"].as_array())
+            .expect("validation args");
+        assert!(validation_args.iter().any(|arg| arg == "--routed-context"));
         assert_eq!(
             result["proposal_evidence_contracts"]["native_normalize_request"]["schema_target"],
             "native-normalize-request"
