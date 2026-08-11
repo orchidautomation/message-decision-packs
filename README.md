@@ -220,6 +220,8 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 
 ## Documentation
 
+- [Minimal context routing](docs/minimal-context-routing.md) — job budgets, exact routed-context digests, invocation binding, and selected-authority enforcement.
+
 - [Getting Started](docs/getting-started.md): install, create, route, fit, brief, and validate.
 - [Portfolio-Aware GTM Scope](docs/portfolio-scope.md): product, capability, solution, and segment scoping inside one pack.
 - [Product Foundations](docs/product-foundations.md): exact per-job product authority, readiness, compatibility, and README orientation.

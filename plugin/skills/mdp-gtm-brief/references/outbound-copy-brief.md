@@ -8,8 +8,15 @@ Read this only for `outbound-copy-brief`.
 2. Build bounded pre-draft context:
 
 ```bash
-mdp --json --summary brief --context --dir PACK_ROOT --prospect PROSPECT_JSON --channel CHANNEL
+mdp --json brief --context --dir PACK_ROOT --prospect PROSPECT_JSON --channel CHANNEL \
+  --job outbound-copy-brief --routed-context-out ROUTED_CONTEXT_JSON
 ```
+
+Require `data.context.minimality.status: ready` and
+`data.routed_context_artifact.status: saved`; do not load
+excluded bodies or open `full_card_required` paths. The downstream host must
+hash those exact bytes in `mdp.prompt-invocation.v1`, and validation must pass
+both `--invocation-receipt` and `--routed-context`.
 
 3. Return a writing contract containing the audience/persona, fit rationale, safe personalization, approved claims/proof, message angles, CTA policy, avoid rules, output constraints, and known gaps.
 4. If no prospect object is required for the pack-owned route, use `mdp emit-brief` with the exact persona, job, and required scope.

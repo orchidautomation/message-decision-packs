@@ -63,7 +63,7 @@ The current router selects base guardrail cards plus persona and job matches, th
 - R15. `route`, `brief --context`, requirements/model-task output, run receipts, schemas, human summaries, and canonical skills must agree on readiness, digest, selected counts, excluded counts, and failure reasons.
 - R16. Detailed excluded bodies must not appear in model, human-summary, or trace projections; exact excluded IDs and bounded reason metadata are sufficient.
 - R17. A synthetic public fixture must prove materially smaller context for fit and outbound generation without losing required guardrails, evidence, or output validity.
-- R18. Private or customer-specific Harvey evidence may be inspected locally when supplied, but it must not be committed; the public proof uses existing synthetic/basic and Clay authorities.
+- R18. Private or customer-specific evidence may be inspected locally when supplied, but it must not be committed; the public proof uses existing synthetic/basic and Clay authorities.
 
 ### Acceptance Examples
 
@@ -87,7 +87,7 @@ The current router selects base guardrail cards plus persona and job matches, th
 
 **Deferred**
 
-- MDP-201 owns behavioral cold-model scoring and the final Harvey qualification claim.
+- MDP-201 owns behavioral cold-model scoring and any final customer-pack qualification claim.
 - Richer optimization metrics may be considered only after deterministic minimality is proven.
 
 **Outside MDP**
@@ -108,7 +108,7 @@ The current router selects base guardrail cards plus persona and job matches, th
 - KTD5. **Hash the actual model-visible projection.** Canonical JSON serialization of the final selected projection owns `context_sha256`. Diagnostic-only exclusions and human explanations stay outside the digest; model-visible gaps and policy stay inside it. Governs R10 and R14.
 - KTD6. **Bind context through the shipped invocation receipt.** Add one required `routed_context` prompt input. Its envelope carries the digest of its model-visible projection, while `mdp.prompt-invocation.v1` binds the complete envelope bytes. Ready output echoes the projection digest. This avoids a redundant detached-hash input and a second receipt family. Governs R11-R12 and R14.
 - KTD7. **Validate typed selected authority.** Build one index from the bound context and require output claim/evidence/angle/CTA references to resolve through their allowed card kinds. Pack-global existence never satisfies governed output. Governs R12-R14.
-- KTD8. **Keep public proof synthetic.** Use generated basic/targeted GTM and Clay fixtures for committed evidence. Treat any Harvey pack as private/manual input and defer the public cold-model claim to MDP-201. Governs R17-R18.
+- KTD8. **Keep public proof synthetic.** Use generated basic/targeted GTM and Clay fixtures for committed evidence. Treat customer packs as private/manual input and defer any public cold-model claim to MDP-201. Governs R17-R18.
 
 ### High-Level Technical Design
 
@@ -208,7 +208,7 @@ U1 defines the authored budget and selection vocabulary. U2 centralizes compilat
 - **Requirements:** R6-R7 and R17-R18.
 - **Dependencies:** U1-U4.
 - **Files:** `cli/src/starter.rs`, `cli/src/target_starter.rs`, `assets/templates/basic/.mdp/manifest.yaml`, plugin mirrors, `examples/clay-table-pack/.mdp/manifest.yaml`, synthetic fixtures/evals, `scripts/test-run-conformance.mjs`, and init/template tests.
-- **Approach:** Add budgets to new canonical jobs, then tune declarations or entry applicability rather than weakening guardrails. Record before/after selected card, entry, and byte counts for the synthetic proof. Keep customer/private Harvey inputs outside Git and treat any local comparison as supplemental evidence.
+- **Approach:** Add budgets to new canonical jobs, then tune declarations or entry applicability rather than weakening guardrails. Record before/after selected card, entry, and byte counts for the synthetic proof. Keep customer/private inputs outside Git and treat any local comparison as supplemental evidence.
 - **Execution note:** Capture the current basic/Clay counts before modifying selection, then require a material reduction with unchanged expected fit/no-fit/insufficient-context and governed-output outcomes.
 - **Patterns to follow:** Starter/template byte-parity tests, Clay v2 lineage fixtures, and run conformance cases.
 - **Test scenarios:** Fit job excludes generation-only authority; outbound job includes its exact claims/angle/CTA/guardrails; unrelated personas and proposal rules do not leak; all existing decision outcomes remain unchanged; generated assets byte-match plugin mirrors; public fixtures contain no private paths or raw customer data.
@@ -252,5 +252,5 @@ U1 defines the authored budget and selection vocabulary. U2 centralizes compilat
 - Synthetic basic/Clay proof demonstrates materially smaller job context with unchanged governed outcomes.
 - CLI, schemas, templates, docs, skills, fixtures, and packaged assets agree.
 - Focused tests, full Rust tests, run conformance, and `make validate` pass.
-- The diff contains no private Harvey/customer data, dead experimental code, duplicate routing engine, or abandoned compatibility path.
+- The diff contains no private customer data, dead experimental code, duplicate routing engine, or abandoned compatibility path.
 - The PR is linked to MDP-200 and MDP-194, carries the repository autofix label when safe, and completes release/install closeout after merge.

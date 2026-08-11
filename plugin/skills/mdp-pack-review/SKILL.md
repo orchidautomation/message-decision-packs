@@ -53,6 +53,13 @@ product foundation, exact governed-artifact schema, valid/refusal/gap fixtures,
 and separate claim/proof verification for generated prose. Legacy unbound jobs
 may remain valid only as `unassessed`; do not call them self-standing.
 
+Require every self-standing generation/review job to declare positive entry and
+byte context budgets. `route`, `brief --context`, requirements, and summaries
+must agree on minimality status/digest/counts. Budget overflow and whole-card
+fallback must block without removing guardrails. Governed-output fixtures must
+bind the exact canonical `routed_context` bytes and reject pack-global but
+unselected or wrong-kind identifiers. Exclusion diagnostics must never include bodies.
+
 When a source binding is supplied, also run:
 
 ```bash

@@ -45,12 +45,17 @@ mdp --json requirements --dir PACK_ROOT --job JOB_ID
 For `outbound-copy-brief` or `outbound-copy-review`, ignore Decision Input
 `data.available`; that field describes the normalization handoff, not whether
 the selected generation or review job is runnable. Require
-`data.model_task.status` to be exactly `ready`, then use only its exact compiled
-prompt, selected product foundation, declared inputs, version, and output
-schema. The customer-selected host owns the model call. Validate the returned
-governed artifact with `--invocation-receipt PROMPT_INVOCATION_JSON`, then run
+`data.model_task.status` to be exactly `ready`, then run `brief --context
+--routed-context-out ROUTED_CONTEXT_JSON` and use only its exact compiled
+prompt, declared inputs, version, output schema, and a `ready` minimal-context
+receipt. Require the routed-context artifact to be saved; do not
+open excluded entries or the whole pack. The customer-selected host owns the
+model call. Validate the returned
+governed artifact with `--invocation-receipt PROMPT_INVOCATION_JSON` and
+`--routed-context ROUTED_CONTEXT_JSON`, then run
 `mdp check-claims` on generated or supplied copy. The host receipt must bind
-the exact job, prompt ID/version/SHA-256, and per-declared-input SHA-256 values.
+the exact job, prompt ID/version/SHA-256, and per-declared-input SHA-256 values,
+including the canonical routed-context bytes.
 If `data.model_task` is absent, state that no job-owned model task is declared,
 include any available product-foundation diagnostics, and stop no-draft; do not
 invent a model-task status or diagnostics. If `data.model_task` is present but

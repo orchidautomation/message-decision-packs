@@ -140,6 +140,11 @@ and exact Decision Input Contract receipts.
      `requirements --job` to inspect the compiled prompt/hash. Do not put this
      behavior only in a skill, and do not add a model runner to MDP.
 
+   - Declare positive `jobs[].context_budget.max_entries` and `max_bytes` for
+     every self-standing generation/review job. Require `routed_context` as a
+     pack-produced prompt input and `context_sha256` in governed output. Never
+     meet a budget by dropping safety/output guardrails or permitting whole-card access.
+
    - Only when the selected prompt is the job-bound
      `decision-input-normalization` prompt producing
      `mdp.normalized-decision-input.v1` or

@@ -200,14 +200,17 @@ readiness field. For extraction or card-patch prompts, successful contract
 validation is the applicable machine gate; do not require an undeclared
 normalization trace.
 
-For `data.model_task.status: ready`, use only the compiled prompt package and
-exact resolved product foundation. Validate the returned governed artifact
+For `data.model_task.status: ready`, require `brief --context --routed-context-out
+ROUTED_CONTEXT_JSON` minimality to be `ready`, require the routed-context
+artifact to be saved, and use only that bounded authority. Never open excluded
+entries or the whole pack. Validate the returned governed artifact
 with its prompt ID and the exact host-created invocation receipt:
 
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT \
   --prompt-id PROMPT_ID \
   --invocation-receipt PROMPT_INVOCATION_JSON \
+  --routed-context ROUTED_CONTEXT_JSON \
   --file OUTPUT_JSON
 ```
 
