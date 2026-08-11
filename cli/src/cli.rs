@@ -134,6 +134,11 @@ pub(crate) enum Commands {
             help = "Exact mdp.prompt-invocation.v1 JSON receipt binding a governed artifact to the host-supplied prompt and declared inputs"
         )]
         invocation_receipt: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Exact canonical mdp.routed-context.v1 JSON input used by a governed generation or review prompt"
+        )]
+        routed_context: Option<PathBuf>,
         #[arg(long, help = "Prompt file path to validate against")]
         prompt: Option<PathBuf>,
         #[arg(long, help = "Prompt id to validate against")]

@@ -3329,7 +3329,7 @@ optional:
 
         assert_eq!(compiled["model_task"]["status"], "ready");
         assert_eq!(compiled["model_task"]["kind"], "generation");
-        assert_eq!(compiled["model_task"]["prompt_version"], "1");
+        assert_eq!(compiled["model_task"]["prompt_version"], "2");
         assert_eq!(
             compiled["model_task"]["host_boundary"]["model_call_included"],
             false
@@ -3345,7 +3345,7 @@ optional:
         );
         assert_eq!(
             compiled["model_task"]["instructions"]["instructions"][0],
-            "Use only declared inputs and the exact selected product-foundation entries for this job."
+            "Use only declared inputs and the exact mdp.routed-context.v1 authority for this job."
         );
         assert_eq!(
             compiled["job"]["resolved_input_contracts"][0]["prompt"],

@@ -1054,7 +1054,7 @@ mod tests {
                     .expect("job-owned prompt should parse");
                 assert_eq!(prompt.id, binding.prompt);
                 assert_eq!(prompt.kind.as_deref(), Some(binding.kind.as_str()));
-                assert_eq!(prompt.version.as_deref(), Some("1"));
+                assert_eq!(prompt.version.as_deref(), Some("2"));
                 assert_eq!(
                     prompt.output_contract.output_kind.as_deref(),
                     Some("governed-artifact")

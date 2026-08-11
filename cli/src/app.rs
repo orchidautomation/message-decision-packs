@@ -102,6 +102,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             source_attempt_request,
             collected_attempt_results,
             invocation_receipt,
+            routed_context,
             prompt,
             prompt_id,
             strict,
@@ -117,6 +118,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                     source_attempt_request.as_deref(),
                     collected_attempt_results.as_deref(),
                     invocation_receipt.as_deref(),
+                    routed_context.as_deref(),
                 )?
             } else {
                 validate_prompt_output_file_with_inputs(
@@ -128,6 +130,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                     source_attempt_request.as_deref(),
                     collected_attempt_results.as_deref(),
                     invocation_receipt.as_deref(),
+                    routed_context.as_deref(),
                 )?
             };
             let data = apply_strict(validation, strict, StrictWarningSource::Issues);

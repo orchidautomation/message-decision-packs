@@ -349,6 +349,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
             "gaps": details.gaps,
             "full_card_required": [],
             "minimality": minimality,
+            "model_context": Value::Null,
             "summary": {
                 "card_count": load_order.len(),
                 "entry_count": entry_count,
@@ -387,6 +388,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
         "gaps": details.gaps,
         "full_card_required": details.full_card_required,
         "minimality": minimality,
+        "model_context": model_visible_projection,
         "summary": {
             "card_count": load_order.len(),
             "entry_count": entry_count,

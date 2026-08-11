@@ -45,6 +45,7 @@ pub(crate) fn validate_prompt_output_file_with_source_audit(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -57,6 +58,7 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
     source_attempt_request_path: Option<&Path>,
     collected_attempt_results_path: Option<&Path>,
     invocation_receipt_path: Option<&Path>,
+    routed_context_path: Option<&Path>,
 ) -> Result<Value> {
     validate_prompt_output_file_with_lineage_inputs(
         root,
@@ -68,6 +70,7 @@ pub(crate) fn validate_prompt_output_file_with_inputs(
         source_attempt_request_path,
         collected_attempt_results_path,
         invocation_receipt_path,
+        routed_context_path,
     )
 }
 
@@ -81,6 +84,7 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
     source_attempt_request_path: Option<&Path>,
     collected_attempt_results_path: Option<&Path>,
     invocation_receipt_path: Option<&Path>,
+    routed_context_path: Option<&Path>,
 ) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of --prompt and --prompt-id"));
@@ -168,6 +172,21 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
         },
         None => None,
     };
+    let routed_context = match routed_context_path {
+        Some(path) => match read_json_file_with_hash(path, "routed context") {
+            Ok((value, sha256)) => Some((value, display_path(path), sha256)),
+            Err(err) => {
+                issues.push(issue(
+                    "routed_context_parse_failed",
+                    "error",
+                    display_path(path),
+                    err.to_string(),
+                ));
+                None
+            }
+        },
+        None => None,
+    };
     let (output, markdown_wrapped) = match parse_prompt_output(&raw) {
         Ok(parsed) => parsed,
         Err(err) => {
@@ -242,6 +261,9 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
         invocation_receipt
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
+        routed_context
+            .as_ref()
+            .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
     )
 }
 
@@ -285,6 +307,7 @@ pub(crate) fn validate_prompt_output_value_with_source_audit(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -300,6 +323,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
     invocation_receipt: Option<(&Value, &str, &str)>,
+    routed_context: Option<(&Value, &str, &str)>,
 ) -> Result<Value> {
     if prompt_path.is_some() && prompt_id.is_some() {
         return Err(anyhow!("pass at most one of prompt or prompt_id"));
@@ -319,6 +343,7 @@ pub(crate) fn validate_prompt_output_value_with_inputs(
         source_attempt_request,
         collected_attempt_results,
         invocation_receipt,
+        routed_context,
     )
 }
 
@@ -335,6 +360,7 @@ fn validate_prompt_output_parsed(
     source_attempt_request: Option<(&Value, &str, &str)>,
     collected_attempt_results: Option<(&Value, &str, &str)>,
     invocation_receipt: Option<(&Value, &str, &str)>,
+    routed_context: Option<(&Value, &str, &str)>,
 ) -> Result<Value> {
     if prompt.output_contract.output_kind.as_deref() == Some("decision-input-normalization") {
         if source_audit.is_some() {
@@ -470,6 +496,7 @@ fn validate_prompt_output_parsed(
             artifact_path,
             canonical_prompt_sha256.as_deref(),
             invocation_receipt,
+            routed_context,
             &mut issues,
         );
         return Ok(json!({
@@ -543,6 +570,7 @@ fn validate_governed_artifact_authority(
     path: &str,
     canonical_prompt_sha256: Option<&str>,
     invocation_receipt: Option<(&Value, &str, &str)>,
+    routed_context: Option<(&Value, &str, &str)>,
     issues: &mut Vec<Value>,
 ) {
     let jobs = manifest
@@ -625,12 +653,113 @@ fn validate_governed_artifact_authority(
             "selected job product foundation is not ready",
         ));
     }
-    let allowed_refs = resolution
+    let foundation_refs = resolution
         .selected_facets
         .iter()
         .flat_map(|facet| facet.entry_refs.iter())
         .map(|entry| format!("{}/{}", entry.card_id, entry.entry_id))
         .collect::<BTreeSet<_>>();
+    let requires_routed_context = prompt
+        .inputs
+        .iter()
+        .any(|input| input.required && input.name == "routed_context");
+    let mut allowed_refs = if requires_routed_context {
+        BTreeSet::new()
+    } else {
+        foundation_refs
+    };
+    let mut selected_kind_by_id = BTreeMap::<String, CardKind>::new();
+    if requires_routed_context {
+        match routed_context {
+            Some((context, context_path, raw_sha256)) => {
+                if context["contract"] != "mdp.routed-context.v1" {
+                    issues.push(issue(
+                        "governed_artifact_routed_context_contract_mismatch",
+                        "error",
+                        format!("{context_path}#/contract"),
+                        "routed context contract must be mdp.routed-context.v1",
+                    ));
+                }
+                if context["job"].as_str() != Some(job.id.as_str()) {
+                    issues.push(issue(
+                        "governed_artifact_routed_context_job_mismatch",
+                        "error",
+                        format!("{context_path}#/job"),
+                        format!("routed context job must be {}", job.id),
+                    ));
+                }
+                let canonical_sha256 = canonical_json_sha256(context).ok();
+                if canonical_sha256.as_deref() != Some(raw_sha256) {
+                    issues.push(issue(
+                        "governed_artifact_routed_context_not_canonical",
+                        "error",
+                        context_path,
+                        "routed context file bytes must be canonical JSON",
+                    ));
+                }
+                if output["context_sha256"].as_str() != canonical_sha256.as_deref() {
+                    issues.push(issue(
+                        "governed_artifact_context_sha256_mismatch",
+                        "error",
+                        format!("{path}#/context_sha256"),
+                        "governed artifact context_sha256 must match the exact routed context",
+                    ));
+                }
+                let receipt_context_sha256 = invocation_receipt
+                    .and_then(|(receipt, _, _)| receipt["inputs"].as_array())
+                    .and_then(|inputs| {
+                        inputs.iter().find_map(|input| {
+                            (input["name"] == "routed_context")
+                                .then(|| input["sha256"].as_str())
+                                .flatten()
+                        })
+                    });
+                if receipt_context_sha256 != Some(raw_sha256) {
+                    issues.push(issue(
+                        "governed_artifact_routed_context_receipt_mismatch",
+                        "error",
+                        invocation_receipt.map_or(path, |(_, receipt_path, _)| receipt_path),
+                        "prompt invocation receipt must bind the exact routed context bytes",
+                    ));
+                }
+                for entry in context["entries"].as_array().into_iter().flatten() {
+                    let (Some(card_id), Some(entry_id)) =
+                        (entry["card_id"].as_str(), entry["entry_id"].as_str())
+                    else {
+                        continue;
+                    };
+                    allowed_refs.insert(format!("{card_id}/{entry_id}"));
+                    if let Ok(kind) = serde_json::from_value::<CardKind>(entry["card_kind"].clone())
+                    {
+                        selected_kind_by_id.insert(entry_id.to_string(), kind);
+                    }
+                }
+                for reference in context["product_foundation_load_order"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|reference| reference["reference_kind"] == "entry")
+                {
+                    let (Some(card_id), Some(entry_id)) = (
+                        reference["card_id"].as_str(),
+                        reference["entry_id"].as_str(),
+                    ) else {
+                        continue;
+                    };
+                    allowed_refs.insert(format!("{card_id}/{entry_id}"));
+                    if let Some(card) = manifest.cards.iter().find(|card| card.id == card_id) {
+                        selected_kind_by_id.insert(entry_id.to_string(), card.kind.clone());
+                    }
+                }
+            }
+            None => issues.push(issue(
+                "governed_artifact_routed_context_missing",
+                "error",
+                path,
+                "governed prompt requires the exact routed context input",
+            )),
+        }
+    }
     let selected = output["selected_authority"].as_array();
     if selected.is_none() {
         issues.push(issue(
@@ -775,6 +904,16 @@ fn validate_governed_artifact_authority(
                             job.id
                         ),
                     ));
+                } else if let Some(identifier) = value.as_str()
+                    && identifier != "N/A"
+                    && !identifier_kind_allowed(field, selected_kind_by_id.get(identifier))
+                {
+                    issues.push(issue(
+                        "governed_artifact_identifier_kind_mismatch",
+                        "error",
+                        format!("{path}#/artifact/{field}"),
+                        format!("{identifier} has the wrong selected card kind for {field}"),
+                    ));
                 }
             } else if field.ends_with("_ids")
                 && let Some(values) = value.as_array()
@@ -791,6 +930,15 @@ fn validate_governed_artifact_authority(
                                 "{identifier} is not present in selected_authority for job {}",
                                 job.id
                             ),
+                        ));
+                    } else if let Some(identifier) = value.as_str()
+                        && !identifier_kind_allowed(field, selected_kind_by_id.get(identifier))
+                    {
+                        issues.push(issue(
+                            "governed_artifact_identifier_kind_mismatch",
+                            "error",
+                            format!("{path}#/artifact/{field}/{index}"),
+                            format!("{identifier} has the wrong selected card kind for {field}"),
                         ));
                     }
                 }
@@ -825,6 +973,20 @@ fn validate_governed_artifact_authority(
 
     if ready && prompt.kind.as_deref() == Some("generation") {
         validate_substantive_generation_artifact(artifact, path, issues);
+    }
+}
+
+fn identifier_kind_allowed(field: &str, kind: Option<&CardKind>) -> bool {
+    match field {
+        "angle_id" => matches!(
+            kind,
+            Some(CardKind::Positioning | CardKind::Hooks | CardKind::Motions)
+        ),
+        "cta_id" => matches!(kind, Some(CardKind::Ctas)),
+        "claim_ids" | "accepted_claim_ids" | "evidence_ids" | "accepted_evidence_ids" => {
+            matches!(kind, Some(CardKind::Claims))
+        }
+        _ => true,
     }
 }
 
@@ -2941,7 +3103,7 @@ mod tests {
         output["source_summary"]["inputs_used"] = json!([
             "invocation_receipt_sha256",
             "normalized_prospect",
-            "product_foundation",
+            "routed_context",
             "prompt_receipt"
         ]);
         output["selected_authority"] = json!([
@@ -2980,7 +3142,11 @@ mod tests {
             },
             "inputs": input_names.iter().map(|name| json!({
                 "name": name,
-                "sha256": sha256_hex(name.as_bytes())
+                "sha256": if *name == "routed_context" {
+                    sha256_hex(&std::fs::read(root.join("routed-context.json")).expect("routed context should load"))
+                } else {
+                    sha256_hex(name.as_bytes())
+                }
             })).collect::<Vec<_>>()
         });
         let path = write_json_output(root, "prompt-invocation-receipt.json", &receipt);
@@ -2994,12 +3160,68 @@ mod tests {
         mut output: Value,
         input_names: &[&str],
     ) -> Value {
+        let requires_routed_context = prompt
+            .inputs
+            .iter()
+            .any(|input| input.required && input.name == "routed_context");
+        let routed_context_path = requires_routed_context.then(|| {
+            let manifest = read_manifest(root).expect("manifest should load");
+            let job_id = output["job_id"].as_str().expect("job id");
+            let context = crate::routing::entry_context_scoped(
+                root,
+                &manifest,
+                "PMM",
+                job_id,
+                true,
+                &crate::scope::ScopeResolution::default(),
+            )
+            .expect("routed context should compile");
+            assert_eq!(context["minimality"]["status"], "ready");
+            let model_context = context["model_context"].clone();
+            let bytes = crate::artifact_hash::canonical_json_bytes(&model_context)
+                .expect("context should serialize canonically");
+            let path = root.join("routed-context.json");
+            std::fs::write(&path, &bytes).expect("routed context should write");
+            if output["context_sha256"]
+                .as_str()
+                .is_none_or(|value| value.chars().all(|character| character == '0'))
+            {
+                output["context_sha256"] = json!(sha256_hex(&bytes));
+            }
+            path
+        });
+        let actual_input_names = input_names
+            .iter()
+            .map(|name| {
+                if requires_routed_context && *name == "product_foundation" {
+                    "routed_context"
+                } else {
+                    *name
+                }
+            })
+            .collect::<Vec<_>>();
+        if requires_routed_context {
+            output["source_summary"]["inputs_used"] = Value::Array(
+                output["source_summary"]["inputs_used"]
+                    .as_array()
+                    .expect("inputs used")
+                    .iter()
+                    .map(|value| {
+                        if value == "product_foundation" {
+                            json!("routed_context")
+                        } else {
+                            value.clone()
+                        }
+                    })
+                    .collect(),
+            );
+        }
         let job_id = output["job_id"]
             .as_str()
             .expect("governed output should declare a job")
             .to_string();
         let (receipt_path, receipt_sha256) =
-            write_governed_invocation_receipt(root, prompt, &job_id, input_names);
+            write_governed_invocation_receipt(root, prompt, &job_id, &actual_input_names);
         output["invocation_receipt_sha256"] = json!(receipt_sha256);
         let output_path = write_json_output(root, "governed-artifact.json", &output);
         validate_prompt_output_file_with_inputs(
@@ -3011,6 +3233,7 @@ mod tests {
             None,
             None,
             Some(&receipt_path),
+            routed_context_path.as_deref(),
         )
         .expect("validation should return diagnostics")
     }
@@ -3052,6 +3275,7 @@ mod tests {
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
             None,
+            None,
         )
         .expect("decision-input prompt validation should run");
         assert_eq!(valid["valid"], true);
@@ -3085,6 +3309,7 @@ mod tests {
             Some((&binding, "synthetic-binding", &binding_sha256)),
             Some((&request, "synthetic-request", &request_sha256)),
             Some((&results, "synthetic-results", &results_sha256)),
+            None,
             None,
         )
         .expect("decision-input prompt validation should run");
@@ -4740,6 +4965,32 @@ mod tests {
     }
 
     #[test]
+    fn governed_artifact_rejects_wrong_context_digest_and_identifier_kind() {
+        let root = temp_pack("governed-context-binding");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("prompt should load");
+        let mut output = ready_governed_example(&prompt);
+        output["context_sha256"] = json!("f".repeat(64));
+        output["artifact"]["cta_id"] = json!("decision-layer");
+
+        let result = validate_governed_with_receipt(
+            &root,
+            &prompt,
+            output,
+            &["routed_context", "normalized_prospect"],
+        );
+        let codes = result["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .filter_map(|issue| issue["code"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(codes.contains("governed_artifact_context_sha256_mismatch"));
+        assert!(codes.contains("governed_artifact_identifier_kind_mismatch"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn governed_artifact_missing_declared_field_fails_closed() {
         let root = temp_pack("governed-artifact-invalid");
         let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
@@ -4889,6 +5140,7 @@ mod tests {
             None,
             None,
             Some(&receipt_path),
+            None,
         )
         .expect("validation should return diagnostics");
         assert!(
@@ -4936,6 +5188,7 @@ mod tests {
             None,
             None,
             Some(&receipt_path),
+            None,
         )
         .expect("validation should return diagnostics");
         let codes = result["issues"]

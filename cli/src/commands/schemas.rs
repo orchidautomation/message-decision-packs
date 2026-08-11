@@ -3164,6 +3164,7 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 "prompt_version",
                                 "prompt_sha256",
                                 "invocation_receipt_sha256",
+                                "context_sha256",
                                 "decision_input_contracts",
                                 "normalization",
                                 "attributes",
@@ -3231,6 +3232,7 @@ fn governed_artifact_example_schema() -> Value {
             "prompt_version": {"type": "string", "minLength": 1},
             "prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "invocation_receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "context_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "source_summary": {
                 "type": "object",
                 "required": ["inputs_used"],
