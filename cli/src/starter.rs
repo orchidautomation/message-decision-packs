@@ -384,6 +384,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 "proof-boundaries",
             ])),
             model_task: None,
+            context_budget: None,
         },
         ProfileJob {
             id: "outbound-copy-brief".to_string(),
@@ -424,6 +425,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 kind: "generation".to_string(),
                 prompt: "generate-outbound-copy-v1".to_string(),
             }),
+            context_budget: None,
         },
         ProfileJob {
             id: "outbound-copy-review".to_string(),
@@ -459,6 +461,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 kind: "review".to_string(),
                 prompt: "review-outbound-copy-v1".to_string(),
             }),
+            context_budget: None,
         },
     ]
 }

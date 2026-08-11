@@ -2281,6 +2281,15 @@ fn profile_jobs_schema() -> Value {
                 "input_contracts": string_array(),
                 "decision_input_contracts": string_array(),
                 "product_foundation": product_foundation_binding_schema(),
+                "context_budget": {
+                    "type": "object",
+                    "required": ["max_entries", "max_bytes"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "max_entries": {"type": "integer", "minimum": 1},
+                        "max_bytes": {"type": "integer", "minimum": 1}
+                    }
+                },
                 "model_task": {
                     "type": "object",
                     "required": ["kind", "prompt"],
@@ -3636,6 +3645,20 @@ mod tests {
             result["properties"]["jobs"]["items"]["properties"]["required_primitives"]["items"]["enum"]
                 [1],
             "decision-criteria"
+        );
+        assert_eq!(
+            result["properties"]["jobs"]["items"]["properties"]["context_budget"]["required"],
+            json!(["max_entries", "max_bytes"])
+        );
+        assert_eq!(
+            result["properties"]["jobs"]["items"]["properties"]["context_budget"]["properties"]["max_entries"]
+                ["minimum"],
+            1
+        );
+        assert_eq!(
+            result["properties"]["jobs"]["items"]["properties"]["context_budget"]["properties"]["max_bytes"]
+                ["minimum"],
+            1
         );
         assert_eq!(
             result["properties"]["profile_eval"]["properties"]["required_categories"]["items"]["enum"]

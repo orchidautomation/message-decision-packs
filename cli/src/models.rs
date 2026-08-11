@@ -188,6 +188,16 @@ pub(crate) struct ProfileJob {
     pub(crate) product_foundation: Option<ProductFoundationBinding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) model_task: Option<JobModelTask>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) context_budget: Option<JobContextBudget>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub(crate) struct JobContextBudget {
+    #[serde(default)]
+    pub(crate) max_entries: usize,
+    #[serde(default)]
+    pub(crate) max_bytes: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]

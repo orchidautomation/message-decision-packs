@@ -1168,6 +1168,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             "decision_input_contracts",
             "product_foundation",
             "model_task",
+            "context_budget",
         ],
         ".mdp/manifest.yaml#/jobs",
         "manifest_profile_job_unknown_field",
@@ -1183,6 +1184,29 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
                 "manifest_profile_job_model_task_unknown_field",
                 issues,
             );
+            let budget = yaml_get(job, "context_budget").unwrap_or(&YamlValue::Null);
+            validate_object_keys(
+                budget,
+                &["max_entries", "max_bytes"],
+                &format!(".mdp/manifest.yaml#/jobs/{index}/context_budget"),
+                "manifest_profile_job_context_budget_unknown_field",
+                issues,
+            );
+            if !budget.is_null() {
+                for field in ["max_entries", "max_bytes"] {
+                    let valid = yaml_get(budget, field)
+                        .and_then(YamlValue::as_u64)
+                        .is_some_and(|value| value > 0);
+                    if !valid {
+                        issues.push(issue(
+                            "profile_job_context_budget_limit_invalid",
+                            "error",
+                            format!(".mdp/manifest.yaml#/jobs/{index}/context_budget/{field}"),
+                            format!("context_budget.{field} must be a positive integer"),
+                        ));
+                    }
+                }
+            }
         }
     }
     validate_object_keys(
@@ -6604,6 +6628,36 @@ excluded: []
         let result = validate_pack(&root).expect("validate should return diagnostics");
 
         assert_eq!(result["valid"], true, "issues: {}", result["issues"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_invalid_job_context_budget() {
+        let root = temp_pack("invalid-job-context-budget");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][0]["context_budget"] =
+            serde_yaml::from_str("max_entries: 0\nmax_bytes: 1024\nlegacy_limit: 2\n")
+                .expect("budget should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let issues = result["issues"]
+            .as_array()
+            .expect("issues should be an array");
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_job_context_budget_limit_invalid"
+                && issue["path"] == ".mdp/manifest.yaml#/jobs/0/context_budget/max_entries"
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "manifest_profile_job_context_budget_unknown_field"
+                && issue["path"] == ".mdp/manifest.yaml#/jobs/0/context_budget/legacy_limit"
+        }));
         let _ = std::fs::remove_dir_all(root);
     }
 
