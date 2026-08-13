@@ -1661,7 +1661,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     &["evidence-proof", "boundaries", "output-contracts"],
                     &["outbound-copy-brief"]
                 ),
-                "text": "MDP is a graph engineering platform, graph database, agent runtime, memory layer, persistent memory layer, orchestration framework, and universal company graph whose hashes prove source truth.",
+                "text": "MDP is a graph engineering platform, graph database, agent runtime, memory layer, persistent memory layer, orchestration framework, and universal company graph that proves source truth.",
                 "expect_valid": false,
                 "expect_guardrail_terms_contains": [
                     "graph engineering platform",
