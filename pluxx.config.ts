@@ -11,8 +11,8 @@ export default definePlugin({
   },
   brand: {
     "displayName": "Message Decision Packs",
-    "shortDescription": "Create and route message decision context.",
-    "longDescription": "Message Decision Packs helps supported agents create, validate, and use local decision packs for GTM messaging and proposal review workflows. MDP stores personas or roles, fit or review rules, signals, approved claims, proof, avoid-rules, output-rules, source evidence, eval fixtures, and explicit gaps, then routes the right cards into agent-readable context with the local mdp CLI. MDP stops at pack validation, fit/review checks, claim and output checks, gaps, and briefs; sending, CRM updates, enrichment, scraping, sequencing, proposal submission, and approval workflow ownership stay outside MDP.",
+    "shortDescription": "Versioned decision context for agents.",
+    "longDescription": "Message Decision Packs gives supported agents versioned decision context for GTM messaging and proposal review workflows. MDP stores personas or roles, fit or review rules, signals, approved claims, proof, avoid-rules, output-rules, source evidence, eval fixtures, and explicit gaps, then deterministically routes bounded job-specific context and emits inspectable, hash-bound traces with the local mdp CLI. MDP is not an agent runtime, graph database, memory layer, or orchestration framework. Model calls, sending, CRM updates, enrichment, scraping, sequencing, proposal submission, and approval workflow ownership stay outside MDP.",
     "icon": "./assets/brand/icon.png",
     "screenshots": [
       "./assets/brand/screenshot.png"

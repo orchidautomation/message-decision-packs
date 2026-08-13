@@ -1,8 +1,8 @@
 # Conceptual Decision Flow
 
-Message Decision Packs (MDP) are a local decision/context layer for GTM messaging. An MDP pack stores the decisions an agent needs before writing or evaluating a message: fit rules, personas, pains, hooks, approved claims, CTA and channel policy, avoid-rules, output-rules, evidence, and gaps.
+Message Decision Packs (MDP) provide **versioned decision context for agents** through a local decision/context layer for GTM messaging. An MDP pack stores the decisions an agent needs before writing or evaluating a message: fit rules, personas, pains, hooks, approved claims, CTA and channel policy, avoid-rules, output-rules, evidence, and gaps.
 
-MDP does not send messages, enrich leads, update CRM, scrape the web, run sequences, or act as an AI SDR. It decides what context is allowed into the drafting task and what should block the task.
+MDP does not send messages, enrich leads, update CRM, scrape the web, run sequences, or act as an AI SDR. It is not a graph database, agent runtime, memory layer, or orchestration framework. It decides what context is allowed into the drafting task and what should block the task.
 
 ## Mental Model
 

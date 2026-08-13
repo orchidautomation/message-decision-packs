@@ -8,6 +8,7 @@ rules:
 sources:
 - confidence: high
   direct_claims:
+  - MDP is versioned decision context for agents.
   - MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.
   - MDP stores decision context and routing contracts; it is not execution infrastructure.
   - The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.

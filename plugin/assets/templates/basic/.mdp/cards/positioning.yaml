@@ -12,8 +12,8 @@ tags:
 - boundary
 entries:
 - id: decision-layer
-  title: Decision/context layer
-  body: Describe MDP as a local, agent-readable decision and context layer for GTM messaging. It stores what an agent should load, believe, avoid, and surface as a gap.
+  title: Versioned decision context for agents
+  body: MDP is versioned decision context for agents. It stores the rules, approved evidence, boundaries, gaps, and job-specific context an agent may use.
   applies_to:
   - GTM Engineering
   - PMM
@@ -22,8 +22,8 @@ entries:
   - mdp-reference-contract
   avoid: []
 - id: not-execution-system
-  title: Not execution
-  body: Do not describe MDP as a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.
+  title: Not an execution system
+  body: MDP is not an agent runtime, graph database, orchestration framework, persistent memory layer, or universal company graph. It does not call models, send messages, update CRM records, enrich leads, scrape data, sequence outreach, replace workflow execution tools, or prove that a source claim is true.
   applies_to:
   - GTM Engineering
   - PMM

@@ -5,7 +5,11 @@ description: Use when the user names MDP, Message Decision Packs, `.mdp/`, or th
 
 # MDP
 
-Coordinate explicit MDP work and use the CLI as the source of truth.
+Coordinate explicit MDP work and use the CLI as the source of truth. Describe
+MDP as **versioned decision context for agents**. “Decision/context layer” is
+compatible architectural shorthand; “decision graph” names only the bounded
+JSON or Mermaid visualization, never a graph database, agent runtime, memory
+layer, or orchestration framework.
 
 ## Start Here
 
@@ -36,6 +40,7 @@ Treat `mdp.decision-trace.v1` as explanatory only. Distinguish its
 and follow artifact references only when deeper review is necessary. Never
 infer missing steps, recover redacted prose, or upgrade a blocked/unavailable
 trace. Use `--format mermaid` only as a display adapter over that same trace.
+Do not claim that hash or receipt agreement proves source truth.
 
 For a new authoritative execution, freeze the pack and declared inputs into an
 `mdp.run-request.v1` file, then launch the shared runtime outside the authoring
