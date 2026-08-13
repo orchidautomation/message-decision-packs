@@ -676,8 +676,8 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("pm", "PM", "Needs product boundaries, roadmap-relevant pain evidence, and clear decisions about what the product is not.", &["PM"], &["mdp-reference-contract"]),
         ])),
         ("positioning.yaml", card("positioning", CardKind::Positioning, "Positioning and boundaries", "Category and product truth that every routed brief should preserve.", &["GTM Engineering", "PMM", "PM"], &["positioning", "category", "boundary"], vec![
-            entry_with_evidence("decision-layer", "Decision/context layer", "Describe MDP as a local, agent-readable decision and context layer for GTM messaging. It stores what an agent should load, believe, avoid, and surface as a gap.", &["GTM Engineering", "PMM", "PM"], &["mdp-reference-contract"]),
-            entry_with_evidence("not-execution-system", "Not execution", "Do not describe MDP as a sender, CRM, sequencer, enrichment provider, scraper, AI SDR, BI tool, or generic automation system.", &["GTM Engineering", "PMM", "PM"], &["mdp-reference-contract"]),
+            entry_with_evidence("decision-layer", "Versioned decision context for agents", "MDP is versioned decision context for agents. It stores the rules, approved evidence, boundaries, gaps, and job-specific context an agent may use.", &["GTM Engineering", "PMM", "PM"], &["mdp-reference-contract"]),
+            entry_with_evidence("not-execution-system", "Not an execution system", "MDP is not an agent runtime, graph database, orchestration framework, persistent memory layer, or universal company graph. It does not call models, send messages, update CRM records, enrich leads, scrape data, sequence outreach, replace workflow execution tools, or prove that a source claim is true.", &["GTM Engineering", "PMM", "PM"], &["mdp-reference-contract"]),
             entry_with_evidence("progressive-disclosure", "Progressive disclosure", "The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.", &["GTM Engineering", "PMM"], &["mdp-reference-contract"]),
         ])),
         ("fit-rules.yaml", card("fit-rules", CardKind::FitRules, "Fit rules", "ICP, qualification, disqualification, and no-message rules.", &["GTM Engineering", "PMM", "PM"], &["fit", "icp", "disqualifier", "no-message"], vec![
@@ -696,7 +696,7 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("claim-inconsistency", "Claim inconsistency", "Different agents or workflows reuse outdated claims, unsupported proof points, or mismatched CTAs when there is no shared pack.", &["PMM"], &["mdp-reference-contract"]),
         ])),
         ("claims.yaml", card("claims", CardKind::Claims, "Approved claims", "Claims an agent may use only when the route and source context support them.", &["PMM", "GTM Engineering"], &["claim", "proof", "evidence"], vec![
-            entry_with_evidence("modular-pack-routing", "Modular pack routing", "MDP lets teams store messaging decisions in a manifest plus modular cards so agents load relevant context instead of a giant prompt.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
+            entry_with_evidence("modular-pack-routing", "Versioned decision context", "MDP is versioned decision context for agents. It lets teams store messaging decisions in a manifest plus modular cards so agents load relevant context instead of a giant prompt.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
             entry_with_evidence("local-offline", "Local offline CLI", "MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.", &["GTM Engineering"], &["mdp-reference-contract"]),
             entry_with_evidence("versionable-context", "Version-declared context", "Each MDP pack declares a version in its manifest alongside the card references for its modular message context.", &["GTM Engineering", "PMM"], &["mdp-pack-manifest"]),
         ])),
@@ -731,7 +731,7 @@ pub(crate) fn starter_cards(_template: &str) -> Vec<(&'static str, Card)> {
             entry_with_evidence("reply-path", "Reply path", "When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.", &["PMM", "GTM Engineering"], &["mdp-reference-contract"]),
         ])),
         ("avoid-rules.yaml", card("avoid-rules", CardKind::AvoidRules, "Avoid rules", "Category and claim boundaries agents must keep intact.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"], vec![
-            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, meeting booker, sender, AI-owned response system, or generic RevOps automation system.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], scope: BTreeMap::new(), evidence: vec!["mdp-reference-contract".to_string()], avoid: vec!["AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string(), "update CRM".to_string(), "updates CRM".to_string(), "sends for you".to_string(), "auto-sends".to_string(), "books meetings".to_string(), "launches campaigns".to_string(), "AI can own the response".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
+            Entry { id: "not-execution".to_string(), title: "Do not claim execution".to_string(), body: "Do not describe the decision pack as an agent runtime, graph database, orchestration framework, persistent memory layer, AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, meeting booker, sender, AI-owned response system, or generic RevOps automation system. Do not claim its hashes prove source truth.".to_string(), applies_to: vec!["GTM Engineering".to_string(), "PMM".to_string(), "PM".to_string()], scope: BTreeMap::new(), evidence: vec!["mdp-reference-contract".to_string()], avoid: vec!["agent runtime".to_string(), "graph database".to_string(), "graph engineering platform".to_string(), "orchestration framework".to_string(), "persistent memory layer".to_string(), "universal company graph".to_string(), "proves source truth".to_string(), "AI SDR".to_string(), "sequencer".to_string(), "CRM replacement".to_string(), "generic automation".to_string(), "scraper".to_string(), "update CRM".to_string(), "updates CRM".to_string(), "sends for you".to_string(), "auto-sends".to_string(), "books meetings".to_string(), "launches campaigns".to_string(), "AI can own the response".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
             Entry { id: "no-unsourced-claims".to_string(), title: "No unsourced claims".to_string(), body: "Do not add quantified outcomes, integrations, customer names, compliance/security approval, production adoption, design partner, paid pilot, market validation, commercial traction, weak trust claims, fake personalization, RFP/proposal-platform replacement, or product capability claims unless they are present in the claims card or supplied source material.".to_string(), applies_to: vec!["PMM".to_string(), "GTM Engineering".to_string()], scope: BTreeMap::new(), evidence: vec![], avoid: vec!["guaranteed".to_string(), "proven ROI".to_string(), "doubles reply rates".to_string(), "fully automated".to_string(), "connect to your CRM".to_string(), "connects to your CRM".to_string(), "native CRM integration".to_string(), "security-approved".to_string(), "handles compliance".to_string(), "compliance approval".to_string(), "customers already use".to_string(), "customers rely on".to_string(), "customer adoption".to_string(), "design partner".to_string(), "design partners".to_string(), "paid pilot".to_string(), "paid pilots".to_string(), "production adoption".to_string(), "production use".to_string(), "validated adoption".to_string(), "ARR conversion".to_string(), "workshop conversion".to_string(), "workshops converted".to_string(), "market validated".to_string(), "market validation".to_string(), "I loved your recent LinkedIn post".to_string(), "bypasses procurement".to_string(), "bypass legal".to_string(), "replace proposal management software".to_string(), "replaces proposal management software".to_string(), "best-in-class".to_string()], exact_paragraphs: None, constraints: EntryConstraints::default(), metadata: BTreeMap::new() },
         ])),
         ("output-rules.yaml", card("output-rules", CardKind::OutputRules, "Output rules", "Global style, formatting, and output-structure rules generated text must follow.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"], vec![
@@ -777,6 +777,7 @@ pub(crate) fn starter_source_ledger(_template: &str) -> Value {
                 "freshness": "repo-current",
                 "confidence": "high",
                 "direct_claims": [
+                    "MDP is versioned decision context for agents.",
                     "MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.",
                     "MDP stores decision context and routing contracts; it is not execution infrastructure.",
                     "The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands."
@@ -1651,6 +1652,29 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
+            "claim-check-category-overreach.yaml",
+            json!({
+                "id": "claim-check-category-overreach",
+                "command": "check-claims",
+                "profile_eval": eval_profile(
+                    "unsafe-output",
+                    &["evidence-proof", "boundaries", "output-contracts"],
+                    &["outbound-copy-brief"]
+                ),
+                "text": "MDP is a graph engineering platform, graph database, agent runtime, orchestration framework, persistent memory layer, and universal company graph that proves source truth.",
+                "expect_valid": false,
+                "expect_guardrail_terms_contains": [
+                    "graph engineering platform",
+                    "graph database",
+                    "agent runtime",
+                    "orchestration framework",
+                    "persistent memory layer",
+                    "universal company graph",
+                    "proves source truth"
+                ]
+            }),
+        ),
+        (
             "claim-check-coordinated-safe-boundary.yaml",
             json!({
                 "id": "claim-check-coordinated-safe-boundary",
@@ -1674,7 +1698,7 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                     &["evidence-proof", "boundaries"],
                     &["outbound-copy-review"]
                 ),
-                "text": "MDP is a local offline CLI. Each pack declares a version in its manifest alongside modular card references.",
+                "text": "MDP is versioned decision context for agents. It is a local offline CLI, and each pack declares a version in its manifest alongside modular card references.",
                 "expect_valid": true
             }),
         ),

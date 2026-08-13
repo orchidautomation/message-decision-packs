@@ -10,6 +10,11 @@ Canonical jobs can own deterministic entry and byte budgets. MDP selects require
 
 ## Product Model
 
+- **Versioned decision context for agents** — MDP's primary category. A pack
+  makes the rules, evidence, boundaries, gaps, and job-specific context an
+  agent may use explicit and versioned. The CLI deterministically validates,
+  resolves, and projects that authority; the host remains responsible for
+  model calls and external actions.
 - **Message Decision Pack (pack)** — a local `.mdp/` directory containing
   reviewed decision context and routing contracts.
 - **Primitive** — one of the ten domain-agnostic decision families: actors,
@@ -55,7 +60,9 @@ Canonical jobs can own deterministic entry and byte budgets. MDP selects require
 - **Designed graph** — policy and gate relationships relevant to a decision.
 - **Observed path** — the bounded facts recorded for one decision. A
   **decision graph** is the JSON or Mermaid visualization of the designed
-  graph plus observed path.
+  graph plus observed path. It is a visualization term, not a claim that MDP
+  is a graph database, agent runtime, orchestration framework, persistent
+  memory layer, or universal company graph.
 
 ## Evidence And Assurance
 

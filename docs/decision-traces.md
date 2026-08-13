@@ -11,6 +11,18 @@ The stable vocabulary is:
 - **Observed path** — the facts recorded for one decision.
 - **Decision graph** — a JSON or Mermaid visualization of those two views.
 
+MDP's product category is **versioned decision context for agents**. A decision
+graph is only the bounded visualization of designed policy and one observed
+path. It is not a persistent graph store, workflow engine, model invocation,
+or source-of-truth database.
+
+| Phrase | Use |
+| --- | --- |
+| Versioned decision context for agents | Primary product category |
+| Decision/context layer | Compatible architectural shorthand |
+| Decision graph | JSON or Mermaid visualization of designed policy and one observed path |
+| Graph database, agent runtime, memory layer, or orchestration framework | Not MDP |
+
 ## Inspect a saved result
 
 Save the normal `--json` wrapper from `fit`, `route`, `brief`, or `emit-brief`,
@@ -57,3 +69,13 @@ passed. It is excluded from portable pack identity and is never an authority
 store.
 
 Synthetic examples live in [`examples/decision-trace`](../examples/decision-trace/README.md).
+
+## Resolution boundary
+
+The source artifact remains the complete authority. Fit traces expose exact
+matched rule IDs and missing or disqualifying reasons. Route and brief source
+artifacts retain their exact entry-level load order, exclusions, and reason
+codes, while the v1 trace projection summarizes that routed selection as a
+bounded count. Inspect the referenced source artifact when an audit requires
+the complete selected-entry record; do not infer omitted entries from the
+visualization.

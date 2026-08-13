@@ -1,8 +1,8 @@
 # Message Decision Packs
 
-Message Decision Packs (MDP) make agent judgment explicit. A local `.mdp/` folder stores source evidence, decision rules, approved claims or proof, routing contracts, output boundaries, gaps, and evals. The Rust CLI validates and routes that context; the plugin teaches supported agents how to use it.
+**MDP is versioned decision context for agents.** A local `.mdp/` folder makes agent judgment explicit by storing source evidence, decision rules, approved claims or proof, routing contracts, output boundaries, gaps, and evals. The Rust CLI validates and routes that context; the plugin teaches supported agents how to use it.
 
-MDP is a decision/context layer. It is not an AI SDR, CRM, sequencer, enrichment provider, scraper, BI tool, proposal management system, or generic automation platform. It does not send messages or update external systems.
+MDP is a decision/context layer: it produces deterministic decisions and bounded, hash-bound traces from pack-owned authority. It is not an agent runtime, graph database, memory layer, orchestration framework, AI SDR, CRM, sequencer, enrichment provider, scraper, BI tool, proposal management system, or generic automation platform. It does not call models, send messages, update external systems, or prove that a source claim is true.
 
 See [CONCEPTS.md](CONCEPTS.md) for the canonical vocabulary and assurance-state
 boundaries used across the CLI, docs, and agent skills.

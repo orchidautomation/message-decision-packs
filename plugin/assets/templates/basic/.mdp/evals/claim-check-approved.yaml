@@ -8,4 +8,4 @@ profile_eval:
   primitives:
   - evidence-proof
   - boundaries
-text: MDP is a local offline CLI. Each pack declares a version in its manifest alongside modular card references.
+text: MDP is versioned decision context for agents. It is a local offline CLI, and each pack declares a version in its manifest alongside modular card references.

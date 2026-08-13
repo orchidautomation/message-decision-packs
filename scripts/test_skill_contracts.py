@@ -40,6 +40,17 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("available: false", skill)
         self.assertIn("does not collect sources or call a model", skill)
 
+    def test_core_and_review_skills_preserve_positioning_boundary(self):
+        core = Path("plugin/skills/mdp/SKILL.md").read_text()
+        mental_model = Path("plugin/skills/mdp/references/mental-model.md").read_text()
+        review = Path("plugin/skills/mdp-pack-review/SKILL.md").read_text()
+        for text in [core, mental_model, review]:
+            normalized = " ".join(text.lower().replace("-", " ").split())
+            self.assertIn("versioned decision context for agents", normalized)
+            self.assertIn("decision graph", normalized)
+            self.assertIn("graph database", normalized)
+            self.assertIn("agent runtime", normalized)
+
     def test_existing_skills_route_provider_neutral_source_binding(self):
         core = Path("plugin/skills/mdp/SKILL.md").read_text()
         operator = Path("plugin/skills/mdp/references/cli-operator.md").read_text()

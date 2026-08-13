@@ -93,6 +93,11 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
 
 ## Review Rules
 
+- Require public and agent-facing copy to use “versioned decision context for
+  agents” as the primary category or the compatible “decision/context layer”
+  shorthand. Reserve “decision graph” for the bounded designed-graph plus
+  observed-path visualization. Flag graph-database, agent-runtime,
+  orchestration, persistent-memory, universal-graph, and source-truth claims.
 - Treat CLI errors as findings, not prose to reinterpret away.
 - Verify every agent-routable `jobs[]` entry has one canonical `skill_id` and a supported closed pair.
 - Audit `profile.product_foundation.facets` as indexes over exact existing card

@@ -4,6 +4,9 @@ Read this when explaining what belongs in MDP or deciding which layer owns a beh
 
 ## Responsibility Split
 
+- Product category: versioned decision context for agents. The compatibility
+  phrase “decision/context layer” remains valid. “Decision graph” is only the
+  JSON or Mermaid visualization of designed policy plus one observed path.
 - CLI: validation, closed job-to-skill routing, readiness, fit, routes, briefs, claim/output checks, gaps, and evals.
 - Decision trace: a bounded inspection projection of existing CLI or run
   authority. Its designed graph and observed path explain a result without
@@ -38,6 +41,8 @@ Use `actors`, `decision-criteria`, `source-signals`, `needs-requirements`, `evid
 - Reject unsupported job bindings; do not choose a nearby skill.
 - State that host discovery is unobserved and host-managed.
 - Keep side effects outside MDP.
+- Do not describe MDP as a graph database, agent runtime, orchestration
+  framework, persistent memory layer, or proof that a source claim is true.
 - Keep legacy signals readable but non-authoritative. A v2
   `lineage-validated` result means the host-submitted artifact chain is
   internally consistent; it does not authenticate the host or prove truth.

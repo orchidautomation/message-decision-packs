@@ -11,8 +11,8 @@ tags:
 - evidence
 entries:
 - id: modular-pack-routing
-  title: Modular pack routing
-  body: MDP lets teams store messaging decisions in a manifest plus modular cards so agents load relevant context instead of a giant prompt.
+  title: Versioned decision context
+  body: MDP is versioned decision context for agents. It lets teams store messaging decisions in a manifest plus modular cards so agents load relevant context instead of a giant prompt.
   applies_to:
   - PMM
   - GTM Engineering
