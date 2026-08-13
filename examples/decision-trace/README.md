@@ -10,8 +10,9 @@ mdp trace --file examples/decision-trace/fixtures/fit-no-draft-result.json \
 mdp --json schema decision-trace-v1
 ```
 
-The ready fixture records the exact selected fit rule, source-artifact hash,
-and projection-only authority notice. The no-draft fixture stops at a
+The ready fixture drives a trace projection that records the exact selected
+fit rule and computes the source-artifact hash and projection-only authority
+notice. The no-draft fixture stops at a
 missing-field gate, records the exact missing field, and exposes no output
 authority. Both outputs are projections; the input artifacts remain the
 decision source.
