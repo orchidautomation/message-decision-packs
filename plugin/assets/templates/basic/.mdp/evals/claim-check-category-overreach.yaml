@@ -5,6 +5,8 @@ expect_guardrail_terms_contains:
 - agent runtime
 - orchestration framework
 - persistent memory layer
+- memory layer
+- source truth
 - universal company graph
 - proves source truth
 expect_valid: false
@@ -17,4 +19,4 @@ profile_eval:
   - evidence-proof
   - boundaries
   - output-contracts
-text: MDP is a graph engineering platform, graph database, agent runtime, orchestration framework, persistent memory layer, and universal company graph that proves source truth.
+text: MDP is a graph engineering platform, graph database, agent runtime, memory layer, persistent memory layer, orchestration framework, and universal company graph whose hashes prove source truth.
