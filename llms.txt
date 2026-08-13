@@ -1,8 +1,8 @@
 # Message Decision Packs
 
-> Message Decision Packs (MDP) is a local/offline standard, Rust CLI, and agent plugin for explicit decision context. A `.mdp/` folder stores source evidence, routing rules, approved claims or proof, output boundaries, gaps, and evals that agents can inspect and validate.
+> **MDP is versioned decision context for agents.** It is a local/offline standard, Rust CLI, and agent plugin for explicit decision context. A `.mdp/` folder stores source evidence, routing rules, approved claims or proof, output boundaries, gaps, and evals that agents can inspect and validate.
 
-> MDP is not an AI SDR, CRM, sequencer, enrichment provider, scraper, BI tool, proposal management system, or generic automation platform. It does not send messages or update external systems.
+> MDP is a decision/context layer, not an agent runtime, graph database, memory layer, orchestration framework, or universal company graph. It does not send messages or update external systems, and its hashes and traces do not prove source truth.
 
 ## Install
 
@@ -72,7 +72,7 @@ MDP ships exactly five skills: `mdp`, `mdp-pack-builder`, `mdp-pack-review`, `md
 
 ## Canonical Example
 
-[AI SDR Eve on Vercel](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/ai-sdr-eve-vercel) is the only canonical runnable example. Eve is the runtime; MDP is the decision/context source of truth. Each live run targets three qualified people and continues across approved strategy prompts until the target or bounded exhaustion. Pack-owned `qualification_gates` require person-level and source-backed evidence before reviewed ledger rows are appended. The example does not send outreach or sync a CRM.
+[AI SDR Eve on Vercel](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/ai-sdr-eve-vercel) is the only canonical runnable example. Eve is the runtime; MDP provides versioned decision context and remains the local decision/context authority for the run. Each live run targets three qualified people and continues across approved strategy prompts until the target or bounded exhaustion. Pack-owned `qualification_gates` require person-level and source-backed evidence before reviewed ledger rows are appended. The example does not send outreach or sync a CRM.
 
 ## Docs
 

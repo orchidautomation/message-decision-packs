@@ -1,8 +1,8 @@
 # Message Decision Packs - Full Agent Context
 
-Last updated: 2026-07-21
+Last updated: 2026-08-13
 
-Message Decision Packs (MDP) is a local/offline file standard, Rust CLI, and agent plugin for making decision context explicit and testable.
+**MDP is versioned decision context for agents.** It is a local/offline file standard, Rust CLI, and agent plugin for making decision context explicit and testable. The compatible architectural shorthand is “decision/context layer.”
 
 The core rule is simple:
 
@@ -17,9 +17,12 @@ MDP stores source evidence, fit or review rules, approved claims or proof, routi
 
 MDP is not:
 
+- an agent runtime, graph database, memory layer, orchestration framework, or universal company graph;
 - an AI SDR, CRM, sequencer, enrichment provider, scraper, or BI tool;
 - a proposal management system or approval workflow owner;
 - a generic automation platform.
+
+A decision graph is only the bounded JSON or Mermaid visualization of designed policy and one observed path. Hashes and receipts bind artifact identity and linkage; they do not prove source truth.
 
 Sending, CRM mutation, enrichment, scraping, sequencing, proposal submission, legal/compliance approval, and external automation remain outside MDP.
 
@@ -187,7 +190,7 @@ Use `mdp --json skills --dir <pack> --job <job-id>` before profile-sensitive wor
 
 ## Canonical Runnable Example
 
-[AI SDR Eve on Vercel](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/ai-sdr-eve-vercel) is the sole canonical runnable example. Eve is the runtime and MDP is its decision/context source of truth.
+[AI SDR Eve on Vercel](https://github.com/orchidautomation/message-decision-packs/tree/main/examples/ai-sdr-eve-vercel) is the sole canonical runnable example. Eve is the runtime; MDP provides versioned decision context and remains the local decision/context authority for the run. Hashes and receipts bind artifacts but do not prove source truth.
 
 The example:
 

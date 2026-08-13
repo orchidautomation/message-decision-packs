@@ -104,4 +104,6 @@ artifact.
 
 Do not describe MDP as an AI SDR, CRM, sequencer, enrichment provider,
 scraper, BI tool, proposal management system, compliance approval system, or
-fully automated proposal writer.
+fully automated proposal writer. Do not position it as a graph database, agent
+runtime, orchestration framework, persistent memory layer, or universal company
+graph, and do not claim that its hashes or traces prove source truth.
