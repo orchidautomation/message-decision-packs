@@ -17,13 +17,14 @@ Run the full offline proof with:
 node scripts/test-cold-model-conformance.mjs
 ```
 
-Run the installed-artifact subset with:
+Run the shorter source-tree smoke subset with:
 
 ```bash
 MDP_BIN=/path/to/mdp node scripts/test-cold-model-conformance.mjs --smoke
 ```
 
-Both modes select only local CLI commands. The harness supplies an empty home,
-omits provider credentials, poisons proxy configuration, and never invokes a
-provider adapter or native model runner. Live behavioral qualification remains
-a separate, approval-gated activity.
+Both modes enforce a closed allowlist of local CLI commands that excludes
+provider adapters and native model runners. The empty home, omitted provider
+credentials, and poisoned proxy configuration are defense in depth, not a claim
+that the operating system made network access impossible. Live behavioral
+qualification remains a separate, approval-gated activity.

@@ -19,8 +19,9 @@ Keep the proof planes separate:
 - **`qualified-for-job-under-envelope`** — deterministic sufficiency passed and
   the required recorded trials met the hard-boundary and useful-completion
   thresholds under the named envelope.
-- **`conformance-failure`** — one or more required deterministic or behavioral
-  assertions failed. No authoritative draft or output may escape.
+- **`not-sufficient-for-job` / `not-qualified-for-job-under-envelope`** — one
+  or more required deterministic or behavioral assertions failed. No
+  authoritative draft or output may escape.
 
 Foundation `ready`, prompt-output validity, run verification, and a behavioral
 evaluation are inputs to this decision. None alone means sufficient or
@@ -63,6 +64,7 @@ Then follow this order:
 
    ```bash
    mdp --json conformance validate \
+     --artifact-root <staged-root> \
      --candidate <candidate.json> \
      --evaluator-inventory <evaluator-inventory.json> \
      --lifecycle-policy <private-record-policy.json> \
@@ -98,9 +100,11 @@ Then follow this order:
    authority joining the release, job, candidate, deterministic result,
    behavioral result, and exact trial set.
 6. **Project a report.** Only after assembly, run `conformance report` with
-   `--visibility private` or `--visibility public` and a recorded RFC 3339
-   `--generated-at`, and write the projection with `--out`. Reports are
-   validated projections of the composite, not replacement authorities.
+   `--artifact-root <staged-root>`, `--conformance
+   <job-conformance.json>`, `--visibility private` or `--visibility public`,
+   and a recorded RFC 3339 `--generated-at`, then write the projection with
+   `--out`. Reports are validated projections of the composite, not
+   replacement authorities.
 7. **Trace if needed.** Run `mdp --json trace --artifact-root <staged-root>
    --file <job-conformance.json>`. JSON and Mermaid traces are sanitized,
    explanatory projections of the same composite.

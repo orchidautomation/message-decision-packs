@@ -185,7 +185,8 @@ sufficient → customer-hosted model call → recorded-evidence validation →
 composite assembly → report or trace. `sufficient-for-job` is the deterministic
 gate; `qualified-for-job-under-envelope` additionally requires the declared
 behavioral trial thresholds. Missing evidence is `unassessed`; a failed
-required assertion is `conformance-failure`.
+required assertion is `not-sufficient-for-job` or
+`not-qualified-for-job-under-envelope`, depending on the proof plane.
 
 MDP never makes the model call, chooses the provider, calculates provider
 pricing, or grants drafting/sending authority. See

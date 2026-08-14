@@ -331,30 +331,46 @@ pub(crate) fn conformance_schema(contract: &str) -> Option<Value> {
             contract,
             json!({"contract":{"const":contract},"report_id":string(),"pack_release":closed(json!({"pack_id":string(),"release_id":string(),"version":string(),"portable_digest":hash(),"source_revision":hash()})),"evaluator_inventory_sha256":hash(),"job_conformance_sha256s":hash_array_schema(),"generated_at":string(),"lifecycle_policy_sha256":hash()}),
         ),
-        PUBLIC_CONFORMANCE_REPORT_V1 => contract_schema(
-            contract,
-            json!({"contract":{"const":contract},"report_id":string(),"pack_id":string(),"release_id":string(),"evaluator_id":string(),"evaluator_version":string(),"generated_at":string(),"jobs":{"type":"array","maxItems":256,"items":closed(json!({"job_id":string(),"deterministic_status":deterministic_status_schema(),"behavioral_status":behavioral_status_schema(),"verdict":qualification_verdict_schema(),"evidence":{"type":"array","maxItems":256,"items":closed(json!({"artifact_role":{"enum":["candidate","pack-release","requirements","product-foundation","skills-route","prompt","prompt-invocation","source-lineage","normalized-input","routed-context","governed-output","claims-validation","decision-result","run-bundle","run-receipt","run-verification","evaluator-inventory","private-record-policy","publication-approval","deterministic-evaluation","behavioral-evaluation","trial"]},"artifact_sha256":{"anyOf":[hash(),{"type":"null"}]},"classification":{"enum":["private","synthetic","sanitized-public"]},"publication_approved":{"type":"boolean"}}))},"limitations":{"type":"array","maxItems":256,"items":{"enum":["required-sampling-incomplete","unreferenced-evaluator-result","trial-replay-or-identity-reuse","fresh-host-binding-not-verified","cold-isolation-unproven","model-visible-context-oracle-leak-or-hash-mismatch","challenge-not-frozen-before-trial","output-lifecycle-policy-mismatch","protected-challenge-provenance-invalid","sanitized-public-exact-hash-approval-missing","missing-or-ambiguous-score","sampling-threshold-not-met","behavioral-trials-not-run"]}}}))}}),
-        ),
-        DETERMINISTIC_CONFORMANCE_V1 => contract_schema(
-            contract,
-            json!({
+        PUBLIC_CONFORMANCE_REPORT_V1 => {
+            let artifact_role = || json!({"enum":["candidate","pack-release","requirements","product-foundation","skills-route","prompt","prompt-invocation","source-lineage","normalized-input","routed-context","governed-output","claims-validation","decision-result","run-bundle","run-receipt","run-verification","evaluator-inventory","private-record-policy","publication-approval","deterministic-evaluation","behavioral-evaluation","trial"]});
+            let evidence = json!({"oneOf":[
+                closed(json!({"artifact_role":artifact_role(),"artifact_sha256":{"type":"null"},"classification":{"const":"private"},"publication_approved":{"const":false}})),
+                closed(json!({"artifact_role":artifact_role(),"artifact_sha256":hash(),"classification":{"const":"synthetic"},"publication_approved":{"const":false}})),
+                closed(json!({"artifact_role":artifact_role(),"artifact_sha256":hash(),"classification":{"const":"sanitized-public"},"publication_approved":{"const":true}}))
+            ]});
+            contract_schema(
+                contract,
+                json!({"contract":{"const":contract},"report_id":string(),"pack_id":string(),"release_id":string(),"evaluator_id":string(),"evaluator_version":string(),"generated_at":string(),"jobs":{"type":"array","maxItems":256,"items":closed(json!({"job_id":string(),"deterministic_status":deterministic_status_schema(),"behavioral_status":behavioral_status_schema(),"verdict":qualification_verdict_schema(),"evidence":{"type":"array","maxItems":256,"items":evidence},"limitations":{"type":"array","maxItems":256,"items":{"enum":["required-sampling-incomplete","unreferenced-evaluator-result","trial-replay-or-identity-reuse","fresh-host-binding-not-verified","cold-isolation-unproven","model-visible-context-oracle-leak-or-hash-mismatch","challenge-not-frozen-before-trial","output-lifecycle-policy-mismatch","protected-challenge-provenance-invalid","sanitized-public-exact-hash-approval-missing","missing-or-ambiguous-score","sampling-threshold-not-met","behavioral-trials-not-run"]}}}))}}),
+            )
+        }
+        DETERMINISTIC_CONFORMANCE_V1 => {
+            let assertion = |id: &str| {
+                closed(json!({
+                    "id":{"const":id},"name":string(),
+                    "scope":{"enum":["release","fixture"]},"hard":{"const":true},"status":{"enum":["pass","fail","unassessed"]},
+                    "authority_refs":{"type":"array","maxItems":MAX_CANDIDATE_AUTHORITIES,"items":closed(json!({
+                        "role":{"enum":["pack-manifest","requirements","product-foundation","skills-route","prompt","prompt-invocation","source-lineage","normalized-input","routed-context","governed-output","claims-validation","decision-result","run-bundle","run-receipt","run-verification","evaluator-inventory","private-record-policy","publication-approval"]},
+                        "contract":string(),"relative_path":string(),"sha256":hash()
+                    }))},"reason_codes":string_array_schema()
+                }))
+            };
+            contract_schema(
+                contract,
+                json!({
                 "contract":{"const":contract},"valid":{"type":"boolean"},"candidate_id":string(),"job_id":string(),
                 "pack_release":closed(json!({"pack_id":string(),"release_id":string(),"version":string(),"portable_digest":hash(),"source_revision":hash()})),
                 "evaluator":closed(json!({"id":string(),"version":string(),"fixture_set_id":string(),"inventory_sha256":hash()})),
                 "fixture_id":string(),"challenge_id":{"type":["string","null"]},
                 "status":{"enum":["sufficient-for-job","not-sufficient-for-job","unassessed"]},
                 "behavioral_qualification_allowed":{"type":"boolean"},
-                "assertions":{"type":"array","minItems":12,"maxItems":12,"items":closed(json!({
-                    "id":{"enum":["D1","D2","D3","D4","D5","D6","D7","D8","D9","D10","D11","D12"]},"name":string(),
-                    "scope":{"enum":["release","fixture"]},"hard":{"const":true},"status":{"enum":["pass","fail","unassessed"]},
-                    "authority_refs":{"type":"array","maxItems":MAX_CANDIDATE_AUTHORITIES,"items":closed(json!({
-                        "role":{"enum":["pack-manifest","requirements","product-foundation","skills-route","prompt","prompt-invocation","source-lineage","normalized-input","routed-context","governed-output","claims-validation","decision-result","run-bundle","run-receipt","run-verification","evaluator-inventory","private-record-policy","publication-approval"]},
-                        "contract":string(),"relative_path":string(),"sha256":hash()
-                    }))},"reason_codes":string_array_schema()
-                }))},
+                "assertions":{"type":"array","minItems":12,"maxItems":12,"prefixItems":[
+                    assertion("D1"),assertion("D2"),assertion("D3"),assertion("D4"),assertion("D5"),assertion("D6"),
+                    assertion("D7"),assertion("D8"),assertion("D9"),assertion("D10"),assertion("D11"),assertion("D12")
+                ],"items":false},
                 "summary":closed(json!({"passed":{"type":"integer","minimum":0,"maximum":12},"failed":{"type":"integer","minimum":0,"maximum":12},"unassessed":{"type":"integer","minimum":0,"maximum":12}}))
-            }),
-        ),
+                }),
+            )
+        }
         CONFORMANCE_VERIFIER_RECEIPT_V1 => contract_schema(
             contract,
             json!({"contract":{"const":contract},"receipt_id":string(),"verifier_name":string(),"verifier_version":string(),"verifier_config_sha256":hash(),"identity_authority_sha256":hash(),"invocation_id":string(),"candidate_sha256":hash(),"evaluator_inventory_sha256":hash(),"model_visible_context_sha256":hash(),"started_at":utc(),"completed_at":utc(),"freshness_verified":{"const":true},"isolation_dimensions":{"type":"array","minItems":3,"maxItems":3,"items":{"enum":["memory","tools","neighboring-context"]},"uniqueItems":true},"signature_hex":{"type":"string","pattern":"^[0-9a-f]{128}$","minLength":128,"maxLength":128}}),
@@ -3780,9 +3796,12 @@ mod tests {
     use super::*;
     use crate::commands::briefs::emit_brief;
     use crate::conformance::{
-        AssertionEvaluationStatus, BehavioralEvaluation, BehavioralQualification, BehavioralStatus,
-        BehavioralTrialEvaluation, ConformanceAssertionEvaluation, DeterministicStatus,
-        JobSufficiency, QualificationVerdict,
+        AccessClass, AssertionEvaluationStatus, BehavioralEvaluation, BehavioralQualification,
+        BehavioralStatus, BehavioralTrialEvaluation, ConformanceAssertionEvaluation,
+        DeterministicAssertion, DeterministicConformanceV1, DeterministicEvaluatorIdentity,
+        DeterministicStatus, DeterministicSummary, DeterministicVerdict, JobSufficiency,
+        JourneyArtifactRole, PackReleaseIdentity, PublicConformanceReportV1, PublicEvidenceDigest,
+        PublicJobResult, QualificationVerdict,
     };
     use jsonschema::draft202012;
     use std::path::PathBuf;
@@ -3874,6 +3893,124 @@ mod tests {
             job["properties"]["behavioral_status"]
         );
         assert_eq!(public_job["verdict"], job["properties"]["verdict"]);
+    }
+
+    #[test]
+    fn public_conformance_report_schema_validates_output_and_evidence_policy() {
+        let output = PublicConformanceReportV1 {
+            contract: PUBLIC_CONFORMANCE_REPORT_V1.into(),
+            report_id: "report-1".into(),
+            pack_id: "pack-1".into(),
+            release_id: "release-1".into(),
+            evaluator_id: "evaluator-1".into(),
+            evaluator_version: "1".into(),
+            generated_at: "2026-08-14T00:00:00Z".into(),
+            jobs: vec![PublicJobResult {
+                job_id: "outbound-copy-brief".into(),
+                deterministic_status: DeterministicStatus::Passed,
+                behavioral_status: BehavioralStatus::Passed,
+                verdict: QualificationVerdict::QualifiedForJobUnderEnvelope,
+                evidence: vec![
+                    PublicEvidenceDigest {
+                        artifact_role: JourneyArtifactRole::NormalizedInput,
+                        artifact_sha256: None,
+                        classification: AccessClass::Private,
+                        publication_approved: false,
+                    },
+                    PublicEvidenceDigest {
+                        artifact_role: JourneyArtifactRole::GovernedOutput,
+                        artifact_sha256: Some("a".repeat(64)),
+                        classification: AccessClass::Synthetic,
+                        publication_approved: false,
+                    },
+                    PublicEvidenceDigest {
+                        artifact_role: JourneyArtifactRole::ClaimsValidation,
+                        artifact_sha256: Some("b".repeat(64)),
+                        classification: AccessClass::SanitizedPublic,
+                        publication_approved: true,
+                    },
+                ],
+                limitations: vec![],
+            }],
+        };
+        let value = serde_json::to_value(output).expect("public report should serialize");
+        let schema = schema(SchemaTarget::PublicConformanceReportV1);
+        draft202012::validate(&schema, &value)
+            .expect("actual public report should validate against its public schema");
+
+        for (classification, artifact_sha256, publication_approved) in [
+            ("private", Some(json!("c".repeat(64))), false),
+            ("private", None, true),
+            ("synthetic", None, false),
+            ("synthetic", Some(json!("c".repeat(64))), true),
+            ("sanitized-public", None, true),
+            ("sanitized-public", Some(json!("c".repeat(64))), false),
+        ] {
+            let mut invalid = value.clone();
+            let evidence = &mut invalid["jobs"][0]["evidence"][0];
+            evidence["classification"] = json!(classification);
+            evidence["artifact_sha256"] = artifact_sha256.unwrap_or(Value::Null);
+            evidence["publication_approved"] = json!(publication_approved);
+            assert!(
+                draft202012::validate(&schema, &invalid).is_err(),
+                "invalid {classification} evidence policy should fail"
+            );
+        }
+    }
+
+    #[test]
+    fn deterministic_conformance_schema_enforces_ordered_assertions() {
+        let output = DeterministicConformanceV1 {
+            contract: DETERMINISTIC_CONFORMANCE_V1.into(),
+            valid: true,
+            candidate_id: "candidate-1".into(),
+            job_id: "outbound-copy-brief".into(),
+            pack_release: PackReleaseIdentity {
+                pack_id: "pack-1".into(),
+                release_id: "release-1".into(),
+                version: "1.0.0".into(),
+                portable_digest: "a".repeat(64),
+                source_revision: "b".repeat(64),
+            },
+            evaluator: DeterministicEvaluatorIdentity {
+                id: "evaluator-1".into(),
+                version: "1".into(),
+                fixture_set_id: "fixtures-1".into(),
+                inventory_sha256: "c".repeat(64),
+            },
+            fixture_id: "fixture-1".into(),
+            challenge_id: None,
+            status: DeterministicVerdict::SufficientForJob,
+            behavioral_qualification_allowed: true,
+            assertions: (1..=12)
+                .map(|number| DeterministicAssertion {
+                    id: format!("D{number}"),
+                    name: format!("deterministic assertion {number}"),
+                    scope: "release".into(),
+                    hard: true,
+                    status: "pass".into(),
+                    authority_refs: vec![],
+                    reason_codes: vec![],
+                })
+                .collect(),
+            summary: DeterministicSummary {
+                passed: 12,
+                failed: 0,
+                unassessed: 0,
+            },
+        };
+        let value = serde_json::to_value(output).expect("deterministic output should serialize");
+        let schema = schema(SchemaTarget::DeterministicConformanceV1);
+        draft202012::validate(&schema, &value)
+            .expect("actual deterministic output should validate against its public schema");
+
+        let mut duplicate = value.clone();
+        duplicate["assertions"][1]["id"] = json!("D1");
+        assert!(draft202012::validate(&schema, &duplicate).is_err());
+
+        let mut reordered = value;
+        reordered["assertions"].as_array_mut().unwrap().swap(0, 1);
+        assert!(draft202012::validate(&schema, &reordered).is_err());
     }
 
     #[test]

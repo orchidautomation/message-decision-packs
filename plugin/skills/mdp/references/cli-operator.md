@@ -69,14 +69,17 @@ Use first-class `--out` files for the exact chain: compile to
 `deterministic.json`; pass that file with `validate --deterministic` and write
 `behavioral.json`; assemble those authorities plus every repeated `--trial`
 into `job-conformance.json`; then project a private/public report with its own
-`--out`. Validation also requires every predeclared repeated `--invocation`,
+`--out`. Pass the same staged root to every command through `--artifact-root`.
+Validation also requires the candidate, evaluator inventory, lifecycle policy,
+and every predeclared repeated `--invocation`,
 `--trial`, and `--verifier-receipt`. External calls remain customer-owned and
 separately authorized.
 Trial slots freeze requested/resolved model identity and the exact candidate
 prompt, input list, and context digest. Verifier and publication evidence must
 match trusted authority descriptors already frozen in the evaluator inventory.
 
-All four conformance commands are read-only and make no model calls. The
+All four conformance commands make no model calls. Without `--out` they are
+read-only; `--out` writes only the declared local authority or projection. The
 behavioral evaluation returned by `validate` is intermediate, not report
 authority. Only `mdp.job-conformance.v1` is the cross-phase authority; reports
 and traces are projections. Stop no-draft on failed or unassessed required

@@ -491,7 +491,9 @@ pub(crate) enum ConformanceCommand {
     },
     #[command(about = "Validate recorded behavioral trials without invoking a model")]
     Validate {
-        #[arg(long)]
+        #[arg(long, help = "Staged root containing every behavioral evidence file")]
+        artifact_root: PathBuf,
+        #[arg(long, help = "Candidate path relative to the staged artifact root")]
         candidate: PathBuf,
         #[arg(long, help = "Closed mdp.deterministic-conformance.v1 JSON file")]
         deterministic: PathBuf,
@@ -507,7 +509,7 @@ pub(crate) enum ConformanceCommand {
         evaluator_result: Vec<PathBuf>,
         #[arg(long)]
         publication_approval: Vec<PathBuf>,
-        #[arg(long)]
+        #[arg(long, required = true)]
         verifier_receipt: Vec<PathBuf>,
         #[arg(long)]
         out: Option<PathBuf>,
@@ -529,6 +531,7 @@ pub(crate) enum ConformanceCommand {
             long,
             help = "Trial path relative to the staged root; repeat in declared order"
         )]
+        #[arg(required = true)]
         trial: Vec<PathBuf>,
         #[arg(long, help = "Staged root containing every composite member")]
         artifact_root: PathBuf,
@@ -726,6 +729,8 @@ mod tests {
             "mdp",
             "conformance",
             "validate",
+            "--artifact-root",
+            "staged",
             "--candidate",
             "candidate.json",
             "--deterministic",
@@ -738,6 +743,8 @@ mod tests {
             "invocation-1.json",
             "--trial",
             "trial-1.json",
+            "--verifier-receipt",
+            "verifier-1.json",
         ])
         .expect("recorded behavioral evidence should parse");
         match parsed.command {
@@ -757,6 +764,46 @@ mod tests {
             _ => panic!("expected behavioral validation command"),
         }
         assert!(Cli::try_parse_from(["mdp", "conformance", "validate"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "conformance",
+                "validate",
+                "--candidate",
+                "candidate.json",
+                "--deterministic",
+                "deterministic.json",
+                "--evaluator-inventory",
+                "inventory.json",
+                "--lifecycle-policy",
+                "policy.json",
+                "--invocation",
+                "invocation.json",
+                "--trial",
+                "trial.json",
+                "--verifier-receipt",
+                "verifier.json"
+            ])
+            .is_err(),
+            "behavioral validation requires an artifact root"
+        );
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "conformance",
+                "assemble",
+                "--candidate",
+                "candidate.json",
+                "--deterministic",
+                "deterministic.json",
+                "--behavioral",
+                "behavioral.json",
+                "--artifact-root",
+                "staged"
+            ])
+            .is_err(),
+            "assembly requires at least one trial"
+        );
     }
 
     #[test]

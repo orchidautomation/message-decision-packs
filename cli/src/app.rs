@@ -50,6 +50,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 dry_run,
             ),
             ConformanceCommand::Validate {
+                artifact_root,
                 candidate,
                 deterministic,
                 evaluator_inventory,
@@ -66,6 +67,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 summary_mode,
                 "conformance-validate",
                 validate_behavioral_files(BehavioralEvidencePaths {
+                    artifact_root: &artifact_root,
                     candidate: &candidate,
                     deterministic: &deterministic,
                     evaluator_inventory: &evaluator_inventory,
@@ -727,7 +729,7 @@ fn emit_conformance_output(
     json_mode: bool,
     summary_mode: bool,
     command: &str,
-    data: Value,
+    mut data: Value,
     out: Option<&Path>,
     dry_run: bool,
 ) -> Result<()> {
@@ -738,10 +740,7 @@ fn emit_conformance_output(
             ));
         }
         if dry_run {
-            let plan = planned_json_write(path);
-            if plan["would_write"] != true {
-                return Err(anyhow!("conformance output path is not writable"));
-            }
+            data = prepare_conformance_dry_run(data, path)?;
         } else {
             write_json_file(path, &data)?;
         }
@@ -749,6 +748,14 @@ fn emit_conformance_output(
         return Err(anyhow!("--dry-run requires --out"));
     }
     print_checked(json_mode, summary_mode, command, data)
+}
+
+fn prepare_conformance_dry_run(data: Value, path: &Path) -> Result<Value> {
+    let plan = planned_json_write(path);
+    if plan["would_write"] != true {
+        return Err(anyhow!("conformance output path is not writable"));
+    }
+    Ok(attach_dry_run_artifact(data, path))
 }
 
 #[derive(Clone, Copy)]
@@ -1445,5 +1452,19 @@ mod tests {
         assert_eq!(result["artifact"]["status"], "dry-run");
         assert_eq!(result["dry_run"], true);
         assert_eq!(result["write_plan"][0]["path"], "/tmp/brief.json");
+    }
+
+    #[test]
+    fn conformance_dry_run_output_exposes_planned_artifact() {
+        let path = PathBuf::from("/tmp/conformance.json");
+        let result = prepare_conformance_dry_run(
+            json!({"contract": "mdp.deterministic-conformance.v1"}),
+            &path,
+        )
+        .unwrap();
+        assert_eq!(result["artifact"]["status"], "dry-run");
+        assert_eq!(result["dry_run"], true);
+        assert_eq!(result["write_plan"][0]["path"], "/tmp/conformance.json");
+        assert_eq!(result["write_plan"][0]["would_write"], true);
     }
 }

@@ -260,9 +260,12 @@ Stop no-draft unless deterministic status is `sufficient-for-job`. The
 customer-selected host owns provider/model selection and the call; MDP does
 neither and does not calculate pricing. After the host returns recorded
 invocation, trial, verifier-receipt, and evaluator evidence, chain the exact
-compiled authority with `conformance validate --deterministic
-STAGED_ROOT/deterministic.json --out STAGED_ROOT/behavioral.json`. Repeat all
-predeclared evidence flags. Validation does not invoke a model.
+compiled authority with `conformance validate --artifact-root STAGED_ROOT
+--candidate CANDIDATE_JSON --deterministic deterministic.json --out
+behavioral.json`, plus the required evaluator inventory, lifecycle policy, and
+all predeclared repeated evidence flags. Validation does not invoke a model;
+use the complete runnable form in [references/cli-operator.md](references/cli-operator.md)
+instead of guessing required arguments.
 Accept verifier receipts and publication approvals only when the CLI confirms
 they match the evaluator inventory's predeclared trusted authority descriptors;
 do not treat self-declared verifier or reviewer identity as proof.
@@ -270,8 +273,9 @@ do not treat self-declared verifier or reviewer identity as proof.
 Treat `mdp.behavioral-evaluation.v1` as intermediate only. Use `conformance
 assemble --out STAGED_ROOT/job-conformance.json` to create the sole cross-phase `mdp.job-conformance.v1` authority, then use `conformance report --out ...` or
 `trace` only as projections. Keep
-`sufficient-for-job`, `qualified-for-job-under-envelope`, `unassessed`, and
-`conformance-failure` distinct. No result grants drafting, sending, scheduling,
+`sufficient-for-job`, `not-sufficient-for-job`,
+`qualified-for-job-under-envelope`, `not-qualified-for-job-under-envelope`, and
+`unassessed` distinct. No result grants drafting, sending, scheduling,
 CRM mutation, or publication authority. Public output must omit paths, raw
 content, identities, provider/session data, evaluator rationale, reviewer
 identity, and private digests.

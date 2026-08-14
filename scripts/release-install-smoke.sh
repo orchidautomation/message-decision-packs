@@ -149,7 +149,7 @@ for schema_target in \
   fi
 done
 
-MDP_BIN="$mdp_bin" node "$ROOT/scripts/test-cold-model-conformance.mjs" --smoke
+MDP_BIN="$mdp_bin" node "$ROOT/scripts/test-cold-model-conformance.mjs"
 
 if find "$codex_plugin_root" -type d -name __pycache__ | grep -q .; then
   echo "Installed plugin must not contain Python __pycache__ directories." >&2

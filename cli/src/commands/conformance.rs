@@ -18,7 +18,7 @@ use crate::conformance::{
     parse_behavioral_evaluation, parse_candidate, parse_candidate_file,
     parse_conformance_verifier_receipt, parse_deterministic_conformance, parse_evaluator_inventory,
     parse_evaluator_result, parse_invocation, parse_job_conformance, parse_lifecycle_policy,
-    parse_publication_approval, parse_trial, read_bounded_file, read_contained_authority,
+    parse_publication_approval, parse_trial, read_contained_authority,
     read_contained_authority_bytes, read_contained_file,
 };
 use crate::pack_io::read_manifest;
@@ -61,6 +61,7 @@ pub(crate) fn compile_candidate_file(candidate_path: &Path, artifact_root: &Path
 }
 
 pub(crate) struct BehavioralEvidencePaths<'a> {
+    pub(crate) artifact_root: &'a Path,
     pub(crate) candidate: &'a Path,
     pub(crate) deterministic: &'a Path,
     pub(crate) evaluator_inventory: &'a Path,
@@ -86,11 +87,11 @@ pub(crate) fn validate_behavioral_files(paths: BehavioralEvidencePaths<'_>) -> R
             ));
         }
     }
-    let read = |path: &Path| read_bounded_file(path, MAX_CONFORMANCE_AUTHORITY_BYTES);
+    let read = |path: &Path| read_contained_file(paths.artifact_root, path);
     let candidate = parse_candidate(&read(paths.candidate)?)?;
     let deterministic = parse_deterministic_conformance(&read(paths.deterministic)?)?;
     let inventory = parse_evaluator_inventory(&read(paths.evaluator_inventory)?)?;
-    validate_inventory_candidate_context(&candidate, paths.candidate, &inventory)?;
+    validate_inventory_candidate_context(&candidate, paths.artifact_root, &inventory)?;
     let lifecycle = parse_lifecycle_policy(&read(paths.lifecycle_policy)?)?;
     let invocations = paths
         .invocations
@@ -132,11 +133,10 @@ pub(crate) fn validate_behavioral_files(paths: BehavioralEvidencePaths<'_>) -> R
 
 fn validate_inventory_candidate_context(
     candidate: &ConformanceCandidateV1,
-    candidate_path: &Path,
+    artifact_root: &Path,
     inventory: &EvaluatorInventoryV1,
 ) -> Result<()> {
-    let staged_root = candidate_path.parent().unwrap_or_else(|| Path::new("."));
-    let candidate_root = contained_candidate_root(staged_root, &candidate.artifact_root)?;
+    let candidate_root = contained_candidate_root(artifact_root, &candidate.artifact_root)?;
     let loaded = load_authorities(candidate, candidate_root)?;
     let requirements = loaded
         .values
@@ -229,20 +229,43 @@ fn validate_inventory_candidate_context(
         "mdp.model-visible-context.v1",
         &serde_json::to_value(&inputs)?,
     )?;
-    for challenge in &inventory.challenges {
-        if challenge.job_id != candidate.job_id
-            || challenge.trial_slots.iter().any(|slot| {
-                slot.prompt_sha256 != expected_prompt
-                    || slot.input_artifacts != inputs
-                    || slot.model_visible_context_sha256 != context_sha256
-            })
-        {
-            return Err(anyhow!(
-                "evaluator inventory does not bind candidate compiled model context"
-            ));
-        }
+    let challenge = matching_inventory_challenge(candidate, inventory)?;
+    if challenge.trial_slots.iter().any(|slot| {
+        slot.prompt_sha256 != expected_prompt
+            || slot.input_artifacts != inputs
+            || slot.model_visible_context_sha256 != context_sha256
+    }) {
+        return Err(anyhow!(
+            "evaluator inventory does not bind candidate compiled model context"
+        ));
     }
     Ok(())
+}
+
+fn matching_inventory_challenge<'a>(
+    candidate: &ConformanceCandidateV1,
+    inventory: &'a EvaluatorInventoryV1,
+) -> Result<&'a crate::conformance::EvaluatorChallenge> {
+    let matching = inventory
+        .challenges
+        .iter()
+        .filter(|challenge| {
+            challenge.job_id == candidate.job_id && challenge.fixture_id == candidate.fixture_id
+        })
+        .collect::<Vec<_>>();
+    match matching.as_slice() {
+        [challenge]
+            if candidate
+                .challenge_id
+                .as_deref()
+                .is_none_or(|id| id == challenge.challenge_id) =>
+        {
+            Ok(*challenge)
+        }
+        _ => Err(anyhow!(
+            "evaluator inventory must contain one exact job and fixture challenge"
+        )),
+    }
 }
 
 pub(crate) struct AssembleConformancePaths<'a> {
@@ -641,6 +664,43 @@ pub(crate) fn validate_composite_members(
         }
     }
     let candidate = parsed_candidate.ok_or_else(|| anyhow!("composite lacks candidate member"))?;
+    let candidate_member_roles = candidate
+        .authorities
+        .iter()
+        .map(|reference| journey_role(reference.role))
+        .collect::<Vec<_>>();
+    let supplied_candidate_members = composite
+        .journey
+        .artifacts
+        .iter()
+        .filter(|artifact| candidate_member_roles.contains(&artifact.role))
+        .count();
+    if supplied_candidate_members != candidate.authorities.len() {
+        return Err(anyhow!(
+            "journey must contain exactly one member for every candidate authority"
+        ));
+    }
+    for reference in &candidate.authorities {
+        let expected_path = Path::new(&candidate.artifact_root)
+            .join(&reference.relative_path)
+            .to_string_lossy()
+            .into_owned();
+        let count = composite
+            .journey
+            .artifacts
+            .iter()
+            .filter(|artifact| {
+                artifact.role == journey_role(reference.role)
+                    && artifact.contract == reference.contract
+                    && artifact.relative_path.as_deref() == Some(expected_path.as_str())
+            })
+            .count();
+        if count != 1 {
+            return Err(anyhow!(
+                "journey candidate authority member is omitted, duplicated, or mismatched"
+            ));
+        }
+    }
     let deterministic =
         parsed_deterministic.ok_or_else(|| anyhow!("composite lacks deterministic member"))?;
     let behavioral =
@@ -1640,6 +1700,40 @@ mod tests {
         assert!(!existing_result_passes(&json!({"status": "blocked"})));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn behavioral_validation_rejects_symlinked_evidence_under_artifact_root() {
+        use std::os::unix::fs::symlink;
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!("mdp-contained-evidence-{nonce}"));
+        let root = base.join("staged");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(base.join("outside-candidate.json"), b"{}").unwrap();
+        symlink(
+            base.join("outside-candidate.json"),
+            root.join("candidate.json"),
+        )
+        .unwrap();
+        let result = validate_behavioral_files(BehavioralEvidencePaths {
+            artifact_root: &root,
+            candidate: Path::new("candidate.json"),
+            deterministic: Path::new("deterministic.json"),
+            evaluator_inventory: Path::new("inventory.json"),
+            lifecycle_policy: Path::new("policy.json"),
+            invocations: &[],
+            trials: &[],
+            evaluator_results: &[],
+            publication_approvals: &[],
+            verifier_receipts: &[],
+        });
+        assert!(result.is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
+
     #[test]
     fn compile_emits_all_deterministic_assertions_for_one_exact_job() {
         let nonce = SystemTime::now()
@@ -1708,6 +1802,14 @@ mod tests {
                 "minimum_passes": if number == 6 { 2 } else { 3 }
             })).collect::<Vec<_>>()
         });
+        let mut unrelated_challenge = inventory["challenges"][0].clone();
+        unrelated_challenge["challenge_id"] = json!("challenge-unrelated");
+        unrelated_challenge["fixture_id"] = json!("fixture-unrelated");
+        unrelated_challenge["job_id"] = json!("job-unrelated");
+        inventory["challenges"]
+            .as_array_mut()
+            .expect("challenge inventory")
+            .push(unrelated_challenge);
         let inventory_digest = hash_authority_value(EVALUATOR_INVENTORY_V1, &inventory)
             .expect("inventory should hash");
         inventory["inventory_sha256"] = json!(inventory_digest);
@@ -1860,6 +1962,12 @@ mod tests {
         let candidate_contract =
             parse_candidate(&fs::read(&candidate_path).expect("candidate should remain staged"))
                 .expect("candidate should parse");
+        assert_eq!(
+            matching_inventory_challenge(&candidate_contract, &parsed_inventory)
+                .expect("unrelated inventory challenges must not affect the selected candidate")
+                .challenge_id,
+            "challenge-1"
+        );
         let deterministic_path = stage.join("deterministic.json");
         fs::write(
             &deterministic_path,
@@ -1932,6 +2040,18 @@ mod tests {
         composite
             .validate()
             .expect("assembled composite should validate");
+        let mut duplicate_authority = composite.clone();
+        let mut duplicate_prompt = duplicate_authority
+            .journey
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.role == JourneyArtifactRole::Prompt)
+            .expect("prompt journey member")
+            .clone();
+        duplicate_prompt.artifact_id = "duplicate-prompt-authority".into();
+        duplicate_authority.journey.artifacts.push(duplicate_prompt);
+        assert!(duplicate_authority.validate().is_ok());
+        assert!(validate_composite_members(&duplicate_authority, &stage).is_err());
         jsonschema::draft202012::validate(&schema(SchemaTarget::JobConformanceV1), &assembled)
             .expect("assembled composite should match its public schema");
         let mut missing_role = composite.clone();

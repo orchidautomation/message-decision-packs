@@ -394,7 +394,7 @@
       "expected_output": "A finding that requires deterministic sufficiency, the exact trial set, composite assembly, and safe report projection before qualification.",
       "assertions": [
         {"id": "review-cold-train-cli", "category": "cli-gate", "criterion": "Inspects capabilities/schemas and requires compile, validate, and assemble evidence.", "required": true},
-        {"id": "review-cold-train-content", "category": "content", "criterion": "Distinguishes sufficient, unassessed, qualified, and conformance-failure statuses.", "required": true},
+        {"id": "review-cold-train-content", "category": "content", "criterion": "Distinguishes sufficient, not-sufficient, unassessed, qualified, and not-qualified statuses.", "required": true},
         {"id": "review-cold-train-handoff", "category": "handoff", "criterion": "Rejects the unsupported claim and names the missing composite/report step without running a provider call.", "required": true}
       ]
     }

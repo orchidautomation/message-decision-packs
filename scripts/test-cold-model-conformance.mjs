@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -27,6 +27,22 @@ const keep = process.argv.includes("--keep");
 const root = mkdtempSync(join(tmpdir(), "mdp-cold-model-conformance-"));
 const emptyHome = join(root, "empty-home");
 const results = [];
+const observedMdpCommands = new Set();
+const allowedMdpCommands = new Set([
+  "--version",
+  "capabilities",
+  "check-claims",
+  "conformance",
+  "emit-brief",
+  "fit",
+  "requirements",
+  "run",
+  "schema",
+  "skills",
+  "trace",
+  "validate-prompt-output",
+  "verify-run",
+]);
 mkdirSync(emptyHome);
 
 const HASH = Object.freeze({
@@ -54,6 +70,9 @@ const TRUSTED_PUBLICATION_AUTHORITY = Object.freeze({
 });
 
 function invoke(args, options = {}) {
+  const command = args[0] === "--json" ? args[1] : args[0];
+  assert.ok(allowedMdpCommands.has(command), `harness refused non-allowlisted MDP command: ${command}`);
+  observedMdpCommands.add(command);
   return spawnSync(mdp, args, {
     cwd: options.cwd || repoRoot,
     encoding: "utf8",
@@ -176,7 +195,7 @@ function candidateFor(seed, policy, authorities = baseAuthorities(), pack = {}) 
     contract: "mdp.conformance-candidate.v1",
     candidate_id: `candidate-${seed.fixture_id}`,
     artifact_root: "candidate",
-    job_id: "outbound-copy-brief",
+    job_id: pack.jobId || "outbound-copy-brief",
     pack_release: {
       pack_id: pack.packId || "basic-mdp-template",
       release_id: "synthetic-offline-release",
@@ -258,7 +277,8 @@ function inventoryFor(seed, candidate, binding = {}) {
 
 function buildEvidence(seed, options = {}) {
   const policy = options.policy ? structuredClone(options.policy) : lifecycle(options.accessClass);
-  const compiledTemplate = !options.candidate && !options.authorities && deterministicFixture;
+  const fixtureKey = seed.phase === "review" ? "review" : "generation";
+  const compiledTemplate = !options.candidate && !options.authorities && deterministicFixtures.get(fixtureKey);
   const candidate = options.candidate
     ? structuredClone(options.candidate)
     : compiledTemplate
@@ -267,6 +287,7 @@ function buildEvidence(seed, options = {}) {
         version: compiledTemplate.candidate.pack_release.version,
         portableDigest: compiledTemplate.candidate.pack_release.portable_digest,
         cliVersion: compiledTemplate.candidate.cli_version,
+        jobId: compiledTemplate.candidate.job_id,
       })
       : candidateFor(seed, policy, options.authorities, options.pack);
   const defaultInputs = structuredClone(compiledTemplate?.promptBinding?.inputArtifacts
@@ -541,12 +562,13 @@ function stageEvidence(name, evidence, candidateSource) {
 }
 
 function validateArgs(paths) {
-  const args = ["--json", "conformance", "validate", "--candidate", paths.candidate, "--evaluator-inventory", paths.inventory, "--lifecycle-policy", paths.lifecycle, "--deterministic", paths.deterministic];
-  paths.invocations.forEach((path) => args.push("--invocation", path));
-  paths.trials.forEach((path) => args.push("--trial", path));
-  paths.results.forEach((path) => args.push("--evaluator-result", path));
-  paths.verifierReceipts.forEach((path) => args.push("--verifier-receipt", path));
-  paths.publicationApprovals.forEach((path) => args.push("--publication-approval", path));
+  const contained = (path) => relative(paths.stage, path);
+  const args = ["--json", "conformance", "validate", "--artifact-root", paths.stage, "--candidate", contained(paths.candidate), "--evaluator-inventory", contained(paths.inventory), "--lifecycle-policy", contained(paths.lifecycle), "--deterministic", contained(paths.deterministic)];
+  paths.invocations.forEach((path) => args.push("--invocation", contained(path)));
+  paths.trials.forEach((path) => args.push("--trial", contained(path)));
+  paths.results.forEach((path) => args.push("--evaluator-result", contained(path)));
+  paths.verifierReceipts.forEach((path) => args.push("--verifier-receipt", contained(path)));
+  paths.publicationApprovals.forEach((path) => args.push("--publication-approval", contained(path)));
   return args;
 }
 
@@ -575,34 +597,63 @@ function stageComposite(name, compiled) {
   return { stage, composite, evidence, evaluation };
 }
 
-function compileReplay() {
-  const stage = join(root, "compile-replay");
+function compileReplay(jobId = "outbound-copy-brief", seedName = "generation") {
+  const stage = join(root, `compile-replay-${jobId}`);
   const candidateRoot = join(stage, "candidate");
   const pack = join(candidateRoot, "pack");
   cpSync(join(repoRoot, "plugin", "assets", "templates", "basic"), pack, { recursive: true });
   mkdirSync(join(candidateRoot, "evidence"), { recursive: true });
-  const requirements = output(invoke(["--json", "requirements", "--dir", pack, "--job", "outbound-copy-brief"]), "requirements compile");
-  const skills = output(invoke(["--json", "skills", "--dir", pack, "--job", "outbound-copy-brief"]), "skills compile");
+  const requirements = output(invoke(["--json", "requirements", "--dir", pack, "--job", jobId]), `${jobId} requirements compile`);
+  const skills = output(invoke(["--json", "skills", "--dir", pack, "--job", jobId]), `${jobId} skills compile`);
   const policy = lifecycle();
-  const seed = readSeed("generation");
+  const seed = readSeed(seedName);
   const candidate = candidateFor(seed, policy, [], {
     packId: requirements.pack.id,
     version: requirements.pack.version,
     portableDigest: requirements.pack.sha256,
     cliVersion: invoke(["--version"]).stdout.trim().split(/\s+/).at(-1),
+    jobId,
   });
 
   const routedPath = join(candidateRoot, "evidence", "routed-context.json");
-  output(invoke(["--json", "emit-brief", "--dir", pack, "--persona", "PMM", "--job", "outbound-copy-brief", "--routed-context-out", routedPath]), "routed context compile");
+  const persona = jobId === "outbound-copy-review" ? "PM" : "PMM";
+  const routed = output(invoke(["--json", "emit-brief", "--dir", pack, "--persona", persona, "--job", jobId, "--routed-context-out", routedPath]), `${jobId} routed context compile`);
   const routedBytes = readFileSync(routedPath);
-  const normalized = { contract: "mdp.synthetic-normalized-input.v1", valid: true, synthetic: true };
-  const normalizedBytes = Buffer.from(`${JSON.stringify(normalized, null, 2)}\n`);
-  writeFileSync(join(candidateRoot, "evidence", "normalized-input.json"), normalizedBytes);
+  assert.equal(routed.context.minimality.status, "ready");
+  assert.equal(routed.context.minimality.budget.max_bytes, requirements.model_task.context_budget.max_bytes);
+  assert.equal(routed.context.minimality.budget.max_entries, requirements.model_task.context_budget.max_entries);
+  assert.equal(routed.context.minimality.context_sha256, sha(routedBytes));
+  const routedContext = JSON.parse(routedBytes);
+  assert.ok(routedContext.entries.some((entry) => entry.card_kind === "avoid-rules"), `${jobId} context must retain avoid guardrails`);
+  assert.ok(routedContext.entries.some((entry) => entry.card_kind === "output-rules"), `${jobId} context must retain output guardrails`);
+
+  const normalizedPath = join(candidateRoot, "evidence", "normalized-input.json");
+  cpSync(join(fixtureRoot, "normalized-prompt-output.json"), normalizedPath);
+  const normalizedBytes = readFileSync(normalizedPath);
+  const normalized = JSON.parse(normalizedBytes);
+  const normalizationValidation = output(invoke(["--json", "validate-prompt-output", "--dir", pack, "--file", normalizedPath, "--prompt-id", "normalize-prospect-row"]), `${jobId} normalized input validation`);
+  assert.equal(normalizationValidation.valid, true);
+  const normalizationReceipt = {
+    contract: "mdp.prompt-output-validation.v1",
+    valid: normalizationValidation.valid,
+    command: "validate-prompt-output",
+    validation: normalizationValidation,
+  };
+  const normalizationValidationBytes = Buffer.from(`${JSON.stringify(normalizationReceipt, null, 2)}\n`);
+  writeFileSync(join(candidateRoot, "evidence", "normalization-validation.json"), normalizationValidationBytes);
 
   const promptPath = requirements.model_task.prompt_path;
   const promptBytes = readFileSync(join(pack, promptPath));
   const requirementsBytes = Buffer.from(`${JSON.stringify(requirements, null, 2)}\n`);
   writeFileSync(join(candidateRoot, "evidence", "requirements.json"), requirementsBytes);
+  const suppliedDraftBytes = Buffer.from("MDP is versioned decision context for agents.\n");
+  const invocationInputs = [
+    { name: "routed_context", sha256: sha(routedBytes) },
+    { name: "normalized_prospect", sha256: sha(normalizedBytes) },
+  ];
+  if (jobId === "outbound-copy-review") {
+    invocationInputs.push({ name: "supplied_draft", sha256: sha(suppliedDraftBytes) });
+  }
   const receipt = {
     contract: "mdp.prompt-invocation.v1",
     job_id: candidate.job_id,
@@ -611,14 +662,11 @@ function compileReplay() {
       version: requirements.model_task.prompt_version,
       sha256: requirements.model_task.prompt_sha256,
     },
-    inputs: [
-      { name: "routed_context", sha256: sha(routedBytes) },
-      { name: "normalized_prospect", sha256: sha(normalizedBytes) },
-    ],
+    inputs: invocationInputs,
   };
   const receiptBytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`);
   writeFileSync(join(candidateRoot, "evidence", "prompt-invocation.json"), receiptBytes);
-  const governedOutput = {
+  const commonOutput = {
     contract: "mdp.prompt-output.v0",
     prompt_id: requirements.model_task.prompt_id,
     job_id: candidate.job_id,
@@ -626,18 +674,40 @@ function compileReplay() {
     prompt_sha256: requirements.model_task.prompt_sha256,
     invocation_receipt_sha256: sha(receiptBytes),
     context_sha256: sha(routedBytes),
-    source_summary: { inputs_used: ["routed_context", "normalized_prospect", "prompt_receipt", "invocation_receipt_sha256"] },
+    source_summary: { inputs_used: invocationInputs.map((input) => input.name).concat(["prompt_receipt", "invocation_receipt_sha256"]) },
     selected_authority: [],
-    artifact: { status: "gap", angle_id: "N/A", cta_id: "N/A", claim_ids: [], evidence_ids: [], subject_options: [], message_body: "N/A" },
     gaps: ["Synthetic gap fixture."],
     rejected_claims: [],
   };
+  const governedOutput = jobId === "outbound-copy-review"
+    ? {
+      ...commonOutput,
+      artifact: { status: "gap", decision: "revise", issues: ["Synthetic review requires revision."], accepted_claim_ids: [], accepted_evidence_ids: [] },
+    }
+    : {
+      ...commonOutput,
+      artifact: { status: "gap", angle_id: "N/A", cta_id: "N/A", claim_ids: [], evidence_ids: [], subject_options: [], message_body: "N/A" },
+    };
   const governedBytes = Buffer.from(`${JSON.stringify(governedOutput, null, 2)}\n`);
   writeFileSync(join(candidateRoot, "evidence", "governed-output.json"), governedBytes);
+  const acceptedClaims = output(invoke(["--json", "check-claims", "--dir", pack, "--text", "MDP is versioned decision context for agents. It is a local offline CLI, and each pack declares a version in its manifest alongside modular card references."]), `${jobId} accepted claim validation`);
+  assert.equal(acceptedClaims.valid, true);
+  assert.ok(acceptedClaims.matched_claims.length >= 2);
+  const rejectedAttempt = invoke(["--json", "check-claims", "--dir", pack, "--text", "MDP guarantees meetings, improves reply rates by 30%, integrates with Salesforce, and updates CRM records."]);
+  assert.equal(rejectedAttempt.status, 1, `${jobId} unsupported claims must take the CLI rejection path`);
+  const rejectedEnvelope = JSON.parse(rejectedAttempt.stdout);
+  assert.equal(rejectedEnvelope.ok, true);
+  const rejectedClaims = rejectedEnvelope.data;
+  assert.equal(rejectedClaims.valid, false);
+  assert.ok(rejectedClaims.unsupported_claims.length >= 3);
+  assert.ok(rejectedClaims.guardrail_hits.length >= 1);
+  const claimsBytes = Buffer.from(`${JSON.stringify(acceptedClaims, null, 2)}\n`);
+  writeFileSync(join(candidateRoot, "evidence", "claims-validation.json"), claimsBytes);
+  writeFileSync(join(candidateRoot, "evidence", "rejected-claims-validation.json"), `${JSON.stringify(rejectedClaims, null, 2)}\n`);
 
   const runRoot = join(stage, "run-authority");
   const runRequest = JSON.parse(readFileSync(join(repoRoot, "examples", "run-conformance", "run-requests", "gtm-qualify.json"), "utf8"));
-  runRequest.execution_id = "synthetic-conformance-run";
+  runRequest.execution_id = `synthetic-conformance-run-${jobId}`;
   runRequest.pack_dir = join(repoRoot, runRequest.pack_dir);
   for (const input of runRequest.inputs) input.source_path = join(repoRoot, input.source_path);
   const runRequestPath = join(stage, "run-request.json");
@@ -657,11 +727,11 @@ function compileReplay() {
     ["skills-route", [skills.contract, "evidence/skills.json", Buffer.from(`${JSON.stringify(skills, null, 2)}\n`)]],
     ["prompt", ["mdp.prompt.v1", `pack/${promptPath}`, promptBytes]],
     ["prompt-invocation", [receipt.contract, "evidence/prompt-invocation.json", receiptBytes]],
-    ["source-lineage", ["mdp.synthetic-source-lineage.v1", "evidence/source-lineage.json", Buffer.from(`${JSON.stringify({ contract: "mdp.synthetic-source-lineage.v1", valid: true }, null, 2)}\n`)]],
+    ["source-lineage", ["mdp.prompt-output-validation.v1", "evidence/normalization-validation.json", normalizationValidationBytes]],
     ["normalized-input", [normalized.contract, "evidence/normalized-input.json", normalizedBytes]],
     ["routed-context", ["mdp.routed-context.v1", "evidence/routed-context.json", routedBytes]],
     ["governed-output", [governedOutput.contract, "evidence/governed-output.json", governedBytes]],
-    ["claims-validation", ["mdp.claim-check.v0", "evidence/claims-validation.json", Buffer.from(`${JSON.stringify({ contract: "mdp.claim-check.v0", valid: true }, null, 2)}\n`)]],
+    ["claims-validation", [acceptedClaims.contract, "evidence/claims-validation.json", claimsBytes]],
     ["decision-result", [decision.contract, "evidence/decision-result.json", Buffer.from(`${JSON.stringify(decision, null, 2)}\n`)]],
     ["run-bundle", [runBundle.contract, "evidence/run-bundle.json", Buffer.from(`${JSON.stringify(runBundle, null, 2)}\n`)]],
     ["run-receipt", [runReceipt.contract, "evidence/run-receipt.json", Buffer.from(`${JSON.stringify(runReceipt, null, 2)}\n`)]],
@@ -703,12 +773,44 @@ function compileReplay() {
     candidate,
     inventory,
     policy,
+    normalizationValidation,
+    acceptedClaims,
+    rejectedClaims,
     candidateSource: candidateRoot,
     promptBinding: { promptSha: receipt.prompt.sha256, inputArtifacts: receipt.inputs },
   };
 }
 
-let deterministicFixture;
+const deterministicFixtures = new Map();
+
+function compileNormalizationJob() {
+  const stage = join(root, "compile-replay-prospect-fit-or-brief");
+  const pack = join(stage, "pack");
+  cpSync(join(repoRoot, "plugin", "assets", "templates", "basic"), pack, { recursive: true });
+  const requirementsArgs = ["--json", "requirements", "--dir", pack, "--job", "prospect-fit-or-brief"];
+  const firstRequirements = output(invoke(requirementsArgs), "normalization requirements compile 1");
+  const secondRequirements = output(invoke(requirementsArgs), "normalization requirements compile 2");
+  assert.deepEqual(secondRequirements, firstRequirements);
+  assert.equal(firstRequirements.valid, true);
+  assert.equal(firstRequirements.available, false);
+  assert.equal(firstRequirements.status, "unavailable");
+  assert.equal(firstRequirements.job.id, "prospect-fit-or-brief");
+  assert.equal(firstRequirements.model_task, undefined);
+  assert.match(JSON.stringify(firstRequirements.diagnostics), /decision_input_contract_not_bound/);
+
+  const skills = output(invoke(["--json", "skills", "--dir", pack, "--job", "prospect-fit-or-brief"]), "normalization skills compile");
+  assert.equal(skills.job_routes.length, 1);
+  assert.equal(skills.job_routes[0].job_id, "prospect-fit-or-brief");
+  assert.equal(skills.job_routes[0].model_task.status, "unassessed");
+  const normalizedPath = join(stage, "normalized-prompt-output.json");
+  cpSync(join(fixtureRoot, "normalized-prompt-output.json"), normalizedPath);
+  const validationArgs = ["--json", "validate-prompt-output", "--dir", pack, "--file", normalizedPath, "--prompt-id", "normalize-prospect-row"];
+  const firstValidation = output(invoke(validationArgs), "normalization prompt evaluation 1");
+  const secondValidation = output(invoke(validationArgs), "normalization prompt evaluation 2");
+  assert.deepEqual(secondValidation, firstValidation);
+  assert.equal(firstValidation.valid, true);
+  return { requirements: firstRequirements, skills, validation: firstValidation };
+}
 
 try {
   assert.ok(existsSync(mdp), `compiled CLI not found at ${mdp}`);
@@ -735,10 +837,22 @@ try {
     }
   });
 
-  record("deterministic candidate compilation replays byte-equivalent assertions", () => { deterministicFixture = compileReplay(); });
+  record("deterministic candidate compilation replays byte-equivalent assertions", () => {
+    deterministicFixtures.set("generation", compileReplay("outbound-copy-brief", "generation"));
+    if (!smoke) deterministicFixtures.set("review", compileReplay("outbound-copy-review", "review"));
+  });
 
   for (const seedName of smoke ? ["generation"] : ["normalization", "generation", "review"]) {
-    record(`${seedName} recorded synthetic trials enforce hard 3/3 and useful 2/3`, () => {
+    const proofName = seedName === "normalization"
+      ? "normalization job compiles and validates its real prompt output without claiming model qualification"
+      : `${seedName} recorded synthetic trials enforce hard 3/3 and useful 2/3`;
+    record(proofName, () => {
+      if (seedName === "normalization") {
+        const normalization = compileNormalizationJob();
+        assert.equal(normalization.requirements.status, "unavailable");
+        assert.equal(normalization.validation.valid, true);
+        return;
+      }
       const { evaluation } = validateEvidence(`positive-${seedName}`, buildEvidence(readSeed(seedName)));
       assert.equal(evaluation.behavioral_qualification, "qualified-for-job-under-envelope");
       assert.deepEqual(evaluation.behavioral_assertions.map((item) => item.id), ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9"]);
@@ -864,6 +978,7 @@ try {
     });
 
     record("containment and resource limits reject traversal, links, oversized, deep, and amplified inputs", () => {
+      const deterministicFixture = deterministicFixtures.get("generation");
       const evidence = buildEvidence(readSeed("generation"));
       const paths = stageEvidence("resource-baseline", evidence);
       const outside = join(root, "outside-candidate.json");
@@ -897,6 +1012,7 @@ try {
 
     let compositeStage;
     record("composite authority, public/private reports, and JSON/Mermaid traces replay deterministically", () => {
+      const deterministicFixture = deterministicFixtures.get("generation");
       compositeStage = stageComposite("composite-source", deterministicFixture);
       const traceArgs = ["--json", "trace", "--file", "job-conformance.json", "--artifact-root", compositeStage.stage];
       assert.deepEqual(output(invoke(traceArgs), "trace replay 1"), output(invoke(traceArgs), "trace replay 2"));
@@ -910,6 +1026,7 @@ try {
     });
 
     record("composite tampering, missing links, cycles, privacy leakage, and fan-out fail closed", () => {
+      const deterministicFixture = deterministicFixtures.get("generation");
       const stage = compositeStage.stage;
       const original = readFileSync(join(stage, "deterministic.json"));
       writeFileSync(join(stage, "deterministic.json"), "{}\n");
@@ -968,6 +1085,11 @@ try {
 }
 
 const failed = results.filter((item) => item.status === "fail");
+assert.ok(observedMdpCommands.size > 0, "harness must exercise at least one allowlisted MDP command");
+for (const providerCommand of ["model", "provider", "native-normalize-openai", "mcp"]) {
+  assert.equal(allowedMdpCommands.has(providerCommand), false, `${providerCommand} must remain outside the harness command allowlist`);
+  assert.equal(observedMdpCommands.has(providerCommand), false, `${providerCommand} must not be observed`);
+}
 process.stdout.write(`1..${results.length}\n`);
-process.stdout.write(`${results.length - failed.length} passed; ${failed.length} failed; mode=${smoke ? "smoke" : "full"}; provider_calls=0\n`);
+process.stdout.write(`${results.length - failed.length} passed; ${failed.length} failed; mode=${smoke ? "smoke" : "full"}; static_command_allowlist=enforced; provider_commands=forbidden\n`);
 if (failed.length) process.exitCode = 1;

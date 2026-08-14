@@ -95,8 +95,9 @@ Canonical jobs can own deterministic entry and byte budgets. MDP selects require
 - **Cold-model conformance:** `sufficient-for-job` means deterministic checks
   passed; `qualified-for-job-under-envelope` adds the declared behavioral
   threshold; `unassessed` means required evidence is missing or incomplete;
-  `conformance-failure` means a required assertion failed. None grants
-  drafting, sending, or publication authority.
+  `not-sufficient-for-job` and `not-qualified-for-job-under-envelope` mean a
+  required deterministic or behavioral assertion failed. None grants drafting,
+  sending, or publication authority.
 - **Per-run decision:** `audit-grade`, `advisory`, `blocked`, or `not-run`.
 - **Readiness:** `ready`, `advisory`, or `blocked`.
 - **Product-foundation status:** `unassessed`, `ready`, or `blocked`.

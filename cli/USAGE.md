@@ -140,7 +140,7 @@ mdp --json conformance compile \
   --out STAGED_ROOT/deterministic.json
 
 mdp --json conformance validate \
-  --candidate CANDIDATE.json \
+  --artifact-root STAGED_ROOT --candidate CANDIDATE.json \
   --evaluator-inventory EVALUATOR_INVENTORY.json \
   --lifecycle-policy PRIVATE_RECORD_POLICY.json \
   --deterministic STAGED_ROOT/deterministic.json \
@@ -150,7 +150,7 @@ mdp --json conformance validate \
   --out STAGED_ROOT/behavioral.json
 
 mdp --json conformance assemble \
-  --artifact-root STAGED_ROOT --candidate candidate.json \
+  --artifact-root STAGED_ROOT --candidate CANDIDATE.json \
   --deterministic deterministic.json --behavioral behavioral.json \
   --trial trials/trial-1.json --out STAGED_ROOT/job-conformance.json
 

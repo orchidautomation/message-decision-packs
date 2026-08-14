@@ -151,13 +151,6 @@ pub(crate) fn read_contained_file(artifact_root: &Path, relative_path: &Path) ->
     )
 }
 
-/// Reads a caller-selected file without imposing staged-root containment.
-/// The file is still required to be regular, link-free, bounded, and stable
-/// across the single opened snapshot.
-pub(crate) fn read_bounded_file(path: &Path, max_bytes: usize) -> Result<Vec<u8>> {
-    read_bounded_file_snapshot(path, max_bytes)
-}
-
 fn read_contained_bytes_inner(
     artifact_root: &Path,
     relative_path: &str,
@@ -237,6 +230,7 @@ fn read_contained_file_snapshot(root: &Path, relative: &Path, max_bytes: usize) 
     read_bounded_file_snapshot(&resolved, max_bytes)
 }
 
+#[cfg(not(unix))]
 fn read_bounded_file_snapshot(path: &Path, max_bytes: usize) -> Result<Vec<u8>> {
     let before = fs::symlink_metadata(path)?;
     if !before.is_file() || before.file_type().is_symlink() {
@@ -1793,18 +1787,31 @@ impl ConformanceContract for BehavioralEvaluation {
             DeterministicStatus::Failed => JobSufficiency::NotSufficientForJob,
             DeterministicStatus::Unassessed => JobSufficiency::Unassessed,
         };
-        let expected_qualification = if self.deterministic_status != DeterministicStatus::Passed
-            || !complete_sampling
-            || any_unassessed
-        {
+        let malformed_trial = self
+            .trials
+            .iter()
+            .any(|trial| trial.status == BehavioralStatus::Malformed);
+        let failed_trials = self
+            .trials
+            .iter()
+            .filter(|trial| trial.status == BehavioralStatus::Failed)
+            .count();
+        let useful_misses = self
+            .behavioral_assertions
+            .iter()
+            .find(|assertion| assertion.id == "B6")
+            .map(|assertion| {
+                assertion
+                    .required_trials
+                    .saturating_sub(assertion.passed_trials) as usize
+            })
+            .unwrap_or_default();
+        let expected_qualification = if self.deterministic_status != DeterministicStatus::Passed {
             BehavioralQualification::Unassessed
-        } else if any_failed
-            || self
-                .trials
-                .iter()
-                .any(|trial| matches!(trial.status, BehavioralStatus::Malformed))
-        {
+        } else if any_failed || malformed_trial {
             BehavioralQualification::NotQualifiedForJobUnderEnvelope
+        } else if !complete_sampling || any_unassessed {
+            BehavioralQualification::Unassessed
         } else {
             BehavioralQualification::QualifiedForJobUnderEnvelope
         };
@@ -1820,6 +1827,13 @@ impl ConformanceContract for BehavioralEvaluation {
             ) => QualificationVerdict::NotQualifiedForJobUnderEnvelope,
             _ => QualificationVerdict::Unassessed,
         };
+        if expected_qualification == BehavioralQualification::QualifiedForJobUnderEnvelope
+            && failed_trials > useful_misses
+        {
+            return Err(anyhow!(
+                "qualified behavioral trial statuses contradict usefulness sampling"
+            ));
+        }
         if self.job_sufficiency != expected_sufficiency
             || self.behavioral_qualification != expected_qualification
             || self.overall_result != expected_overall
@@ -3196,6 +3210,10 @@ mod tests {
         let mut wrong_threshold = evidence.evaluate(3).unwrap();
         wrong_threshold.behavioral_assertions[5].passed_trials = 1;
         assert!(wrong_threshold.validate().is_err());
+
+        let mut failed_trial = evidence.evaluate(3).unwrap();
+        failed_trial.trials[0].status = BehavioralStatus::Failed;
+        assert!(failed_trial.validate().is_err());
     }
 
     #[test]
@@ -3228,6 +3246,19 @@ mod tests {
             evaluation.overall_result,
             QualificationVerdict::NotSufficientForJob
         );
+
+        let mut incomplete_failure = behavioral_evidence(TerminalState::Success, 2, 3);
+        incomplete_failure.invocations[0].isolation[0].state = AssuranceEvidenceState::Unknown;
+        incomplete_failure.invocations[0].isolation[0].provenance = EvidenceProvenance::Unknown;
+        incomplete_failure.invocations[0].isolation[0].verifier_receipt_sha256 = None;
+        incomplete_failure.trials[0].invocation_sha256 =
+            canonical_authority_sha256(&incomplete_failure.invocations[0]).unwrap();
+        let evaluation = incomplete_failure.evaluate(2).unwrap();
+        assert_eq!(
+            evaluation.behavioral_qualification,
+            BehavioralQualification::NotQualifiedForJobUnderEnvelope
+        );
+        assert!(evaluation.validate().is_ok());
     }
 
     #[test]

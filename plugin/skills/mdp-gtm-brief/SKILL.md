@@ -81,8 +81,9 @@ call, validate the recorded invocation/trial/evaluator artifacts and assemble
 `mdp.job-conformance.v1`. The behavioral evaluation is intermediate, not
 report authority. `sufficient-for-job` is deterministic only; only the
 assembled result can be `qualified-for-job-under-envelope`. `unassessed` and
-`conformance-failure` remain no-draft. Conformance never authorizes this skill
-to draft or send copy.
+the failure states `not-sufficient-for-job` and
+`not-qualified-for-job-under-envelope` remain no-draft. Conformance never
+authorizes this skill to draft or send copy.
 If `data.model_task` is absent, state that no job-owned model task is declared,
 include any available product-foundation diagnostics, and stop no-draft; do not
 invent a model-task status or diagnostics. If `data.model_task` is present but

@@ -57,9 +57,10 @@ For a released job that claims cold-model conformance, require the full
 progression: `conformance compile`, externally recorded trials, `conformance
 validate`, and `conformance assemble`. Deterministic `sufficient-for-job` is
 not behavioral qualification. Missing, stale, or incomplete evidence is
-`unassessed`; a required failure is `conformance-failure`; only the composite
-may report `qualified-for-job-under-envelope`. A behavioral evaluation alone
-is intermediate, never report authority.
+`unassessed`; a required failure is `not-sufficient-for-job` or
+`not-qualified-for-job-under-envelope`; only the composite may report
+`qualified-for-job-under-envelope`. A behavioral evaluation alone is
+intermediate, never report authority.
 
 Confirm public reports and traces contain no paths, customer/person/company
 content, prompts or outputs, provider/session identifiers, evaluator rationale,

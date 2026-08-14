@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import tempfile
 import unittest
@@ -272,9 +273,15 @@ class SkillContractTests(unittest.TestCase):
             original = path.read_text()
             for guardrail, phrase in guardrails.items():
                 with self.subTest(skill_id=skill_id, guardrail=guardrail):
-                    path.write_text(
-                        original.replace(phrase, "REMOVED_COLD_MODEL_GUARDRAIL", 1)
+                    flexible_phrase = r"\s+".join(re.escape(part) for part in phrase.split())
+                    mutated, replacements = re.subn(
+                        flexible_phrase,
+                        "REMOVED_COLD_MODEL_GUARDRAIL",
+                        original,
+                        count=1,
                     )
+                    self.assertEqual(replacements, 1)
+                    path.write_text(mutated)
                     self.assertIn(
                         f"cold_model_guardrail_missing:{skill_id}:{guardrail}",
                         self.codes(),
@@ -287,7 +294,8 @@ class SkillContractTests(unittest.TestCase):
             "sufficient-for-job",
             "qualified-for-job-under-envelope",
             "unassessed",
-            "conformance-failure",
+            "not-sufficient-for-job",
+            "not-qualified-for-job-under-envelope",
             "intermediate authority",
             "sole hash-complete",
             "performs no model or network call",

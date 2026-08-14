@@ -162,7 +162,7 @@ pub(crate) fn project_conformance_file(
     builder.add_designed("behavioral", "gate", "Behavioral qualification", "designed");
     builder.add_designed("verdict", "decision", "Job conformance verdict", "designed");
     builder.link_designed("candidate", "deterministic", "evaluated-by");
-    builder.link_designed("deterministic", "behavioral", "evaluated-by");
+    builder.link_designed("deterministic", "behavioral", "bound-to");
     builder.link_designed("behavioral", "verdict", "records");
 
     for (index, artifact) in composite.journey.artifacts.iter().enumerate() {
