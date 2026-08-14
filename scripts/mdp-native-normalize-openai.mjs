@@ -135,8 +135,8 @@ const translateRequest = (legacy, requestSha256) => {
     output_schema_sha256: sha256CanonicalJson(legacy.prompt_output_schema),
   }
   if (legacy.schema_name) translated.schema_name = legacy.schema_name
-  if (legacy.max_output_tokens) translated.max_output_tokens = legacy.max_output_tokens
-  if (legacy.reasoning) translated.reasoning = legacy.reasoning
+  if ('max_output_tokens' in legacy) translated.max_output_tokens = legacy.max_output_tokens
+  if ('reasoning' in legacy) translated.reasoning = legacy.reasoning
   if (legacy.metadata) translated.metadata = legacy.metadata
   return translated
 }

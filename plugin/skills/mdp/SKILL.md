@@ -277,8 +277,10 @@ closed candidate:
 mdp --json conformance compile --candidate CANDIDATE_JSON --artifact-root STAGED_ROOT --out STAGED_ROOT/deterministic.json
 ```
 
-Stop no-draft unless deterministic status is `sufficient-for-job`. The
-For the behavioral trial, the customer-selected host owns provider/model selection and the call; MDP does neither. The conformance commands do not invoke that trial and MDP does not calculate pricing. After the host returns recorded
+Stop no-draft unless deterministic status is `sufficient-for-job`. For the
+behavioral trial, the customer-selected host owns provider/model selection and
+the call; MDP does neither. The conformance commands do not invoke that trial
+and MDP does not calculate pricing. After the host returns recorded
 invocation, trial, verifier-receipt, and evaluator evidence, chain the exact
 compiled authority with `conformance validate --artifact-root STAGED_ROOT
 --candidate CANDIDATE_JSON --deterministic deterministic.json --out

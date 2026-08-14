@@ -271,8 +271,8 @@ flowchart TB
 - **Requirements:** R1-R20.
 - **Files:** Only files required by review fixes and routine version/release metadata; PR description and Linear closeout are delivery actions, not repository files.
 - **Approach:** Run simplification and conditional security/reliability/API reviews, resolve material findings, commit, push, open one PR labeled `ai:autofix-enabled`, babysit checks/review, and after merge cut the routine patch release and run the documented installer smoke.
-- **Test scenarios:** Clean full suite; source/plugin parity; PR checks; installed binary reports the new release and passes both-template driver/MCP smoke.
-- **Verification:** `make validate`, PR checks, release workflow, installer, installed `mdp --version`, and installed behavioral smoke.
+- **Test scenarios:** Clean full suite; source/plugin parity; PR checks; installed binary reports the new release, passes both-template driver/MCP smoke, and runs the full fail-closed cold-model conformance suite against the installed artifact, including mutation, trace/report, and expected no-draft cases with frozen 3/3 hard-boundary and 2/3 usefulness sampling.
+- **Verification:** `make validate`, PR checks, release workflow, installer, installed `mdp --version`, and installed `scripts/test-cold-model-conformance.mjs` plus driver/MCP behavioral smoke.
 
 ---
 
@@ -288,7 +288,7 @@ flowchart TB
 | Skill parity | `make validate-skills validate-skill-contracts validate-skill-packaging` | U6 | Canonical skills, behavioral assertions, and packaged bundles pass. |
 | Full repository | `make validate` | U5-U7 | Entire release gate exits zero without live provider calls. |
 | Public safety | Public-artifact lint plus canary scans over stdout, stderr, MCP messages, bundles, traces, receipts, and temp/output trees | U3-U7 | No keys, private data, real/unrestricted provider content, failed raw output, or unsafe claims. |
-| PR/release/install | GitHub checks, routine patch release, documented installer, installed smoke | U7 | Merge commit, release tag, and installed binary are all explicitly verified. |
+| PR/release/install | GitHub checks, routine patch release, documented installer, installed smoke | U7 | Merge commit and release tag are verified; the installed binary passes the complete fail-closed cold-model conformance suite plus both-template driver/MCP smoke. |
 
 ---
 
@@ -314,4 +314,4 @@ flowchart TB
 | U4 | Normalization, generation, and review validation chains grant authority only after all deterministic gates pass. |
 | U5 | Cross-template CLI/MCP/compatibility black-box matrix plus cold-operator GTM/proposal chains pass with zero real provider calls. |
 | U6 | Capabilities, docs, skills, evals, packaging, and asset-sync checks pass. |
-| U7 | Review findings are resolved or explicitly documented, PR checks pass, release is published, and installed smoke passes. |
+| U7 | Review findings are resolved or explicitly documented, PR checks pass, release is published, and the installed artifact passes the full cold-model conformance suite (including mutation, trace/report, no-draft, 3/3 hard-boundary, and 2/3 usefulness cases) plus driver/MCP smoke. |

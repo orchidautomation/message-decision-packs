@@ -333,6 +333,7 @@ pub(crate) struct RunnerAuditV1 {
     pub(crate) driver_result_sha256: Option<String>,
     pub(crate) provider_request_body_sha256: Option<String>,
     pub(crate) provider_request_schema_id: Option<String>,
+    pub(crate) provider_observation: Option<DriverProviderObservationV2>,
     pub(crate) terminal_state: TerminalState,
     pub(crate) assurance: Vec<AssuranceDimension>,
     pub(crate) limitations: Vec<String>,

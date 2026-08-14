@@ -416,6 +416,7 @@ fn verify_runner_audit(
         RunMode::Deterministic => {
             if audit.provider_request_body_sha256.is_some()
                 || audit.provider_request_schema_id.is_some()
+                || audit.provider_observation.is_some()
             {
                 issues.push("deterministic-provider-request-evidence-present".to_string());
             }
@@ -435,15 +436,12 @@ fn verify_runner_audit(
             {
                 issues.push("generative-driver-evidence-missing".to_string());
             }
-            let provider_evidence_complete = audit.provider_request_body_sha256.is_some()
-                && audit.provider_request_schema_id.is_some();
-            let provider_evidence_absent = audit.provider_request_body_sha256.is_none()
-                && audit.provider_request_schema_id.is_none();
-            if !(provider_evidence_complete || provider_evidence_absent) {
-                issues.push("generative-provider-request-evidence-missing".to_string());
-            }
-            if receipt.terminal_state.is_success() && !provider_evidence_complete {
-                issues.push("generative-provider-request-evidence-missing".to_string());
+            if let Some(issue) = provider_request_evidence_issue(
+                receipt.terminal_state.is_success(),
+                audit.provider_request_body_sha256.as_deref(),
+                audit.provider_request_schema_id.as_deref(),
+            ) {
+                issues.push(issue.to_string());
             }
             if audit
                 .provider_request_body_sha256
@@ -451,6 +449,23 @@ fn verify_runner_audit(
                 .is_some_and(|sha256| !is_canonical_sha256(sha256))
             {
                 issues.push("generative-provider-request-hash-invalid".to_string());
+            }
+            if receipt.terminal_state.is_success() {
+                let observation_valid = bundle.model.as_ref().is_some_and(|model| {
+                    audit
+                        .provider_observation
+                        .as_ref()
+                        .is_some_and(|observation| {
+                            observation.provider == model.provider
+                                && observation
+                                    .resolved_model
+                                    .as_deref()
+                                    .is_some_and(|resolved| !resolved.trim().is_empty())
+                        })
+                });
+                if !observation_valid {
+                    issues.push("generative-provider-observation-missing".to_string());
+                }
             }
         }
     }
@@ -460,6 +475,17 @@ fn verify_runner_audit(
     if audit.limitations != receipt.limitations {
         issues.push("runner-audit-limitations-mismatch".to_string());
     }
+}
+
+fn provider_request_evidence_issue(
+    success: bool,
+    request_sha256: Option<&str>,
+    schema_id: Option<&str>,
+) -> Option<&'static str> {
+    let complete = request_sha256.is_some() && schema_id.is_some();
+    let absent = request_sha256.is_none() && schema_id.is_none();
+    (!(complete || absent) || (success && !complete))
+        .then_some("generative-provider-request-evidence-missing")
 }
 
 fn is_canonical_sha256(value: &str) -> bool {
@@ -515,7 +541,10 @@ fn verify_artifact(root: &Path, authority: &ArtifactAuthority, issues: &mut Vec<
 
 #[cfg(test)]
 mod tests {
-    use super::{is_canonical_sha256, recompute_assurance, verify_legacy_v0_receipt, verify_run};
+    use super::{
+        is_canonical_sha256, provider_request_evidence_issue, recompute_assurance,
+        verify_legacy_v0_receipt, verify_run,
+    };
     use crate::artifact_hash::{canonical_json_sha256_for_domain, sha256_hex};
     use crate::run_contracts::*;
     use std::fs;
@@ -566,6 +595,19 @@ mod tests {
         assert!(!is_canonical_sha256(&"A".repeat(64)));
         assert!(!is_canonical_sha256(&"a".repeat(63)));
         assert!(!is_canonical_sha256(&format!("{}g", "a".repeat(63))));
+    }
+
+    #[test]
+    fn partial_provider_evidence_maps_to_one_stable_diagnostic() {
+        assert_eq!(
+            provider_request_evidence_issue(false, Some(&"a".repeat(64)), None),
+            Some("generative-provider-request-evidence-missing")
+        );
+        assert_eq!(
+            provider_request_evidence_issue(false, None, Some("schema.v1")),
+            Some("generative-provider-request-evidence-missing")
+        );
+        assert_eq!(provider_request_evidence_issue(false, None, None), None);
     }
 
     #[test]
@@ -841,6 +883,7 @@ mod tests {
             driver_result_sha256: None,
             provider_request_body_sha256: None,
             provider_request_schema_id: None,
+            provider_observation: None,
             terminal_state: receipt.terminal_state,
             assurance: receipt.assurance.clone(),
             limitations: vec![],

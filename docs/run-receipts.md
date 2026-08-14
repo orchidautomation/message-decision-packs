@@ -26,10 +26,14 @@ The v1 family separates what an operator asked to run, the immutable bytes the r
 The bundled native path also uses closed `mdp.driver-request.v2` and
 `mdp.driver-result.v2` envelopes. V2 binds the exact model-visible prompt,
 prompt invocation, declared input bytes, canonical and provider-adherence
-schemas, provider/model policy, and request/result hashes. These are
-CLI-to-subprocess contracts, not caller-authored alternatives to
-`mdp.run-request.v1`. Inspect them with `mdp --json schema driver-request-v2`
-and `mdp --json schema driver-result-v2`.
+schemas, provider/model policy, and request/result hashes. These are internal
+canonical driver contracts that the CLI binds into receipts, not
+caller-authored alternatives to `mdp.run-request.v1`. They are distinct from
+the `mdp.native-model-subprocess-request.v1` and
+`mdp.native-model-subprocess-result.v1` wire protocol used with the bundled
+subprocess. Inspect the internal contracts with
+`mdp --json schema driver-request-v2` and
+`mdp --json schema driver-result-v2`.
 
 One generative run selects exactly one stable model-step ID and produces one
 receipt. The customer host separately sequences normalization, deterministic

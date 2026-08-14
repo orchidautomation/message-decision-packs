@@ -125,6 +125,7 @@ assert.deepEqual(mockResult.provider_observation, {
 })
 assert.equal(mockResult.diagnostic_code, null)
 assert.ok(!JSON.stringify(mockResult).includes('OPENAI_API_KEY'))
+assert.ok(!JSON.stringify(mockResult).includes('must-not-be-needed-or-observed'))
 assert.ok(!JSON.stringify(mockResult).includes('attacker.invalid'))
 
 for (const [environment, diagnosticCode] of [
@@ -169,6 +170,8 @@ const providerFailure = await executeNativeModelRequest(request, {
 assert.equal(providerFailure.terminal_state, 'no-draft:runner-failed')
 assert.equal(providerFailure.diagnostic_code, 'provider_http_error')
 assert.equal(providerFailure.output, null)
+assert.match(providerFailure.provider_request_body_sha256, /^[0-9a-f]{64}$/)
+assert.equal(providerFailure.provider_request_schema_id, PROVIDER_REQUEST_SCHEMA_ID)
 assert.ok(!JSON.stringify(providerFailure).includes('provider-private-canary'))
 assert.ok(!JSON.stringify(providerFailure).includes('sk-private-canary'))
 assert.ok(!JSON.stringify(providerFailure).includes('attacker.invalid'))
@@ -250,7 +253,17 @@ const projectionFailure = await executeNativeModelRequest(projectionFailureReque
 assert.equal(projectionFailure.terminal_state, 'no-draft:preflight-refused')
 assert.equal(projectionFailure.diagnostic_code, 'output_schema_projection_unsupported')
 assert.equal(projectionFailure.output, null)
+assert.equal(projectionFailure.provider_request_body_sha256, null)
+assert.equal(projectionFailure.provider_request_schema_id, null)
 assert.equal(projectionFailure.provider_output_schema_sha256, null)
+
+const invalidRequestResult = await executeNativeModelRequest({ ...request, max_output_tokens: 0 }, {
+  mode: 'mock',
+  mockResponse,
+})
+assert.equal(invalidRequestResult.diagnostic_code, 'request_invalid')
+assert.equal(invalidRequestResult.provider_request_body_sha256, null)
+assert.equal(invalidRequestResult.provider_request_schema_id, null)
 
 const conditionalRequest = {
   ...request,
@@ -284,6 +297,35 @@ try {
   )
 } finally {
   rmSync(projectionDir, { recursive: true, force: true })
+}
+
+const legacyDriverPath = fileURLToPath(new URL('./mdp-native-normalize-openai.mjs', import.meta.url))
+const legacyDir = mkdtempSync(join(tmpdir(), 'mdp-legacy-native-model-'))
+try {
+  for (const invalidOptional of [
+    { max_output_tokens: 0 },
+    { reasoning: null },
+  ]) {
+    const legacyRequestPath = join(legacyDir, `request-${Object.keys(invalidOptional)[0]}.json`)
+    writeFileSync(legacyRequestPath, JSON.stringify({
+      contract: 'mdp.native-normalize-request.v0',
+      provider: 'openai',
+      model: request.model,
+      prompt_id: request.prompt_id,
+      declared_inputs_only: true,
+      input: request.input,
+      prompt_output_schema: request.output_schema,
+      ...invalidOptional,
+    }))
+    const legacyProcess = spawnSync(process.execPath, [legacyDriverPath, '--request', legacyRequestPath, '--dry-run'], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH },
+    })
+    assert.notEqual(legacyProcess.status, 0)
+    assert.match(legacyProcess.stderr, /Native model runner failed safely: internal_error/)
+  }
+} finally {
+  rmSync(legacyDir, { recursive: true, force: true })
 }
 
 console.log(JSON.stringify({ ok: true, contract: 'mdp.native-model-driver-test.v1' }))

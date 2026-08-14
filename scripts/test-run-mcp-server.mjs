@@ -15,7 +15,7 @@ const fixtureCli = (root) => {
   writeFileSync(
     path,
     `#!/usr/bin/env node
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 const args = process.argv.slice(2)
 if (args.includes('verify-run')) {
@@ -28,10 +28,23 @@ if (args.includes('verify-run')) {
 }
 const requestPath = args[args.indexOf('--request') + 1]
 const outputDir = args[args.indexOf('--out-dir') + 1]
-writeFileSync(outputDir + '.ready', '')
-await new Promise((resolveWait) => setTimeout(resolveWait, 25))
+if (existsSync(outputDir + '.pause-before-read')) {
+  writeFileSync(outputDir + '.ready', '')
+  while (!existsSync(outputDir + '.continue')) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 5))
+  }
+}
 const request = JSON.parse(readFileSync(requestPath, 'utf8'))
-writeFileSync(outputDir + '.invocation.json', JSON.stringify({ args, request, secret_seen: Boolean(process.env.MDP_MCP_SECRET_MARKER), env_keys: Object.keys(process.env).sort() }))
+writeFileSync(outputDir + '.invocation.json', JSON.stringify({
+  args,
+  request,
+  secret_seen: Boolean(process.env.MDP_MCP_SECRET_MARKER),
+  credential_canary_seen: [
+    'test-key-must-not-be-printed',
+    'must-not-cross-after-mutation',
+  ].includes(process.env.OPENAI_API_KEY),
+  env_keys: Object.keys(process.env).sort(),
+}))
 if (request.test_mode === 'fail') {
   process.stderr.write('PRIVATE-SOURCE-BODY /private/customer/path\\n')
   process.exit(7)
@@ -198,7 +211,7 @@ test('forwards native model permission and credential only for generative reques
   writeFileSync(deterministic, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'deterministic' }))
   writeFileSync(generative, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'generative' }))
 
-  await rpc(
+  const replies = await rpc(
     cli,
     [
       toolCall(1, 'mdp_run', { request_path: deterministic, output_dir: join(root, 'deterministic-run') }),
@@ -213,7 +226,9 @@ test('forwards native model permission and credential only for generative reques
   assert.equal(deterministicInvocation.env_keys.includes('MDP_ALLOW_NATIVE_MODEL_CALLS'), false)
   assert.equal(generativeInvocation.env_keys.includes('OPENAI_API_KEY'), true)
   assert.equal(generativeInvocation.env_keys.includes('MDP_ALLOW_NATIVE_MODEL_CALLS'), true)
-  assert.equal(JSON.stringify(generativeInvocation).includes('test-key-must-not-be-printed'), false)
+  assert.equal(deterministicInvocation.credential_canary_seen, false)
+  assert.equal(generativeInvocation.credential_canary_seen, true)
+  assert.equal(JSON.stringify(replies).includes('test-key-must-not-be-printed'), false)
 })
 
 test('rejects ambient or inline request arguments before spawning the CLI', async (t) => {
@@ -271,6 +286,7 @@ test('executes frozen request bytes when the public path is mutated or replaced 
     const output = join(root, `${attack}-run`)
     const original = { contract: 'mdp.run-request.v1', mode: 'deterministic', marker: `${attack}-original` }
     writeFileSync(request, JSON.stringify(original))
+    writeFileSync(`${output}.pause-before-read`, '')
     const pending = rpc(
       cli,
       [toolCall(1, 'mdp_run', { request_path: request, output_dir: output })],
@@ -284,12 +300,15 @@ test('executes frozen request bytes when the public path is mutated or replaced 
       writeFileSync(replacement, JSON.stringify({ ...original, mode: 'generative', marker: 'replaced' }))
       renameSync(replacement, request)
     }
+    writeFileSync(`${output}.continue`, '')
     const [reply] = await pending
     assert.equal(reply.result.isError, false)
     const invocation = JSON.parse(readFileSync(`${output}.invocation.json`, 'utf8'))
     assert.deepEqual(invocation.request, original)
     assert.equal(invocation.env_keys.includes('OPENAI_API_KEY'), false)
     assert.equal(invocation.env_keys.includes('MDP_ALLOW_NATIVE_MODEL_CALLS'), false)
+    assert.equal(invocation.credential_canary_seen, false)
+    assert.equal(JSON.stringify(reply).includes('must-not-cross-after-mutation'), false)
     assert.notEqual(invocation.args[3], request)
     assert.equal(existsSync(invocation.args[3]), false)
   }

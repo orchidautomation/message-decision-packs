@@ -561,7 +561,10 @@ fn read_trace_runner_audit(
     {
         return None;
     }
-    let bytes = fs::read(root.join(logical)).ok()?;
+    let bytes = read_contained_file(root, logical).ok()?;
+    if bytes.len() as u64 != authority.byte_count || sha256_hex(&bytes) != authority.sha256 {
+        return None;
+    }
     parse_authority_json(&bytes, AuthorityJsonLimits::default()).ok()
 }
 

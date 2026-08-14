@@ -72,7 +72,6 @@ validate-native-parity:
 	cd cli && $(CARGO) build
 	node --check scripts/test-universal-native-parity.mjs
 	node scripts/test-universal-native-parity.mjs
-	node --test scripts/test-run-mcp-server.mjs
 
 validate-proposal-runner:
 	node --check scripts/mdp-proposal-runner.mjs

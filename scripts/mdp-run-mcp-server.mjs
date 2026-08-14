@@ -142,6 +142,9 @@ const freezeRequestFile = (value) => {
     if (!opened.isFile() || !singleLink(opened) || !sameFile(before, opened)) {
       throw new Error('request_path changed while it was being opened')
     }
+    if (opened.size > BigInt(MAX_REQUEST_FILE_BYTES)) {
+      throw new Error(`request_path exceeds ${MAX_REQUEST_FILE_BYTES} bytes`)
+    }
 
     const bytes = Buffer.alloc(Number(opened.size))
     let offset = 0

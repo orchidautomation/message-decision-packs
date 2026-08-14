@@ -267,7 +267,7 @@ const emptyResult = (
   terminal_state: terminalState,
   output: null,
   provider_request_body_sha256: providerRequestBodySha256,
-  provider_request_schema_id: PROVIDER_REQUEST_SCHEMA_ID,
+  provider_request_schema_id: providerRequestBodySha256 === null ? null : PROVIDER_REQUEST_SCHEMA_ID,
   provider_output_schema_sha256: providerOutputSchemaSha256,
   provider_observation: null,
   diagnostic_code: diagnosticCode,

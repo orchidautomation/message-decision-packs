@@ -69,12 +69,26 @@ Use only the exact compiled prompt, declared inputs, version, output schema,
 and a `ready` minimal-context receipt. Require the routed-context artifact to
 be saved; do not open excluded entries or the whole pack. The customer host
 may execute the step itself or select the exact generation/review step ID from
-`data.model_steps` for one generative `mdp run`. Validate the returned
-governed artifact with `--invocation-receipt PROMPT_INVOCATION_JSON` and
-`--routed-context ROUTED_CONTEXT_JSON`, then run
-`mdp check-claims` on generated or supplied copy. The host receipt must bind
-the exact job, prompt ID/version/SHA-256, and per-declared-input SHA-256 values,
-including the canonical routed-context bytes.
+`data.model_steps` for one generative `mdp run`.
+
+For a host-owned model call, validate the returned governed artifact with
+`--invocation-receipt PROMPT_INVOCATION_JSON` and `--routed-context
+ROUTED_CONTEXT_JSON`, then run `mdp check-claims` on generated or supplied
+copy. The host receipt must bind the exact job, prompt ID/version/SHA-256, and
+per-declared-input SHA-256 values, including the canonical routed-context
+bytes.
+
+For a generative `mdp run`, do not create a separate host prompt receipt.
+Verify the run-owned authority instead:
+
+```bash
+mdp --json verify-run --bundle RUN_DIRECTORY/run-bundle.json \
+  --receipt RUN_DIRECTORY/run-receipt.json \
+  --artifact-root RUN_DIRECTORY
+```
+
+Treat only the verified run receipt, its validation artifact, and its decision
+as authority for that native path.
 
 When this job is cold-model conformance evidence, require a passing
 `conformance compile` before handing anything to the external host. After its

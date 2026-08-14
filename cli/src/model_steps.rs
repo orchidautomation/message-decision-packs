@@ -251,6 +251,7 @@ pub(crate) fn resolve_model_steps(
 
     if let Some(binding) = &job.model_task {
         let phase = match binding.kind.as_str() {
+            "normalization" => ModelStepPhase::Normalization,
             "generation" => ModelStepPhase::Generation,
             "review" => ModelStepPhase::Review,
             other => {
@@ -278,7 +279,7 @@ pub(crate) fn resolve_model_steps(
                     binding.prompt
                 )
             })?;
-        steps.push(compile_step(
+        let compiled = compile_step(
             root,
             job,
             phase,
@@ -289,7 +290,21 @@ pub(crate) fn resolve_model_steps(
             path,
             prompt,
             None,
-        )?);
+        )?;
+        if let Some(existing) = steps.iter().find(|step| step.phase == phase) {
+            if existing.prompt_id != compiled.prompt_id
+                || existing.prompt_version != compiled.prompt_version
+                || existing.prompt_sha256 != compiled.prompt_sha256
+            {
+                return Err(anyhow!(
+                    "job {} declares conflicting {} model step authority",
+                    job.id,
+                    phase.as_str()
+                ));
+            }
+        } else {
+            steps.push(compiled);
+        }
     }
 
     Ok(ModelStepResolutionV1 {
@@ -650,6 +665,22 @@ mod tests {
                 .to_string()
                 .contains("with kind")
         );
+    }
+
+    #[test]
+    fn accepts_and_coalesces_normalization_model_task_authority() {
+        let root = template("basic");
+        let manifest = read_manifest(&root).unwrap();
+        let mut job = manifest.jobs[0].clone();
+        job.model_task = Some(crate::models::JobModelTask {
+            kind: "normalization".into(),
+            prompt: "normalize-prospect-row".into(),
+        });
+
+        let resolution = resolve_model_steps(&root, &manifest, &job).unwrap();
+        assert_eq!(resolution.steps.len(), 1);
+        assert_eq!(resolution.steps[0].phase, ModelStepPhase::Normalization);
+        assert_eq!(resolution.steps[0].prompt_id, "normalize-prospect-row");
     }
 
     #[test]

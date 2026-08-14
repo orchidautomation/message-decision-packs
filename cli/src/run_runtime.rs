@@ -781,6 +781,7 @@ where
     let mut driver_result_sha256 = None;
     let mut provider_request_body_sha256 = None;
     let mut provider_request_schema_id = None;
+    let mut provider_observation = None;
     let (mut terminal_state, mut success_values) = if request.mode == RunMode::Generative {
         let prompt = staged_prompt.as_ref().ok_or_else(|| {
             run_failure(RunFailureKind::PolicyBlocked, "generative-prompt-missing")
@@ -799,6 +800,7 @@ where
         )?;
         provider_request_body_sha256 = outcome.provider_request_body_sha256;
         provider_request_schema_id = outcome.provider_request_schema_id;
+        provider_observation = outcome.provider_observation;
         driver_request_sha256 = Some(outcome.driver_request_sha256);
         driver_result_sha256 = Some(outcome.driver_result_sha256);
         validation = outcome.validation;
@@ -1027,6 +1029,7 @@ where
         driver_result_sha256,
         provider_request_body_sha256,
         provider_request_schema_id,
+        provider_observation,
         terminal_state,
         assurance: assurance.clone(),
         limitations: vec![
@@ -1142,6 +1145,7 @@ struct GenerativeOutcome {
     validation: Option<Value>,
     provider_request_body_sha256: Option<String>,
     provider_request_schema_id: Option<String>,
+    provider_observation: Option<DriverProviderObservationV2>,
     driver_request_sha256: String,
     driver_result_sha256: String,
 }
@@ -1306,8 +1310,9 @@ where
             terminal_state: TerminalState::NoDraftRunnerFailed,
             success: None,
             validation: None,
-            provider_request_body_sha256: result.provider_request_body_sha256,
-            provider_request_schema_id: result.provider_request_schema_id,
+            provider_request_body_sha256: None,
+            provider_request_schema_id: None,
+            provider_observation: None,
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
         });
@@ -1319,6 +1324,7 @@ where
             validation: None,
             provider_request_body_sha256: result.provider_request_body_sha256,
             provider_request_schema_id: result.provider_request_schema_id,
+            provider_observation: result.provider_observation,
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
         });
@@ -1365,6 +1371,7 @@ where
         validation: if valid { Some(validation) } else { None },
         provider_request_body_sha256: result.provider_request_body_sha256,
         provider_request_schema_id: result.provider_request_schema_id,
+        provider_observation: result.provider_observation,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: result.result_sha256,
     })
@@ -1394,6 +1401,7 @@ fn failed_generative_outcome(
         validation: None,
         provider_request_body_sha256: None,
         provider_request_schema_id: None,
+        provider_observation: None,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: failed_result.result_sha256,
     })
@@ -1560,6 +1568,14 @@ fn seal_driver_result(result: &mut DriverResultV2) -> Result<()> {
     Ok(())
 }
 
+fn is_canonical_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .as_bytes()
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
 fn validate_driver_result(request: &DriverRequestV2, result: &DriverResultV2) -> Result<()> {
     if result.contract != DRIVER_RESULT_V2
         || result.execution_id != request.execution_id
@@ -1578,9 +1594,35 @@ fn validate_driver_result(request: &DriverRequestV2, result: &DriverResultV2) ->
     {
         return Err(anyhow!("driver provider schema hash mismatch"));
     }
+    if let Some(observation) = &result.provider_observation
+        && (observation.provider != request.provider_policy.provider
+            || observation
+                .resolved_model
+                .as_deref()
+                .is_some_and(|model| model.trim().is_empty()))
+    {
+        return Err(anyhow!("driver provider observation mismatch"));
+    }
     match (&result.terminal_state, &result.output) {
         (TerminalState::Success, Some(output)) => {
-            if output.media_type != "application/json"
+            if !result
+                .provider_request_body_sha256
+                .as_deref()
+                .is_some_and(is_canonical_sha256)
+                || result
+                    .provider_request_schema_id
+                    .as_deref()
+                    .is_none_or(|schema_id| schema_id.trim().is_empty())
+                || result
+                    .provider_observation
+                    .as_ref()
+                    .is_none_or(|observation| {
+                        observation
+                            .resolved_model
+                            .as_deref()
+                            .is_none_or(|model| model.trim().is_empty())
+                    })
+                || output.media_type != "application/json"
                 || output.byte_count != output.content_utf8.len() as u64
                 || output.sha256 != sha256_hex(output.content_utf8.as_bytes())
                 || output.byte_count > request.provider_policy.max_output_bytes
@@ -2560,9 +2602,10 @@ mod tests {
     use crate::commands::init::init_pack;
     use crate::run_contracts::{
         ArtifactAuthority, AssuranceEvidenceState, DRIVER_REQUEST_V2, DRIVER_RESULT_V2,
-        DriverArtifactV2, DriverIdentity, DriverOutputV2, DriverProviderPolicyV2, DriverRequestV2,
-        DriverResultV2, EvidenceProvenance, ExecutionPolicy, JobIdentity, LocalArtifactInput,
-        ModelIdentity, PackAuthority, RunBundleV1, RunMode, RunRequestV1, TerminalState,
+        DriverArtifactV2, DriverIdentity, DriverOutputV2, DriverProviderObservationV2,
+        DriverProviderPolicyV2, DriverRequestV2, DriverResultV2, EvidenceProvenance,
+        ExecutionPolicy, JobIdentity, LocalArtifactInput, ModelIdentity, PackAuthority,
+        RunBundleV1, RunMode, RunRequestV1, TerminalState,
     };
     use std::fs;
     use std::path::Path;
@@ -2680,13 +2723,38 @@ mod tests {
             provider_request_body_sha256: Some("d".repeat(64)),
             provider_request_schema_id: Some("openai.responses.json-schema-request.v1".into()),
             provider_output_schema_sha256: Some(request.provider_output_schema_sha256.clone()),
-            provider_observation: None,
+            provider_observation: Some(DriverProviderObservationV2 {
+                provider: "openai".into(),
+                response_id: Some("resp_synthetic".into()),
+                resolved_model: Some("gpt-5-mini-2026-08-01".into()),
+            }),
             diagnostic_code: None,
             result_sha256: String::new(),
         };
         seal_driver_result(&mut result).unwrap();
         assert!(validate_driver_result(&request, &result).is_ok());
 
+        let valid = result.clone();
+        result.provider_request_body_sha256 = None;
+        seal_driver_result(&mut result).unwrap();
+        assert!(validate_driver_result(&request, &result).is_err());
+
+        result = valid.clone();
+        result.provider_request_schema_id = None;
+        seal_driver_result(&mut result).unwrap();
+        assert!(validate_driver_result(&request, &result).is_err());
+
+        result = valid.clone();
+        result.provider_observation.as_mut().unwrap().provider = "other".into();
+        seal_driver_result(&mut result).unwrap();
+        assert!(validate_driver_result(&request, &result).is_err());
+
+        result = valid.clone();
+        result.provider_observation.as_mut().unwrap().resolved_model = None;
+        seal_driver_result(&mut result).unwrap();
+        assert!(validate_driver_result(&request, &result).is_err());
+
+        result = valid;
         result.provider_output_schema_sha256 = Some("e".repeat(64));
         seal_driver_result(&mut result).unwrap();
         assert!(validate_driver_result(&request, &result).is_err());
@@ -2768,6 +2836,79 @@ mod tests {
             .unwrap()["valid"],
             true
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn successful_provider_observation_is_bound_even_when_local_output_validation_blocks() {
+        let root = temp_path("generative-provider-observation");
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let pack = repository.join("plugin/assets/templates/basic");
+        let raw = root.join("raw-row.json");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
+        let request = generative_request_fixture(&pack, &raw);
+        let run = root.join("published-run");
+        let result = execute_run_inner_with_driver(
+            &request,
+            &run,
+            || Ok(()),
+            |driver_request, _| {
+                let content = "{\"status\":\"ready\"}";
+                let mut result = DriverResultV2 {
+                    contract: DRIVER_RESULT_V2.into(),
+                    execution_id: driver_request.execution_id.clone(),
+                    operation: driver_request.operation.clone(),
+                    terminal_state: TerminalState::Success,
+                    output: Some(DriverOutputV2 {
+                        schema_id: "mdp.prompt-output.v0".into(),
+                        media_type: "application/json".into(),
+                        content_utf8: content.into(),
+                        byte_count: content.len() as u64,
+                        sha256: crate::artifact_hash::sha256_hex(content.as_bytes()),
+                    }),
+                    provider_request_body_sha256: Some("d".repeat(64)),
+                    provider_request_schema_id: Some(
+                        "openai.responses.json-schema-request.v1".into(),
+                    ),
+                    provider_output_schema_sha256: Some(
+                        driver_request.provider_output_schema_sha256.clone(),
+                    ),
+                    provider_observation: Some(DriverProviderObservationV2 {
+                        provider: "openai".into(),
+                        response_id: Some("resp_synthetic".into()),
+                        resolved_model: Some("gpt-5-mini-2026-08-01".into()),
+                    }),
+                    diagnostic_code: None,
+                    result_sha256: String::new(),
+                };
+                seal_driver_result(&mut result)?;
+                Ok(result)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
+        let audit: crate::run_contracts::RunnerAuditV1 =
+            serde_json::from_slice(&fs::read(run.join("runner-audit.json")).unwrap()).unwrap();
+        let observation = audit.provider_observation.unwrap();
+        assert_eq!(observation.provider, "openai");
+        assert_eq!(
+            observation.resolved_model.as_deref(),
+            Some("gpt-5-mini-2026-08-01")
+        );
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
+        assert!(receipt["validation"].is_null());
+        assert!(!run.join("artifacts/validation.json").exists());
+        assert!(!run.join("private").exists());
+
+        let bundle_schema = crate::commands::schemas::schema(crate::cli::SchemaTarget::RunBundleV1);
+        let mut bundle: serde_json::Value =
+            serde_json::from_slice(&fs::read(run.join("run-bundle.json")).unwrap()).unwrap();
+        jsonschema::draft202012::validate(&bundle_schema, &bundle).unwrap();
+        bundle["mode"] = serde_json::json!("deterministic");
+        assert!(jsonschema::draft202012::validate(&bundle_schema, &bundle).is_err());
         let _ = fs::remove_dir_all(root);
     }
 

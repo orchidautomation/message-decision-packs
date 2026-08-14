@@ -235,6 +235,16 @@ pub(crate) fn model_step_resolution_schema() -> Value {
             "steps": {"type": "array", "items": compiled_model_step_schema()},
             "diagnostics": {"type": "array", "items": {"type": "object"}}
         },
+        "allOf": [
+            {
+                "if": {"properties": {"status": {"const": "ready"}}, "required": ["status"]},
+                "then": {"properties": {"steps": {"minItems": 1}}}
+            },
+            {
+                "if": {"properties": {"status": {"const": "unassessed"}}, "required": ["status"]},
+                "then": {"properties": {"steps": {"maxItems": 0}}}
+            }
+        ],
         "$defs": {"compiled_model_step_contract": {"const": COMPILED_MODEL_STEP_V1}}
     })
 }
@@ -1688,7 +1698,28 @@ fn run_bundle_v1_schema() -> Value {
             "execution_policy_sha256": sha256_schema(),
             "driver": nullable_object_schema(driver_identity_v1_schema()),
             "model": nullable_object_schema(model_identity_v1_schema())
-        }
+        },
+        "oneOf": [
+            {
+                "properties": {
+                    "mode": {"const": "deterministic"},
+                    "prompt": {"type": "null"},
+                    "driver": {"type": "null"},
+                    "model": {"type": "null"}
+                },
+                "required": ["mode", "prompt", "driver", "model"]
+            },
+            {
+                "properties": {
+                    "mode": {"const": "generative"},
+                    "job_identity": job_identity_v1_schema(),
+                    "prompt": artifact_authority_v1_schema(),
+                    "driver": driver_identity_v1_schema(),
+                    "model": model_identity_v1_schema()
+                },
+                "required": ["mode", "job_identity", "prompt", "driver", "model"]
+            }
+        ]
     })
 }
 
@@ -1846,7 +1877,28 @@ fn driver_result_v2_schema() -> Value {
             "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
             "diagnostic_code": {"type": ["string", "null"]},
             "result_sha256": sha256_schema()
-        }
+        },
+        "allOf": [{
+            "if": {
+                "properties": {"terminal_state": {"const": "success"}},
+                "required": ["terminal_state"]
+            },
+            "then": {
+                "properties": {
+                    "output": driver_output_v2_schema(),
+                    "provider_request_body_sha256": sha256_schema(),
+                    "provider_request_schema_id": non_blank_string_schema(),
+                    "provider_output_schema_sha256": sha256_schema(),
+                    "provider_observation": {
+                        "allOf": [
+                            driver_provider_observation_v2_schema(),
+                            {"properties": {"resolved_model": non_blank_string_schema()}}
+                        ]
+                    }
+                }
+            },
+            "else": {"properties": {"output": {"type": "null"}}}
+        }]
     })
 }
 
@@ -1858,7 +1910,7 @@ fn runner_audit_v1_schema() -> Value {
         "required": [
             "contract", "execution_id", "runner_version", "runner_build_sha256", "platform",
             "snapshot_sha256", "driver_request_sha256", "driver_result_sha256",
-            "provider_request_body_sha256", "provider_request_schema_id",
+            "provider_request_body_sha256", "provider_request_schema_id", "provider_observation",
             "terminal_state", "assurance", "limitations"
         ],
         "additionalProperties": false,
@@ -1873,6 +1925,7 @@ fn runner_audit_v1_schema() -> Value {
             "driver_result_sha256": optional_sha256_schema(),
             "provider_request_body_sha256": optional_sha256_schema(),
             "provider_request_schema_id": {"type": ["string", "null"]},
+            "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
             "terminal_state": terminal_state_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array()
@@ -4866,6 +4919,81 @@ mod tests {
             driver["properties"]["prompt"]["properties"]["authority"]["additionalProperties"],
             false
         );
+    }
+
+    #[test]
+    fn exported_model_step_and_driver_result_schemas_enforce_terminal_invariants() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("plugin/assets/templates/basic");
+        let manifest = crate::pack_io::read_manifest(&root).unwrap();
+        let job = manifest
+            .jobs
+            .iter()
+            .find(|job| job.id == "prospect-fit-or-brief")
+            .unwrap();
+        let ready = serde_json::to_value(
+            crate::model_steps::resolve_model_steps(&root, &manifest, job).unwrap(),
+        )
+        .unwrap();
+        let resolution_schema = model_step_resolution_schema();
+        draft202012::validate(&resolution_schema, &ready).unwrap();
+        let mut ready_without_steps = ready.clone();
+        ready_without_steps["steps"] = json!([]);
+        assert!(draft202012::validate(&resolution_schema, &ready_without_steps).is_err());
+        let unassessed = json!({
+            "contract": MODEL_STEP_RESOLUTION_V1,
+            "job_id": "synthetic-unassessed",
+            "status": "unassessed",
+            "steps": []
+        });
+        draft202012::validate(&resolution_schema, &unassessed).unwrap();
+        let mut unassessed_with_steps = unassessed;
+        unassessed_with_steps["steps"] = ready["steps"].clone();
+        assert!(draft202012::validate(&resolution_schema, &unassessed_with_steps).is_err());
+
+        let driver_schema = driver_result_v2_schema();
+        let success = json!({
+            "contract": DRIVER_RESULT_V2,
+            "execution_id": "exec-1",
+            "operation": "model:outbound-copy-brief/generation",
+            "terminal_state": "success",
+            "output": {
+                "schema_id": "mdp.prompt-output.v0",
+                "media_type": "application/json",
+                "content_utf8": "{}",
+                "byte_count": 2,
+                "sha256": "a".repeat(64)
+            },
+            "provider_request_body_sha256": "b".repeat(64),
+            "provider_request_schema_id": "openai.responses.json-schema-request.v1",
+            "provider_output_schema_sha256": "c".repeat(64),
+            "provider_observation": {
+                "provider": "openai",
+                "response_id": "resp_synthetic",
+                "resolved_model": "gpt-5-mini-2026-08-01"
+            },
+            "diagnostic_code": null,
+            "result_sha256": "d".repeat(64)
+        });
+        draft202012::validate(&driver_schema, &success).unwrap();
+        for field in [
+            "provider_request_body_sha256",
+            "provider_request_schema_id",
+            "provider_output_schema_sha256",
+            "provider_observation",
+        ] {
+            let mut missing = success.clone();
+            missing[field] = Value::Null;
+            assert!(
+                draft202012::validate(&driver_schema, &missing).is_err(),
+                "{field}"
+            );
+        }
+        let mut missing_model = success;
+        missing_model["provider_observation"]["resolved_model"] = Value::Null;
+        assert!(draft202012::validate(&driver_schema, &missing_model).is_err());
     }
 
     #[test]

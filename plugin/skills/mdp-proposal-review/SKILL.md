@@ -47,7 +47,7 @@ proposal runner and `run-receipt` commands only as explicit v0 compatibility
 paths; never relabel their historical `audit-grade` value as v1 assurance.
 
 Resolve `requirements.data.model_steps` for the selected job. One generative
-run must select exactly one stable normalization or review step ID and produces
+run must select exactly one stable normalization or review step ID and produce
 one receipt. The customer host separately sequences normalization,
 deterministic routing, and review; do not collapse them into one call. The
 bundled native path uses the official OpenAI endpoint and is default-deny. A

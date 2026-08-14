@@ -167,7 +167,7 @@ attempt statuses, provenance, confidence, freshness, normalization schemas,
 signal projections, conflict rules, version matrix, and no-draft boundary.
 Structured repeated signal observations exist only in the opt-in v2 envelope;
 scalar-only v1 and detached prospect signals remain readable as legacy or
-unassessed context and cannot satisfy explicit roles. The contract tells an
+unassessed context and cannot satisfy explicit roles. The contract tells a
 customer host what to attempt. MDP performs no collection. The host may execute
 the declared normalization step itself or use the optional local BYOK native
 driver, one selected step and one receipt at a time. See
