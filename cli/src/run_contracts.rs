@@ -334,7 +334,9 @@ pub(crate) struct RunnerAuditV1 {
     pub(crate) driver_result_sha256: Option<String>,
     pub(crate) provider_request_body_sha256: Option<String>,
     pub(crate) provider_request_schema_id: Option<String>,
+    #[serde(default)]
     pub(crate) provider_response_body_sha256: Option<String>,
+    #[serde(default)]
     pub(crate) provider_observation: Option<DriverProviderObservationV2>,
     pub(crate) terminal_state: TerminalState,
     pub(crate) assurance: Vec<AssuranceDimension>,
@@ -431,5 +433,27 @@ mod tests {
             serde_json::to_string(&GtmReasonCode::MissingRequiredSourceAttempt).unwrap(),
             "\"missing-required-source-attempt\""
         );
+    }
+
+    #[test]
+    fn runner_audit_v1_defaults_new_provider_fields_for_legacy_artifacts() {
+        let audit: super::RunnerAuditV1 = serde_json::from_value(serde_json::json!({
+            "contract": RUNNER_AUDIT_V1,
+            "execution_id": "legacy-exec",
+            "runner_version": "0.1.66",
+            "runner_build_sha256": null,
+            "platform": "test",
+            "snapshot_sha256": "a".repeat(64),
+            "driver_request_sha256": null,
+            "driver_result_sha256": null,
+            "provider_request_body_sha256": null,
+            "provider_request_schema_id": null,
+            "terminal_state": "no-draft:policy-blocked",
+            "assurance": [],
+            "limitations": []
+        }))
+        .unwrap();
+        assert_eq!(audit.provider_response_body_sha256, None);
+        assert_eq!(audit.provider_observation, None);
     }
 }

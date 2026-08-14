@@ -291,7 +291,8 @@ pub(crate) fn resolve_model_steps(
             prompt,
             None,
         )?;
-        if let Some(existing) = steps.iter().find(|step| step.phase == phase) {
+        if let Some(index) = steps.iter().position(|step| step.phase == phase) {
+            let existing = &steps[index];
             if existing.prompt_id != compiled.prompt_id
                 || existing.prompt_version != compiled.prompt_version
                 || existing.prompt_sha256 != compiled.prompt_sha256
@@ -302,6 +303,10 @@ pub(crate) fn resolve_model_steps(
                     phase.as_str()
                 ));
             }
+            // `model_task` is the job's canonical authority. Equivalent legacy
+            // or Decision Input aliases may prove compatibility, but they must
+            // not decide the selected path exposed to execution.
+            steps[index] = compiled;
         } else {
             steps.push(compiled);
         }
@@ -480,7 +485,9 @@ mod tests {
     use crate::pack_io::read_manifest;
     use serde_json::to_value;
     use std::collections::BTreeSet;
+    use std::fs;
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn template(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -681,6 +688,46 @@ mod tests {
         assert_eq!(resolution.steps.len(), 1);
         assert_eq!(resolution.steps[0].phase, ModelStepPhase::Normalization);
         assert_eq!(resolution.steps[0].prompt_id, "normalize-prospect-row");
+    }
+
+    #[test]
+    fn model_task_coalescing_selects_the_canonical_prompt_path_over_a_legacy_alias() {
+        let source = template("basic");
+        let mut manifest = read_manifest(&source).unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "mdp-model-step-canonical-alias-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let canonical_dir = root.join(".mdp/prompts");
+        let legacy_dir = root.join(".mdp/legacy");
+        fs::create_dir_all(&canonical_dir).unwrap();
+        fs::create_dir_all(&legacy_dir).unwrap();
+        let prompt_bytes = fs::read(source.join(".mdp/prompts/normalize-prospect.yaml")).unwrap();
+        fs::write(canonical_dir.join("normalize-prospect.yaml"), &prompt_bytes).unwrap();
+        fs::write(
+            legacy_dir.join("normalize-prospect-alias.yaml"),
+            &prompt_bytes,
+        )
+        .unwrap();
+
+        manifest.input_contracts[0].prompt = Some("legacy/normalize-prospect-alias.yaml".into());
+        let mut job = manifest.jobs[0].clone();
+        job.model_task = Some(crate::models::JobModelTask {
+            kind: "normalization".into(),
+            prompt: "normalize-prospect-row".into(),
+        });
+
+        let resolution = resolve_model_steps(&root, &manifest, &job).unwrap();
+        assert_eq!(resolution.steps.len(), 1);
+        assert_eq!(resolution.steps[0].authority.kind, "model_task");
+        assert_eq!(
+            resolution.steps[0].prompt_path,
+            "prompts/normalize-prospect.yaml"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

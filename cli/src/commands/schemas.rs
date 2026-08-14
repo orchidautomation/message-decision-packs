@@ -1914,7 +1914,6 @@ fn runner_audit_v1_schema() -> Value {
             "contract", "execution_id", "runner_version", "runner_build_sha256", "platform",
             "snapshot_sha256", "driver_request_sha256", "driver_result_sha256",
             "provider_request_body_sha256", "provider_request_schema_id",
-            "provider_response_body_sha256", "provider_observation",
             "terminal_state", "assurance", "limitations"
         ],
         "additionalProperties": false,
@@ -5001,6 +5000,26 @@ mod tests {
         let mut missing_model = success;
         missing_model["provider_observation"]["resolved_model"] = Value::Null;
         assert!(draft202012::validate(&driver_schema, &missing_model).is_err());
+    }
+
+    #[test]
+    fn runner_audit_v1_schema_accepts_legacy_absence_of_new_provider_fields() {
+        let legacy = json!({
+            "contract": RUNNER_AUDIT_V1,
+            "execution_id": "legacy-exec",
+            "runner_version": "0.1.66",
+            "runner_build_sha256": null,
+            "platform": "test",
+            "snapshot_sha256": "a".repeat(64),
+            "driver_request_sha256": null,
+            "driver_result_sha256": null,
+            "provider_request_body_sha256": null,
+            "provider_request_schema_id": null,
+            "terminal_state": "no-draft:policy-blocked",
+            "assurance": [],
+            "limitations": []
+        });
+        draft202012::validate(&runner_audit_v1_schema(), &legacy).unwrap();
     }
 
     #[test]
