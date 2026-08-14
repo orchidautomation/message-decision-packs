@@ -1,5 +1,13 @@
 use crate::cli::SchemaTarget;
 use crate::commands::source_binding::source_binding_schema;
+use crate::conformance::{
+    BEHAVIORAL_EVALUATION_V1, CONFORMANCE_CANDIDATE_V1, CONFORMANCE_REPORT_V1,
+    CONFORMANCE_TRIAL_V1, CONFORMANCE_VERIFIER_RECEIPT_V1, DETERMINISTIC_CONFORMANCE_V1,
+    EVALUATOR_INVENTORY_V1, EVALUATOR_RESULT_V1, JOB_CONFORMANCE_V1, MAX_CANDIDATE_AUTHORITIES,
+    MAX_CONFORMANCE_ARRAY_ITEMS, MAX_JOURNEY_LINKS, MAX_MODEL_VISIBLE_INPUTS,
+    MODEL_INVOCATION_EVIDENCE_V1, PRIVATE_RECORD_POLICY_V1, PUBLIC_CONFORMANCE_REPORT_V1,
+    PUBLICATION_APPROVAL_V1,
+};
 use crate::constants::{
     FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
     NORMALIZED_DECISION_INPUT_CONTRACT_V2, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
@@ -111,6 +119,33 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RunExecutionV1 => run_execution_v1_schema(),
         SchemaTarget::DecisionTraceV1 => crate::commands::decision_trace_schema(),
         SchemaTarget::CanonicalAuthorityBlockV1 => canonical_authority_block_v1_schema(),
+        SchemaTarget::ConformanceCandidateV1 => {
+            conformance_schema(CONFORMANCE_CANDIDATE_V1).unwrap()
+        }
+        SchemaTarget::ModelInvocationEvidenceV1 => {
+            conformance_schema(MODEL_INVOCATION_EVIDENCE_V1).unwrap()
+        }
+        SchemaTarget::EvaluatorInventoryV1 => conformance_schema(EVALUATOR_INVENTORY_V1).unwrap(),
+        SchemaTarget::EvaluatorResultV1 => conformance_schema(EVALUATOR_RESULT_V1).unwrap(),
+        SchemaTarget::PrivateRecordPolicyV1 => {
+            conformance_schema(PRIVATE_RECORD_POLICY_V1).unwrap()
+        }
+        SchemaTarget::PublicationApprovalV1 => conformance_schema(PUBLICATION_APPROVAL_V1).unwrap(),
+        SchemaTarget::ConformanceTrialV1 => conformance_schema(CONFORMANCE_TRIAL_V1).unwrap(),
+        SchemaTarget::JobConformanceV1 => conformance_schema(JOB_CONFORMANCE_V1).unwrap(),
+        SchemaTarget::ConformanceReportV1 => conformance_schema(CONFORMANCE_REPORT_V1).unwrap(),
+        SchemaTarget::PublicConformanceReportV1 => {
+            conformance_schema(PUBLIC_CONFORMANCE_REPORT_V1).unwrap()
+        }
+        SchemaTarget::DeterministicConformanceV1 => {
+            conformance_schema(DETERMINISTIC_CONFORMANCE_V1).unwrap()
+        }
+        SchemaTarget::ConformanceVerifierReceiptV1 => {
+            conformance_schema(CONFORMANCE_VERIFIER_RECEIPT_V1).unwrap()
+        }
+        SchemaTarget::BehavioralEvaluationV1 => {
+            conformance_schema(BEHAVIORAL_EVALUATION_V1).unwrap()
+        }
         SchemaTarget::Brief => brief_schema(),
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
@@ -172,6 +207,214 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
     }
 }
 
+/// U1 schema registry. CLI target variants are wired separately so the
+/// contract layer remains usable by U2 before command integration lands.
+pub(crate) fn conformance_schemas() -> Vec<(&'static str, &'static str, Value)> {
+    [
+        ("conformance-candidate-v1", CONFORMANCE_CANDIDATE_V1),
+        ("model-invocation-evidence-v1", MODEL_INVOCATION_EVIDENCE_V1),
+        ("evaluator-inventory-v1", EVALUATOR_INVENTORY_V1),
+        ("evaluator-result-v1", EVALUATOR_RESULT_V1),
+        ("private-record-policy-v1", PRIVATE_RECORD_POLICY_V1),
+        ("publication-approval-v1", PUBLICATION_APPROVAL_V1),
+        ("conformance-trial-v1", CONFORMANCE_TRIAL_V1),
+        ("job-conformance-v1", JOB_CONFORMANCE_V1),
+        ("conformance-report-v1", CONFORMANCE_REPORT_V1),
+        ("public-conformance-report-v1", PUBLIC_CONFORMANCE_REPORT_V1),
+        ("deterministic-conformance-v1", DETERMINISTIC_CONFORMANCE_V1),
+        (
+            "conformance-verifier-receipt-v1",
+            CONFORMANCE_VERIFIER_RECEIPT_V1,
+        ),
+        ("behavioral-evaluation-v1", BEHAVIORAL_EVALUATION_V1),
+    ]
+    .into_iter()
+    .map(|(target, contract)| (target, contract, conformance_schema(contract).unwrap()))
+    .collect()
+}
+
+pub(crate) fn conformance_schema(contract: &str) -> Option<Value> {
+    let hash = || json!({"type":"string","pattern":"^[0-9a-f]{64}$","maxLength":64});
+    let string = || json!({"type":"string","minLength":1,"maxLength":16384});
+    let utc = || json!({"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$","minLength":20,"maxLength":20});
+    let closed = |mut properties: Value| {
+        let required = properties
+            .as_object()
+            .expect("closed properties object")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        json!({"type":"object","additionalProperties":false,"required":required,"properties":properties.take()})
+    };
+    let schema = match contract {
+        CONFORMANCE_CANDIDATE_V1 => contract_schema(
+            contract,
+            json!({
+                "contract":{"const":contract},"candidate_id":string(),"artifact_root":string(),"job_id":string(),
+                "pack_release":closed(json!({"pack_id":string(),"release_id":string(),"version":string(),"portable_digest":hash(),"source_revision":hash()})),
+                "cli_version":string(),"fixture_id":string(),"challenge_id":{"type":["string","null"]},
+                "evaluator_inventory_sha256":hash(),
+                "authorities":{"type":"array","minItems":5,"maxItems":MAX_CANDIDATE_AUTHORITIES,"items":closed(json!({"role":{"enum":["pack-manifest","requirements","product-foundation","skills-route","prompt","prompt-invocation","source-lineage","normalized-input","routed-context","governed-output","claims-validation","decision-result","run-bundle","run-receipt","run-verification","evaluator-inventory","private-record-policy","publication-approval"]},"contract":string(),"relative_path":string(),"sha256":hash(),"byte_count":{"type":"integer","minimum":1,"maximum":1048576}}))},
+                "lifecycle_policy_sha256":hash()
+            }),
+        ),
+        MODEL_INVOCATION_EVIDENCE_V1 => contract_schema(
+            contract,
+            json!({
+                "contract":{"const":contract},"invocation_id":string(),"trial_id":string(),"phase":{"enum":["normalization","generation","review"]},"job_id":string(),"fixture_id":string(),"candidate_sha256":hash(),"evaluator_inventory_sha256":hash(),"requested_model":string(),"resolved_model":string(),"prompt_sha256":hash(),
+                "input_artifacts":{"type":"array","maxItems":MAX_MODEL_VISIBLE_INPUTS,"items":closed(json!({"name":string(),"sha256":hash()}))},"model_visible_context_sha256":hash(),"started_at":utc(),"completed_at":utc(),
+                "freshness":closed(json!({"session_id":string(),"resumed":{"type":"boolean"},"provenance":provenance_schema(),"verifier_receipt_sha256":{"anyOf":[hash(),{"type":"null"}]}})),
+                "isolation":{"type":"array","maxItems":MAX_CONFORMANCE_ARRAY_ITEMS,"items":closed(json!({"dimension":string(),"state":assurance_state_schema(),"provenance":provenance_schema(),"evidence_refs":string_array_schema(),"limitations":string_array_schema(),"verifier_receipt_sha256":{"anyOf":[hash(),{"type":"null"}]}}))},
+                "provider_metadata":{"anyOf":[closed(json!({"request_id":{"type":["string","null"]},"region":{"type":["string","null"]}})),{"type":"null"}]},"terminal_state":terminal_state_schema(),
+                "output":{"anyOf":[closed(json!({"artifact_id":string(),"sha256":hash(),"byte_count":{"type":"integer","minimum":1,"maximum":1048576},"lifecycle_policy_sha256":hash()})),{"type":"null"}]}
+            }),
+        ),
+        EVALUATOR_INVENTORY_V1 => {
+            let assertion = |id: &str, useful: bool| {
+                closed(json!({
+                    "assertion_id":{"const":id},
+                    "kind":{"const":if useful { "useful-completion" } else { "hard-boundary" }},
+                    "required_trials":{"const":3},
+                    "minimum_passes":{"const":if useful { 2 } else { 3 }}
+                }))
+            };
+            contract_schema(
+                contract,
+                json!({"contract":{"const":contract},"evaluator_id":string(),"evaluator_version":string(),"fixture_set_id":string(),"frozen_at":utc(),"inventory_sha256":hash(),"trusted_verifiers":{"type":"array","minItems":1,"maxItems":16,"items":closed(json!({"verifier_name":string(),"verifier_version":string(),"verifier_config_sha256":hash(),"identity_authority_sha256":hash(),"public_key_hex":{"type":"string","pattern":"^[0-9a-f]{64}$","minLength":64,"maxLength":64}}))},"trusted_publication_authorities":{"type":"array","minItems":1,"maxItems":16,"items":closed(json!({"reviewer_role":string(),"identity_authority_sha256":hash(),"public_key_hex":{"type":"string","pattern":"^[0-9a-f]{64}$","minLength":64,"maxLength":64}}))},"challenges":{"type":"array","minItems":1,"maxItems":256,"items":closed(json!({"challenge_id":string(),"fixture_id":string(),"job_id":string(),"phase":{"enum":["normalization","generation","review"]},"expected_terminal_state":terminal_state_schema(),"protected":{"const":true},"frozen_before_trials":{"const":true},"model_visible":{"const":false},"selection_method":string(),"selection_version":string(),"created_at":utc(),"frozen_candidate_sha256":hash(),"selection_receipt_sha256":hash(),"prior_exposure":{"enum":["never-exposed","exposed","unknown"]},"pack_authored":{"const":false},"reuse_allowed":{"const":true},"trial_slots":{"type":"array","minItems":3,"maxItems":3,"items":closed(json!({"trial_id":string(),"phase":{"enum":["normalization","generation","review"]},"requested_model":string(),"resolved_model":string(),"prompt_sha256":hash(),"input_artifacts":{"type":"array","maxItems":MAX_MODEL_VISIBLE_INPUTS,"items":closed(json!({"name":string(),"sha256":hash()}))},"model_visible_context_sha256":hash()}))}}))},"assertions":{"type":"array","minItems":9,"maxItems":9,"prefixItems":[assertion("B1",false),assertion("B2",false),assertion("B3",false),assertion("B4",false),assertion("B5",false),assertion("B6",true),assertion("B7",false),assertion("B8",false),assertion("B9",false)],"items":false}}),
+            )
+        }
+        EVALUATOR_RESULT_V1 => contract_schema(
+            contract,
+            json!({"contract":{"const":contract},"result_id":string(),"trial_id":string(),"output_sha256":hash(),"evaluator_inventory_sha256":hash(),"evaluator_id":string(),"evaluator_version":string(),"scorer":closed(json!({"scorer_type":{"enum":["named-human","host-evaluator","deterministic-evaluator"]},"scorer_id":string(),"reviewer_role":string(),"identity_authority_ref":{"type":["string","null"]}})),"scores":{"type":"array","minItems":1,"maxItems":256,"items":closed(json!({"assertion_id":string(),"status":{"enum":["pass","fail","disputed"]},"rationale":string()}))},"competing_score_sha256s":hash_array_schema(),"disagreement":{"enum":["none","open","resolved"]},"adjudication":{"anyOf":[closed(json!({"adjudicator_name":string(),"reviewer_role":string(),"identity_authority_ref":string(),"approval_receipt_sha256":hash(),"output_sha256":hash(),"competing_score_sha256s":hash_array_schema(),"decision":{"enum":["pass","fail","disputed"]},"purpose":string(),"approved_at":string()})),{"type":"null"}]}}),
+        ),
+        PRIVATE_RECORD_POLICY_V1 => contract_schema(
+            contract,
+            json!({"contract":{"const":contract},"policy_id":string(),"access_class":{"enum":["private","synthetic","sanitized-public"]},"policy_owner_or_ref":string(),"retention_until":utc(),"deletion_disposition":{"enum":["delete","archive","review-required"]},"host_capabilities":closed(json!({"access":{"enum":["supported","unsupported","unknown"]},"retention":{"enum":["supported","unsupported","unknown"]},"deletion":{"enum":["supported","unsupported","unknown"]}}))}),
+        ),
+        PUBLICATION_APPROVAL_V1 => contract_schema(
+            contract,
+            json!({"contract":{"const":contract},"approval_id":string(),"artifact_sha256":hash(),"classification":{"const":"sanitized-public"},"approved_by":string(),"reviewer_role":string(),"identity_authority_sha256":hash(),"approved_at":utc(),"purpose":string(),"signature_hex":{"type":"string","pattern":"^[0-9a-f]{128}$","minLength":128,"maxLength":128}}),
+        ),
+        CONFORMANCE_TRIAL_V1 => contract_schema(
+            contract,
+            json!({"contract":{"const":contract},"trial_id":string(),"candidate_sha256":hash(),"invocation_sha256":hash(),"evaluator_result_sha256s":hash_array_schema(),"terminal_state":terminal_state_schema(),"useful_completion":{"type":["boolean","null"]},"expected_bounded_non_success":{"type":"boolean"},"lifecycle_policy_sha256":hash(),"publication_approval_sha256s":hash_array_schema()}),
+        ),
+        JOB_CONFORMANCE_V1 => contract_schema(
+            contract,
+            json!({
+                "contract":{"const":contract},"candidate_id":string(),"job_id":string(),"fixture_id":string(),
+                "pack_release":closed(json!({"pack_id":string(),"release_id":string(),"version":string(),"portable_digest":hash(),"source_revision":hash()})),
+                "candidate_sha256":hash(),"evaluator_inventory_sha256":hash(),"lifecycle_policy_sha256":hash(),
+                "deterministic_evaluation_sha256":hash(),"behavioral_evaluation_sha256":hash(),
+                "deterministic_status":deterministic_status_schema(),"behavioral_status":behavioral_status_schema(),
+                "verdict":qualification_verdict_schema(),"trial_sha256s":{"type":"array","maxItems":128,"items":hash()},
+                "journey":closed(json!({
+                    "subject_class":string(),"synthetic_subject":{"const":true},
+                    "artifacts":{"type":"array","maxItems":MAX_JOURNEY_LINKS,"items":closed(json!({
+                        "artifact_id":string(),
+                        "phase":{"enum":["candidate","normalization","selection","generation","review","deterministic-evaluation","behavioral-evaluation","publication"]},
+                        "role":{"enum":["candidate","pack-release","requirements","product-foundation","skills-route","prompt","prompt-invocation","source-lineage","normalized-input","routed-context","governed-output","claims-validation","decision-result","run-bundle","run-receipt","run-verification","evaluator-inventory","private-record-policy","publication-approval","deterministic-evaluation","behavioral-evaluation","trial"]},
+                        "contract":string(),"relative_path":{"type":["string","null"]},"opaque_artifact_id":{"type":["string","null"]},
+                        "authority_sha256":hash(),"byte_count":{"type":["integer","null"],"minimum":1,"maximum":1048576},
+                        "access_class":{"enum":["private","synthetic","sanitized-public"]},
+                        "publication_approval_sha256":{"anyOf":[hash(),{"type":"null"}]}
+                    }))},
+                    "links":{"type":"array","maxItems":MAX_JOURNEY_LINKS,"items":closed(json!({
+                        "from_artifact_id":string(),"to_artifact_id":string(),
+                        "relation":{"enum":["declares","normalizes","selects","generates","reviews","evaluates","verifies","bound-to","blocks","approves"]}
+                    }))}
+                })),
+                "limitations":string_array_schema()
+            }),
+        ),
+        CONFORMANCE_REPORT_V1 => contract_schema(
+            contract,
+            json!({"contract":{"const":contract},"report_id":string(),"pack_release":closed(json!({"pack_id":string(),"release_id":string(),"version":string(),"portable_digest":hash(),"source_revision":hash()})),"evaluator_inventory_sha256":hash(),"job_conformance_sha256s":hash_array_schema(),"generated_at":string(),"lifecycle_policy_sha256":hash()}),
+        ),
+        PUBLIC_CONFORMANCE_REPORT_V1 => contract_schema(
+            contract,
+            json!({"contract":{"const":contract},"report_id":string(),"pack_id":string(),"release_id":string(),"evaluator_id":string(),"evaluator_version":string(),"generated_at":string(),"jobs":{"type":"array","maxItems":256,"items":closed(json!({"job_id":string(),"deterministic_status":deterministic_status_schema(),"behavioral_status":behavioral_status_schema(),"verdict":qualification_verdict_schema(),"evidence":{"type":"array","maxItems":256,"items":closed(json!({"artifact_role":{"enum":["candidate","pack-release","requirements","product-foundation","skills-route","prompt","prompt-invocation","source-lineage","normalized-input","routed-context","governed-output","claims-validation","decision-result","run-bundle","run-receipt","run-verification","evaluator-inventory","private-record-policy","publication-approval","deterministic-evaluation","behavioral-evaluation","trial"]},"artifact_sha256":{"anyOf":[hash(),{"type":"null"}]},"classification":{"enum":["private","synthetic","sanitized-public"]},"publication_approved":{"type":"boolean"}}))},"limitations":{"type":"array","maxItems":256,"items":{"enum":["required-sampling-incomplete","unreferenced-evaluator-result","trial-replay-or-identity-reuse","fresh-host-binding-not-verified","cold-isolation-unproven","model-visible-context-oracle-leak-or-hash-mismatch","challenge-not-frozen-before-trial","output-lifecycle-policy-mismatch","protected-challenge-provenance-invalid","sanitized-public-exact-hash-approval-missing","missing-or-ambiguous-score","sampling-threshold-not-met","behavioral-trials-not-run"]}}}))}}),
+        ),
+        DETERMINISTIC_CONFORMANCE_V1 => contract_schema(
+            contract,
+            json!({
+                "contract":{"const":contract},"valid":{"type":"boolean"},"candidate_id":string(),"job_id":string(),
+                "pack_release":closed(json!({"pack_id":string(),"release_id":string(),"version":string(),"portable_digest":hash(),"source_revision":hash()})),
+                "evaluator":closed(json!({"id":string(),"version":string(),"fixture_set_id":string(),"inventory_sha256":hash()})),
+                "fixture_id":string(),"challenge_id":{"type":["string","null"]},
+                "status":{"enum":["sufficient-for-job","not-sufficient-for-job","unassessed"]},
+                "behavioral_qualification_allowed":{"type":"boolean"},
+                "assertions":{"type":"array","minItems":12,"maxItems":12,"items":closed(json!({
+                    "id":{"enum":["D1","D2","D3","D4","D5","D6","D7","D8","D9","D10","D11","D12"]},"name":string(),
+                    "scope":{"enum":["release","fixture"]},"hard":{"const":true},"status":{"enum":["pass","fail","unassessed"]},
+                    "authority_refs":{"type":"array","maxItems":MAX_CANDIDATE_AUTHORITIES,"items":closed(json!({
+                        "role":{"enum":["pack-manifest","requirements","product-foundation","skills-route","prompt","prompt-invocation","source-lineage","normalized-input","routed-context","governed-output","claims-validation","decision-result","run-bundle","run-receipt","run-verification","evaluator-inventory","private-record-policy","publication-approval"]},
+                        "contract":string(),"relative_path":string(),"sha256":hash()
+                    }))},"reason_codes":string_array_schema()
+                }))},
+                "summary":closed(json!({"passed":{"type":"integer","minimum":0,"maximum":12},"failed":{"type":"integer","minimum":0,"maximum":12},"unassessed":{"type":"integer","minimum":0,"maximum":12}}))
+            }),
+        ),
+        CONFORMANCE_VERIFIER_RECEIPT_V1 => contract_schema(
+            contract,
+            json!({"contract":{"const":contract},"receipt_id":string(),"verifier_name":string(),"verifier_version":string(),"verifier_config_sha256":hash(),"identity_authority_sha256":hash(),"invocation_id":string(),"candidate_sha256":hash(),"evaluator_inventory_sha256":hash(),"model_visible_context_sha256":hash(),"started_at":utc(),"completed_at":utc(),"freshness_verified":{"const":true},"isolation_dimensions":{"type":"array","minItems":3,"maxItems":3,"items":{"enum":["memory","tools","neighboring-context"]},"uniqueItems":true},"signature_hex":{"type":"string","pattern":"^[0-9a-f]{128}$","minLength":128,"maxLength":128}}),
+        ),
+        BEHAVIORAL_EVALUATION_V1 => contract_schema(
+            contract,
+            json!({
+                "contract":{"const":contract},"valid":{"type":"boolean"},"job_id":string(),
+                "candidate_sha256":hash(),"evaluator_inventory_sha256":hash(),"lifecycle_policy_sha256":hash(),"deterministic_evaluation_sha256":hash(),
+                "trial_sha256s":{"type":"array","maxItems":128,"items":hash()},
+                "deterministic_status":deterministic_status_schema(),
+                "job_sufficiency":{"enum":["sufficient-for-job","not-sufficient-for-job","unassessed"]},
+                "preflight_assertions":{"type":"array","minItems":4,"maxItems":4,"prefixItems":[
+                    closed(json!({"id":{"const":"Q1"},"status":{"enum":["passed","failed","not-applicable"]},"passed_trials":{"type":"integer","minimum":0,"maximum":255},"required_trials":{"type":"integer","minimum":0,"maximum":255},"reason_codes":string_array_schema()})),
+                    closed(json!({"id":{"const":"Q2"},"status":{"enum":["passed","failed","not-applicable"]},"passed_trials":{"type":"integer","minimum":0,"maximum":255},"required_trials":{"type":"integer","minimum":0,"maximum":255},"reason_codes":string_array_schema()})),
+                    closed(json!({"id":{"const":"Q3"},"status":{"enum":["passed","failed","not-applicable"]},"passed_trials":{"type":"integer","minimum":0,"maximum":255},"required_trials":{"type":"integer","minimum":0,"maximum":255},"reason_codes":string_array_schema()})),
+                    closed(json!({"id":{"const":"Q4"},"status":{"enum":["passed","failed","not-applicable"]},"passed_trials":{"type":"integer","minimum":0,"maximum":255},"required_trials":{"type":"integer","minimum":0,"maximum":255},"reason_codes":string_array_schema()}))
+                ],"items":false},
+                "behavioral_assertions":{"type":"array","maxItems":MAX_CONFORMANCE_ARRAY_ITEMS,"items":closed(json!({
+                    "id":string(),"status":{"enum":["passed","failed","not-applicable"]},"passed_trials":{"type":"integer","minimum":0,"maximum":255},"required_trials":{"type":"integer","minimum":0,"maximum":255},"reason_codes":string_array_schema()
+                }))},
+                "trials":{"type":"array","maxItems":128,"items":closed(json!({
+                    "trial_id":string(),"status":behavioral_status_schema(),"usable_output":{"type":"boolean"},"reason_codes":string_array_schema()
+                }))},
+                "behavioral_qualification":{"enum":["qualified-for-job-under-envelope","not-qualified-for-job-under-envelope","unassessed"]},
+                "overall_result":qualification_verdict_schema(),"drafting_authority_granted":{"const":false},"reason_codes":string_array_schema()
+            }),
+        ),
+        _ => return None,
+    };
+    Some(schema)
+}
+
+fn contract_schema(contract: &str, mut properties: Value) -> Value {
+    let required = properties
+        .as_object()
+        .expect("properties object")
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    json!({"$schema":"https://json-schema.org/draft/2020-12/schema","title":contract,"type":"object","additionalProperties":false,"required":required,"properties":properties.take()})
+}
+fn string_array_schema() -> Value {
+    json!({"type":"array","maxItems":256,"items":{"type":"string","maxLength":16384}})
+}
+fn hash_array_schema() -> Value {
+    json!({"type":"array","maxItems":256,"items":{"type":"string","pattern":"^[0-9a-f]{64}$","maxLength":64}})
+}
+fn deterministic_status_schema() -> Value {
+    json!({"enum":["unassessed","passed","failed"]})
+}
+fn behavioral_status_schema() -> Value {
+    json!({"enum":["unassessed","passed","failed","malformed","bounded-non-success-confirmed"]})
+}
+fn qualification_verdict_schema() -> Value {
+    json!({"enum":["qualified-for-job-under-envelope","not-qualified-for-job-under-envelope","not-sufficient-for-job","unassessed"]})
+}
+fn provenance_schema() -> Value {
+    json!({"enum":["mdp-observed","provider-returned","customer-attested","host-attested","driver-attested","verifier-recomputed","unknown"]})
+}
 fn decision_input_envelope_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3536,8 +3779,151 @@ fn attribute_schema() -> Value {
 mod tests {
     use super::*;
     use crate::commands::briefs::emit_brief;
+    use crate::conformance::{
+        AssertionEvaluationStatus, BehavioralEvaluation, BehavioralQualification, BehavioralStatus,
+        BehavioralTrialEvaluation, ConformanceAssertionEvaluation, DeterministicStatus,
+        JobSufficiency, QualificationVerdict,
+    };
     use jsonschema::draft202012;
     use std::path::PathBuf;
+
+    #[test]
+    fn conformance_schemas_are_closed_versioned_and_compile() {
+        let schemas = conformance_schemas();
+        assert_eq!(schemas.len(), 13);
+        for (_, contract, schema) in schemas {
+            draft202012::new(&schema)
+                .unwrap_or_else(|error| panic!("{contract} schema should compile: {error}"));
+            assert_eq!(schema["additionalProperties"], false);
+            assert_eq!(schema["properties"]["contract"]["const"], contract);
+        }
+
+        let dispatch = [
+            (
+                SchemaTarget::ConformanceCandidateV1,
+                CONFORMANCE_CANDIDATE_V1,
+            ),
+            (
+                SchemaTarget::ModelInvocationEvidenceV1,
+                MODEL_INVOCATION_EVIDENCE_V1,
+            ),
+            (SchemaTarget::EvaluatorInventoryV1, EVALUATOR_INVENTORY_V1),
+            (SchemaTarget::EvaluatorResultV1, EVALUATOR_RESULT_V1),
+            (
+                SchemaTarget::PrivateRecordPolicyV1,
+                PRIVATE_RECORD_POLICY_V1,
+            ),
+            (SchemaTarget::PublicationApprovalV1, PUBLICATION_APPROVAL_V1),
+            (SchemaTarget::ConformanceTrialV1, CONFORMANCE_TRIAL_V1),
+            (SchemaTarget::JobConformanceV1, JOB_CONFORMANCE_V1),
+            (SchemaTarget::ConformanceReportV1, CONFORMANCE_REPORT_V1),
+            (
+                SchemaTarget::PublicConformanceReportV1,
+                PUBLIC_CONFORMANCE_REPORT_V1,
+            ),
+            (
+                SchemaTarget::DeterministicConformanceV1,
+                DETERMINISTIC_CONFORMANCE_V1,
+            ),
+            (
+                SchemaTarget::ConformanceVerifierReceiptV1,
+                CONFORMANCE_VERIFIER_RECEIPT_V1,
+            ),
+            (
+                SchemaTarget::BehavioralEvaluationV1,
+                BEHAVIORAL_EVALUATION_V1,
+            ),
+        ];
+        for (target, contract) in dispatch {
+            let output = schema(target);
+            assert_eq!(output["properties"]["contract"]["const"], contract);
+        }
+    }
+
+    #[test]
+    fn conformance_report_schemas_export_fixed_behavioral_and_verdict_vocabularies() {
+        let job = schema(SchemaTarget::JobConformanceV1);
+        assert_eq!(
+            job["properties"]["behavioral_status"]["enum"],
+            json!([
+                "unassessed",
+                "passed",
+                "failed",
+                "malformed",
+                "bounded-non-success-confirmed"
+            ])
+        );
+        assert_eq!(
+            job["properties"]["verdict"]["enum"],
+            json!([
+                "qualified-for-job-under-envelope",
+                "not-qualified-for-job-under-envelope",
+                "not-sufficient-for-job",
+                "unassessed"
+            ])
+        );
+        assert_eq!(
+            job["properties"]["deterministic_status"]["enum"],
+            json!(["unassessed", "passed", "failed"])
+        );
+
+        let public = schema(SchemaTarget::PublicConformanceReportV1);
+        let public_job = &public["properties"]["jobs"]["items"]["properties"];
+        assert_eq!(
+            public_job["behavioral_status"],
+            job["properties"]["behavioral_status"]
+        );
+        assert_eq!(public_job["verdict"], job["properties"]["verdict"]);
+    }
+
+    #[test]
+    fn behavioral_evaluation_schema_validates_actual_serialized_output() {
+        let assertion = ConformanceAssertionEvaluation {
+            id: "Q1".to_string(),
+            status: AssertionEvaluationStatus::Passed,
+            passed_trials: 3,
+            required_trials: 3,
+            reason_codes: vec!["q1-passed".to_string()],
+        };
+        let output = BehavioralEvaluation {
+            contract: BEHAVIORAL_EVALUATION_V1.to_string(),
+            valid: true,
+            job_id: "outbound-copy-brief".to_string(),
+            candidate_sha256: "a".repeat(64),
+            evaluator_inventory_sha256: "b".repeat(64),
+            lifecycle_policy_sha256: "c".repeat(64),
+            deterministic_evaluation_sha256: "e".repeat(64),
+            trial_sha256s: vec!["d".repeat(64)],
+            deterministic_status: DeterministicStatus::Passed,
+            job_sufficiency: JobSufficiency::SufficientForJob,
+            preflight_assertions: ["Q1", "Q2", "Q3", "Q4"]
+                .into_iter()
+                .map(|id| ConformanceAssertionEvaluation {
+                    id: id.into(),
+                    ..assertion.clone()
+                })
+                .collect(),
+            behavioral_assertions: vec![assertion],
+            trials: vec![BehavioralTrialEvaluation {
+                trial_id: "trial-1".to_string(),
+                status: BehavioralStatus::BoundedNonSuccessConfirmed,
+                usable_output: false,
+                reason_codes: vec!["expected-bounded-non-success".to_string()],
+            }],
+            behavioral_qualification: BehavioralQualification::QualifiedForJobUnderEnvelope,
+            overall_result: QualificationVerdict::QualifiedForJobUnderEnvelope,
+            drafting_authority_granted: false,
+            reason_codes: vec!["qualified".to_string()],
+        };
+        let value = serde_json::to_value(output).expect("behavioral evaluation should serialize");
+        let schema = schema(SchemaTarget::BehavioralEvaluationV1);
+        draft202012::validate(&schema, &value)
+            .expect("actual behavioral evaluation should validate against its public schema");
+
+        let mut unknown = value;
+        unknown["unexpected"] = json!(true);
+        assert!(draft202012::validate(&schema, &unknown).is_err());
+    }
 
     #[test]
     fn prospect_schema_keeps_required_skill_input_fields() {

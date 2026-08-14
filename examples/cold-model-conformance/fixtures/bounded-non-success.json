@@ -1,0 +1,6 @@
+{
+  "fixture_id": "synthetic-bounded-non-success",
+  "phase": "generation",
+  "expected_terminal_state": "no-draft:preflight-refused",
+  "useful_passes": 0
+}

@@ -7,6 +7,13 @@ MDP separates two questions:
 
 The customer-selected host runs the model. MDP remains the local contract, compilation, routing, and validation layer. It does not choose a provider, make a model call, browse, enrich, send, schedule, or update a CRM.
 
+Cold-model conformance does not change this boundary. It compiles sufficiency
+before the host call, then validates the host's recorded invocation and trial
+evidence. Prompt readiness or prompt-output validity alone is not
+`sufficient-for-job` or `qualified-for-job-under-envelope`; the assembled
+`mdp.job-conformance.v1` remains conformance authority. See
+[Cold-model Conformance](cold-model-conformance.md).
+
 ## Job binding
 
 A canonical generation or review job opts in with one explicit binding:

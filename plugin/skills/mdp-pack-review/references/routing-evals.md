@@ -30,6 +30,13 @@ Use `validate-prompt-output` for valid and adversarial normalization results, in
 
 Require both successful and failing cases. Include insufficient context, refusal/unsafe output, job routing, unsupported proof, prompt-output invention, and declared profile-specific categories. Prefer distinct scenario families over paraphrases.
 
+For a cold-model conformance claim, require predeclared hard-boundary and
+useful-completion slots. Hard boundaries pass only at 3/3; useful completion
+passes at 2/3. Missing slots remain `unassessed`; never select the best trials
+after observing outcomes. A negative case counts only when the exact expected
+bounded non-success state occurs and no usable output escapes. Run committed
+fixtures offline against recorded synthetic evidence; do not call a provider.
+
 For a targeted GTM pack, also require an isolation family:
 
 - create Company A and Company B packs in separate clean roots, with Company A listed as an excluded term for Company B

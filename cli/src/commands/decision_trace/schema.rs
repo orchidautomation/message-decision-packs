@@ -60,7 +60,7 @@ pub(crate) fn decision_trace_schema() -> Value {
                     "contract": {"type": "string"},
                     "command": {"type": "string"},
                     "sha256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"},
-                    "class": {"enum": ["unknown", "row-level", "run-execution", "receipt-backed-run"]}
+                    "class": {"enum": ["unknown", "row-level", "run-execution", "receipt-backed-run", "composite-conformance"]}
                 }
             },
             "authority": {
@@ -68,7 +68,7 @@ pub(crate) fn decision_trace_schema() -> Value {
                 "required": ["projection_only", "decision_authority", "output_authority", "verification_state", "notice"],
                 "properties": {
                     "projection_only": {"const": true},
-                    "decision_authority": {"enum": ["none", "source-artifact", "run-receipt-reference", "run-receipt"]},
+                    "decision_authority": {"enum": ["none", "source-artifact", "run-receipt-reference", "run-receipt", "composite-conformance"]},
                     "output_authority": {"type": "boolean"},
                     "verification_state": {"enum": ["not-verified", "not-created", "referenced", "verified", "failed"]},
                     "notice": {"type": "string"}

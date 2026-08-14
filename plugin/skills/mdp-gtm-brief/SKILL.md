@@ -74,6 +74,15 @@ governed artifact with `--invocation-receipt PROMPT_INVOCATION_JSON` and
 `mdp check-claims` on generated or supplied copy. The host receipt must bind
 the exact job, prompt ID/version/SHA-256, and per-declared-input SHA-256 values,
 including the canonical routed-context bytes.
+
+When this job is cold-model conformance evidence, require a passing
+`conformance compile` before handing anything to the external host. After its
+call, validate the recorded invocation/trial/evaluator artifacts and assemble
+`mdp.job-conformance.v1`. The behavioral evaluation is intermediate, not
+report authority. `sufficient-for-job` is deterministic only; only the
+assembled result can be `qualified-for-job-under-envelope`. `unassessed` and
+`conformance-failure` remain no-draft. Conformance never authorizes this skill
+to draft or send copy.
 If `data.model_task` is absent, state that no job-owned model task is declared,
 include any available product-foundation diagnostics, and stop no-draft; do not
 invent a model-task status or diagnostics. If `data.model_task` is present but

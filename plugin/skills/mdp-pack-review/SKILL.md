@@ -53,6 +53,20 @@ product foundation, exact governed-artifact schema, valid/refusal/gap fixtures,
 and separate claim/proof verification for generated prose. Legacy unbound jobs
 may remain valid only as `unassessed`; do not call them self-standing.
 
+For a released job that claims cold-model conformance, require the full
+progression: `conformance compile`, externally recorded trials, `conformance
+validate`, and `conformance assemble`. Deterministic `sufficient-for-job` is
+not behavioral qualification. Missing, stale, or incomplete evidence is
+`unassessed`; a required failure is `conformance-failure`; only the composite
+may report `qualified-for-job-under-envelope`. A behavioral evaluation alone
+is intermediate, never report authority.
+
+Confirm public reports and traces contain no paths, customer/person/company
+content, prompts or outputs, provider/session identifiers, evaluator rationale,
+reviewer identity, or private digests. Confirm no skill implies MDP calls a
+model, chooses a provider, calculates pricing, or grants drafting, sending,
+scheduling, CRM mutation, or publication authority.
+
 Require every self-standing generation/review job to declare positive entry and
 byte context budgets. `requirements` must report the declared `context_budget`
 and `routed_context_required`; it does not compute a minimality receipt. `route`,

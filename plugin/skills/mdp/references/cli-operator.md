@@ -58,6 +58,33 @@ policy deterministically disqualifies.
 
 ## Deterministic Gates
 
+### Cold-model qualification
+
+Discover with `capabilities`, schema inspection, and `mdp conformance --help`.
+The exact flow is discover → `conformance compile` → stop unless sufficient →
+external host call → `conformance validate` → `conformance assemble` →
+`conformance report` or `trace`.
+
+Use first-class `--out` files for the exact chain: compile to
+`deterministic.json`; pass that file with `validate --deterministic` and write
+`behavioral.json`; assemble those authorities plus every repeated `--trial`
+into `job-conformance.json`; then project a private/public report with its own
+`--out`. Validation also requires every predeclared repeated `--invocation`,
+`--trial`, and `--verifier-receipt`. External calls remain customer-owned and
+separately authorized.
+Trial slots freeze requested/resolved model identity and the exact candidate
+prompt, input list, and context digest. Verifier and publication evidence must
+match trusted authority descriptors already frozen in the evaluator inventory.
+
+All four conformance commands are read-only and make no model calls. The
+behavioral evaluation returned by `validate` is intermediate, not report
+authority. Only `mdp.job-conformance.v1` is the cross-phase authority; reports
+and traces are projections. Stop no-draft on failed or unassessed required
+gates. Conformance never authorizes drafting, sending, scheduling, CRM
+mutation, or publication. Public projections must omit paths, raw content,
+identities, provider/session data, evaluator rationale, reviewer identity, and
+private hashes.
+
 Use [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix) for integration state. The only states are `verified`, `recipe-only`, `unsupported`, and `fixture/mock-only`; schema acceptance, a recipe, MCP availability, or one valid receipt does not promote a row.
 
 - `validate-prompt-output`: validate model-produced normalization or governed-artifact output against the exact selected prompt. Governed artifacts require `--invocation-receipt` with the host-created `mdp.prompt-invocation.v1` job/prompt/input-hash receipt and, when declared, `--routed-context` with the exact canonical `mdp.routed-context.v1` bytes. Pass `--source-audit` for proposal PDF/doc extraction ledgers when raw-field/snippet citations must resolve. Generated prose still requires `check-claims` or `verify-output`.

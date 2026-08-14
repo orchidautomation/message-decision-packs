@@ -1,15 +1,20 @@
 use crate::artifact_hash::{canonical_json_bytes, sha256_hex};
-use crate::cli::{Cli, Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
+use crate::cli::{
+    Cli, Commands, ConformanceCommand, ConformanceReportVisibility, HumanBriefFormat,
+    SampleLeadsFormat, TraceFormat,
+};
 use crate::commands::briefs::prospect_brief_from_fit_with_context;
 use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
 use crate::commands::routing::fit_normalized;
 use crate::commands::{
-    RunReceiptOptions, TargetInitOptions, author_proof_output_file, capabilities,
-    check_claims_scoped, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, fit, gaps,
-    init_pack_targeted, init_pack_targeted_dry_run, pack, project_run_files, project_source_file,
+    AssembleConformancePaths, BehavioralEvidencePaths, RunReceiptOptions, TargetInitOptions,
+    assemble_conformance, author_proof_output_file, capabilities, check_claims_scoped,
+    compile_candidate_file, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, fit, gaps,
+    init_pack_targeted, init_pack_targeted_dry_run, pack, project_conformance_file,
+    project_conformance_report, project_run_files, project_source_file,
     prospect_brief_with_context, render_human_brief_file, render_human_brief_markdown,
     render_mermaid, render_readable_prospect_brief, requirements, route_scoped, run_receipt,
-    run_request_file, sample_leads, schema, skills, validate_pack,
+    run_request_file, sample_leads, schema, skills, validate_behavioral_files, validate_pack,
     validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
     verify_output_readable_file, verify_run_files,
 };
@@ -30,6 +35,93 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Commands::Capabilities => {
             print_output(json_mode, summary_mode, "capabilities", capabilities())
         }
+        Commands::Conformance { command } => match command {
+            ConformanceCommand::Compile {
+                candidate,
+                artifact_root,
+                out,
+                dry_run,
+            } => emit_conformance_output(
+                json_mode,
+                summary_mode,
+                "conformance-compile",
+                compile_candidate_file(&candidate, &artifact_root)?,
+                out.as_deref(),
+                dry_run,
+            ),
+            ConformanceCommand::Validate {
+                candidate,
+                deterministic,
+                evaluator_inventory,
+                lifecycle_policy,
+                invocation,
+                trial,
+                evaluator_result,
+                publication_approval,
+                verifier_receipt,
+                out,
+                dry_run,
+            } => emit_conformance_output(
+                json_mode,
+                summary_mode,
+                "conformance-validate",
+                validate_behavioral_files(BehavioralEvidencePaths {
+                    candidate: &candidate,
+                    deterministic: &deterministic,
+                    evaluator_inventory: &evaluator_inventory,
+                    lifecycle_policy: &lifecycle_policy,
+                    invocations: &invocation,
+                    trials: &trial,
+                    evaluator_results: &evaluator_result,
+                    publication_approvals: &publication_approval,
+                    verifier_receipts: &verifier_receipt,
+                })?,
+                out.as_deref(),
+                dry_run,
+            ),
+            ConformanceCommand::Assemble {
+                candidate,
+                deterministic,
+                behavioral,
+                trial,
+                artifact_root,
+                out,
+                dry_run,
+            } => emit_conformance_output(
+                json_mode,
+                summary_mode,
+                "conformance-assemble",
+                assemble_conformance(AssembleConformancePaths {
+                    candidate: &candidate,
+                    deterministic: &deterministic,
+                    behavioral: &behavioral,
+                    trials: &trial,
+                    artifact_root: &artifact_root,
+                })?,
+                out.as_deref(),
+                dry_run,
+            ),
+            ConformanceCommand::Report {
+                conformance,
+                artifact_root,
+                visibility,
+                generated_at,
+                out,
+                dry_run,
+            } => emit_conformance_output(
+                json_mode,
+                summary_mode,
+                "conformance-report",
+                project_conformance_report(
+                    &conformance,
+                    &artifact_root,
+                    &generated_at,
+                    matches!(visibility, ConformanceReportVisibility::Public),
+                )?,
+                out.as_deref(),
+                dry_run,
+            ),
+        },
         Commands::Init {
             name,
             target_name,
@@ -196,7 +288,10 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             out,
         } => {
             let trace = match (file.as_deref(), bundle.as_deref(), receipt.as_deref()) {
-                (Some(path), None, None) => project_source_file(path)?,
+                (Some(path), None, None) => match artifact_root.as_deref() {
+                    Some(root) => project_conformance_file(path, root)?,
+                    None => project_source_file(path)?,
+                },
                 (None, Some(bundle), Some(receipt)) => {
                     project_run_files(bundle, receipt, artifact_root.as_deref())?
                 }
@@ -628,6 +723,34 @@ fn print_checked(json_mode: bool, summary_mode: bool, command: &str, data: Value
     }
 }
 
+fn emit_conformance_output(
+    json_mode: bool,
+    summary_mode: bool,
+    command: &str,
+    data: Value,
+    out: Option<&Path>,
+    dry_run: bool,
+) -> Result<()> {
+    if let Some(path) = out {
+        if fs::symlink_metadata(path).is_ok() {
+            return Err(anyhow!(
+                "conformance output already exists; refusing to overwrite"
+            ));
+        }
+        if dry_run {
+            let plan = planned_json_write(path);
+            if plan["would_write"] != true {
+                return Err(anyhow!("conformance output path is not writable"));
+            }
+        } else {
+            write_json_file(path, &data)?;
+        }
+    } else if dry_run {
+        return Err(anyhow!("--dry-run requires --out"));
+    }
+    print_checked(json_mode, summary_mode, command, data)
+}
+
 #[derive(Clone, Copy)]
 enum StrictWarningSource {
     Issues,
@@ -931,7 +1054,7 @@ fn attach_stdout_artifact(mut data: Value) -> Value {
     data
 }
 
-fn attach_input_artifact(mut data: Value, kind: &str, path: &PathBuf) -> Value {
+fn attach_input_artifact(mut data: Value, kind: &str, path: &Path) -> Value {
     if let Some(object) = data.as_object_mut() {
         object.insert(
             "input_artifact".to_string(),

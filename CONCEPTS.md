@@ -54,6 +54,15 @@ Canonical jobs can own deterministic entry and byte budgets. MDP selects require
   first-class sourced proof for an explicit role.
 - **Gap** — missing or unsupported context kept explicit rather than inferred.
 - **Eval** — a deterministic fixture that tests routing or policy behavior.
+- **Deterministic sufficiency** — the D1-D12 checks for one exact release and
+  job. A passing result is `sufficient-for-job`; it permits behavioral testing
+  but does not prove model performance.
+- **Behavioral evaluation** — validated, externally recorded trial evidence
+  for one candidate and host/model envelope. It is an intermediate input, not
+  the private/public report authority.
+- **Job conformance** — the sole hash-complete `mdp.job-conformance.v1`
+  authority joining candidate, deterministic evaluation, behavioral
+  evaluation, and exact trial set.
 - **Decision trace** — a bounded, read-only `mdp.decision-trace.v1`
   projection of existing decision artifacts. The source artifacts retain all
   decision, output, and assurance authority.
@@ -83,6 +92,11 @@ Canonical jobs can own deterministic entry and byte budgets. MDP selects require
 
 - **Integration support:** `verified`, `recipe-only`, `unsupported`, or
   `fixture/mock-only`.
+- **Cold-model conformance:** `sufficient-for-job` means deterministic checks
+  passed; `qualified-for-job-under-envelope` adds the declared behavioral
+  threshold; `unassessed` means required evidence is missing or incomplete;
+  `conformance-failure` means a required assertion failed. None grants
+  drafting, sending, or publication authority.
 - **Per-run decision:** `audit-grade`, `advisory`, `blocked`, or `not-run`.
 - **Readiness:** `ready`, `advisory`, or `blocked`.
 - **Product-foundation status:** `unassessed`, `ready`, or `blocked`.

@@ -266,6 +266,81 @@ class SkillContractTests(unittest.TestCase):
                     )
                     path.write_text(original)
 
+    def test_each_cold_model_guardrail_is_enforced(self):
+        for skill_id, guardrails in module.COLD_MODEL_GUARDRAILS.items():
+            path = self.root / "plugin/skills" / skill_id / "SKILL.md"
+            original = path.read_text()
+            for guardrail, phrase in guardrails.items():
+                with self.subTest(skill_id=skill_id, guardrail=guardrail):
+                    path.write_text(
+                        original.replace(phrase, "REMOVED_COLD_MODEL_GUARDRAIL", 1)
+                    )
+                    self.assertIn(
+                        f"cold_model_guardrail_missing:{skill_id}:{guardrail}",
+                        self.codes(),
+                    )
+                    path.write_text(original)
+
+    def test_public_cold_model_doc_keeps_authority_and_privacy_boundaries(self):
+        text = Path("docs/cold-model-conformance.md").read_text()
+        for phrase in [
+            "sufficient-for-job",
+            "qualified-for-job-under-envelope",
+            "unassessed",
+            "conformance-failure",
+            "intermediate authority",
+            "sole hash-complete",
+            "performs no model or network call",
+            "never expose\nprivate or opaque evidence IDs",
+            "Conformance never grants drafting, sending, scheduling, CRM mutation",
+        ]:
+            self.assertIn(phrase, text)
+        self.assertNotIn("/Users/", text)
+        self.assertNotIn("opaque private evidence IDs", text)
+
+    def test_cold_model_discovery_help_and_schema_inventory_stay_aligned(self):
+        cli = Path("cli/src/cli.rs").read_text()
+        capabilities = Path("cli/src/commands/capabilities.rs").read_text()
+        operator = Path("plugin/skills/mdp/references/cli-operator.md").read_text()
+        for command in ["compile", "validate", "assemble", "report"]:
+            self.assertIn(f'["conformance", "{command}"]', capabilities)
+            self.assertIn(f"`conformance {command}`", operator)
+        for flag in [
+            "--candidate",
+            "--artifact-root",
+            "--evaluator-inventory",
+            "--lifecycle-policy",
+            "--deterministic",
+            "--invocation",
+            "--trial",
+            "--verifier-receipt",
+            "--behavioral",
+            "--conformance",
+            "--visibility",
+            "--generated-at",
+            "--out",
+            "--dry-run",
+        ]:
+            self.assertIn(f'"{flag}"', capabilities)
+        for target in [
+            "conformance-candidate-v1",
+            "model-invocation-evidence-v1",
+            "conformance-verifier-receipt-v1",
+            "evaluator-inventory-v1",
+            "evaluator-result-v1",
+            "private-record-policy-v1",
+            "publication-approval-v1",
+            "conformance-trial-v1",
+            "job-conformance-v1",
+            "conformance-report-v1",
+            "public-conformance-report-v1",
+            "deterministic-conformance-v1",
+            "behavioral-evaluation-v1",
+        ]:
+            self.assertIn(target, cli)
+        self.assertIn('"model_execution": "external-only"', capabilities)
+        self.assertIn('"behavioral_calls_in_validation": false', capabilities)
+
     def test_public_product_foundation_doc_keeps_authority_and_readiness_boundaries(self):
         text = Path("docs/product-foundations.md").read_text()
         for phrase in [

@@ -55,6 +55,52 @@ no-draft leakage produce a blocked projection. Without `--artifact-root`, the
 trace states that published artifact bytes were not recomputed. The run receipt
 and verification remain authoritative in either case.
 
+## Inspect a job-conformance journey
+
+`mdp.job-conformance.v1` is the sole cross-phase authority for one exact
+release, job, fixture, deterministic evaluation, behavioral evaluation, and
+trial set. Assemble it only from members staged under one artifact root:
+
+```bash
+mdp --json conformance assemble \
+  --artifact-root <staged-root> \
+  --candidate candidate.json \
+  --deterministic deterministic.json \
+  --behavioral behavioral.json \
+  --trial trials/trial-1.json
+
+mdp --json conformance report \
+  --artifact-root <staged-root> \
+  --conformance job-conformance.json \
+  --visibility public \
+  --generated-at 2026-08-13T12:00:00Z
+
+mdp trace \
+  --artifact-root <staged-root> \
+  --file job-conformance.json \
+  --format mermaid
+```
+
+Assembly and projection re-open every path-backed member through the shared
+containment boundary and recompute its digest. Missing links, cross-job,
+cross-fixture, cross-release, and changed-byte substitutions fail closed. An
+opaque artifact ID can record private external evidence, but cannot satisfy a
+deterministic authority role.
+
+The private and public reports, JSON trace, and Mermaid trace are projections
+of the composite. None becomes a competing authority. Public reports and safe
+traces never copy paths, people or company content, prompts, inputs, outputs,
+provider or session identifiers, evaluator rationale, reviewer identity, or
+private digests. Synthetic digests may be shown. A sanitized-public digest is
+shown only when a contained approval receipt covers that exact digest;
+changing the bytes invalidates the approval.
+
+Do not trace the intermediate `mdp.behavioral-evaluation.v1` as though it were
+a conformance report. First assemble and validate the exact
+`mdp.job-conformance.v1` member set. A trace explains that composite; it never
+promotes `unassessed` to sufficient, promotes sufficient to qualified, or
+grants drafting/sending authority.
+
 ## Safety and limits
 
 The projector allowlists labels and references. It does not copy prospect

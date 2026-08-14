@@ -4,6 +4,7 @@ mod app;
 mod artifact_hash;
 mod cli;
 mod commands;
+mod conformance;
 mod constants;
 mod models;
 mod output;

@@ -1,0 +1,6 @@
+{
+  "fixture_id": "synthetic-review",
+  "phase": "review",
+  "expected_terminal_state": "success",
+  "useful_passes": 2
+}

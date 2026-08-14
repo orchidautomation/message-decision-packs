@@ -22,6 +22,11 @@ pub(crate) struct Cli {
 pub(crate) enum Commands {
     #[command(about = "Print agent-readable CLI capabilities and contracts")]
     Capabilities,
+    #[command(about = "Compile and inspect cold-model conformance evidence")]
+    Conformance {
+        #[command(subcommand)]
+        command: ConformanceCommand,
+    },
     #[command(about = "Create a starter MDP package")]
     Init {
         #[arg(long, help = "Pack display name; defaults by template")]
@@ -213,8 +218,7 @@ pub(crate) enum Commands {
         receipt: Option<PathBuf>,
         #[arg(
             long,
-            requires = "bundle",
-            help = "Optional root containing receipt artifacts at their logical names"
+            help = "Root containing receipt artifacts or a composite conformance authority"
         )]
         artifact_root: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = TraceFormat::Json)]
@@ -472,6 +476,90 @@ pub(crate) enum Commands {
     },
 }
 
+#[derive(Subcommand)]
+pub(crate) enum ConformanceCommand {
+    #[command(about = "Compile deterministic D1-D12 sufficiency assertions for one candidate")]
+    Compile {
+        #[arg(long, help = "Closed mdp.conformance-candidate.v1 JSON file")]
+        candidate: PathBuf,
+        #[arg(long, help = "Staged root containing every candidate authority")]
+        artifact_root: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    #[command(about = "Validate recorded behavioral trials without invoking a model")]
+    Validate {
+        #[arg(long)]
+        candidate: PathBuf,
+        #[arg(long, help = "Closed mdp.deterministic-conformance.v1 JSON file")]
+        deterministic: PathBuf,
+        #[arg(long)]
+        evaluator_inventory: PathBuf,
+        #[arg(long)]
+        lifecycle_policy: PathBuf,
+        #[arg(long, required = true)]
+        invocation: Vec<PathBuf>,
+        #[arg(long, required = true)]
+        trial: Vec<PathBuf>,
+        #[arg(long)]
+        evaluator_result: Vec<PathBuf>,
+        #[arg(long)]
+        publication_approval: Vec<PathBuf>,
+        #[arg(long)]
+        verifier_receipt: Vec<PathBuf>,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    #[command(about = "Assemble one hash-linked mdp.job-conformance.v1 authority")]
+    Assemble {
+        #[arg(long, help = "Candidate path relative to the staged artifact root")]
+        candidate: PathBuf,
+        #[arg(
+            long,
+            help = "Deterministic evaluation path relative to the staged root"
+        )]
+        deterministic: PathBuf,
+        #[arg(long, help = "Behavioral evaluation path relative to the staged root")]
+        behavioral: PathBuf,
+        #[arg(
+            long,
+            help = "Trial path relative to the staged root; repeat in declared order"
+        )]
+        trial: Vec<PathBuf>,
+        #[arg(long, help = "Staged root containing every composite member")]
+        artifact_root: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    #[command(about = "Project a validated composite into a private or public report")]
+    Report {
+        #[arg(long, help = "Job conformance path relative to the staged root")]
+        conformance: PathBuf,
+        #[arg(long)]
+        artifact_root: PathBuf,
+        #[arg(long, value_enum)]
+        visibility: ConformanceReportVisibility,
+        #[arg(long, help = "Recorded RFC 3339 report projection time")]
+        generated_at: String,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub(crate) enum ConformanceReportVisibility {
+    Private,
+    Public,
+}
+
 #[derive(Clone, ValueEnum)]
 pub(crate) enum SchemaTarget {
     Manifest,
@@ -500,6 +588,19 @@ pub(crate) enum SchemaTarget {
     RunExecutionV1,
     DecisionTraceV1,
     CanonicalAuthorityBlockV1,
+    ConformanceCandidateV1,
+    ModelInvocationEvidenceV1,
+    EvaluatorInventoryV1,
+    EvaluatorResultV1,
+    PrivateRecordPolicyV1,
+    PublicationApprovalV1,
+    ConformanceTrialV1,
+    JobConformanceV1,
+    ConformanceReportV1,
+    PublicConformanceReportV1,
+    DeterministicConformanceV1,
+    ConformanceVerifierReceiptV1,
+    BehavioralEvaluationV1,
     Brief,
     HumanBrief,
     RuntimeContext,
@@ -580,6 +681,83 @@ impl RunIsolation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conformance_compile_requires_candidate_and_artifact_root() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "conformance",
+            "compile",
+            "--candidate",
+            "candidate.json",
+            "--artifact-root",
+            "staged",
+        ])
+        .expect("conformance compile should parse");
+
+        assert!(matches!(
+            parsed.command,
+            Commands::Conformance {
+                command: ConformanceCommand::Compile {
+                    candidate,
+                    artifact_root,
+                    ..
+                }
+            } if candidate == PathBuf::from("candidate.json")
+                && artifact_root == PathBuf::from("staged")
+        ));
+        assert!(Cli::try_parse_from(["mdp", "conformance", "compile"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "conformance",
+                "compile",
+                "--candidate",
+                "candidate.json"
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn conformance_validate_requires_recorded_evidence_and_never_requests_a_provider() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "conformance",
+            "validate",
+            "--candidate",
+            "candidate.json",
+            "--deterministic",
+            "deterministic.json",
+            "--evaluator-inventory",
+            "inventory.json",
+            "--lifecycle-policy",
+            "policy.json",
+            "--invocation",
+            "invocation-1.json",
+            "--trial",
+            "trial-1.json",
+        ])
+        .expect("recorded behavioral evidence should parse");
+        match parsed.command {
+            Commands::Conformance {
+                command:
+                    ConformanceCommand::Validate {
+                        invocation,
+                        trial,
+                        deterministic,
+                        ..
+                    },
+            } => {
+                assert_eq!(invocation.len(), 1);
+                assert_eq!(trial.len(), 1);
+                assert_eq!(deterministic, PathBuf::from("deterministic.json"));
+            }
+            _ => panic!("expected behavioral validation command"),
+        }
+        assert!(Cli::try_parse_from(["mdp", "conformance", "validate"]).is_err());
+    }
 
     #[test]
     fn trace_requires_exactly_one_complete_source_form() {
@@ -806,5 +984,55 @@ mod tests {
         }
 
         assert!(Cli::try_parse_from(["mdp", "schema", "run-request"]).is_err());
+    }
+
+    #[test]
+    fn conformance_schema_targets_use_explicit_versioned_names() {
+        let targets = [
+            (
+                "conformance-candidate-v1",
+                SchemaTarget::ConformanceCandidateV1,
+            ),
+            (
+                "model-invocation-evidence-v1",
+                SchemaTarget::ModelInvocationEvidenceV1,
+            ),
+            ("evaluator-inventory-v1", SchemaTarget::EvaluatorInventoryV1),
+            ("evaluator-result-v1", SchemaTarget::EvaluatorResultV1),
+            (
+                "private-record-policy-v1",
+                SchemaTarget::PrivateRecordPolicyV1,
+            ),
+            (
+                "publication-approval-v1",
+                SchemaTarget::PublicationApprovalV1,
+            ),
+            ("conformance-trial-v1", SchemaTarget::ConformanceTrialV1),
+            ("job-conformance-v1", SchemaTarget::JobConformanceV1),
+            ("conformance-report-v1", SchemaTarget::ConformanceReportV1),
+            (
+                "public-conformance-report-v1",
+                SchemaTarget::PublicConformanceReportV1,
+            ),
+            (
+                "deterministic-conformance-v1",
+                SchemaTarget::DeterministicConformanceV1,
+            ),
+            (
+                "conformance-verifier-receipt-v1",
+                SchemaTarget::ConformanceVerifierReceiptV1,
+            ),
+            (
+                "behavioral-evaluation-v1",
+                SchemaTarget::BehavioralEvaluationV1,
+            ),
+        ];
+        for (name, expected) in targets {
+            let parsed = Cli::try_parse_from(["mdp", "schema", name])
+                .unwrap_or_else(|error| panic!("{name} should parse: {error}"));
+            assert!(
+                matches!(parsed.command, Commands::Schema { target } if std::mem::discriminant(&target) == std::mem::discriminant(&expected))
+            );
+        }
     }
 }
