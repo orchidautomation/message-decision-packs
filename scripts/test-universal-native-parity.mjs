@@ -8,8 +8,13 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
+  buildProviderRequestBody,
+  canonicalJsonBytes,
   DRIVER_REQUEST_CONTRACT,
   DRIVER_RESULT_CONTRACT,
+  projectOutputSchemaForOpenAI,
+  PROVIDER_REQUEST_SCHEMA_ID,
+  sha256Bytes,
   sha256CanonicalJson,
 } from './mdp-native-model-openai.mjs'
 
@@ -232,6 +237,56 @@ try {
     assert.equal(result.execution_id, request.execution_id)
     assert.equal(result.terminal_state, 'success')
     assert.deepEqual(JSON.parse(result.output.content), providerExample)
+    // Bind every declared model-step to the exact authorities handed across the
+    // subprocess boundary. These are the same digests consumed by driver v2
+    // when it records the run receipt; a profile-neutral adapter parse alone is
+    // not parity proof.
+    const projectedProviderSchema = projectOutputSchemaForOpenAI(outputSchema)
+    const providerBody = buildProviderRequestBody(request)
+    const authorityReceipt = {
+      contract: 'mdp.native-model-parity-authority.v1',
+      profile,
+      job_id: jobId,
+      operation: step.step_id,
+      prompt_sha256: step.prompt_sha256,
+      output_contract_sha256: step.output_contract_sha256,
+      subprocess_request_sha256: sha256CanonicalJson(request),
+      canonical_output_schema_sha256: sha256CanonicalJson(resolvedOutputSchema(step)),
+      provider_output_schema_sha256: sha256CanonicalJson(projectedProviderSchema),
+      provider_request_body_sha256: sha256Bytes(JSON.stringify(providerBody)),
+      output_sha256: sha256Bytes(output),
+    }
+    const authorityReceiptSha256 = sha256CanonicalJson(authorityReceipt)
+    assert.match(authorityReceiptSha256, /^[0-9a-f]{64}$/)
+    assert.equal(request.output_schema_sha256, sha256CanonicalJson(outputSchema))
+    assert.equal(result.provider_request_schema_id, PROVIDER_REQUEST_SCHEMA_ID)
+    assert.equal(result.provider_request_body_sha256, authorityReceipt.provider_request_body_sha256)
+    assert.equal(result.provider_output_schema_sha256, authorityReceipt.provider_output_schema_sha256)
+    assert.equal(result.output.sha256, authorityReceipt.output_sha256)
+    assert.equal(result.output.byte_count, Buffer.byteLength(output))
+    assert.equal(result.provider_observation.provider, 'openai')
+    assert.equal(result.provider_observation.response_id, `resp_parity_${index + 1}`)
+    assert.equal(result.provider_observation.model, 'gpt-test-synthetic')
+
+    // Normalization uses the public canonical prompt-output contract directly,
+    // so prove the returned bytes pass the same CLI validator used by `mdp run`.
+    // Governed generation/review output additionally needs runtime-created
+    // invocation and routed-context receipts and is covered by the canonical
+    // driver-v2/run tests; here its complete schema and authority hashes are
+    // still checked for every binding without making a live provider call.
+    if (step.phase === 'normalization') {
+      const outputPath = join(scratch, `canonical-output-${index + 1}.json`)
+      writeFileSync(outputPath, `${canonicalJsonBytes(providerExample)}\n`)
+      const validation = expectJson(
+        invoke(mdp, [
+          '--json', 'validate-prompt-output', '--dir', profile === 'gtm' ? profiles[0].pack : profiles[1].pack,
+          '--prompt-id', step.prompt_id, '--file', outputPath,
+        ]),
+        `${profile}/${jobId}/${step.phase} canonical prompt-output validation`,
+      )
+      assert.equal(validation.data.valid, true, JSON.stringify(validation.data.issues))
+      assert.equal(validation.data.artifacts.prompt_output.sha256, sha256Bytes(`${canonicalJsonBytes(providerExample)}\n`))
+    }
     assert.ok(!JSON.stringify(result).includes('OPENAI_API_KEY'))
   }
 

@@ -169,6 +169,7 @@ fn generative_trace_exposes_only_bound_driver_hashes() {
         driver_result_sha256: Some("b".repeat(64)),
         provider_request_body_sha256: Some("d".repeat(64)),
         provider_request_schema_id: Some("private-provider-schema".into()),
+        provider_response_body_sha256: Some("e".repeat(64)),
         provider_observation: None,
         terminal_state: TerminalState::Success,
         assurance: vec![crate::run_contracts::AssuranceDimension {
@@ -189,6 +190,7 @@ fn generative_trace_exposes_only_bound_driver_hashes() {
     assert!(encoded.contains("mdp.driver-result.v2"));
     assert!(encoded.contains(&"b".repeat(64)));
     assert!(!encoded.contains(&"d".repeat(64)));
+    assert!(!encoded.contains(&"e".repeat(64)));
     assert!(!encoded.contains("private-provider-schema"));
     assert!(!encoded.contains("private diagnostic prose"));
 }
@@ -214,6 +216,7 @@ fn trace_runner_audit_requires_exact_contained_authority_bytes() {
         driver_result_sha256: Some("b".repeat(64)),
         provider_request_body_sha256: None,
         provider_request_schema_id: None,
+        provider_response_body_sha256: None,
         provider_observation: None,
         terminal_state: TerminalState::Success,
         assurance: vec![],

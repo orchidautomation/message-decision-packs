@@ -258,6 +258,7 @@ const emptyResult = (
   terminalState,
   diagnosticCode,
   providerRequestBodySha256 = null,
+  providerResponseBodySha256 = null,
   providerOutputSchemaSha256 = null,
 ) => ({
   contract: DRIVER_RESULT_CONTRACT,
@@ -268,6 +269,7 @@ const emptyResult = (
   output: null,
   provider_request_body_sha256: providerRequestBodySha256,
   provider_request_schema_id: providerRequestBodySha256 === null ? null : PROVIDER_REQUEST_SCHEMA_ID,
+  provider_response_body_sha256: providerResponseBodySha256,
   provider_output_schema_sha256: providerOutputSchemaSha256,
   provider_observation: null,
   diagnostic_code: diagnosticCode,
@@ -298,9 +300,10 @@ const readBoundedResponse = async (response) => {
   const contentLength = Number(response.headers?.get?.('content-length'))
   if (Number.isFinite(contentLength) && contentLength > MAX_PROVIDER_RESPONSE_BYTES) fault('provider_response_too_large')
   if (!response.body?.getReader) {
-    const text = await response.text()
-    if (Buffer.byteLength(text) > MAX_PROVIDER_RESPONSE_BYTES) fault('provider_response_too_large')
-    return text
+    if (typeof response.arrayBuffer !== 'function') fault('provider_response_invalid')
+    const bytes = Buffer.from(await response.arrayBuffer())
+    if (bytes.length > MAX_PROVIDER_RESPONSE_BYTES) fault('provider_response_too_large')
+    return { text: bytes.toString('utf8'), sha256: sha256Bytes(bytes) }
   }
   const reader = response.body.getReader()
   const chunks = []
@@ -315,7 +318,8 @@ const readBoundedResponse = async (response) => {
     }
     chunks.push(value)
   }
-  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8')
+  const bytes = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+  return { text: bytes.toString('utf8'), sha256: sha256Bytes(bytes) }
 }
 
 const realProviderCall = async ({ providerBodyText, environment, fetchImpl, timeoutMs }) => {
@@ -346,10 +350,10 @@ const realProviderCall = async ({ providerBodyText, environment, fetchImpl, time
       if (error?.name === 'AbortError') fault('provider_timeout')
       fault('provider_transport_error')
     }
-    const text = await readBoundedResponse(response)
+    const { text, sha256 } = await readBoundedResponse(response)
     if (!response.ok) fault('provider_http_error')
     try {
-      return JSON.parse(text)
+      return { response: JSON.parse(text), providerResponseBodySha256: sha256 }
     } catch {
       fault('provider_response_invalid')
     }
@@ -360,6 +364,7 @@ const realProviderCall = async ({ providerBodyText, environment, fetchImpl, time
 
 export const executeNativeModelRequest = async (request, options = {}) => {
   let providerRequestBodySha256 = null
+  let providerResponseBodySha256 = null
   let providerOutputSchemaSha256 = null
   try {
     validateNativeModelRequest(request)
@@ -376,8 +381,10 @@ export const executeNativeModelRequest = async (request, options = {}) => {
 
     let response
     if (options.mode === 'mock') {
-      const mockBytes = Buffer.byteLength(JSON.stringify(options.mockResponse))
+      const rawMockResponse = JSON.stringify(options.mockResponse)
+      const mockBytes = Buffer.byteLength(rawMockResponse)
       if (mockBytes > MAX_PROVIDER_RESPONSE_BYTES) fault('provider_response_too_large')
+      providerResponseBodySha256 = sha256Bytes(rawMockResponse)
       response = options.mockResponse
     } else if (options.mode === 'dry-run') {
       return emptyResult(
@@ -385,15 +392,18 @@ export const executeNativeModelRequest = async (request, options = {}) => {
         'no-draft:policy-blocked',
         'dry_run_complete',
         providerRequestBodySha256,
+        providerResponseBodySha256,
         providerOutputSchemaSha256,
       )
     } else {
-      response = await realProviderCall({
+      const providerResult = await realProviderCall({
         providerBodyText,
         environment: options.environment || process.env,
         fetchImpl: options.fetchImpl || globalThis.fetch,
         timeoutMs: request.timeout_ms || DEFAULT_REQUEST_TIMEOUT_MS,
       })
+      response = providerResult.response
+      providerResponseBodySha256 = providerResult.providerResponseBodySha256
     }
 
     requireObject(response, 'provider response')
@@ -420,6 +430,7 @@ export const executeNativeModelRequest = async (request, options = {}) => {
       },
       provider_request_body_sha256: providerRequestBodySha256,
       provider_request_schema_id: PROVIDER_REQUEST_SCHEMA_ID,
+      provider_response_body_sha256: providerResponseBodySha256,
       provider_output_schema_sha256: providerOutputSchemaSha256,
       provider_observation: {
         provider: 'openai',
@@ -435,6 +446,7 @@ export const executeNativeModelRequest = async (request, options = {}) => {
         error.terminalState,
         error.code,
         providerRequestBodySha256,
+        providerResponseBodySha256,
         providerOutputSchemaSha256,
       )
     }
@@ -443,6 +455,7 @@ export const executeNativeModelRequest = async (request, options = {}) => {
       'no-draft:preflight-refused',
       'request_invalid',
       providerRequestBodySha256,
+      providerResponseBodySha256,
       providerOutputSchemaSha256,
     )
   }

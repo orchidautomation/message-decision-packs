@@ -416,6 +416,7 @@ fn verify_runner_audit(
         RunMode::Deterministic => {
             if audit.provider_request_body_sha256.is_some()
                 || audit.provider_request_schema_id.is_some()
+                || audit.provider_response_body_sha256.is_some()
                 || audit.provider_observation.is_some()
             {
                 issues.push("deterministic-provider-request-evidence-present".to_string());
@@ -450,7 +451,21 @@ fn verify_runner_audit(
             {
                 issues.push("generative-provider-request-hash-invalid".to_string());
             }
+            if audit
+                .provider_response_body_sha256
+                .as_deref()
+                .is_some_and(|sha256| !is_canonical_sha256(sha256))
+            {
+                issues.push("generative-provider-response-hash-invalid".to_string());
+            }
             if receipt.terminal_state.is_success() {
+                if !audit
+                    .provider_response_body_sha256
+                    .as_deref()
+                    .is_some_and(is_canonical_sha256)
+                {
+                    issues.push("generative-provider-response-evidence-missing".to_string());
+                }
                 let observation_valid = bundle.model.as_ref().is_some_and(|model| {
                     audit
                         .provider_observation
@@ -883,6 +898,7 @@ mod tests {
             driver_result_sha256: None,
             provider_request_body_sha256: None,
             provider_request_schema_id: None,
+            provider_response_body_sha256: None,
             provider_observation: None,
             terminal_state: receipt.terminal_state,
             assurance: receipt.assurance.clone(),

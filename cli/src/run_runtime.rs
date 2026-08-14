@@ -46,6 +46,12 @@ const MAX_EXECUTION_ID_BYTES: usize = 128;
 const MAX_OUTPUT_LEAF_BYTES: usize = 120;
 const MAX_RECOVERY_CLAIM_BYTES: usize = 512;
 const MAX_POLICY_INPUT_BYTES: u64 = 100 * 1024 * 1024;
+// Native requests also contain the prompt envelope and projected provider
+// schema. Keep the public generative input budget well below the driver's
+// 2 MiB serialized-request ceiling so requests cannot pass preflight and then
+// fail only after the immutable bundle has been published.
+const MAX_NATIVE_DECLARED_INPUT_BYTES: u64 = 128 * 1024;
+const MAX_NATIVE_SERIALIZED_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_POLICY_OUTPUT_BYTES: u64 = 1024 * 1024;
 const DRIVER_RESULT_ENVELOPE_BYTES: u64 = 64 * 1024;
 const MAX_FINALIZATION_RESERVE_MS: u64 = 250;
@@ -189,6 +195,7 @@ struct NativeSubprocessRequestV1<'a> {
     output_schema_sha256: &'a str,
     schema_name: String,
     timeout_ms: u64,
+    max_output_tokens: u64,
 }
 
 #[derive(Deserialize)]
@@ -218,6 +225,7 @@ struct NativeSubprocessResultV1 {
     output: Option<NativeSubprocessOutputV1>,
     provider_request_body_sha256: Option<String>,
     provider_request_schema_id: Option<String>,
+    provider_response_body_sha256: Option<String>,
     provider_output_schema_sha256: Option<String>,
     provider_observation: Option<NativeSubprocessObservationV1>,
     diagnostic_code: Option<String>,
@@ -262,40 +270,26 @@ fn invoke_native_driver(
         ));
     }
 
-    let mut visible_input = String::new();
-    visible_input.push_str("<mdp-prompt id=\"");
-    visible_input.push_str(&request.prompt_id);
-    visible_input.push_str("\" version=\"");
-    visible_input.push_str(&request.prompt_version);
-    visible_input.push_str("\" canonical_sha256=\"");
-    visible_input.push_str(&request.prompt_canonical_sha256);
-    visible_input.push_str("\">\n");
-    visible_input.push_str(&request.prompt.content_utf8);
-    visible_input.push_str("\n</mdp-prompt>\n<mdp-invocation sha256=\"");
-    visible_input.push_str(&request.prompt_invocation.authority.sha256);
-    visible_input.push_str("\">\n");
-    visible_input.push_str(&request.prompt_invocation.content_utf8);
-    visible_input.push_str("\n</mdp-invocation>\n<mdp-host-input name=\"prompt_receipt\">\n");
-    visible_input.push_str(&request.prompt_invocation.content_utf8);
-    visible_input
-        .push_str("\n</mdp-host-input>\n<mdp-host-input name=\"invocation_receipt_sha256\">\n");
-    visible_input.push_str(&request.prompt_invocation.authority.sha256);
-    visible_input.push_str("\n</mdp-host-input>\n");
-    for input in &request.inputs {
-        visible_input.push_str("<mdp-declared-input name=\"");
-        let visible_name = input
-            .authority
-            .logical_name
-            .strip_prefix("declared/")
-            .and_then(|name| name.split_once('-'))
-            .map_or(input.authority.logical_name.as_str(), |(_, name)| name);
-        visible_input.push_str(visible_name);
-        visible_input.push_str("\" sha256=\"");
-        visible_input.push_str(&input.authority.sha256);
-        visible_input.push_str("\">\n");
-        visible_input.push_str(&input.content_utf8);
-        visible_input.push_str("\n</mdp-declared-input>\n");
-    }
+    let visible_inputs = request
+        .inputs
+        .iter()
+        .map(|input| {
+            (
+                input.authority.logical_name.clone(),
+                input.authority.sha256.clone(),
+                input.content_utf8.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let visible_input = native_visible_input(
+        &request.prompt_id,
+        &request.prompt_version,
+        &request.prompt_canonical_sha256,
+        &request.prompt.content_utf8,
+        &request.prompt_invocation.authority.sha256,
+        &request.prompt_invocation.content_utf8,
+        &visible_inputs,
+    );
     let native = NativeSubprocessRequestV1 {
         contract: NATIVE_SUBPROCESS_REQUEST_V1,
         execution_id: &request.execution_id,
@@ -308,8 +302,15 @@ fn invoke_native_driver(
         output_schema_sha256: &request.provider_output_schema_sha256,
         schema_name: format!("mdp_{}", request.operation.replace([':', '/', '-'], "_")),
         timeout_ms: request.provider_policy.timeout_ms,
+        max_output_tokens: provider_max_output_tokens(request.provider_policy.max_output_bytes),
     };
     let request_bytes = serde_json::to_vec(&native)?;
+    if request_bytes.len() > MAX_NATIVE_SERIALIZED_REQUEST_BYTES {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "native-request-too-large",
+        ));
+    }
     let source = format!("{BUNDLED_NATIVE_DRIVER_SOURCE}\nawait main()\n");
     let mut command = Command::new(node);
     command
@@ -332,11 +333,7 @@ fn invoke_native_driver(
         .ok_or_else(|| run_failure(RunFailureKind::RunnerFailed, "driver-stdin-failed"))?
         .write_all(&request_bytes)
         .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "driver-stdin-failed"))?;
-    let driver_stdout_limit = request
-        .provider_policy
-        .max_output_bytes
-        .checked_add(DRIVER_RESULT_ENVELOPE_BYTES)
-        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "driver-output-limit-invalid"))?;
+    let driver_stdout_limit = driver_stdout_limit(request.provider_policy.max_output_bytes)?;
     let (status, stdout_bytes) = supervise_child(
         &mut child,
         request.provider_policy.timeout_ms,
@@ -385,6 +382,7 @@ fn invoke_native_driver(
         output: result_output,
         provider_request_body_sha256: native_result.provider_request_body_sha256,
         provider_request_schema_id: native_result.provider_request_schema_id,
+        provider_response_body_sha256: native_result.provider_response_body_sha256,
         provider_output_schema_sha256: native_result.provider_output_schema_sha256,
         provider_observation: observation,
         diagnostic_code: native_result.diagnostic_code,
@@ -392,6 +390,66 @@ fn invoke_native_driver(
     };
     seal_driver_result(&mut result)?;
     Ok(result)
+}
+
+fn native_visible_input(
+    prompt_id: &str,
+    prompt_version: &str,
+    prompt_sha256: &str,
+    prompt_content: &str,
+    invocation_sha256: &str,
+    invocation_content: &str,
+    inputs: &[(String, String, String)],
+) -> String {
+    let mut visible_input = String::new();
+    visible_input.push_str("<mdp-prompt id=\"");
+    visible_input.push_str(prompt_id);
+    visible_input.push_str("\" version=\"");
+    visible_input.push_str(prompt_version);
+    visible_input.push_str("\" canonical_sha256=\"");
+    visible_input.push_str(prompt_sha256);
+    visible_input.push_str("\">\n");
+    visible_input.push_str(prompt_content);
+    visible_input.push_str("\n</mdp-prompt>\n<mdp-invocation sha256=\"");
+    visible_input.push_str(invocation_sha256);
+    visible_input.push_str("\">\n");
+    visible_input.push_str(invocation_content);
+    visible_input.push_str("\n</mdp-invocation>\n<mdp-host-input name=\"prompt_receipt\">\n");
+    visible_input.push_str(invocation_content);
+    visible_input
+        .push_str("\n</mdp-host-input>\n<mdp-host-input name=\"invocation_receipt_sha256\">\n");
+    visible_input.push_str(invocation_sha256);
+    visible_input.push_str("\n</mdp-host-input>\n");
+    for (logical_name, sha256, content) in inputs {
+        visible_input.push_str("<mdp-declared-input name=\"");
+        let visible_name = logical_name
+            .strip_prefix("declared/")
+            .and_then(|name| name.split_once('-'))
+            .map_or(logical_name.as_str(), |(_, name)| name);
+        visible_input.push_str(visible_name);
+        visible_input.push_str("\" sha256=\"");
+        visible_input.push_str(sha256);
+        visible_input.push_str("\">\n");
+        visible_input.push_str(content);
+        visible_input.push_str("\n</mdp-declared-input>\n");
+    }
+    visible_input
+}
+
+fn provider_max_output_tokens(max_output_bytes: u64) -> u64 {
+    // Four UTF-8 bytes per token is a conservative provider-side budget for
+    // ordinary JSON. The local decoded-byte validation remains authoritative.
+    (max_output_bytes / 4).clamp(1, 100_000)
+}
+
+fn driver_stdout_limit(max_output_bytes: u64) -> Result<u64> {
+    // JSON may encode each decoded byte as a six-byte `\u00xx` escape. The
+    // decoded DriverOutputV2 byte_count is still checked against the smaller
+    // policy limit after parsing.
+    max_output_bytes
+        .checked_mul(6)
+        .and_then(|limit| limit.checked_add(DRIVER_RESULT_ENVELOPE_BYTES))
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "driver-output-limit-invalid"))
 }
 
 fn supervise_child(
@@ -774,6 +832,15 @@ where
     };
     let bundle_value = serde_json::to_value(&bundle)?;
     let bundle_sha256 = canonical_json_sha256_for_domain(RUN_BUNDLE_V1, &bundle_value)?;
+    if request.mode == RunMode::Generative {
+        validate_native_request_size_before_bundle(
+            request,
+            &manifest,
+            &staged_pack,
+            staged_prompt.as_ref().expect("generative prompt validated"),
+            &staged,
+        )?;
+    }
     write_json_create_new(&transaction_dir.join("run-bundle.json"), &bundle)?;
 
     let mut validation = None;
@@ -781,6 +848,7 @@ where
     let mut driver_result_sha256 = None;
     let mut provider_request_body_sha256 = None;
     let mut provider_request_schema_id = None;
+    let mut provider_response_body_sha256 = None;
     let mut provider_observation = None;
     let (mut terminal_state, mut success_values) = if request.mode == RunMode::Generative {
         let prompt = staged_prompt.as_ref().ok_or_else(|| {
@@ -800,6 +868,7 @@ where
         )?;
         provider_request_body_sha256 = outcome.provider_request_body_sha256;
         provider_request_schema_id = outcome.provider_request_schema_id;
+        provider_response_body_sha256 = outcome.provider_response_body_sha256;
         provider_observation = outcome.provider_observation;
         driver_request_sha256 = Some(outcome.driver_request_sha256);
         driver_result_sha256 = Some(outcome.driver_result_sha256);
@@ -1029,6 +1098,7 @@ where
         driver_result_sha256,
         provider_request_body_sha256,
         provider_request_schema_id,
+        provider_response_body_sha256,
         provider_observation,
         terminal_state,
         assurance: assurance.clone(),
@@ -1145,9 +1215,126 @@ struct GenerativeOutcome {
     validation: Option<Value>,
     provider_request_body_sha256: Option<String>,
     provider_request_schema_id: Option<String>,
+    provider_response_body_sha256: Option<String>,
     provider_observation: Option<DriverProviderObservationV2>,
     driver_request_sha256: String,
     driver_result_sha256: String,
+}
+
+fn validate_native_request_size_before_bundle(
+    request: &RunRequestV1,
+    manifest: &crate::models::Manifest,
+    staged_pack: &Path,
+    staged_prompt: &StagedInput,
+    staged_inputs: &[StagedInput],
+) -> Result<()> {
+    let identity = request
+        .job_identity
+        .as_ref()
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "job-identity-required"))?;
+    let step =
+        resolve_selected_model_step(staged_pack, manifest, &identity.job_id, &request.operation)
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "model-step-not-declared"))?;
+    validate_generative_job_gates(staged_pack, manifest, &identity.job_id, step.phase)?;
+    validate_selected_prompt(staged_pack, staged_prompt, &step)?;
+    validate_step_inputs(&step, staged_inputs)?;
+    validate_generative_input_gates(staged_inputs)?;
+
+    let invocation_value = json!({
+        "contract": "mdp.prompt-invocation.v1",
+        "job_id": identity.job_id,
+        "prompt": {
+            "id": step.prompt_id,
+            "version": step.prompt_version,
+            "sha256": step.prompt_sha256,
+        },
+        "inputs": staged_inputs.iter().map(|input| json!({
+            "name": input.logical_name,
+            "sha256": input.authority.sha256,
+        })).collect::<Vec<_>>(),
+    });
+    let mut invocation_bytes = serde_json::to_vec_pretty(&invocation_value)?;
+    invocation_bytes.push(b'\n');
+    let invocation_content = std::str::from_utf8(&invocation_bytes)
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "invocation-not-utf8"))?;
+    let invocation_sha256 = sha256_hex(&invocation_bytes);
+    let visible_inputs = staged_inputs
+        .iter()
+        .map(|input| {
+            Ok((
+                input.authority.logical_name.clone(),
+                input.authority.sha256.clone(),
+                utf8_staged_content(input, "declared-input")?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let visible_input = native_visible_input(
+        &step.prompt_id,
+        &step.prompt_version,
+        &step.prompt_sha256,
+        &utf8_staged_content(staged_prompt, "prompt")?,
+        &invocation_sha256,
+        invocation_content,
+        &visible_inputs,
+    );
+
+    let canonical_output_schema = match (
+        step.output_contract.schema.clone(),
+        step.output_contract.schema_ref.as_deref(),
+    ) {
+        (Some(schema), _) => schema,
+        (None, Some(schema_ref)) => prompt_output_schema_for_ref(schema_ref).ok_or_else(|| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "output-schema-ref-unsupported",
+            )
+        })?,
+        (None, None) => {
+            return Err(run_failure(
+                RunFailureKind::PolicyBlocked,
+                "output-schema-missing",
+            ));
+        }
+    };
+    let provider_schema_source = if step.output_contract.schema_ref.is_some() {
+        let example = required_output_example(
+            &step.output_contract.example,
+            &step.output_contract.required_top_level,
+        )?;
+        schema_for_example_shape(&canonical_output_schema, &example)
+    } else {
+        provider_schema_source(
+            &canonical_output_schema,
+            &step.output_contract.required_top_level,
+        )?
+    };
+    let provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
+    let provider_output_schema_sha256 = canonical_json_sha256(&provider_output_schema)?;
+    let model = request
+        .model
+        .as_ref()
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "model-identity-required"))?;
+    let native = NativeSubprocessRequestV1 {
+        contract: NATIVE_SUBPROCESS_REQUEST_V1,
+        execution_id: &request.execution_id,
+        provider: &model.provider,
+        model: &model.requested_model,
+        prompt_id: &step.prompt_id,
+        declared_inputs_only: true,
+        input: visible_input,
+        output_schema: &provider_output_schema,
+        output_schema_sha256: &provider_output_schema_sha256,
+        schema_name: format!("mdp_{}", request.operation.replace([':', '/', '-'], "_")),
+        timeout_ms: request.execution_policy.timeout_ms,
+        max_output_tokens: provider_max_output_tokens(request.execution_policy.max_output_bytes),
+    };
+    if serde_json::to_vec(&native)?.len() > MAX_NATIVE_SERIALIZED_REQUEST_BYTES {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "native-request-too-large",
+        ));
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1312,6 +1499,7 @@ where
             validation: None,
             provider_request_body_sha256: None,
             provider_request_schema_id: None,
+            provider_response_body_sha256: None,
             provider_observation: None,
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
@@ -1324,6 +1512,7 @@ where
             validation: None,
             provider_request_body_sha256: result.provider_request_body_sha256,
             provider_request_schema_id: result.provider_request_schema_id,
+            provider_response_body_sha256: result.provider_response_body_sha256,
             provider_observation: result.provider_observation,
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
@@ -1371,6 +1560,7 @@ where
         validation: if valid { Some(validation) } else { None },
         provider_request_body_sha256: result.provider_request_body_sha256,
         provider_request_schema_id: result.provider_request_schema_id,
+        provider_response_body_sha256: result.provider_response_body_sha256,
         provider_observation: result.provider_observation,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: result.result_sha256,
@@ -1389,6 +1579,7 @@ fn failed_generative_outcome(
         output: None,
         provider_request_body_sha256: None,
         provider_request_schema_id: None,
+        provider_response_body_sha256: None,
         provider_output_schema_sha256: Some(driver_request.provider_output_schema_sha256.clone()),
         provider_observation: None,
         diagnostic_code: Some(diagnostic_code.into()),
@@ -1401,6 +1592,7 @@ fn failed_generative_outcome(
         validation: None,
         provider_request_body_sha256: None,
         provider_request_schema_id: None,
+        provider_response_body_sha256: None,
         provider_observation: None,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: failed_result.result_sha256,
@@ -1613,6 +1805,10 @@ fn validate_driver_result(request: &DriverRequestV2, result: &DriverResultV2) ->
                     .provider_request_schema_id
                     .as_deref()
                     .is_none_or(|schema_id| schema_id.trim().is_empty())
+                || !result
+                    .provider_response_body_sha256
+                    .as_deref()
+                    .is_some_and(is_canonical_sha256)
                 || result
                     .provider_observation
                     .as_ref()
@@ -2099,6 +2295,11 @@ fn validate_request(request: &RunRequestV1) -> Result<()> {
             {
                 return Err(anyhow!(
                     "generative execution must use private staging and no tools"
+                ));
+            }
+            if request.execution_policy.max_input_bytes > MAX_NATIVE_DECLARED_INPUT_BYTES {
+                return Err(anyhow!(
+                    "generative max_input_bytes exceeds the native request boundary"
                 ));
             }
         }
@@ -2596,8 +2797,8 @@ mod tests {
     use super::{
         execute_run_inner, execute_run_inner_with_driver, governed_normalization_outcome,
         gtm_lineage_schema_ids, gtm_success_artifacts, project_output_schema_for_openai,
-        provider_schema_source, seal_driver_request, seal_driver_result, validate_driver_result,
-        validate_request,
+        provider_max_output_tokens, provider_schema_source, seal_driver_request,
+        seal_driver_result, validate_driver_result, validate_request,
     };
     use crate::commands::init::init_pack;
     use crate::run_contracts::{
@@ -2653,10 +2854,27 @@ mod tests {
         request.execution_policy.authorized_endpoints =
             vec![super::OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into()];
         request.execution_policy.environment_allowlist = vec!["OPENAI_API_KEY".into()];
+        request.execution_policy.max_input_bytes = super::MAX_NATIVE_DECLARED_INPUT_BYTES;
         assert!(validate_request(&request).is_ok());
+
+        request.execution_policy.max_input_bytes = super::MAX_NATIVE_DECLARED_INPUT_BYTES + 1;
+        assert!(validate_request(&request).is_err());
+        request.execution_policy.max_input_bytes = super::MAX_NATIVE_DECLARED_INPUT_BYTES;
 
         request.execution_policy.authorized_endpoints = vec!["https://example.test".into()];
         assert!(validate_request(&request).is_err());
+    }
+
+    #[test]
+    fn native_output_limits_bind_provider_tokens_and_json_encoding_headroom() {
+        assert_eq!(provider_max_output_tokens(1), 1);
+        assert_eq!(provider_max_output_tokens(1_024), 256);
+        assert_eq!(provider_max_output_tokens(1_048_576), 100_000);
+        assert_eq!(super::driver_stdout_limit(1).unwrap(), 65_542);
+        assert_eq!(
+            super::driver_stdout_limit(1_048_576).unwrap(),
+            6 * 1_048_576 + 65_536
+        );
     }
 
     #[test]
@@ -2722,6 +2940,7 @@ mod tests {
             }),
             provider_request_body_sha256: Some("d".repeat(64)),
             provider_request_schema_id: Some("openai.responses.json-schema-request.v1".into()),
+            provider_response_body_sha256: Some("f".repeat(64)),
             provider_output_schema_sha256: Some(request.provider_output_schema_sha256.clone()),
             provider_observation: Some(DriverProviderObservationV2 {
                 provider: "openai".into(),
@@ -2741,6 +2960,11 @@ mod tests {
 
         result = valid.clone();
         result.provider_request_schema_id = None;
+        seal_driver_result(&mut result).unwrap();
+        assert!(validate_driver_result(&request, &result).is_err());
+
+        result = valid.clone();
+        result.provider_response_body_sha256 = None;
         seal_driver_result(&mut result).unwrap();
         assert!(validate_driver_result(&request, &result).is_err());
 
@@ -2809,6 +3033,7 @@ mod tests {
                     provider_request_schema_id: Some(
                         "openai.responses.json-schema-request.v1".into(),
                     ),
+                    provider_response_body_sha256: None,
                     provider_output_schema_sha256: Some(
                         driver_request.provider_output_schema_sha256.clone(),
                     ),
@@ -2871,6 +3096,7 @@ mod tests {
                     provider_request_schema_id: Some(
                         "openai.responses.json-schema-request.v1".into(),
                     ),
+                    provider_response_body_sha256: Some("f".repeat(64)),
                     provider_output_schema_sha256: Some(
                         driver_request.provider_output_schema_sha256.clone(),
                     ),
@@ -2891,6 +3117,7 @@ mod tests {
         assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
         let audit: crate::run_contracts::RunnerAuditV1 =
             serde_json::from_slice(&fs::read(run.join("runner-audit.json")).unwrap()).unwrap();
+        assert_eq!(audit.provider_response_body_sha256, Some("f".repeat(64)));
         let observation = audit.provider_observation.unwrap();
         assert_eq!(observation.provider, "openai");
         assert_eq!(
@@ -2909,6 +3136,15 @@ mod tests {
         jsonschema::draft202012::validate(&bundle_schema, &bundle).unwrap();
         bundle["mode"] = serde_json::json!("deterministic");
         assert!(jsonschema::draft202012::validate(&bundle_schema, &bundle).is_err());
+        assert_eq!(
+            crate::commands::run_verification::verify_run_files(
+                Some(&run.join("run-bundle.json")),
+                &run.join("run-receipt.json"),
+                Some(&run),
+            )
+            .unwrap()["valid"],
+            true
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -2976,6 +3212,7 @@ mod tests {
                     output: None,
                     provider_request_body_sha256: None,
                     provider_request_schema_id: None,
+                    provider_response_body_sha256: None,
                     provider_output_schema_sha256: Some(
                         driver_request.provider_output_schema_sha256.clone(),
                     ),
@@ -3607,7 +3844,7 @@ mod tests {
                 tool_mode: "none".into(),
                 network_mode: "none".into(),
                 authorized_endpoints: vec![],
-                max_input_bytes: 2_097_152,
+                max_input_bytes: 131_072,
                 max_output_bytes: 1_048_576,
                 timeout_ms: 30_000,
                 retention_policy: "receipt-only".into(),
@@ -3719,7 +3956,7 @@ mod tests {
                 tool_mode: "none".into(),
                 network_mode: "authorized-endpoints-only".into(),
                 authorized_endpoints: vec![super::OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into()],
-                max_input_bytes: 2_097_152,
+                max_input_bytes: 131_072,
                 max_output_bytes: 1_048_576,
                 timeout_ms: 30_000,
                 retention_policy: "receipt-only".into(),

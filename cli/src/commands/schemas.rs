@@ -1478,7 +1478,7 @@ fn execution_policy_v1_schema() -> Value {
             "network_mode": {"const": "none"},
             "authorized_endpoints": {"type": "array", "maxItems": 0},
             "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
-            "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
+            "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
             "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
             "retention_policy": {"enum": ["receipt-only", "customer-controlled-workdir"]}
         }
@@ -1500,8 +1500,8 @@ fn generative_execution_policy_v1_schema() -> Value {
             "tool_mode": {"const": "none"},
             "network_mode": {"const": "authorized-endpoints-only"},
             "authorized_endpoints": {"const": ["https://api.openai.com/v1/responses"]},
-            "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
-            "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
+            "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 131072},
+            "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
             "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
             "retention_policy": {"enum": ["receipt-only", "customer-controlled-workdir"]}
         }
@@ -1861,7 +1861,8 @@ fn driver_result_v2_schema() -> Value {
         "required": [
             "contract", "execution_id", "operation", "terminal_state", "output",
             "provider_request_body_sha256", "provider_request_schema_id",
-            "provider_output_schema_sha256", "provider_observation", "diagnostic_code",
+            "provider_response_body_sha256", "provider_output_schema_sha256",
+            "provider_observation", "diagnostic_code",
             "result_sha256"
         ],
         "additionalProperties": false,
@@ -1873,6 +1874,7 @@ fn driver_result_v2_schema() -> Value {
             "output": nullable_object_schema(driver_output_v2_schema()),
             "provider_request_body_sha256": optional_sha256_schema(),
             "provider_request_schema_id": {"type": ["string", "null"]},
+            "provider_response_body_sha256": optional_sha256_schema(),
             "provider_output_schema_sha256": optional_sha256_schema(),
             "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
             "diagnostic_code": {"type": ["string", "null"]},
@@ -1888,6 +1890,7 @@ fn driver_result_v2_schema() -> Value {
                     "output": driver_output_v2_schema(),
                     "provider_request_body_sha256": sha256_schema(),
                     "provider_request_schema_id": non_blank_string_schema(),
+                    "provider_response_body_sha256": sha256_schema(),
                     "provider_output_schema_sha256": sha256_schema(),
                     "provider_observation": {
                         "allOf": [
@@ -1910,7 +1913,8 @@ fn runner_audit_v1_schema() -> Value {
         "required": [
             "contract", "execution_id", "runner_version", "runner_build_sha256", "platform",
             "snapshot_sha256", "driver_request_sha256", "driver_result_sha256",
-            "provider_request_body_sha256", "provider_request_schema_id", "provider_observation",
+            "provider_request_body_sha256", "provider_request_schema_id",
+            "provider_response_body_sha256", "provider_observation",
             "terminal_state", "assurance", "limitations"
         ],
         "additionalProperties": false,
@@ -1925,6 +1929,7 @@ fn runner_audit_v1_schema() -> Value {
             "driver_result_sha256": optional_sha256_schema(),
             "provider_request_body_sha256": optional_sha256_schema(),
             "provider_request_schema_id": {"type": ["string", "null"]},
+            "provider_response_body_sha256": optional_sha256_schema(),
             "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
             "terminal_state": terminal_state_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
@@ -4968,6 +4973,7 @@ mod tests {
             },
             "provider_request_body_sha256": "b".repeat(64),
             "provider_request_schema_id": "openai.responses.json-schema-request.v1",
+            "provider_response_body_sha256": "e".repeat(64),
             "provider_output_schema_sha256": "c".repeat(64),
             "provider_observation": {
                 "provider": "openai",
@@ -4981,6 +4987,7 @@ mod tests {
         for field in [
             "provider_request_body_sha256",
             "provider_request_schema_id",
+            "provider_response_body_sha256",
             "provider_output_schema_sha256",
             "provider_observation",
         ] {
@@ -5075,7 +5082,7 @@ mod tests {
                 "tool_mode": "none",
                 "network_mode": "authorized-endpoints-only",
                 "authorized_endpoints": ["https://api.openai.com/v1/responses"],
-                "max_input_bytes": 1048576,
+                "max_input_bytes": 131072,
                 "max_output_bytes": 1048576,
                 "timeout_ms": 60000,
                 "retention_policy": "receipt-only"

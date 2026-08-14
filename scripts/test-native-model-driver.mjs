@@ -109,6 +109,7 @@ assert.equal(mockResult.contract, DRIVER_RESULT_CONTRACT)
 assert.equal(mockResult.terminal_state, 'success')
 assert.equal(mockResult.execution_id, request.execution_id)
 assert.equal(mockResult.provider_request_schema_id, PROVIDER_REQUEST_SCHEMA_ID)
+assert.equal(mockResult.provider_response_body_sha256, sha256(JSON.stringify(mockResponse)))
 assert.equal(mockResult.provider_output_schema_sha256, sha256CanonicalJson(schema))
 assert.equal(mockResult.output.media_type, 'application/json')
 assert.equal(mockResult.output.encoding, 'utf-8')
@@ -127,6 +128,23 @@ assert.equal(mockResult.diagnostic_code, null)
 assert.ok(!JSON.stringify(mockResult).includes('OPENAI_API_KEY'))
 assert.ok(!JSON.stringify(mockResult).includes('must-not-be-needed-or-observed'))
 assert.ok(!JSON.stringify(mockResult).includes('attacker.invalid'))
+
+const exactProviderBytes = ` ${JSON.stringify(mockResponse)}\n`
+const realSuccess = await executeNativeModelRequest(request, {
+  mode: 'real',
+  environment: {
+    MDP_ALLOW_NATIVE_MODEL_CALLS: '1',
+    OPENAI_API_KEY: 'sk-private-success-canary',
+  },
+  fetchImpl: async () => new Response(exactProviderBytes, {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  }),
+})
+assert.equal(realSuccess.terminal_state, 'success')
+assert.equal(realSuccess.provider_response_body_sha256, sha256(exactProviderBytes))
+assert.ok(!JSON.stringify(realSuccess).includes(exactProviderBytes))
+assert.ok(!JSON.stringify(realSuccess).includes('sk-private-success-canary'))
 
 for (const [environment, diagnosticCode] of [
   [{ OPENAI_API_KEY: 'sk-secret' }, 'native_model_calls_not_allowed'],
