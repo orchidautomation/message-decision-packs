@@ -659,7 +659,7 @@ pub(crate) enum CardKind {
     Gaps,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub(crate) struct PromptFile {
     pub(crate) format: String,
     pub(crate) id: String,
@@ -695,7 +695,7 @@ pub(crate) struct PromptFile {
     pub(crate) output_contract: PromptOutputContract,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub(crate) struct PromptInput {
     pub(crate) name: String,
     pub(crate) description: String,
@@ -706,7 +706,7 @@ pub(crate) struct PromptInput {
     pub(crate) producer: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub(crate) struct PromptOutputContract {
     pub(crate) contract: String,
     #[serde(default)]
@@ -721,7 +721,7 @@ pub(crate) struct PromptOutputContract {
     pub(crate) example: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub(crate) struct PromptEntryDefaults {
     pub(crate) body: String,
     pub(crate) applies_to: Vec<String>,

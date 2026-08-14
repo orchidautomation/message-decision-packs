@@ -181,10 +181,23 @@ pub(crate) fn verify_run(
     }
 
     let mut dimensions = std::collections::HashSet::new();
+    let expected_dimensions = [
+        "declared-input-isolation",
+        "declared-input-byte-binding",
+        "source-mutation-resistance",
+        "stateless-inference",
+        "audit-evidence",
+    ];
     for dimension in &receipt.assurance {
         if !dimensions.insert(dimension.dimension.as_str()) {
             issues.push(format!(
                 "duplicate-assurance-dimension:{}",
+                dimension.dimension
+            ));
+        }
+        if !expected_dimensions.contains(&dimension.dimension.as_str()) {
+            issues.push(format!(
+                "unexpected-assurance-dimension:{}",
                 dimension.dimension
             ));
         }
@@ -308,26 +321,65 @@ fn recompute_assurance(
         ];
     }
 
-    // The local verifier has no authenticated observer for generative drivers.
-    // Preserve non-elevated evidence, but deterministically downgrade any
-    // caller-supplied enforced/verified claim until such a trust root exists.
-    claimed
-        .iter()
-        .map(|dimension| {
-            let mut recomputed = dimension.clone();
-            if matches!(
-                recomputed.state,
-                AssuranceEvidenceState::Enforced | AssuranceEvidenceState::Verified
-            ) {
-                recomputed.state = AssuranceEvidenceState::Unknown;
-                recomputed.limitations.push(
-                    "local integrity verification cannot authenticate generative enforcement"
-                        .into(),
-                );
-            }
-            recomputed
-        })
-        .collect()
+    // Generative assurance is a closed verifier-owned contract. Never preserve
+    // caller-added dimensions or caller-selected MDP/verifier provenance.
+    let mutation_state = if terminal_state == TerminalState::NoDraftAuditIncomplete {
+        AssuranceEvidenceState::Unknown
+    } else {
+        AssuranceEvidenceState::Verified
+    };
+    let _ = claimed;
+    vec![
+        AssuranceDimension {
+            dimension: "declared-input-isolation".into(),
+            state: AssuranceEvidenceState::Observed,
+            provenance: EvidenceProvenance::MdpObserved,
+            evidence_refs: vec![bundle_sha256.into()],
+            limitations: vec![
+                "OS-level access outside the private staging tree is not attested".into(),
+            ],
+        },
+        AssuranceDimension {
+            dimension: "declared-input-byte-binding".into(),
+            state: AssuranceEvidenceState::Verified,
+            provenance: EvidenceProvenance::MdpObserved,
+            evidence_refs: vec![bundle_sha256.into()],
+            limitations: vec![
+                "exact source and staged bytes were re-read and matched during this local invocation"
+                    .into(),
+            ],
+        },
+        AssuranceDimension {
+            dimension: "source-mutation-resistance".into(),
+            state: mutation_state,
+            provenance: EvidenceProvenance::VerifierRecomputed,
+            evidence_refs: vec![bundle_sha256.into()],
+            limitations: vec![],
+        },
+        AssuranceDimension {
+            dimension: "stateless-inference".into(),
+            state: AssuranceEvidenceState::Declared,
+            provenance: EvidenceProvenance::DriverAttested,
+            evidence_refs: vec![bundle_sha256.into()],
+            limitations: vec![
+                "store:false and fresh-request behavior are driver-declared; provider-side retention remains provider-controlled"
+                    .into(),
+            ],
+        },
+        AssuranceDimension {
+            dimension: "audit-evidence".into(),
+            state: if terminal_state == TerminalState::NoDraftAuditIncomplete {
+                AssuranceEvidenceState::Unknown
+            } else {
+                AssuranceEvidenceState::Observed
+            },
+            provenance: EvidenceProvenance::MdpObserved,
+            evidence_refs: vec![bundle_sha256.into()],
+            limitations: vec![
+                "receipt integrity is locally recomputable; host durability is not attested".into(),
+            ],
+        },
+    ]
 }
 
 fn verify_runner_audit(
@@ -364,15 +416,63 @@ fn verify_runner_audit(
         RunMode::Deterministic => {
             if audit.provider_request_body_sha256.is_some()
                 || audit.provider_request_schema_id.is_some()
+                || audit.provider_response_body_sha256.is_some()
+                || audit.provider_observation.is_some()
             {
                 issues.push("deterministic-provider-request-evidence-present".to_string());
             }
+            if audit.driver_request_sha256.is_some() || audit.driver_result_sha256.is_some() {
+                issues.push("deterministic-driver-evidence-present".to_string());
+            }
         }
         RunMode::Generative => {
-            if audit.provider_request_body_sha256.is_none()
-                || audit.provider_request_schema_id.is_none()
+            if !audit
+                .driver_request_sha256
+                .as_deref()
+                .is_some_and(is_canonical_sha256)
+                || !audit
+                    .driver_result_sha256
+                    .as_deref()
+                    .is_some_and(is_canonical_sha256)
             {
-                issues.push("generative-provider-request-evidence-missing".to_string());
+                issues.push("generative-driver-evidence-missing".to_string());
+            }
+            if let Some(issue) = provider_request_evidence_issue(
+                receipt.terminal_state.is_success(),
+                audit.provider_request_body_sha256.as_deref(),
+                audit.provider_request_schema_id.as_deref(),
+            ) {
+                issues.push(issue.to_string());
+            }
+            if audit
+                .provider_request_body_sha256
+                .as_deref()
+                .is_some_and(|sha256| !is_canonical_sha256(sha256))
+            {
+                issues.push("generative-provider-request-hash-invalid".to_string());
+            }
+            if let Some(issue) = provider_response_evidence_issue(
+                receipt.terminal_state.is_success(),
+                audit.provider_response_body_sha256.as_deref(),
+            ) {
+                issues.push(issue.to_string());
+            }
+            if receipt.terminal_state.is_success() {
+                let observation_valid = bundle.model.as_ref().is_some_and(|model| {
+                    audit
+                        .provider_observation
+                        .as_ref()
+                        .is_some_and(|observation| {
+                            observation.provider == model.provider
+                                && observation
+                                    .resolved_model
+                                    .as_deref()
+                                    .is_some_and(|resolved| !resolved.trim().is_empty())
+                        })
+                });
+                if !observation_valid {
+                    issues.push("generative-provider-observation-missing".to_string());
+                }
             }
         }
     }
@@ -382,6 +482,38 @@ fn verify_runner_audit(
     if audit.limitations != receipt.limitations {
         issues.push("runner-audit-limitations-mismatch".to_string());
     }
+}
+
+fn provider_request_evidence_issue(
+    success: bool,
+    request_sha256: Option<&str>,
+    schema_id: Option<&str>,
+) -> Option<&'static str> {
+    let complete = request_sha256.is_some() && schema_id.is_some();
+    let absent = request_sha256.is_none() && schema_id.is_none();
+    (!(complete || absent) || (success && !complete))
+        .then_some("generative-provider-request-evidence-missing")
+}
+
+fn provider_response_evidence_issue(
+    success: bool,
+    response_sha256: Option<&str>,
+) -> Option<&'static str> {
+    match response_sha256 {
+        Some(sha256) if !is_canonical_sha256(sha256) => {
+            Some("generative-provider-response-hash-invalid")
+        }
+        None if success => Some("generative-provider-response-evidence-missing"),
+        _ => None,
+    }
+}
+
+fn is_canonical_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .as_bytes()
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 fn verify_artifact(root: &Path, authority: &ArtifactAuthority, issues: &mut Vec<String>) {
@@ -429,7 +561,10 @@ fn verify_artifact(root: &Path, authority: &ArtifactAuthority, issues: &mut Vec<
 
 #[cfg(test)]
 mod tests {
-    use super::{recompute_assurance, verify_legacy_v0_receipt, verify_run};
+    use super::{
+        is_canonical_sha256, provider_request_evidence_issue, provider_response_evidence_issue,
+        recompute_assurance, verify_legacy_v0_receipt, verify_run,
+    };
     use crate::artifact_hash::{canonical_json_sha256_for_domain, sha256_hex};
     use crate::run_contracts::*;
     use std::fs;
@@ -472,6 +607,78 @@ mod tests {
                 .any(|issue| issue == "assurance-not-verifier-derived")
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn driver_hashes_use_the_closed_canonical_sha256_form() {
+        assert!(is_canonical_sha256(&"a".repeat(64)));
+        assert!(!is_canonical_sha256(&"A".repeat(64)));
+        assert!(!is_canonical_sha256(&"a".repeat(63)));
+        assert!(!is_canonical_sha256(&format!("{}g", "a".repeat(63))));
+    }
+
+    #[test]
+    fn partial_provider_evidence_maps_to_one_stable_diagnostic() {
+        assert_eq!(
+            provider_request_evidence_issue(false, Some(&"a".repeat(64)), None),
+            Some("generative-provider-request-evidence-missing")
+        );
+        assert_eq!(
+            provider_request_evidence_issue(false, None, Some("schema.v1")),
+            Some("generative-provider-request-evidence-missing")
+        );
+        assert_eq!(provider_request_evidence_issue(false, None, None), None);
+    }
+
+    #[test]
+    fn provider_response_hash_maps_to_exactly_one_stable_diagnostic() {
+        assert_eq!(
+            provider_response_evidence_issue(true, None),
+            Some("generative-provider-response-evidence-missing")
+        );
+        assert_eq!(
+            provider_response_evidence_issue(true, Some("malformed")),
+            Some("generative-provider-response-hash-invalid")
+        );
+        assert_eq!(
+            provider_response_evidence_issue(true, Some(&"a".repeat(64))),
+            None
+        );
+    }
+
+    #[test]
+    fn generative_assurance_is_reconstructed_from_a_closed_dimension_set() {
+        let claimed = vec![
+            AssuranceDimension {
+                dimension: "declared-input-isolation".into(),
+                state: AssuranceEvidenceState::Enforced,
+                provenance: EvidenceProvenance::MdpObserved,
+                evidence_refs: vec!["caller-selected".into()],
+                limitations: vec![],
+            },
+            AssuranceDimension {
+                dimension: "made-up-verifier-proof".into(),
+                state: AssuranceEvidenceState::Verified,
+                provenance: EvidenceProvenance::VerifierRecomputed,
+                evidence_refs: vec!["caller-selected".into()],
+                limitations: vec![],
+            },
+        ];
+
+        let recomputed = recompute_assurance(
+            RunMode::Generative,
+            TerminalState::Success,
+            &"a".repeat(64),
+            &claimed,
+        );
+        assert_eq!(recomputed.len(), 5);
+        assert_eq!(recomputed[0].dimension, "declared-input-isolation");
+        assert_eq!(recomputed[0].state, AssuranceEvidenceState::Observed);
+        assert!(
+            !recomputed
+                .iter()
+                .any(|dimension| { dimension.dimension == "made-up-verifier-proof" })
+        );
     }
 
     #[test]
@@ -525,6 +732,39 @@ mod tests {
             result
                 .issues
                 .contains(&"runner-audit-limitations-mismatch".to_string())
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn deterministic_run_rejects_generative_driver_hashes() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-verify-deterministic-driver-evidence-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        for name in ["output.json", "context.json", "validation.json"] {
+            fs::write(root.join(name), b"{}\n").unwrap();
+        }
+        let bundle = sample_bundle();
+        let mut receipt = sample_receipt(&bundle, &root);
+        write_audit(&root, &receipt);
+        let mut audit: RunnerAuditV1 =
+            serde_json::from_slice(&fs::read(root.join("audit.json")).unwrap()).unwrap();
+        audit.driver_request_sha256 = Some("a".repeat(64));
+        audit.driver_result_sha256 = Some("b".repeat(64));
+        fs::write(root.join("audit.json"), serde_json::to_vec(&audit).unwrap()).unwrap();
+        receipt.runner_audit = artifact(&root, "audit.json");
+        seal_receipt(&mut receipt);
+
+        let result = verify_run(&bundle, &receipt, Some(&root)).unwrap();
+        assert!(
+            result
+                .issues
+                .contains(&"deterministic-driver-evidence-present".to_string())
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -675,8 +915,12 @@ mod tests {
             runner_build_sha256: None,
             platform: "test".into(),
             snapshot_sha256: receipt.bundle_sha256.clone(),
+            driver_request_sha256: None,
+            driver_result_sha256: None,
             provider_request_body_sha256: None,
             provider_request_schema_id: None,
+            provider_response_body_sha256: None,
+            provider_observation: None,
             terminal_state: receipt.terminal_state,
             assurance: receipt.assurance.clone(),
             limitations: vec![],

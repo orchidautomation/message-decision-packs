@@ -5,8 +5,11 @@
   "runner_build_sha256": null,
   "platform": "synthetic-table-worker",
   "snapshot_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "driver_request_sha256": null,
+  "driver_result_sha256": null,
   "provider_request_body_sha256": null,
   "provider_request_schema_id": null,
+  "provider_response_body_sha256": null,
   "terminal_state": "no-draft:audit-incomplete",
   "assurance": [
     {

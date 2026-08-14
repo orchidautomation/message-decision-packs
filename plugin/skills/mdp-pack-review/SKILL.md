@@ -65,8 +65,16 @@ intermediate, never report authority.
 Confirm public reports and traces contain no paths, customer/person/company
 content, prompts or outputs, provider/session identifiers, evaluator rationale,
 reviewer identity, or private digests. Confirm no skill implies MDP calls a
-model, chooses a provider, calculates pricing, or grants drafting, sending,
-scheduling, CRM mutation, or publication authority.
+model automatically or as generalized orchestration, chooses a provider for
+the customer, calculates pricing, or grants drafting, sending, scheduling, CRM
+mutation, or publication authority. The bounded native driver may execute one
+explicitly selected declared step.
+
+Inspect `requirements.data.model_steps` for every canonical job. Require stable
+phase-ordered normalization/generation/review step IDs, no unbound prompt
+execution, and the same resolver/runtime for basic GTM and proposal. One
+generative run must execute one step and emit one receipt; workflow sequencing
+remains customer-hosted.
 
 Require every self-standing generation/review job to declare positive entry and
 byte context budgets. `requirements` must report the declared `context_budget`
@@ -149,7 +157,7 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
 - Distinguish structural validity from commercial readiness or human approval.
 - Sample representative routes and deterministic claim/output gates when the pack changed those decisions.
 - Exercise generated surfaces such as sample leads, prompt output, JSON/readable briefs, run receipts, and eval payloads; required contracts and CLI receipts are implementation metadata, while their prospect-facing content must remain target-aware or neutral.
-- For proposal/document normalization QA, require `mdp run-receipt` before calling the flow audit-grade; paid-pilot QA should include `--runner-audit ... --require-runner-audit`. Prefer the host-neutral local proposal runner when available (`scripts/mdp-proposal-runner.mjs` in the source repo or `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in an installed bundle) because it exercises source staging, native/headless request construction, validation, receipt, and review probes together. For MCP-capable hosts, the bundled local stdio MCP wrapper is `scripts/mdp-proposal-mcp-server.mjs` or `${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs`; it exposes `mdp_proposal_tools` and file/path-only `mdp_proposal_run`. It is not a hosted or remote MCP service, and MCP transport alone is not audit-grade. A lower-level native API runner audit (`scripts/mdp-native-normalize-openai.mjs`) or a hardened headless runner audit is also acceptable when it produces a valid `mdp.runner-audit.v0`. Ambient, unknown, dry-run/mock, demo/fixture runner-audit, synthetic runner model, missing runner-audit, or invalid runner-audit context isolation is an advisory/blocking finding even when prompt-output validation passes.
+- For new native QA, exercise one selected declared model step through `mdp run` and the profile-neutral `scripts/mdp-run-mcp-server.mjs` path. Confirm the MCP accepts paths only, can inherit `OPENAI_API_KEY` and `MDP_ALLOW_NATIVE_MODEL_CALLS` only from server startup for a parsed generative request, and adds no assurance. Use synthetic key-free mock fixtures; do not claim real provider verification. Treat the proposal runner/MCP, `mdp run-receipt`, and `scripts/mdp-native-normalize-openai.mjs` as v0 compatibility surfaces with their existing audit rules.
 - When QA asks whether a live proposal review is audit-grade, do not answer from
   pack validity or MCP availability. Route the live evidence decision to
   `$mdp-proposal-review`; this skill reports whether the pack and its fixtures

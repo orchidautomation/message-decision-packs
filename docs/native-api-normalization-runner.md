@@ -1,183 +1,162 @@
-# Native API Normalization Runner
+# Native API Model Runner
 
-> **Current contract boundary:** this JavaScript runner is the legacy v0 BYOK
-> compatibility transport. New deterministic proposal validation and GTM
-> qualification use `mdp run` and `mdp.run-receipt.v1`. The proposal runner's
-> `--clean-run-v1` option can bind this runner's output and audit as declared
-> upstream artifacts, but the v1 receipt honestly marks the actual MDP
-> operation as deterministic validation; it does not claim Rust performed or
-> independently observed the upstream provider call. MDP-184 completed the
-> installed proof matrix with an explicit policy-blocked native cell: the
-> request shape passed offline, but no provider call was authorized and no
-> receipt exists. The remaining real native proposal proof is tracked in
-> MDP-149. See the [sanitized proof record](orchid/qa/2026-08-03-mdp-184-clean-run-proof.md).
+MDP ships one profile-neutral local BYOK driver for every job-declared model
+step in the basic GTM and proposal templates. A selected step may normalize
+messy input, generate a governed artifact, or review an artifact. The same
+`mdp run` state machine, validation rules, terminal states, and receipt format
+apply to every phase.
 
-The cleanest currently documented provider boundary for proposal/document
-normalization is a native stateless model call. The operator's chat remains the
-control plane, but the normalizer call is a separate request that contains only
-the prompt package and declared inputs. This is stronger hygiene than a
-same-conversation run, but provider and transport properties remain limited to
-what the runner and provider actually expose.
+One run always means **one selected declared model step and one receipt**. The
+customer host sequences the larger workflow:
 
-This repo includes a small OpenAI reference runner:
+```text
+normalization run
+  -> deterministic fit and minimal-context routing
+  -> generation or review run
+```
+
+MDP does not automatically chain those steps, collect source data, retry
+providers, batch records, send outreach, submit proposals, mutate CRM, or
+calculate model pricing.
+
+## Discover The Declared Steps
+
+Use the exact canonical job ID. `requirements` resolves the job-bound
+normalization prompt and the job-owned generation or review prompt into stable
+step IDs and phase order:
 
 ```bash
-node scripts/mdp-native-normalize-openai.mjs --request <request.json> --out <prompt-output.json> --runner-audit <runner-audit.json>
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
 ```
 
-Pluxx packages repo scripts into installed host bundles, so a shipped plugin can call the same runner at `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`. Source checkouts can use the relative `scripts/...` path shown here.
+Inspect `data.model_steps`. A native run's `operation` must equal one emitted
+`step_id`. MDP does not infer a step from a filename, free-text instruction, or
+skill prose. Unbound authoring and extraction prompts are not executable model
+steps.
 
-It is optional and BYOK. Installing MDP, validating packs, running evals, and using `mdp fit`, `route`, `brief`, `validate-prompt-output`, or `run-receipt` do not require an API key. A key is required only when this script performs a real model call.
+The shipped templates use one resolver and driver contract:
 
-The script requires Node.js 18+ for the built-in `fetch` API.
+- basic GTM: `normalize-prospect-row`, `generate-outbound-copy-v1`, and
+  `review-outbound-copy-v1` as selected by their jobs;
+- proposal: `normalize-opportunity` and the four job-owned review prompts.
 
-The native implementation is currently `recipe-only`, not a verified integration. Offline request and mock tests prove request construction and fail-closed fixture behavior; they do not prove a real provider invocation. The MDP-184 installed dry run additionally proved the released request shape without making a provider call; it did not change this support state. See the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix) for the current state and exact upgrade condition.
+## Canonical CLI Run
 
-For proposal workflows, prefer the higher-level local surface first:
+Create one closed `mdp.run-request.v1` that names the released pack, selected
+job, stable model-step operation, exact prompt, declared input files, driver,
+model, and execution policy. Inspect the installed schema instead of copying a
+request shape from documentation:
 
 ```bash
-node scripts/mdp-proposal-runner.mjs tools
-node scripts/mdp-proposal-runner.mjs run --pack <pack-root> --workdir <run-dir> ...
+mdp --json schema run-request-v1
+mdp --json run --request RUN_REQUEST.json --out-dir NEW_RUN_DIRECTORY
+mdp --json verify-run \
+  --bundle NEW_RUN_DIRECTORY/run-bundle.json \
+  --receipt NEW_RUN_DIRECTORY/run-receipt.json \
+  --artifact-root NEW_RUN_DIRECTORY
 ```
 
-That wrapper stages sources, writes or preserves source audit, builds this native runner's request, invokes this script, validates the output, and creates the receipt. This native runner remains the lower-level stateless model-call boundary.
+The CLI freezes the pack, prompt, and declared inputs before it invokes the
+driver. It creates the versioned `mdp.driver-request.v2`, launches the bundled
+subprocess with a cleared and allowlisted environment, validates the returned
+artifact against the pack-owned output contract, applies the relevant
+deterministic gates, and publishes no usable output on failure.
 
-## What The Runner Owns
+Inspect `mdp --json schema driver-request-v2` and `driver-result-v2` when
+implementing or auditing that boundary. They are runtime driver contracts, not
+operator request formats.
 
-The native runner owns:
+The canonical subprocess is `scripts/mdp-native-model-openai.mjs`. Installed
+Pluxx bundles provide the same file under
+`${PLUGIN_ROOT}/scripts/mdp-native-model-openai.mjs`. The Rust runtime invokes
+it through the driver protocol; operators should normally use `mdp run`, not
+construct `mdp.driver-request.v2` or the subprocess envelope by hand.
 
-- one stateless OpenAI Responses API call;
-- no `previous_response_id` and no `conversation` attachment;
-- no model tools;
-- `store: false`;
-- Structured Outputs through `text.format` with `type: "json_schema"` and `strict: true`;
-- writing the model's strict JSON prompt output;
-- writing `mdp.runner-audit.v0` with `runner: "native-api"`.
+## Real Calls Are Default-Deny
 
-The runner does not create or manage API keys, parse private PDFs, build source audits, decide fit, update packs, submit proposals, or prove semantic truth beyond the supplied artifacts.
-
-Provider configuration is fail-closed. The default is the official
-`https://api.openai.com/v1` origin. A custom `OPENAI_BASE_URL` must use HTTPS,
-must not contain credentials, query parameters, or fragments, and is rejected
-unless the operator explicitly sets `MDP_ALLOW_CUSTOM_OPENAI_BASE_URL=1` after
-reviewing where credentials and proposal data will be sent. Artifacts record
-only `endpoint_policy` (`official-default` or `custom-explicit`) and the stable
-API path; they do not publish a custom hostname.
-
-## Request Contract
-
-The host/plugin/runner creates a request JSON file after it has staged source files, extracted bounded text, and loaded the selected MDP prompt contract. In proposal flows, `mdp-proposal-runner.mjs` does this with a single user message whose JSON payload contains only the prompt-declared input fields: `raw_opportunity`, `existing_pack_context`, `source_audit`, and `source_kind`.
-
-```json
-{
-  "contract": "mdp.native-normalize-request.v0",
-  "provider": "openai",
-  "model": "<openai-model-id>",
-  "prompt_id": "normalize-opportunity",
-  "declared_inputs_only": true,
-  "input": [
-    {
-      "role": "user",
-      "content": "{\"prompt_instructions\":\"You normalize supplied proposal material into the MDP prompt output contract. Return strict JSON only.\",\"raw_opportunity\":{...},\"existing_pack_context\":{...},\"source_kind\":\"pdf-extraction\"}"
-    }
-  ],
-  "prompt_output_schema": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": ["contract", "prompt_id", "source_summary", "normalized_prospect", "normalization_trace", "card_patches", "gaps", "rejected_claims"],
-    "properties": {}
-  }
-}
-```
-
-Rules:
-
-- `input` must include only prompt-declared payload fields.
-- `input` must be either a single string payload or an array with exactly one plain `user` message.
-- Do not use free-form `instructions`; the runner rejects `request.instructions` so ambient notes cannot cross the model boundary while the audit claims declared-input-only. Put all model-visible prompt guidance inside the audited single `input` payload generated from the selected MDP prompt contract.
-- Do not include prior chat messages, notes, brainstorms, or desired outcomes.
-- Do not include `previous_response_id`, `conversation`, or tools.
-- Keep private source documents outside the public repo; pass only the bounded extracted payload and local source-audit refs needed for validation.
-
-## Offline Dry Run
-
-A dry run validates the request shape and shows the API request preview without needing a key or making a network call:
+The bundled transport uses only the official OpenAI Responses endpoint. A real
+call requires both environment values to exist before the CLI or MCP server
+starts:
 
 ```bash
-node scripts/mdp-native-normalize-openai.mjs --request <request.json> --dry-run
+export MDP_ALLOW_NATIVE_MODEL_CALLS=1
+export OPENAI_API_KEY='<operator-supplied-secret>'
+mdp --json run --request RUN_REQUEST.json --out-dir NEW_RUN_DIRECTORY
 ```
 
-## Real Run
+`MDP_ALLOW_NATIVE_MODEL_CALLS=1` is an out-of-band operator permission. A run
+request, prompt, or MCP tool argument cannot enable it. The key is passed only
+to the bounded driver process and must never appear in a request, pack, prompt,
+fixture, log, stdout result, or receipt.
 
-For a real run, provide `OPENAI_API_KEY` through the operator's secure local environment and invoke:
+The driver sends one Responses request with Structured Outputs, `store: false`,
+no tools, and no conversation or previous-response attachment. Custom OpenAI
+origins are not supported by this canonical path. Raw provider request and
+response envelopes and failed model output are not published as run artifacts.
+
+`store: false` is a request setting, not a promise that every provider-side
+retention category is zero. The customer remains responsible for provider
+terms, account policy, and data handling.
+
+## Offline And Mock Validation
+
+Installing MDP, inspecting schemas, resolving steps, validating packs, and
+running deterministic commands require no API key. Repository tests exercise
+the native subprocess with synthetic mock responses and no network call.
+
+The subprocess also has a direct dry-run/mock test interface:
 
 ```bash
-node scripts/mdp-native-normalize-openai.mjs \
-  --request <request.json> \
-  --out <normalize-opportunity-output.json> \
-  --runner-audit <runner-audit.json> \
-  --response <openai-response.json>
+node scripts/mdp-native-model-openai.mjs --request DRIVER_REQUEST.json --dry-run
+node scripts/mdp-native-model-openai.mjs \
+  --request DRIVER_REQUEST.json \
+  --mock-response SYNTHETIC_OPENAI_RESPONSE.json
 ```
 
-`--response` is optional. Use it only in customer-controlled scratch if retaining the raw provider response is acceptable for that engagement.
+That interface consumes the bounded subprocess request contract, not the
+public `mdp.run-request.v1`. Dry-run and mock success prove request construction
+and parsing only. They do not prove a provider call, model quality, fresh
+context, or a verified integration.
 
-The runner writes `runner-audit.json` similar to:
+## MCP Parity
 
-```json
-{
-  "contract": "mdp.runner-audit.v0",
-  "runner": "native-api",
-  "model": "<openai-model-id>",
-  "isolated_invocation": true,
-  "conversation_resume": false,
-  "declared_inputs_only": true,
-  "output_schema_used": true,
-  "stateless_request": true,
-  "prior_messages_included": false,
-  "tools_disabled": true,
-  "tool_invocations_observed": 0,
-  "prompt_id": "normalize-opportunity",
-  "prompt_output_sha256": "<prompt-output-sha256>",
-  "endpoint": "/v1/responses",
-  "store": false
-}
-```
-
-## Downstream MDP Gate
-
-After the native run, the deterministic flow is unchanged:
+For MCP-capable hosts, launch the profile-neutral local stdio server:
 
 ```bash
-mdp --json validate-prompt-output \
-  --dir <pack-root> \
-  --prompt-id normalize-opportunity \
-  --file <normalize-opportunity-output.json> \
-  --source-audit <source-audit.json> \
-  > <validation-result.json>
-
-mdp --json run-receipt \
-  --dir <pack-root> \
-  --workflow proposal-review \
-  --isolation isolated \
-  --declared-inputs-only \
-  --prompt-id normalize-opportunity \
-  --prompt-output <normalize-opportunity-output.json> \
-  --validation <validation-result.json> \
-  --source-audit <source-audit.json> \
-  --runner-audit <runner-audit.json> \
-  --require-runner-audit \
-  --out <run-receipt.json>
+node scripts/mdp-run-mcp-server.mjs
 ```
 
-The validation result records artifact hashes for the prompt output and source audit. `run-receipt` compares those hashes to the supplied files, and also compares `runner-audit.prompt_output_sha256` to the supplied prompt output, so substituting the prompt output, source audit, or runner audit after the native run blocks audit-grade status. A valid native runner audit gives the receipt `runner.assurance: "stateless-api-verified"`.
+It exposes `mdp_run_tools`, path-only `mdp_run`, and read-only
+`mdp_verify_run`. `mdp_run` accepts an existing request path and a new output
+directory; it does not accept inline source text, credentials, or an enable
+flag. Only a parsed generative request may inherit the key and native-call
+permission that were present when the server started.
 
-## Test Mode
+MCP is transport only. It invokes the same CLI and returns canonical CLI data
+unchanged; it adds no execution, validation, or isolation authority.
 
-`--mock-response` exists only for offline tests. It writes `mock_response: true`, `isolated_invocation: false`, and `stateless_request: false` in the runner audit so it cannot be mistaken for audit-grade production evidence.
+## Failure And Assurance
 
-## Source Docs
+Missing permission, missing credentials, an unsupported endpoint, a timeout,
+provider refusal, malformed response, invalid schema, mismatched hash, or a
+failed deterministic gate produces a bounded `no-draft:*` result. Partial or
+invalid model text must not be used as copy or review authority.
 
-The OpenAI Structured Outputs guide recommends schema-constrained output when the model should respond in a specific JSON shape, and the Responses API accepts `text.format` with `type: "json_schema"`, `strict: true`, and a JSON Schema. The Responses API also supports stateless calls with `store: false`, and conversation state is only attached when the request supplies conversation/previous-response fields.
+A receipt describes one invocation. It does not establish that the integration
+is publicly `verified`, prove the truth of supplied source claims, authorize
+sending, or qualify a cold-model behavioral trial. Do not claim real provider
+verification from repository tests, dry runs, mock fixtures, or MCP transport.
 
-- Structured Outputs: <https://developers.openai.com/api/docs/guides/structured-outputs>
-- Responses API: <https://developers.openai.com/api/reference/responses/create>
+## Legacy Compatibility
+
+`scripts/mdp-native-normalize-openai.mjs`, `scripts/mdp-proposal-runner.mjs`,
+`scripts/mdp-proposal-mcp-server.mjs`, and `mdp run-receipt` remain v0 proposal
+compatibility surfaces. New GTM and proposal execution should use the shared
+`mdp run` kernel and `scripts/mdp-run-mcp-server.mjs`. Compatibility artifacts
+do not silently become v1 receipts or stronger assurance.
+
+## Provider References
+
+- [OpenAI Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
+- [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)
+- [OpenAI endpoint retention defaults](https://platform.openai.com/docs/models/default-usage-policies-by-endpoint)

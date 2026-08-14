@@ -90,7 +90,7 @@ Use `run-receipt` when a runner or agent host normalized proposal/doc material b
 mdp --json run-receipt --dir . --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output <prompt-output.json> --validation <validation-result.json> --source-audit <source-audit.json> --runner-audit <runner-audit.json> --require-runner-audit --out <run-receipt.json>
 ```
 
-A receipt returns `decision: advisory` when normalization used the ambient conversation or when declared-input-only cannot be confirmed. It returns `decision: blocked` when required artifacts are missing, malformed, failed validation, or do not match the artifact hashes recorded by `validate-prompt-output` or the prompt-output hash recorded by `runner-audit`. Use `mdp --json schema run-receipt` for the receipt contract.
+A receipt returns `decision: advisory` when normalization used the ambient conversation or when declared-input-only cannot be confirmed. It returns `decision: blocked` when required artifacts are missing, malformed, failed validation, or do not match the artifact hashes recorded by `validate-prompt-output` or the prompt-output hash recorded by `runner-audit`. Use `mdp --json schema run-receipt` for the receipt contract. This command is the v0 proposal compatibility path; use the unified run flow below for new GTM and proposal execution.
 
 Layer 1 rules are card body guidance an agent must read and follow. Layer 2 rules are structured constraints the CLI can enforce. For proposal `mdp.proof-output.v0` artifacts, packs can declare:
 
@@ -106,6 +106,48 @@ constraints:
 ```
 
 These proof-output constraints are pack-owned card entry fields, not fields the model may put inside the generated proof-output artifact.
+
+## Native model steps
+
+The shared run kernel supports deterministic operations and one selected
+job-declared model step per generative request. Resolve the exact stable step
+IDs first:
+
+```bash
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
+```
+
+Inspect `data.model_steps`. Job-bound normalization appears before the
+job-owned generation or review step. Unbound extraction and authoring prompts
+are not executable model steps.
+
+Create one closed `mdp.run-request.v1` whose `operation` equals the selected
+step ID, then run and verify it:
+
+```bash
+mdp --json schema run-request-v1
+mdp --json run --request RUN_REQUEST.json --out-dir NEW_RUN_DIRECTORY
+mdp --json verify-run \
+  --bundle NEW_RUN_DIRECTORY/run-bundle.json \
+  --receipt NEW_RUN_DIRECTORY/run-receipt.json \
+  --artifact-root NEW_RUN_DIRECTORY
+```
+
+One run executes one normalization, generation, or review step and emits one
+receipt. The customer host sequences normalization → deterministic fit/routing
+→ generation/review as separate operations. MDP does not collect, batch,
+retry, send, mutate CRM, or calculate provider pricing.
+
+The bundled native subprocess is `scripts/mdp-native-model-openai.mjs`. It uses
+the official OpenAI Responses endpoint only. Real calls are default-deny and
+require both `MDP_ALLOW_NATIVE_MODEL_CALLS=1` and `OPENAI_API_KEY` in the
+process environment. Neither value is accepted in a request or MCP tool
+argument. Pack validation, step discovery, deterministic runs, and synthetic
+mock/dry-run tests are key-free; they do not prove a real provider call.
+
+For MCP-capable hosts, `scripts/mdp-run-mcp-server.mjs` exposes path-only
+`mdp_run` and read-only `mdp_verify_run` over the same CLI. MCP is transport
+only and adds no execution or isolation authority.
 
 ## JSON contract
 

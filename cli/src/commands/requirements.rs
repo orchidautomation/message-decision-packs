@@ -11,6 +11,7 @@ use crate::constants::{
     NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
     REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
 };
+use crate::model_steps::{MODEL_STEP_RESOLUTION_V1, resolve_model_steps};
 use crate::models::{
     DecisionInputAttemptStatus, DecisionInputAttribute, DecisionInputCondition,
     DecisionInputConditionOperator, DecisionInputContract, DecisionInputDisposition,
@@ -37,6 +38,20 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let pack_sha256 = pack_content_sha256(root)?;
     let validation = validate_pack(root)?;
     let model_task = compile_model_task(root, job);
+    let model_steps = match resolve_model_steps(root, &manifest, job) {
+        Ok(resolution) => serde_json::to_value(resolution)?,
+        Err(error) => json!({
+            "contract": MODEL_STEP_RESOLUTION_V1,
+            "job_id": job.id,
+            "status": "blocked",
+            "steps": [],
+            "diagnostics": [{
+                "code": "model_step_resolution_failed",
+                "severity": "error",
+                "message": error.to_string()
+            }]
+        }),
+    };
     let mut product_foundation_resolution =
         resolve_product_foundation_for_pack(root, &manifest, job_id);
     if validation["valid"] != true {
@@ -82,6 +97,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
                 },
                 "product_foundation": product_foundation,
                 "model_task": model_task,
+                "model_steps": model_steps,
                 "decision_input_contracts": [],
                 "diagnostics": validation_issues
             }));
@@ -120,11 +136,23 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         })
         .collect::<Result<Vec<_>>>()?;
     if selected_contracts.is_empty() && model_task.is_null() {
+        let model_steps_blocked = model_steps["status"] == "blocked";
+        let model_step_diagnostics = model_steps["diagnostics"]
+            .as_array()
+            .cloned()
+            .unwrap_or_else(|| {
+                vec![json!({
+                    "code": "decision_input_contract_not_bound",
+                    "severity": "info",
+                    "message": "This job has no Decision Input contract. Existing fit/readiness behavior remains available through lead_input_requirements."
+                })]
+            });
         return finalize_requirements(json!({
             "contract": REQUIREMENTS_CONTRACT,
-            "status": "unavailable",
+            "status": if model_steps_blocked { "blocked" } else { "unavailable" },
             "valid": true,
             "available": false,
+            "draft_allowed": false,
             "pack": pack_summary(&manifest, &pack_sha256),
             "job": {
                 "id": &job.id,
@@ -134,12 +162,9 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
             },
             "product_foundation": product_foundation,
             "model_task": model_task,
+            "model_steps": model_steps,
             "decision_input_contracts": [],
-            "diagnostics": [{
-                "code": "decision_input_contract_not_bound",
-                "severity": "info",
-                "message": "This job has no decision input contract. Existing fit/readiness behavior remains available through lead_input_requirements."
-            }]
+            "diagnostics": model_step_diagnostics
         }));
     }
 
@@ -147,11 +172,19 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         let foundation_blocked = product_foundation["status"] == "blocked";
         let activation_blocked = manifest.profile_eval.blocks_activation();
         let model_task_blocked = model_task["status"] == "blocked";
-        let drafting_blocked = foundation_blocked || activation_blocked || model_task_blocked;
+        let model_steps_blocked = model_steps["status"] == "blocked";
+        let drafting_blocked =
+            foundation_blocked || activation_blocked || model_task_blocked || model_steps_blocked;
         let mut diagnostics = product_foundation["diagnostics"]
             .as_array()
             .cloned()
             .unwrap_or_default();
+        diagnostics.extend(
+            model_steps["diagnostics"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
+        );
         if activation_blocked {
             diagnostics.push(json!({
                 "code": "profile_activation_blocks_drafting",
@@ -176,6 +209,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
             },
             "product_foundation": product_foundation,
             "model_task": model_task,
+            "model_steps": model_steps,
             "decision_input_contracts": [],
             "diagnostics": diagnostics
         }));
@@ -194,11 +228,19 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let foundation_blocked = product_foundation["status"] == "blocked";
     let activation_blocked = manifest.profile_eval.blocks_activation();
     let model_task_blocked = model_task["status"] == "blocked";
-    let drafting_blocked = foundation_blocked || activation_blocked || model_task_blocked;
+    let model_steps_blocked = model_steps["status"] == "blocked";
+    let drafting_blocked =
+        foundation_blocked || activation_blocked || model_task_blocked || model_steps_blocked;
     let mut diagnostics = product_foundation["diagnostics"]
         .as_array()
         .cloned()
         .unwrap_or_default();
+    diagnostics.extend(
+        model_steps["diagnostics"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+    );
     if activation_blocked {
         diagnostics.push(json!({
             "code": "profile_activation_blocks_drafting",
@@ -222,6 +264,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         },
         "product_foundation": product_foundation,
         "model_task": model_task,
+        "model_steps": model_steps,
         "decision_input_contracts": compiled_contracts,
         "source_attempt_request_schema": source_attempt_schema,
         "collected_attempt_results_schema": collected_results_schema,
@@ -3330,6 +3373,20 @@ optional:
             requirements(&root, "outbound-copy-brief").expect("requirements should compile");
 
         assert_eq!(compiled["model_task"]["status"], "ready");
+        assert_eq!(
+            compiled["model_steps"]["contract"],
+            "mdp.model-step-resolution.v1"
+        );
+        assert_eq!(compiled["model_steps"]["status"], "ready");
+        assert_eq!(
+            compiled["model_steps"]["steps"][0]["phase"],
+            "normalization"
+        );
+        assert_eq!(compiled["model_steps"]["steps"][1]["phase"], "generation");
+        assert_eq!(
+            compiled["model_steps"]["steps"][1]["step_id"],
+            "model:outbound-copy-brief/generation"
+        );
         assert_eq!(compiled["model_task"]["kind"], "generation");
         assert_eq!(compiled["model_task"]["prompt_version"], "2");
         assert_eq!(

@@ -5,8 +5,11 @@
   "runner_build_sha256": null,
   "platform": "customer-controlled-ephemeral-worker",
   "snapshot_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+  "driver_request_sha256": null,
+  "driver_result_sha256": null,
   "provider_request_body_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
   "provider_request_schema_id": "synthetic.provider.request.v1",
+  "provider_response_body_sha256": null,
   "terminal_state": "success",
   "assurance": [
     {

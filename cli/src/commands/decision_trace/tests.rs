@@ -1,4 +1,10 @@
-use super::{MAX_TRACE_NODES, project_source_file, project_source_value, render_mermaid};
+use super::{
+    MAX_TRACE_NODES, TraceBuilder, TraceSource, add_driver_trace, project_source_file,
+    project_source_value, read_trace_runner_audit, render_mermaid,
+};
+use crate::run_contracts::{
+    ArtifactAuthority, AssuranceEvidenceState, EvidenceProvenance, RunnerAuditV1, TerminalState,
+};
 use serde_json::json;
 
 #[test]
@@ -140,4 +146,100 @@ fn successful_run_with_no_draft_decision_remains_blocked() {
             .unwrap()
             .contains("insufficient-context")
     );
+}
+
+#[test]
+fn generative_trace_exposes_only_bound_driver_hashes() {
+    let mut builder = TraceBuilder::new(TraceSource {
+        contract: "mdp.run-receipt.v1".into(),
+        command: None,
+        sha256: "c".repeat(64),
+        class: "receipt-backed-run",
+    });
+    builder.add_observed("run-bundle", "source", "Immutable run bundle", "observed");
+    builder.add_observed("run-receipt", "authority", "Run receipt", "verified");
+    let audit = RunnerAuditV1 {
+        contract: "mdp.runner-audit.v1".into(),
+        execution_id: "exec-1".into(),
+        runner_version: "test".into(),
+        runner_build_sha256: None,
+        platform: "test".into(),
+        snapshot_sha256: "c".repeat(64),
+        driver_request_sha256: Some("a".repeat(64)),
+        driver_result_sha256: Some("b".repeat(64)),
+        provider_request_body_sha256: Some("d".repeat(64)),
+        provider_request_schema_id: Some("private-provider-schema".into()),
+        provider_response_body_sha256: Some("e".repeat(64)),
+        provider_observation: None,
+        terminal_state: TerminalState::Success,
+        assurance: vec![crate::run_contracts::AssuranceDimension {
+            dimension: "stateless-inference".into(),
+            state: AssuranceEvidenceState::Declared,
+            provenance: EvidenceProvenance::DriverAttested,
+            evidence_refs: vec![],
+            limitations: vec![],
+        }],
+        limitations: vec!["private diagnostic prose".into()],
+    };
+
+    add_driver_trace(&mut builder, &audit);
+    let trace = builder.finish("available");
+    let encoded = serde_json::to_string(&trace).unwrap();
+    assert!(encoded.contains("mdp.driver-request.v2"));
+    assert!(encoded.contains(&"a".repeat(64)));
+    assert!(encoded.contains("mdp.driver-result.v2"));
+    assert!(encoded.contains(&"b".repeat(64)));
+    assert!(!encoded.contains(&"d".repeat(64)));
+    assert!(!encoded.contains(&"e".repeat(64)));
+    assert!(!encoded.contains("private-provider-schema"));
+    assert!(!encoded.contains("private diagnostic prose"));
+}
+
+#[test]
+fn trace_runner_audit_requires_exact_contained_authority_bytes() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-trace-audit-authority-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let audit = RunnerAuditV1 {
+        contract: "mdp.runner-audit.v1".into(),
+        execution_id: "exec-contained".into(),
+        runner_version: "test".into(),
+        runner_build_sha256: None,
+        platform: "test".into(),
+        snapshot_sha256: "c".repeat(64),
+        driver_request_sha256: Some("a".repeat(64)),
+        driver_result_sha256: Some("b".repeat(64)),
+        provider_request_body_sha256: None,
+        provider_request_schema_id: None,
+        provider_response_body_sha256: None,
+        provider_observation: None,
+        terminal_state: TerminalState::Success,
+        assurance: vec![],
+        limitations: vec![],
+    };
+    let bytes = serde_json::to_vec(&audit).unwrap();
+    std::fs::write(root.join("runner-audit.json"), &bytes).unwrap();
+    let mut authority = ArtifactAuthority {
+        logical_name: "runner-audit.json".into(),
+        schema_id: "mdp.runner-audit.v1".into(),
+        media_type: "application/json".into(),
+        byte_count: bytes.len() as u64,
+        sha256: crate::artifact_hash::sha256_hex(&bytes),
+        provenance: EvidenceProvenance::MdpObserved,
+        provenance_refs: vec![],
+    };
+
+    assert!(read_trace_runner_audit(&root, &authority).is_some());
+    authority.byte_count += 1;
+    assert!(read_trace_runner_audit(&root, &authority).is_none());
+    authority.byte_count -= 1;
+    authority.sha256 = "f".repeat(64);
+    assert!(read_trace_runner_audit(&root, &authority).is_none());
+
+    let _ = std::fs::remove_dir_all(root);
 }
