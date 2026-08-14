@@ -172,6 +172,26 @@ external host what to attempt; MDP performs no collection or model calls. See
 [Decision Input Contracts](docs/decision-input-contracts.md) and the synthetic
 [Clay Audiences example](examples/clay-audiences-self-serve-enterprise-expansion/README.md).
 
+## Cold-model conformance
+
+For one exact release and job, MDP can compile deterministic sufficiency,
+validate externally recorded behavioral evidence, assemble one hash-linked
+`mdp.job-conformance.v1` authority, and project private or sanitized public
+reports. Discover the installed surface with `mdp --json capabilities` and
+`mdp conformance --help`.
+
+The required order is discover → deterministic compile → stop unless
+sufficient → customer-hosted model call → recorded-evidence validation →
+composite assembly → report or trace. `sufficient-for-job` is the deterministic
+gate; `qualified-for-job-under-envelope` additionally requires the declared
+behavioral trial thresholds. Missing evidence is `unassessed`; a failed
+required assertion is `not-sufficient-for-job` or
+`not-qualified-for-job-under-envelope`, depending on the proof plane.
+
+MDP never makes the model call, chooses the provider, calculates provider
+pricing, or grants drafting/sending authority. See
+[Cold-model Conformance](docs/cold-model-conformance.md).
+
 External orchestrators can bind their fields to one exact compiled job through
 the provider-neutral v1 or signal-aware v2 source-binding contract selected by
 the compiled requirements. Use `mdp --json schema source-binding`, then

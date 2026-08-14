@@ -128,6 +128,29 @@ for schema_target in run-request-v1 run-bundle-v1 driver-request-v1 driver-resul
   fi
 done
 
+for schema_target in \
+  conformance-candidate-v1 \
+  model-invocation-evidence-v1 \
+  evaluator-inventory-v1 \
+  evaluator-result-v1 \
+  private-record-policy-v1 \
+  conformance-verifier-receipt-v1 \
+  publication-approval-v1 \
+  conformance-trial-v1 \
+  job-conformance-v1 \
+  conformance-report-v1 \
+  public-conformance-report-v1 \
+  deterministic-conformance-v1 \
+  behavioral-evaluation-v1; do
+  schema="$("$mdp_bin" --json schema "$schema_target")"
+  if ! printf '%s\n' "$schema" | grep -F '"$schema"' >/dev/null; then
+    echo "Installed CLI conformance schema failed: $schema_target" >&2
+    exit 1
+  fi
+done
+
+MDP_BIN="$mdp_bin" node "$ROOT/scripts/test-cold-model-conformance.mjs"
+
 if find "$codex_plugin_root" -type d -name __pycache__ | grep -q .; then
   echo "Installed plugin must not contain Python __pycache__ directories." >&2
   find "$codex_plugin_root" -type d -name __pycache__ >&2

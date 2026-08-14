@@ -1,0 +1,6 @@
+{
+  "fixture_id": "synthetic-generation",
+  "phase": "generation",
+  "expected_terminal_state": "success",
+  "useful_passes": 3
+}

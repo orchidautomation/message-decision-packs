@@ -27,6 +27,13 @@ Read this for pack shape, evidence, and content quality.
   `jobs[].model_task` / `mdp.prompt.v1` binding. Audit every declared input
   producer, exact prompt hash, selected authority, governed-artifact schema,
   gap/refusal behavior, and downstream claim/proof validation.
+- For cold-model claims, require one closed candidate that pins the exact
+  release, job, fixture/challenge, evaluator inventory, lifecycle policy, and
+  every contained authority path plus digest. Expected outcomes must resolve
+  from evaluator-owned inventory, never from model-visible pack instructions.
+  Confirm deterministic, behavioral, trial, and composite identities close on
+  the same candidate/release/job and exact trial order before accepting a
+  report or trace.
 
 ## Target Identity
 
@@ -55,6 +62,10 @@ Read this for pack shape, evidence, and content quality.
   absence of raw provider records or credentials.
 - Check that gaps remain explicit and are not contradicted by confident prose elsewhere.
 - Check that privacy, access, no-invention, human-review, and no-execution boundaries are concrete.
+- Confirm the public projection excludes paths, raw content, identities,
+  provider/session data, evaluator rationale, reviewer identity, private
+  digests, and opaque private evidence IDs. Eligible digests must be synthetic
+  or covered by an exact sanitized-public approval.
 
 ## Content Shape
 

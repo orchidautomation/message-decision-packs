@@ -51,6 +51,82 @@ fn summarize(command: &str, data: &Value) -> Value {
             "stable_error_code_count": array_len(&data["stable_error_codes"]),
             "offline_by_default": data["defaults"]["offline_by_default"]
         }),
+        "conformance-compile" => json!({
+            "contract": data["contract"],
+            "valid": data["valid"],
+            "candidate_id": data["candidate_id"],
+            "job_id": data["job_id"],
+            "fixture_id": data["fixture_id"],
+            "challenge_id": data["challenge_id"],
+            "pack_id": data["pack_release"]["pack_id"],
+            "release_id": data["pack_release"]["release_id"],
+            "status": data["status"],
+            "behavioral_qualification_allowed": data["behavioral_qualification_allowed"],
+            "evaluator_inventory_sha256": data["evaluator"]["inventory_sha256"],
+            "passed_assertion_count": data["summary"]["passed"],
+            "failed_assertion_count": data["summary"]["failed"],
+            "unassessed_assertion_count": data["summary"]["unassessed"]
+        }),
+        "conformance-validate" => json!({
+            "contract": data["contract"],
+            "valid": data["valid"],
+            "job_id": data["job_id"],
+            "deterministic_status": data["deterministic_status"],
+            "job_sufficiency": data["job_sufficiency"],
+            "behavioral_qualification": data["behavioral_qualification"],
+            "overall_result": data["overall_result"],
+            "drafting_authority_granted": data["drafting_authority_granted"],
+            "trial_count": array_len(&data["trials"]),
+            "reason_codes": data["reason_codes"]
+        }),
+        "conformance-assemble" => json!({
+            "contract": data["contract"],
+            "candidate_id": data["candidate_id"],
+            "job_id": data["job_id"],
+            "fixture_id": data["fixture_id"],
+            "pack_id": data["pack_release"]["pack_id"],
+            "release_id": data["pack_release"]["release_id"],
+            "deterministic_status": data["deterministic_status"],
+            "behavioral_status": data["behavioral_status"],
+            "verdict": data["verdict"],
+            "candidate_sha256": data["candidate_sha256"],
+            "deterministic_evaluation_sha256": data["deterministic_evaluation_sha256"],
+            "behavioral_evaluation_sha256": data["behavioral_evaluation_sha256"],
+            "trial_count": array_len(&data["trial_sha256s"]),
+            "journey_artifact_count": array_len(&data["journey"]["artifacts"]),
+            "journey_link_count": array_len(&data["journey"]["links"]),
+            "limitation_count": array_len(&data["limitations"])
+        }),
+        "conformance-report" if data["contract"] == "mdp.public-conformance-report.v1" => json!({
+            "contract": data["contract"],
+            "report_id": data["report_id"],
+            "pack_id": data["pack_id"],
+            "release_id": data["release_id"],
+            "evaluator_id": data["evaluator_id"],
+            "evaluator_version": data["evaluator_version"],
+            "generated_at": data["generated_at"],
+            "job_count": array_len(&data["jobs"]),
+            "jobs": data["jobs"].as_array().map(|jobs| jobs.iter().map(|job| json!({
+                "job_id": job["job_id"],
+                "deterministic_status": job["deterministic_status"],
+                "behavioral_status": job["behavioral_status"],
+                "verdict": job["verdict"],
+                "evidence_count": array_len(&job["evidence"]),
+                "public_digest_count": job["evidence"].as_array().map_or(0, |evidence| evidence.iter().filter(|item| !item["artifact_sha256"].is_null()).count()),
+                "limitation_count": array_len(&job["limitations"])
+            })).collect::<Vec<_>>()).unwrap_or_default()
+        }),
+        "conformance-report" => json!({
+            "contract": data["contract"],
+            "report_id": data["report_id"],
+            "pack_id": data["pack_release"]["pack_id"],
+            "release_id": data["pack_release"]["release_id"],
+            "generated_at": data["generated_at"],
+            "evaluator_inventory_sha256": data["evaluator_inventory_sha256"],
+            "lifecycle_policy_sha256": data["lifecycle_policy_sha256"],
+            "job_conformance_count": array_len(&data["job_conformance_sha256s"]),
+            "job_conformance_sha256s": data["job_conformance_sha256s"]
+        }),
         "skills" => json!({
             "contract": data["contract"],
             "status": data["status"],
@@ -799,6 +875,91 @@ mod tests {
         );
 
         assert_eq!(summary["model_task_available"], true);
+    }
+
+    #[test]
+    fn behavioral_conformance_summary_is_compact_and_never_grants_drafting() {
+        let summary = summarize(
+            "conformance-validate",
+            &json!({
+                "contract":"mdp.behavioral-evaluation.v1","valid":true,
+                "job_id":"outbound-copy-brief","deterministic_status":"passed",
+                "job_sufficiency":"sufficient-for-job",
+                "behavioral_qualification":"qualified-for-job-under-envelope",
+                "overall_result":"qualified-for-job-under-envelope",
+                "drafting_authority_granted":false,
+                "trials":[{"trial_id":"private-trial","raw_output":"must not escape"}],
+                "reason_codes":[]
+            }),
+        );
+        assert_eq!(summary["trial_count"], 1);
+        assert_eq!(summary["drafting_authority_granted"], false);
+        assert!(!summary.to_string().contains("private-trial"));
+        assert!(!summary.to_string().contains("must not escape"));
+    }
+
+    #[test]
+    fn conformance_summaries_keep_only_ids_status_counts_and_digests() {
+        let compile = summarize(
+            "conformance-compile",
+            &json!({
+                "contract":"mdp.deterministic-conformance.v1", "valid":true,
+                "candidate_id":"candidate-1", "job_id":"job-1", "fixture_id":"fixture-1",
+                "challenge_id":"challenge-1", "pack_release":{"pack_id":"pack-1","release_id":"release-1","private":"must-not-escape"},
+                "status":"sufficient-for-job", "behavioral_qualification_allowed":true,
+                "evaluator":{"inventory_sha256":"a".repeat(64),"private":"must-not-escape"},
+                "assertions":[{"evidence_refs":["private/path"]}],
+                "summary":{"passed":12,"failed":0,"unassessed":0}
+            }),
+        );
+        assert_eq!(compile["passed_assertion_count"], 12);
+        assert!(!compile.to_string().contains("must-not-escape"));
+        assert!(!compile.to_string().contains("private/path"));
+
+        let assembled = summarize(
+            "conformance-assemble",
+            &json!({
+                "contract":"mdp.job-conformance.v1", "candidate_id":"candidate-1", "job_id":"job-1", "fixture_id":"fixture-1",
+                "pack_release":{"pack_id":"pack-1","release_id":"release-1"},
+                "deterministic_status":"passed", "behavioral_status":"passed", "verdict":"qualified-for-job-under-envelope",
+                "candidate_sha256":"a".repeat(64), "deterministic_evaluation_sha256":"b".repeat(64), "behavioral_evaluation_sha256":"c".repeat(64),
+                "trial_sha256s":["d".repeat(64)],
+                "journey":{"artifacts":[{"relative_path":"private/path"}],"links":[{"from_artifact_id":"private-id"}]},
+                "limitations":["private limitation"]
+            }),
+        );
+        assert_eq!(assembled["journey_artifact_count"], 1);
+        assert!(!assembled.to_string().contains("private/path"));
+        assert!(!assembled.to_string().contains("private limitation"));
+    }
+
+    #[test]
+    fn public_and_private_report_summaries_do_not_clone_evidence() {
+        let public = summarize(
+            "conformance-report",
+            &json!({
+                "contract":"mdp.public-conformance-report.v1", "report_id":"report-1", "pack_id":"pack-1", "release_id":"release-1",
+                "evaluator_id":"evaluator-1", "evaluator_version":"1", "generated_at":"2026-08-13T14:00:00Z",
+                "jobs":[{"job_id":"job-1","deterministic_status":"passed","behavioral_status":"passed","verdict":"qualified-for-job-under-envelope",
+                    "evidence":[{"artifact_sha256":null,"opaque_artifact_id":"private-ref"},{"artifact_sha256":"a".repeat(64)}],"limitations":["private limitation"]}]
+            }),
+        );
+        assert_eq!(public["jobs"][0]["evidence_count"], 2);
+        assert_eq!(public["jobs"][0]["public_digest_count"], 1);
+        assert!(!public.to_string().contains("private-ref"));
+        assert!(!public.to_string().contains("private limitation"));
+
+        let private = summarize(
+            "conformance-report",
+            &json!({
+                "contract":"mdp.conformance-report.v1", "report_id":"private-report-1",
+                "pack_release":{"pack_id":"pack-1","release_id":"release-1","private":"must-not-escape"},
+                "evaluator_inventory_sha256":"a".repeat(64), "job_conformance_sha256s":["b".repeat(64)],
+                "generated_at":"2026-08-13T14:00:00Z", "lifecycle_policy_sha256":"c".repeat(64)
+            }),
+        );
+        assert_eq!(private["job_conformance_count"], 1);
+        assert!(!private.to_string().contains("must-not-escape"));
     }
 
     #[test]

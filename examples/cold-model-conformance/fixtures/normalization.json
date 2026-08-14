@@ -1,0 +1,6 @@
+{
+  "fixture_id": "synthetic-normalization",
+  "phase": "normalization",
+  "expected_terminal_state": "success",
+  "useful_passes": 2
+}

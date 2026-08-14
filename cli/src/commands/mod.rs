@@ -1,5 +1,6 @@
 pub(crate) mod briefs;
 pub(crate) mod capabilities;
+pub(crate) mod conformance;
 pub(crate) mod decision_trace;
 pub(crate) mod evals;
 pub(crate) mod health;
@@ -22,8 +23,13 @@ pub(crate) use briefs::{
     demo_copy, emit_brief_scoped, prospect_brief_with_context, render_readable_prospect_brief,
 };
 pub(crate) use capabilities::capabilities;
+pub(crate) use conformance::{
+    AssembleConformancePaths, BehavioralEvidencePaths, assemble_conformance,
+    compile_candidate_file, project_conformance_report, validate_behavioral_files,
+};
 pub(crate) use decision_trace::{
-    decision_trace_schema, project_run_files, project_source_file, render_mermaid,
+    decision_trace_schema, project_conformance_file, project_run_files, project_source_file,
+    render_mermaid,
 };
 pub(crate) use evals::eval_pack;
 pub(crate) use health::{doctor, explain, gaps, validate_pack};

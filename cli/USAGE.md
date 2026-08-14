@@ -119,6 +119,59 @@ closed contract with `mdp --json schema decision-trace-v1`.
 
 All commands support `--json`; add `--summary` for compact status output. Run `mdp --json capabilities` when an agent or wrapper needs to inspect command names, coarse side effects, output contracts, `--out` support, dry-run support, strict-mode support, and stable error codes. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.
 
+## Cold-model conformance
+
+Discover the exact installed command and schema inventory first:
+
+```bash
+mdp --json capabilities
+mdp conformance --help
+mdp --json schema conformance-candidate-v1
+```
+
+The normative order is discover → `conformance compile` → stop unless
+`sufficient-for-job` → customer-selected host performs and records model calls
+→ `conformance validate` → `conformance assemble` → `conformance report` or
+`trace`.
+
+```bash
+mdp --json conformance compile \
+  --candidate CANDIDATE.json --artifact-root STAGED_ROOT \
+  --out STAGED_ROOT/deterministic.json
+
+mdp --json conformance validate \
+  --artifact-root STAGED_ROOT --candidate CANDIDATE.json \
+  --evaluator-inventory EVALUATOR_INVENTORY.json \
+  --lifecycle-policy PRIVATE_RECORD_POLICY.json \
+  --deterministic deterministic.json \
+  --invocation INVOCATION.json --trial TRIAL.json \
+  --verifier-receipt VERIFIER_RECEIPT.json \
+  --evaluator-result EVALUATOR_RESULT.json \
+  --out STAGED_ROOT/behavioral.json
+
+mdp --json conformance assemble \
+  --artifact-root STAGED_ROOT --candidate CANDIDATE.json \
+  --deterministic deterministic.json --behavioral behavioral.json \
+  --trial trials/trial-1.json --out STAGED_ROOT/job-conformance.json
+
+mdp --json conformance report \
+  --artifact-root STAGED_ROOT --conformance job-conformance.json \
+  --visibility public --generated-at 2026-08-13T12:00:00Z \
+  --out STAGED_ROOT/public-report.json
+```
+
+Repeat evidence flags for the predeclared trial inventory. `validate` consumes
+recorded bytes and makes no model/network call. Its
+`mdp.behavioral-evaluation.v1` is intermediate, not report authority. Private
+and public reports project the sole cross-phase `mdp.job-conformance.v1`
+authority. Public reports and traces omit content, paths, identities,
+provider/session metadata, evaluator rationale, and private digests.
+
+MDP does not choose a provider/model, perform a call, calculate pricing, or
+grant drafting/sending authority. External calls remain customer-owned and
+separately authorized. See
+[Cold-model Conformance](../docs/cold-model-conformance.md).
+
 Selected write paths support `--dry-run` so agents can inspect local file writes before mutating a pack:
 
 ```bash

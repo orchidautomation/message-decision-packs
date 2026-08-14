@@ -1,5 +1,12 @@
 # MDP v1 Host Conformance
 
+Cold-model qualification composes this host-assurance vocabulary with
+deterministic pack/job sufficiency and separately recorded behavioral trials.
+MDP validates supplied invocation evidence; it does not perform the model call
+or promote a caller-selected assurance label. Hard cold-context dimensions
+must be `enforced` or `verified`; self-attestation alone cannot qualify them.
+See [Cold-model Conformance](cold-model-conformance.md).
+
 This guide defines how an external host can invoke the MDP clean-run boundary without inheriting an authoring conversation. It applies to ephemeral coding agents, Clay-style table jobs, and customer-controlled/BYOK workers.
 
 MDP remains a local/offline decision-context standard and deterministic authority. It does not become a scheduler, credential vault, model gateway, enrichment service, sequencer, or generalized production API. MDP Cloud's current gateway is bounded and synthetic; it is not the endpoint described by this guide.

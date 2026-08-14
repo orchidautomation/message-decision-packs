@@ -56,6 +56,26 @@ FOUNDATION_GUARDRAILS = {
         "veto_only": "Foundation readiness only vetoes broader readiness",
     },
 }
+COLD_MODEL_GUARDRAILS = {
+    "mdp": {
+        "compile_first": "Stop no-draft unless deterministic status is `sufficient-for-job`.",
+        "external_model": "customer-selected host owns provider/model selection and the call; MDP does neither",
+        "intermediate_not_report": "Treat `mdp.behavioral-evaluation.v1` as intermediate only.",
+        "sole_authority": "sole cross-phase `mdp.job-conformance.v1` authority",
+        "no_action_authority": "No result grants drafting, sending, scheduling,",
+    },
+    "mdp-pack-review": {
+        "complete_flow": "`conformance compile`, externally recorded trials, `conformance",
+        "not_qualification": "Deterministic `sufficient-for-job` is not behavioral qualification.",
+        "intermediate_not_report": "A behavioral evaluation alone is intermediate, never report authority.",
+        "privacy": "provider/session identifiers, evaluator rationale,",
+    },
+    "mdp-gtm-brief": {
+        "compile_first": "require a passing `conformance compile` before handing anything to the external host",
+        "sole_authority": "assemble `mdp.job-conformance.v1`",
+        "no_draft": "`not-sufficient-for-job` and `not-qualified-for-job-under-envelope` remain no-draft",
+    },
+}
 
 
 def error(errors: list[dict[str, str]], code: str, path: Path | str, message: str) -> None:
@@ -144,6 +164,19 @@ def validate(root: Path, source: Path) -> dict:
                     f"foundation_guardrail_missing:{skill_id}:{guardrail}",
                     skill_path,
                     f"required product-foundation phrase is missing: {phrase}",
+                )
+
+    for skill_id, guardrails in COLD_MODEL_GUARDRAILS.items():
+        skill_path = source / skill_id / "SKILL.md"
+        skill_text = skill_path.read_text(encoding="utf-8") if skill_path.is_file() else ""
+        normalized_skill_text = " ".join(skill_text.split())
+        for guardrail, phrase in guardrails.items():
+            if phrase not in normalized_skill_text:
+                error(
+                    errors,
+                    f"cold_model_guardrail_missing:{skill_id}:{guardrail}",
+                    skill_path,
+                    f"required cold-model phrase is missing: {phrase}",
                 )
 
     return {"model": MODEL, "source": str(source.relative_to(root)) if inside(source, root) else str(source), "skills": skills, "valid": not errors, "errors": errors}

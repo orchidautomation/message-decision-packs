@@ -2,7 +2,12 @@ use crate::commands::decision_trace::{
     DECISION_TRACE_V1, MAX_MERMAID_BYTES, MAX_TRACE_EDGES, MAX_TRACE_LABEL_BYTES, MAX_TRACE_NODES,
     MAX_TRACE_SOURCE_BYTES,
 };
+use crate::commands::schemas::conformance_schemas;
 use crate::commands::source_binding::source_lineage_version_matrix;
+use crate::conformance::{
+    BEHAVIORAL_EVALUATION_V1, CONFORMANCE_REPORT_V1, DETERMINISTIC_CONFORMANCE_V1,
+    JOB_CONFORMANCE_V1, PUBLIC_CONFORMANCE_REPORT_V1,
+};
 use crate::constants::{
     DEFAULT_DIR, FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT,
     NORMALIZED_DECISION_INPUT_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
@@ -22,6 +27,12 @@ use crate::run_contracts::{
 use serde_json::{Value, json};
 
 pub(crate) fn capabilities() -> Value {
+    let conformance_contracts = conformance_schemas()
+        .into_iter()
+        .map(|(schema_target, contract, _)| {
+            json!({"contract":contract,"schema_target":schema_target})
+        })
+        .collect::<Vec<_>>();
     json!({
         "contract": "mdp.capabilities.v0",
         "tool": "mdp",
@@ -123,6 +134,29 @@ pub(crate) fn capabilities() -> Value {
             "canonical_authority_block": {"contract": CANONICAL_AUTHORITY_BLOCK_V1, "schema_target": "canonical-authority-block-v1"},
             "assurance": "Vector-valued evidence; v0 labels and driver assertions never silently elevate."
         },
+        "cold_model_conformance_contracts": {
+            "contracts": conformance_contracts,
+            "commands": {
+                "compile": {"argv": ["conformance", "compile"], "output_contract": DETERMINISTIC_CONFORMANCE_V1, "model_calls": false},
+                "validate": {"argv": ["conformance", "validate"], "output_contract": BEHAVIORAL_EVALUATION_V1, "model_calls": false},
+                "assemble": {"argv": ["conformance", "assemble"], "output_contract": JOB_CONFORMANCE_V1, "model_calls": false, "contained_members_required": true},
+                "report": {"argv": ["conformance", "report"], "output_contracts": [CONFORMANCE_REPORT_V1, PUBLIC_CONFORMANCE_REPORT_V1], "model_calls": false, "source_authority": JOB_CONFORMANCE_V1}
+            },
+            "model_execution": "external-only",
+            "behavioral_calls_in_validation": false,
+            "candidate_expectations": "evaluator-inventory-only",
+            "sampling": {"hard_boundaries":"3/3","useful_completion":"2/3"},
+            "public_digest_policy": "synthetic-or-exact-hash-sanitized-public-approval",
+            "limits": {
+                "authority_bytes": crate::conformance::MAX_CONFORMANCE_AUTHORITY_BYTES,
+                "json_depth": crate::conformance::MAX_CONFORMANCE_DEPTH,
+                "array_items": crate::conformance::MAX_CONFORMANCE_ARRAY_ITEMS,
+                "model_visible_inputs": crate::conformance::MAX_MODEL_VISIBLE_INPUTS,
+                "candidate_authorities": crate::conformance::MAX_CANDIDATE_AUTHORITIES,
+                "trials_per_job": crate::conformance::MAX_TRIALS_PER_JOB,
+                "journey_links": crate::conformance::MAX_JOURNEY_LINKS
+            }
+        },
         "decision_trace_contract": {
             "contract": DECISION_TRACE_V1,
             "schema_target": "decision-trace-v1",
@@ -163,6 +197,10 @@ pub(crate) fn capabilities() -> Value {
         },
         "commands": [
             command("capabilities", "mdp.capabilities.v0", "read-only", false, false, false, &[]),
+            nested_command("compile", DETERMINISTIC_CONFORMANCE_V1, &["--candidate", "--artifact-root"], &[], &["--out", "--dry-run"]),
+            nested_command("validate", BEHAVIORAL_EVALUATION_V1, &["--artifact-root", "--candidate", "--evaluator-inventory", "--lifecycle-policy", "--deterministic", "--invocation", "--trial", "--verifier-receipt"], &["--invocation", "--trial", "--verifier-receipt", "--evaluator-result", "--publication-approval"], &["--evaluator-result", "--publication-approval", "--out", "--dry-run"]),
+            nested_command("assemble", JOB_CONFORMANCE_V1, &["--candidate", "--deterministic", "--behavioral", "--artifact-root"], &["--trial"], &["--out", "--dry-run"]),
+            nested_command_with_outputs("report", &[CONFORMANCE_REPORT_V1, PUBLIC_CONFORMANCE_REPORT_V1], &["--conformance", "--artifact-root", "--visibility", "--generated-at"], &[], &["--out", "--dry-run"]),
             command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--target-name", "--target-kind", "--target-alias", "--exclude-term", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
@@ -234,6 +272,58 @@ fn command(
     })
 }
 
+fn nested_command(
+    subcommand: &str,
+    output_contract: &str,
+    required_args: &[&str],
+    repeatable_args: &[&str],
+    optional_args: &[&str],
+) -> Value {
+    let mut args = required_args.to_vec();
+    for arg in repeatable_args.iter().chain(optional_args) {
+        if !args.contains(arg) {
+            args.push(arg);
+        }
+    }
+    json!({
+        "name": format!("conformance {subcommand}"),
+        "argv": ["conformance", subcommand],
+        "output_contract": output_contract,
+        "side_effects": "writes-files-with-out",
+        "supports_json": true,
+        "supports_summary": true,
+        "supports_out": true,
+        "supports_dry_run": true,
+        "supports_strict": false,
+        "required_args": required_args,
+        "repeatable_args": repeatable_args,
+        "optional_args": optional_args,
+        "args": args
+    })
+}
+
+fn nested_command_with_outputs(
+    subcommand: &str,
+    output_contracts: &[&str],
+    required_args: &[&str],
+    repeatable_args: &[&str],
+    optional_args: &[&str],
+) -> Value {
+    let mut value = nested_command(
+        subcommand,
+        "",
+        required_args,
+        repeatable_args,
+        optional_args,
+    );
+    value
+        .as_object_mut()
+        .expect("command metadata object")
+        .remove("output_contract");
+    value["output_contracts"] = json!(output_contracts);
+    value
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,6 +332,25 @@ mod tests {
     fn capabilities_exposes_agent_driving_contracts() {
         let result = capabilities();
         assert_eq!(result["contract"], "mdp.capabilities.v0");
+        assert_eq!(
+            result["cold_model_conformance_contracts"]["model_execution"],
+            "external-only"
+        );
+        assert_eq!(
+            result["cold_model_conformance_contracts"]["commands"]["validate"]["output_contract"],
+            BEHAVIORAL_EVALUATION_V1
+        );
+        assert_eq!(
+            result["cold_model_conformance_contracts"]["commands"]["validate"]["model_calls"],
+            false
+        );
+        assert_eq!(
+            result["cold_model_conformance_contracts"]["contracts"]
+                .as_array()
+                .expect("conformance contracts")
+                .len(),
+            13
+        );
         assert!(
             result["commands"]
                 .as_array()
@@ -249,6 +358,62 @@ mod tests {
                 .iter()
                 .any(|command| command["name"] == "capabilities")
         );
+        let report = result["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .find(|command| command["argv"] == json!(["conformance", "report"]))
+            .expect("conformance-report command");
+        assert_eq!(
+            report["output_contracts"],
+            json!([CONFORMANCE_REPORT_V1, PUBLIC_CONFORMANCE_REPORT_V1])
+        );
+        assert!(report.get("output_contract").is_none());
+        let validate = result["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .find(|command| command["argv"] == json!(["conformance", "validate"]))
+            .expect("conformance validate command");
+        assert_eq!(
+            validate["required_args"],
+            json!([
+                "--artifact-root",
+                "--candidate",
+                "--evaluator-inventory",
+                "--lifecycle-policy",
+                "--deterministic",
+                "--invocation",
+                "--trial",
+                "--verifier-receipt"
+            ])
+        );
+        assert_eq!(
+            validate["repeatable_args"],
+            json!([
+                "--invocation",
+                "--trial",
+                "--verifier-receipt",
+                "--evaluator-result",
+                "--publication-approval"
+            ])
+        );
+        let assemble = result["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .find(|command| command["argv"] == json!(["conformance", "assemble"]))
+            .expect("conformance assemble command");
+        assert_eq!(
+            assemble["required_args"],
+            json!([
+                "--candidate",
+                "--deterministic",
+                "--behavioral",
+                "--artifact-root"
+            ])
+        );
+        assert_eq!(assemble["repeatable_args"], json!(["--trial"]));
         assert!(
             result["commands"]
                 .as_array()

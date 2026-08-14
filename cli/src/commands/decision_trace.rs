@@ -1,5 +1,9 @@
 use crate::artifact_hash::{AuthorityJsonLimits, parse_authority_json, sha256_hex};
 use crate::commands::run_verification::verify_run;
+use crate::conformance::{
+    AccessClass, JOB_CONFORMANCE_V1, JourneyRelation, canonical_authority_sha256,
+    parse_job_conformance, read_contained_file,
+};
 use crate::run_contracts::{
     EvidenceProvenance, RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1, RunBundleV1, RunReceiptV1,
 };
@@ -114,6 +118,226 @@ pub(crate) fn project_source_file(path: &Path) -> Result<DecisionTrace> {
         Err(_) => return Ok(unavailable("source-malformed", hash)),
     };
     Ok(project_source_value(&value, hash))
+}
+
+pub(crate) fn project_conformance_file(
+    relative_path: &Path,
+    artifact_root: &Path,
+) -> Result<DecisionTrace> {
+    let bytes = read_contained_file(artifact_root, relative_path)?;
+    let composite = parse_job_conformance(&bytes)?;
+    crate::commands::conformance::validate_composite_members(&composite, artifact_root)?;
+    let all_public = composite.journey.artifacts.iter().all(|artifact| {
+        matches!(
+            artifact.access_class,
+            AccessClass::Synthetic | AccessClass::SanitizedPublic
+        )
+    });
+    let source_hash = if all_public {
+        canonical_authority_sha256(&composite)?
+    } else {
+        String::new()
+    };
+    let mut builder = TraceBuilder::new(TraceSource {
+        contract: JOB_CONFORMANCE_V1.into(),
+        command: Some("conformance-assemble".into()),
+        sha256: source_hash,
+        class: "composite-conformance",
+    });
+    builder.authority.decision_authority = "composite-conformance";
+    builder.authority.verification_state = "verified";
+    builder.authority.output_authority = false;
+    builder.add_designed(
+        "candidate",
+        "source",
+        "Frozen candidate authority",
+        "designed",
+    );
+    builder.add_designed(
+        "deterministic",
+        "gate",
+        "Deterministic sufficiency",
+        "designed",
+    );
+    builder.add_designed("behavioral", "gate", "Behavioral qualification", "designed");
+    builder.add_designed("verdict", "decision", "Job conformance verdict", "designed");
+    builder.link_designed("candidate", "deterministic", "evaluated-by");
+    builder.link_designed("deterministic", "behavioral", "bound-to");
+    builder.link_designed("behavioral", "verdict", "records");
+
+    for (index, artifact) in composite.journey.artifacts.iter().enumerate() {
+        let id = format!("artifact-{index}");
+        let state = match artifact.role {
+            crate::conformance::JourneyArtifactRole::DeterministicEvaluation => {
+                if composite.deterministic_status == crate::conformance::DeterministicStatus::Passed
+                {
+                    "verified"
+                } else {
+                    "blocked"
+                }
+            }
+            crate::conformance::JourneyArtifactRole::BehavioralEvaluation => {
+                if composite.behavioral_status == crate::conformance::BehavioralStatus::Passed {
+                    "verified"
+                } else if composite.behavioral_status
+                    == crate::conformance::BehavioralStatus::Unassessed
+                {
+                    "observed"
+                } else {
+                    "blocked"
+                }
+            }
+            _ => "observed",
+        };
+        let public_digest = matches!(
+            artifact.access_class,
+            AccessClass::Synthetic | AccessClass::SanitizedPublic
+        );
+        let label = format!("{} phase artifact", trace_role(artifact.role));
+        if public_digest {
+            builder.add_observed_ref(
+                &id,
+                trace_kind(artifact.role),
+                &label,
+                state,
+                TraceArtifactRef {
+                    schema_id: artifact.contract.clone(),
+                    sha256: artifact.authority_sha256.clone(),
+                    logical_name: None,
+                },
+            );
+        } else {
+            builder.add_observed(&id, trace_kind(artifact.role), &label, state);
+        }
+    }
+    for link in &composite.journey.links {
+        let Some(from) = composite
+            .journey
+            .artifacts
+            .iter()
+            .position(|artifact| artifact.artifact_id == link.from_artifact_id)
+        else {
+            continue;
+        };
+        let Some(to) = composite
+            .journey
+            .artifacts
+            .iter()
+            .position(|artifact| artifact.artifact_id == link.to_artifact_id)
+        else {
+            continue;
+        };
+        builder.link_observed(
+            &format!("artifact-{from}"),
+            &format!("artifact-{to}"),
+            trace_relation(link.relation),
+        );
+    }
+    builder.add_observed(
+        "conformance-verdict",
+        "decision",
+        &format!("Verdict: {}", verdict_token(composite.verdict)),
+        if matches!(
+            composite.verdict,
+            crate::conformance::QualificationVerdict::QualifiedForJobUnderEnvelope
+        ) {
+            "verified"
+        } else if matches!(
+            composite.verdict,
+            crate::conformance::QualificationVerdict::Unassessed
+        ) {
+            "observed"
+        } else {
+            "blocked"
+        },
+    );
+    builder.limitations.extend(
+        composite
+            .limitations
+            .iter()
+            .map(|_| "recorded-limitation".into()),
+    );
+    builder
+        .limitations
+        .push("composite-remains-authoritative".into());
+    Ok(builder.finish(
+        if matches!(
+            composite.verdict,
+            crate::conformance::QualificationVerdict::NotSufficientForJob
+                | crate::conformance::QualificationVerdict::NotQualifiedForJobUnderEnvelope
+        ) {
+            "blocked"
+        } else {
+            "available"
+        },
+    ))
+}
+
+fn trace_kind(role: crate::conformance::JourneyArtifactRole) -> &'static str {
+    use crate::conformance::JourneyArtifactRole::*;
+    match role {
+        Candidate | PackRelease | Requirements | ProductFoundation | EvaluatorInventory
+        | PrivateRecordPolicy | PublicationApproval => "authority",
+        SourceLineage => "source",
+        NormalizedInput => "normalization",
+        RoutedContext => "selection",
+        DeterministicEvaluation | BehavioralEvaluation | ClaimsValidation | RunVerification => {
+            "gate"
+        }
+        DecisionResult => "decision",
+        _ => "authority",
+    }
+}
+
+fn trace_role(role: crate::conformance::JourneyArtifactRole) -> &'static str {
+    use crate::conformance::JourneyArtifactRole::*;
+    match role {
+        Candidate => "Candidate",
+        PackRelease => "Pack release",
+        Requirements => "Requirements",
+        ProductFoundation => "Product foundation",
+        SkillsRoute => "Skills route",
+        Prompt => "Prompt",
+        PromptInvocation => "Prompt invocation",
+        SourceLineage => "Source lineage",
+        NormalizedInput => "Normalized input",
+        RoutedContext => "Routed context",
+        GovernedOutput => "Governed output",
+        ClaimsValidation => "Claims validation",
+        DecisionResult => "Decision result",
+        RunBundle => "Run bundle",
+        RunReceipt => "Run receipt",
+        RunVerification => "Run verification",
+        EvaluatorInventory => "Evaluator inventory",
+        PrivateRecordPolicy => "Private record policy",
+        PublicationApproval => "Publication approval",
+        DeterministicEvaluation => "Deterministic evaluation",
+        BehavioralEvaluation => "Behavioral evaluation",
+        Trial => "Behavioral trial",
+    }
+}
+
+fn trace_relation(relation: JourneyRelation) -> &'static str {
+    match relation {
+        JourneyRelation::Declares | JourneyRelation::BoundTo => "bound-to",
+        JourneyRelation::Normalizes | JourneyRelation::Generates | JourneyRelation::Reviews => {
+            "records"
+        }
+        JourneyRelation::Selects => "selected",
+        JourneyRelation::Evaluates => "evaluated-by",
+        JourneyRelation::Verifies | JourneyRelation::Approves => "verified-by",
+        JourneyRelation::Blocks => "blocked-by",
+    }
+}
+
+fn verdict_token(verdict: crate::conformance::QualificationVerdict) -> &'static str {
+    use crate::conformance::QualificationVerdict::*;
+    match verdict {
+        QualifiedForJobUnderEnvelope => "qualified-for-job-under-envelope",
+        NotQualifiedForJobUnderEnvelope => "not-qualified-for-job-under-envelope",
+        NotSufficientForJob => "not-sufficient-for-job",
+        Unassessed => "unassessed",
+    }
 }
 
 pub(crate) fn project_run_files(
@@ -335,6 +559,7 @@ pub(crate) fn project_source_value(value: &Value, source_sha256: String) -> Deci
         "mdp.brief.v0" | "mdp.message-brief.v0" => project_brief(data, source),
         "mdp.prompt-output.v0" => project_prompt_output(data, source),
         RUN_EXECUTION_V1 => project_run_execution(data, source),
+        JOB_CONFORMANCE_V1 => unavailable_with_source("composite-artifact-root-required", source),
         _ => unavailable_with_source("unsupported-source-contract", source),
     }
 }

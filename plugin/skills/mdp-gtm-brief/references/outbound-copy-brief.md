@@ -24,3 +24,10 @@ both `--invocation-receipt` and `--routed-context`.
 ## Boundary
 
 The output is a brief, not outbound copy. Do not write subject lines, opening lines, emails, DMs, sequences, or send instructions. A downstream writer must remain within the brief and run claim checks on any draft.
+
+If this brief is part of a cold-model trial, deterministic
+`sufficient-for-job` must exist before the external host call. Preserve and
+validate host invocation and evaluator evidence, then assemble the sole
+`mdp.job-conformance.v1` authority before making a qualification claim. An
+intermediate behavioral evaluation is not a report, and neither conformance
+nor a trace grants drafting or sending authority.
