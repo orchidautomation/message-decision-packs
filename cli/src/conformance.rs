@@ -1733,16 +1733,101 @@ impl ConformanceContract for BehavioralEvaluation {
                 .map(|item| item.id.as_str()),
             "behavioral assertion id",
         )?;
+        if self.behavioral_assertions.len() != 9
+            || self
+                .behavioral_assertions
+                .iter()
+                .map(|item| item.id.as_str())
+                .ne(["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9"])
+        {
+            return Err(anyhow!(
+                "behavioral assertions must be ordered exactly B1-B9"
+            ));
+        }
         validate_unique(
             self.trials.iter().map(|item| item.trial_id.as_str()),
             "trial id",
         )?;
-        if self.valid
-            != (self.behavioral_qualification
-                == BehavioralQualification::QualifiedForJobUnderEnvelope)
+        for assertion in &self.preflight_assertions {
+            if assertion.required_trials != REQUIRED_COLD_TRIALS as u8
+                || assertion.passed_trials > assertion.required_trials
+                || assertion.status == AssertionEvaluationStatus::Passed
+                    && (assertion.passed_trials != assertion.required_trials
+                        || !assertion.reason_codes.is_empty())
+                || assertion.status == AssertionEvaluationStatus::Failed
+                    && assertion.reason_codes.is_empty()
+            {
+                return Err(anyhow!(
+                    "preflight assertion result contradicts frozen sampling"
+                ));
+            }
+        }
+        for assertion in &self.behavioral_assertions {
+            let minimum = if assertion.id == "B6" { 2 } else { 3 };
+            if assertion.required_trials != REQUIRED_COLD_TRIALS as u8
+                || assertion.passed_trials > assertion.required_trials
+                || assertion.status == AssertionEvaluationStatus::Passed
+                    && (assertion.passed_trials < minimum || !assertion.reason_codes.is_empty())
+                || assertion.status == AssertionEvaluationStatus::Failed
+                    && (assertion.passed_trials >= minimum || assertion.reason_codes.is_empty())
+            {
+                return Err(anyhow!(
+                    "behavioral assertion result contradicts closed threshold policy"
+                ));
+            }
+        }
+        let complete_sampling = self.trials.len() == REQUIRED_COLD_TRIALS
+            && self.trial_sha256s.len() == REQUIRED_COLD_TRIALS;
+        let any_failed = self
+            .preflight_assertions
+            .iter()
+            .chain(self.behavioral_assertions.iter())
+            .any(|item| item.status == AssertionEvaluationStatus::Failed);
+        let any_unassessed = self
+            .preflight_assertions
+            .iter()
+            .chain(self.behavioral_assertions.iter())
+            .any(|item| item.status == AssertionEvaluationStatus::NotApplicable);
+        let expected_sufficiency = match self.deterministic_status {
+            DeterministicStatus::Passed => JobSufficiency::SufficientForJob,
+            DeterministicStatus::Failed => JobSufficiency::NotSufficientForJob,
+            DeterministicStatus::Unassessed => JobSufficiency::Unassessed,
+        };
+        let expected_qualification = if self.deterministic_status != DeterministicStatus::Passed
+            || !complete_sampling
+            || any_unassessed
+        {
+            BehavioralQualification::Unassessed
+        } else if any_failed
+            || self
+                .trials
+                .iter()
+                .any(|trial| matches!(trial.status, BehavioralStatus::Malformed))
+        {
+            BehavioralQualification::NotQualifiedForJobUnderEnvelope
+        } else {
+            BehavioralQualification::QualifiedForJobUnderEnvelope
+        };
+        let expected_overall = match (expected_sufficiency, expected_qualification) {
+            (JobSufficiency::NotSufficientForJob, _) => QualificationVerdict::NotSufficientForJob,
+            (
+                JobSufficiency::SufficientForJob,
+                BehavioralQualification::QualifiedForJobUnderEnvelope,
+            ) => QualificationVerdict::QualifiedForJobUnderEnvelope,
+            (
+                JobSufficiency::SufficientForJob,
+                BehavioralQualification::NotQualifiedForJobUnderEnvelope,
+            ) => QualificationVerdict::NotQualifiedForJobUnderEnvelope,
+            _ => QualificationVerdict::Unassessed,
+        };
+        if self.job_sufficiency != expected_sufficiency
+            || self.behavioral_qualification != expected_qualification
+            || self.overall_result != expected_overall
+            || self.valid
+                != (expected_qualification == BehavioralQualification::QualifiedForJobUnderEnvelope)
         {
             return Err(anyhow!(
-                "behavioral evaluation valid flag contradicts verdict"
+                "behavioral evaluation aggregate contradicts assertion results"
             ));
         }
         Ok(())
@@ -2521,10 +2606,12 @@ pub(crate) fn evaluate_behavioral_trials(
         .zip(q_reasons.iter())
         .map(|(id, assertion_reasons)| ConformanceAssertionEvaluation {
             id: id.to_string(),
-            status: if assertion_reasons.is_empty() {
+            status: if !assertion_reasons.is_empty() {
+                AssertionEvaluationStatus::Failed
+            } else if complete_sampling {
                 AssertionEvaluationStatus::Passed
             } else {
-                AssertionEvaluationStatus::Failed
+                AssertionEvaluationStatus::NotApplicable
             },
             passed_trials: if assertion_reasons.is_empty() {
                 trials.len().min(REQUIRED_COLD_TRIALS) as u8
@@ -3095,6 +3182,20 @@ mod tests {
             evaluation.behavioral_qualification,
             BehavioralQualification::NotQualifiedForJobUnderEnvelope
         );
+    }
+
+    #[test]
+    fn hand_authored_empty_qualified_behavioral_aggregate_is_rejected() {
+        let evidence = behavioral_evidence(TerminalState::Success, 3, 3);
+        let mut evaluation = evidence.evaluate(3).unwrap();
+        assert!(evaluation.valid);
+        evaluation.trials.clear();
+        evaluation.trial_sha256s.clear();
+        assert!(evaluation.validate().is_err());
+
+        let mut wrong_threshold = evidence.evaluate(3).unwrap();
+        wrong_threshold.behavioral_assertions[5].passed_trials = 1;
+        assert!(wrong_threshold.validate().is_err());
     }
 
     #[test]

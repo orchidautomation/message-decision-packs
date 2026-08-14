@@ -773,7 +773,7 @@ try {
         ["wrong-requested-model", { mutateInvocation(value, index) { if (index === 0) value.requested_model = "undeclared-requested-model"; } }, /model-visible-context-oracle-leak-or-hash-mismatch|model/],
         ["wrong-resolved-model", { mutateInvocation(value, index) { if (index === 0) value.resolved_model = "undeclared-resolved-model"; } }, /model-visible-context-oracle-leak-or-hash-mismatch|model/],
         ["wrong-phase", { mutateInvocation(value, index) { if (index === 0) value.phase = "review"; } }, /model-visible-context-oracle-leak-or-hash-mismatch/],
-        ["wrong-slot", { mutateInvocation(value, index) { if (index === 0) value.trial_id = "undeclared-trial-slot"; } }, /required-sampling-incomplete|model-visible-context-oracle-leak-or-hash-mismatch|invocation-missing/],
+        ["wrong-slot", { mutateInvocation(value, index) { if (index === 0) value.trial_id = "undeclared-trial-slot"; } }, /behavioral evaluation aggregate contradicts assertion results|required-sampling-incomplete|model-visible-context-oracle-leak-or-hash-mismatch|invocation-missing/],
         ["missing-verifier", { mutateInvocation(value, index) { if (index === 0) value.freshness.verifier_receipt_sha256 = "f".repeat(64); } }, /fresh-host-binding-not-verified|verifier/],
         ["untrusted-verifier", { mutateVerifierReceipt(value, index) { if (index === 0) value.identity_authority_sha256 = "f".repeat(64); } }, /trusted|verifier|authority/],
         ["forged-verifier-signature", { mutateVerifierReceiptAfterSign(value, index) { if (index === 0) value.signature_hex = "f".repeat(128); } }, /signature|verifier|fresh-host-binding-not-verified/],
@@ -954,7 +954,7 @@ try {
       writeJson(join(stage, "mismatched-behavioral.json"), mismatchedBehavioral);
       const mismatchArgs = ["--json", "conformance", "assemble", "--candidate", "candidate.json", "--deterministic", "mismatched-deterministic.json", "--behavioral", "mismatched-behavioral.json", "--artifact-root", stage];
       compositeStage.evidence.trials.forEach((_, index) => mismatchArgs.push("--trial", `trial-${index + 1}.json`));
-      expectFail(invoke(mismatchArgs), "deterministic status mismatch", /top-level fields|status/);
+      expectFail(invoke(mismatchArgs), "deterministic status mismatch", /deterministic evaluation does not equal authoritative staged compilation|top-level fields|status/);
 
       const amplified = structuredClone(compositeStage.composite);
       while (amplified.journey.links.length <= 64) amplified.journey.links.push({ from_artifact_id: "candidate", to_artifact_id: "deterministic-evaluation", relation: "declares" });

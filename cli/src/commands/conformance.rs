@@ -263,6 +263,11 @@ pub(crate) fn assemble_conformance(paths: AssembleConformancePaths<'_>) -> Resul
     let deterministic_bytes = read_contained_file(paths.artifact_root, paths.deterministic)?;
     let deterministic = parse_deterministic_conformance(&deterministic_bytes)?;
     validate_deterministic_binding(&candidate, &deterministic)?;
+    if deterministic != recompute_deterministic(&candidate, paths.artifact_root)? {
+        return Err(anyhow!(
+            "deterministic evaluation does not equal authoritative staged compilation"
+        ));
+    }
     let deterministic_sha256 = canonical_authority_sha256(&deterministic)?;
 
     let behavioral_bytes = read_contained_file(paths.artifact_root, paths.behavioral)?;
@@ -649,6 +654,11 @@ pub(crate) fn validate_composite_members(
     let behavioral_hash = canonical_authority_sha256(&behavioral)?;
     let lifecycle_hash = canonical_authority_sha256(&lifecycle)?;
     validate_deterministic_binding(&candidate, &deterministic)?;
+    if deterministic != recompute_deterministic(&candidate, artifact_root)? {
+        return Err(anyhow!(
+            "contained deterministic evaluation does not equal authoritative staged compilation"
+        ));
+    }
     let trial_hashes = parsed_trials
         .iter()
         .map(|(digest, _)| digest.clone())
@@ -729,6 +739,18 @@ fn validate_deterministic_binding(
         ));
     }
     Ok(())
+}
+
+fn recompute_deterministic(
+    candidate: &ConformanceCandidateV1,
+    artifact_root: &Path,
+) -> Result<crate::conformance::DeterministicConformanceV1> {
+    let candidate_root = contained_candidate_root(artifact_root, &candidate.artifact_root)?;
+    let loaded = load_authorities(candidate, candidate_root)?;
+    let value = compile_candidate(candidate, &loaded)?;
+    let recomputed: crate::conformance::DeterministicConformanceV1 = serde_json::from_value(value)?;
+    recomputed.validate()?;
+    Ok(recomputed)
 }
 
 fn load_candidate_approvals(
@@ -1053,7 +1075,7 @@ fn compile_candidate(
 
     let evaluator = load_evaluator(candidate, loaded)?;
     let lifecycle = load_lifecycle(candidate, loaded)?;
-    let privacy_valid = validate_fixture_privacy(&lifecycle, loaded)?;
+    let privacy_valid = validate_fixture_privacy(&lifecycle, &evaluator, loaded)?;
     let challenge = evaluator.challenges.iter().find(|challenge| {
         challenge.fixture_id == candidate.fixture_id
             && challenge.job_id == candidate.job_id
@@ -1267,12 +1289,13 @@ fn compile_candidate(
 
 fn validate_fixture_privacy(
     lifecycle: &PrivateRecordPolicyV1,
+    evaluator: &EvaluatorInventoryV1,
     loaded: &LoadedAuthorities<'_>,
 ) -> Result<bool> {
     lifecycle.validate()?;
     match lifecycle.access_class {
         AccessClass::Synthetic => Ok(true),
-        AccessClass::Private => Ok(false),
+        AccessClass::Private => Ok(true),
         AccessClass::SanitizedPublic => {
             let Some(value) = loaded
                 .values
@@ -1282,6 +1305,9 @@ fn validate_fixture_privacy(
             };
             let approval: PublicationApprovalV1 = serde_json::from_value(value.clone())?;
             approval.validate()?;
+            if !publication_approval_is_trusted(evaluator, &approval) {
+                return Ok(false);
+            }
             let Some(fixture) = loaded
                 .references
                 .get(&CandidateAuthorityRole::GovernedOutput)
@@ -1296,6 +1322,20 @@ fn validate_fixture_privacy(
             Ok(approval.approves_exact_hash(&fixture.sha256))
         }
     }
+}
+
+fn publication_approval_is_trusted(
+    evaluator: &EvaluatorInventoryV1,
+    approval: &PublicationApprovalV1,
+) -> bool {
+    evaluator
+        .trusted_publication_authorities
+        .iter()
+        .any(|authority| {
+            authority.reviewer_role == approval.reviewer_role
+                && authority.identity_authority_sha256 == approval.identity_authority_sha256
+                && approval.verify_signature(&authority.public_key_hex).is_ok()
+        })
 }
 
 fn decision_matches_expected(
@@ -1691,6 +1731,50 @@ mod tests {
         let lifecycle_bytes = serde_json::to_vec(&lifecycle).expect("lifecycle JSON");
         fs::write(evidence_root.join("lifecycle.json"), &lifecycle_bytes)
             .expect("lifecycle should stage");
+        let mut private_lifecycle = lifecycle.clone();
+        private_lifecycle["access_class"] = json!("private");
+        let private_lifecycle = parse_lifecycle_policy(
+            &serde_json::to_vec(&private_lifecycle).expect("private lifecycle JSON"),
+        )
+        .expect("private lifecycle should parse");
+        let parsed_inventory =
+            parse_evaluator_inventory(&inventory_bytes).expect("inventory should parse");
+        let empty_loaded = LoadedAuthorities {
+            root: candidate_root.clone(),
+            pack_root: pack_root.clone(),
+            references: HashMap::new(),
+            values: HashMap::new(),
+            bytes: HashMap::new(),
+        };
+        assert!(
+            validate_fixture_privacy(&private_lifecycle, &parsed_inventory, &empty_loaded)
+                .expect("policy-governed private fixture should be deterministic")
+        );
+        assert_eq!(
+            public_access(&private_lifecycle, &[], &"f".repeat(64)),
+            AccessClass::Private,
+            "deterministic sufficiency must not relabel private fixture evidence"
+        );
+        let forged_approval = parse_publication_approval(
+            &serde_json::to_vec(&json!({
+                "contract": crate::conformance::PUBLICATION_APPROVAL_V1,
+                "approval_id": "forged-approval",
+                "artifact_sha256": "f".repeat(64),
+                "classification": "sanitized-public",
+                "approved_by": "Forged Reviewer",
+                "reviewer_role": "publication-reviewer",
+                "identity_authority_sha256": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+                "approved_at": "2026-08-13T12:00:00Z",
+                "purpose": "public-conformance-report",
+                "signature_hex": "0".repeat(128)
+            }))
+            .unwrap(),
+        )
+        .expect("shape-valid forged approval should parse");
+        assert!(!publication_approval_is_trusted(
+            &parsed_inventory,
+            &forged_approval
+        ));
 
         let manifest_path = pack_root.join(".mdp/manifest.yaml");
         let manifest_bytes = fs::read(&manifest_path).expect("manifest should read");
@@ -1810,7 +1894,15 @@ mod tests {
             deterministic_status: DeterministicStatus::Unassessed,
             job_sufficiency: JobSufficiency::Unassessed,
             preflight_assertions: preflight,
-            behavioral_assertions: vec![],
+            behavioral_assertions: (1..=9)
+                .map(|number| ConformanceAssertionEvaluation {
+                    id: format!("B{number}"),
+                    status: AssertionEvaluationStatus::NotApplicable,
+                    passed_trials: 0,
+                    required_trials: crate::conformance::REQUIRED_COLD_TRIALS as u8,
+                    reason_codes: vec!["behavioral-trials-not-run".into()],
+                })
+                .collect(),
             trials: vec![],
             behavioral_qualification: BehavioralQualification::Unassessed,
             overall_result: QualificationVerdict::Unassessed,
@@ -1946,6 +2038,24 @@ mod tests {
                 .is_err()
             );
         }
+
+        let mut forged_assertion = result.clone();
+        forged_assertion["assertions"][0]["name"] = json!("caller-forged-release-integrity");
+        fs::write(
+            stage.join("deterministic-forged.json"),
+            serde_json::to_vec(&forged_assertion).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            assemble_conformance(AssembleConformancePaths {
+                candidate: Path::new("candidate.json"),
+                deterministic: Path::new("deterministic-forged.json"),
+                behavioral: Path::new("behavioral.json"),
+                trials: &[],
+                artifact_root: &stage,
+            })
+            .is_err()
+        );
 
         let original_deterministic = fs::read(&deterministic_path).unwrap();
         fs::write(&deterministic_path, b"{}").unwrap();
