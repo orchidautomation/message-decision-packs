@@ -1,6 +1,22 @@
 #!/usr/bin/env node
 
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -29,6 +45,7 @@ const CHILD_ENV_KEYS = [
   'SSL_CERT_DIR',
   'NODE_EXTRA_CA_CERTS',
 ]
+const NATIVE_MODEL_ENV_KEYS = ['OPENAI_API_KEY', 'MDP_ALLOW_NATIVE_MODEL_CALLS']
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
@@ -99,7 +116,72 @@ const canonicalExistingFile = (value, label) => {
   return canonical
 }
 
-const canonicalRequestPath = (value) => canonicalExistingFile(value, 'request_path')
+const sameFile = (left, right) => left.dev === right.dev && left.ino === right.ino
+const singleLink = (stats) => stats.nlink === 1n
+const stableOpenedFile = (before, after) =>
+  sameFile(before, after) &&
+  before.size === after.size &&
+  before.mtimeNs === after.mtimeNs &&
+  before.ctimeNs === after.ctimeNs
+
+const freezeRequestFile = (value) => {
+  const requested = resolve(value)
+  let descriptor
+  let privateDir
+  try {
+    const before = lstatSync(requested, { bigint: true })
+    if (before.isSymbolicLink()) throw new Error('request_path must not be a symlink')
+    if (!before.isFile()) throw new Error('request_path must be a regular file')
+    if (!singleLink(before)) throw new Error('request_path must have exactly one hard link')
+    if (before.size > BigInt(MAX_REQUEST_FILE_BYTES)) {
+      throw new Error(`request_path exceeds ${MAX_REQUEST_FILE_BYTES} bytes`)
+    }
+
+    descriptor = openSync(requested, constants.O_RDONLY | (constants.O_NOFOLLOW || 0))
+    const opened = fstatSync(descriptor, { bigint: true })
+    if (!opened.isFile() || !singleLink(opened) || !sameFile(before, opened)) {
+      throw new Error('request_path changed while it was being opened')
+    }
+
+    const bytes = Buffer.alloc(Number(opened.size))
+    let offset = 0
+    while (offset < bytes.length) {
+      const count = readSync(descriptor, bytes, offset, bytes.length - offset, offset)
+      if (count === 0) break
+      offset += count
+    }
+    const extra = Buffer.alloc(1)
+    const hasExtraByte = readSync(descriptor, extra, 0, 1, offset) !== 0
+    const after = fstatSync(descriptor, { bigint: true })
+    if (offset !== bytes.length || hasExtraByte || !singleLink(after) || !stableOpenedFile(opened, after)) {
+      throw new Error('request_path changed while it was being read')
+    }
+
+    let parsed = null
+    try {
+      parsed = JSON.parse(bytes.toString('utf8'))
+    } catch {
+      // The CLI remains the authority for rejecting malformed run requests.
+    }
+    privateDir = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-request-'))
+    const frozenPath = join(privateDir, 'request.json')
+    writeFileSync(frozenPath, bytes, { flag: 'wx', mode: 0o400 })
+    return {
+      path: frozenPath,
+      privateDir,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      executionId: typeof parsed?.execution_id === 'string' ? parsed.execution_id : null,
+      usesNativeModel: parsed?.contract === 'mdp.run-request.v1' && parsed?.mode === 'generative',
+    }
+  } catch (error) {
+    if (privateDir) rmSync(privateDir, { recursive: true, force: true })
+    if (error?.code === 'ENOENT') throw new Error('request_path does not exist')
+    if (error?.code === 'ELOOP') throw new Error('request_path must not be a symlink')
+    throw error
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor)
+  }
+}
 
 const canonicalExistingDir = (value, label) => {
   const requested = resolve(value)
@@ -123,30 +205,23 @@ const canonicalNewOutputDir = (value) => {
   return join(parent, leaf)
 }
 
-const childEnvironment = () =>
+const childEnvironment = (includeNativeModel = false) =>
   Object.fromEntries(
-    CHILD_ENV_KEYS.filter((key) => typeof process.env[key] === 'string').map((key) => [key, process.env[key]]),
+    [...CHILD_ENV_KEYS, ...(includeNativeModel ? NATIVE_MODEL_ENV_KEYS : [])]
+      .filter((key) => typeof process.env[key] === 'string')
+      .map((key) => [key, process.env[key]]),
   )
 
-const invokeCli = (args, cwd, timeoutMs, recovery = null) =>
+const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false) =>
   superviseProcess({
     command: [process.env.MDP_BIN || 'mdp'],
     args,
     cwd,
-    environment: childEnvironment(),
+    environment: childEnvironment(includeNativeModel),
     timeoutMs,
     maxOutputBytes: MAX_CHILD_BUFFER_BYTES,
     recovery,
   })
-
-const recoveryExecutionId = (requestPath) => {
-  try {
-    const value = JSON.parse(readFileSync(requestPath, 'utf8'))
-    return typeof value?.execution_id === 'string' ? value.execution_id : null
-  } catch {
-    return null
-  }
-}
 
 const tools = [
   {
@@ -168,7 +243,7 @@ const tools = [
       properties: {
         request_path: {
           type: 'string',
-          description: 'Existing regular, non-symlink mdp.run-request.v1 JSON file.',
+          description: 'Existing regular, single-link, non-symlink mdp.run-request.v1 JSON file.',
         },
         output_dir: {
           type: 'string',
@@ -213,7 +288,9 @@ const callRunTools = (args) => {
     mcp_authority: [],
     guardrails: [
       'Only explicit local request_path and output_dir arguments cross this MCP boundary.',
+      'The adapter freezes one bounded read of request_path in a private read-only copy before classifying or spawning the CLI.',
       'The adapter starts a separate CLI process with bounded time, output, stdin, and environment.',
+      'Only a parsed mdp.run-request.v1 with mode=generative may inherit OPENAI_API_KEY and MDP_ALLOW_NATIVE_MODEL_CALLS from the server startup environment; tool arguments cannot supply or enable either.',
       'MCP transport does not prove fresh context, isolation, freshness, replay safety, or audit grade.',
       'The returned run result and authority block are copied from mdp --json run without modification.',
     ],
@@ -223,19 +300,30 @@ const callRunTools = (args) => {
 const callRun = async (args) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['request_path', 'output_dir', 'timeout_ms']))
-  const requestPath = canonicalRequestPath(requiredString(parsed, 'request_path'))
+  const requestPath = requiredString(parsed, 'request_path')
   const outputDir = canonicalNewOutputDir(requiredString(parsed, 'output_dir'))
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
     throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
   }
+  const frozenRequest = freezeRequestFile(requestPath)
 
-  const invocation = await invokeCli(
-    ['--json', 'run', '--request', requestPath, '--out-dir', outputDir],
-    dirname(outputDir),
-    timeoutMs,
-    { outputDir, executionId: recoveryExecutionId(requestPath) },
-  )
+  let invocation
+  try {
+    invocation = await invokeCli(
+      ['--json', 'run', '--request', frozenRequest.path, '--out-dir', outputDir],
+      dirname(outputDir),
+      timeoutMs,
+      {
+        outputDir,
+        executionId: frozenRequest.executionId,
+        requestSha256: frozenRequest.sha256,
+      },
+      frozenRequest.usesNativeModel,
+    )
+  } finally {
+    rmSync(frozenRequest.privateDir, { recursive: true, force: true })
+  }
   if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
     const code = invocation.timedOut
       ? 'cli-timeout'

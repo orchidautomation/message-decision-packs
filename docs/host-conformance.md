@@ -2,8 +2,10 @@
 
 Cold-model qualification composes this host-assurance vocabulary with
 deterministic pack/job sufficiency and separately recorded behavioral trials.
-MDP validates supplied invocation evidence; it does not perform the model call
-or promote a caller-selected assurance label. Hard cold-context dimensions
+MDP conformance validates supplied behavioral-trial evidence; it does not
+perform that trial call or promote a caller-selected assurance label. A
+separate `mdp run` may execute one declared model step through the optional
+native driver, but that receipt is not behavioral qualification. Hard cold-context dimensions
 must be `enforced` or `verified`; self-attestation alone cannot qualify them.
 See [Cold-model Conformance](cold-model-conformance.md).
 
@@ -11,7 +13,11 @@ This guide defines how an external host can invoke the MDP clean-run boundary wi
 
 MDP remains a local/offline decision-context standard and deterministic authority. It does not become a scheduler, credential vault, model gateway, enrichment service, sequencer, or generalized production API. MDP Cloud's current gateway is bounded and synthetic; it is not the endpoint described by this guide.
 
-Job-owned `mdp.prompt.v1` contracts do not change this boundary. MDP may compile the exact prompt, declared input producers, selected product authority, output schema, version, and hash. The customer-selected host still owns model selection, invocation, isolation, credentials, transport, and runner evidence.
+Job-owned `mdp.prompt.v1` contracts make the boundary explicit. MDP compiles
+the exact prompt, declared input producers, selected product authority, output
+schema, version, and hash. The customer host still owns workflow sequencing,
+credentials, provider approval, and external actions. It may execute the step
+itself or explicitly select MDP's local BYOK native driver.
 
 ## Normative Authority
 
@@ -22,20 +28,22 @@ mdp --json schema run-request-v1
 mdp --json schema run-bundle-v1
 mdp --json schema driver-request-v1
 mdp --json schema driver-result-v1
+mdp --json schema driver-request-v2
+mdp --json schema driver-result-v2
 mdp --json schema runner-audit-v1
 mdp --json schema run-receipt-v1
 mdp --json schema run-verification-v1
 ```
 
-All seven contracts are closed JSON Schemas. Reject unknown fields, duplicate JSON members, floats, negative zero, integers outside the JavaScript-safe range, oversized payloads, and contract-version mismatches before execution. Do not accept an extension field as an unaudited way to pass extra context.
+All contracts are closed JSON Schemas. Reject unknown fields, duplicate JSON members, floats, negative zero, integers outside the JavaScript-safe range, oversized payloads, and contract-version mismatches before execution. Do not accept an extension field as an unaudited way to pass extra context.
 
 The [synthetic conformance envelopes](../examples/run-conformance/) demonstrate the wire contracts. Fixture data is not evidence of a provider call or a maintained integration.
 
 ## Boundary and Driver Protocol
 
-The host supplies `mdp.run-request.v1` to the local CLI. MDP resolves and freezes the pack release and declared artifacts, then creates `mdp.run-bundle.v1`. Local source paths exist only in the request; the driver receives content-addressed staged authority through `mdp.driver-request.v1`.
+The host supplies `mdp.run-request.v1` to the local CLI. MDP resolves and freezes the pack release and declared artifacts, then creates `mdp.run-bundle.v1`. For the bundled native path, the operation selects one resolver-emitted model-step ID and the CLI creates a closed `mdp.driver-request.v2` containing the exact model-visible bytes. External v1 drivers continue to receive content-addressed staged authority through `mdp.driver-request.v1`.
 
-An external driver follows one bounded protocol:
+An external v1 driver follows one bounded protocol:
 
 1. Receive exactly one UTF-8 `mdp.driver-request.v1` JSON object on stdin.
 2. Resolve each logical artifact only inside the read-only staged root provided by the runtime. Reject absolute paths, `..`, symlinks, hard-link substitutions, sockets, devices, and files absent from the bundle.
@@ -43,6 +51,18 @@ An external driver follows one bounded protocol:
 4. Keep stdout reserved for exactly one UTF-8 `mdp.driver-result.v1` JSON object. Send bounded, redacted diagnostics to stderr.
 5. Return either `success` with one output authority or a `no-draft:*` state with `output: null`. Always return an audit authority for a staged `mdp.runner-audit.v1` artifact.
 6. Exit. Do not publish, send, sync to CRM, or trigger another row from inside the driver.
+
+The bundled native driver is narrower. Rust constructs the v2 envelope, starts
+`scripts/mdp-native-model-openai.mjs` with a cleared allowlisted environment,
+and permits only the official OpenAI Responses endpoint. Real calls are
+default-deny: both `MDP_ALLOW_NATIVE_MODEL_CALLS=1` and `OPENAI_API_KEY` must be
+present before the CLI or MCP server starts. Neither value may be supplied by
+the run request or an MCP tool argument. Dry-run and mock fixtures require no
+key and do not prove a provider call.
+
+One native run executes one declared normalization, generation, or review
+step. The customer host must make deterministic fit/routing and later model
+steps separate calls with separately declared inputs and receipts.
 
 The driver request contains artifact authority, not raw workspace context. An implementation-specific launcher may communicate the staged root through an inherited file descriptor or one allowlisted environment variable; that launcher detail is included in the driver configuration hash and audit limitations. No other ambient environment variable is authorized.
 

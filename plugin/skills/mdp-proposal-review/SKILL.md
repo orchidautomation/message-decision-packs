@@ -46,6 +46,16 @@ launching the run or add evidence to its returned decision. Keep the existing
 proposal runner and `run-receipt` commands only as explicit v0 compatibility
 paths; never relabel their historical `audit-grade` value as v1 assurance.
 
+Resolve `requirements.data.model_steps` for the selected job. One generative
+run must select exactly one stable normalization or review step ID and produces
+one receipt. The customer host separately sequences normalization,
+deterministic routing, and review; do not collapse them into one call. The
+bundled native path uses the official OpenAI endpoint and is default-deny. A
+real call requires both `MDP_ALLOW_NATIVE_MODEL_CALLS=1` and `OPENAI_API_KEY` in
+the process startup environment; never accept either as a request/MCP argument
+or print the key. Mock and dry-run evidence is key-free and never proves a real
+provider call.
+
 ## Source And Safety Gate
 
 1. Require the exact pack root, supplied review material, review scope, and known owner.
@@ -77,8 +87,9 @@ mdp --json validate-prompt-output --dir PACK_ROOT --prompt-id PROMPT_ID --file O
 Before any canonical proposal review model step, run
 `mdp --json requirements --dir PACK_ROOT --job JOB_ID`. Use only its exact
 `data.model_task` prompt package and a `ready` minimal-context receipt, and proceed
-only when `data.model_task.status` is exactly `ready`; the customer-selected
-host owns execution. If `data.model_task` is missing, `unassessed`, or
+only when `data.model_task.status` is exactly `ready`; the customer host may
+execute it directly or select its exact review step for one generative
+`mdp run`. If `data.model_task` is missing, `unassessed`, or
 `blocked`, report its exact diagnostics and stop with `assurance: blocked`.
 Never substitute this skill's mode references, legacy normalization prompt, or
 implied review instructions for a non-ready canonical review task. Validate the
@@ -127,11 +138,10 @@ Treat `confidence` only as evidence-anchoring strength, never as a probability
 that a claim is true. The report cannot override a blocked/advisory
 `run-receipt`, certify compliance, or approve submission.
 
-Keep provider configuration fail-closed. Prefer the official endpoint default.
-Never set `MDP_ALLOW_CUSTOM_OPENAI_BASE_URL=1` on the operator's behalf; a
-human must review and explicitly approve the credential/data destination.
-Reject HTTP endpoints or URLs containing credentials, query parameters, or
-fragments, and do not copy private endpoint hostnames into public artifacts.
+Keep provider configuration fail-closed. The canonical v1 native path permits
+only the official OpenAI Responses endpoint; reject custom origins. The older
+v0 proposal compatibility runner has a separately guarded custom-origin
+option, but it must never be presented as the canonical v1 driver.
 
 The repository's deterministic proposal evidence harness may emit a positive
 `audit-grade` receipt solely to test contract acceptance. Its report is marked
@@ -154,7 +164,14 @@ lock, failed manifest readback, or run ID mismatch as a blocker. A terminal
 blocked manifest may be explicitly reused but is never advisory/audit-grade
 evidence for its prior invocation.
 
-`run-receipt` is audit-grade only when the host runner reports a fresh/stateless model call and declared-input-only payload. It also compares validation-result artifact hashes to the supplied prompt-output and source-audit files and compares the runner-audit `prompt_output_sha256` to the supplied prompt output, so a validation result or runner audit from a different run must block review. Prefer the host-neutral local proposal runner (`scripts/mdp-proposal-runner.mjs` in source checkouts, `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed bundles) when available because it stages sources, builds the declared-input-only request, invokes the native runner, validates, creates the receipt, and runs review probes. For MCP-capable hosts, the bundled local stdio MCP wrapper is `scripts/mdp-proposal-mcp-server.mjs` or `${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs`; it exposes `mdp_proposal_tools` and file/path-only `mdp_proposal_run`. It is not a hosted or remote MCP service, and MCP transport alone is not audit-grade. The lower-level optional BYOK native API runner (`scripts/mdp-native-normalize-openai.mjs` or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`) calls the model outside the current chat with Structured Outputs, no tools, no conversation resume, and `store: false`. Do not ask for or create an API key unless the operator explicitly chooses a real native run; installs, dry-runs, mock tests, validation, fit, and receipts without a real model call do not need one. Activation hooks may report OpenAI key presence as a convenience, but they do not establish audit-grade status and must not print the key. For paid pilots, require `mdp.runner-audit.v0` from a native API runner or a hardened headless runner such as Claude `--bare -p`, Codex `exec`, Cursor `-p` with tools externally denied, or OpenCode `run` with `--pure` and a no-tool agent. If normalization happened in the current conversation, dry-run, or mock mode, treat the review as advisory/blocked even when validation passes. Treat missing source-audit refs, snippet mismatches, missing/invalid runner audit, missing/nonzero tool invocation counts, mismatched validation or runner-audit hashes, or a non-audit-grade receipt as blockers for confident proposal review; keep the issue in gaps or reviewer questions instead of smoothing it into a sourced fact.
+The remaining `run-receipt`, proposal runner/MCP, and
+`scripts/mdp-native-normalize-openai.mjs` instructions are v0 compatibility
+rules. They remain audit-grade only under their existing matching-hash and
+runner-audit requirements and must never be relabeled v1. New work should use
+the shared `mdp run` kernel, `scripts/mdp-native-model-openai.mjs`, and the
+path-only `scripts/mdp-run-mcp-server.mjs`. MCP transport alone is not
+audit-grade, and dry/mock/advisory results must remain blocked for a confident
+review.
 
 When using `mdp_proposal_run`, pass only explicit approved local paths; never put
 proposal text, surrounding chat, credentials, or environment dumps in tool

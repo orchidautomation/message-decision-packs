@@ -53,6 +53,18 @@ mdp --json verify-run --bundle <new-run-directory>/run-bundle.json \
   --artifact-root <new-run-directory>
 ```
 
+For `mode: generative`, `operation` must be one stable step ID from
+`requirements.data.model_steps`. One run executes one declared normalization,
+generation, or review step and emits one receipt. The customer host must
+sequence normalization → deterministic fit/routing → generation/review as
+separate calls. Never turn this skill into a workflow orchestrator.
+
+The bundled native path is OpenAI BYOK through the official endpoint. Never
+request or print a key. A real call is allowed only when the operator started
+the process with both `MDP_ALLOW_NATIVE_MODEL_CALLS=1` and `OPENAI_API_KEY`.
+Requests and MCP arguments cannot enable calls. Dry-run/mock fixtures are
+key-free and never prove provider execution.
+
 For MCP-capable hosts, the profile-neutral adapter is
 `scripts/mdp-run-mcp-server.mjs` or
 `${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs`. It exposes `mdp_run_tools`,
@@ -69,9 +81,12 @@ explanation as outside receipt authority. A new agent task is only advisory
 unless its runner evidence proves the relevant controls. Deterministic-only
 runs must report inference dimensions as `not-applicable`, not “fresh.”
 
-`mdp run-receipt` remains the legacy v0 proposal compatibility path. A v0
-`audit-grade` label does not silently become v1 verified assurance. Prefer the
-host-neutral local proposal runner when available: `scripts/mdp-proposal-runner.mjs` in source checkouts or `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed Pluxx bundles. For MCP-capable hosts, the bundled local stdio MCP wrapper is `scripts/mdp-proposal-mcp-server.mjs` or `${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs`; it exposes `mdp_proposal_tools` and file/path-only `mdp_proposal_run`. This is local stdio only, not a hosted or remote MCP service, and MCP transport alone is not isolation evidence. MDP also ships the lower-level optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs` or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; dry-run/mock validation and normal MDP install/use do not need an API key, but a real native model call requires the operator's secure `OPENAI_API_KEY`. Demo, fixture, mock, or synthetic runner audits may only be used for walkthroughs/tests.
+The canonical native subprocess is `scripts/mdp-native-model-openai.mjs` (or
+`${PLUGIN_ROOT}/scripts/mdp-native-model-openai.mjs`). Operators normally use
+it through `mdp run`. `mdp run-receipt`, the proposal runner/MCP wrapper, and
+`scripts/mdp-native-normalize-openai.mjs` remain v0 proposal compatibility
+paths. A v0 `audit-grade` label does not silently become v1 assurance. Demo,
+fixture, mock, or synthetic evidence may only be used for walkthroughs/tests.
 
 If the user asks whether proposal work is audit-grade, route the answer to
 `$mdp-proposal-review` even when the request sounds like general MDP help. That
@@ -129,7 +144,13 @@ For a bound job, retrieve its attempted-complete collector and normalization han
 mdp --json requirements --dir <pack-root> --job <job-id>
 ```
 
-This command is read-only. It compiles the pack-owned questions, source policy, normalization identity, and request/response schemas; it does not collect sources or call a model. An existing job without a Decision Input Contract returns `available: false`. When that job declares `model_task`, inspect `data.model_task_available`, the exact prompt ID/version/hash, declared input producers, instructions, and output contract. Hand that package to the customer-selected host; MDP does not execute it.
+This command is read-only. It compiles the pack-owned questions, source policy,
+normalization identity, request/response schemas, and `data.model_steps`; it
+does not collect sources or call a model. An existing job without a Decision
+Input Contract returns `available: false`. For each declared model step,
+inspect the stable step ID, phase, exact prompt ID/version/hash, declared input
+producers, and output contract. The customer host may execute that package or
+select exactly one step for a generative `mdp run`.
 
 For signal-aware v2 jobs, inspect `data.runtime_contract_version`,
 `data.contract_version_matrix`, and
@@ -257,8 +278,7 @@ mdp --json conformance compile --candidate CANDIDATE_JSON --artifact-root STAGED
 ```
 
 Stop no-draft unless deterministic status is `sufficient-for-job`. The
-customer-selected host owns provider/model selection and the call; MDP does
-neither and does not calculate pricing. After the host returns recorded
+For the behavioral trial, the customer-selected host owns provider/model selection and the call; MDP does neither. The conformance commands do not invoke that trial and MDP does not calculate pricing. After the host returns recorded
 invocation, trial, verifier-receipt, and evaluator evidence, chain the exact
 compiled authority with `conformance validate --artifact-root STAGED_ROOT
 --candidate CANDIDATE_JSON --deterministic deterministic.json --out

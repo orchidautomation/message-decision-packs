@@ -1,29 +1,34 @@
-# Headless Normalization Runners
+# Headless And Native Model Runners
 
-> **V1 note:** the shared `mdp run` kernel is now the canonical authority for
-> deterministic proposal validation and GTM qualification. The headless paths
-> below remain v0 compatibility/reference transports until a released v1
-> driver completes real provider proof. MDP-184 closed its four-cell installed
-> matrix with two deterministic customer-controlled passes and two explicit
-> native no-draft/not-run outcomes; it did not verify a provider integration.
-> See the [sanitized proof record](orchid/qa/2026-08-03-mdp-184-clean-run-proof.md).
-> A new process, task, CLI, or MCP call improves context hygiene but cannot by
-> itself prove declared-input isolation.
+> **V1 note:** the shared `mdp run` kernel is the canonical authority for both
+> deterministic work and one selected job-declared model step. The bundled
+> OpenAI BYOK driver covers normalization, generation, and review across the
+> basic GTM and proposal templates. The customer host sequences those separate
+> runs; MDP does not orchestrate a workflow. The coding-agent recipes below and
+> the older proposal runner remain compatibility/reference transports. No
+> committed dry run or mock proves a real provider integration.
 
-MDP does not own generalized model execution. The plugin teaches the agent what
-to do, and the CLI owns pack/input authority, deterministic evaluation,
-validation, receipts, and verification. For proposal or document review, a
-model call that turns messy source material into `mdp.prompt-output.v0` should
-run in a separate stateless boundary, not inside the operator's current chat
-context.
+MDP does not own generalized model execution. The CLI owns pack/input
+authority, model-step resolution, deterministic evaluation, validation,
+receipts, and verification. Its bounded native path runs exactly one selected
+declared model step per receipt. A normalization, generation, or review call
+should run in that separate boundary, not inside the operator's current chat.
 
-The strongest default boundary is a native stateless API call. This repo includes an optional BYOK OpenAI reference runner at `scripts/mdp-native-normalize-openai.mjs`, and Pluxx packages it into installed bundles under `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`; see [Native API Normalization Runner](native-api-normalization-runner.md). For the proposal flow, `scripts/mdp-proposal-runner.mjs` is the local orchestration surface that stages sources, builds the native request, calls the runner, validates prompt output, creates the receipt, and runs review probes; see [Local Proposal Runner Surface](proposal-runner.md). Headless Codex, Claude Code, Cursor, and OpenCode entries below are recipe-only adapter paths, not verified MDP integrations.
+The strongest default boundary is the native stateless API path. The canonical
+subprocess is `scripts/mdp-native-model-openai.mjs`, packaged under
+`${PLUGIN_ROOT}/scripts/mdp-native-model-openai.mjs`; see [Native API Model
+Runner](native-api-normalization-runner.md). Real execution is default-deny and
+requires `MDP_ALLOW_NATIVE_MODEL_CALLS=1` plus `OPENAI_API_KEY`; offline
+dry-run/mock validation is key-free. The official OpenAI Responses endpoint is
+the only bundled native endpoint. Headless Codex, Claude Code, Cursor, and
+OpenCode entries below are recipe-only customer-host paths, not verified MDP
+integrations.
 
 This lets the user keep a one-thread workshop UX while the implementation keeps two separate planes:
 
 ```text
 Control plane:  ChatGPT/Codex/Claude/Copilot conversation, status, questions, final explanation
-Evidence plane: local source files -> source audit -> prompt package -> model output -> validation -> run receipt -> fit/proof checks
+Evidence plane: declared files -> one selected model step -> validation -> one run receipt -> deterministic next gate
 ```
 
 ## Canonical Runner Support Matrix
@@ -39,7 +44,7 @@ No runner is currently `verified`. A row can move to `verified` only after one r
 
 | Candidate | Current state | Required isolation evidence | Current repository evidence | Missing proof / exact upgrade condition |
 | --- | --- | --- | --- | --- |
-| `native-api` | `recipe-only` | Stateless request; no prior messages, conversation attachment, or tools; structured output; `store: false`; zero tool calls; exact output hash. | Maintained OpenAI Responses request builder and audit emitter; offline dry-run/mock coverage; receipt validator; installed v0.1.59 request-shape dry run recorded under MDP-184. | Run one explicit real request with synthetic source material, validate its output, and produce an audit-grade receipt with matching hashes. Commit only sanitized evidence. Tracked in MDP-149. |
+| `native-api` | `recipe-only` | Stateless request; no prior messages, conversation attachment, or tools; structured output; `store: false`; exact output hash. | Maintained profile-neutral OpenAI Responses subprocess; shared GTM/proposal resolver and run kernel; offline dry-run/mock coverage. | Run an explicitly approved real request with synthetic source material, validate its output, and produce a verified receipt with matching hashes. Commit only sanitized evidence. |
 | `codex-exec` | `recipe-only` | Ephemeral/no-resume run; no session persistence; sterile workdir and instruction/config discovery; audited prompt input; read-only sandbox; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained wrapper that isolates home/workdir, audits model-visible input, parses events, and completes the full receipt chain in a machine-observed run. |
 | `claude-print` | `recipe-only` | Bare print mode; no resume or persistence; structured output; tools disabled; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained wrapper and complete the full receipt chain in a machine-observed run. |
 | `cursor-print` | `recipe-only` | No resume or `--force`; sterile workdir and audited input; external tool denial; zero tool events. | Documented command shape and runner-audit validation. | Add a maintained wrapper/external sandbox that denies tools and completes the full receipt chain in a machine-observed run. |
@@ -88,9 +93,10 @@ feature set.
 
 The default public proposal walkthrough remains synthetic and must be described as mock/non-audit-grade. A client-facing run may be called real and audit-grade only when that invocation itself ends with `decision: "audit-grade"` and a valid runner assurance from `--require-runner-audit`. Until a real run also satisfies the matrix upgrade rule, do not describe MDP as having a verified runner integration.
 
-## Required Artifact Chain
+## Legacy Proposal Artifact Chain
 
-A production proposal normalization runner should create or preserve these local artifacts:
+The v0 proposal compatibility runner creates or preserves these local artifacts.
+New native GTM and proposal steps use `mdp run` and one v1 receipt instead:
 
 1. `mdp.source-audit.v0` — bounded extraction ledger for the supplied PDF/doc/text material.
 2. Prompt package — the selected `.mdp/prompts/normalize-opportunity.yaml` plus only its declared inputs (`raw_opportunity`, `existing_pack_context`, optional `runtime_context`, `source_kind`, and source-audit references as needed).
@@ -367,10 +373,18 @@ Runner requirements:
 For the product, the clean path is one installable MDP plugin bundle plus a runner/MCP layer that the plugin can call:
 
 - Pluxx continues to package the authored skills, hooks, and assets from this repo for each host.
-- The optional `scripts/mdp-native-normalize-openai.mjs` runner is the first local reference for the native API path, and ships inside installed Pluxx bundles as `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs`. It validates a `mdp.native-normalize-request.v0` file, calls the OpenAI Responses API with Structured Outputs and `store: false`, writes `mdp.prompt-output.v0`, and emits `mdp.runner-audit.v0`.
-- The bundled local runner/MCP layer owns source staging, prompt-package construction, native/headless model invocation, artifact persistence, and runner-audit emission. PDF/doc ingestion remains a future adapter around that boundary unless the operator supplies an approved text export/source audit.
+- `scripts/mdp-native-model-openai.mjs` is the canonical internal OpenAI
+  subprocess for one selected declared step and ships inside installed Pluxx
+  bundles. `scripts/mdp-native-normalize-openai.mjs` remains a v0 proposal
+  compatibility adapter.
+- The shared Rust run kernel owns staging, exact step resolution, validation,
+  hashes, terminal state, and receipts. The customer host owns the sequence
+  between separate normalization, deterministic, generation, and review runs.
+  PDF/doc ingestion remains outside the native driver.
 - Pluxx may generate host-specific install/config shims that point Cursor, OpenCode, Claude, Codex, or Copilot toward the same runner contract, but Pluxx should not be the only place that defines or enforces audit-grade isolation.
-- The `mdp` CLI owns deterministic validation, source-audit checks, fit/proof/routing checks, and run-receipt gating.
+- The `mdp` CLI owns model-step compilation, the bounded native subprocess
+  boundary, deterministic validation, source-audit checks, fit/proof/routing
+  checks, and receipt gating.
 - The chat agent owns user guidance, questions, and final explanation, but it should not normalize proposal facts in its ambient conversation when audit-grade output is required.
 
 Same-conversation normalization is still useful for drafting, debugging, and workshops. It should be labeled `advisory`, not `audit-grade`, unless the runner receipt includes a valid runner audit.

@@ -6,6 +6,7 @@ mod cli;
 mod commands;
 mod conformance;
 mod constants;
+mod model_steps;
 mod models;
 mod output;
 mod pack_io;

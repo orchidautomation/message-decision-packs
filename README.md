@@ -2,7 +2,7 @@
 
 **MDP is versioned decision context for agents.** A local `.mdp/` folder makes agent judgment explicit by storing source evidence, decision rules, approved claims or proof, routing contracts, output boundaries, gaps, and evals. The Rust CLI validates and routes that context; the plugin teaches supported agents how to use it.
 
-MDP is a decision/context layer: it produces deterministic decisions and bounded, hash-bound traces from pack-owned authority. It is not an agent runtime, graph database, memory layer, orchestration framework, AI SDR, CRM, sequencer, enrichment provider, scraper, BI tool, proposal management system, or generic automation platform. It does not call models, send messages, update external systems, or prove that a source claim is true.
+MDP is a decision/context layer: it produces deterministic decisions and bounded, hash-bound traces from pack-owned authority. Its optional local BYOK driver can execute exactly one job-declared model step—normalization, generation, or review—then return the result to the same validation and receipt kernel. It is not an agent runtime, graph database, memory layer, orchestration framework, AI SDR, CRM, sequencer, enrichment provider, scraper, BI tool, proposal management system, or generic automation platform. It does not collect source data, sequence multi-step work, send messages, update external systems, calculate inference pricing, or prove that a source claim is true.
 
 See [CONCEPTS.md](CONCEPTS.md) for the canonical vocabulary and assurance-state
 boundaries used across the CLI, docs, and agent skills.
@@ -168,7 +168,9 @@ signal projections, conflict rules, version matrix, and no-draft boundary.
 Structured repeated signal observations exist only in the opt-in v2 envelope;
 scalar-only v1 and detached prospect signals remain readable as legacy or
 unassessed context and cannot satisfy explicit roles. The contract tells an
-external host what to attempt; MDP performs no collection or model calls. See
+customer host what to attempt. MDP performs no collection. The host may execute
+the declared normalization step itself or use the optional local BYOK native
+driver, one selected step and one receipt at a time. See
 [Decision Input Contracts](docs/decision-input-contracts.md) and the synthetic
 [Clay Audiences example](examples/clay-audiences-self-serve-enterprise-expansion/README.md).
 
@@ -188,8 +190,10 @@ behavioral trial thresholds. Missing evidence is `unassessed`; a failed
 required assertion is `not-sufficient-for-job` or
 `not-qualified-for-job-under-envelope`, depending on the proof plane.
 
-MDP never makes the model call, chooses the provider, calculates provider
-pricing, or grants drafting/sending authority. See
+The conformance commands never make the behavioral-trial model call. The
+optional local run driver is a separate execution surface and does not turn a
+native run into behavioral qualification. MDP does not calculate provider
+pricing or grant drafting/sending authority. See
 [Cold-model Conformance](docs/cold-model-conformance.md).
 
 External orchestrators can bind their fields to one exact compiled job through
@@ -201,9 +205,26 @@ results, prompt, and normalized envelope, validate the chain, and pass it to
 `fit` or `brief` through `--normalized-input`; do not extract and edit a
 detached prospect. `lineage-validated` means internal chain consistency only,
 not host authenticity or source truth. Bindings remain integration-owned and
-outside `.mdp`; MDP still performs no provider calls or orchestration.
+outside `.mdp`; source binding itself performs no provider call or
+orchestration. A customer host may later select one declared model step for a
+separate native run.
 
-For audit-grade proposal normalization, the runner or host must make a fresh/stateless model call and pass only prompt-declared inputs. `scripts/mdp-proposal-runner.mjs` is the host-neutral local command surface that stages sources, preserves or creates source-audit inputs, calls the native runner, validates prompt output, creates the required receipt, and runs review-support probes. It is also exposed through `scripts/mdp-proposal-mcp-server.mjs`, a bundled local stdio MCP wrapper; neither surface is a hosted or remote MCP service. `mdp run-receipt` records the host-owned boundary plus local artifact hashes for the source audit, prompt output, validation result, runner audit, and downstream files, and blocks if the validation-result hashes do not match the supplied prompt-output/source-audit artifacts, if the runner-audit prompt-output hash does not match the supplied prompt output, or if the runner audit is marked demo/fixture/mock/synthetic. Same-conversation, dry-run, or mock normalization without a valid required runner-audit receipt is advisory or blocked even when the JSON validates.
+For a native model step, one `mdp.run-request.v1` selects one stable step ID.
+The shared Rust runtime freezes the prompt and declared inputs, calls the
+profile-neutral OpenAI BYOK subprocess, validates the returned artifact, and
+emits one receipt. The same path covers the shipped basic GTM and proposal
+templates. The customer host explicitly sequences separate normalization,
+deterministic fit/routing, and generation/review runs; MDP does not chain them
+automatically. Real calls are default-deny and require both
+`MDP_ALLOW_NATIVE_MODEL_CALLS=1` and `OPENAI_API_KEY` in the process environment;
+dry-run and mock validation are key-free and do not prove a provider call. The
+official OpenAI Responses endpoint is the only bundled native endpoint.
+
+The older proposal runner, proposal MCP wrapper, `mdp run-receipt`, and
+`scripts/mdp-native-normalize-openai.mjs` remain v0 compatibility surfaces.
+The profile-neutral local stdio MCP surface is
+`scripts/mdp-run-mcp-server.mjs`; it transports file paths to the same CLI and
+adds no authority or isolation assurance.
 
 Profiles express domain language over ten universal primitives:
 
@@ -250,11 +271,11 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Job-owned Prompt Contracts](docs/job-prompt-contracts.md): versioned generation/review instructions, declared input producers, compiled host packages, and exact governed-artifact schemas.
 - [Decision Input Contracts](docs/decision-input-contracts.md): attempted-complete data questions, source-attempt policy, normalization envelopes, and no-draft outcomes.
 - [Decision Traces](docs/decision-traces.md): bounded JSON and Mermaid projections of existing decision authority.
-- [Runner Receipts](docs/run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
+- [Runner Receipts](docs/run-receipts.md): unified v1 run receipts plus the legacy proposal receipt contract.
 - [Local Proposal Runner Surface](docs/proposal-runner.md): host-neutral local command surface for source audit, native/headless normalization, validation, receipts, and review probes.
 - [Deterministic Proposal Evidence Harness](docs/proposal-evidence-harness.md): synthetic CI proof for positive contract acceptance and fail-closed ambient/mock/hash/injection/unsupported-proof cases.
-- [Headless Normalization Runners](docs/headless-normalization-runners.md): native/headless runner recipes for Codex, Claude Code, Cursor, OpenCode, and the bundled local stdio MCP wrapper.
-- [Native API Normalization Runner](docs/native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.
+- [Headless And Native Model Runners](docs/headless-normalization-runners.md): the canonical native path plus compatibility recipes for Codex, Claude Code, Cursor, and OpenCode.
+- [Native API Model Runner](docs/native-api-normalization-runner.md): optional BYOK OpenAI driver for one declared normalization, generation, or review step.
 - [Proof-Output Drafting](docs/proof-output-drafting.md): draft-helper workflow for verified proof-output artifacts.
 - [Agent Hook Guidance](docs/agent-hook-guidance.md): safe activation and post-edit validation.
 - [Distribution](docs/distribution.md): releases, Pluxx bundles, installers, and updates.

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -28,8 +28,10 @@ if (args.includes('verify-run')) {
 }
 const requestPath = args[args.indexOf('--request') + 1]
 const outputDir = args[args.indexOf('--out-dir') + 1]
+writeFileSync(outputDir + '.ready', '')
+await new Promise((resolveWait) => setTimeout(resolveWait, 25))
 const request = JSON.parse(readFileSync(requestPath, 'utf8'))
-writeFileSync(outputDir + '.invocation.json', JSON.stringify({ args, secret_seen: Boolean(process.env.MDP_MCP_SECRET_MARKER), env_keys: Object.keys(process.env).sort() }))
+writeFileSync(outputDir + '.invocation.json', JSON.stringify({ args, request, secret_seen: Boolean(process.env.MDP_MCP_SECRET_MARKER), env_keys: Object.keys(process.env).sort() }))
 if (request.test_mode === 'fail') {
   process.stderr.write('PRIVATE-SOURCE-BODY /private/customer/path\\n')
   process.exit(7)
@@ -118,6 +120,14 @@ const toolCall = (id, name, args = {}) => ({
   params: { name, arguments: args },
 })
 
+const waitForFile = async (path) => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (existsSync(path)) return
+    await new Promise((resolveWait) => setTimeout(resolveWait, 5))
+  }
+  throw new Error(`fixture did not create ${path}`)
+}
+
 test('lists the profile-neutral run and verification tools and identifies MCP as transport only', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -171,17 +181,39 @@ test('passes only file paths to a bounded CLI child and returns its authority un
   assert.equal('mcp_assurance' in result, false)
 
   const invocation = JSON.parse(readFileSync(`${output}.invocation.json`, 'utf8'))
-  const canonicalRoot = realpathSync(root)
-  assert.deepEqual(invocation.args, [
-    '--json',
-    'run',
-    '--request',
-    join(canonicalRoot, 'run-request.json'),
-    '--out-dir',
-    join(canonicalRoot, 'new-run'),
-  ])
+  assert.deepEqual(invocation.args.slice(0, 3), ['--json', 'run', '--request'])
+  assert.notEqual(invocation.args[3], request)
+  assert.equal(existsSync(invocation.args[3]), false)
+  assert.deepEqual(invocation.args.slice(4), ['--out-dir', join(realpathSync(root), 'new-run')])
   assert.equal(invocation.secret_seen, false)
   assert.equal(invocation.env_keys.includes('MDP_MCP_SECRET_MARKER'), false)
+})
+
+test('forwards native model permission and credential only for generative requests', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const cli = fixtureCli(root)
+  const deterministic = join(root, 'deterministic.json')
+  const generative = join(root, 'generative.json')
+  writeFileSync(deterministic, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'deterministic' }))
+  writeFileSync(generative, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'generative' }))
+
+  await rpc(
+    cli,
+    [
+      toolCall(1, 'mdp_run', { request_path: deterministic, output_dir: join(root, 'deterministic-run') }),
+      toolCall(2, 'mdp_run', { request_path: generative, output_dir: join(root, 'generative-run') }),
+    ],
+    { OPENAI_API_KEY: 'test-key-must-not-be-printed', MDP_ALLOW_NATIVE_MODEL_CALLS: '1' },
+  )
+
+  const deterministicInvocation = JSON.parse(readFileSync(join(root, 'deterministic-run.invocation.json'), 'utf8'))
+  const generativeInvocation = JSON.parse(readFileSync(join(root, 'generative-run.invocation.json'), 'utf8'))
+  assert.equal(deterministicInvocation.env_keys.includes('OPENAI_API_KEY'), false)
+  assert.equal(deterministicInvocation.env_keys.includes('MDP_ALLOW_NATIVE_MODEL_CALLS'), false)
+  assert.equal(generativeInvocation.env_keys.includes('OPENAI_API_KEY'), true)
+  assert.equal(generativeInvocation.env_keys.includes('MDP_ALLOW_NATIVE_MODEL_CALLS'), true)
+  assert.equal(JSON.stringify(generativeInvocation).includes('test-key-must-not-be-printed'), false)
 })
 
 test('rejects ambient or inline request arguments before spawning the CLI', async (t) => {
@@ -200,14 +232,18 @@ test('rejects ambient or inline request arguments before spawning the CLI', asyn
   assert.match(reply.error.message, /pass file paths only/)
 })
 
-test('rejects request symlinks, existing output directories, and oversized request files', async (t) => {
+test('rejects request symlinks, hard links, existing output directories, and oversized request files', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const cli = fixtureCli(root)
   const request = join(root, 'request.json')
   const requestLink = join(root, 'request-link.json')
+  const requestHardLink = join(root, 'request-hard-link.json')
+  const cleanRequest = join(root, 'clean-request.json')
   writeFileSync(request, '{}')
   symlinkSync(request, requestLink)
+  linkSync(request, requestHardLink)
+  writeFileSync(cleanRequest, '{}')
   const existingOutput = join(root, 'existing')
   writeFileSync(existingOutput, 'not a directory')
   const oversized = join(root, 'oversized.json')
@@ -215,12 +251,48 @@ test('rejects request symlinks, existing output directories, and oversized reque
 
   const replies = await rpc(cli, [
     toolCall(1, 'mdp_run', { request_path: requestLink, output_dir: join(root, 'one') }),
-    toolCall(2, 'mdp_run', { request_path: request, output_dir: existingOutput }),
-    toolCall(3, 'mdp_run', { request_path: oversized, output_dir: join(root, 'three') }),
+    toolCall(2, 'mdp_run', { request_path: requestHardLink, output_dir: join(root, 'two') }),
+    toolCall(3, 'mdp_run', { request_path: cleanRequest, output_dir: existingOutput }),
+    toolCall(4, 'mdp_run', { request_path: oversized, output_dir: join(root, 'four') }),
   ])
   assert.match(replies[0].error.message, /must not be a symlink/)
-  assert.match(replies[1].error.message, /must not already exist/)
-  assert.match(replies[2].error.message, /exceeds 1048576 bytes/)
+  assert.match(replies[1].error.message, /exactly one hard link/)
+  assert.match(replies[2].error.message, /must not already exist/)
+  assert.match(replies[3].error.message, /exceeds 1048576 bytes/)
+})
+
+test('executes frozen request bytes when the public path is mutated or replaced after spawn', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const cli = fixtureCli(root)
+
+  for (const attack of ['mutate', 'replace']) {
+    const request = join(root, `${attack}.json`)
+    const output = join(root, `${attack}-run`)
+    const original = { contract: 'mdp.run-request.v1', mode: 'deterministic', marker: `${attack}-original` }
+    writeFileSync(request, JSON.stringify(original))
+    const pending = rpc(
+      cli,
+      [toolCall(1, 'mdp_run', { request_path: request, output_dir: output })],
+      { OPENAI_API_KEY: 'must-not-cross-after-mutation', MDP_ALLOW_NATIVE_MODEL_CALLS: '1' },
+    )
+    await waitForFile(`${output}.ready`)
+    if (attack === 'mutate') {
+      writeFileSync(request, JSON.stringify({ ...original, mode: 'generative', marker: 'mutated' }))
+    } else {
+      const replacement = join(root, 'replacement.json')
+      writeFileSync(replacement, JSON.stringify({ ...original, mode: 'generative', marker: 'replaced' }))
+      renameSync(replacement, request)
+    }
+    const [reply] = await pending
+    assert.equal(reply.result.isError, false)
+    const invocation = JSON.parse(readFileSync(`${output}.invocation.json`, 'utf8'))
+    assert.deepEqual(invocation.request, original)
+    assert.equal(invocation.env_keys.includes('OPENAI_API_KEY'), false)
+    assert.equal(invocation.env_keys.includes('MDP_ALLOW_NATIVE_MODEL_CALLS'), false)
+    assert.notEqual(invocation.args[3], request)
+    assert.equal(existsSync(invocation.args[3]), false)
+  }
 })
 
 test('fails closed without returning CLI stderr, partial stdout, paths, or source bodies', async (t) => {

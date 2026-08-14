@@ -667,6 +667,7 @@ assert request["pack_release_id"] == "proposal-test-release-v1"
 assert request["prompt"] is None
 assert request["driver"] is None
 assert request["model"] is None
+assert request["execution_policy"]["max_output_bytes"] == 1048576
 assert "assurance" not in request
 assert "receipt_sha256" not in request
 assert "bundle_sha256" not in request

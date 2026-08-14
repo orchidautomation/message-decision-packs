@@ -2,7 +2,7 @@ use crate::commands::decision_trace::{
     DECISION_TRACE_V1, MAX_MERMAID_BYTES, MAX_TRACE_EDGES, MAX_TRACE_LABEL_BYTES, MAX_TRACE_NODES,
     MAX_TRACE_SOURCE_BYTES,
 };
-use crate::commands::schemas::conformance_schemas;
+use crate::commands::schemas::{conformance_schemas, model_step_resolution_schema};
 use crate::commands::source_binding::source_lineage_version_matrix;
 use crate::conformance::{
     BEHAVIORAL_EVALUATION_V1, CONFORMANCE_REPORT_V1, DETERMINISTIC_CONFORMANCE_V1,
@@ -18,11 +18,12 @@ use crate::constants::{
     SOURCE_AUDIT_CONTRACT, SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2,
     SOURCE_BINDING_VALIDATION_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
+use crate::model_steps::{COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1};
 use crate::models::DecisionInputAttemptStatus;
 use crate::run_contracts::{
-    CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_RESULT_V1, PROPOSAL_RUNNER_RESULT_V1,
-    RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1,
-    RUNNER_AUDIT_V1,
+    CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V1,
+    DRIVER_RESULT_V2, PROPOSAL_RUNNER_RESULT_V1, RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1,
+    RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
 };
 use serde_json::{Value, json};
 
@@ -127,12 +128,22 @@ pub(crate) fn capabilities() -> Value {
             "run_bundle": {"contract": RUN_BUNDLE_V1, "schema_target": "run-bundle-v1"},
             "driver_request": {"contract": DRIVER_REQUEST_V1, "schema_target": "driver-request-v1"},
             "driver_result": {"contract": DRIVER_RESULT_V1, "schema_target": "driver-result-v1"},
+            "model_driver_request": {"contract": DRIVER_REQUEST_V2, "schema_target": "driver-request-v2"},
+            "model_driver_result": {"contract": DRIVER_RESULT_V2, "schema_target": "driver-result-v2"},
             "runner_audit": {"contract": RUNNER_AUDIT_V1, "schema_target": "runner-audit-v1"},
             "run_receipt": {"contract": RUN_RECEIPT_V1, "schema_target": "run-receipt-v1"},
             "run_verification": {"contract": RUN_VERIFICATION_V1, "schema_target": "run-verification-v1"},
             "run_execution": {"contract": RUN_EXECUTION_V1, "schema_target": "run-execution-v1"},
             "canonical_authority_block": {"contract": CANONICAL_AUTHORITY_BLOCK_V1, "schema_target": "canonical-authority-block-v1"},
             "assurance": "Vector-valued evidence; v0 labels and driver assertions never silently elevate."
+        },
+        "model_step_contracts": {
+            "resolution": MODEL_STEP_RESOLUTION_V1,
+            "compiled_step": COMPILED_MODEL_STEP_V1,
+            "phase_order": ["normalization", "generation", "review"],
+            "step_id_format": "model:{job_id}/{phase}",
+            "unbound_behavior": "unassessed; prompts are never inferred from filenames or skill prose",
+            "schema": model_step_resolution_schema()
         },
         "cold_model_conformance_contracts": {
             "contracts": conformance_contracts,
@@ -332,6 +343,18 @@ mod tests {
     fn capabilities_exposes_agent_driving_contracts() {
         let result = capabilities();
         assert_eq!(result["contract"], "mdp.capabilities.v0");
+        assert_eq!(
+            result["model_step_contracts"]["resolution"],
+            MODEL_STEP_RESOLUTION_V1
+        );
+        assert_eq!(
+            result["model_step_contracts"]["compiled_step"],
+            COMPILED_MODEL_STEP_V1
+        );
+        assert_eq!(
+            result["model_step_contracts"]["phase_order"],
+            json!(["normalization", "generation", "review"])
+        );
         assert_eq!(
             result["cold_model_conformance_contracts"]["model_execution"],
             "external-only"

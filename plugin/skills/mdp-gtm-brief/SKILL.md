@@ -67,8 +67,9 @@ mdp --json brief --dir PACK_ROOT --normalized-input OUTPUT_JSON \
 
 Use only the exact compiled prompt, declared inputs, version, output schema,
 and a `ready` minimal-context receipt. Require the routed-context artifact to
-be saved; do not open excluded entries or the whole pack. The customer-selected
-host owns the model call. Validate the returned
+be saved; do not open excluded entries or the whole pack. The customer host
+may execute the step itself or select the exact generation/review step ID from
+`data.model_steps` for one generative `mdp run`. Validate the returned
 governed artifact with `--invocation-receipt PROMPT_INVOCATION_JSON` and
 `--routed-context ROUTED_CONTEXT_JSON`, then run
 `mdp check-claims` on generated or supplied copy. The host receipt must bind
@@ -93,7 +94,10 @@ skill-implied writing or review instructions.
 
 5. For `prospect-fit-or-brief` normalization only, branch on
    Decision Input `data.available`:
-   - When `true`, do not collect or normalize inside this skill.
+   - When `true`, do not collect or normalize inside this skill. The customer
+     host may normalize with its own declared-input-only call or ask the shared
+     runtime to execute the resolved normalization step in one generative
+     `mdp run`; consume only its validated, receipted result.
      Inspect `data.runtime_contract_version`,
      `data.contract_version_matrix`, and every compiled signal projection. Do
      not mix v1/v2 artifacts or infer roles from prose. For v2, require the
@@ -196,10 +200,12 @@ Load only the selected mode.
   cannot satisfy explicit `fit`, `why-now`, `person-resolution`, or
   `disqualifier` roles through keywords or source prose.
 - When decision authority must be isolated from a context-rich authoring chat,
-  create a deterministic `mdp.run-request.v1` and use `mdp run`; do not call a
-  model driver. Verify the returned bundle and receipt before presenting the
-  decision. Inference assurance is `not-applicable`, while upstream source and
-  normalization provenance remain separate limitations.
+  create one `mdp.run-request.v1` per operation and use `mdp run`. A
+  deterministic request calls no model and reports inference as
+  `not-applicable`. A generative request must select exactly one stable
+  `data.model_steps` ID and produces one receipt. The host sequences
+  normalization → deterministic fit/routing → generation/review; never collapse
+  them into one run. Verify each returned bundle and receipt.
 - MDP returns qualification and bounded context. Campaign drafting, table
   batching, retries, enrichment, outbound, and CRM actions remain host-owned.
 

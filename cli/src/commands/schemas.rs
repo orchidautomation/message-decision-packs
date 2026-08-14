@@ -16,6 +16,9 @@ use crate::constants::{
     PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
     RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
+use crate::model_steps::{
+    COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1, compiled_model_step_schema,
+};
 use crate::models::{
     DecisionInputAttemptStatus, MAX_SIGNAL_ATTEMPTS, MAX_SIGNAL_CONTRIBUTORS,
     MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN, MAX_SIGNAL_LOCATOR_LEN,
@@ -23,9 +26,9 @@ use crate::models::{
     MAX_SIGNAL_QUALIFIED_ID_LEN, SIGNAL_OBSERVATION_CONTRACT_V2,
 };
 use crate::run_contracts::{
-    CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_RESULT_V1, PROPOSAL_RUNNER_RESULT_V1,
-    RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1,
-    RUNNER_AUDIT_V1,
+    CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V1,
+    DRIVER_RESULT_V2, PROPOSAL_RUNNER_RESULT_V1, RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1,
+    RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -113,6 +116,8 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RunBundleV1 => run_bundle_v1_schema(),
         SchemaTarget::DriverRequestV1 => driver_request_v1_schema(),
         SchemaTarget::DriverResultV1 => driver_result_v1_schema(),
+        SchemaTarget::DriverRequestV2 => driver_request_v2_schema(),
+        SchemaTarget::DriverResultV2 => driver_result_v2_schema(),
         SchemaTarget::RunnerAuditV1 => runner_audit_v1_schema(),
         SchemaTarget::RunReceiptV1 => run_receipt_v1_schema(),
         SchemaTarget::RunVerificationV1 => run_verification_v1_schema(),
@@ -205,6 +210,33 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         }
         SchemaTarget::Skills => skills_schema(),
     }
+}
+
+pub(crate) fn prompt_output_schema_for_ref(schema_ref: &str) -> Option<Value> {
+    match schema_ref {
+        PROMPT_CARD_PATCH_SCHEMA_REF | PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF => {
+            Some(schema(SchemaTarget::PromptOutput))
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn model_step_resolution_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Model Step Resolution v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "job_id", "status", "steps"],
+        "properties": {
+            "contract": {"const": MODEL_STEP_RESOLUTION_V1},
+            "job_id": {"type": "string", "minLength": 1},
+            "status": {"enum": ["ready", "unassessed", "blocked"]},
+            "steps": {"type": "array", "items": compiled_model_step_schema()},
+            "diagnostics": {"type": "array", "items": {"type": "object"}}
+        },
+        "$defs": {"compiled_model_step_contract": {"const": COMPILED_MODEL_STEP_V1}}
+    })
 }
 
 /// U1 schema registry. CLI target variants are wired separately so the
@@ -1443,6 +1475,29 @@ fn execution_policy_v1_schema() -> Value {
     })
 }
 
+fn generative_execution_policy_v1_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": [
+            "environment_allowlist", "filesystem_mode", "tool_mode", "network_mode",
+            "authorized_endpoints", "max_input_bytes", "max_output_bytes", "timeout_ms",
+            "retention_policy"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "environment_allowlist": {"const": ["OPENAI_API_KEY"]},
+            "filesystem_mode": {"const": "private-staging"},
+            "tool_mode": {"const": "none"},
+            "network_mode": {"const": "authorized-endpoints-only"},
+            "authorized_endpoints": {"const": ["https://api.openai.com/v1/responses"]},
+            "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
+            "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
+            "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+            "retention_policy": {"enum": ["receipt-only", "customer-controlled-workdir"]}
+        }
+    })
+}
+
 fn driver_identity_v1_schema() -> Value {
     json!({
         "type": "object",
@@ -1465,6 +1520,15 @@ fn driver_identity_v1_schema() -> Value {
     })
 }
 
+fn native_openai_driver_identity_v1_schema() -> Value {
+    let mut schema = driver_identity_v1_schema();
+    schema["properties"]["driver_id"] = json!({"const": "mdp-native-openai"});
+    schema["properties"]["implementation"] = json!({"const": "bundled:mdp-native-model-openai"});
+    schema["properties"]["executable_sha256"] = sha256_schema();
+    schema["properties"]["dependency_lock_sha256"] = sha256_schema();
+    schema
+}
+
 fn model_identity_v1_schema() -> Value {
     json!({
         "type": "object",
@@ -1484,6 +1548,15 @@ fn model_identity_v1_schema() -> Value {
             "storage_behavior": assurance_state_schema()
         }
     })
+}
+
+fn native_openai_model_identity_v1_schema() -> Value {
+    let mut schema = model_identity_v1_schema();
+    schema["properties"]["provider"] = json!({"const": "openai"});
+    schema["properties"]["resolved_model"] = json!({"type": "null"});
+    schema["properties"]["authorized_endpoint"] =
+        json!({"const": "https://api.openai.com/v1/responses"});
+    schema
 }
 
 fn assurance_dimension_v1_schema() -> Value {
@@ -1518,26 +1591,32 @@ fn run_request_v1_schema() -> Value {
             "created_at": {"type": "string", "format": "date-time"},
             "profile": non_blank_string_schema(),
             "operation": non_blank_string_schema(),
-            "mode": {"const": "deterministic"},
+            "mode": {"enum": ["deterministic", "generative"]},
             "job_identity": nullable_object_schema(job_identity_v1_schema()),
             "pack_dir": non_blank_string_schema(),
             "pack_release_id": non_blank_string_schema(),
-            "prompt": {"type": "null"},
+            "prompt": nullable_object_schema(local_artifact_input_v1_schema()),
             "inputs": {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": 10000,
                 "items": local_artifact_input_v1_schema()
             },
-            "execution_policy": execution_policy_v1_schema(),
-            "driver": {"type": "null"},
-            "model": {"type": "null"}
+            "execution_policy": {"oneOf": [execution_policy_v1_schema(), generative_execution_policy_v1_schema()]},
+            "driver": nullable_object_schema(driver_identity_v1_schema()),
+            "model": nullable_object_schema(model_identity_v1_schema())
         },
         "oneOf": [
             {
+                "required": ["mode", "prompt", "driver", "model", "execution_policy"],
                 "properties": {
+                    "mode": {"const": "deterministic"},
                     "profile": {"const": "proposal"},
                     "operation": {"const": "validate-existing-output"},
+                    "prompt": {"type": "null"},
+                    "driver": {"type": "null"},
+                    "model": {"type": "null"},
+                    "execution_policy": execution_policy_v1_schema(),
                     "inputs": {
                         "contains": {
                             "type": "object",
@@ -1550,9 +1629,15 @@ fn run_request_v1_schema() -> Value {
                 }
             },
             {
+                "required": ["mode", "prompt", "driver", "model", "execution_policy"],
                 "properties": {
+                    "mode": {"const": "deterministic"},
                     "profile": {"const": "gtm"},
                     "operation": {"const": "qualify"},
+                    "prompt": {"type": "null"},
+                    "driver": {"type": "null"},
+                    "model": {"type": "null"},
+                    "execution_policy": execution_policy_v1_schema(),
                     "inputs": {
                         "allOf": [
                             {"contains": {"type": "object", "properties": {"logical_name": {"const": "normalized-decision-input"}}, "required": ["logical_name"]}, "minContains": 1, "maxContains": 1},
@@ -1561,6 +1646,18 @@ fn run_request_v1_schema() -> Value {
                             {"contains": {"type": "object", "properties": {"logical_name": {"const": "bound-prompt"}}, "required": ["logical_name"]}, "minContains": 1, "maxContains": 1}
                         ]
                     }
+                }
+            },
+            {
+                "required": ["mode", "operation", "job_identity", "prompt", "driver", "model", "execution_policy"],
+                "properties": {
+                    "mode": {"const": "generative"},
+                    "operation": {"type": "string", "pattern": "^model:[a-z0-9][a-z0-9-]*/(normalization|generation|review)$"},
+                    "job_identity": job_identity_v1_schema(),
+                    "prompt": local_artifact_input_v1_schema(),
+                    "driver": native_openai_driver_identity_v1_schema(),
+                    "model": native_openai_model_identity_v1_schema(),
+                    "execution_policy": generative_execution_policy_v1_schema()
                 }
             }
         ]
@@ -1632,6 +1729,127 @@ fn driver_result_v1_schema() -> Value {
     })
 }
 
+fn driver_artifact_v2_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["authority", "content_utf8"],
+        "additionalProperties": false,
+        "properties": {
+            "authority": artifact_authority_v1_schema(),
+            "content_utf8": {"type": "string"}
+        }
+    })
+}
+
+fn driver_provider_policy_v2_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["provider", "requested_model", "authorized_endpoint", "timeout_ms", "max_output_bytes"],
+        "additionalProperties": false,
+        "properties": {
+            "provider": {"const": "openai"},
+            "requested_model": non_blank_string_schema(),
+            "authorized_endpoint": {"const": "https://api.openai.com/v1/responses"},
+            "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
+            "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64}
+        }
+    })
+}
+
+fn driver_request_v2_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Driver Request v2",
+        "type": "object",
+        "required": [
+            "contract", "execution_id", "profile", "operation", "job_identity", "phase",
+            "prompt_id", "prompt_version", "prompt_canonical_sha256", "prompt",
+            "prompt_invocation", "inputs", "canonical_output_schema",
+            "canonical_output_schema_sha256", "provider_output_schema",
+            "provider_output_schema_sha256", "provider_policy", "execution_policy_sha256",
+            "request_sha256"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": DRIVER_REQUEST_V2},
+            "execution_id": non_blank_string_schema(),
+            "profile": non_blank_string_schema(),
+            "operation": {"type": "string", "pattern": "^model:[a-z0-9][a-z0-9-]*/(normalization|generation|review)$"},
+            "job_identity": job_identity_v1_schema(),
+            "phase": {"enum": ["normalization", "generation", "review"]},
+            "prompt_id": non_blank_string_schema(),
+            "prompt_version": non_blank_string_schema(),
+            "prompt_canonical_sha256": sha256_schema(),
+            "prompt": driver_artifact_v2_schema(),
+            "prompt_invocation": driver_artifact_v2_schema(),
+            "inputs": {"type": "array", "maxItems": 10000, "items": driver_artifact_v2_schema()},
+            "canonical_output_schema": {"type": "object"},
+            "canonical_output_schema_sha256": sha256_schema(),
+            "provider_output_schema": {"type": "object"},
+            "provider_output_schema_sha256": sha256_schema(),
+            "provider_policy": driver_provider_policy_v2_schema(),
+            "execution_policy_sha256": sha256_schema(),
+            "request_sha256": sha256_schema()
+        }
+    })
+}
+
+fn driver_output_v2_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["schema_id", "media_type", "content_utf8", "byte_count", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+            "schema_id": non_blank_string_schema(),
+            "media_type": non_blank_string_schema(),
+            "content_utf8": {"type": "string"},
+            "byte_count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991_u64},
+            "sha256": sha256_schema()
+        }
+    })
+}
+
+fn driver_provider_observation_v2_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["provider", "response_id", "resolved_model"],
+        "additionalProperties": false,
+        "properties": {
+            "provider": {"const": "openai"},
+            "response_id": {"type": ["string", "null"]},
+            "resolved_model": {"type": ["string", "null"]}
+        }
+    })
+}
+
+fn driver_result_v2_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Driver Result v2",
+        "type": "object",
+        "required": [
+            "contract", "execution_id", "operation", "terminal_state", "output",
+            "provider_request_body_sha256", "provider_request_schema_id",
+            "provider_output_schema_sha256", "provider_observation", "diagnostic_code",
+            "result_sha256"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": DRIVER_RESULT_V2},
+            "execution_id": non_blank_string_schema(),
+            "operation": {"type": "string", "pattern": "^model:[a-z0-9][a-z0-9-]*/(normalization|generation|review)$"},
+            "terminal_state": terminal_state_schema(),
+            "output": nullable_object_schema(driver_output_v2_schema()),
+            "provider_request_body_sha256": optional_sha256_schema(),
+            "provider_request_schema_id": {"type": ["string", "null"]},
+            "provider_output_schema_sha256": optional_sha256_schema(),
+            "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
+            "diagnostic_code": {"type": ["string", "null"]},
+            "result_sha256": sha256_schema()
+        }
+    })
+}
+
 fn runner_audit_v1_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1639,7 +1857,8 @@ fn runner_audit_v1_schema() -> Value {
         "type": "object",
         "required": [
             "contract", "execution_id", "runner_version", "runner_build_sha256", "platform",
-            "snapshot_sha256", "provider_request_body_sha256", "provider_request_schema_id",
+            "snapshot_sha256", "driver_request_sha256", "driver_result_sha256",
+            "provider_request_body_sha256", "provider_request_schema_id",
             "terminal_state", "assurance", "limitations"
         ],
         "additionalProperties": false,
@@ -1650,6 +1869,8 @@ fn runner_audit_v1_schema() -> Value {
             "runner_build_sha256": optional_sha256_schema(),
             "platform": non_blank_string_schema(),
             "snapshot_sha256": sha256_schema(),
+            "driver_request_sha256": optional_sha256_schema(),
+            "driver_result_sha256": optional_sha256_schema(),
             "provider_request_body_sha256": optional_sha256_schema(),
             "provider_request_schema_id": {"type": ["string", "null"]},
             "terminal_state": terminal_state_schema(),
@@ -4540,6 +4761,8 @@ mod tests {
             (SchemaTarget::RunBundleV1, RUN_BUNDLE_V1),
             (SchemaTarget::DriverRequestV1, DRIVER_REQUEST_V1),
             (SchemaTarget::DriverResultV1, DRIVER_RESULT_V1),
+            (SchemaTarget::DriverRequestV2, DRIVER_REQUEST_V2),
+            (SchemaTarget::DriverResultV2, DRIVER_RESULT_V2),
             (SchemaTarget::RunnerAuditV1, RUNNER_AUDIT_V1),
             (SchemaTarget::RunReceiptV1, RUN_RECEIPT_V1),
             (SchemaTarget::RunVerificationV1, RUN_VERIFICATION_V1),
@@ -4605,7 +4828,11 @@ mod tests {
     fn v1_execution_schemas_close_nested_authority_objects() {
         let request = schema(SchemaTarget::RunRequestV1);
         assert_eq!(
-            request["properties"]["execution_policy"]["additionalProperties"],
+            request["properties"]["execution_policy"]["oneOf"][0]["additionalProperties"],
+            false
+        );
+        assert_eq!(
+            request["properties"]["execution_policy"]["oneOf"][1]["additionalProperties"],
             false
         );
         assert_eq!(
@@ -4629,24 +4856,43 @@ mod tests {
             receipt["properties"]["terminal_state"]["enum"][1],
             "no-draft:preflight-refused"
         );
+
+        let driver = schema(SchemaTarget::DriverRequestV2);
+        assert_eq!(
+            driver["properties"]["prompt"]["additionalProperties"],
+            false
+        );
+        assert_eq!(
+            driver["properties"]["prompt"]["properties"]["authority"]["additionalProperties"],
+            false
+        );
     }
 
     #[test]
-    fn executable_run_request_schema_matches_deterministic_kernel_policy() {
+    fn executable_run_request_schema_discriminates_deterministic_and_generative_policy() {
         let request = schema(SchemaTarget::RunRequestV1);
-        assert_eq!(request["properties"]["mode"]["const"], "deterministic");
+        assert_eq!(
+            request["properties"]["mode"]["enum"],
+            json!(["deterministic", "generative"])
+        );
         assert_eq!(request["properties"]["inputs"]["minItems"], 1);
         assert_eq!(
-            request["properties"]["execution_policy"]["properties"]["network_mode"]["const"],
+            request["oneOf"][0]["properties"]["execution_policy"]["properties"]["network_mode"]["const"],
             "none"
         );
-        assert_eq!(request["properties"]["prompt"]["type"], "null");
-        assert_eq!(request["properties"]["driver"]["type"], "null");
-        assert_eq!(request["properties"]["model"]["type"], "null");
+        assert_eq!(
+            request["oneOf"][2]["properties"]["execution_policy"]["properties"]["network_mode"]["const"],
+            "authorized-endpoints-only"
+        );
+        assert_eq!(
+            request["oneOf"][2]["properties"]["execution_policy"]["properties"]["authorized_endpoints"]
+                ["const"],
+            json!(["https://api.openai.com/v1/responses"])
+        );
     }
 
     #[test]
-    fn executable_run_request_schema_accepts_shipped_profiles_and_rejects_future_mode() {
+    fn executable_run_request_schema_accepts_shipped_profiles_and_closed_generative_mode() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("CLI crate should have a repository parent")
@@ -4670,6 +4916,75 @@ mod tests {
         unsupported["mode"] = json!("deterministic");
         unsupported["inputs"] = json!([]);
         assert!(draft202012::validate(&request_schema, &unsupported).is_err());
+
+        let generative = json!({
+            "contract": RUN_REQUEST_V1,
+            "execution_id": "schema-generative-1",
+            "created_at": "2026-08-14T12:00:00Z",
+            "profile": "gtm",
+            "operation": "model:outbound-copy-brief/generation",
+            "mode": "generative",
+            "job_identity": {"job_id": "outbound-copy-brief", "idempotency_key": "schema-generative-1"},
+            "pack_dir": "plugin/assets/templates/basic",
+            "pack_release_id": "synthetic-release",
+            "prompt": {
+                "logical_name": "bound-prompt",
+                "source_path": ".mdp/prompts/generate-outbound-copy.yaml",
+                "schema_id": "mdp.prompt.v1",
+                "media_type": "application/yaml",
+                "provenance_refs": []
+            },
+            "inputs": [{
+                "logical_name": "prospect",
+                "source_path": "prospect.json",
+                "schema_id": "synthetic.prospect.v1",
+                "media_type": "application/json",
+                "provenance_refs": []
+            }],
+            "execution_policy": {
+                "environment_allowlist": ["OPENAI_API_KEY"],
+                "filesystem_mode": "private-staging",
+                "tool_mode": "none",
+                "network_mode": "authorized-endpoints-only",
+                "authorized_endpoints": ["https://api.openai.com/v1/responses"],
+                "max_input_bytes": 1048576,
+                "max_output_bytes": 1048576,
+                "timeout_ms": 60000,
+                "retention_policy": "receipt-only"
+            },
+            "driver": {
+                "driver_id": "mdp-native-openai",
+                "implementation": "bundled:mdp-native-model-openai",
+                "version": "1",
+                "build_sha256": null,
+                "executable_sha256": "a".repeat(64),
+                "image_digest": null,
+                "configuration_sha256": "b".repeat(64),
+                "dependency_lock_sha256": "c".repeat(64),
+                "identity_provenance": "mdp-observed"
+            },
+            "model": {
+                "provider": "openai",
+                "requested_model": "gpt-5-mini",
+                "resolved_model": null,
+                "authorized_endpoint": "https://api.openai.com/v1/responses",
+                "parameters_sha256": "d".repeat(64),
+                "session_behavior": "declared",
+                "cache_behavior": "declared",
+                "storage_behavior": "declared"
+            }
+        });
+        draft202012::validate(&request_schema, &generative)
+            .expect("closed generative request should validate");
+
+        let mut custom_endpoint = generative.clone();
+        custom_endpoint["execution_policy"]["authorized_endpoints"] =
+            json!(["https://example.test"]);
+        assert!(draft202012::validate(&request_schema, &custom_endpoint).is_err());
+
+        let mut custom_driver = generative;
+        custom_driver["driver"]["implementation"] = json!("/tmp/request-selected-driver.mjs");
+        assert!(draft202012::validate(&request_schema, &custom_driver).is_err());
     }
 
     #[test]

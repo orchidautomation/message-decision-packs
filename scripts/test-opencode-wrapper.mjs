@@ -96,7 +96,10 @@ const releaseInstallSmoke = readFileSync(join(root, 'scripts/release-install-smo
 assert(
   releaseInstallSmoke.includes('MDP_RELEASE_INSTALL_ARGS:---agents -y') &&
     releaseInstallSmoke.includes('mdp-proposal-runner.mjs') &&
+    releaseInstallSmoke.includes('mdp-native-model-openai.mjs') &&
     releaseInstallSmoke.includes('mdp-native-normalize-openai.mjs') &&
+    releaseInstallSmoke.includes('driver-request-v2') &&
+    releaseInstallSmoke.includes('driver-result-v2') &&
     releaseInstallSmoke.includes('mdp-proposal-mcp-server.mjs') &&
     releaseInstallSmoke.includes('The bundled MCP is local stdio only, not a hosted or remote MCP service') &&
     releaseInstallSmoke.includes('Hooks report readiness only; the CLI receipt is the blocking gate.'),
@@ -284,6 +287,10 @@ try {
   assert(
     existsSync(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')),
     'Generated Codex installer must install the local proposal runner.',
+  )
+  assert(
+    existsSync(join(codexPluginRoot, 'scripts/mdp-native-model-openai.mjs')),
+    'Generated Codex installer must install the universal native model driver.',
   )
   assert(
     existsSync(join(codexPluginRoot, 'scripts/mdp-native-normalize-openai.mjs')),

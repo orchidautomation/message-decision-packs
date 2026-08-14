@@ -823,7 +823,7 @@ const buildCleanRunV1Request = ({ args, packRoot, runState, paths }) => ({
     network_mode: 'none',
     authorized_endpoints: [],
     max_input_bytes: 20_000_000,
-    max_output_bytes: 2_000_000,
+    max_output_bytes: 1_048_576,
     timeout_ms: 30_000,
     retention_policy: 'customer-controlled-workdir',
   },

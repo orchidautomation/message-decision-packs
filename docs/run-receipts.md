@@ -1,6 +1,6 @@
 # MDP Run Receipts
 
-`mdp run-receipt` creates the legacy local `mdp.run-receipt.v0` artifact for workflows where an agent host or runner normalized messy source material before deterministic MDP checks ran. The unified clean-context runtime uses the closed v1 contracts described below. The v0 command remains available for compatibility while v1 execution is introduced.
+`mdp run-receipt` creates the legacy local `mdp.run-receipt.v0` artifact for workflows where an agent host or runner normalized messy source material before deterministic MDP checks ran. The unified clean-context runtime uses the v1 run contracts described below for deterministic work and for one selected declared normalization, generation, or review step. The v0 command remains available for proposal compatibility.
 
 Use v0 only to preserve or inspect an existing proposal/document-review flow,
 especially when a PDF/doc extraction step produced a `mdp.source-audit.v0`
@@ -23,6 +23,19 @@ The v1 family separates what an operator asked to run, the immutable bytes the r
 | `mdp.run-receipt.v1` | `run-receipt-v1` | MDP's terminal result, bound artifacts, decision authority, validation, assurance vector, limitations, and receipt hash. |
 | `mdp.run-verification.v1` | `run-verification-v1` | A verifier's recomputed integrity and assurance result. `integrity_only: true` means external provider or host state was unavailable and was not silently assumed. |
 
+The bundled native path also uses closed `mdp.driver-request.v2` and
+`mdp.driver-result.v2` envelopes. V2 binds the exact model-visible prompt,
+prompt invocation, declared input bytes, canonical and provider-adherence
+schemas, provider/model policy, and request/result hashes. These are
+CLI-to-subprocess contracts, not caller-authored alternatives to
+`mdp.run-request.v1`. Inspect them with `mdp --json schema driver-request-v2`
+and `mdp --json schema driver-result-v2`.
+
+One generative run selects exactly one stable model-step ID and produces one
+receipt. The customer host separately sequences normalization, deterministic
+fit/routing, and generation/review. A receipt does not imply automatic
+multi-step orchestration.
+
 Inspect the exact contracts with:
 
 ```bash
@@ -30,6 +43,8 @@ mdp --json schema run-request-v1
 mdp --json schema run-bundle-v1
 mdp --json schema driver-request-v1
 mdp --json schema driver-result-v1
+mdp --json schema driver-request-v2
+mdp --json schema driver-result-v2
 mdp --json schema runner-audit-v1
 mdp --json schema run-receipt-v1
 mdp --json schema run-verification-v1
@@ -240,7 +255,7 @@ submission approval. It cannot upgrade the receipt decision.
 
 For proposal pilots, prefer `--require-runner-audit`. This blocks the receipt unless the supplied runner audit proves one of the schema-accepted isolated modes and includes `prompt_id`, the exact `prompt_output_sha256`, and `tool_invocations_observed: 0`. Schema acceptance does not make a runner a maintained or verified MDP integration:
 
-- `native-api`: a direct stateless API request with no prior messages and no tools. The bundled optional reference is `scripts/mdp-native-normalize-openai.mjs` in source checkouts and `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed Pluxx bundles; see [Native API Normalization Runner](native-api-normalization-runner.md).
+- `native-api`: a direct stateless API request with no prior messages and no tools. For new v1 runs the bundled reference is `scripts/mdp-native-model-openai.mjs`; the normalization-named script is v0 compatibility. See [Native API Model Runner](native-api-normalization-runner.md).
 - `codex-exec`: `codex exec` in a sterile working directory with ephemeral output, read-only sandboxing, no resume, prompt-input audit, and zero observed tool events.
 - `claude-print`: `claude --bare -p` with no session persistence, no resume/continue, structured output, disabled tools, and zero observed tool events.
 - `cursor-print`: `cursor-agent -p` only when a wrapper proves no resume, no `--force`, sterile input, disabled/externally denied tools, and zero observed tool events.
@@ -262,11 +277,21 @@ Evidence plane: local source files, source audit, prompt output, validation, fit
 
 For production proposal flows, same-conversation normalization should be labeled advisory unless a runner/MCP can create a fresh model invocation with only the prompt-declared payload.
 
-See [Native API Normalization Runner](native-api-normalization-runner.md) for the BYOK OpenAI reference runner and [Headless Normalization Runners](headless-normalization-runners.md) for Codex, Claude Code, Cursor, and OpenCode recipes.
+See [Native API Model Runner](native-api-normalization-runner.md) for the
+profile-neutral BYOK OpenAI driver and [Headless And Native Model
+Runners](headless-normalization-runners.md) for Codex, Claude Code, Cursor, and
+OpenCode compatibility recipes.
 
-## Runner/MCP Direction
+## Legacy Proposal Runner/MCP Direction
 
-`run-receipt` is the deterministic receipt contract. This repo also ships a host-neutral local proposal runner at `scripts/mdp-proposal-runner.mjs` plus a local stdio MCP wrapper at `scripts/mdp-proposal-mcp-server.mjs`. The MCP wrapper is local-only, not a hosted or remote MCP service, and it wraps the same tool boundaries:
+The following v0 flow remains for proposal compatibility. New GTM and proposal
+model steps use `mdp run` plus the profile-neutral, path-only
+`scripts/mdp-run-mcp-server.mjs` surface. That MCP server invokes the same CLI,
+can inherit native credentials and permission only from its startup
+environment for a parsed generative request, and adds no assurance.
+
+`scripts/mdp-proposal-runner.mjs` and
+`scripts/mdp-proposal-mcp-server.mjs` remain local compatibility surfaces:
 
 1. stage supplied source files in customer-controlled storage;
 2. extract bounded text and create `mdp.source-audit.v0`;

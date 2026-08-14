@@ -5,6 +5,8 @@ pub(crate) const RUN_REQUEST_V1: &str = "mdp.run-request.v1";
 pub(crate) const RUN_BUNDLE_V1: &str = "mdp.run-bundle.v1";
 pub(crate) const DRIVER_REQUEST_V1: &str = "mdp.driver-request.v1";
 pub(crate) const DRIVER_RESULT_V1: &str = "mdp.driver-result.v1";
+pub(crate) const DRIVER_REQUEST_V2: &str = "mdp.driver-request.v2";
+pub(crate) const DRIVER_RESULT_V2: &str = "mdp.driver-result.v2";
 pub(crate) const RUNNER_AUDIT_V1: &str = "mdp.runner-audit.v1";
 pub(crate) const RUN_RECEIPT_V1: &str = "mdp.run-receipt.v1";
 pub(crate) const RUN_VERIFICATION_V1: &str = "mdp.run-verification.v1";
@@ -235,6 +237,89 @@ pub(crate) struct DriverResultV1 {
     pub(crate) audit: ArtifactAuthority,
 }
 
+/// One exact, model-visible artifact retained from the private staging tree.
+///
+/// Runtime model steps are textual contracts. Keeping the UTF-8 bytes inline
+/// prevents a driver from reopening a caller-controlled path after MDP has
+/// hashed it. `authority.sha256` binds the exact bytes in `content_utf8`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverArtifactV2 {
+    pub(crate) authority: ArtifactAuthority,
+    pub(crate) content_utf8: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverProviderPolicyV2 {
+    pub(crate) provider: String,
+    pub(crate) requested_model: String,
+    pub(crate) authorized_endpoint: String,
+    pub(crate) timeout_ms: u64,
+    pub(crate) max_output_bytes: u64,
+}
+
+/// Canonical MDP-to-driver authority for exactly one selected model step.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverRequestV2 {
+    pub(crate) contract: String,
+    pub(crate) execution_id: String,
+    pub(crate) profile: String,
+    pub(crate) operation: String,
+    pub(crate) job_identity: JobIdentity,
+    pub(crate) phase: String,
+    pub(crate) prompt_id: String,
+    pub(crate) prompt_version: String,
+    pub(crate) prompt_canonical_sha256: String,
+    pub(crate) prompt: DriverArtifactV2,
+    pub(crate) prompt_invocation: DriverArtifactV2,
+    pub(crate) inputs: Vec<DriverArtifactV2>,
+    pub(crate) canonical_output_schema: serde_json::Value,
+    pub(crate) canonical_output_schema_sha256: String,
+    pub(crate) provider_output_schema: serde_json::Value,
+    pub(crate) provider_output_schema_sha256: String,
+    pub(crate) provider_policy: DriverProviderPolicyV2,
+    pub(crate) execution_policy_sha256: String,
+    pub(crate) request_sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverOutputV2 {
+    pub(crate) schema_id: String,
+    pub(crate) media_type: String,
+    pub(crate) content_utf8: String,
+    pub(crate) byte_count: u64,
+    pub(crate) sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverProviderObservationV2 {
+    pub(crate) provider: String,
+    pub(crate) response_id: Option<String>,
+    pub(crate) resolved_model: Option<String>,
+}
+
+/// Closed result envelope. Diagnostics are stable codes, never raw provider
+/// error text. Failed results cannot carry model output authority.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverResultV2 {
+    pub(crate) contract: String,
+    pub(crate) execution_id: String,
+    pub(crate) operation: String,
+    pub(crate) terminal_state: TerminalState,
+    pub(crate) output: Option<DriverOutputV2>,
+    pub(crate) provider_request_body_sha256: Option<String>,
+    pub(crate) provider_request_schema_id: Option<String>,
+    pub(crate) provider_output_schema_sha256: Option<String>,
+    pub(crate) provider_observation: Option<DriverProviderObservationV2>,
+    pub(crate) diagnostic_code: Option<String>,
+    pub(crate) result_sha256: String,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RunnerAuditV1 {
@@ -244,6 +329,8 @@ pub(crate) struct RunnerAuditV1 {
     pub(crate) runner_build_sha256: Option<String>,
     pub(crate) platform: String,
     pub(crate) snapshot_sha256: String,
+    pub(crate) driver_request_sha256: Option<String>,
+    pub(crate) driver_result_sha256: Option<String>,
     pub(crate) provider_request_body_sha256: Option<String>,
     pub(crate) provider_request_schema_id: Option<String>,
     pub(crate) terminal_state: TerminalState,
@@ -296,10 +383,10 @@ pub(crate) struct RunVerificationV1 {
 #[cfg(test)]
 mod tests {
     use super::{
-        AssuranceEvidenceState, CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_RESULT_V1,
-        EvidenceProvenance, GtmReasonCode, PROPOSAL_RUNNER_RESULT_V1, RUN_BUNDLE_V1,
-        RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
-        RunMode, TerminalState,
+        AssuranceEvidenceState, CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_REQUEST_V2,
+        DRIVER_RESULT_V1, DRIVER_RESULT_V2, EvidenceProvenance, GtmReasonCode,
+        PROPOSAL_RUNNER_RESULT_V1, RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1,
+        RUN_VERIFICATION_V1, RUNNER_AUDIT_V1, RunMode, TerminalState,
     };
 
     #[test]
@@ -308,6 +395,8 @@ mod tests {
         assert_eq!(RUN_BUNDLE_V1, "mdp.run-bundle.v1");
         assert_eq!(DRIVER_REQUEST_V1, "mdp.driver-request.v1");
         assert_eq!(DRIVER_RESULT_V1, "mdp.driver-result.v1");
+        assert_eq!(DRIVER_REQUEST_V2, "mdp.driver-request.v2");
+        assert_eq!(DRIVER_RESULT_V2, "mdp.driver-result.v2");
         assert_eq!(RUNNER_AUDIT_V1, "mdp.runner-audit.v1");
         assert_eq!(RUN_RECEIPT_V1, "mdp.run-receipt.v1");
         assert_eq!(RUN_VERIFICATION_V1, "mdp.run-verification.v1");

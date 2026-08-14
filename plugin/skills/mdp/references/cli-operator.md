@@ -39,7 +39,13 @@ Read `.mdp/README.md` only after the CLI projection and only for navigation.
 It cannot close a gap or override a diagnostic. Foundation `ready` is a
 veto-only result and never means sufficient-for-job or self-standing.
 
-`requirements` is the read-only, job-bound handoff to collectors and customer-selected hosts. It compiles Decision Input questions and schemas when present, plus any declared job-owned model task: exact prompt/version/hash, input producers, instructions, selected product foundation, and output schema. It never performs research or a model call. Existing jobs without a Decision Input Contract keep `available: false`; inspect `model_task_available` separately.
+`requirements` is the read-only, job-bound handoff to collectors and
+customer-selected hosts. It compiles Decision Input questions and schemas plus
+`data.model_steps`: stable IDs for each job-bound normalization, generation,
+or review prompt with exact prompt/version/hash, input producers, selected
+product foundation, and output schema. It never performs research or a model
+call. Existing jobs without a Decision Input Contract keep `available: false`;
+inspect model steps separately.
 
 `validate-source-binding` checks one integration-owned version-compatible
 `mdp.source-binding.v1` or signal-aware `mdp.source-binding.v2` mapping against the exact pack and requirements
@@ -95,7 +101,8 @@ Use [canonical runner support matrix](https://github.com/orchidautomation/messag
 - `scripts/mdp-proposal-runner.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed bundles): host-neutral local proposal runner surface. Use `tools` to inspect local runner steps. Use `run --dry-run` for request hygiene, `run --mock-response` for fixture safety, and real `run --model ...` only when the operator chose a real native call.
 - Treat `scripts/lib/proposal-runner-*.mjs` as bundled internal implementation modules. Invoke the runner or MCP entrypoint rather than importing those modules as a public API.
 - `scripts/mdp-proposal-mcp-server.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs` in installed bundles): local stdio MCP wrapper exposing `mdp_proposal_tools` and file/path-only `mdp_proposal_run`. It is not hosted/remote, does not accept raw chat text as source evidence, and dry-run/mock runs are never audit-grade.
-- `scripts/mdp-native-normalize-openai.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` in installed bundles): optional BYOK reference runner for OpenAI Responses API normalization. Use `--dry-run` or `--mock-response` for offline validation without a key; real native calls require `OPENAI_API_KEY` and still must be followed by `validate-prompt-output` and `run-receipt`.
+- `scripts/mdp-native-model-openai.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-native-model-openai.mjs`): internal profile-neutral OpenAI Responses subprocess for one selected declared model step. Operators normally invoke it through `mdp run`. Real calls require both startup environment values `MDP_ALLOW_NATIVE_MODEL_CALLS=1` and `OPENAI_API_KEY`; mock/dry-run validation is key-free and does not prove a call. The official endpoint is fixed. `scripts/mdp-native-normalize-openai.mjs` is a v0 compatibility adapter.
+- `schema driver-request-v2` and `schema driver-result-v2`: inspect the closed versioned CLI-to-subprocess boundary. These are driver contracts, not substitutes for operator-authored `run-request-v1`.
 - `fit`: decide fit, insufficient context, or disqualification for supplied GTM prospect JSON.
 - `brief --context`: build bounded GTM decision context after fit permits it.
 - `check-claims`: test supplied claim-bearing text and output constraints.
@@ -132,8 +139,17 @@ an optional artifact root, and the same bounded deadline. Each tool spawns the
 matching CLI command as a separate process with a bounded environment, stdin,
 output buffer, and deadline, then returns the canonical CLI data object unchanged.
 It does not accept inline requests, raw source bodies, ambient chat, provider
-credentials, or assurance overrides. Configure the host to start this server;
-do not paste evidence into its tool arguments.
+credentials, native-call enable flags, or assurance overrides. For a parsed
+generative request only, it may inherit `OPENAI_API_KEY` and
+`MDP_ALLOW_NATIVE_MODEL_CALLS` if they were present when the server started.
+Configure the host to start this server; do not paste evidence into its tool
+arguments.
+
+For a generative request, `operation` must equal one stable step ID from
+`requirements.data.model_steps`. One run means one selected declared model
+step and one receipt. The host separately sequences normalization,
+deterministic fit/routing, and generation/review; MDP does not batch, retry,
+collect, send, mutate CRM, or calculate inference pricing.
 
 On timeout or output overflow, the adapter closes the isolated process group
 before recovery. It removes staging state only when the CLI's bounded

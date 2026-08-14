@@ -3,9 +3,15 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
+import {
+  DRIVER_REQUEST_CONTRACT,
+  buildProviderRequestBody,
+  executeNativeModelRequest,
+  sha256CanonicalJson,
+} from './mdp-native-model-openai.mjs'
+
 const RUNNER_CONTRACT = 'mdp.runner-audit.v0'
 const REQUEST_CONTRACT = 'mdp.native-normalize-request.v0'
-const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 
 const usage = () => `
 Usage:
@@ -14,13 +20,12 @@ Usage:
   node scripts/mdp-native-normalize-openai.mjs --request REQUEST.json --mock-response RESPONSE.json --out OUTPUT.json --runner-audit RUNNER_AUDIT.json
 
 Environment for real runs:
-  OPENAI_API_KEY     Required only when neither --dry-run nor --mock-response is used.
-  OPENAI_BASE_URL    Optional. Defaults to ${DEFAULT_BASE_URL}. Custom origins require
-                     MDP_ALLOW_CUSTOM_OPENAI_BASE_URL=1 and HTTPS.
+  MDP_ALLOW_NATIVE_MODEL_CALLS=1  Explicit permission for a real provider call.
+  OPENAI_API_KEY                  Credential for that call.
 
-This script is an optional BYOK/native runner reference. It does not create API keys,
-read .env files, parse PDFs, or mutate packs. The host must build REQUEST.json from
-prompt-declared inputs only, then validate the output with mdp validate-prompt-output.
+This legacy normalization entry point translates its v0 request into the universal,
+profile-neutral ${DRIVER_REQUEST_CONTRACT} subprocess protocol. The provider endpoint
+is fixed to the official OpenAI Responses endpoint. Raw provider envelopes are not retained.
 `.trim()
 
 const fail = (message, code = 1) => {
@@ -29,14 +34,7 @@ const fail = (message, code = 1) => {
 }
 
 const parseArgs = (argv) => {
-  const args = {
-    request: null,
-    out: null,
-    runnerAudit: null,
-    response: null,
-    mockResponse: null,
-    dryRun: false,
-  }
+  const args = { request: null, out: null, runnerAudit: null, mockResponse: null, dryRun: false }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     const next = () => {
@@ -44,46 +42,28 @@ const parseArgs = (argv) => {
       if (index >= argv.length) fail(`Missing value for ${arg}`)
       return argv[index]
     }
-    switch (arg) {
-      case '--request':
-        args.request = next()
-        break
-      case '--out':
-        args.out = next()
-        break
-      case '--runner-audit':
-        args.runnerAudit = next()
-        break
-      case '--response':
-        args.response = next()
-        break
-      case '--mock-response':
-        args.mockResponse = next()
-        break
-      case '--dry-run':
-        args.dryRun = true
-        break
-      case '-h':
-      case '--help':
-        console.log(usage())
-        process.exit(0)
-        break
-      default:
-        fail(`Unknown argument: ${arg}\n\n${usage()}`)
-    }
+    if (arg === '--request') args.request = next()
+    else if (arg === '--out') args.out = next()
+    else if (arg === '--runner-audit') args.runnerAudit = next()
+    else if (arg === '--mock-response') args.mockResponse = next()
+    else if (arg === '--response') fail('--response is no longer supported; raw provider envelopes are memory-only')
+    else if (arg === '--dry-run') args.dryRun = true
+    else if (arg === '--help' || arg === '-h') {
+      console.log(usage())
+      process.exit(0)
+    } else fail(`Unknown argument: ${arg}\n\n${usage()}`)
   }
   if (!args.request) fail(`Missing --request\n\n${usage()}`)
-  if (!args.dryRun && (!args.out || !args.runnerAudit)) {
-    fail('Real and mock runs require --out and --runner-audit')
-  }
+  if (args.dryRun && args.mockResponse) fail('--dry-run and --mock-response are mutually exclusive')
+  if (!args.dryRun && (!args.out || !args.runnerAudit)) fail('Real and mock runs require --out and --runner-audit')
   return args
 }
 
 const readJson = (path) => {
   try {
     return JSON.parse(readFileSync(path, 'utf8'))
-  } catch (error) {
-    fail(`${path} must contain valid JSON: ${error.message}`)
+  } catch {
+    fail(`${path} must contain valid JSON`)
   }
 }
 
@@ -104,49 +84,28 @@ const requireString = (value, label) => {
 
 const validateInputPayload = (input) => {
   if (typeof input === 'string') {
-    if (input.trim() === '') fail('request.input must be a non-empty string')
+    requireString(input, 'request.input')
     return
   }
-
-  if (!Array.isArray(input)) fail('request.input must be a Responses API input string or single user message array')
-  if (input.length !== 1) {
-    fail('request.input array must contain exactly one user message; include all prompt guidance in that audited payload')
+  if (!Array.isArray(input) || input.length !== 1) {
+    fail('request.input must contain exactly one user message')
   }
-
-  const [message] = input
-  requireObject(message, 'request.input[0]')
-  if (message.role !== 'user') fail('request.input[0].role must be user')
-  if (!('content' in message)) fail('request.input[0].content is required')
-  requireString(message.content, 'request.input[0].content')
-  if ('id' in message || 'status' in message || 'type' in message) {
-    fail('request.input[0] must be a plain user message without prior response metadata')
-  }
-  const unknown = Object.keys(message).filter((key) => !['role', 'content'].includes(key))
-  if (unknown.length > 0) fail(`request.input[0] contains unsupported fields: ${unknown.sort().join(', ')}`)
+  requireObject(input[0], 'request.input[0]')
+  const unknown = Object.keys(input[0]).filter((key) => !['role', 'content'].includes(key)).sort()
+  if (unknown.length > 0) fail(`request.input[0] contains unsupported fields: ${unknown.join(', ')}`)
+  if (input[0].role !== 'user') fail('request.input[0].role must be user')
+  requireString(input[0].content, 'request.input[0].content')
 }
 
-const validateRequest = (request) => {
+const validateLegacyRequest = (request) => {
   requireObject(request, 'request')
-  if ('instructions' in request) fail('request.instructions is not allowed; include all model-visible prompt guidance in the audited request.input payload')
-  if ('previous_response_id' in request) fail('request must not include previous_response_id')
-  if ('conversation' in request) fail('request must not include conversation')
   const allowed = new Set([
-    'contract',
-    'provider',
-    'model',
-    'prompt_id',
-    'declared_inputs_only',
-    'input',
-    'prompt_output_schema',
-    'schema_name',
-    'max_output_tokens',
-    'reasoning',
-    'metadata',
-    'tools',
-    'tool_choice',
+    'contract', 'provider', 'model', 'prompt_id', 'declared_inputs_only', 'input',
+    'prompt_output_schema', 'schema_name', 'max_output_tokens', 'reasoning', 'metadata',
+    'tools', 'tool_choice',
   ])
-  const unsupported = Object.keys(request).filter((key) => !allowed.has(key))
-  if (unsupported.length > 0) fail(`request contains unsupported fields: ${unsupported.sort().join(', ')}`)
+  const unsupported = Object.keys(request).filter((key) => !allowed.has(key)).sort()
+  if (unsupported.length > 0) fail(`request contains unsupported fields: ${unsupported.join(', ')}`)
   if (request.contract !== REQUEST_CONTRACT) fail(`request.contract must be ${REQUEST_CONTRACT}`)
   if (request.provider !== 'openai') fail('request.provider must be openai')
   requireString(request.model, 'request.model')
@@ -154,164 +113,50 @@ const validateRequest = (request) => {
   if (request.declared_inputs_only !== true) fail('request.declared_inputs_only must be true')
   requireObject(request.prompt_output_schema, 'request.prompt_output_schema')
   validateInputPayload(request.input)
-  if ('schema_name' in request) requireString(request.schema_name, 'request.schema_name')
-  if (
-    'max_output_tokens' in request &&
-    (!Number.isInteger(request.max_output_tokens) || request.max_output_tokens < 1)
-  ) {
-    fail('request.max_output_tokens must be a positive integer')
-  }
-  if ('reasoning' in request) requireObject(request.reasoning, 'request.reasoning')
-  if ('metadata' in request) requireObject(request.metadata, 'request.metadata')
   if ('tools' in request && (!Array.isArray(request.tools) || request.tools.length > 0)) {
-    fail('request.tools must be omitted or empty for native normalization')
+    fail('request.tools must be omitted or empty')
   }
   if ('tool_choice' in request && request.tool_choice !== 'none') {
     fail('request.tool_choice must be omitted or set to none')
   }
 }
 
-const buildResponsesBody = (request) => {
-  const schemaName = request.schema_name || 'mdp_prompt_output'
-  const body = {
-    model: request.model,
-    input: request.input,
-    text: {
-      format: {
-        type: 'json_schema',
-        name: schemaName,
-        strict: true,
-        schema: request.prompt_output_schema,
-      },
-    },
-    store: false,
-    tool_choice: 'none',
+const translateRequest = (legacy, requestSha256) => {
+  validateLegacyRequest(legacy)
+  const translated = {
+    contract: DRIVER_REQUEST_CONTRACT,
+    execution_id: `legacy-${requestSha256.slice(0, 24)}`,
+    provider: 'openai',
+    model: legacy.model,
+    prompt_id: legacy.prompt_id,
+    declared_inputs_only: true,
+    input: legacy.input,
+    output_schema: legacy.prompt_output_schema,
+    output_schema_sha256: sha256CanonicalJson(legacy.prompt_output_schema),
   }
-
-  if (request.max_output_tokens) body.max_output_tokens = request.max_output_tokens
-  if (request.reasoning) body.reasoning = request.reasoning
-  if (request.metadata) body.metadata = request.metadata
-
-  return body
+  if (legacy.schema_name) translated.schema_name = legacy.schema_name
+  if (legacy.max_output_tokens) translated.max_output_tokens = legacy.max_output_tokens
+  if (legacy.reasoning) translated.reasoning = legacy.reasoning
+  if (legacy.metadata) translated.metadata = legacy.metadata
+  return translated
 }
-
-const resolveEndpoint = () => {
-  const configured = process.env.OPENAI_BASE_URL || DEFAULT_BASE_URL
-  let url
-  try {
-    url = new URL(configured)
-  } catch {
-    fail('OPENAI_BASE_URL must be a valid absolute URL')
-  }
-  if (url.protocol !== 'https:') fail('OPENAI_BASE_URL must use HTTPS')
-  if (url.username || url.password || url.search || url.hash) {
-    fail('OPENAI_BASE_URL must not contain credentials, query parameters, or a fragment')
-  }
-  const normalized = `${url.origin}${url.pathname.replace(/\/+$/, '')}`
-  const custom = normalized !== DEFAULT_BASE_URL
-  if (custom && process.env.MDP_ALLOW_CUSTOM_OPENAI_BASE_URL !== '1') {
-    fail('Custom OPENAI_BASE_URL is blocked by default; set MDP_ALLOW_CUSTOM_OPENAI_BASE_URL=1 only after reviewing the credential and data destination')
-  }
-  return {
-    baseUrl: normalized,
-    policy: custom ? 'custom-explicit' : 'official-default',
-  }
-}
-
-const extractOutputText = (response) => {
-  if (typeof response.output_text === 'string' && response.output_text.trim()) return response.output_text
-
-  const parts = []
-  for (const item of response.output || []) {
-    if (item?.type !== 'message') continue
-    for (const content of item.content || []) {
-      if (content?.type === 'refusal') {
-        fail(`Model refusal: ${content.refusal || 'no refusal message supplied'}`)
-      }
-      if (content?.type === 'output_text' && typeof content.text === 'string') parts.push(content.text)
-      if (content?.type === 'text' && typeof content.text === 'string') parts.push(content.text)
-    }
-  }
-
-  const text = parts.join('').trim()
-  if (!text) fail('OpenAI response did not include output_text content')
-  return text
-}
-
-const parsePromptOutput = (response) => {
-  const text = extractOutputText(response)
-  try {
-    return JSON.parse(text)
-  } catch (error) {
-    fail(`Model output was not parseable JSON: ${error.message}`)
-  }
-}
-
-const callOpenAI = async (body, endpointConfig) => {
-  if (typeof fetch !== 'function') {
-    fail('This runner requires Node.js 18+ for the built-in fetch API.')
-  }
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) fail('OPENAI_API_KEY is required for a real native run. Use --dry-run or --mock-response for offline validation.')
-  const response = await fetch(`${endpointConfig.baseUrl}/responses`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
-  const text = await response.text()
-  let payload
-  try {
-    payload = JSON.parse(text)
-  } catch {
-    fail(`OpenAI API returned non-JSON response (${response.status}): ${text.slice(0, 500)}`)
-  }
-  if (!response.ok) {
-    const message = payload?.error?.message || `OpenAI API request failed with status ${response.status}`
-    fail(message)
-  }
-  return payload
-}
-
-const runnerAudit = ({ request, requestPath, promptOutputPath, response, mock, endpointConfig }) => ({
-  contract: RUNNER_CONTRACT,
-  runner: 'native-api',
-  model: request.model,
-  isolated_invocation: !mock,
-  conversation_resume: false,
-  declared_inputs_only: true,
-  output_schema_used: true,
-  stateless_request: !mock,
-  prior_messages_included: false,
-  tools_disabled: true,
-  tool_invocations_observed: 0,
-  endpoint: '/v1/responses',
-  endpoint_policy: endpointConfig.policy,
-  store: false,
-  prompt_id: request.prompt_id,
-  prompt_output_sha256: sha256File(promptOutputPath),
-  request_sha256: sha256File(requestPath),
-  response_id: response?.id || null,
-  mock_response: mock,
-})
 
 const main = async () => {
   const args = parseArgs(process.argv.slice(2))
   if (!existsSync(args.request)) fail(`Request file not found: ${args.request}`)
-  const request = readJson(args.request)
-  validateRequest(request)
-  const body = buildResponsesBody(request)
-  const endpointConfig = resolveEndpoint()
+  const legacyRequest = readJson(args.request)
+  const requestSha256 = sha256File(args.request)
+  const request = translateRequest(legacyRequest, requestSha256)
+  const providerBody = buildProviderRequestBody(request)
 
   if (args.dryRun) {
     console.log(JSON.stringify({
       ok: true,
       contract: 'mdp.native-normalize-dry-run.v0',
+      delegated_contract: DRIVER_REQUEST_CONTRACT,
       provider: 'openai',
       endpoint: '/v1/responses',
-      endpoint_policy: endpointConfig.policy,
+      endpoint_policy: 'official-fixed',
       model: request.model,
       prompt_id: request.prompt_id,
       declared_inputs_only: true,
@@ -319,40 +164,61 @@ const main = async () => {
       store: false,
       tools_disabled: true,
       requires_api_key_for_real_run: true,
-      request_sha256: sha256File(args.request),
+      requires_native_call_permission_for_real_run: true,
+      request_sha256: requestSha256,
       api_request_preview: {
-        model: body.model,
-        input_kind: Array.isArray(body.input) ? 'array' : 'string',
-        text_format: body.text.format.type,
-        schema_name: body.text.format.name,
-        strict: body.text.format.strict,
-        store: body.store,
-        tool_choice: body.tool_choice,
+        model: providerBody.model,
+        input_kind: Array.isArray(providerBody.input) ? 'array' : 'string',
+        text_format: providerBody.text.format.type,
+        schema_name: providerBody.text.format.name,
+        strict: providerBody.text.format.strict,
+        store: providerBody.store,
+        tool_choice: providerBody.tool_choice,
       },
     }, null, 2))
     return
   }
 
-  const response = args.mockResponse ? readJson(args.mockResponse) : await callOpenAI(body, endpointConfig)
-  if (args.response) writeJson(args.response, response)
-  const promptOutput = parsePromptOutput(response)
+  const result = await executeNativeModelRequest(request, {
+    mode: args.mockResponse ? 'mock' : 'real',
+    mockResponse: args.mockResponse ? readJson(args.mockResponse) : null,
+  })
+  if (result.terminal_state !== 'success' || !result.output) {
+    fail(`Native model call failed safely: ${result.diagnostic_code || 'runner_failed'}`)
+  }
+
+  const promptOutput = JSON.parse(result.output.content)
   writeJson(args.out, promptOutput)
-  writeJson(args.runnerAudit, runnerAudit({
-    request,
-    requestPath: args.request,
-    promptOutputPath: args.out,
-    response,
-    mock: Boolean(args.mockResponse),
-    endpointConfig,
-  }))
+  writeJson(args.runnerAudit, {
+    contract: RUNNER_CONTRACT,
+    runner: 'native-api',
+    model: request.model,
+    isolated_invocation: !args.mockResponse,
+    conversation_resume: false,
+    declared_inputs_only: true,
+    output_schema_used: true,
+    stateless_request: !args.mockResponse,
+    prior_messages_included: false,
+    tools_disabled: true,
+    tool_invocations_observed: 0,
+    endpoint: '/v1/responses',
+    endpoint_policy: 'official-fixed',
+    store: false,
+    prompt_id: request.prompt_id,
+    prompt_output_sha256: sha256File(args.out),
+    request_sha256: requestSha256,
+    response_id: result.provider_observation?.response_id || null,
+    mock_response: Boolean(args.mockResponse),
+  })
   console.log(JSON.stringify({
     ok: true,
     contract: 'mdp.native-normalize-result.v0',
+    delegated_contract: DRIVER_REQUEST_CONTRACT,
     prompt_output: args.out,
     runner_audit: args.runnerAudit,
-    response: args.response || null,
+    response: null,
     audit_grade_eligible: !args.mockResponse,
   }, null, 2))
 }
 
-main().catch((error) => fail(error.stack || error.message))
+main().catch(() => fail('Native model runner failed safely: internal_error'))

@@ -13,8 +13,10 @@ Canonical jobs can own deterministic entry and byte budgets. MDP selects require
 - **Versioned decision context for agents** — MDP's primary category. A pack
   makes the rules, evidence, boundaries, gaps, and job-specific context an
   agent may use explicit and versioned. The CLI deterministically validates,
-  resolves, and projects that authority; the host remains responsible for
-  model calls and external actions.
+  resolves, and projects that authority. A customer host may perform model
+  calls itself or explicitly invoke MDP's optional local BYOK driver for one
+  declared step; the host remains responsible for sequencing and external
+  actions.
 - **Message Decision Pack (pack)** — a local `.mdp/` directory containing
   reviewed decision context and routing contracts.
 - **Primitive** — one of the ten domain-agnostic decision families: actors,
@@ -32,9 +34,18 @@ Canonical jobs can own deterministic entry and byte budgets. MDP selects require
 - **Resolved product foundation** — the CLI's deterministic, exact-job
   projection of required and triggered conditional facets. Optional, excluded,
   and untriggered content is not selected.
+- **Declared model step** — one job-bound normalization, generation, or review
+  prompt selected by a stable resolver-emitted step ID. One generative run
+  executes exactly one declared step and produces one receipt. Unbound
+  authoring or extraction prompts are not runtime steps.
 - **Job-owned model task** — one canonical job's explicit versioned prompt,
   declared input producers, instructions, and exact structured output contract.
-  The customer's host executes it; MDP compiles and validates it.
+  The customer's host may execute it directly or select it for the optional
+  local native driver; MDP compiles and validates it in either case.
+- **Native model driver** — the profile-neutral, local BYOK subprocess used by
+  `mdp run` to execute one declared model step. The bundled transport uses the
+  official OpenAI Responses endpoint, is default-deny for real calls, and is
+  not a scheduler or multi-step orchestrator.
 - **Decision Input Contract** — a versioned pack declaration of the attributes, source attempts, normalization evidence, and status behavior required before a job can make deterministic MDP decisions.
 - **Signal projection** — a pack-owned, repeated Decision Input projection that
   assigns a profile-defined signal kind and closed qualification roles to
@@ -109,7 +120,8 @@ commercial, human-approved, or audit-grade status. `unassessed` preserves
 legacy compatibility without claiming sufficiency.
 
 Do not substitute “supported” for “verified,” or “valid JSON” for
-“audit-grade.” MDP is a decision/context layer, not execution infrastructure.
+“audit-grade.” MDP is a decision/context layer with a bounded local execution
+kernel, not generalized execution infrastructure.
 
 ## Public-Safety Vocabulary
 

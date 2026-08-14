@@ -88,6 +88,7 @@ for required in \
   "$codex_plugin_root/scripts/mdp-proposal-runner.mjs" \
   "$codex_plugin_root/scripts/mdp-proposal-mcp-server.mjs" \
   "$codex_plugin_root/scripts/mdp-run-mcp-server.mjs" \
+  "$codex_plugin_root/scripts/mdp-native-model-openai.mjs" \
   "$codex_plugin_root/scripts/mdp-native-normalize-openai.mjs" \
   "$codex_plugin_root/scripts/lib/proposal-runner-contracts.mjs" \
   "$codex_plugin_root/scripts/lib/proposal-runner-runtime.mjs" \
@@ -108,6 +109,8 @@ for schema_target in \
   native-normalize-request \
   prompt-output \
   runner-audit \
+  driver-request-v2 \
+  driver-result-v2 \
   run-receipt \
   proposal-run-manifest \
   proposal-runner-result \

@@ -5,7 +5,8 @@ use crate::conformance::{
     parse_job_conformance, read_contained_file,
 };
 use crate::run_contracts::{
-    EvidenceProvenance, RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1, RunBundleV1, RunReceiptV1,
+    DRIVER_REQUEST_V2, DRIVER_RESULT_V2, EvidenceProvenance, RUN_BUNDLE_V1, RUN_EXECUTION_V1,
+    RUN_RECEIPT_V1, RunBundleV1, RunMode, RunReceiptV1, RunnerAuditV1,
 };
 use anyhow::Result;
 use serde::Serialize;
@@ -396,6 +397,17 @@ pub(crate) fn project_run_files(
         && receipt.output.is_some()
         && !decision_blocks_output;
     builder.add_designed("run-policy", "policy", "Declared run policy", "designed");
+    if bundle.mode == RunMode::Generative {
+        builder.add_designed("model-step", "policy", "Declared model step", "designed");
+        builder.add_designed(
+            "governed-validation",
+            "gate",
+            "Governed output validation",
+            "designed",
+        );
+        builder.link_designed("run-policy", "model-step", "governs");
+        builder.link_designed("model-step", "governed-validation", "evaluated-by");
+    }
     builder.add_observed_ref(
         "run-bundle",
         "source",
@@ -423,6 +435,13 @@ pub(crate) fn project_run_files(
         },
     );
     builder.link_observed("run-bundle", "run-receipt", "bound-to");
+    if verification.valid && bundle.mode == RunMode::Generative {
+        if let Some(root) = artifact_root {
+            if let Some(audit) = read_trace_runner_audit(root, &receipt.runner_audit) {
+                add_driver_trace(&mut builder, &audit);
+            }
+        }
+    }
     if let Some(decision) = &receipt.decision {
         if verification.valid {
             builder.add_observed_ref(
@@ -527,6 +546,57 @@ pub(crate) fn project_run_files(
             "blocked"
         }),
     )
+}
+
+fn read_trace_runner_audit(
+    root: &Path,
+    authority: &crate::run_contracts::ArtifactAuthority,
+) -> Option<RunnerAuditV1> {
+    let logical = Path::new(&authority.logical_name);
+    if logical.as_os_str().is_empty()
+        || logical.is_absolute()
+        || logical
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    let bytes = fs::read(root.join(logical)).ok()?;
+    parse_authority_json(&bytes, AuthorityJsonLimits::default()).ok()
+}
+
+fn add_driver_trace(builder: &mut TraceBuilder, audit: &RunnerAuditV1) {
+    let (Some(request_sha256), Some(result_sha256)) = (
+        audit.driver_request_sha256.as_ref(),
+        audit.driver_result_sha256.as_ref(),
+    ) else {
+        return;
+    };
+    builder.add_observed_ref(
+        "driver-request",
+        "source",
+        "Exact driver request",
+        "observed",
+        TraceArtifactRef {
+            schema_id: DRIVER_REQUEST_V2.into(),
+            sha256: request_sha256.clone(),
+            logical_name: None,
+        },
+    );
+    builder.add_observed_ref(
+        "driver-result",
+        "authority",
+        "Bound driver result",
+        "observed",
+        TraceArtifactRef {
+            schema_id: DRIVER_RESULT_V2.into(),
+            sha256: result_sha256.clone(),
+            logical_name: None,
+        },
+    );
+    builder.link_observed("run-bundle", "driver-request", "bound-to");
+    builder.link_observed("driver-request", "driver-result", "records");
+    builder.link_observed("driver-result", "run-receipt", "bound-to");
 }
 
 pub(crate) fn project_source_value(value: &Value, source_sha256: String) -> DecisionTrace {

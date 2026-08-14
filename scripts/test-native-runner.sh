@@ -114,7 +114,7 @@ if OPENAI_API_KEY= node "$root/scripts/mdp-native-normalize-openai.mjs" --reques
   echo "expected bad request with prior messages to fail" >&2
   exit 1
 fi
-grep -q "request.input array must contain exactly one user message" "$bad_stderr"
+grep -q "request.input must contain exactly one user message" "$bad_stderr"
 
 python3 - "$request" "$bad_request" <<'PY'
 import json, sys
@@ -127,27 +127,16 @@ if OPENAI_API_KEY= node "$root/scripts/mdp-native-normalize-openai.mjs" --reques
   echo "expected bad request with free-form instructions to fail" >&2
   exit 1
 fi
-grep -q "request.instructions is not allowed" "$bad_stderr"
-
-if OPENAI_BASE_URL=http://example.test/v1 OPENAI_API_KEY= node "$root/scripts/mdp-native-normalize-openai.mjs" --request "$request" --dry-run 2>"$bad_stderr"; then
-  echo "expected insecure custom endpoint to fail" >&2
-  exit 1
-fi
-grep -q "must use HTTPS" "$bad_stderr"
-
-if OPENAI_BASE_URL=https://example.test/v1 OPENAI_API_KEY= node "$root/scripts/mdp-native-normalize-openai.mjs" --request "$request" --dry-run 2>"$bad_stderr"; then
-  echo "expected unapproved custom endpoint to fail" >&2
-  exit 1
-fi
-grep -q "blocked by default" "$bad_stderr"
+grep -q "request contains unsupported fields: instructions" "$bad_stderr"
 
 OPENAI_BASE_URL=https://example.test/v1 MDP_ALLOW_CUSTOM_OPENAI_BASE_URL=1 OPENAI_API_KEY= \
   node "$root/scripts/mdp-native-normalize-openai.mjs" --request "$request" --dry-run > "$dry_run"
 python3 - "$dry_run" <<'PY'
 import json, sys
 payload = json.load(open(sys.argv[1]))
-assert payload["endpoint_policy"] == "custom-explicit"
+assert payload["endpoint_policy"] == "official-fixed"
 assert "example.test" not in json.dumps(payload)
+assert payload["requires_native_call_permission_for_real_run"] is True
 PY
 
 echo '{"ok":true,"contract":"mdp.native-runner-test.v0"}'
