@@ -3286,7 +3286,10 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .unwrap();
-        let error = super::supervise_child(&mut child, 2_000, 128).unwrap_err();
+        // Cold Node startup can exceed two seconds on a contended CI runner.
+        // Keep the deadline bounded while giving the child enough time to
+        // exercise the stdout limit instead of racing the timeout branch.
+        let error = super::supervise_child(&mut child, 10_000, 128).unwrap_err();
         assert_eq!(
             error.downcast_ref::<super::RunFailure>().unwrap().code(),
             "driver-result-too-large"
