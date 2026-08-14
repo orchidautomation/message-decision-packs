@@ -694,10 +694,11 @@ function compileReplay(jobId = "outbound-copy-brief", seedName = "generation") {
   const acceptedClaimArgs = jobId === "outbound-copy-review"
     ? ["--json", "check-claims", "--dir", pack, "--file", suppliedDraftPath]
     : ["--json", "check-claims", "--dir", pack, "--text", suppliedDraftBytes.toString("utf8")];
+  acceptedClaimArgs.push("--persona", persona, "--job", jobId);
   const acceptedClaims = output(invoke(acceptedClaimArgs), `${jobId} accepted claim validation`);
   assert.equal(acceptedClaims.valid, true);
   assert.ok(acceptedClaims.matched_claims.length >= 2);
-  const rejectedAttempt = invoke(["--json", "check-claims", "--dir", pack, "--text", "MDP guarantees meetings, improves reply rates by 30%, integrates with Salesforce, and updates CRM records."]);
+  const rejectedAttempt = invoke(["--json", "check-claims", "--dir", pack, "--text", "MDP guarantees meetings, improves reply rates by 30%, integrates with Salesforce, and updates CRM records.", "--persona", persona, "--job", jobId]);
   assert.equal(rejectedAttempt.status, 1, `${jobId} unsupported claims must take the CLI rejection path`);
   const rejectedEnvelope = JSON.parse(rejectedAttempt.stdout);
   assert.equal(rejectedEnvelope.ok, true);
