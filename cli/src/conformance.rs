@@ -2299,9 +2299,12 @@ impl ConformanceContract for PublicConformanceReportV1 {
             for evidence in &job.evidence {
                 match evidence.classification {
                     AccessClass::Synthetic => {
-                        if let Some(h) = &evidence.artifact_sha256 {
-                            validate_hash(h, "synthetic artifact hash")?;
-                        }
+                        validate_hash(
+                            evidence.artifact_sha256.as_deref().ok_or_else(|| {
+                                anyhow!("synthetic evidence requires artifact hash")
+                            })?,
+                            "synthetic artifact hash",
+                        )?;
                         if evidence.publication_approved {
                             return Err(anyhow!(
                                 "synthetic evidence does not use publication approval"
@@ -2951,6 +2954,40 @@ mod tests {
 
         value.as_object_mut().unwrap().remove("expected_result");
         assert!(parse_candidate(&serde_json::to_vec(&value).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn public_report_rejects_synthetic_evidence_without_an_artifact_hash() {
+        let report = PublicConformanceReportV1 {
+            contract: PUBLIC_CONFORMANCE_REPORT_V1.to_string(),
+            report_id: "report-1".to_string(),
+            pack_id: "pack-1".to_string(),
+            release_id: "release-1".to_string(),
+            evaluator_id: "evaluator-1".to_string(),
+            evaluator_version: "1.0.0".to_string(),
+            generated_at: "2026-08-14T00:00:00Z".to_string(),
+            jobs: vec![PublicJobResult {
+                job_id: "outbound-copy-brief".to_string(),
+                deterministic_status: DeterministicStatus::Unassessed,
+                behavioral_status: BehavioralStatus::Unassessed,
+                verdict: QualificationVerdict::Unassessed,
+                evidence: vec![PublicEvidenceDigest {
+                    artifact_role: JourneyArtifactRole::Prompt,
+                    artifact_sha256: None,
+                    classification: AccessClass::Synthetic,
+                    publication_approved: false,
+                }],
+                limitations: vec![],
+            }],
+        };
+
+        let error = report
+            .validate()
+            .expect_err("synthetic evidence must retain its public hash");
+        assert_eq!(
+            error.to_string(),
+            "synthetic evidence requires artifact hash"
+        );
     }
 
     #[cfg(unix)]

@@ -143,7 +143,7 @@ mdp --json conformance validate \
   --artifact-root STAGED_ROOT --candidate CANDIDATE.json \
   --evaluator-inventory EVALUATOR_INVENTORY.json \
   --lifecycle-policy PRIVATE_RECORD_POLICY.json \
-  --deterministic STAGED_ROOT/deterministic.json \
+  --deterministic deterministic.json \
   --invocation INVOCATION.json --trial TRIAL.json \
   --verifier-receipt VERIFIER_RECEIPT.json \
   --evaluator-result EVALUATOR_RESULT.json \

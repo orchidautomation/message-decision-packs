@@ -199,7 +199,7 @@ pub(crate) fn capabilities() -> Value {
             command("capabilities", "mdp.capabilities.v0", "read-only", false, false, false, &[]),
             nested_command("compile", DETERMINISTIC_CONFORMANCE_V1, &["--candidate", "--artifact-root"], &[], &["--out", "--dry-run"]),
             nested_command("validate", BEHAVIORAL_EVALUATION_V1, &["--artifact-root", "--candidate", "--evaluator-inventory", "--lifecycle-policy", "--deterministic", "--invocation", "--trial", "--verifier-receipt"], &["--invocation", "--trial", "--verifier-receipt", "--evaluator-result", "--publication-approval"], &["--evaluator-result", "--publication-approval", "--out", "--dry-run"]),
-            nested_command("assemble", JOB_CONFORMANCE_V1, &["--candidate", "--deterministic", "--behavioral", "--trial", "--artifact-root"], &["--trial"], &["--out", "--dry-run"]),
+            nested_command("assemble", JOB_CONFORMANCE_V1, &["--candidate", "--deterministic", "--behavioral", "--artifact-root"], &["--trial"], &["--out", "--dry-run"]),
             nested_command_with_outputs("report", &[CONFORMANCE_REPORT_V1, PUBLIC_CONFORMANCE_REPORT_V1], &["--conformance", "--artifact-root", "--visibility", "--generated-at"], &[], &["--out", "--dry-run"]),
             command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--target-name", "--target-kind", "--target-alias", "--exclude-term", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
@@ -398,6 +398,22 @@ mod tests {
                 "--publication-approval"
             ])
         );
+        let assemble = result["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .find(|command| command["argv"] == json!(["conformance", "assemble"]))
+            .expect("conformance assemble command");
+        assert_eq!(
+            assemble["required_args"],
+            json!([
+                "--candidate",
+                "--deterministic",
+                "--behavioral",
+                "--artifact-root"
+            ])
+        );
+        assert_eq!(assemble["repeatable_args"], json!(["--trial"]));
         assert!(
             result["commands"]
                 .as_array()

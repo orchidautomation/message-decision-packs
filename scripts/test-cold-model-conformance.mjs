@@ -57,9 +57,9 @@ const PUBLICATION_KEYS = generateKeyPairSync("ed25519");
 const VERIFIER_PUBLIC_KEY = rawPublicKey(VERIFIER_KEYS.publicKey);
 const PUBLICATION_PUBLIC_KEY = rawPublicKey(PUBLICATION_KEYS.publicKey);
 const TRUSTED_VERIFIER = Object.freeze({
-  verifier_name: "offline-harness-verifier",
+  verifier_name: "recorded-evidence-harness-verifier",
   verifier_version: "1.0.0",
-  verifier_config_sha256: sha("offline-harness-verifier-config:v1"),
+  verifier_config_sha256: sha("recorded-evidence-harness-verifier-config:v1"),
   public_key_hex: VERIFIER_PUBLIC_KEY.toString("hex"),
   identity_authority_sha256: sha(VERIFIER_PUBLIC_KEY),
 });
@@ -84,7 +84,6 @@ function invoke(args, options = {}) {
       HTTPS_PROXY: "http://127.0.0.1:9",
       ALL_PROXY: "http://127.0.0.1:9",
       NO_PROXY: "",
-      MDP_CONFORMANCE_NETWORK_SENTINEL: "network-must-not-be-used",
     },
   });
 }
@@ -171,9 +170,9 @@ function readSeed(name) {
 function lifecycle(accessClass = "synthetic") {
   return {
     contract: "mdp.private-record-policy.v1",
-    policy_id: "synthetic-offline-policy",
+    policy_id: "synthetic-recorded-evidence-policy",
     access_class: accessClass,
-    policy_owner_or_ref: "offline-harness",
+    policy_owner_or_ref: "recorded-evidence-harness",
     retention_until: "2026-09-13T00:00:00Z",
     deletion_disposition: "delete",
     host_capabilities: { access: "supported", retention: "supported", deletion: "supported" },
@@ -198,7 +197,7 @@ function candidateFor(seed, policy, authorities = baseAuthorities(), pack = {}) 
     job_id: pack.jobId || "outbound-copy-brief",
     pack_release: {
       pack_id: pack.packId || "basic-mdp-template",
-      release_id: "synthetic-offline-release",
+      release_id: "synthetic-recorded-evidence-release",
       version: pack.version || "0.1.0",
       portable_digest: pack.portableDigest || "a".repeat(64),
       source_revision: HASH.sourceRevision,
@@ -225,9 +224,9 @@ function inventoryFor(seed, candidate, binding = {}) {
   const resolvedModel = binding.resolvedModel || "recorded-synthetic-model";
   const value = {
     contract: "mdp.evaluator-inventory.v1",
-    evaluator_id: "offline-synthetic-evaluator",
+    evaluator_id: "recorded-synthetic-evaluator",
     evaluator_version: "1.0.0",
-    fixture_set_id: "offline-core-v1",
+    fixture_set_id: "recorded-core-v1",
     frozen_at: "2026-08-13T10:00:00Z",
     inventory_sha256: "",
     trusted_verifiers: [TRUSTED_VERIFIER],
@@ -360,7 +359,7 @@ function buildEvidence(seed, options = {}) {
         dimension,
         state: "verified",
         provenance: "verifier-recomputed",
-        evidence_refs: [`offline-verifier:${dimension}:${slot}`],
+        evidence_refs: [`recorded-verifier:${dimension}:${slot}`],
         limitations: ["recorded-synthetic-evidence"],
         verifier_receipt_sha256: null,
       })),
@@ -646,12 +645,14 @@ function compileReplay(jobId = "outbound-copy-brief", seedName = "generation") {
   const promptBytes = readFileSync(join(pack, promptPath));
   const requirementsBytes = Buffer.from(`${JSON.stringify(requirements, null, 2)}\n`);
   writeFileSync(join(candidateRoot, "evidence", "requirements.json"), requirementsBytes);
-  const suppliedDraftBytes = Buffer.from("MDP is versioned decision context for agents.\n");
+  const suppliedDraftBytes = Buffer.from("MDP is versioned decision context for agents. It is a local offline CLI, and each pack declares a version in its manifest alongside modular card references.\n");
+  const suppliedDraftPath = join(candidateRoot, "evidence", "supplied-draft.txt");
   const invocationInputs = [
     { name: "routed_context", sha256: sha(routedBytes) },
     { name: "normalized_prospect", sha256: sha(normalizedBytes) },
   ];
   if (jobId === "outbound-copy-review") {
+    writeFileSync(suppliedDraftPath, suppliedDraftBytes);
     invocationInputs.push({ name: "supplied_draft", sha256: sha(suppliedDraftBytes) });
   }
   const receipt = {
@@ -690,7 +691,10 @@ function compileReplay(jobId = "outbound-copy-brief", seedName = "generation") {
     };
   const governedBytes = Buffer.from(`${JSON.stringify(governedOutput, null, 2)}\n`);
   writeFileSync(join(candidateRoot, "evidence", "governed-output.json"), governedBytes);
-  const acceptedClaims = output(invoke(["--json", "check-claims", "--dir", pack, "--text", "MDP is versioned decision context for agents. It is a local offline CLI, and each pack declares a version in its manifest alongside modular card references."]), `${jobId} accepted claim validation`);
+  const acceptedClaimArgs = jobId === "outbound-copy-review"
+    ? ["--json", "check-claims", "--dir", pack, "--file", suppliedDraftPath]
+    : ["--json", "check-claims", "--dir", pack, "--text", suppliedDraftBytes.toString("utf8")];
+  const acceptedClaims = output(invoke(acceptedClaimArgs), `${jobId} accepted claim validation`);
   assert.equal(acceptedClaims.valid, true);
   assert.ok(acceptedClaims.matched_claims.length >= 2);
   const rejectedAttempt = invoke(["--json", "check-claims", "--dir", pack, "--text", "MDP guarantees meetings, improves reply rates by 30%, integrates with Salesforce, and updates CRM records."]);
@@ -701,7 +705,23 @@ function compileReplay(jobId = "outbound-copy-brief", seedName = "generation") {
   assert.equal(rejectedClaims.valid, false);
   assert.ok(rejectedClaims.unsupported_claims.length >= 3);
   assert.ok(rejectedClaims.guardrail_hits.length >= 1);
-  const claimsBytes = Buffer.from(`${JSON.stringify(acceptedClaims, null, 2)}\n`);
+  const claimsValidation = {
+    ...acceptedClaims,
+    harness_binding: {
+      input_name: jobId === "outbound-copy-review" ? "supplied_draft" : "claim_text",
+      relative_path: jobId === "outbound-copy-review" ? "evidence/supplied-draft.txt" : null,
+      sha256: sha(suppliedDraftBytes),
+      byte_count: suppliedDraftBytes.length,
+      cli_input_flag: jobId === "outbound-copy-review" ? "--file" : "--text",
+    },
+  };
+  if (jobId === "outbound-copy-review") {
+    assert.deepEqual(readFileSync(suppliedDraftPath), suppliedDraftBytes);
+    assert.equal(receipt.inputs.find((input) => input.name === "supplied_draft")?.sha256, claimsValidation.harness_binding.sha256);
+    assert.equal(claimsValidation.harness_binding.sha256, sha(readFileSync(suppliedDraftPath)));
+    assert.equal(claimsValidation.harness_binding.byte_count, readFileSync(suppliedDraftPath).length);
+  }
+  const claimsBytes = Buffer.from(`${JSON.stringify(claimsValidation, null, 2)}\n`);
   writeFileSync(join(candidateRoot, "evidence", "claims-validation.json"), claimsBytes);
   writeFileSync(join(candidateRoot, "evidence", "rejected-claims-validation.json"), `${JSON.stringify(rejectedClaims, null, 2)}\n`);
 
@@ -731,7 +751,7 @@ function compileReplay(jobId = "outbound-copy-brief", seedName = "generation") {
     ["normalized-input", [normalized.contract, "evidence/normalized-input.json", normalizedBytes]],
     ["routed-context", ["mdp.routed-context.v1", "evidence/routed-context.json", routedBytes]],
     ["governed-output", [governedOutput.contract, "evidence/governed-output.json", governedBytes]],
-    ["claims-validation", [acceptedClaims.contract, "evidence/claims-validation.json", claimsBytes]],
+    ["claims-validation", [claimsValidation.contract, "evidence/claims-validation.json", claimsBytes]],
     ["decision-result", [decision.contract, "evidence/decision-result.json", Buffer.from(`${JSON.stringify(decision, null, 2)}\n`)]],
     ["run-bundle", [runBundle.contract, "evidence/run-bundle.json", Buffer.from(`${JSON.stringify(runBundle, null, 2)}\n`)]],
     ["run-receipt", [runReceipt.contract, "evidence/run-receipt.json", Buffer.from(`${JSON.stringify(runReceipt, null, 2)}\n`)]],
@@ -815,7 +835,7 @@ function compileNormalizationJob() {
 try {
   assert.ok(existsSync(mdp), `compiled CLI not found at ${mdp}`);
 
-  record("installed discovery exposes closed conformance schemas and offline-only capabilities", () => {
+  record("installed discovery exposes closed conformance schemas and external-only model execution", () => {
     for (const target of ["conformance-candidate-v1", "model-invocation-evidence-v1", "conformance-verifier-receipt-v1", "evaluator-inventory-v1", "evaluator-result-v1", "private-record-policy-v1", "publication-approval-v1", "conformance-trial-v1", "job-conformance-v1", "conformance-report-v1", "public-conformance-report-v1", "deterministic-conformance-v1", "behavioral-evaluation-v1"]) {
       assert.ok(output(invoke(["--json", "schema", target]), `schema ${target}`).$schema);
     }
@@ -1091,5 +1111,5 @@ for (const providerCommand of ["model", "provider", "native-normalize-openai", "
   assert.equal(observedMdpCommands.has(providerCommand), false, `${providerCommand} must not be observed`);
 }
 process.stdout.write(`1..${results.length}\n`);
-process.stdout.write(`${results.length - failed.length} passed; ${failed.length} failed; mode=${smoke ? "smoke" : "full"}; static_command_allowlist=enforced; provider_commands=forbidden\n`);
+process.stdout.write(`${results.length - failed.length} passed; ${failed.length} failed; mode=${smoke ? "smoke" : "full"}; provider_command_allowlist=enforced; provider_command_execution=blocked; network_isolation=unobserved\n`);
 if (failed.length) process.exitCode = 1;

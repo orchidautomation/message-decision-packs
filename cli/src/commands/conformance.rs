@@ -1712,7 +1712,34 @@ mod tests {
         let base = std::env::temp_dir().join(format!("mdp-contained-evidence-{nonce}"));
         let root = base.join("staged");
         fs::create_dir_all(&root).unwrap();
-        fs::write(base.join("outside-candidate.json"), b"{}").unwrap();
+        let candidate = json!({
+            "contract": "mdp.conformance-candidate.v1",
+            "candidate_id": "candidate-1",
+            "artifact_root": "candidate",
+            "job_id": "outbound-copy-brief",
+            "pack_release": {
+                "pack_id": "pack",
+                "release_id": "release",
+                "version": "1.0.0",
+                "portable_digest": "a".repeat(64),
+                "source_revision": "b".repeat(64)
+            },
+            "cli_version": "0.1.0",
+            "fixture_id": "fixture-1",
+            "challenge_id": "challenge-1",
+            "evaluator_inventory_sha256": "c".repeat(64),
+            "authorities": [
+                {"role":"pack-manifest","contract":"mdp.v0","relative_path":"pack/manifest.json","sha256":"d".repeat(64),"byte_count":100},
+                {"role":"requirements","contract":"mdp.requirements.v2","relative_path":"pack/requirements.json","sha256":"e".repeat(64),"byte_count":100},
+                {"role":"prompt","contract":"mdp.prompt.v1","relative_path":"pack/prompt.json","sha256":"f".repeat(64),"byte_count":100},
+                {"role":"evaluator-inventory","contract":"mdp.evaluator-inventory.v1","relative_path":"evaluator/inventory.json","sha256":"c".repeat(64),"byte_count":100},
+                {"role":"private-record-policy","contract":"mdp.private-record-policy.v1","relative_path":"policy/private.json","sha256":"9".repeat(64),"byte_count":100}
+            ],
+            "lifecycle_policy_sha256": "9".repeat(64)
+        });
+        let candidate_bytes = serde_json::to_vec(&candidate).unwrap();
+        parse_candidate(&candidate_bytes).expect("outside fixture must be a valid candidate");
+        fs::write(base.join("outside-candidate.json"), candidate_bytes).unwrap();
         symlink(
             base.join("outside-candidate.json"),
             root.join("candidate.json"),
@@ -1730,7 +1757,12 @@ mod tests {
             publication_approvals: &[],
             verifier_receipts: &[],
         });
-        assert!(result.is_err());
+        assert!(
+            result
+                .expect_err("symlinked candidate must fail containment")
+                .to_string()
+                .contains("cannot open contained authority component safely")
+        );
         fs::remove_dir_all(base).unwrap();
     }
 

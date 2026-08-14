@@ -1456,7 +1456,7 @@ mod tests {
 
     #[test]
     fn conformance_dry_run_output_exposes_planned_artifact() {
-        let path = PathBuf::from("/tmp/conformance.json");
+        let path = std::env::temp_dir().join("conformance.json");
         let result = prepare_conformance_dry_run(
             json!({"contract": "mdp.deterministic-conformance.v1"}),
             &path,
@@ -1464,7 +1464,7 @@ mod tests {
         .unwrap();
         assert_eq!(result["artifact"]["status"], "dry-run");
         assert_eq!(result["dry_run"], true);
-        assert_eq!(result["write_plan"][0]["path"], "/tmp/conformance.json");
+        assert_eq!(result["write_plan"][0]["path"], path.display().to_string());
         assert_eq!(result["write_plan"][0]["would_write"], true);
     }
 }

@@ -531,7 +531,6 @@ pub(crate) enum ConformanceCommand {
             long,
             help = "Trial path relative to the staged root; repeat in declared order"
         )]
-        #[arg(required = true)]
         trial: Vec<PathBuf>,
         #[arg(long, help = "Staged root containing every composite member")]
         artifact_root: PathBuf,
@@ -787,23 +786,26 @@ mod tests {
             .is_err(),
             "behavioral validation requires an artifact root"
         );
-        assert!(
-            Cli::try_parse_from([
-                "mdp",
-                "conformance",
-                "assemble",
-                "--candidate",
-                "candidate.json",
-                "--deterministic",
-                "deterministic.json",
-                "--behavioral",
-                "behavioral.json",
-                "--artifact-root",
-                "staged"
-            ])
-            .is_err(),
-            "assembly requires at least one trial"
-        );
+        let assembly = Cli::try_parse_from([
+            "mdp",
+            "conformance",
+            "assemble",
+            "--candidate",
+            "candidate.json",
+            "--deterministic",
+            "deterministic.json",
+            "--behavioral",
+            "behavioral.json",
+            "--artifact-root",
+            "staged",
+        ])
+        .expect("an unassessed assembly may contain zero trials");
+        assert!(matches!(
+            assembly.command,
+            Commands::Conformance {
+                command: ConformanceCommand::Assemble { trial, .. }
+            } if trial.is_empty()
+        ));
     }
 
     #[test]
