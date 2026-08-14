@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -77,6 +77,15 @@ const expectJson = (result, label) => {
   assert.equal(result.stderr, '', `${label} wrote unexpected stderr`)
   return JSON.parse(result.stdout)
 }
+
+const parseJsonResult = (result, label) => {
+  assert.equal(result.stderr, '', `${label} wrote unexpected stderr`)
+  assert.ok([0, 1, 2].includes(result.status), `${label} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
+  return JSON.parse(result.stdout)
+}
+
+const sha256File = (path) => sha256Bytes(readFileSync(path))
+const authorityHash = (domain, value) => sha256Bytes(`${domain}\0${canonicalJsonBytes(value)}`)
 
 try {
   const bindings = []
@@ -243,26 +252,11 @@ try {
     // not parity proof.
     const projectedProviderSchema = projectOutputSchemaForOpenAI(outputSchema)
     const providerBody = buildProviderRequestBody(request)
-    const authorityReceipt = {
-      contract: 'mdp.native-model-parity-authority.v1',
-      profile,
-      job_id: jobId,
-      operation: step.step_id,
-      prompt_sha256: step.prompt_sha256,
-      output_contract_sha256: step.output_contract_sha256,
-      subprocess_request_sha256: sha256CanonicalJson(request),
-      canonical_output_schema_sha256: sha256CanonicalJson(resolvedOutputSchema(step)),
-      provider_output_schema_sha256: sha256CanonicalJson(projectedProviderSchema),
-      provider_request_body_sha256: sha256Bytes(JSON.stringify(providerBody)),
-      output_sha256: sha256Bytes(output),
-    }
-    const authorityReceiptSha256 = sha256CanonicalJson(authorityReceipt)
-    assert.match(authorityReceiptSha256, /^[0-9a-f]{64}$/)
     assert.equal(request.output_schema_sha256, sha256CanonicalJson(outputSchema))
     assert.equal(result.provider_request_schema_id, PROVIDER_REQUEST_SCHEMA_ID)
-    assert.equal(result.provider_request_body_sha256, authorityReceipt.provider_request_body_sha256)
-    assert.equal(result.provider_output_schema_sha256, authorityReceipt.provider_output_schema_sha256)
-    assert.equal(result.output.sha256, authorityReceipt.output_sha256)
+    assert.equal(result.provider_request_body_sha256, sha256Bytes(JSON.stringify(providerBody)))
+    assert.equal(result.provider_output_schema_sha256, sha256CanonicalJson(projectedProviderSchema))
+    assert.equal(result.output.sha256, sha256Bytes(output))
     assert.equal(result.output.byte_count, Buffer.byteLength(output))
     assert.equal(result.provider_observation.provider, 'openai')
     assert.equal(result.provider_observation.response_id, `resp_parity_${index + 1}`)
@@ -287,6 +281,166 @@ try {
       assert.equal(validation.data.valid, true, JSON.stringify(validation.data.issues))
       assert.equal(validation.data.artifacts.prompt_output.sha256, sha256Bytes(`${canonicalJsonBytes(providerExample)}\n`))
     }
+
+    // Execute the public canonical run path offline for every binding. The
+    // native subprocess is intentionally denied permission, but only after v2
+    // has resolved and sealed the selected prompt, ordered inputs, schemas,
+    // driver request/result, bundle, audit, and receipt authorities.
+    const pack = profiles.find((candidate) => candidate.profile === profile).pack
+    const runInputs = step.declared_inputs
+      .filter((input) => input.required && !['prompt_receipt', 'invocation_receipt_sha256'].includes(input.name))
+      .map((input, inputIndex) => {
+        const inputPath = join(scratch, `run-${index + 1}-input-${inputIndex + 1}.json`)
+        writeFileSync(inputPath, `${JSON.stringify(input.name === 'routed_context' ? { status: 'ready' } : {})}\n`)
+        return {
+          logical_name: input.name,
+          source_path: inputPath,
+          schema_id: `mdp.synthetic-${input.name.replaceAll('_', '-')}.v1`,
+          media_type: 'application/json',
+          provenance_refs: [],
+        }
+      })
+    const runRequest = {
+      contract: 'mdp.run-request.v1',
+      execution_id: `parity-v2-${profile}-${index + 1}`,
+      created_at: '2026-08-14T00:00:00Z',
+      profile,
+      operation: step.step_id,
+      mode: 'generative',
+      job_identity: { job_id: jobId, idempotency_key: `parity-v2-${index + 1}` },
+      pack_dir: pack,
+      pack_release_id: `parity-${profile}`,
+      prompt: {
+        logical_name: step.prompt_id,
+        source_path: join(pack, '.mdp', step.prompt_path),
+        schema_id: 'mdp.prompt.v1',
+        media_type: 'application/yaml',
+        provenance_refs: [],
+      },
+      inputs: runInputs,
+      execution_policy: {
+        environment_allowlist: ['OPENAI_API_KEY'],
+        filesystem_mode: 'private-staging',
+        tool_mode: 'none',
+        network_mode: 'authorized-endpoints-only',
+        authorized_endpoints: ['https://api.openai.com/v1/responses'],
+        max_input_bytes: 131072,
+        max_output_bytes: 1048576,
+        timeout_ms: 30000,
+        retention_policy: 'receipt-only',
+      },
+      driver: {
+        driver_id: 'mdp-native-openai',
+        implementation: 'bundled:mdp-native-model-openai',
+        version: '1',
+        build_sha256: null,
+        executable_sha256: sha256File(driver),
+        image_digest: null,
+        configuration_sha256: 'b'.repeat(64),
+        dependency_lock_sha256: sha256File(process.execPath),
+        identity_provenance: 'mdp-observed',
+      },
+      model: {
+        provider: 'openai', requested_model: 'gpt-test', resolved_model: null,
+        authorized_endpoint: 'https://api.openai.com/v1/responses', parameters_sha256: 'c'.repeat(64),
+        session_behavior: 'not-applicable', cache_behavior: 'unknown', storage_behavior: 'declared',
+      },
+    }
+    const runRequestPath = join(scratch, `run-${index + 1}.json`)
+    const runDir = join(scratch, `run-${index + 1}`)
+    writeFileSync(runRequestPath, `${JSON.stringify(runRequest)}\n`)
+    const execution = parseJsonResult(
+      invoke(mdp, ['--json', 'run', '--request', runRequestPath, '--out-dir', runDir]),
+      `${profile}/${jobId}/${step.phase} canonical v2 offline run`,
+    )
+    const bundle = JSON.parse(readFileSync(join(runDir, 'run-bundle.json'), 'utf8'))
+    const audit = JSON.parse(readFileSync(join(runDir, 'runner-audit.json'), 'utf8'))
+    const receipt = JSON.parse(readFileSync(join(runDir, 'run-receipt.json'), 'utf8'))
+    assert.equal(bundle.prompt.sha256, sha256File(runRequest.prompt.source_path))
+    assert.match(step.prompt_sha256, /^[0-9a-f]{64}$/)
+    assert.deepEqual(bundle.inputs.map((item) => item.logical_name), runInputs.map((item, i) => `declared/${String(i).padStart(3, '0')}-${item.logical_name}`))
+    assert.deepEqual(bundle.inputs.map((item) => item.sha256), runInputs.map((item) => sha256File(item.source_path)))
+    assert.equal(bundle.operation, step.step_id)
+    assert.equal(bundle.driver.executable_sha256, sha256File(driver))
+    assert.equal(bundle.model.requested_model, 'gpt-test')
+    assert.match(audit.driver_request_sha256, /^[0-9a-f]{64}$/)
+    assert.match(audit.driver_result_sha256, /^[0-9a-f]{64}$/)
+    assert.match(audit.provider_request_body_sha256, /^[0-9a-f]{64}$/)
+    assert.equal(audit.provider_request_schema_id, PROVIDER_REQUEST_SCHEMA_ID)
+    assert.equal(audit.provider_response_body_sha256, null)
+    const invocation = {
+      contract: 'mdp.prompt-invocation.v1',
+      inputs: bundle.inputs.map((input, i) => ({ name: runInputs[i].logical_name, sha256: input.sha256 })),
+      job_id: jobId,
+      prompt: { id: step.prompt_id, sha256: step.prompt_sha256, version: step.prompt_version },
+    }
+    const invocationContent = `${JSON.stringify(invocation, null, 2)}\n`
+    const expectedDriverRequest = {
+      contract: 'mdp.driver-request.v2', execution_id: runRequest.execution_id, profile, operation: step.step_id,
+      job_identity: runRequest.job_identity, phase: step.phase, prompt_id: step.prompt_id,
+      prompt_version: step.prompt_version, prompt_canonical_sha256: step.prompt_sha256,
+      prompt: { authority: bundle.prompt, content_utf8: readFileSync(runRequest.prompt.source_path, 'utf8') },
+      prompt_invocation: {
+        authority: {
+          logical_name: 'private/prompt-invocation.json', schema_id: 'mdp.prompt-invocation.v1',
+          media_type: 'application/json', byte_count: Buffer.byteLength(invocationContent),
+          sha256: sha256Bytes(invocationContent), provenance: 'mdp-observed',
+          provenance_refs: [execution.data.bundle_sha256],
+        },
+        content_utf8: invocationContent,
+      },
+      inputs: bundle.inputs.map((authority, i) => ({
+        authority, content_utf8: readFileSync(runInputs[i].source_path, 'utf8'),
+      })),
+      canonical_output_schema: resolvedOutputSchema(step),
+      canonical_output_schema_sha256: sha256CanonicalJson(resolvedOutputSchema(step)),
+      provider_output_schema: projectedProviderSchema,
+      provider_output_schema_sha256: sha256CanonicalJson(projectedProviderSchema),
+      provider_policy: {
+        provider: 'openai', requested_model: 'gpt-test',
+        authorized_endpoint: 'https://api.openai.com/v1/responses', timeout_ms: 1,
+        max_output_bytes: 1048576,
+      },
+      execution_policy_sha256: bundle.execution_policy_sha256,
+      request_sha256: '',
+    }
+    // Runtime subtracts elapsed staging time and a finalization reserve from
+    // timeout_ms. Search only that single runtime-derived scalar; an exact hash
+    // match proves every other v2 field above, including ordered inputs and both schemas.
+    let matchedDriverTimeout = null
+    for (let timeout = 1; timeout <= runRequest.execution_policy.timeout_ms; timeout += 1) {
+      expectedDriverRequest.provider_policy.timeout_ms = timeout
+      if (authorityHash('mdp.driver-request.v2', expectedDriverRequest) === audit.driver_request_sha256) {
+        matchedDriverTimeout = timeout
+        break
+      }
+    }
+    assert.ok(matchedDriverTimeout !== null, `${profile}/${jobId}/${step.phase} v2 request authority mismatch`)
+    const expectedDriverResult = {
+      contract: 'mdp.driver-result.v2',
+      execution_id: runRequest.execution_id,
+      operation: step.step_id,
+      terminal_state: 'no-draft:policy-blocked',
+      output: null,
+      provider_request_body_sha256: audit.provider_request_body_sha256,
+      provider_request_schema_id: PROVIDER_REQUEST_SCHEMA_ID,
+      provider_response_body_sha256: null,
+      provider_output_schema_sha256: sha256CanonicalJson(projectedProviderSchema),
+      provider_observation: null,
+      diagnostic_code: 'native_model_calls_not_allowed',
+      result_sha256: '',
+    }
+    assert.equal(audit.driver_result_sha256, authorityHash('mdp.driver-result.v2', expectedDriverResult))
+    assert.equal(execution.data.bundle_sha256, authorityHash('mdp.run-bundle.v1', bundle))
+    assert.equal(receipt.bundle_sha256, execution.data.bundle_sha256)
+    assert.equal(receipt.runner_audit.sha256, sha256File(join(runDir, 'runner-audit.json')))
+    assert.equal(receipt.receipt_sha256, execution.data.receipt_sha256)
+    assert.equal(receipt.receipt_sha256, authorityHash('mdp.run-receipt.v1', { ...receipt, receipt_sha256: '' }))
+    const verification = expectJson(invoke(mdp, [
+      '--json', 'verify-run', '--bundle', join(runDir, 'run-bundle.json'),
+      '--receipt', join(runDir, 'run-receipt.json'), '--artifact-root', runDir,
+    ]), `${profile}/${jobId}/${step.phase} receipt verification`)
+    assert.equal(verification.data.valid, true)
     assert.ok(!JSON.stringify(result).includes('OPENAI_API_KEY'))
   }
 

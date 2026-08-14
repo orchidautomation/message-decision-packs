@@ -1782,7 +1782,7 @@ fn driver_provider_policy_v2_schema() -> Value {
             "requested_model": non_blank_string_schema(),
             "authorized_endpoint": {"const": "https://api.openai.com/v1/responses"},
             "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
-            "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64}
+            "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576}
         }
     })
 }
@@ -5020,6 +5020,38 @@ mod tests {
             "limitations": []
         });
         draft202012::validate(&runner_audit_v1_schema(), &legacy).unwrap();
+    }
+
+    #[test]
+    fn documented_conformance_runner_audits_validate_against_the_exported_schema() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("examples/run-conformance");
+        let audit_schema = runner_audit_v1_schema();
+        for name in ["synthetic-success", "synthetic-no-draft"] {
+            let audit: Value = serde_json::from_slice(
+                &std::fs::read(root.join(name).join("runner-audit.json")).unwrap(),
+            )
+            .unwrap();
+            draft202012::validate(&audit_schema, &audit)
+                .unwrap_or_else(|error| panic!("{name} runner audit: {error}"));
+        }
+    }
+
+    #[test]
+    fn driver_provider_policy_schema_caps_output_at_one_mibibyte() {
+        let policy_schema = driver_provider_policy_v2_schema();
+        let mut policy = json!({
+            "provider": "openai",
+            "requested_model": "gpt-5-mini",
+            "authorized_endpoint": "https://api.openai.com/v1/responses",
+            "timeout_ms": 60000,
+            "max_output_bytes": 1048576
+        });
+        draft202012::validate(&policy_schema, &policy).unwrap();
+        policy["max_output_bytes"] = json!(1048577);
+        assert!(draft202012::validate(&policy_schema, &policy).is_err());
     }
 
     #[test]

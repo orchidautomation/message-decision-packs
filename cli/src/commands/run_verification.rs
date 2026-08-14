@@ -451,21 +451,13 @@ fn verify_runner_audit(
             {
                 issues.push("generative-provider-request-hash-invalid".to_string());
             }
-            if audit
-                .provider_response_body_sha256
-                .as_deref()
-                .is_some_and(|sha256| !is_canonical_sha256(sha256))
-            {
-                issues.push("generative-provider-response-hash-invalid".to_string());
+            if let Some(issue) = provider_response_evidence_issue(
+                receipt.terminal_state.is_success(),
+                audit.provider_response_body_sha256.as_deref(),
+            ) {
+                issues.push(issue.to_string());
             }
             if receipt.terminal_state.is_success() {
-                if !audit
-                    .provider_response_body_sha256
-                    .as_deref()
-                    .is_some_and(is_canonical_sha256)
-                {
-                    issues.push("generative-provider-response-evidence-missing".to_string());
-                }
                 let observation_valid = bundle.model.as_ref().is_some_and(|model| {
                     audit
                         .provider_observation
@@ -501,6 +493,19 @@ fn provider_request_evidence_issue(
     let absent = request_sha256.is_none() && schema_id.is_none();
     (!(complete || absent) || (success && !complete))
         .then_some("generative-provider-request-evidence-missing")
+}
+
+fn provider_response_evidence_issue(
+    success: bool,
+    response_sha256: Option<&str>,
+) -> Option<&'static str> {
+    match response_sha256 {
+        Some(sha256) if !is_canonical_sha256(sha256) => {
+            Some("generative-provider-response-hash-invalid")
+        }
+        None if success => Some("generative-provider-response-evidence-missing"),
+        _ => None,
+    }
 }
 
 fn is_canonical_sha256(value: &str) -> bool {
@@ -557,8 +562,8 @@ fn verify_artifact(root: &Path, authority: &ArtifactAuthority, issues: &mut Vec<
 #[cfg(test)]
 mod tests {
     use super::{
-        is_canonical_sha256, provider_request_evidence_issue, recompute_assurance,
-        verify_legacy_v0_receipt, verify_run,
+        is_canonical_sha256, provider_request_evidence_issue, provider_response_evidence_issue,
+        recompute_assurance, verify_legacy_v0_receipt, verify_run,
     };
     use crate::artifact_hash::{canonical_json_sha256_for_domain, sha256_hex};
     use crate::run_contracts::*;
@@ -623,6 +628,22 @@ mod tests {
             Some("generative-provider-request-evidence-missing")
         );
         assert_eq!(provider_request_evidence_issue(false, None, None), None);
+    }
+
+    #[test]
+    fn provider_response_hash_maps_to_exactly_one_stable_diagnostic() {
+        assert_eq!(
+            provider_response_evidence_issue(true, None),
+            Some("generative-provider-response-evidence-missing")
+        );
+        assert_eq!(
+            provider_response_evidence_issue(true, Some("malformed")),
+            Some("generative-provider-response-hash-invalid")
+        );
+        assert_eq!(
+            provider_response_evidence_issue(true, Some(&"a".repeat(64))),
+            None
+        );
     }
 
     #[test]
