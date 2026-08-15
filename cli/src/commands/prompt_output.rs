@@ -333,17 +333,7 @@ fn attach_prompt_output_validation_authority(
         current_pack_sha256.as_str()
     };
     let valid = result["valid"].as_bool() == Some(true);
-    let decision_state = if !valid {
-        "unavailable"
-    } else if output.and_then(|value| {
-        value["normalization_trace"]["fit_readiness"]["ready_for_mdp_fit"].as_bool()
-    }) == Some(false)
-        || output.and_then(|value| value["artifact"]["status"].as_str()) == Some("blocked")
-    {
-        "blocked"
-    } else {
-        "available"
-    };
+    let decision_state = prompt_output_decision_state(valid, output);
     let mut authority = json!({
         "pack": {
             "id": manifest.id,
@@ -366,6 +356,25 @@ fn attach_prompt_output_validation_authority(
     result["contract"] = json!(PROMPT_OUTPUT_VALIDATION_CONTRACT);
     result["authority"] = authority;
     Ok(())
+}
+
+fn prompt_output_decision_state(valid: bool, output: Option<&Value>) -> &'static str {
+    if !valid {
+        return "unavailable";
+    }
+    let decision_input_not_ready = output
+        .and_then(|value| value["outcome"].as_str())
+        .is_some_and(|outcome| outcome != "ready");
+    let fit_not_ready = output.and_then(|value| {
+        value["normalization_trace"]["fit_readiness"]["ready_for_mdp_fit"].as_bool()
+    }) == Some(false);
+    let artifact_blocked =
+        output.and_then(|value| value["artifact"]["status"].as_str()) == Some("blocked");
+    if decision_input_not_ready || fit_not_ready || artifact_blocked {
+        "blocked"
+    } else {
+        "available"
+    }
 }
 
 fn enforce_unchanged_validation_pack(
@@ -3320,6 +3329,23 @@ mod tests {
             .parent()
             .expect("CLI crate should have a repository parent")
             .join("examples/clay-audiences-self-serve-enterprise-expansion")
+    }
+
+    #[test]
+    fn decision_input_outcome_controls_validation_decision_state() {
+        for outcome in ["human-review", "insufficient-context", "disqualified"] {
+            let output = json!({"outcome": outcome});
+            assert_eq!(prompt_output_decision_state(true, Some(&output)), "blocked");
+        }
+        let ready = json!({"outcome": "ready"});
+        assert_eq!(
+            prompt_output_decision_state(true, Some(&ready)),
+            "available"
+        );
+        assert_eq!(
+            prompt_output_decision_state(false, Some(&ready)),
+            "unavailable"
+        );
     }
 
     #[test]

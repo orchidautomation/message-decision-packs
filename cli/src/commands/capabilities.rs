@@ -231,7 +231,7 @@ pub(crate) fn capabilities() -> Value {
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
             command("validate-source-binding", SOURCE_BINDING_VALIDATION_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--file"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
-            command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--invocation-receipt", "--routed-context", "--prompt", "--prompt-id", "--strict"]),
+            command("validate-prompt-output", PROMPT_OUTPUT_VALIDATION_CONTRACT, "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--invocation-receipt", "--routed-context", "--prompt", "--prompt-id", "--strict"]),
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
             command("verify-run", RUN_VERIFICATION_V1, "read-only", false, false, false, &["--bundle", "--receipt", "--artifact-root"]),
             command("trace", DECISION_TRACE_V1, "read-only-unless-out", false, true, false, &["--file", "--dir", "--prompt-output", "--validation-input", "--bundle", "--receipt", "--artifact-root", "--format", "--out"]),
@@ -601,6 +601,14 @@ mod tests {
         assert_eq!(
             result["decision_trace_contract"]["prompt_output_authority"]["validation_contract"],
             PROMPT_OUTPUT_VALIDATION_CONTRACT
+        );
+        assert!(
+            result["commands"]
+                .as_array()
+                .expect("commands array")
+                .iter()
+                .any(|command| command["name"] == "validate-prompt-output"
+                    && command["output_contract"] == PROMPT_OUTPUT_VALIDATION_CONTRACT)
         );
         assert!(
             result["commands"]
