@@ -50,16 +50,30 @@ cleanup() {
 trap cleanup EXIT
 
 install_dir="$install_home/.local/bin"
+fake_bin="$install_home/.local/fake-bin"
 codex_home="$install_home/.codex"
+claude_marketplace_root="$install_home/.claude/plugins/data/message-decision-packs-releases"
+claude_plugin_root="$claude_marketplace_root/plugins/message-decision-packs"
 codex_plugin_root="$codex_home/plugins/message-decision-packs"
 cursor_plugin_root="$install_home/.cursor/plugins/local/message-decision-packs"
 opencode_plugin_root="$install_home/.config/opencode/plugins/message-decision-packs"
+mkdir -p "$fake_bin"
+cat > "$fake_bin/claude" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = "plugin" ] && [ "${2:-}" = "marketplace" ] && [ "${3:-}" = "list" ]; then
+  printf '[]\n'
+fi
+exit 0
+EOF
+chmod +x "$fake_bin/claude"
 # shellcheck disable=SC2206
 install_args=(${MDP_RELEASE_INSTALL_ARGS:---agents -y})
 
 HOME="$install_home" \
+PATH="$fake_bin:$PATH" \
 CODEX_HOME="$codex_home" \
 MDP_INSTALL_DIR="$install_dir" \
+PLUXX_CLAUDE_MARKETPLACE_DIR="$claude_marketplace_root" \
 PLUXX_CODEX_CONFIG_PATH="$codex_home/config.toml" \
 PLUXX_CODEX_INSTALL_DIR="$codex_plugin_root" \
 PLUXX_CODEX_MARKETPLACE_PATH="$install_home/.agents/plugins/marketplace.json" \
@@ -79,10 +93,111 @@ if [ ! -x "$mdp_bin" ]; then
 fi
 "$mdp_bin" --version
 
-if [ ! -d "$codex_plugin_root" ]; then
-  echo "Installed Codex plugin root not found: $codex_plugin_root" >&2
-  exit 1
+if [ "${MDP_RELEASE_REQUIRE_STAGED_PARITY:-0}" = "1" ]; then
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) staged_target="x86_64-unknown-linux-gnu" ;;
+    Darwin-x86_64) staged_target="x86_64-apple-darwin" ;;
+    Darwin-arm64) staged_target="aarch64-apple-darwin" ;;
+    *) echo "Unsupported staged parity platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+  esac
+  release_root="$(cd "$(dirname "$installer")" && pwd)"
+  staged_cli="$release_root/mdp-$staged_target"
+  release_manifest="$release_root/release-manifest.json"
+  if [ ! -f "$staged_cli" ] || [ ! -f "$release_manifest" ]; then
+    echo "Staged release parity requires the exact CLI asset and release manifest." >&2
+    exit 1
+  fi
+  cmp "$staged_cli" "$mdp_bin"
+  node - "$release_manifest" "mdp-$staged_target" "$staged_cli" <<'NODE'
+const { createHash } = require('node:crypto')
+const { readFileSync } = require('node:fs')
+const [manifestPath, name, stagedPath] = process.argv.slice(2)
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+const actual = createHash('sha256').update(readFileSync(stagedPath)).digest('hex')
+const declared = manifest.cli_artifacts?.find((asset) => asset.name === name)?.sha256
+if (!declared || declared !== actual) {
+  console.error(`Release manifest CLI digest mismatch for ${name}.`)
+  process.exit(1)
+}
+NODE
 fi
+
+for host_root in \
+  "$claude_plugin_root" \
+  "$codex_plugin_root" \
+  "$cursor_plugin_root" \
+  "$opencode_plugin_root"; do
+  if [ ! -d "$host_root" ]; then
+    echo "Installed agent plugin root not found: $host_root" >&2
+    exit 1
+  fi
+  for skill in mdp mdp-gtm-brief mdp-pack-builder mdp-pack-review mdp-proposal-review; do
+    if [ ! -f "$host_root/skills/$skill/SKILL.md" ]; then
+      echo "Installed plugin is missing canonical skill $skill: $host_root" >&2
+      exit 1
+    fi
+  done
+  if [ ! -f "$host_root/assets/authority-conformance/corpus.json" ]; then
+    echo "Installed plugin is missing the authority conformance corpus: $host_root" >&2
+    exit 1
+  fi
+done
+
+for reference_root in "$claude_plugin_root" "$cursor_plugin_root" "$opencode_plugin_root"; do
+  for common_tree in scripts skills assets; do
+    diff -qr "$codex_plugin_root/$common_tree" "$reference_root/$common_tree"
+  done
+  diff \
+    <(cd "$codex_plugin_root" && find scripts skills assets -type f -perm -111 -print | sort) \
+    <(cd "$reference_root" && find scripts skills assets -type f -perm -111 -print | sort)
+done
+
+if [ "${MDP_RELEASE_REQUIRE_STAGED_PARITY:-0}" = "1" ]; then
+  node - "$release_manifest" \
+    "claude-code=$claude_plugin_root" \
+    "codex=$codex_plugin_root" \
+    "cursor=$cursor_plugin_root" \
+    "opencode=$opencode_plugin_root" <<'NODE'
+const { createHash } = require('node:crypto')
+const { lstatSync, readFileSync, readdirSync } = require('node:fs')
+const { join, relative } = require('node:path')
+const [manifestPath, ...bindings] = process.argv.slice(2)
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
+const inventory = (root) => {
+  const records = []
+  const walk = (directory) => {
+    for (const name of readdirSync(directory).sort()) {
+      const path = join(directory, name)
+      const stats = lstatSync(path)
+      if (stats.isSymbolicLink()) throw new Error(`Installed plugin contains a symbolic link: ${path}`)
+      if (stats.isDirectory()) walk(path)
+      else if (stats.isFile()) records.push({
+        path: relative(root, path).split('\\').join('/'),
+        executable: (stats.mode & 0o111) !== 0,
+        sha256: sha256(readFileSync(path)),
+      })
+    }
+  }
+  for (const tree of ['scripts', 'skills', 'assets']) walk(join(root, tree))
+  return records.sort((left, right) => left.path.localeCompare(right.path))
+}
+for (const binding of bindings) {
+  const separator = binding.indexOf('=')
+  const platform = binding.slice(0, separator)
+  const root = binding.slice(separator + 1)
+  const staged = manifest.plugin_trees?.[platform]?.files?.filter((entry) =>
+    ['scripts/', 'skills/', 'assets/'].some((prefix) => entry.path.startsWith(prefix)))
+    .sort((left, right) => left.path.localeCompare(right.path))
+  const installed = inventory(root)
+  if (!staged || JSON.stringify(staged) !== JSON.stringify(installed)) {
+    throw new Error(`Installed ${platform} authority-bearing tree differs from the staged release manifest.`)
+  }
+}
+NODE
+fi
+
+node "$codex_plugin_root/scripts/test-authority-conformance.mjs"
 
 for required in \
   "$codex_plugin_root/scripts/mdp-proposal-runner.mjs" \

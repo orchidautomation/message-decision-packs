@@ -68,23 +68,35 @@ if (request.test_mode === 'descendant') {
   process.on('SIGTERM', () => process.exit(0))
   setInterval(() => {}, 1000)
 }
+const blocked = request.test_mode === 'no-draft'
+const unavailable = request.test_mode === 'unavailable'
 const data = {
   contract: request.test_mode === 'wrong-contract' ? 'wrong.run-contract' : 'mdp.run-execution.v1',
-  valid: request.test_mode === 'wrong-contract' ? 'yes' : request.test_mode !== 'no-draft',
+  valid: request.test_mode === 'wrong-contract' ? 'yes' : !blocked && !unavailable,
   execution_id: 'exec-fixture',
-  terminal_state: request.test_mode === 'no-draft' ? 'no-draft:decision-invalid' : 'success',
+  terminal_state: blocked ? 'no-draft:decision-invalid' : unavailable ? 'no-draft:runner-failed' : 'success',
   run_dir: outputDir,
   bundle_sha256: 'a'.repeat(64),
   receipt_sha256: 'b'.repeat(64),
+  authority: {
+    authority_level: unavailable ? 'unavailable' : 'authoritative',
+    disposition: unavailable ? 'undetermined' : blocked ? 'block' : 'allow',
+    terminal: unavailable ? 'authority-unavailable' : blocked ? 'no-draft' : 'success',
+    governed_generation: blocked || unavailable ? 'absent' : 'available',
+    obligations: [{ id: 'fixture-decision', result: unavailable ? 'unknown' : blocked ? 'fail' : 'pass' }],
+    reason_codes: blocked ? ['fixture-no-draft'] : unavailable ? ['fixture-unavailable'] : [],
+  },
   authority_block: {
-    terminal_state: request.test_mode === 'no-draft' ? 'no-draft:decision-invalid' : 'success',
-    decision: request.test_mode === 'no-draft' ? 'no-draft' : 'ready',
+    terminal_state: blocked ? 'no-draft:decision-invalid' : unavailable ? 'no-draft:runner-failed' : 'success',
+    decision: blocked
+      ? { decision: 'no-draft', reason_codes: ['fixture-no-draft'] }
+      : unavailable ? null : { decision: 'ready', reason_codes: [] },
     assurance: { 'declared-input-isolation': { level: 'unknown' } },
     limitations: ['fixture limitation'],
   },
 }
 process.stdout.write(JSON.stringify({ ok: true, command: 'run', data }))
-if (request.test_mode === 'no-draft') process.exit(1)
+if (blocked || unavailable) process.exit(1)
 if (request.test_mode === 'nonzero-success') process.exit(1)
 if (request.test_mode === 'wrong-contract') process.exit(0)
 `,
@@ -348,7 +360,23 @@ test('returns a canonical no-draft result even when the CLI exits nonzero', asyn
   assert.equal(reply.result.isError, false)
   assert.equal(reply.result.structuredContent.valid, false)
   assert.equal(reply.result.structuredContent.terminal_state, 'no-draft:decision-invalid')
-  assert.equal(reply.result.structuredContent.authority_block.decision, 'no-draft')
+  assert.equal(reply.result.structuredContent.authority_block.decision.decision, 'no-draft')
+  assert.equal(reply.result.structuredContent.authority.disposition, 'block')
+})
+
+test('returns a canonical unavailable result as data when the CLI cannot establish authority', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const request = join(root, 'unavailable.json')
+  writeFileSync(request, JSON.stringify({ test_mode: 'unavailable' }))
+  const [reply] = await rpc(fixtureCli(root), [
+    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'unavailable-run') }),
+  ])
+  assert.equal(reply.result.isError, false)
+  assert.equal(reply.result.structuredContent.valid, false)
+  assert.equal(reply.result.structuredContent.authority.authority_level, 'unavailable')
+  assert.equal(reply.result.structuredContent.authority.disposition, 'undetermined')
+  assert.equal(reply.result.structuredContent.authority.terminal, 'authority-unavailable')
 })
 
 test('rejects contradictory child exit status and canonical terminal state', async (t) => {

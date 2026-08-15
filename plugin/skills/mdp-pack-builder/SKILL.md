@@ -7,6 +7,10 @@ description: Use when creating, initializing, reconstructing, or improving a Mes
 
 Build evidence-grounded `.mdp/` decision context. Use the CLI for deterministic structure and validation; use judgment only for interpreting approved source material and authoring explicit decisions.
 
+## Authority Monotonicity
+
+The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
+
 ## Intake Gate
 
 1. Identify the pack root and intended profile: `gtm` or `proposal`.

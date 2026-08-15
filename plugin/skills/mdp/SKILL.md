@@ -11,6 +11,10 @@ compatible architectural shorthand; “decision graph” names only the bounded
 JSON or Mermaid visualization, never a graph database, agent runtime, memory
 layer, or orchestration framework.
 
+## Authority Monotonicity
+
+The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. A well-formed CLI decision remains data across wrappers even when its decision-oriented process exit is nonzero. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
+
 ## Start Here
 
 1. Find the intended pack root. Pass `--dir` explicitly; do not assume the current directory.

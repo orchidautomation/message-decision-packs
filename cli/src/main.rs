@@ -2,6 +2,7 @@
 
 mod app;
 mod artifact_hash;
+mod authority;
 mod cli;
 mod commands;
 mod conformance;

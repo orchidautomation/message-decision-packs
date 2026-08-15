@@ -316,7 +316,7 @@ assert raw_text_response["error"]["code"] == -32602
 assert "Unsupported arguments: source_text" in raw_text_response["error"]["message"]
 
 audit_required = result(6, "tools/call require_audit_grade dry-run")
-assert audit_required["isError"] is True
+assert audit_required["isError"] is False
 audit_content = audit_required["structuredContent"]
 assert audit_content["runner_exit_status"] == 2
 assert audit_content["mode"] == "dry-run"

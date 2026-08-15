@@ -7,6 +7,10 @@ description: "Use when auditing, validating, hardening, testing, or diagnosing a
 
 Review an existing pack and produce evidence-backed findings. Do not silently repair it unless the user also asks for changes.
 
+## Authority Monotonicity
+
+The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
+
 ## Gate
 
 Identify the exact pack root and inspect its policy state:

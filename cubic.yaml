@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
+
+version: 1
+
+reviews:
+  enabled: true
+  sensitivity: high
+  incremental_commits: true
+  check_drafts: false
+  ultrareview: manual
+  auto_ultrareview: disabled
+  custom_instructions: |
+    Message Decision Packs is a local/offline authority system. The Rust CLI is
+    the only source of authoritative allow or block decisions. Review every
+    changed renderer, summary, trace, MCP server, compatibility wrapper, skill,
+    generated package, and installer projection for authority monotonicity.
+    A downstream surface may preserve or reduce authority but must never turn a
+    block or unavailable result into allow, needs-review, transport success that
+    implies decision success, or usable governed generation.
+  custom_rules:
+    - name: MDP authority monotonicity
+      description: |
+        Flag any path that synthesizes decision authority outside the Rust
+        authority kernel, infers governed success from process exit or MCP
+        transport alone, changes an authoritative block into allow or
+        needs-review, drops a required gate obligation, or exposes governed
+        generation after a failed, missing, malformed, unknown, unsupported, or
+        unverifiable required gate. Require new authority-consuming or
+        projecting surfaces to be registered in the conformance corpus.
+      include:
+        - cli/**
+        - scripts/**
+        - plugin/skills/**
+        - plugin/assets/**
+        - assets/**
+        - .github/workflows/**
+        - Makefile
+        - docs/**
+
+pr_descriptions:
+  generate: true
+  instructions: |
+    State whether authority-bearing CLI, renderer, MCP, compatibility, skill,
+    package, or installer surfaces changed. Include the authority-conformance,
+    mutation, full-validation, and installed-parity evidence that applies.

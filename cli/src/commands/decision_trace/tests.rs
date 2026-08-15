@@ -476,8 +476,13 @@ fn symlink_trace_source_is_unreadable() {
 fn successful_run_with_no_draft_decision_remains_blocked() {
     let source = json!({
         "contract": "mdp.run-execution.v1",
-        "valid": true,
+        "valid": false,
         "terminal_state": "success",
+        "authority": {
+            "authority_level": "authoritative",
+            "disposition": "block",
+            "terminal": "no-draft"
+        },
         "authority_block": {
             "decision": {"decision": "no-draft"},
             "reason_codes": ["insufficient-context"]
@@ -485,12 +490,28 @@ fn successful_run_with_no_draft_decision_remains_blocked() {
     });
     let trace = project_source_value(&source, "e".repeat(64));
     assert_eq!(trace.status, "blocked");
+    assert_eq!(trace.authority.decision_authority, "source-artifact");
     assert!(!trace.authority.output_authority);
     assert!(
         serde_json::to_string(&trace)
             .unwrap()
             .contains("insufficient-context")
     );
+}
+
+#[test]
+fn raw_run_decision_cannot_self_certify_trace_authority() {
+    let source = json!({
+        "contract": "mdp.run-execution.v1",
+        "valid": true,
+        "terminal_state": "success",
+        "authority_block": {"decision": {"decision": "ready"}, "verification": {}}
+    });
+    let trace = project_source_value(&source, "f".repeat(64));
+    assert_eq!(trace.status, "unavailable");
+    assert_eq!(trace.authority.decision_authority, "none");
+    assert!(!trace.authority.output_authority);
+    assert_eq!(trace.authority.verification_state, "not-verified");
 }
 
 #[test]

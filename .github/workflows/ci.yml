@@ -10,12 +10,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Check formatting
         run: cargo fmt --check
         working-directory: cli
       - name: Test CLI
         run: cargo test
         working-directory: cli
+      - name: Validate authority monotonicity corpus and registered projections
+        run: make validate-authority-conformance
       - name: Validate bundled template
         run: cargo run -- --json validate --dir ../plugin/assets/templates/basic
         working-directory: cli
@@ -26,6 +31,17 @@ jobs:
         run: |
           python3 -m unittest scripts/test_skill_eval_harness.py
           python3 scripts/skill-eval-harness.py --mdp-bin cli/target/debug/mdp
+
+  authority-mutations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned cargo-mutants
+        run: cargo install cargo-mutants --version 27.1.0 --locked
+      - name: Kill focused authority mutants
+        run: bash scripts/test-authority-mutations.sh
 
   pluxx:
     runs-on: ubuntu-latest

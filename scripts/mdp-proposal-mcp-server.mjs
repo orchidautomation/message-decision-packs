@@ -274,6 +274,53 @@ const parseRunnerJson = (stdout) => {
   }
 }
 
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+const validSourceAuthority = (authority, valid) => {
+  if (!isRecord(authority) || !Array.isArray(authority.obligations) || !Array.isArray(authority.reason_codes)) return false
+  if (authority.authority_level === 'authoritative' && authority.disposition === 'allow') {
+    return valid === true && authority.terminal === 'success' &&
+      ['available', 'not-applicable'].includes(authority.governed_generation) &&
+      authority.obligations.every((gate) => ['pass', 'not-applicable'].includes(gate?.result))
+  }
+  if (authority.authority_level === 'authoritative' && authority.disposition === 'block') {
+    return valid === false && authority.terminal === 'no-draft' && authority.governed_generation === 'absent' &&
+      authority.obligations.some((gate) => gate?.result === 'fail')
+  }
+  return authority.authority_level === 'unavailable' && authority.disposition === 'undetermined' &&
+    authority.terminal === 'authority-unavailable' && authority.governed_generation === 'absent'
+}
+
+const validProposalRunnerEnvelope = (parsed, cleanRunV1) => {
+  if (!isRecord(parsed)) return false
+  const baseKeys = [
+    'contract', 'runner_contract', 'mode', 'ok', 'audit_grade_eligible', 'decision',
+    'runner_assurance', 'run_id', 'run_manifest', 'readiness_report', 'workdir',
+    'artifacts', 'steps', 'caveats',
+  ]
+  const v1Keys = ['authority_contract', 'terminal_state', 'canonical_run', 'canonical_authority']
+  const allowed = new Set(cleanRunV1 ? [...baseKeys, ...v1Keys] : baseKeys)
+  if (Object.keys(parsed).some((key) => !allowed.has(key)) || [...allowed].some((key) => !(key in parsed))) return false
+  if (parsed.contract !== (cleanRunV1 ? 'mdp.proposal-runner-result.v1' : 'mdp.proposal-runner-result.v0')) return false
+  if (!['dry-run', 'mock', 'native'].includes(parsed.mode) || typeof parsed.ok !== 'boolean' ||
+      typeof parsed.audit_grade_eligible !== 'boolean' ||
+      !['not-run', 'audit-grade', 'advisory', 'blocked'].includes(parsed.decision) ||
+      !isRecord(parsed.artifacts) || !Array.isArray(parsed.steps) ||
+      !Array.isArray(parsed.caveats) || parsed.caveats.length === 0) return false
+  if (!cleanRunV1) return true
+
+  const run = parsed.canonical_run
+  const authorityBlock = parsed.canonical_authority
+  return parsed.authority_contract === 'mdp.run-execution.v1' &&
+    parsed.runner_assurance === 'see-canonical-authority' &&
+    isRecord(run) && run.contract === 'mdp.run-execution.v1' &&
+    run.terminal_state === parsed.terminal_state &&
+    validSourceAuthority(run.authority, run.valid) &&
+    isRecord(authorityBlock) && authorityBlock.contract === 'mdp.canonical-authority-block.v1' &&
+    authorityBlock.terminal_state === parsed.terminal_state &&
+    JSON.stringify(authorityBlock) === JSON.stringify(run.authority_block)
+}
+
 const proposalToolsSchema = {
   type: 'object',
   additionalProperties: false,
@@ -597,10 +644,11 @@ const callProposalRun = async (args) => {
     if (result.status === 0) throw error
   }
 
+  const validRunnerEnvelope = validProposalRunnerEnvelope(parsed, cleanRunV1)
   const auditGradeRejected =
     requireAuditGrade &&
-    (!parsed || parsed.decision !== 'audit-grade' || parsed.audit_grade_eligible !== true)
-  const ok = result.status === 0 && parsed && parsed.ok !== false && !auditGradeRejected
+    (!validRunnerEnvelope || parsed.decision !== 'audit-grade' || parsed.audit_grade_eligible !== true)
+  const ok = result.status === 0 && validRunnerEnvelope && parsed.ok !== false && !auditGradeRejected
   const structuredContent = {
     ok,
     contract: 'mdp.proposal-mcp-run-result.v0',
@@ -640,7 +688,7 @@ const callProposalRun = async (args) => {
     ],
   }
 
-  if (result.status !== 0 || auditGradeRejected) {
+  if (!validRunnerEnvelope) {
     return toolResult({
       isError: true,
       text: compact(JSON.stringify(structuredContent, null, 2)),
@@ -648,6 +696,10 @@ const callProposalRun = async (args) => {
     })
   }
 
+  // A well-formed runner envelope is a successful MCP transport even when
+  // its canonical decision is blocked or audit-grade was refused. Preserve
+  // the runner result and exit status as data; only malformed/missing output
+  // is a transport error.
   return toolResult({ text: JSON.stringify(structuredContent, null, 2), structuredContent })
 }
 
