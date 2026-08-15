@@ -1,7 +1,7 @@
 use crate::commands::briefs::prospect_brief_from_value;
 use crate::commands::health::{KNOWN_PRIMITIVES, KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
 use crate::commands::prompt_output::validate_prompt_output_value_with_source_audit;
-use crate::commands::routing::{check_claims_scoped, fit_prospect, route_scoped};
+use crate::commands::routing::{check_claims_scoped, fit_prospect_for_job, route_scoped};
 use crate::commands::{verify_output_file, verify_output_value};
 use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
@@ -162,7 +162,9 @@ fn run_fixture(
             false,
         )?,
         "fit" => match parse_prospect(path, fixture)? {
-            ParsedProspect::Valid(prospect) => fit_prospect(root, prospect)?,
+            ParsedProspect::Valid(prospect) => {
+                fit_prospect_for_job(root, prospect, fixture.job.as_deref())?
+            }
             ParsedProspect::Invalid(output) => output,
         },
         "brief" => match parse_prospect(path, fixture)? {
@@ -793,7 +795,10 @@ expect_load_order_contains:
         let result = eval_pack(&root).expect("eval should succeed");
 
         assert_eq!(result["valid"], false);
-        assert_eq!(result["issues"][0]["code"], "eval_fixture_missing_field");
+        assert_eq!(
+            result["issues"][0]["code"], "eval_fixture_missing_field",
+            "{result}"
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

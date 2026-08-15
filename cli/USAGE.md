@@ -318,6 +318,15 @@ artifacts across those rows. It includes:
 Legacy jobs without a decision-input binding return `available: false` and
 remain compatible with existing `lead_input_requirements` behavior.
 
+Job ingress is authoritative. A selected job with a direct or input-contract-
+inherited Decision Input Contract accepts qualification and brief authority
+only through `--normalized-input` plus the exact required lineage files.
+Detached `--prospect` returns non-success with
+`mdp.job-ingress.v1` status `blocked` and diagnostic
+`governed_job_requires_normalized_input`. Detached compatibility is limited to
+a selected job without a governed binding; `--job` is never silently ignored,
+and governed multi-job packs require explicit selection.
+
 `requirements` is deterministic and makes no network or model calls. The host
 owns source access and paid normalization. The normalization envelope always
 sets `draft_allowed: false`; a later `fit` or `brief --context` decision must be

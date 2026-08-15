@@ -15,7 +15,8 @@ use crate::model_steps::{MODEL_STEP_RESOLUTION_V1, resolve_model_steps};
 use crate::models::{
     DecisionInputAttemptStatus, DecisionInputAttribute, DecisionInputCondition,
     DecisionInputConditionOperator, DecisionInputContract, DecisionInputDisposition,
-    DecisionInputRequirement, DecisionInputSourceClass, Manifest, ProfileJob, ValueContract,
+    DecisionInputRequirement, DecisionInputSourceClass, InputContract, Manifest, ProfileJob,
+    ValueContract,
 };
 use crate::pack_io::{read_canonical_prompt_by_id, read_manifest, resolve_pack_path};
 use crate::product_foundation::{
@@ -27,6 +28,55 @@ use anyhow::{Result, anyhow};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+
+pub(crate) struct ResolvedJobDecisionInputs<'a> {
+    pub(crate) input_contracts: Vec<&'a InputContract>,
+    pub(crate) decision_input_contracts: Vec<&'a DecisionInputContract>,
+}
+
+pub(crate) fn resolve_job_decision_inputs<'a>(
+    manifest: &'a Manifest,
+    job: &'a ProfileJob,
+) -> Result<ResolvedJobDecisionInputs<'a>> {
+    let input_contracts = job
+        .input_contracts
+        .iter()
+        .map(|id| {
+            manifest
+                .input_contracts
+                .iter()
+                .find(|contract| contract.id == *id)
+                .ok_or_else(|| anyhow!("job {} references missing input contract {id}", job.id))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut decision_input_ids = job
+        .decision_input_contracts
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    for input_contract in &input_contracts {
+        decision_input_ids.extend(input_contract.decision_input_contracts.iter().cloned());
+    }
+    let decision_input_contracts = decision_input_ids
+        .iter()
+        .map(|id| {
+            manifest
+                .decision_input_contracts
+                .iter()
+                .find(|contract| contract.id == *id)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "job {} references missing decision input contract {id}",
+                        job.id
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(ResolvedJobDecisionInputs {
+        input_contracts,
+        decision_input_contracts,
+    })
+}
 
 pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
     let manifest = read_manifest(root)?;
@@ -104,37 +154,13 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         }
     }
     let product_foundation = resolution_json(&product_foundation_resolution?);
-    let selected_input_contracts = job
-        .input_contracts
+    let resolved_inputs = resolve_job_decision_inputs(&manifest, job)?;
+    let selected_input_contracts = resolved_inputs.input_contracts;
+    let selected_contracts = resolved_inputs.decision_input_contracts;
+    let selected_ids = selected_contracts
         .iter()
-        .map(|id| {
-            manifest
-                .input_contracts
-                .iter()
-                .find(|contract| contract.id == *id)
-                .ok_or_else(|| anyhow!("job {job_id} references missing input contract {id}"))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let mut selected_ids = job
-        .decision_input_contracts
-        .iter()
-        .cloned()
+        .map(|contract| contract.id.clone())
         .collect::<BTreeSet<_>>();
-    for input_contract in &selected_input_contracts {
-        selected_ids.extend(input_contract.decision_input_contracts.iter().cloned());
-    }
-    let selected_contracts = selected_ids
-        .iter()
-        .map(|id| {
-            manifest
-                .decision_input_contracts
-                .iter()
-                .find(|contract| contract.id == *id)
-                .ok_or_else(|| {
-                    anyhow!("job {job_id} references missing decision input contract {id}")
-                })
-        })
-        .collect::<Result<Vec<_>>>()?;
     if selected_contracts.is_empty() && model_task.is_null() {
         let model_steps_blocked = model_steps["status"] == "blocked";
         let model_step_diagnostics = model_steps["diagnostics"]

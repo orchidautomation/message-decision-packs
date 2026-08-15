@@ -2,8 +2,8 @@ use crate::artifact_hash::{canonical_json_sha256, sha256_hex};
 use crate::commands::prompt_output::{
     read_bounded_bytes, validate_prompt_output_file_with_lineage_inputs,
 };
-use crate::commands::requirements::requirements;
-use crate::models::{CardKind, QualificationGates};
+use crate::commands::requirements::{requirements, resolve_job_decision_inputs};
+use crate::models::{CardKind, Manifest, QualificationGates};
 use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
 use crate::routing::{entry_context_scoped, entry_route_scoped, select_cards};
 use crate::scope::{
@@ -131,8 +131,16 @@ fn eval_fixture(
 }
 
 pub(crate) fn fit(root: &Path, prospect_path: &Path) -> Result<Value> {
+    fit_for_job(root, prospect_path, None)
+}
+
+pub(crate) fn fit_for_job(
+    root: &Path,
+    prospect_path: &Path,
+    requested_job: Option<&str>,
+) -> Result<Value> {
     let prospect = read_prospect(prospect_path)?;
-    fit_prospect(root, prospect)
+    fit_prospect_for_job(root, prospect, requested_job)
 }
 
 pub(crate) fn fit_normalized(
@@ -201,11 +209,189 @@ pub(crate) fn fit_normalized(
     authority["normalized_output_sha256"] = json!(sha256_hex(&normalized_bytes));
     authority["projected_prospect_sha256"] =
         json!(canonical_json_sha256(&normalized["normalized_prospect"])?);
-    fit_prospect_with_signal_authority(root, prospect, Some(authority))
+    let result = fit_prospect_with_signal_authority(root, prospect, Some(authority))?;
+    let decision_input_contracts = compiled["decision_input_contracts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|contract| contract["id"].as_str())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    Ok(attach_accepted_job_ingress(
+        result,
+        job_id,
+        Some(decision_input_contracts),
+    ))
 }
 
-pub(crate) fn fit_prospect(root: &Path, prospect: crate::models::Prospect) -> Result<Value> {
-    fit_prospect_with_signal_authority(root, prospect, None)
+pub(crate) fn fit_prospect_for_job(
+    root: &Path,
+    prospect: crate::models::Prospect,
+    requested_job: Option<&str>,
+) -> Result<Value> {
+    let manifest = read_manifest(root)?;
+    let ingress = resolve_job_ingress(&manifest, requested_job)?;
+    let result = fit_prospect_with_signal_authority(root, prospect, None)?;
+    Ok(match ingress {
+        Some(ingress) if ingress.is_governed() => block_detached_governed_fit(result, &ingress),
+        Some(ingress) => attach_legacy_job_ingress(result, &ingress),
+        None => result,
+    })
+}
+
+pub(crate) fn fit_prospect_with_governed_authority(
+    root: &Path,
+    prospect: crate::models::Prospect,
+    job_id: &str,
+    mut authority: Value,
+) -> Result<Value> {
+    authority["contract"] = json!("mdp.signal-qualification-authority.v1");
+    authority["job_id"] = json!(job_id);
+    authority["authority_class"] = json!("lineage-validated");
+    authority["aggregate_authority"] = json!("lineage-validated");
+    authority["projection_status"] = json!("lineage-validated");
+    authority["eligible_signal_count"] = json!(0);
+    authority["roles"] =
+        json!({"fit": false, "why-now": false, "person-resolution": false, "disqualifier": false});
+    authority["accepted"] = json!([]);
+    authority["rejected"] = json!([]);
+    authority["trust_boundary"] = json!(
+        "validated normalized-input lineage; does not attest host authenticity or source truth"
+    );
+    let result = fit_prospect_with_signal_authority(root, prospect, Some(authority))?;
+    Ok(attach_accepted_job_ingress(result, job_id, None))
+}
+
+fn attach_accepted_job_ingress(
+    mut result: Value,
+    job_id: &str,
+    decision_input_contracts: Option<Vec<String>>,
+) -> Value {
+    let mut ingress = json!({
+        "contract": "mdp.job-ingress.v1",
+        "status": "accepted",
+        "input_authority": "lineage-validated-normalized-input",
+        "required_authority": "lineage-validated-normalized-input",
+        "diagnostics": []
+    });
+    if let Some(decision_input_contracts) = decision_input_contracts {
+        ingress["decision_input_contracts"] = json!(decision_input_contracts);
+    }
+    result["job_id"] = json!(job_id);
+    result["ingress"] = ingress;
+    result
+}
+
+#[derive(Debug)]
+pub(crate) struct JobIngress {
+    pub(crate) job_id: String,
+    pub(crate) decision_input_contracts: Vec<String>,
+}
+
+impl JobIngress {
+    pub(crate) fn is_governed(&self) -> bool {
+        !self.decision_input_contracts.is_empty()
+    }
+}
+
+pub(crate) fn resolve_job_ingress(
+    manifest: &Manifest,
+    requested_job: Option<&str>,
+) -> Result<Option<JobIngress>> {
+    let job_ingresses = manifest
+        .jobs
+        .iter()
+        .map(|job| {
+            let contracts = resolve_job_decision_inputs(manifest, job)?
+                .decision_input_contracts
+                .iter()
+                .map(|contract| contract.id.clone())
+                .collect::<Vec<_>>();
+            Ok((job, contracts))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let has_governed_jobs = job_ingresses
+        .iter()
+        .any(|(_, contracts)| !contracts.is_empty());
+    let selected = if let Some(job_id) = requested_job {
+        match job_ingresses.iter().find(|(job, _)| job.id == job_id) {
+            Some(job_ingress) => Some(job_ingress),
+            None if !has_governed_jobs => None,
+            None => {
+                return Err(anyhow!(
+                    "job_not_found: selected job {job_id} is not declared"
+                ));
+            }
+        }
+    } else {
+        if !has_governed_jobs {
+            None
+        } else if job_ingresses.len() == 1 {
+            job_ingresses.first()
+        } else {
+            return Err(anyhow!(
+                "governed_job_required: --job must select one declared job before detached input can be evaluated"
+            ));
+        }
+    };
+
+    Ok(selected.map(|(job, decision_input_contracts)| JobIngress {
+        job_id: job.id.clone(),
+        decision_input_contracts: decision_input_contracts.clone(),
+    }))
+}
+
+fn block_detached_governed_fit(mut result: Value, ingress: &JobIngress) -> Value {
+    let diagnostic = json!({
+        "code": "governed_job_requires_normalized_input",
+        "severity": "error",
+        "message": "This job binds a decision-input contract; detached prospect input cannot satisfy its normalized-input and lineage requirements."
+    });
+    result["job_id"] = json!(&ingress.job_id);
+    result["valid"] = json!(false);
+    result["ingress"] = json!({
+        "contract": "mdp.job-ingress.v1",
+        "status": "blocked",
+        "input_authority": "detached-legacy",
+        "required_authority": "lineage-validated-normalized-input",
+        "decision_input_contracts": &ingress.decision_input_contracts,
+        "diagnostics": [diagnostic.clone()]
+    });
+    result["context"]["ready"] = json!(false);
+    if let Some(missing) = result["context"]["missing"].as_array_mut() {
+        missing.push(json!("governed_normalized_input"));
+        missing.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+        missing.dedup();
+    }
+    if let Some(missing) = result["context"]["missing_requirements"].as_array_mut() {
+        missing.push(json!({
+            "scope": "job-ingress",
+            "field": "normalized_input",
+            "path": "jobs[].decision_input_contracts",
+            "reason": diagnostic["message"]
+        }));
+    }
+    result["matches"] = json!([]);
+    if result["status"] != "disqualified" {
+        result["status"] = json!("insufficient-context");
+        result["decision"] = json!(
+            "Do not qualify or draft; provide the governed normalized input and exact lineage artifacts."
+        );
+    }
+    result
+}
+
+fn attach_legacy_job_ingress(mut result: Value, ingress: &JobIngress) -> Value {
+    result["job_id"] = json!(&ingress.job_id);
+    result["ingress"] = json!({
+        "contract": "mdp.job-ingress.v1",
+        "status": "legacy-compatible",
+        "input_authority": "detached-legacy",
+        "required_authority": "legacy",
+        "decision_input_contracts": [],
+        "diagnostics": []
+    });
+    result
 }
 
 fn fit_prospect_with_signal_authority(
@@ -303,6 +489,7 @@ fn fit_prospect_with_signal_authority(
     };
     Ok(json!({
         "contract": "mdp.fit.v0",
+        "valid": true,
         "prospect": prospect,
         "scope": scope,
         "portfolio_sensitive": portfolio_sensitive,
@@ -2181,6 +2368,42 @@ mod tests {
         root
     }
 
+    fn govern_job_through_input_contract(root: &Path, job_id: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["decision_input_contracts"] = serde_yaml::from_str(
+            r#"
+- id: governed-prospect
+  version: v1
+  normalization:
+    prompt: normalize-prospect-row
+    prompt_version: v1
+    normalized_schema_ref: mdp.normalized-decision-input.v1
+  source_classes: [user_provided]
+  attributes: []
+"#,
+        )
+        .expect("decision input contract should parse");
+        manifest["input_contracts"][0]["decision_input_contracts"] =
+            serde_yaml::from_str("[governed-prospect]")
+                .expect("input contract binding should parse");
+        assert!(
+            manifest["jobs"]
+                .as_sequence()
+                .expect("jobs should be a sequence")
+                .iter()
+                .any(|job| job["id"].as_str() == Some(job_id)),
+            "fixture must contain the selected job"
+        );
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
     fn add_route_product_foundation(root: &Path) {
         let manifest_path = root.join(".mdp/manifest.yaml");
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
@@ -2562,7 +2785,7 @@ optional:
     }
 
     #[test]
-    fn fit_gate_allows_generated_prospect() {
+    fn legacy_fit_gate_allows_generated_prospect_without_governed_bindings() {
         let root = temp_pack("fit-contract");
         let prospect_path = root.join("examples").join("clay-row.json");
 
@@ -2578,6 +2801,128 @@ optional:
         );
         assert!(result["matches"].as_array().expect("matches array").len() > 0);
 
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_job_rejects_detached_prospect_before_qualification() {
+        let root = temp_pack("governed-detached-fit");
+        govern_job_through_input_contract(&root, "prospect-fit-or-brief");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result = fit_for_job(&root, &prospect_path, Some("prospect-fit-or-brief"))
+            .expect("governed detached fit should return a deterministic result");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert_ne!(
+            result["decision"],
+            "Proceed to route/brief with stated assumptions."
+        );
+        assert_eq!(result["job_id"], "prospect-fit-or-brief");
+        assert_eq!(result["ingress"]["status"], "blocked");
+        assert_eq!(
+            result["ingress"]["diagnostics"][0]["code"],
+            "governed_job_requires_normalized_input"
+        );
+        assert_eq!(result["context"]["ready"], false);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_multi_job_pack_requires_explicit_job_selection() {
+        let root = temp_pack("governed-job-required");
+        govern_job_through_input_contract(&root, "prospect-fit-or-brief");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let error = fit(&root, &prospect_path)
+            .expect_err("a governed multi-job pack must not guess the selected job");
+
+        assert!(error.to_string().contains("governed_job_required"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn direct_job_decision_input_binding_also_blocks_detached_fit() {
+        let root = temp_pack("direct-governed-detached-fit");
+        govern_job_through_input_contract(&root, "prospect-fit-or-brief");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["input_contracts"][0]["decision_input_contracts"] =
+            serde_yaml::Value::Sequence(Vec::new());
+        manifest["jobs"][0]["decision_input_contracts"] =
+            serde_yaml::from_str("[governed-prospect]").expect("direct job binding should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let result = fit_for_job(
+            &root,
+            &root.join("examples/clay-row.json"),
+            Some("prospect-fit-or-brief"),
+        )
+        .expect("direct governed binding should return a deterministic block");
+
+        assert_eq!(result["ingress"]["status"], "blocked");
+        assert_eq!(result["valid"], false);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn detached_fit_rejects_unknown_explicit_job() {
+        let root = temp_pack("unknown-detached-job");
+        govern_job_through_input_contract(&root, "prospect-fit-or-brief");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let error = fit_for_job(&root, &prospect_path, Some("not-a-declared-job"))
+            .expect_err("--job must never be ignored");
+
+        assert!(error.to_string().contains("job_not_found"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn detached_fit_rejects_dangling_input_contract_before_legacy_fallback() {
+        let root = temp_pack("dangling-detached-input-contract");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][0]["input_contracts"] =
+            serde_yaml::from_str("[missing-prospect-contract]")
+                .expect("input contract list should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let error = fit_for_job(
+            &root,
+            &root.join("examples/clay-row.json"),
+            Some("prospect-fit-or-brief"),
+        )
+        .expect_err("a dangling input contract must not become legacy-compatible");
+
+        assert!(error.to_string().contains("missing input contract"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_legacy_job_preserves_bounded_detached_compatibility() {
+        let root = temp_pack("explicit-legacy-job");
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result = fit_for_job(&root, &prospect_path, Some("prospect-fit-or-brief"))
+            .expect("an ungoverned selected job should retain legacy compatibility");
+
+        assert_eq!(result["status"], "fit");
+        assert_eq!(result["ingress"]["status"], "legacy-compatible");
+        assert_eq!(result["signal_authority"]["authority_class"], "legacy");
         let _ = std::fs::remove_dir_all(root);
     }
 

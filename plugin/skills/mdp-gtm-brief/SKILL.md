@@ -47,14 +47,17 @@ For `outbound-copy-brief` or `outbound-copy-review`, ignore Decision Input
 the selected generation or review job is runnable. Require
 `data.model_task.status` to be exactly `ready`. Both modes require a supplied
 prospect artifact: review copy alone is insufficient to compile bounded
-context. With a prospect JSON file, run:
+context. Inspect `data.decision_input_contracts` for the selected job before
+choosing an ingress. Only when that resolved list is empty may a detached
+prospect be used:
 
 ```bash
 mdp --json brief --dir PACK_ROOT --prospect PROSPECT_JSON --job JOB_ID \
   --channel CHANNEL --context --routed-context-out ROUTED_CONTEXT_JSON
 ```
 
-With a validated v2 normalized artifact, use the same lineage inputs from step
+When the resolved list is non-empty, detached input is forbidden. With a
+validated v2 normalized artifact, use the same exact lineage inputs from step
 5:
 
 ```bash
@@ -64,6 +67,11 @@ mdp --json brief --dir PACK_ROOT --normalized-input OUTPUT_JSON \
   --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON --job JOB_ID \
   --channel CHANNEL --context --routed-context-out ROUTED_CONTEXT_JSON
 ```
+
+For another supported normalized contract version, use only the exact
+normalized-input and lineage arguments compiled by `mdp requirements`; never
+extract a prospect JSON as a fallback. If the required normalized or lineage
+artifact is missing, stop before bounded context or drafting.
 
 Use only the exact compiled prompt, declared inputs, version, output schema,
 and a `ready` minimal-context receipt. Require the routed-context artifact to
@@ -210,9 +218,12 @@ Load only the selected mode.
 - Supply every required portfolio `--scope` dimension; never silently choose a product, brand, region, or offer.
 - A passing claim check is not approval to send.
 - Preserve CLI diagnostics and gaps verbatim enough for the next reviewer to act.
-- Legacy or detached prospect signals remain `legacy` or `unassessed` and
-  cannot satisfy explicit `fit`, `why-now`, `person-resolution`, or
-  `disqualifier` roles through keywords or source prose.
+- Detached prospect input is allowed only for a selected job with no direct or
+  transitive Decision Input Contract. Treat
+  `governed_job_requires_normalized_input` as a terminal no-draft result.
+  Legacy signals remain `legacy` or `unassessed` and cannot satisfy explicit
+  `fit`, `why-now`, `person-resolution`, or `disqualifier` roles through
+  keywords or source prose.
 - When decision authority must be isolated from a context-rich authoring chat,
   create one `mdp.run-request.v1` per operation and use `mdp run`. A
   deterministic request calls no model and reports inference as

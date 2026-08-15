@@ -102,8 +102,10 @@ For a v2 chain, validate the exact source binding, request, collected results,
 prompt, and normalized envelope together. Then exercise `fit` or `brief` with
 `--normalized-input` and the same lineage artifacts. Compare accepted/rejected
 projection IDs, roles, authority classes, conflicts, and diagnostics across
-JSON and human output. Detached `--prospect` input must remain legacy or
-unassessed. `lineage-validated` may claim internal consistency only, never host
+JSON and human output. Detached `--prospect` input on a governed job must fail
+closed with `governed_job_requires_normalized_input`; it may remain compatible
+only for a selected job without direct or transitive Decision Input Contracts.
+`lineage-validated` may claim internal consistency only, never host
 authenticity, authorization, non-repudiation, or observation truth.
 
 Preview a portable compilation when needed:

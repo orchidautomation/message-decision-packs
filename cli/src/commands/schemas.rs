@@ -3103,8 +3103,37 @@ fn canonical_skill_id_array_schema() -> Value {
 fn brief_schema() -> Value {
     json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Brief Contracts v0", "oneOf": [
         {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "scope", "portfolio_sensitive", "draft_status", "required_load_order", "context", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "draft_status": {"enum": ["ready", "blocked"]}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "context": context_schema(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "scope", "portfolio_sensitive", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"], "properties": {"signal_authority": {"type": "object", "required": ["contract", "authority_class", "eligible_signal_count", "roles", "accepted", "rejected"], "properties": {"contract": {"const": "mdp.signal-qualification-authority.v1"}, "authority_class": {"enum": ["lineage-validated", "legacy", "unassessed"]}, "eligible_signal_count": {"type": "integer", "minimum": 0}, "roles": {"type": "object"}, "accepted": {"type": "array"}, "rejected": {"type": "array"}}}}}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "scope", "portfolio_sensitive", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "valid": {"type": "boolean"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"], "properties": {"valid": {"type": "boolean"}, "job_id": {"type": "string"}, "ingress": job_ingress_schema(), "signal_authority": {"type": "object", "required": ["contract", "authority_class", "eligible_signal_count", "roles", "accepted", "rejected"], "properties": {"contract": {"const": "mdp.signal-qualification-authority.v1"}, "authority_class": {"enum": ["lineage-validated", "legacy", "unassessed"]}, "eligible_signal_count": {"type": "integer", "minimum": 0}, "roles": {"type": "object"}, "accepted": {"type": "array"}, "rejected": {"type": "array"}}}}}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
     ]})
+}
+
+fn job_ingress_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["contract", "status", "input_authority", "required_authority", "diagnostics"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": "mdp.job-ingress.v1"},
+            "status": {"enum": ["accepted", "blocked", "legacy-compatible"]},
+            "input_authority": {"enum": ["detached-legacy", "lineage-validated-normalized-input"]},
+            "required_authority": {"enum": ["legacy", "lineage-validated-normalized-input"]},
+            "decision_input_contracts": string_array(),
+            "diagnostics": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                    "type": "object",
+                    "required": ["code", "severity", "message"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "code": {"enum": ["governed_job_requires_normalized_input"]},
+                        "severity": {"const": "error"},
+                        "message": {"type": "string", "maxLength": 1024}
+                    }
+                }
+            }
+        }
+    })
 }
 
 fn human_brief_schema() -> Value {
@@ -4673,6 +4702,14 @@ mod tests {
                 .expect("required fields")
                 .iter()
                 .all(|field| field != "product_foundation")
+        );
+        assert!(
+            result["oneOf"][1]["required"]
+                .as_array()
+                .expect("required message brief fields")
+                .iter()
+                .all(|field| field != "valid"),
+            "mdp.message-brief.v0 must keep pre-ingress artifacts schema-valid"
         );
     }
 

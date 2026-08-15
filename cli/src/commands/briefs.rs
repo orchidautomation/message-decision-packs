@@ -110,7 +110,7 @@ pub(crate) fn prospect_brief_from_value_with_context(
     job: Option<&str>,
     include_context: bool,
 ) -> Result<Value> {
-    let fit_result = crate::commands::routing::fit_prospect(root, prospect.clone())?;
+    let fit_result = crate::commands::routing::fit_prospect_for_job(root, prospect.clone(), job)?;
     prospect_brief_from_fit_with_context(root, prospect, fit_result, channel, job, include_context)
 }
 
@@ -197,8 +197,10 @@ pub(crate) fn prospect_brief_from_fit_with_context(
                 .unwrap_or("Portfolio scope did not resolve to draft-safe bounded context.")
         )
     };
+    let valid = fit_result["valid"].as_bool().unwrap_or(true);
     let mut payload = json!({
         "contract": "mdp.message-brief.v0",
+        "valid": valid,
         "pack": {"id": manifest.id, "name": manifest.name, "version": manifest.version},
         "runtime_context": runtime_context.clone(),
         "channel": channel,
@@ -263,6 +265,9 @@ fn brief_routing_task(explicit_job: Option<&str>, foundation_job: &str, channel:
 }
 
 fn brief_no_draft_reason(fit_result: &Value) -> String {
+    if fit_result["ingress"]["status"] == "blocked" {
+        return "The selected job requires governed normalized input with exact lineage artifacts; detached prospect input is not qualification or draft authority.".to_string();
+    }
     let status = fit_result["status"]
         .as_str()
         .unwrap_or("insufficient-context");
@@ -329,6 +334,28 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
             "no_draft_reason",
             display_value(&brief["no_draft_reason"]),
         );
+    }
+    if fit["ingress"]["status"].is_string() {
+        bullet(
+            &mut out,
+            "ingress_status",
+            display_value(&fit["ingress"]["status"]),
+        );
+        for diagnostic in fit["ingress"]["diagnostics"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            bullet(
+                &mut out,
+                "ingress_diagnostic",
+                format!(
+                    "{}: {}",
+                    display_value(&diagnostic["code"]),
+                    display_value(&diagnostic["message"])
+                ),
+            );
+        }
     }
     out.push('\n');
 
@@ -945,6 +972,34 @@ mod tests {
         root
     }
 
+    fn govern_prospect_input(root: &Path) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["decision_input_contracts"] = serde_yaml::from_str(
+            r#"
+- id: governed-prospect
+  version: v1
+  normalization:
+    prompt: normalize-prospect-row
+    prompt_version: v1
+    normalized_schema_ref: mdp.normalized-decision-input.v1
+  source_classes: [user_provided]
+  attributes: []
+"#,
+        )
+        .expect("decision input contract should parse");
+        manifest["input_contracts"][0]["decision_input_contracts"] =
+            serde_yaml::from_str("[governed-prospect]")
+                .expect("input contract binding should parse");
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
     fn add_selected_foundation_gap(root: &Path) {
         let manifest_path = root.join(".mdp/manifest.yaml");
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
@@ -1026,6 +1081,37 @@ mod tests {
                 .as_array()
                 .expect("foundation load order")
                 .is_empty()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn governed_job_detached_brief_cannot_become_ready() {
+        let root = temp_pack("governed-detached-brief");
+        govern_prospect_input(&root);
+        let prospect_path = root.join("examples").join("clay-row.json");
+
+        let result = prospect_brief_with_context(
+            &root,
+            &prospect_path,
+            "linkedin",
+            Some("prospect-fit-or-brief"),
+            true,
+        )
+        .expect("governed detached brief should return a deterministic result");
+
+        assert_eq!(result["fit"]["status"], "insufficient-context");
+        assert_eq!(result["draft_status"], "no-draft");
+        assert_eq!(
+            result["fit"]["ingress"]["diagnostics"][0]["code"],
+            "governed_job_requires_normalized_input"
+        );
+        assert!(
+            result["agent_instruction"]
+                .as_str()
+                .expect("agent instruction")
+                .starts_with("Stop before drafting")
         );
 
         let _ = std::fs::remove_dir_all(root);

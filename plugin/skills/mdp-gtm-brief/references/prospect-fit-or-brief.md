@@ -69,10 +69,12 @@ belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
      source-attempt request. Stop before extracting `normalized_prospect`
      unless validation passes and
      `normalization_trace.fit_readiness.ready_for_mdp_fit` is exactly `true`.
-3. For the legacy path only, run the CLI-owned detached-prospect decision:
+3. For the legacy path only, first confirm the selected job has no direct or
+   transitive Decision Input Contract. Always pass the selected job so the CLI
+   cannot silently choose or ignore one, then run:
 
 ```bash
-mdp --json fit --dir PACK_ROOT --prospect PROSPECT_JSON
+mdp --json fit --dir PACK_ROOT --job JOB_ID --prospect PROSPECT_JSON
 ```
 
 4. If the user asked only for fit, return status, matched rules, disqualifiers, qualification gates, missing/invalid requirements, and gaps.
@@ -84,10 +86,10 @@ For v2, keep the verified envelope attached:
 mdp --json --summary brief --context --dir PACK_ROOT --normalized-input OUTPUT_JSON --prompt BOUND_PROMPT_PATH --source-binding SOURCE_BINDING_JSON --source-attempt-request SOURCE_ATTEMPT_REQUEST_JSON --collected-attempt-results COLLECTED_ATTEMPT_RESULTS_JSON --job prospect-fit-or-brief --channel CHANNEL
 ```
 
-For v1/legacy only, use the detached prospect:
+For a truly ungoverned legacy job only, use the detached prospect:
 
 ```bash
-mdp --json --summary brief --context --dir PACK_ROOT --prospect PROSPECT_JSON --channel CHANNEL
+mdp --json --summary brief --context --dir PACK_ROOT --job JOB_ID --prospect PROSPECT_JSON --channel CHANNEL
 ```
 
 Use `--out BRIEF_JSON --dry-run` before a requested durable write. Use `--readable` only when the user wants Markdown.
@@ -97,6 +99,8 @@ Use `--out BRIEF_JSON --dry-run` before a requested durable write. Use `--readab
 - Insufficient or disqualified means no draft-ready brief.
 - Missing person readiness means no invented contact.
 - Unknown contract values remain validation issues or gaps; do not silently coerce them.
+- `governed_job_requires_normalized_input` is terminal. Do not retry through
+  detached input, extract `normalized_prospect`, or draft from the blocked context.
 - Report `lineage-validated`, `legacy`, and `unassessed` exactly. Lineage
   validation proves internal linkage, not host authenticity or truth.
 - Preserve conflict receipts and stop no-draft on unresolved conflict. Never
