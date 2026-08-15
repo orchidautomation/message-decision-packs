@@ -309,6 +309,18 @@ fn projections_preserve_or_reduce_authority() {
         GovernedGeneration::Absent,
         ProjectionFidelity::Unavailable,
     ));
+    assert!(!block.permits_projection(
+        AuthorityLevel::Informational,
+        DecisionDisposition::Block,
+        GovernedGeneration::Absent,
+        ProjectionFidelity::Unavailable,
+    ));
+    assert!(block.permits_projection(
+        AuthorityLevel::Informational,
+        DecisionDisposition::Block,
+        GovernedGeneration::Absent,
+        ProjectionFidelity::Faithful,
+    ));
 }
 
 fn level(value: u8) -> AuthorityLevel {

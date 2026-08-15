@@ -31,4 +31,7 @@ if [ "$candidate_count" -gt "$MAX_CANDIDATES" ]; then
 fi
 
 printf 'authority mutation candidates=%s version=%s\n' "$candidate_count" "$actual_version"
-cargo mutants --file 'src/authority/mod.rs' --re "$selector" --timeout 40 --jobs 2
+# The CLI embeds repository-level plugin and script assets with include_str!, so
+# cargo-mutants' crate-only scratch copy cannot compile the unmutated baseline.
+# CI runs in a disposable checkout, making the single-worker in-place mode safe.
+cargo mutants --file 'src/authority/mod.rs' --re "$selector" --timeout 40 --in-place
