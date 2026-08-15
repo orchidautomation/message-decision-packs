@@ -1260,7 +1260,7 @@ fn validate_native_request_size_before_bundle(
     let step =
         resolve_selected_model_step(staged_pack, manifest, &identity.job_id, &request.operation)
             .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "model-step-not-declared"))?;
-    validate_generative_job_gates(staged_pack, manifest, &identity.job_id, step.phase)?;
+    validate_generative_job_gates(staged_pack, &identity.job_id, step.phase)?;
     validate_selected_prompt(staged_pack, staged_prompt, &step)?;
     validate_step_inputs(&step, staged_inputs)?;
     validate_generative_input_gates(staged_inputs)?;
@@ -1385,7 +1385,7 @@ where
     let step =
         resolve_selected_model_step(staged_pack, manifest, &identity.job_id, &request.operation)
             .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "model-step-not-declared"))?;
-    validate_generative_job_gates(staged_pack, manifest, &identity.job_id, step.phase)?;
+    validate_generative_job_gates(staged_pack, &identity.job_id, step.phase)?;
     validate_selected_prompt(staged_pack, staged_prompt, &step)?;
     validate_step_inputs(&step, staged_inputs)?;
     validate_generative_input_gates(staged_inputs)?;
@@ -1684,16 +1684,15 @@ fn validate_selected_prompt(
 
 fn validate_generative_job_gates(
     staged_pack: &Path,
-    manifest: &crate::models::Manifest,
     job_id: &str,
     phase: ModelStepPhase,
 ) -> Result<()> {
     let compiled = requirements(staged_pack, job_id)
         .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "job-readiness-unavailable"))?;
     if compiled["valid"] != true
+        || compiled["profile_activation"]["status"] == "blocked"
         || compiled["product_foundation"]["status"] == "blocked"
         || compiled["model_steps"]["status"] != "ready"
-        || manifest.profile_eval.blocks_activation()
         || (phase != ModelStepPhase::Normalization
             && (compiled["status"] != "ready" || compiled["draft_allowed"] == false))
     {
@@ -3174,19 +3173,23 @@ mod tests {
     }
 
     #[test]
-    fn blocked_pack_readiness_never_invokes_the_generative_driver() {
-        let root = temp_path("generative-readiness-block");
+    fn computed_pack_readiness_block_never_invokes_the_generative_driver() {
+        let root = temp_path("computed-generative-readiness-block");
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let source_pack = repository.join("plugin/assets/templates/basic");
         let pack = root.join("pack");
         fs::create_dir_all(&root).unwrap();
         fs::create_dir(&pack).unwrap();
         super::copy_pack(&source_pack, &pack).unwrap();
-        let manifest_path = pack.join(".mdp/manifest.yaml");
-        let manifest = fs::read_to_string(&manifest_path)
-            .unwrap()
-            .replace("status: ready", "status: needs-review");
-        fs::write(&manifest_path, manifest).unwrap();
+        for entry in fs::read_dir(pack.join(".mdp/evals")).expect("evals should be readable") {
+            let path = entry.expect("eval entry should load").path();
+            let raw = fs::read_to_string(&path).expect("eval should be readable");
+            fs::write(
+                path,
+                raw.replace("category: prompt-output-validation", "category: proceed"),
+            )
+            .expect("eval should be writable");
+        }
         let raw = root.join("raw-row.json");
         fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
         let request = generative_request_fixture(&pack, &raw);

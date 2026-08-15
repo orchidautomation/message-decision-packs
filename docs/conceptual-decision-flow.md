@@ -284,7 +284,7 @@ When a question mixes templates, profiles, readiness, routing, and drafting, kee
 | Brief | Model-ready context contract and `draft_status` | Sending, sequencing, or being final copy |
 | Check-claims | Post-draft approval gate for claims and deterministic output guardrails | Creating missing proof |
 
-`activation_ready` is structural readiness for the profile/template: mapped primitives, input contracts, jobs, and eval categories are present enough for deterministic validation. It is not market readiness, customer readiness, commercial readiness, compliance approval, or proof that a real account should be contacted.
+`activation_ready` is structural readiness for the profile/template: mapped primitives, input contracts, jobs, and eval categories are present enough for deterministic validation. Runtime consumers project that result through the shared `profile_activation` decision and fail closed before pack readiness, draft permission, routed drafting context, conformance qualification, or model/driver execution. Default validation may remain warning-first for declared activation blockers; warning-first does not mean runtime-ready. Activation readiness is not market readiness, customer readiness, commercial readiness, compliance approval, or proof that a real account should be contacted.
 
 GTM and proposal are profiles/templates over the same primitives. Proposal terms such as opportunity, compliance gaps, proof, and win themes stay in profile-owned card IDs, prompts, attributes, signals, traces, gaps, jobs, and evals. They do not become new core objects unless the CLI contract explicitly changes.
 

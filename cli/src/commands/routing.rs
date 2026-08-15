@@ -77,6 +77,7 @@ pub(crate) fn route_scoped(
         "load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
         "product_foundation": routed_entries["product_foundation"].clone(),
         "product_foundation_load_order": routed_entries["product_foundation_load_order"].clone(),
+        "profile_activation": routed_entries["profile_activation"].clone(),
         "portfolio_sensitive": portfolio_sensitive,
         "draft_status": if routed_entries["status"] == "blocked" { "blocked" } else { "ready" }
     });

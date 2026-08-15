@@ -1127,11 +1127,14 @@ fn compile_candidate(
         && pack_content_sha256(&loaded.pack_root)? == candidate.pack_release.portable_digest
         && candidate.cli_version == env!("CARGO_PKG_VERSION");
     let selected_job_valid = compiled_requirements["valid"] == true
+        && compiled_requirements["status"] == "ready"
+        && compiled_requirements["profile_activation"]["status"] != "blocked"
         && compiled_requirements["job"]["id"] == candidate.job_id;
     let requirements_match = staged_requirements == Some(&compiled_requirements);
     let skills_ready = compiled_skills["valid"] == true
+        && compiled_skills["profile_activation"]["status"] != "blocked"
         && compiled_skills["requested_job"] == candidate.job_id
-        && !compiled_skills["recommendation"].is_null();
+        && compiled_skills["recommendation"]["pack_ready"] == true;
 
     let evaluator = load_evaluator(candidate, loaded)?;
     let lifecycle = load_lifecycle(candidate, loaded)?;

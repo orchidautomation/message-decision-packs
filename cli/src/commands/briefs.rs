@@ -61,6 +61,7 @@ pub(crate) fn emit_brief_scoped(
         "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
         "product_foundation": context["product_foundation"].clone(),
         "product_foundation_load_order": context["product_foundation_load_order"].clone(),
+        "profile_activation": context["profile_activation"].clone(),
         "context": context,
         "decision_trace": [
             {"step": "load_manifest", "reason": "discover pack metadata and card index"},
@@ -222,6 +223,7 @@ pub(crate) fn prospect_brief_from_fit_with_context(
         "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
         "product_foundation": context["product_foundation"].clone(),
         "product_foundation_load_order": context["product_foundation_load_order"].clone(),
+        "profile_activation": context["profile_activation"].clone(),
         "route": route,
         "decision_trace": [
             {"step": "read_prospect", "reason": "use supplied prospect/account JSON as task input"},
