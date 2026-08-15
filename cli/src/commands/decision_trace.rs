@@ -416,6 +416,7 @@ fn project_validated_prompt_output(
     let mut builder = TraceBuilder::new(source);
     builder.authority.decision_authority = "validation-receipt";
     builder.authority.verification_state = "verified";
+    builder.authority.output_authority = decision_state == "available";
     builder.add_designed(
         "validation-policy",
         "policy",

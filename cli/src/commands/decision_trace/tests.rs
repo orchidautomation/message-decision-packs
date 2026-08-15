@@ -12,6 +12,12 @@ use crate::run_contracts::{
 };
 use serde_json::json;
 
+fn assert_unavailable_without_authority(trace: &super::DecisionTrace) {
+    assert_eq!(trace.status, "unavailable");
+    assert_eq!(trace.authority.decision_authority, "none");
+    assert!(!trace.authority.output_authority);
+}
+
 #[test]
 fn no_draft_fit_exposes_only_bounded_reasons_and_no_output_authority() {
     let source = json!({
@@ -147,6 +153,7 @@ fn invalid_and_unbound_validation_results_have_stable_diagnostics() {
         "valid": false
     });
     let invalid_trace = project_source_value(&invalid, "7".repeat(64));
+    assert_unavailable_without_authority(&invalid_trace);
     assert!(
         invalid_trace
             .limitations
@@ -159,6 +166,7 @@ fn invalid_and_unbound_validation_results_have_stable_diagnostics() {
         "valid": true
     });
     let unbound_trace = project_source_value(&unbound, "8".repeat(64));
+    assert_unavailable_without_authority(&unbound_trace);
     assert!(
         unbound_trace
             .limitations
@@ -176,7 +184,8 @@ fn prompt_output_trace_fixture() -> (std::path::PathBuf, std::path::PathBuf, ser
     .unwrap();
     let output = prompt["output_contract"]["example"].clone();
     let root = std::env::temp_dir().join(format!(
-        "mdp-prompt-output-trace-{}",
+        "mdp-prompt-output-trace-{}-{}",
+        std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -236,6 +245,7 @@ fn bound_valid_prompt_output_receipt_is_available() {
     assert_eq!(trace.status, "available");
     assert_eq!(trace.authority.decision_authority, "validation-receipt");
     assert_eq!(trace.authority.verification_state, "verified");
+    assert!(trace.authority.output_authority);
     assert!(
         trace
             .observed_path
@@ -259,6 +269,7 @@ fn bound_blocked_prompt_output_receipt_remains_blocked() {
             .unwrap();
     assert_eq!(trace.status, "blocked");
     assert_eq!(trace.authority.decision_authority, "validation-receipt");
+    assert!(!trace.authority.output_authority);
     assert!(
         trace
             .observed_path
@@ -287,7 +298,7 @@ fn omitted_required_validation_input_is_unbound() {
     let trace =
         project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
             .unwrap();
-    assert_eq!(trace.status, "unavailable");
+    assert_unavailable_without_authority(&trace);
     assert!(
         trace
             .limitations
@@ -310,7 +321,7 @@ fn changed_prompt_output_bytes_invalidate_validation_authority() {
     let trace =
         project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
             .unwrap();
-    assert_eq!(trace.status, "unavailable");
+    assert_unavailable_without_authority(&trace);
     assert!(
         trace
             .limitations
@@ -330,6 +341,7 @@ fn wrong_pack_or_input_bytes_fail_closed() {
     let trace =
         project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
             .unwrap();
+    assert_unavailable_without_authority(&trace);
     assert!(
         trace
             .limitations
@@ -357,6 +369,7 @@ fn wrong_pack_or_input_bytes_fail_closed() {
         &[format!("source_audit={}", input_path.display())],
     )
     .unwrap();
+    assert_unavailable_without_authority(&trace);
     assert!(
         trace
             .limitations
@@ -375,6 +388,7 @@ fn changed_validation_binding_or_prompt_job_identity_fail_closed() {
     let trace =
         project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
             .unwrap();
+    assert_unavailable_without_authority(&trace);
     assert!(
         trace
             .limitations
@@ -390,6 +404,7 @@ fn changed_validation_binding_or_prompt_job_identity_fail_closed() {
     let trace =
         project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
             .unwrap();
+    assert_unavailable_without_authority(&trace);
     assert!(
         trace
             .limitations
