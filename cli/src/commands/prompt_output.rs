@@ -1,8 +1,9 @@
-use crate::artifact_hash::{canonical_json_sha256, sha256_hex};
+use crate::artifact_hash::{canonical_json_sha256, pack_content_sha256, sha256_hex};
 use crate::commands::requirements::validate_normalized_decision_input_with_projection;
 use crate::commands::schemas::routed_context_schema;
 use crate::constants::{
-    DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, ROUTED_CONTEXT_CONTRACT, SOURCE_AUDIT_CONTRACT,
+    DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, PROMPT_OUTPUT_VALIDATION_CONTRACT,
+    ROUTED_CONTEXT_CONTRACT, SOURCE_AUDIT_CONTRACT,
 };
 use crate::models::{CardKind, Manifest, PromptFile};
 use crate::pack_io::{
@@ -93,6 +94,8 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
         return Err(anyhow!("pass at most one of --prompt and --prompt-id"));
     }
 
+    let validation_pack_sha256 = pack_content_sha256(root)?;
+    let validation_manifest = read_manifest(root)?;
     let (prompt, resolved_prompt_path) = resolve_prompt(root, prompt_path, prompt_id)?;
     let artifact_path = display_path(file);
     let raw_bytes = read_bounded_bytes(file, "prompt output")?;
@@ -199,7 +202,7 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
                 &artifact_path,
                 err.to_string(),
             ));
-            return Ok(json!({
+            let mut result = json!({
                 "valid": false,
                 "file": artifact_path,
                 "prompt": prompt_summary(&prompt, root),
@@ -228,7 +231,17 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
                         .map(|(_, _, sha256)| sha256.as_str())
                 ),
                 "issues": issues
-            }));
+            });
+            attach_prompt_output_validation_authority(
+                &mut result,
+                root,
+                &validation_manifest,
+                &validation_pack_sha256,
+                &prompt,
+                None,
+                &prompt_output_sha256,
+            )?;
+            return Ok(result);
         }
     };
 
@@ -241,7 +254,7 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
         ));
     }
 
-    validate_prompt_output_parsed(
+    let mut result = validate_prompt_output_parsed(
         root,
         &prompt,
         &resolved_prompt_path,
@@ -267,7 +280,139 @@ pub(crate) fn validate_prompt_output_file_with_lineage_inputs(
         routed_context
             .as_ref()
             .map(|(value, path, sha256)| (value, path.as_str(), sha256.as_str())),
-    )
+    )?;
+    attach_prompt_output_validation_authority(
+        &mut result,
+        root,
+        &validation_manifest,
+        &validation_pack_sha256,
+        &prompt,
+        Some(&output),
+        &prompt_output_sha256,
+    )?;
+    Ok(result)
+}
+
+fn attach_prompt_output_validation_authority(
+    result: &mut Value,
+    root: &Path,
+    manifest: &Manifest,
+    validation_pack_sha256: &str,
+    prompt: &PromptFile,
+    output: Option<&Value>,
+    prompt_output_sha256: &str,
+) -> Result<()> {
+    let prompt_value = serde_json::to_value(prompt)?;
+    let prompt_sha256 = canonical_json_sha256(&prompt_value)?;
+    let job_id = unique_model_task_job_id(manifest, &prompt.id).map(str::to_string);
+    let mut input_artifacts = result["artifacts"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(logical_name, _)| logical_name.as_str() != "prompt_output")
+        .filter_map(|(logical_name, artifact)| {
+            artifact["sha256"].as_str().map(|sha256| {
+                json!({
+                    "logical_name": logical_name,
+                    "sha256": sha256
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    input_artifacts.sort_by(|left, right| {
+        left["logical_name"]
+            .as_str()
+            .cmp(&right["logical_name"].as_str())
+    });
+    let current_pack_sha256 = pack_content_sha256(root)?;
+    let pack_unchanged =
+        enforce_unchanged_validation_pack(result, validation_pack_sha256, &current_pack_sha256);
+    let authority_pack_sha256 = if pack_unchanged {
+        validation_pack_sha256
+    } else {
+        current_pack_sha256.as_str()
+    };
+    let valid = result["valid"].as_bool() == Some(true);
+    let decision_state = prompt_output_decision_state(valid, output);
+    let mut authority = json!({
+        "pack": {
+            "id": manifest.id,
+            "version": manifest.version,
+            "sha256": authority_pack_sha256
+        },
+        "prompt": {
+            "id": prompt.id,
+            "version": prompt.version,
+            "sha256": prompt_sha256
+        },
+        "job_id": job_id,
+        "input_artifacts": input_artifacts,
+        "prompt_output_sha256": prompt_output_sha256,
+        "validation_state": if valid { "valid" } else { "invalid" },
+        "decision_state": decision_state
+    });
+    let binding_sha256 = canonical_json_sha256(&authority)?;
+    authority["binding_sha256"] = json!(binding_sha256);
+    result["contract"] = json!(PROMPT_OUTPUT_VALIDATION_CONTRACT);
+    result["authority"] = authority;
+    Ok(())
+}
+
+fn prompt_output_decision_state(valid: bool, output: Option<&Value>) -> &'static str {
+    if !valid {
+        return "unavailable";
+    }
+    let decision_input_not_ready = output
+        .and_then(|value| value["outcome"].as_str())
+        .is_some_and(|outcome| outcome != "ready");
+    let fit_not_ready = output.and_then(|value| {
+        value["normalization_trace"]["fit_readiness"]["ready_for_mdp_fit"].as_bool()
+    }) == Some(false);
+    let artifact_blocked =
+        output.and_then(|value| value["artifact"]["status"].as_str()) == Some("blocked");
+    if decision_input_not_ready || fit_not_ready || artifact_blocked {
+        "blocked"
+    } else {
+        "available"
+    }
+}
+
+fn enforce_unchanged_validation_pack(
+    result: &mut Value,
+    validation_pack_sha256: &str,
+    current_pack_sha256: &str,
+) -> bool {
+    if validation_pack_sha256 == current_pack_sha256 {
+        return true;
+    }
+
+    result["valid"] = json!(false);
+    if !result["issues"].is_array() {
+        result["issues"] = json!([]);
+    }
+    let issues = result["issues"]
+        .as_array_mut()
+        .expect("issues was initialized as an array");
+    issues.push(issue(
+        "pack_changed_during_prompt_output_validation",
+        "error",
+        "$pack",
+        "pack content changed during prompt-output validation; rerun validation against a stable pack",
+    ));
+    false
+}
+
+pub(crate) fn unique_model_task_job_id<'a>(
+    manifest: &'a Manifest,
+    prompt_id: &str,
+) -> Option<&'a str> {
+    let mut matching_jobs = manifest.jobs.iter().filter(|job| {
+        job.model_task
+            .as_ref()
+            .is_some_and(|binding| binding.prompt == prompt_id)
+    });
+    let job_id = matching_jobs.next()?.id.as_str();
+    matching_jobs.next().is_none().then_some(job_id)
 }
 
 #[allow(dead_code)]
@@ -3184,6 +3329,43 @@ mod tests {
             .parent()
             .expect("CLI crate should have a repository parent")
             .join("examples/clay-audiences-self-serve-enterprise-expansion")
+    }
+
+    #[test]
+    fn decision_input_outcome_controls_validation_decision_state() {
+        for outcome in ["human-review", "insufficient-context", "disqualified"] {
+            let output = json!({"outcome": outcome});
+            assert_eq!(prompt_output_decision_state(true, Some(&output)), "blocked");
+        }
+        let ready = json!({"outcome": "ready"});
+        assert_eq!(
+            prompt_output_decision_state(true, Some(&ready)),
+            "available"
+        );
+        assert_eq!(
+            prompt_output_decision_state(false, Some(&ready)),
+            "unavailable"
+        );
+    }
+
+    #[test]
+    fn pack_mutation_during_validation_fails_closed() {
+        let mut result = json!({
+            "valid": true,
+            "issues": []
+        });
+
+        assert!(!enforce_unchanged_validation_pack(
+            &mut result,
+            &"a".repeat(64),
+            &"b".repeat(64),
+        ));
+        assert_eq!(result["valid"], false);
+        assert_eq!(
+            result["issues"][0]["code"],
+            "pack_changed_during_prompt_output_validation"
+        );
+        assert_eq!(result["issues"][0]["path"], "$pack");
     }
 
     #[test]

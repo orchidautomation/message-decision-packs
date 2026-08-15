@@ -11,10 +11,11 @@ use crate::conformance::{
 use crate::constants::{
     FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
     NORMALIZED_DECISION_INPUT_CONTRACT_V2, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
-    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
-    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
-    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_OUTPUT_VALIDATION_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
+    PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
+    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
+    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::model_steps::{
     COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1, compiled_model_step_schema,
@@ -105,6 +106,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
             }
             value
         }
+        SchemaTarget::PromptOutputValidationV1 => prompt_output_validation_v1_schema(),
         SchemaTarget::ProposalRunManifest => proposal_run_manifest_schema(),
         SchemaTarget::ProposalRunnerResult => proposal_runner_result_schema(),
         SchemaTarget::ProposalRunnerResultV1 => proposal_runner_result_v1_schema(),
@@ -3917,6 +3919,94 @@ fn governed_artifact_example_schema() -> Value {
             "artifact": {"type": "object"},
             "gaps": {"type": "array", "items": {"type": "string"}},
             "rejected_claims": {"type": "array", "items": {"type": "string"}}
+        }
+    })
+}
+
+pub(crate) fn prompt_output_validation_v1_schema() -> Value {
+    let artifact = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+            "path": {"type": "string"},
+            "sha256": sha256_schema()
+        }
+    });
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Prompt Output Validation v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "valid", "file", "prompt", "artifacts", "issues", "authority"],
+        "properties": {
+            "contract": {"const": PROMPT_OUTPUT_VALIDATION_CONTRACT},
+            "valid": {"type": "boolean"},
+            "file": {"type": "string"},
+            "prompt": {
+                "type": "object",
+                "required": ["id", "output_kind", "target_card_kinds", "declared_inputs", "pack_dir"],
+                "properties": {
+                    "id": {"type": "string", "minLength": 1},
+                    "output_kind": {"type": "string"},
+                    "target_card_kinds": {"type": "array", "items": {"type": "string"}},
+                    "declared_inputs": {"type": "array", "items": {"type": "string"}},
+                    "pack_dir": {"type": "string"}
+                }
+            },
+            "artifacts": {
+                "type": "object",
+                "required": ["prompt_output"],
+                "additionalProperties": artifact
+            },
+            "issues": {"type": "array", "items": {"type": "object"}},
+            "strict": {"type": "object"},
+            "source_audit": {"type": "object"},
+            "signal_projection": {"type": "object"},
+            "authority": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["pack", "prompt", "job_id", "input_artifacts", "prompt_output_sha256", "validation_state", "decision_state", "binding_sha256"],
+                "properties": {
+                    "pack": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "version", "sha256"],
+                        "properties": {
+                            "id": {"type": "string", "minLength": 1},
+                            "version": {"type": "string", "minLength": 1},
+                            "sha256": sha256_schema()
+                        }
+                    },
+                    "prompt": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "version", "sha256"],
+                        "properties": {
+                            "id": {"type": "string", "minLength": 1},
+                            "version": {"type": ["string", "null"]},
+                            "sha256": sha256_schema()
+                        }
+                    },
+                    "job_id": {"type": ["string", "null"]},
+                    "input_artifacts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["logical_name", "sha256"],
+                            "properties": {
+                                "logical_name": {"type": "string", "minLength": 1},
+                                "sha256": sha256_schema()
+                            }
+                        }
+                    },
+                    "prompt_output_sha256": sha256_schema(),
+                    "validation_state": {"enum": ["valid", "invalid"]},
+                    "decision_state": {"enum": ["available", "blocked", "unavailable"]},
+                    "binding_sha256": sha256_schema()
+                }
+            }
         }
     })
 }

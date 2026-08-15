@@ -51,6 +51,7 @@ mdp sample-leads --dir /tmp/mdp-demo --persona "PMM" --job "initial email outbou
 mdp --json fit --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json
 mdp --json trace --file examples/decision-trace/fixtures/fit-ready-result.json
 mdp trace --file examples/decision-trace/fixtures/fit-no-draft-result.json --format mermaid
+mdp --json trace --file /tmp/validation-result.json --dir /tmp/mdp-demo --prompt-output /tmp/prompt-output.json --validation-input source_audit=/tmp/source-audit.json --validation-input invocation_receipt=/tmp/invocation-receipt.json
 mdp --json --summary brief --context --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.json
 mdp brief --context --readable --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.md
 mdp render-brief --dir /tmp/mdp-demo --file /tmp/mdp-demo/.mdp/briefs/example-linkedin.json --template gtm-prospect --out /tmp/mdp-demo/.mdp/briefs/example-linkedin.md

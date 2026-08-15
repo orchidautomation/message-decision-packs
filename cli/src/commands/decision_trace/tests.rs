@@ -1,11 +1,22 @@
 use super::{
-    MAX_TRACE_NODES, TraceBuilder, TraceSource, add_driver_trace, project_source_file,
-    project_source_value, read_trace_runner_audit, render_mermaid,
+    MAX_TRACE_NODES, TraceBuilder, TraceSource, add_driver_trace,
+    project_prompt_output_validation_file, project_source_file, project_source_value,
+    read_trace_runner_audit, render_mermaid,
 };
+use crate::artifact_hash::{canonical_json_sha256, pack_content_sha256};
+use crate::cli::SchemaTarget;
+use crate::commands::prompt_output::validate_prompt_output_file;
+use crate::commands::schemas::schema;
 use crate::run_contracts::{
     ArtifactAuthority, AssuranceEvidenceState, EvidenceProvenance, RunnerAuditV1, TerminalState,
 };
 use serde_json::json;
+
+fn assert_unavailable_without_authority(trace: &super::DecisionTrace) {
+    assert_eq!(trace.status, "unavailable");
+    assert_eq!(trace.authority.decision_authority, "none");
+    assert!(!trace.authority.output_authority);
+}
 
 #[test]
 fn no_draft_fit_exposes_only_bounded_reasons_and_no_output_authority() {
@@ -111,6 +122,300 @@ fn malformed_claimed_contract_is_unavailable() {
 }
 
 #[test]
+fn raw_prompt_output_never_receives_decision_authority() {
+    let source = json!({
+        "contract": "mdp.prompt-output.v0",
+        "prompt_id": "normalize-prospect-row",
+        "normalization_trace": {
+            "missing_required": [],
+            "fit_readiness": {"ready_for_mdp_fit": true}
+        }
+    });
+
+    let trace = project_source_value(&source, "9".repeat(64));
+    let encoded = serde_json::to_string(&trace).unwrap();
+    assert_eq!(trace.status, "unavailable");
+    assert_eq!(trace.authority.decision_authority, "none");
+    assert!(
+        trace
+            .limitations
+            .iter()
+            .any(|item| item == "raw-prompt-output-untrusted")
+    );
+    assert!(!encoded.contains("Validated prompt output"));
+    assert!(!encoded.contains("Ready for MDP fit"));
+}
+
+#[test]
+fn invalid_and_unbound_validation_results_have_stable_diagnostics() {
+    let invalid = json!({
+        "contract": "mdp.prompt-output-validation.v1",
+        "valid": false
+    });
+    let invalid_trace = project_source_value(&invalid, "7".repeat(64));
+    assert_unavailable_without_authority(&invalid_trace);
+    assert!(
+        invalid_trace
+            .limitations
+            .iter()
+            .any(|item| item == "prompt-output-validation-invalid")
+    );
+
+    let unbound = json!({
+        "contract": "mdp.prompt-output-validation.v1",
+        "valid": true
+    });
+    let unbound_trace = project_source_value(&unbound, "8".repeat(64));
+    assert_unavailable_without_authority(&unbound_trace);
+    assert!(
+        unbound_trace
+            .limitations
+            .iter()
+            .any(|item| item == "prompt-output-validation-unbound")
+    );
+}
+
+fn prompt_output_trace_fixture() -> (std::path::PathBuf, std::path::PathBuf, serde_json::Value) {
+    let pack_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../plugin/assets/templates/basic");
+    let prompt: serde_json::Value = serde_yaml::from_slice(
+        &std::fs::read(pack_root.join(".mdp/prompts/normalize-prospect.yaml")).unwrap(),
+    )
+    .unwrap();
+    let output = prompt["output_contract"]["example"].clone();
+    let root = std::env::temp_dir().join(format!(
+        "mdp-prompt-output-trace-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let output_path = root.join("prompt-output.json");
+    std::fs::write(&output_path, serde_json::to_vec_pretty(&output).unwrap()).unwrap();
+    let validation = validate_prompt_output_file(
+        &pack_root,
+        &output_path,
+        None,
+        Some("normalize-prospect-row"),
+    )
+    .unwrap();
+    assert_eq!(validation["valid"], true);
+    (pack_root, output_path, validation)
+}
+
+fn write_validation_fixture(
+    output_path: &std::path::Path,
+    validation: &serde_json::Value,
+) -> std::path::PathBuf {
+    let validation_path = output_path.with_file_name("validation.json");
+    let wrapper = json!({
+        "ok": true,
+        "command": "validate-prompt-output",
+        "data": validation
+    });
+    std::fs::write(
+        &validation_path,
+        serde_json::to_vec_pretty(&wrapper).unwrap(),
+    )
+    .unwrap();
+    validation_path
+}
+
+fn refresh_validation_binding(validation: &mut serde_json::Value) {
+    validation["authority"]
+        .as_object_mut()
+        .unwrap()
+        .remove("binding_sha256");
+    let binding = canonical_json_sha256(&validation["authority"]).unwrap();
+    validation["authority"]["binding_sha256"] = json!(binding);
+}
+
+#[test]
+fn bound_valid_prompt_output_receipt_is_available() {
+    let (pack_root, output_path, validation) = prompt_output_trace_fixture();
+    jsonschema::draft202012::validate(&schema(SchemaTarget::PromptOutputValidationV1), &validation)
+        .expect("validation receipt should satisfy its public schema");
+    let validation_path = write_validation_fixture(&output_path, &validation);
+
+    let trace =
+        project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
+            .unwrap();
+    assert_eq!(trace.status, "available");
+    assert_eq!(trace.authority.decision_authority, "validation-receipt");
+    assert_eq!(trace.authority.verification_state, "verified");
+    assert!(trace.authority.output_authority);
+    assert!(
+        trace
+            .observed_path
+            .nodes
+            .iter()
+            .any(|node| node.label == "Exact validated prompt output")
+    );
+
+    let _ = std::fs::remove_dir_all(output_path.parent().unwrap());
+}
+
+#[test]
+fn bound_blocked_prompt_output_receipt_remains_blocked() {
+    let (pack_root, output_path, mut validation) = prompt_output_trace_fixture();
+    validation["authority"]["decision_state"] = json!("blocked");
+    refresh_validation_binding(&mut validation);
+    let validation_path = write_validation_fixture(&output_path, &validation);
+
+    let trace =
+        project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
+            .unwrap();
+    assert_eq!(trace.status, "blocked");
+    assert_eq!(trace.authority.decision_authority, "validation-receipt");
+    assert!(!trace.authority.output_authority);
+    assert!(
+        trace
+            .observed_path
+            .nodes
+            .iter()
+            .any(|node| node.state == "blocked")
+    );
+
+    let _ = std::fs::remove_dir_all(output_path.parent().unwrap());
+}
+
+#[test]
+fn omitted_required_validation_input_is_unbound() {
+    let (pack_root, output_path, mut validation) = prompt_output_trace_fixture();
+    validation["artifacts"]["source_audit"] = json!({
+        "path": "source-audit.json",
+        "sha256": "a".repeat(64)
+    });
+    validation["authority"]["input_artifacts"] = json!([{
+        "logical_name": "source_audit",
+        "sha256": "a".repeat(64)
+    }]);
+    refresh_validation_binding(&mut validation);
+    let validation_path = write_validation_fixture(&output_path, &validation);
+
+    let trace =
+        project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
+            .unwrap();
+    assert_unavailable_without_authority(&trace);
+    assert!(
+        trace
+            .limitations
+            .iter()
+            .any(|item| item == "prompt-output-validation-unbound")
+    );
+
+    let _ = std::fs::remove_dir_all(output_path.parent().unwrap());
+}
+
+#[test]
+fn changed_prompt_output_bytes_invalidate_validation_authority() {
+    let (pack_root, output_path, validation) = prompt_output_trace_fixture();
+    let validation_path = write_validation_fixture(&output_path, &validation);
+    let mut output: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&output_path).unwrap()).unwrap();
+    output["normalized_prospect"]["company"] = json!("Tampered Example");
+    std::fs::write(&output_path, serde_json::to_vec_pretty(&output).unwrap()).unwrap();
+
+    let trace =
+        project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
+            .unwrap();
+    assert_unavailable_without_authority(&trace);
+    assert!(
+        trace
+            .limitations
+            .iter()
+            .any(|item| item == "prompt-output-tampered")
+    );
+
+    let _ = std::fs::remove_dir_all(output_path.parent().unwrap());
+}
+
+#[test]
+fn wrong_pack_or_input_bytes_fail_closed() {
+    let (pack_root, output_path, mut validation) = prompt_output_trace_fixture();
+    validation["authority"]["pack"]["sha256"] = json!("f".repeat(64));
+    refresh_validation_binding(&mut validation);
+    let validation_path = write_validation_fixture(&output_path, &validation);
+    let trace =
+        project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
+            .unwrap();
+    assert_unavailable_without_authority(&trace);
+    assert!(
+        trace
+            .limitations
+            .iter()
+            .any(|item| item == "prompt-output-validation-mismatch")
+    );
+
+    validation["authority"]["pack"]["sha256"] = json!(pack_content_sha256(&pack_root).unwrap());
+    validation["artifacts"]["source_audit"] = json!({
+        "path": "source-audit.json",
+        "sha256": "a".repeat(64)
+    });
+    validation["authority"]["input_artifacts"] = json!([{
+        "logical_name": "source_audit",
+        "sha256": "a".repeat(64)
+    }]);
+    refresh_validation_binding(&mut validation);
+    let validation_path = write_validation_fixture(&output_path, &validation);
+    let input_path = output_path.with_file_name("wrong-input.json");
+    std::fs::write(&input_path, b"{}\n").unwrap();
+    let trace = project_prompt_output_validation_file(
+        &validation_path,
+        &pack_root,
+        &output_path,
+        &[format!("source_audit={}", input_path.display())],
+    )
+    .unwrap();
+    assert_unavailable_without_authority(&trace);
+    assert!(
+        trace
+            .limitations
+            .iter()
+            .any(|item| item == "prompt-output-validation-mismatch")
+    );
+
+    let _ = std::fs::remove_dir_all(output_path.parent().unwrap());
+}
+
+#[test]
+fn changed_validation_binding_or_prompt_job_identity_fail_closed() {
+    let (pack_root, output_path, mut validation) = prompt_output_trace_fixture();
+    validation["authority"]["decision_state"] = json!("blocked");
+    let validation_path = write_validation_fixture(&output_path, &validation);
+    let trace =
+        project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
+            .unwrap();
+    assert_unavailable_without_authority(&trace);
+    assert!(
+        trace
+            .limitations
+            .iter()
+            .any(|item| item == "prompt-output-validation-receipt-tampered")
+    );
+
+    validation["authority"]["decision_state"] = json!("available");
+    validation["authority"]["prompt"]["id"] = json!("wrong-prompt");
+    validation["authority"]["job_id"] = json!("wrong-job");
+    refresh_validation_binding(&mut validation);
+    let validation_path = write_validation_fixture(&output_path, &validation);
+    let trace =
+        project_prompt_output_validation_file(&validation_path, &pack_root, &output_path, &[])
+            .unwrap();
+    assert_unavailable_without_authority(&trace);
+    assert!(
+        trace
+            .limitations
+            .iter()
+            .any(|item| item == "prompt-output-validation-mismatch")
+    );
+
+    let _ = std::fs::remove_dir_all(output_path.parent().unwrap());
+}
+
+#[test]
 fn oversized_file_is_refused_without_echoing_its_path() {
     let path = std::env::temp_dir().join("mdp-private-customer-oversized-trace.json");
     std::fs::write(&path, vec![b'x'; super::MAX_TRACE_SOURCE_BYTES + 1]).unwrap();
@@ -125,6 +430,46 @@ fn oversized_file_is_refused_without_echoing_its_path() {
     );
     assert!(!encoded.contains("mdp-private-customer"));
     let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn non_regular_trace_source_is_unreadable() {
+    let path =
+        std::env::temp_dir().join(format!("mdp-trace-source-directory-{}", std::process::id()));
+    std::fs::create_dir_all(&path).unwrap();
+    let trace = project_source_file(&path).unwrap();
+    assert_eq!(trace.status, "unavailable");
+    assert!(
+        trace
+            .limitations
+            .iter()
+            .any(|item| item == "source-unreadable")
+    );
+    let _ = std::fs::remove_dir(path);
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_trace_source_is_unreadable() {
+    use std::os::unix::fs::symlink;
+
+    let root = std::env::temp_dir().join(format!("mdp-trace-symlink-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let target = root.join("target.json");
+    let link = root.join("link.json");
+    std::fs::write(&target, b"{}\n").unwrap();
+    symlink(&target, &link).unwrap();
+
+    let trace = project_source_file(&link).unwrap();
+    assert_eq!(trace.status, "unavailable");
+    assert!(
+        trace
+            .limitations
+            .iter()
+            .any(|item| item == "source-unreadable")
+    );
+
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
