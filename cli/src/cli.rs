@@ -212,6 +212,28 @@ pub(crate) enum Commands {
     Trace {
         #[arg(long, conflicts_with_all = ["bundle", "receipt"], help = "Saved CLI JSON result or supported raw contracted artifact")]
         file: Option<PathBuf>,
+        #[arg(
+            long,
+            requires_all = ["file", "prompt_output"],
+            conflicts_with = "artifact_root",
+            help = "Pack root used to recompute prompt-output validation authority"
+        )]
+        dir: Option<PathBuf>,
+        #[arg(
+            long,
+            requires_all = ["file", "dir"],
+            conflicts_with = "artifact_root",
+            help = "Exact mdp.prompt-output.v0 bytes bound by a validation receipt"
+        )]
+        prompt_output: Option<PathBuf>,
+        #[arg(
+            long = "validation-input",
+            value_name = "LOGICAL_NAME=PATH",
+            requires_all = ["file", "dir", "prompt_output"],
+            conflicts_with = "artifact_root",
+            help = "Exact validator input bytes named by the receipt; repeat for each bound input"
+        )]
+        validation_inputs: Vec<String>,
         #[arg(long, requires = "receipt", help = "mdp.run-bundle.v1 JSON file")]
         bundle: Option<PathBuf>,
         #[arg(long, requires = "bundle", help = "mdp.run-receipt.v1 JSON file")]
@@ -573,6 +595,7 @@ pub(crate) enum SchemaTarget {
     SourceAudit,
     NativeNormalizeRequest,
     PromptOutput,
+    PromptOutputValidationV1,
     ProposalRunManifest,
     ProposalRunnerResult,
     ProposalRunnerResultV1,
@@ -851,6 +874,34 @@ mod tests {
         assert!(Cli::try_parse_from(["mdp", "trace"]).is_err());
         assert!(Cli::try_parse_from(["mdp", "trace", "--bundle", "bundle.json"]).is_err());
         assert!(
+            Cli::try_parse_from(["mdp", "trace", "--file", "validation.json", "--dir", "."])
+                .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "trace",
+                "--file",
+                "validation.json",
+                "--prompt-output",
+                "output.json"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "trace",
+                "--file",
+                "validation.json",
+                "--dir",
+                ".",
+                "--prompt-output",
+                "output.json"
+            ])
+            .is_ok()
+        );
+        assert!(
             Cli::try_parse_from([
                 "mdp",
                 "trace",
@@ -1017,6 +1068,10 @@ mod tests {
             ("run-verification-v1", SchemaTarget::RunVerificationV1),
             ("run-execution-v1", SchemaTarget::RunExecutionV1),
             ("decision-trace-v1", SchemaTarget::DecisionTraceV1),
+            (
+                "prompt-output-validation-v1",
+                SchemaTarget::PromptOutputValidationV1,
+            ),
             ("routed-context-v1", SchemaTarget::RoutedContextV1),
             (
                 "canonical-authority-block-v1",

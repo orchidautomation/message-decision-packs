@@ -28,8 +28,8 @@ pub(crate) use conformance::{
     compile_candidate_file, project_conformance_report, validate_behavioral_files,
 };
 pub(crate) use decision_trace::{
-    decision_trace_schema, project_conformance_file, project_run_files, project_source_file,
-    render_mermaid,
+    decision_trace_schema, project_conformance_file, project_prompt_output_validation_file,
+    project_run_files, project_source_file, render_mermaid,
 };
 pub(crate) use evals::eval_pack;
 pub(crate) use health::{doctor, explain, gaps, validate_pack};

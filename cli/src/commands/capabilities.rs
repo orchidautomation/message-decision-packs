@@ -11,12 +11,13 @@ use crate::conformance::{
 use crate::constants::{
     DEFAULT_DIR, FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT,
     NORMALIZED_DECISION_INPUT_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
-    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
-    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
-    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, REQUIREMENTS_CONTRACT,
-    REQUIREMENTS_CONTRACT_V2, ROUTED_CONTEXT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
-    SOURCE_AUDIT_CONTRACT, SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2,
-    SOURCE_BINDING_VALIDATION_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_OUTPUT_VALIDATION_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
+    PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
+    PROPOSAL_RUNNER_RESULT_CONTRACT, REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2,
+    ROUTED_CONTEXT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT,
+    SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2, SOURCE_BINDING_VALIDATION_CONTRACT,
+    SOURCE_INTAKE_CONTRACT,
 };
 use crate::model_steps::{COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1};
 use crate::models::DecisionInputAttemptStatus;
@@ -173,6 +174,12 @@ pub(crate) fn capabilities() -> Value {
             "schema_target": "decision-trace-v1",
             "projection_only": true,
             "source_authority_retained": true,
+            "prompt_output_authority": {
+                "validation_contract": PROMPT_OUTPUT_VALIDATION_CONTRACT,
+                "schema_target": "prompt-output-validation-v1",
+                "raw_output_behavior": "unavailable-untrusted",
+                "required_bindings": ["pack", "prompt", "job-when-unambiguous", "validator-input-bytes", "prompt-output-bytes", "validation-result-bytes"]
+            },
             "limits": {
                 "source_bytes": MAX_TRACE_SOURCE_BYTES,
                 "nodes": MAX_TRACE_NODES,
@@ -227,7 +234,7 @@ pub(crate) fn capabilities() -> Value {
             command("validate-prompt-output", "mdp.validate-prompt-output.v0", "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--invocation-receipt", "--routed-context", "--prompt", "--prompt-id", "--strict"]),
             command("run-receipt", RUN_RECEIPT_CONTRACT, "writes-files-with-out", true, true, false, &["--dir", "--workflow", "--isolation", "--declared-inputs-only", "--prompt-id", "--prompt-output", "--validation", "--source-audit", "--runner-audit", "--require-runner-audit", "--artifact", "--out", "--dry-run"]),
             command("verify-run", RUN_VERIFICATION_V1, "read-only", false, false, false, &["--bundle", "--receipt", "--artifact-root"]),
-            command("trace", DECISION_TRACE_V1, "read-only-unless-out", false, true, false, &["--file", "--bundle", "--receipt", "--artifact-root", "--format", "--out"]),
+            command("trace", DECISION_TRACE_V1, "read-only-unless-out", false, true, false, &["--file", "--dir", "--prompt-output", "--validation-input", "--bundle", "--receipt", "--artifact-root", "--format", "--out"]),
             command("consume-run", "mdp.run-consumption-result.v1", "writes-local-ledger", false, false, false, &["--ledger", "--job-id", "--idempotency-key", "--receipt-sha256", "--expected-prior-version", "--permit-exact-replay"]),
             command("run", RUN_EXECUTION_V1, "writes-new-run-directory", false, true, false, &["--request", "--out-dir"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
@@ -591,6 +598,10 @@ mod tests {
             DECISION_TRACE_V1
         );
         assert_eq!(result["decision_trace_contract"]["projection_only"], true);
+        assert_eq!(
+            result["decision_trace_contract"]["prompt_output_authority"]["validation_contract"],
+            PROMPT_OUTPUT_VALIDATION_CONTRACT
+        );
         assert!(
             result["commands"]
                 .as_array()
@@ -598,7 +609,10 @@ mod tests {
                 .iter()
                 .any(|command| command["name"] == "trace"
                     && command["output_contract"] == DECISION_TRACE_V1
-                    && command["supports_out"] == true)
+                    && command["supports_out"] == true
+                    && command["args"]
+                        .as_array()
+                        .is_some_and(|args| args.contains(&json!("--prompt-output"))))
         );
         assert_eq!(
             result["clean_run_contracts"]["canonical_authority_block"]["contract"],

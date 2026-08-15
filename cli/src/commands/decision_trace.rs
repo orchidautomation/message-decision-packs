@@ -1,9 +1,14 @@
-use crate::artifact_hash::{AuthorityJsonLimits, parse_authority_json, sha256_hex};
+use crate::artifact_hash::{
+    AuthorityJsonLimits, canonical_json_sha256, pack_content_sha256, parse_authority_json,
+    sha256_hex,
+};
+use crate::commands::prompt_output::unique_model_task_job_id;
 use crate::commands::run_verification::verify_run;
 use crate::conformance::{
     AccessClass, JOB_CONFORMANCE_V1, JourneyRelation, canonical_authority_sha256,
     parse_job_conformance, read_contained_file,
 };
+use crate::constants::{PROMPT_OUTPUT_CONTRACT, PROMPT_OUTPUT_VALIDATION_CONTRACT};
 use crate::run_contracts::{
     DRIVER_REQUEST_V2, DRIVER_RESULT_V2, EvidenceProvenance, RUN_BUNDLE_V1, RUN_EXECUTION_V1,
     RUN_RECEIPT_V1, RunBundleV1, RunMode, RunReceiptV1, RunnerAuditV1,
@@ -12,6 +17,7 @@ use anyhow::Result;
 use serde::Serialize;
 use serde_json::Value;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 mod schema;
@@ -100,25 +106,367 @@ pub(crate) struct TraceTruncation {
 }
 
 pub(crate) fn project_source_file(path: &Path) -> Result<DecisionTrace> {
-    if fs::metadata(path)
-        .map(|metadata| metadata.len() > MAX_TRACE_SOURCE_BYTES as u64)
-        .unwrap_or(false)
-    {
-        return Ok(unavailable("source-oversized", String::new()));
-    }
-    let bytes = match fs::read(path) {
+    let bytes = match read_trace_bytes(path) {
         Ok(bytes) => bytes,
-        Err(_) => return Ok(unavailable("source-unreadable", String::new())),
+        Err(reason) => return Ok(unavailable(reason, String::new())),
     };
-    if bytes.len() > MAX_TRACE_SOURCE_BYTES {
-        return Ok(unavailable("source-oversized", sha256_hex(&bytes)));
-    }
     let hash = sha256_hex(&bytes);
     let value: Value = match parse_authority_json(&bytes, AuthorityJsonLimits::default()) {
         Ok(value) => value,
         Err(_) => return Ok(unavailable("source-malformed", hash)),
     };
     Ok(project_source_value(&value, hash))
+}
+
+pub(crate) fn project_prompt_output_validation_file(
+    validation_path: &Path,
+    pack_root: &Path,
+    prompt_output_path: &Path,
+    validation_inputs: &[String],
+) -> Result<DecisionTrace> {
+    let validation_bytes = match read_trace_bytes(validation_path) {
+        Ok(bytes) => bytes,
+        Err(reason) => return Ok(unavailable(reason, String::new())),
+    };
+    let validation_sha256 = sha256_hex(&validation_bytes);
+    let value: Value = match parse_authority_json(&validation_bytes, AuthorityJsonLimits::default())
+    {
+        Ok(value) => value,
+        Err(_) => return Ok(unavailable("source-malformed", validation_sha256)),
+    };
+    let (command, data) = match unwrap_cli_result(&value) {
+        Some((command, data)) => (command, data),
+        None => (None, &value),
+    };
+    let command_matches = command
+        .as_deref()
+        .is_none_or(|value| command_contract(value) == Some(PROMPT_OUTPUT_VALIDATION_CONTRACT));
+    let source = TraceSource {
+        contract: data["contract"].as_str().unwrap_or("unknown").to_string(),
+        command,
+        sha256: validation_sha256,
+        class: "prompt-output-validation",
+    };
+    if !command_matches || data["contract"].as_str() != Some(PROMPT_OUTPUT_VALIDATION_CONTRACT) {
+        return Ok(unavailable_with_source(
+            "prompt-output-validation-unbound",
+            source,
+        ));
+    }
+    if jsonschema::draft202012::validate(
+        &crate::commands::schemas::prompt_output_validation_v1_schema(),
+        data,
+    )
+    .is_err()
+    {
+        return Ok(unavailable_with_source(
+            "prompt-output-validation-unbound",
+            source,
+        ));
+    }
+    if data["valid"].as_bool() != Some(true)
+        || data["authority"]["validation_state"].as_str() != Some("valid")
+    {
+        return Ok(unavailable_with_source(
+            "prompt-output-validation-invalid",
+            source,
+        ));
+    }
+    let Some(authority) = data["authority"].as_object() else {
+        return Ok(unavailable_with_source(
+            "prompt-output-validation-unbound",
+            source,
+        ));
+    };
+    let mut unsigned_authority = Value::Object(authority.clone());
+    let binding_sha256 = unsigned_authority["binding_sha256"]
+        .as_str()
+        .map(str::to_string);
+    unsigned_authority
+        .as_object_mut()
+        .expect("authority object")
+        .remove("binding_sha256");
+    if binding_sha256.as_deref() != canonical_json_sha256(&unsigned_authority).ok().as_deref() {
+        return Ok(unavailable_with_source(
+            "prompt-output-validation-receipt-tampered",
+            source,
+        ));
+    }
+
+    let output_bytes = match read_trace_bytes(prompt_output_path) {
+        Ok(bytes) => bytes,
+        Err(reason) => return Ok(unavailable_with_source(reason, source)),
+    };
+    let output_sha256 = sha256_hex(&output_bytes);
+    if data["authority"]["prompt_output_sha256"].as_str() != Some(&output_sha256)
+        || data["artifacts"]["prompt_output"]["sha256"].as_str() != Some(&output_sha256)
+    {
+        return Ok(unavailable_with_source("prompt-output-tampered", source));
+    }
+    let output: Value = match parse_authority_json(&output_bytes, AuthorityJsonLimits::default()) {
+        Ok(value) => value,
+        Err(_) => return Ok(unavailable_with_source("prompt-output-tampered", source)),
+    };
+    if !validation_artifact_bindings_match(data) {
+        return Ok(unavailable_with_source(
+            "prompt-output-validation-mismatch",
+            source,
+        ));
+    }
+    if !validation_input_bytes_match(data, validation_inputs) {
+        return Ok(unavailable_with_source(
+            if validation_inputs.is_empty() {
+                "prompt-output-validation-unbound"
+            } else {
+                "prompt-output-validation-mismatch"
+            },
+            source,
+        ));
+    }
+    if !current_pack_prompt_binding_matches(pack_root, data, &output) {
+        return Ok(unavailable_with_source(
+            "prompt-output-validation-mismatch",
+            source,
+        ));
+    }
+    Ok(project_validated_prompt_output(data, source, output_sha256))
+}
+
+fn read_trace_bytes(path: &Path) -> std::result::Result<Vec<u8>, &'static str> {
+    let before = fs::symlink_metadata(path).map_err(|_| "source-unreadable")?;
+    if before.file_type().is_symlink() || !before.is_file() {
+        return Err("source-unreadable");
+    }
+    if before.len() > MAX_TRACE_SOURCE_BYTES as u64 {
+        return Err("source-oversized");
+    }
+
+    #[cfg(unix)]
+    let file = {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+            .open(path)
+            .map_err(|_| "source-unreadable")?
+    };
+    #[cfg(not(unix))]
+    let file = fs::File::open(path).map_err(|_| "source-unreadable")?;
+
+    let opened = file.metadata().map_err(|_| "source-unreadable")?;
+    if !opened.is_file() || !same_trace_file(&before, &opened) {
+        return Err("source-unreadable");
+    }
+    if opened.len() > MAX_TRACE_SOURCE_BYTES as u64 {
+        return Err("source-oversized");
+    }
+
+    let mut bytes = Vec::with_capacity(opened.len() as usize);
+    file.take(MAX_TRACE_SOURCE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "source-unreadable")?;
+    if bytes.len() > MAX_TRACE_SOURCE_BYTES {
+        return Err("source-oversized");
+    }
+    let after = fs::metadata(path).map_err(|_| "source-unreadable")?;
+    if !same_trace_file(&opened, &after) || after.len() != bytes.len() as u64 {
+        return Err("source-unreadable");
+    }
+    Ok(bytes)
+}
+
+#[cfg(unix)]
+fn same_trace_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    left.dev() == right.dev() && left.ino() == right.ino()
+}
+
+#[cfg(not(unix))]
+fn same_trace_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    left.is_file() && right.is_file() && left.len() == right.len()
+}
+
+fn validation_artifact_bindings_match(data: &Value) -> bool {
+    let mut expected = data["artifacts"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(logical_name, _)| logical_name.as_str() != "prompt_output")
+        .filter_map(|(logical_name, artifact)| {
+            artifact["sha256"]
+                .as_str()
+                .map(|sha256| (logical_name.as_str(), sha256))
+        })
+        .collect::<Vec<_>>();
+    expected.sort_unstable();
+    let mut actual = data["authority"]["input_artifacts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|artifact| {
+            artifact["logical_name"]
+                .as_str()
+                .zip(artifact["sha256"].as_str())
+        })
+        .collect::<Vec<_>>();
+    actual.sort_unstable();
+    expected == actual
+        && data["authority"]["prompt_output_sha256"] == data["artifacts"]["prompt_output"]["sha256"]
+}
+
+fn validation_input_bytes_match(data: &Value, inputs: &[String]) -> bool {
+    let expected = data["authority"]["input_artifacts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|artifact| {
+            artifact["logical_name"]
+                .as_str()
+                .zip(artifact["sha256"].as_str())
+        })
+        .collect::<Vec<_>>();
+    if expected.len() != inputs.len() {
+        return false;
+    }
+
+    let mut supplied = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let Some((logical_name, path)) = input.split_once('=') else {
+            return false;
+        };
+        if logical_name.is_empty() || path.is_empty() {
+            return false;
+        }
+        supplied.push((logical_name, path));
+    }
+    supplied.sort_unstable_by(|left, right| left.0.cmp(right.0));
+    if supplied.windows(2).any(|items| items[0].0 == items[1].0) {
+        return false;
+    }
+    expected.iter().zip(supplied.iter()).all(
+        |((expected_name, expected_hash), (actual_name, path))| {
+            if expected_name != actual_name {
+                return false;
+            }
+            read_trace_bytes(Path::new(path))
+                .map(|bytes| sha256_hex(&bytes) == *expected_hash)
+                .unwrap_or(false)
+        },
+    )
+}
+
+fn current_pack_prompt_binding_matches(pack_root: &Path, data: &Value, output: &Value) -> bool {
+    let Ok(manifest) = crate::pack_io::read_manifest(pack_root) else {
+        return false;
+    };
+    let Ok(pack_sha256) = pack_content_sha256(pack_root) else {
+        return false;
+    };
+    if data["authority"]["pack"]["id"].as_str() != Some(manifest.id.as_str())
+        || data["authority"]["pack"]["version"].as_str() != Some(manifest.version.as_str())
+        || data["authority"]["pack"]["sha256"].as_str() != Some(pack_sha256.as_str())
+    {
+        return false;
+    }
+    let Some(prompt_id) = data["authority"]["prompt"]["id"].as_str() else {
+        return false;
+    };
+    if output["contract"].as_str() != Some(PROMPT_OUTPUT_CONTRACT)
+        || output["prompt_id"].as_str() != Some(prompt_id)
+        || data["prompt"]["id"].as_str() != Some(prompt_id)
+    {
+        return false;
+    }
+    let Ok(Some((_, prompt))) = crate::pack_io::read_canonical_prompt_by_id(pack_root, prompt_id)
+    else {
+        return false;
+    };
+    let Ok(prompt_value) = serde_json::to_value(&prompt) else {
+        return false;
+    };
+    let Ok(prompt_sha256) = canonical_json_sha256(&prompt_value) else {
+        return false;
+    };
+    if data["authority"]["prompt"]["sha256"].as_str() != Some(prompt_sha256.as_str())
+        || data["authority"]["prompt"]["version"]
+            != serde_json::to_value(&prompt.version).unwrap_or(Value::Null)
+    {
+        return false;
+    }
+    let current_job_id = unique_model_task_job_id(&manifest, &prompt.id);
+    data["authority"]["job_id"].as_str() == current_job_id
+        && output["job_id"]
+            .as_str()
+            .is_none_or(|job_id| Some(job_id) == current_job_id)
+}
+
+fn project_validated_prompt_output(
+    data: &Value,
+    source: TraceSource,
+    output_sha256: String,
+) -> DecisionTrace {
+    let decision_state = data["authority"]["decision_state"]
+        .as_str()
+        .unwrap_or("unavailable");
+    if !matches!(decision_state, "available" | "blocked") {
+        return unavailable_with_source("prompt-output-validation-invalid", source);
+    }
+    let mut builder = TraceBuilder::new(source);
+    builder.authority.decision_authority = "validation-receipt";
+    builder.authority.verification_state = "verified";
+    builder.add_designed(
+        "validation-policy",
+        "policy",
+        "Prompt-output validation contract",
+        "designed",
+    );
+    builder.add_designed(
+        "authority-gate",
+        "gate",
+        "Exact authority binding gate",
+        "designed",
+    );
+    builder.link_designed("validation-policy", "authority-gate", "governs");
+    builder.add_observed(
+        "source",
+        "source",
+        "Prompt-output validation receipt",
+        "verified",
+    );
+    builder.add_observed_ref(
+        "prompt-output",
+        "normalization",
+        "Exact validated prompt output",
+        "verified",
+        TraceArtifactRef {
+            schema_id: PROMPT_OUTPUT_CONTRACT.into(),
+            sha256: output_sha256,
+            logical_name: Some("prompt-output".into()),
+        },
+    );
+    builder.add_observed(
+        "decision",
+        "decision",
+        if decision_state == "available" {
+            "Validated output is decision-ready"
+        } else {
+            "Validated output is not decision-ready"
+        },
+        if decision_state == "available" {
+            "verified"
+        } else {
+            "blocked"
+        },
+    );
+    builder.link_observed("source", "prompt-output", "bound-to");
+    builder.link_observed("prompt-output", "decision", "verified-by");
+    builder.finish(if decision_state == "available" {
+        "available"
+    } else {
+        "blocked"
+    })
 }
 
 pub(crate) fn project_conformance_file(
@@ -630,7 +978,14 @@ pub(crate) fn project_source_value(value: &Value, source_sha256: String) -> Deci
         "mdp.fit.v0" => project_fit(data, source),
         "mdp.route.v0" => project_route(data, source),
         "mdp.brief.v0" | "mdp.message-brief.v0" => project_brief(data, source),
-        "mdp.prompt-output.v0" => project_prompt_output(data, source),
+        PROMPT_OUTPUT_CONTRACT => unavailable_with_source("raw-prompt-output-untrusted", source),
+        PROMPT_OUTPUT_VALIDATION_CONTRACT => {
+            if data["valid"].as_bool() == Some(false) {
+                unavailable_with_source("prompt-output-validation-invalid", source)
+            } else {
+                unavailable_with_source("prompt-output-validation-unbound", source)
+            }
+        }
         RUN_EXECUTION_V1 => project_run_execution(data, source),
         JOB_CONFORMANCE_V1 => unavailable_with_source("composite-artifact-root-required", source),
         _ => unavailable_with_source("unsupported-source-contract", source),
@@ -653,6 +1008,7 @@ fn command_contract(command: &str) -> Option<&'static str> {
         "brief" => Some("mdp.message-brief.v0"),
         "emit-brief" => Some("mdp.brief.v0"),
         "run" => Some(RUN_EXECUTION_V1),
+        "validate-prompt-output" => Some(PROMPT_OUTPUT_VALIDATION_CONTRACT),
         _ => None,
     }
 }
@@ -805,55 +1161,6 @@ fn project_brief(data: &Value, source: TraceSource) -> DecisionTrace {
     );
     builder.link_observed("brief-decision", "selected-context", "selected");
     builder.finish(if blocked { "blocked" } else { "available" })
-}
-
-fn project_prompt_output(data: &Value, source: TraceSource) -> DecisionTrace {
-    if !data["normalization_trace"].is_object()
-        || !data["normalization_trace"]["missing_required"].is_array()
-    {
-        return unavailable_with_source("normalization-trace-missing", source);
-    }
-    let Some(ready) = data["normalization_trace"]["fit_readiness"]["ready_for_mdp_fit"].as_bool()
-    else {
-        return unavailable_with_source("invalid-fit-readiness", source);
-    };
-    let mut builder = TraceBuilder::new(source);
-    builder.authority.decision_authority = "source-artifact";
-    builder.add_designed(
-        "normalization-policy",
-        "policy",
-        "Declared normalization contract",
-        "designed",
-    );
-    builder.add_designed("fit-readiness", "gate", "Fit readiness gate", "designed");
-    builder.link_designed("normalization-policy", "fit-readiness", "governs");
-    builder.add_observed("source", "source", "Validated prompt output", "observed");
-    builder.add_observed(
-        "normalization",
-        "normalization",
-        "Normalization trace present",
-        "observed",
-    );
-    builder.add_observed(
-        "readiness",
-        "decision",
-        if ready {
-            "Ready for MDP fit"
-        } else {
-            "Not ready for MDP fit"
-        },
-        if ready { "observed" } else { "blocked" },
-    );
-    builder.link_observed("source", "normalization", "records");
-    builder.link_observed("normalization", "readiness", "evaluated-by");
-    add_field_reasons(
-        &mut builder,
-        &data["normalization_trace"]["missing_required"],
-        "readiness",
-        "missing-field",
-        "Missing required field",
-    );
-    builder.finish(if ready { "available" } else { "blocked" })
 }
 
 fn project_run_execution(data: &Value, source: TraceSource) -> DecisionTrace {

@@ -196,6 +196,12 @@ skill-implied writing or review instructions.
        --prompt-id PROMPT_ID --file OUTPUT_JSON
      ```
 
+     Raw `mdp.prompt-output.v0` remains untrusted and is never decision-trace
+     authority. If a trace is needed, save the successful validation wrapper
+     and pass it to `mdp trace --file VALIDATION_JSON --dir PACK_ROOT
+     --prompt-output OUTPUT_JSON`, plus every validator file input as
+     `--validation-input LOGICAL_NAME=PATH`.
+
      Continue only when validation passes and
      `normalization_trace.fit_readiness.ready_for_mdp_fit` is exactly `true`
      before extracting `normalized_prospect`.

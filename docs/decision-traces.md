@@ -35,11 +35,44 @@ mdp trace --file <saved-result.json> --format mermaid \
   --out .mdp/traces/example.mmd
 ```
 
-Supported raw artifacts carry an explicit supported contract, such as
-`mdp.fit.v0`, `mdp.brief.v0`, `mdp.message-brief.v0`,
-`mdp.prompt-output.v0`, or `mdp.run-execution.v1`. A raw route result has no
-embedded contract, so use its saved CLI wrapper. Ambiguous JSON is rejected
-instead of guessed.
+Supported raw decision artifacts carry an explicit supported contract, such as
+`mdp.fit.v0`, `mdp.brief.v0`, `mdp.message-brief.v0`, or
+`mdp.run-execution.v1`. A raw route result has no embedded contract, so use its
+saved CLI wrapper. Ambiguous JSON is rejected instead of guessed.
+
+Raw `mdp.prompt-output.v0` is deliberately different: it is model-produced,
+untrusted data and never receives decision authority from `trace`, even when it
+self-declares readiness. Trace it only through a successful
+`mdp.prompt-output-validation.v1` receipt while supplying the exact pack and
+output bytes:
+
+```bash
+mdp --json validate-prompt-output --strict \
+  --dir <pack-root> \
+  --prompt-id <prompt-id> \
+  --file <prompt-output.json> > <validation-result.json>
+
+mdp --json trace \
+  --file <validation-result.json> \
+  --dir <pack-root> \
+  --prompt-output <prompt-output.json>
+```
+
+When validation used additional file inputs, pass every exact file again by
+the receipt's logical name, for example
+`--validation-input source_audit=<source-audit.json>`. The trace adapter
+recomputes the portable pack digest, canonical prompt digest and job binding,
+the output byte hash, every supplied validator-input byte hash, and the
+receipt's canonical binding digest. It projects the validator outcome; it does
+not rerun prompt-output validation or reinterpret self-declared readiness.
+
+Stable unavailable diagnostics distinguish raw output
+(`raw-prompt-output-untrusted`), unsuccessful validation
+(`prompt-output-validation-invalid`), missing exact-byte bindings
+(`prompt-output-validation-unbound`), pack/prompt/job/input disagreement
+(`prompt-output-validation-mismatch`), changed output bytes
+(`prompt-output-tampered`), and a changed receipt binding
+(`prompt-output-validation-receipt-tampered`).
 
 ## Inspect v1 run authority
 

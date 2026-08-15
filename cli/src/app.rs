@@ -11,12 +11,13 @@ use crate::commands::{
     assemble_conformance, author_proof_output_file, capabilities, check_claims_scoped,
     compile_candidate_file, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, gaps,
     init_pack_targeted, init_pack_targeted_dry_run, pack, project_conformance_file,
-    project_conformance_report, project_run_files, project_source_file,
-    prospect_brief_with_context, render_human_brief_file, render_human_brief_markdown,
-    render_mermaid, render_readable_prospect_brief, requirements, route_scoped, run_receipt,
-    run_request_file, sample_leads, schema, skills, validate_behavioral_files, validate_pack,
-    validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
-    verify_output_readable_file, verify_run_files,
+    project_conformance_report, project_prompt_output_validation_file, project_run_files,
+    project_source_file, prospect_brief_with_context, render_human_brief_file,
+    render_human_brief_markdown, render_mermaid, render_readable_prospect_brief, requirements,
+    route_scoped, run_receipt, run_request_file, sample_leads, schema, skills,
+    validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
+    validate_source_binding_file, verify_output_file, verify_output_readable_file,
+    verify_run_files,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -283,6 +284,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         ),
         Commands::Trace {
             file,
+            dir,
+            prompt_output,
+            validation_inputs,
             bundle,
             receipt,
             artifact_root,
@@ -290,9 +294,20 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             out,
         } => {
             let trace = match (file.as_deref(), bundle.as_deref(), receipt.as_deref()) {
-                (Some(path), None, None) => match artifact_root.as_deref() {
-                    Some(root) => project_conformance_file(path, root)?,
-                    None => project_source_file(path)?,
+                (Some(path), None, None) => match (
+                    artifact_root.as_deref(),
+                    dir.as_deref(),
+                    prompt_output.as_deref(),
+                ) {
+                    (Some(root), None, None) => project_conformance_file(path, root)?,
+                    (None, Some(root), Some(output)) => project_prompt_output_validation_file(
+                        path,
+                        root,
+                        output,
+                        &validation_inputs,
+                    )?,
+                    (None, None, None) => project_source_file(path)?,
+                    _ => unreachable!("clap validates trace authority bindings"),
                 },
                 (None, Some(bundle), Some(receipt)) => {
                     project_run_files(bundle, receipt, artifact_root.as_deref())?

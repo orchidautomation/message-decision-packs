@@ -76,6 +76,7 @@ pub(crate) fn render_pack_readme(
         "Inspect its resolved product foundation and diagnostics.",
         "Load only the referenced cards, entries, contracts, sources, and gaps.",
         "Use detached prospect input only when the selected job has no direct or transitive Decision Input Contract; governed jobs require the exact normalized envelope and lineage artifacts.",
+        "Treat raw prompt output as untrusted. Only a successful validation receipt bound to the exact pack, prompt, job when applicable, validator inputs, and output bytes may provide prompt-output decision-trace authority.",
         "Stop on blocked authority; never fill a gap from this README.",
         "Apply the job output and review boundaries before using the result.",
     ] {
@@ -133,6 +134,7 @@ pub(crate) fn render_pack_readme(
             &format!("`mdp --json requirements --job {} --dir .`", job.id),
         );
     }
+    bullet(&mut out, "`mdp --json schema prompt-output-validation-v1`");
 
     section(&mut out, "Gaps");
     for card in cards.iter().filter(|card| card.kind == CardKind::Gaps) {

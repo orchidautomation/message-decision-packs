@@ -195,6 +195,13 @@ mdp --json validate-prompt-output --dir <pack-root> \
   --file <normalized-output.json>
 ```
 
+Treat the raw output as untrusted even after it reports its own readiness.
+Only the saved successful `mdp.prompt-output-validation.v1` result may provide
+prompt-output trace authority, and only when `mdp trace` is given the same
+`--dir`, exact `--prompt-output` bytes, and each receipt input again as
+`--validation-input LOGICAL_NAME=PATH`. Trace verifies those bindings; it does
+not validate the model output a second time.
+
 Do not extract or pass `normalized_prospect` to fit, routing, brief, or copy
 work unless validation passes and the envelope's top-level `outcome` is exactly
 `ready`. Every other normalized outcome remains no-draft.
