@@ -1,5 +1,5 @@
 use crate::artifact_hash::{canonical_json_bytes, sha256_hex};
-use crate::commands::health::validate_pack;
+use crate::commands::health::{profile_activation_decision, validate_pack};
 use crate::constants::{DEFAULT_DIR, ROUTED_CONTEXT_CONTRACT};
 use crate::models::{CardKind, Entry, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
@@ -181,10 +181,15 @@ pub(crate) fn entry_route_scoped(
     apply_validation_errors_for_job(&mut product_foundation, manifest, validation_issues);
     let validation_blocked =
         validation_errors_block_job(manifest, &product_foundation, validation_issues);
+    let profile_activation = profile_activation_decision(
+        &validation,
+        manifest.profile_eval.blocks_activation(),
+        Some(job),
+    );
+    let profile_activation_blocked = profile_activation["status"] == "blocked";
     let mut details = route_entry_details(root, manifest, persona, job, true, scope)?;
     let product_foundation_load_order = foundation_load_order(&product_foundation);
     apply_selection_authority(&mut details.context_entries, &product_foundation_load_order);
-    let explicit_activation_blocks = manifest.profile_eval.blocks_activation();
     let (policy, model_visible_projection) = routed_context_projection(
         job,
         persona,
@@ -201,9 +206,9 @@ pub(crate) fn entry_route_scoped(
         &details.excluded,
     )?;
     let blocked = validation_blocked
+        || profile_activation_blocked
         || !details.scope_ready(scope)
         || product_foundation.blocks_activation()
-        || explicit_activation_blocks
         || minimality["status"] == "blocked";
 
     Ok(json!({
@@ -215,6 +220,7 @@ pub(crate) fn entry_route_scoped(
         "portfolio_sensitive": details.portfolio_sensitive,
         "product_foundation": resolution_json(&product_foundation),
         "product_foundation_load_order": product_foundation_load_order,
+        "profile_activation": profile_activation,
         "matches": details.matches,
         "gaps": details.gaps,
         "minimality": minimality,
@@ -264,12 +270,17 @@ pub(crate) fn entry_context_with_runtime_scoped(
     apply_validation_errors_for_job(&mut product_foundation, manifest, validation_issues);
     let validation_blocked =
         validation_errors_block_job(manifest, &product_foundation, validation_issues);
+    let profile_activation = profile_activation_decision(
+        &validation,
+        manifest.profile_eval.blocks_activation(),
+        Some(job),
+    );
+    let profile_activation_blocked = profile_activation["status"] == "blocked";
     let mut details = route_entry_details(root, manifest, persona, job, true, scope)?;
     let scope_blocked = !details.scope_ready(scope);
     let product_foundation_load_order = foundation_load_order(&product_foundation);
     apply_selection_authority(&mut details.context_entries, &product_foundation_load_order);
     let foundation_blocked = product_foundation.blocks_activation();
-    let activation_blocked = manifest.profile_eval.blocks_activation();
     let (ready_policy, model_visible_projection) = routed_context_projection(
         job,
         persona,
@@ -287,10 +298,10 @@ pub(crate) fn entry_context_with_runtime_scoped(
     )?;
     let minimality_blocked = minimality["status"] == "blocked";
     if validation_blocked
+        || profile_activation_blocked
         || !draft_ready
         || scope_blocked
         || foundation_blocked
-        || activation_blocked
         || minimality_blocked
     {
         let blocked_reason = if validation_blocked {
@@ -299,8 +310,17 @@ pub(crate) fn entry_context_with_runtime_scoped(
             "portfolio scope is missing or invalid"
         } else if foundation_blocked {
             "selected product foundation authority is blocked"
-        } else if activation_blocked {
+        } else if profile_activation["blocker_codes"]
+            .as_array()
+            .is_some_and(|codes| {
+                codes
+                    .iter()
+                    .any(|code| code == "profile_activation_not_ready")
+            })
+        {
             "profile activation requires review or is blocked"
+        } else if profile_activation_blocked {
+            "computed profile activation is blocked"
         } else if minimality_blocked {
             "minimal context contract is blocked"
         } else {
@@ -332,6 +352,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
             "portfolio_sensitive": details.portfolio_sensitive,
             "product_foundation": resolution_json(&product_foundation),
             "product_foundation_load_order": product_foundation_load_order,
+            "profile_activation": profile_activation,
             "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
             "entries": entries,
             "gaps": details.gaps,
@@ -371,6 +392,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
         "portfolio_sensitive": details.portfolio_sensitive,
         "product_foundation": resolution_json(&product_foundation),
         "product_foundation_load_order": product_foundation_load_order,
+        "profile_activation": profile_activation,
         "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
         "entries": details.context_entries,
         "gaps": details.gaps,
@@ -962,6 +984,18 @@ mod tests {
             serde_yaml::to_string(&manifest).expect("manifest should serialize"),
         )
         .expect("manifest should be writable");
+    }
+
+    fn remove_required_eval_category(root: &Path) {
+        for entry in std::fs::read_dir(root.join(".mdp/evals")).expect("evals should be readable") {
+            let path = entry.expect("eval entry should load").path();
+            let raw = std::fs::read_to_string(&path).expect("eval should be readable");
+            std::fs::write(
+                path,
+                raw.replace("category: prompt-output-validation", "category: proceed"),
+            )
+            .expect("eval should be writable");
+        }
     }
 
     fn set_profile_activation(root: &Path, status: &str) {
@@ -1610,6 +1644,35 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic["code"] == "product_foundation_entry_ambiguous")
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn computed_activation_veto_blocks_route_and_context() {
+        let root = temp_pack("computed-activation-veto");
+        remove_required_eval_category(&root);
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let scope = ScopeResolution::default();
+
+        let route = entry_route_scoped(&root, &manifest, "PMM", "prospect-fit-or-brief", &scope)
+            .expect("route should resolve");
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "prospect-fit-or-brief",
+            true,
+            &scope,
+        )
+        .expect("context should resolve");
+
+        assert_eq!(route["status"], "blocked");
+        assert_eq!(route["profile_activation"]["status"], "blocked");
+        assert_eq!(context["status"], "blocked");
+        assert_eq!(context["reason"], "computed profile activation is blocked");
+        assert_eq!(context["profile_activation"]["status"], "blocked");
+        assert_eq!(context["entries"], json!([]));
 
         let _ = std::fs::remove_dir_all(root);
     }

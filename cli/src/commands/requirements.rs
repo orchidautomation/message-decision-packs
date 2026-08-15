@@ -1,6 +1,6 @@
 use crate::artifact_hash::{canonical_json_sha256, pack_content_sha256};
 use crate::cli::SchemaTarget;
-use crate::commands::health::validate_pack;
+use crate::commands::health::{profile_activation_decision, validate_pack};
 use crate::commands::schemas::schema;
 use crate::commands::schemas::signal_observation_v2_schema;
 use crate::commands::source_binding::{
@@ -87,6 +87,12 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         .ok_or_else(|| anyhow!("unknown profile job {job_id}"))?;
     let pack_sha256 = pack_content_sha256(root)?;
     let validation = validate_pack(root)?;
+    let profile_activation = profile_activation_decision(
+        &validation,
+        manifest.profile_eval.blocks_activation(),
+        Some(job_id),
+    );
+    let activation_blocked = profile_activation["status"] == "blocked";
     let model_task = compile_model_task(root, job);
     let model_steps = match resolve_model_steps(root, &manifest, job) {
         Ok(resolution) => serde_json::to_value(resolution)?,
@@ -146,6 +152,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
                     "decision_input_contracts": &job.decision_input_contracts
                 },
                 "product_foundation": product_foundation,
+                "profile_activation": profile_activation,
                 "model_task": model_task,
                 "model_steps": model_steps,
                 "decision_input_contracts": [],
@@ -163,7 +170,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         .collect::<BTreeSet<_>>();
     if selected_contracts.is_empty() && model_task.is_null() {
         let model_steps_blocked = model_steps["status"] == "blocked";
-        let model_step_diagnostics = model_steps["diagnostics"]
+        let mut model_step_diagnostics = model_steps["diagnostics"]
             .as_array()
             .cloned()
             .unwrap_or_else(|| {
@@ -173,9 +180,15 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
                     "message": "This job has no Decision Input contract. Existing fit/readiness behavior remains available through lead_input_requirements."
                 })]
             });
+        model_step_diagnostics.extend(
+            profile_activation["diagnostics"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
+        );
         return finalize_requirements(json!({
             "contract": REQUIREMENTS_CONTRACT,
-            "status": if model_steps_blocked { "blocked" } else { "unavailable" },
+            "status": if model_steps_blocked || activation_blocked { "blocked" } else { "unavailable" },
             "valid": true,
             "available": false,
             "draft_allowed": false,
@@ -187,6 +200,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
                 "resolved_input_contracts": selected_input_contracts
             },
             "product_foundation": product_foundation,
+            "profile_activation": profile_activation,
             "model_task": model_task,
             "model_steps": model_steps,
             "decision_input_contracts": [],
@@ -196,7 +210,6 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
 
     if selected_contracts.is_empty() {
         let foundation_blocked = product_foundation["status"] == "blocked";
-        let activation_blocked = manifest.profile_eval.blocks_activation();
         let model_task_blocked = model_task["status"] == "blocked";
         let model_steps_blocked = model_steps["status"] == "blocked";
         let drafting_blocked =
@@ -211,14 +224,12 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
                 .cloned()
                 .unwrap_or_default(),
         );
-        if activation_blocked {
-            diagnostics.push(json!({
-                "code": "profile_activation_blocks_drafting",
-                "severity": "error",
-                "path": ".mdp/manifest.yaml#/profile_eval/activation/status",
-                "message": "profile activation is needs-review or blocked; compiled prompt remains inspectable but drafting is blocked"
-            }));
-        }
+        diagnostics.extend(
+            profile_activation["diagnostics"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
+        );
         return finalize_requirements(json!({
             "contract": REQUIREMENTS_CONTRACT,
             "status": if drafting_blocked { "blocked" } else { "ready" },
@@ -234,6 +245,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
                 "resolved_input_contracts": selected_input_contracts
             },
             "product_foundation": product_foundation,
+            "profile_activation": profile_activation,
             "model_task": model_task,
             "model_steps": model_steps,
             "decision_input_contracts": [],
@@ -252,7 +264,6 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
         .iter()
         .any(|contract| !contract.signal_projections.is_empty());
     let foundation_blocked = product_foundation["status"] == "blocked";
-    let activation_blocked = manifest.profile_eval.blocks_activation();
     let model_task_blocked = model_task["status"] == "blocked";
     let model_steps_blocked = model_steps["status"] == "blocked";
     let drafting_blocked =
@@ -267,14 +278,12 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
             .cloned()
             .unwrap_or_default(),
     );
-    if activation_blocked {
-        diagnostics.push(json!({
-            "code": "profile_activation_blocks_drafting",
-            "severity": "error",
-            "path": ".mdp/manifest.yaml#/profile_eval/activation/status",
-            "message": "profile activation is needs-review or blocked; compiled requirements remain inspectable but drafting is blocked"
-        }));
-    }
+    diagnostics.extend(
+        profile_activation["diagnostics"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+    );
     let mut response = json!({
         "contract": REQUIREMENTS_CONTRACT,
         "status": if drafting_blocked { "blocked" } else { "ready" },
@@ -289,6 +298,7 @@ pub(crate) fn requirements(root: &Path, job_id: &str) -> Result<Value> {
             "decision_input_contracts": selected_ids
         },
         "product_foundation": product_foundation,
+        "profile_activation": profile_activation,
         "model_task": model_task,
         "model_steps": model_steps,
         "decision_input_contracts": compiled_contracts,
@@ -4914,6 +4924,48 @@ conditional:
     }
 
     #[test]
+    fn computed_profile_activation_blocks_drafting_without_hiding_contracts() {
+        let root = temporary_clay_example("computed-activation-blocked");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["profile_eval"]["activation"]["status"] =
+            serde_yaml::Value::String("ready".to_string());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+        let eval_path = root.join(".mdp/evals/account-context-missing.yaml");
+        let raw = std::fs::read_to_string(&eval_path).expect("eval should be readable");
+        std::fs::write(
+            &eval_path,
+            raw.replace("category: account-context-missing", "category: proceed"),
+        )
+        .expect("eval should be writable");
+
+        let compiled =
+            requirements(&root, "prospect-fit-or-brief").expect("requirements should compile");
+
+        assert_eq!(compiled["valid"], true);
+        assert_eq!(compiled["available"], true);
+        assert_eq!(compiled["status"], "blocked");
+        assert_eq!(compiled["draft_allowed"], false);
+        assert_eq!(compiled["profile_activation"]["status"], "blocked");
+        assert!(compiled["normalized_output_schema"].is_object());
+        assert!(
+            compiled["diagnostics"]
+                .as_array()
+                .expect("diagnostics should be an array")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "profile_eval_category_missing")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn profile_activation_blocks_drafting_without_hiding_contracts() {
         let root = temporary_clay_example("activation-blocked");
         let manifest_path = root.join(".mdp/manifest.yaml");
@@ -4935,13 +4987,14 @@ conditional:
         assert_eq!(compiled["available"], true);
         assert_eq!(compiled["status"], "blocked");
         assert_eq!(compiled["draft_allowed"], false);
+        assert_eq!(compiled["profile_activation"]["status"], "blocked");
         assert!(compiled["normalized_output_schema"].is_object());
         assert!(
             compiled["diagnostics"]
                 .as_array()
                 .expect("diagnostics should be an array")
                 .iter()
-                .any(|diagnostic| diagnostic["code"] == "profile_activation_blocks_drafting")
+                .any(|diagnostic| diagnostic["code"] == "profile_activation_not_ready")
         );
 
         let _ = std::fs::remove_dir_all(root);

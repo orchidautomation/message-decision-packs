@@ -2981,7 +2981,7 @@ fn skills_schema() -> Value {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "MDP Skills v1",
         "type": "object",
-        "required": ["contract", "status", "valid", "pack", "profile", "packaged_skill_ids", "host_discovery", "eligibility", "requested_job", "recommendation", "job_routes", "diagnostics"],
+        "required": ["contract", "status", "valid", "pack", "profile", "profile_activation", "packaged_skill_ids", "host_discovery", "eligibility", "requested_job", "recommendation", "job_routes", "diagnostics"],
         "additionalProperties": false,
         "properties": {
             "contract": {"const": "mdp.skills.v1"},
@@ -2989,6 +2989,7 @@ fn skills_schema() -> Value {
             "valid": {"type": "boolean"},
             "pack": {"type": "object"},
             "profile": {"type": "object"},
+            "profile_activation": profile_activation_decision_schema(),
             "packaged_skill_ids": canonical_skill_id_array_schema(),
             "host_discovery": {
                 "type": "object",
@@ -3031,7 +3032,7 @@ fn skills_schema() -> Value {
 fn job_route_schema() -> Value {
     json!({
         "type": "object",
-        "required": ["job_id", "skill_id", "pack_ready", "missing_primitives", "required_input_contracts", "model_task", "product_foundation", "readiness_policy"],
+        "required": ["job_id", "skill_id", "pack_ready", "missing_primitives", "required_input_contracts", "model_task", "profile_activation", "product_foundation", "readiness_policy"],
         "additionalProperties": false,
         "oneOf": canonical_job_skill_pairs("job_id"),
         "properties": {
@@ -3040,6 +3041,7 @@ fn job_route_schema() -> Value {
             "pack_ready": {"type": "boolean"},
             "missing_primitives": string_array(),
             "required_input_contracts": string_array(),
+            "profile_activation": profile_activation_decision_schema(),
             "model_task": {
                 "type": "object",
                 "required": ["status"],
@@ -3183,7 +3185,7 @@ fn human_brief_schema() -> Value {
 }
 
 fn context_schema_base() -> Value {
-    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": context_entries_schema(), "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
+    json!({"type": "object", "required": ["contract", "status", "runtime_context", "persona", "job", "scope", "portfolio_sensitive", "profile_activation", "source_load_order", "gaps", "entries", "full_card_required", "summary", "policy"], "properties": {"contract": {"const": "mdp.context.v0"}, "status": {"enum": ["ready", "blocked"]}, "runtime_context": runtime_context_schema(), "reason": {"type": "string"}, "persona": {"type": "string"}, "job": {"type": "string"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "profile_activation": profile_activation_decision_schema(), "source_load_order": string_array(), "gaps": {"type": "array", "items": {"type": "object"}}, "entries": context_entries_schema(), "full_card_required": {"type": "array", "items": {"type": "object", "required": ["card_id", "card_kind", "path", "reason"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}}}}, "summary": {"type": "object", "required": ["card_count", "entry_count", "required_entry_count", "supporting_entry_count", "guardrail_entry_count"], "properties": {"card_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "supporting_entry_count": {"type": "integer"}, "guardrail_entry_count": {"type": "integer"}}}, "policy": {"type": "string"}}})
 }
 
 fn context_entries_schema() -> Value {
@@ -3290,6 +3292,22 @@ pub(crate) fn routed_context_schema() -> Value {
             "entries": routed_context_entries_schema(),
             "gaps": {"type": "array", "items": {"type": "object"}},
             "policy": {"type": "string", "minLength": 1}
+        }
+    })
+}
+
+fn profile_activation_decision_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["contract", "status", "activation_ready", "blocker_codes", "diagnostics"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": "mdp.profile-activation-decision.v1"},
+            "status": {"enum": ["unavailable", "not-applicable", "ready", "blocked"]},
+            "activation_ready": {"type": ["boolean", "null"]},
+            "computed_profile_activation_ready": {"type": ["boolean", "null"]},
+            "blocker_codes": string_array(),
+            "diagnostics": {"type": "array", "items": {"type": "object"}}
         }
     })
 }

@@ -332,6 +332,61 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     }))
 }
 
+pub(crate) fn profile_activation_decision(
+    validation: &Value,
+    explicit_activation_blocks: bool,
+    job_id: Option<&str>,
+) -> Value {
+    let profile = &validation["profile"];
+    if profile["present"] != true {
+        return json!({
+            "contract": "mdp.profile-activation-decision.v1",
+            "status": "not-applicable",
+            "activation_ready": Value::Null,
+            "blocker_codes": [],
+            "diagnostics": []
+        });
+    }
+
+    let mut diagnostics = validation["issues"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|diagnostic| match diagnostic["activation"].as_str() {
+            Some("blocks") => true,
+            Some("blocks-job") => job_id.is_none_or(|job_id| {
+                diagnostic["path"]
+                    .as_str()
+                    .is_some_and(|path| path.contains(&format!("/jobs/{job_id}/")))
+            }),
+            _ => false,
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if explicit_activation_blocks {
+        diagnostics.push(json!({
+            "code": "profile_activation_not_ready",
+            "severity": "error",
+            "path": ".mdp/manifest.yaml#/profile_eval/activation/status",
+            "message": "profile activation requires review or is blocked"
+        }));
+    }
+    let blocker_codes = diagnostics
+        .iter()
+        .filter_map(|diagnostic| diagnostic["code"].as_str().map(str::to_string))
+        .collect::<BTreeSet<_>>();
+    let activation_ready = blocker_codes.is_empty();
+
+    json!({
+        "contract": "mdp.profile-activation-decision.v1",
+        "status": if activation_ready { "ready" } else { "blocked" },
+        "activation_ready": activation_ready,
+        "computed_profile_activation_ready": profile["activation_ready"],
+        "blocker_codes": blocker_codes.into_iter().collect::<Vec<_>>(),
+        "diagnostics": diagnostics
+    })
+}
+
 fn validate_target_identity(
     root: &Path,
     manifest: &Manifest,

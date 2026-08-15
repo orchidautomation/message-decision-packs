@@ -1,3 +1,4 @@
+use crate::commands::health::profile_activation_decision;
 use crate::models::{Manifest, ProfileJob};
 use crate::pack_io::read_manifest;
 use crate::product_foundation::{
@@ -60,6 +61,12 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
         }
     };
     let pack_valid = validation["valid"].as_bool().unwrap_or(false);
+    let profile_activation = profile_activation_decision(
+        &validation,
+        manifest.profile_eval.blocks_activation(),
+        requested_job,
+    );
+    let activation_blocked = profile_activation["status"] == "blocked";
     let mut diagnostics = validation["issues"].as_array().cloned().unwrap_or_default();
     if !pack_valid
         && !crate::commands::requirements::validation_has_only_foundation_errors(&validation)
@@ -140,6 +147,7 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
                     &manifest,
                     job,
                     &product_foundation,
+                    &profile_activation,
                     route_pack_valid,
                 ));
             }
@@ -210,10 +218,11 @@ pub(crate) fn skills(root: Option<&Path>, requested_job: Option<&str>) -> Value 
 
     json!({
         "contract": CONTRACT,
-        "status": if valid { "ready" } else { "unresolved" },
+        "status": if valid && !activation_blocked { "ready" } else { "unresolved" },
         "valid": valid,
         "pack": pack_payload(&manifest),
         "profile": profile_payload(&manifest),
+        "profile_activation": profile_activation,
         "packaged_skill_ids": PACKAGED_SKILL_IDS,
         "host_discovery": host_discovery_payload(),
         "eligibility": {
@@ -251,6 +260,13 @@ fn bootstrap_payload(
         "valid": valid,
         "pack": pack,
         "profile": profile,
+        "profile_activation": {
+            "contract": "mdp.profile-activation-decision.v1",
+            "status": "unavailable",
+            "activation_ready": Value::Null,
+            "blocker_codes": [],
+            "diagnostics": []
+        },
         "packaged_skill_ids": PACKAGED_SKILL_IDS,
         "host_discovery": host_discovery_payload(),
         "eligibility": {
@@ -299,6 +315,7 @@ fn route_payload(
     manifest: &Manifest,
     job: &ProfileJob,
     product_foundation: &ProductFoundationResolution,
+    profile_activation: &Value,
     pack_valid: bool,
 ) -> Value {
     let model_task = job.model_task.as_ref().map_or_else(
@@ -323,7 +340,6 @@ fn route_payload(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let explicit_activation_blocks = manifest.profile_eval.blocks_activation();
     let selected_facet_ids = product_foundation
         .selected_facets
         .iter()
@@ -340,18 +356,19 @@ fn route_payload(
         "skill_id": job.skill_id,
         "pack_ready": missing_primitives.is_empty()
             && pack_valid
-            && !explicit_activation_blocks
+            && profile_activation["status"] != "blocked"
             && !product_foundation.blocks_activation(),
         "missing_primitives": missing_primitives,
         "required_input_contracts": job.input_contracts,
         "model_task": model_task,
+        "profile_activation": profile_activation,
         "product_foundation": {
             "status": product_foundation.status,
             "selected_facet_ids": selected_facet_ids,
             "required_facet_ids": required_facet_ids,
             "diagnostics": product_foundation.diagnostics
         },
-        "readiness_policy": "Product foundation, a declared model-task contract, pack validation, and explicit profile activation may veto readiness. Inspect the exact compiled prompt with mdp requirements --job."
+        "readiness_policy": "Product foundation, a declared model-task contract, pack validation, and computed profile activation may veto readiness. Inspect the exact compiled prompt with mdp requirements --job."
     })
 }
 
@@ -417,6 +434,72 @@ mod tests {
             &result,
         )
         .expect("skills output should satisfy its additive schema");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skills_computed_activation_vetoes_ready_and_pack_ready() {
+        let root = temp_root("skills-computed-activation");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        for entry in std::fs::read_dir(root.join(".mdp/evals")).expect("evals should be readable") {
+            let path = entry.expect("eval entry should load").path();
+            let raw = std::fs::read_to_string(&path).expect("eval should be readable");
+            std::fs::write(
+                path,
+                raw.replace("category: prompt-output-validation", "category: proceed"),
+            )
+            .expect("eval should be writable");
+        }
+
+        let result = skills(Some(&root), Some("prospect-fit-or-brief"));
+
+        assert_eq!(result["status"], "unresolved");
+        assert_eq!(result["valid"], true);
+        assert_eq!(result["profile_activation"]["status"], "blocked");
+        assert_eq!(result["job_routes"][0]["pack_ready"], false);
+        assert_eq!(result["recommendation"]["pack_ready"], false);
+        assert!(
+            result["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "profile_eval_category_missing")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skills_missing_required_primitive_vetoes_pack_ready() {
+        let root = temp_root("skills-missing-required-primitive");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        std::fs::write(
+            &manifest_path,
+            raw.replace(
+                "  gaps:\n    cards:\n    - gaps\n    evals:\n    - fit-insufficient-context\n    - brief-insufficient-context\n    - account-context-missing\n    - account-only-no-draft\n    - prompt-output-missing-readiness-boolean\n    - prompt-output-missing-required-field\n    - prompt-output-validation\n",
+                "",
+            ),
+        )
+        .expect("manifest should be writable");
+
+        let result = skills(Some(&root), Some("prospect-fit-or-brief"));
+
+        assert_eq!(result["status"], "unresolved");
+        assert_eq!(result["valid"], true);
+        assert_eq!(result["profile_activation"]["status"], "blocked");
+        assert_eq!(result["recommendation"]["pack_ready"], false);
+        assert!(
+            result["profile_activation"]["blocker_codes"]
+                .as_array()
+                .expect("blocker codes")
+                .iter()
+                .any(|code| code == "profile_required_primitive_unmapped")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

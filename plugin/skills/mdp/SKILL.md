@@ -135,8 +135,11 @@ or blocked diagnostic and ask for reviewed sources.
 Foundation readiness only vetoes broader readiness. `ready` never promotes an
 otherwise unready job and never establishes sufficient-for-job or self-standing
 status. `unassessed` preserves legacy compatibility without claiming
-sufficiency. Explicit profile activation `needs-review` or `blocked` still
-prevents activation.
+sufficiency. Treat `data.profile_activation` as the shared runtime veto.
+Computed blockers such as missing required primitive or eval-category coverage,
+as well as explicit `needs-review` or `blocked`, prevent pack readiness,
+drafting context, and model/driver execution even when default validation
+remains warning-first and structurally valid.
 
 For a bound job, retrieve its attempted-complete collector and normalization handoff before sourcing or normalizing data:
 
