@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
+find "$ROOT/scripts" -type d -name __pycache__ -prune -exec rm -rf {} +
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -35,6 +36,14 @@ if [ "\$PLUXX_CODEX_INSTALL_DIR" != "\$expected_home/.codex/plugins/message-deci
   echo "release smoke did not isolate PLUXX_CODEX_INSTALL_DIR: \$PLUXX_CODEX_INSTALL_DIR" >&2
   exit 1
 fi
+if [ "\$PLUXX_CLAUDE_MARKETPLACE_DIR" != "\$expected_home/.claude/plugins/data/message-decision-packs-releases" ]; then
+  echo "release smoke did not isolate PLUXX_CLAUDE_MARKETPLACE_DIR: \$PLUXX_CLAUDE_MARKETPLACE_DIR" >&2
+  exit 1
+fi
+if ! command -v claude >/dev/null 2>&1; then
+  echo "release smoke did not provide the isolated Claude CLI prerequisite" >&2
+  exit 1
+fi
 if [ "\$PLUXX_INSTALL_LOCK_ROOT" != "\$expected_home/.pluxx/install-locks" ]; then
   echo "release smoke did not isolate PLUXX_INSTALL_LOCK_ROOT: \$PLUXX_INSTALL_LOCK_ROOT" >&2
   exit 1
@@ -48,14 +57,67 @@ mkdir -p "\$MDP_INSTALL_DIR" "\$(dirname "\$PLUXX_CODEX_CONFIG_PATH")" "\$(dirna
 cp "$ROOT/cli/target/debug/mdp" "\$MDP_INSTALL_DIR/mdp"
 chmod +x "\$MDP_INSTALL_DIR/mdp"
 printf '[features]\\nhooks = true\\n' > "\$PLUXX_CODEX_CONFIG_PATH"
-rm -rf "\$plugin_root"
-mkdir -p "\$plugin_root"
-cp -R "$ROOT/scripts" "\$plugin_root/scripts"
-cp -R "$ROOT/plugin/skills" "\$plugin_root/skills"
+claude_root="\$PLUXX_CLAUDE_MARKETPLACE_DIR/plugins/message-decision-packs"
+for plugin_root in \
+  "\$claude_root" \
+  "\$PLUXX_CODEX_INSTALL_DIR" \
+  "\$PLUXX_CURSOR_INSTALL_DIR" \
+  "\$PLUXX_OPENCODE_INSTALL_DIR"; do
+  rm -rf "\$plugin_root"
+  mkdir -p "\$plugin_root/assets"
+  cp -R "$ROOT/scripts" "\$plugin_root/scripts"
+  cp -R "$ROOT/plugin/skills" "\$plugin_root/skills"
+  rm -rf "\$plugin_root/assets"
+  cp -R "$ROOT/plugin/assets" "\$plugin_root/assets"
+done
 SH
 chmod +x "$fake_installer"
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64) staged_target="x86_64-unknown-linux-gnu" ;;
+  Darwin-x86_64) staged_target="x86_64-apple-darwin" ;;
+  Darwin-arm64) staged_target="aarch64-apple-darwin" ;;
+  *) echo "unsupported release smoke fixture platform" >&2; exit 1 ;;
+esac
+staged_name="mdp-$staged_target"
+cp "$mdp_bin" "$TMP_DIR/$staged_name"
+staged_sha="$(shasum -a 256 "$TMP_DIR/$staged_name" | awk '{print $1}')"
+node - "$ROOT" "$TMP_DIR/release-manifest.json" "$staged_name" "$staged_sha" <<'NODE'
+const { createHash } = require('node:crypto')
+const { lstatSync, readFileSync, readdirSync, writeFileSync } = require('node:fs')
+const { join, relative } = require('node:path')
+const [root, output, stagedName, stagedSha] = process.argv.slice(2)
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
+const records = []
+const trees = [
+  ['scripts', join(root, 'scripts')],
+  ['skills', join(root, 'plugin/skills')],
+  ['assets', join(root, 'plugin/assets')],
+]
+const walk = (prefix, treeRoot, directory) => {
+  for (const name of readdirSync(directory).sort()) {
+    const path = join(directory, name)
+    const stats = lstatSync(path)
+    if (stats.isDirectory()) walk(prefix, treeRoot, path)
+    else if (stats.isFile()) records.push({
+      path: `${prefix}/${relative(treeRoot, path).split('\\').join('/')}`,
+      executable: (stats.mode & 0o111) !== 0,
+      sha256: sha256(readFileSync(path)),
+    })
+  }
+}
+for (const [prefix, treeRoot] of trees) walk(prefix, treeRoot, treeRoot)
+records.sort((left, right) => left.path.localeCompare(right.path))
+const pluginTrees = Object.fromEntries(
+  ['claude-code', 'codex', 'cursor', 'opencode'].map((platform) => [platform, { files: records }]),
+)
+writeFileSync(output, `${JSON.stringify({
+  cli_artifacts: [{ name: stagedName, sha256: stagedSha }],
+  plugin_trees: pluginTrees,
+})}\n`)
+NODE
 
 install_home="$TMP_DIR/install-home"
+MDP_RELEASE_REQUIRE_STAGED_PARITY=1 \
 MDP_RELEASE_INSTALLER="$fake_installer" \
 MDP_RELEASE_INSTALL_HOME="$install_home" \
 EXPECTED_INSTALL_HOME="$install_home" \

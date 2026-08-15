@@ -89,8 +89,10 @@ assert(
   `Release workflow must publish, download, stage, finalize, and upload in order; got ${releaseSequenceIndexes.join(', ')}.`,
 )
 assert(
-  releaseWorkflow.includes('MDP_RELEASE_INSTALLER="release-assets/install.sh" scripts/release-install-smoke.sh "$version"'),
-  'Release workflow must smoke-test the staged release installer with the documented agents path.',
+  releaseWorkflow.includes('MDP_RELEASE_REQUIRE_STAGED_PARITY=1') &&
+    releaseWorkflow.includes('MDP_RELEASE_INSTALLER="release-assets/install.sh"') &&
+    releaseWorkflow.includes('scripts/release-install-smoke.sh "$version"'),
+  'Release workflow must compare and smoke-test the exact staged release artifacts.',
 )
 const releaseInstallSmoke = readFileSync(join(root, 'scripts/release-install-smoke.sh'), 'utf8')
 assert(
@@ -222,6 +224,26 @@ try {
       JSON.stringify(['claude-code', 'cursor', 'codex', 'opencode']) &&
       new Set(finalizedPlatforms).size === finalizedPlatforms.length,
     `Finalized release manifest must list each host archive once; got ${finalizedPlatforms.join(', ')}.`,
+  )
+  assert(
+    finalizedManifest.authority_conformance?.contract ===
+      'mdp.authority-conformance-corpus.v1' &&
+      finalizedManifest.authority_conformance?.oracle === 'hand-authored' &&
+      finalizedManifest.authority_conformance?.case_count >= 10,
+    'Finalized release manifest must bind the independent authority corpus.',
+  )
+  assert(
+    JSON.stringify(Object.keys(finalizedManifest.plugin_trees || {}).sort()) ===
+      JSON.stringify(['claude-code', 'codex', 'cursor', 'opencode']) &&
+      Object.values(finalizedManifest.plugin_trees).every(
+        (tree) => Array.isArray(tree.files) && tree.files.length > 0 && /^[a-f0-9]{64}$/.test(tree.sha256),
+      ),
+    'Finalized release manifest must bind complete generated plugin trees.',
+  )
+  assert(
+    finalizedManifest.cli_artifacts?.length === 3 &&
+      finalizedManifest.cli_artifacts.every((asset) => /^[a-f0-9]{64}$/.test(asset.sha256)),
+    'Finalized release manifest must bind exact staged CLI artifacts.',
   )
   const finalizedChecksums = parseChecksums(join(releaseRoot, 'SHA256SUMS.txt'))
   assert(

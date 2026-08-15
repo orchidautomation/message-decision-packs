@@ -1,0 +1,76 @@
+{
+  "contract": "mdp.authority-conformance-corpus.v1",
+  "oracle": "hand-authored",
+  "cases": [
+    {
+      "id": "run-success-allow",
+      "source": {"terminal_state": "success", "decision": "ready", "governed_output_present": true},
+      "expected": {"authority_level": "authoritative", "disposition": "allow", "terminal": "success", "governed_generation": "available"}
+    },
+    {
+      "id": "lifecycle-success-blocked-decision",
+      "source": {"terminal_state": "success", "decision": "no-draft", "governed_output_present": true},
+      "expected": {"authority_level": "authoritative", "disposition": "block", "terminal": "no-draft", "governed_generation": "absent"}
+    },
+    {
+      "id": "preflight-refused-block",
+      "source": {"terminal_state": "no-draft:preflight-refused", "decision": "blocked", "governed_output_present": false},
+      "expected": {"authority_level": "authoritative", "disposition": "block", "terminal": "no-draft", "governed_generation": "absent"}
+    },
+    {
+      "id": "runner-failed-unavailable",
+      "source": {"terminal_state": "no-draft:runner-failed", "decision": null, "governed_output_present": false},
+      "expected": {"authority_level": "unavailable", "disposition": "undetermined", "terminal": "authority-unavailable", "governed_generation": "absent"}
+    },
+    {
+      "id": "output-invalid-block",
+      "source": {"terminal_state": "no-draft:output-invalid", "decision": null, "governed_output_present": false},
+      "expected": {"authority_level": "authoritative", "disposition": "block", "terminal": "no-draft", "governed_generation": "absent"}
+    },
+    {
+      "id": "decision-invalid-block",
+      "source": {"terminal_state": "no-draft:decision-invalid", "decision": null, "governed_output_present": false},
+      "expected": {"authority_level": "authoritative", "disposition": "block", "terminal": "no-draft", "governed_generation": "absent"}
+    },
+    {
+      "id": "audit-incomplete-unavailable",
+      "source": {"terminal_state": "no-draft:audit-incomplete", "decision": null, "governed_output_present": false},
+      "expected": {"authority_level": "unavailable", "disposition": "undetermined", "terminal": "authority-unavailable", "governed_generation": "absent"}
+    },
+    {
+      "id": "policy-blocked",
+      "source": {"terminal_state": "no-draft:policy-blocked", "decision": "blocked", "governed_output_present": false},
+      "expected": {"authority_level": "authoritative", "disposition": "block", "terminal": "no-draft", "governed_generation": "absent"}
+    },
+    {
+      "id": "human-brief-blocked-projection",
+      "source": {"draft_status": "blocked", "fit_status": "fit"},
+      "expected": {"projection_level": "informational", "source_disposition": "block", "governed_generation": false}
+    },
+    {
+      "id": "mcp-canonical-denial-is-data",
+      "source": {"terminal_state": "no-draft:policy-blocked", "cli_exit_nonzero": true, "well_formed_envelope": true},
+      "expected": {"mcp_is_error": false, "source_disposition": "block", "governed_generation": false}
+    },
+    {
+      "id": "proposal-completed-remains-blocked",
+      "source": {"lifecycle": "completed", "canonical_decision": "blocked", "well_formed_envelope": true},
+      "expected": {"mcp_is_error": false, "source_disposition": "block", "governed_generation": false}
+    },
+    {
+      "id": "mdp-205-detached-governed-input-unavailable",
+      "source": {"governed_input": "detached", "required_binding": "unresolved"},
+      "expected": {"authority_level": "unavailable", "disposition": "undetermined", "terminal": "authority-unavailable", "governed_generation": "absent"}
+    },
+    {
+      "id": "mdp-208-raw-prompt-output-no-trace-authority",
+      "source": {"artifact": "raw-prompt-output", "cli_validation_wrapper": false},
+      "expected": {"authority_level": "unavailable", "disposition": "undetermined", "terminal": "authority-unavailable", "governed_generation": "absent"}
+    },
+    {
+      "id": "mdp-209-profile-activation-block",
+      "source": {"profile_activation": "blocked", "downstream_route_matches": true},
+      "expected": {"authority_level": "authoritative", "disposition": "block", "terminal": "no-draft", "governed_generation": "absent"}
+    }
+  ]
+}

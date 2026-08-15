@@ -7,6 +7,10 @@ description: Use when applying a GTM Message Decision Pack to a supplied prospec
 
 Use a GTM pack for bounded decision support. Never enrich, draft outreach, send, schedule, or update a CRM.
 
+## Authority Monotonicity
+
+The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
+
 ## Select One Mode
 
 Map the explicit user intent to one job ID:

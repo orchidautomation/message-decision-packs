@@ -198,7 +198,7 @@ pub(crate) fn prospect_brief_from_fit_with_context(
                 .unwrap_or("Portfolio scope did not resolve to draft-safe bounded context.")
         )
     };
-    let valid = fit_result["valid"].as_bool().unwrap_or(true);
+    let valid = fit_result["valid"].as_bool().unwrap_or(false);
     let mut payload = json!({
         "contract": "mdp.message-brief.v0",
         "valid": valid,
@@ -217,7 +217,7 @@ pub(crate) fn prospect_brief_from_fit_with_context(
         "portfolio_sensitive": portfolio_sensitive,
         "fit": fit_result,
         "draft_status": draft_status,
-        "draft_decision": if draft_status == "ready" { "Proceed with routed brief using stated assumptions." } else { "Do not draft outbound copy unless the user explicitly overrides this fit gate." },
+        "draft_decision": if draft_status == "ready" { "Proceed with routed brief using stated assumptions." } else { "Do not draft outbound copy from this result. Supply new evidence and run a new evaluation." },
         "no_draft_reason": no_draft_reason,
         "job": job_text,
         "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
@@ -237,7 +237,7 @@ pub(crate) fn prospect_brief_from_fit_with_context(
             } else {
                 "Read only required_load_order card files, combine them with prospect, then draft copy. Use the routed CTA policy and output rules when present. Do not invent claims outside the loaded cards."
             }
-        } else { "Stop before drafting. Surface the fit status and missing context/disqualifiers, then ask for explicit user override before creating outbound copy." }
+        } else { "Stop before drafting. Surface the fit status and missing context/disqualifiers. Draft only after new evidence produces a new ready result." }
     });
     if bounded_context {
         payload["context"] = context;
@@ -274,7 +274,7 @@ fn brief_no_draft_reason(fit_result: &Value) -> String {
         .as_str()
         .unwrap_or("insufficient-context");
     if status == "disqualified" {
-        return "The fit gate found a disqualifier; do not draft outbound copy unless the user explicitly overrides it.".to_string();
+        return "The fit gate found a disqualifier; do not draft outbound copy from this result. New evidence requires a new evaluation.".to_string();
     }
 
     let missing = fit_result["context"]["missing_requirements"]

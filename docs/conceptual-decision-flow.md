@@ -376,7 +376,7 @@ Expected decision:
 ```text
 status: disqualified
 disqualifier: sequence everyone
-decision: Do not draft outbound copy unless the user overrides the disqualifier.
+decision: Do not draft outbound copy from this result. Supply new evidence and run a new MDP evaluation.
 ```
 
 ## Routing After Fit
@@ -458,7 +458,7 @@ agent instruction:
   Surface gaps instead of inventing proof.
 ```
 
-If `draft_status` is `no-draft`, the agent should stop. It can summarize the fit decision and missing context, but it should not produce polished outbound copy unless the user explicitly overrides the gate.
+If `draft_status` is `no-draft`, the agent should stop. It can summarize the fit decision and missing context, but it must not produce polished outbound copy from that result. New evidence must pass a new MDP evaluation before drafting.
 
 Without `--out`, `mdp brief` writes the brief to stdout only. Use `--out` when the user expects a durable artifact. In either case, the brief is still a context contract: draft from `data.context.entries`, preserve `known_gaps`, then run `mdp check-claims` on any proposed copy before treating it as approved.
 

@@ -32,6 +32,15 @@ class SkillContractTests(unittest.TestCase):
     def test_current_canonical_contract_passes(self):
         self.assertTrue(module.validate(Path("."), Path("plugin/skills"))["valid"])
 
+    def test_all_canonical_skills_preserve_cli_authority_monotonicity(self):
+        for path in sorted(Path("plugin/skills").glob("*/SKILL.md")):
+            skill = path.read_text()
+            self.assertIn("The Rust CLI is the decision authority", skill, path)
+            self.assertIn("Preserve or reduce its authority", skill, path)
+            self.assertIn("never upgrade `blocked`, `no-draft`, `unavailable`", skill, path)
+            self.assertIn("New evidence requires a new CLI evaluation", skill, path)
+            self.assertIn("cannot override an existing result in place", skill, path)
+
     def test_core_skill_exposes_job_bound_requirements_handoff(self):
         skill = Path("plugin/skills/mdp/SKILL.md").read_text()
         operator = Path("plugin/skills/mdp/references/cli-operator.md").read_text()

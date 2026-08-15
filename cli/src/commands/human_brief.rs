@@ -120,6 +120,7 @@ fn render_gtm_prospect(
     let decision = match artifact["draft_status"].as_str() {
         Some("ready") => "ready",
         Some("no-draft") => "no-draft",
+        Some("blocked") => "blocked",
         _ => match artifact["fit"]["status"].as_str() {
             Some("disqualified") => "blocked",
             Some("insufficient-context") => "needs-review",
@@ -236,11 +237,14 @@ fn render_gtm_prospect(
         vec![],
     ));
     sections.push(audit_section(source_artifact, artifact, "gtm-prospect"));
+    let (source_disposition, fidelity) = projected_source_authority(artifact, decision);
     Ok(human_brief(
         &manifest,
         source_artifact_type(artifact),
         "gtm-prospect",
         decision,
+        source_disposition,
+        fidelity,
         &title,
         sections,
         source_artifact,
@@ -353,11 +357,14 @@ fn render_proposal_review(
         vec![],
     ));
     sections.push(audit_section(source_artifact, artifact, "proposal-review"));
+    let (source_disposition, fidelity) = projected_source_authority(artifact, decision);
     Ok(human_brief(
         &manifest,
         source_artifact_type(artifact),
         "proposal-review",
         decision,
+        source_disposition,
+        fidelity,
         &title,
         sections,
         source_artifact,
@@ -377,11 +384,21 @@ fn render_proof_report(
     Ok(brief)
 }
 
+fn projected_source_authority<'a>(artifact: &Value, decision: &'a str) -> (&'a str, &'a str) {
+    match decision {
+        "ready" if artifact["valid"].as_bool() == Some(true) => ("allow", "faithful"),
+        "no-draft" | "blocked" | "proof-gap" => ("block", "faithful"),
+        _ => ("undetermined", "unavailable"),
+    }
+}
+
 fn human_brief(
     manifest: &crate::models::Manifest,
     source_artifact_type: String,
     template: &str,
     decision: &str,
+    source_disposition: &str,
+    fidelity: &str,
     title: &str,
     sections: Vec<Value>,
     source_artifact: &str,
@@ -394,6 +411,13 @@ fn human_brief(
         "source_artifact_type": source_artifact_type,
         "template_id": template,
         "decision": decision,
+        "authority": {
+            "projection_only": true,
+            "projection_level": "informational",
+            "source_disposition": source_disposition,
+            "governed_generation": false,
+            "fidelity": fidelity
+        },
         "title": title,
         "sections": sections,
         "audit": {
@@ -952,9 +976,32 @@ mod tests {
         assert_eq!(brief["artifact_type"], HUMAN_BRIEF_CONTRACT);
         assert_eq!(brief["template_id"], "gtm-prospect");
         assert_eq!(brief["decision"], "ready");
+        assert_eq!(brief["authority"]["projection_level"], "informational");
+        assert_eq!(brief["authority"]["source_disposition"], "allow");
+        assert_eq!(brief["authority"]["governed_generation"], false);
         assert!(markdown.contains("## Status and Gate"));
         assert!(markdown.contains("- draft_status: ready"));
         assert!(markdown.contains("## Proof Used"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn gtm_template_does_not_infer_allow_from_an_unverified_ready_label() {
+        let root = temp_pack("gtm");
+        let prospect = root.join("examples").join("clay-row.json");
+        let mut artifact = prospect_brief_with_context(&root, &prospect, "linkedin", None, true)
+            .expect("brief should render");
+        artifact["draft_status"] = json!("ready");
+        artifact["valid"] = Value::Null;
+
+        let brief = render_human_brief(&root, &artifact, "inline", "gtm-prospect", false)
+            .expect("non-strict human brief should remain diagnostic");
+
+        assert_eq!(brief["decision"], "ready");
+        assert_eq!(brief["authority"]["source_disposition"], "undetermined");
+        assert_eq!(brief["authority"]["fidelity"], "unavailable");
+        assert_eq!(brief["authority"]["governed_generation"], false);
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -976,8 +1023,32 @@ mod tests {
         let markdown = render_human_brief_markdown(&brief);
 
         assert_eq!(brief["decision"], "no-draft");
+        assert_eq!(brief["authority"]["source_disposition"], "block");
+        assert_eq!(brief["authority"]["governed_generation"], false);
         assert!(markdown.contains("- draft_status: no-draft"));
         assert!(markdown.contains("Do not draft usable outreach copy"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn gtm_template_preserves_blocked_gate_without_fit_fallback() {
+        let root = temp_pack("gtm");
+        let prospect = root.join("examples").join("clay-row.json");
+        let mut artifact = prospect_brief_with_context(&root, &prospect, "linkedin", None, true)
+            .expect("brief should render");
+        artifact["draft_status"] = json!("blocked");
+        artifact["fit"]["status"] = json!("fit");
+        artifact["draft_decision"] = json!("Do not draft from this blocked artifact.");
+        artifact["no_draft_reason"] = json!("profile-activation-blocked");
+
+        let brief = render_human_brief(&root, &artifact, "inline", "gtm-prospect", true)
+            .expect("human brief should render");
+
+        assert_eq!(brief["decision"], "blocked");
+        assert_eq!(brief["authority"]["source_disposition"], "block");
+        assert_eq!(brief["authority"]["governed_generation"], false);
+        assert_ne!(brief["decision"], "needs-review");
 
         let _ = std::fs::remove_dir_all(root);
     }

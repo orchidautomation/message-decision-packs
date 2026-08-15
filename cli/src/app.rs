@@ -363,10 +363,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 }),
             )
         }
-        Commands::Run { request, out_dir } => print_checked(
+        Commands::Run { request, out_dir } => print_run_execution(
             json_mode,
             summary_mode,
-            "run",
             run_request_file(&request, &out_dir)?,
         ),
         Commands::VerifyOutput {
@@ -619,7 +618,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 data = export_routed_context(data, &path, dry_run)?;
             }
             if readable && !json_mode && !summary_mode {
-                let valid = data["valid"].as_bool().unwrap_or(true);
+                let valid = data["valid"].as_bool().unwrap_or(false);
                 let markdown = render_readable_prospect_brief(&data);
                 if let Some(path) = out {
                     if dry_run {
@@ -736,12 +735,43 @@ fn print_sample_leads(
 }
 
 fn print_checked(json_mode: bool, summary_mode: bool, command: &str, data: Value) -> Result<()> {
-    let valid = data["valid"].as_bool().unwrap_or(true);
+    // Most checked contracts carry an explicit `valid` gate. The typed composite
+    // and report projections predate that field and are validated before they
+    // reach this boundary; preserve their established successful process exit
+    // without treating arbitrary missing gates as success.
+    let valid = match data.get("valid") {
+        Some(value) => value.as_bool().unwrap_or(false),
+        None => matches!(
+            (command, data.get("contract").and_then(Value::as_str)),
+            ("conformance-assemble", Some("mdp.job-conformance.v1"))
+                | ("conformance-report", Some("mdp.conformance-report.v1"))
+                | (
+                    "conformance-report",
+                    Some("mdp.public-conformance-report.v1")
+                )
+        ),
+    };
     print_output(json_mode, summary_mode, command, data)?;
     if valid {
         Ok(())
     } else {
         std::process::exit(1);
+    }
+}
+
+fn print_run_execution(json_mode: bool, summary_mode: bool, data: Value) -> Result<()> {
+    // A verified no-draft decision is a completed run, not a transport failure.
+    // Preserve the v1 process contract while the authority block carries the
+    // machine-readable prohibition on governed generation.
+    let completed_decision = data["terminal_state"] == "success"
+        && matches!(
+            data["authority"]["disposition"].as_str(),
+            Some("allow" | "block")
+        );
+    if completed_decision {
+        print_output(json_mode, summary_mode, "run", data)
+    } else {
+        print_checked(json_mode, summary_mode, "run", data)
     }
 }
 

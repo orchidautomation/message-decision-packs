@@ -364,19 +364,43 @@ const callRun = async (args) => {
     return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
   }
 
-  const success = invocation.status === 0 && envelope.data.valid === true && envelope.data.terminal_state === 'success'
-  const noDraft =
+  const success =
+    invocation.status === 0 &&
+    envelope.data.valid === true &&
+    envelope.data.terminal_state === 'success' &&
+    envelope.data.authority?.authority_level === 'authoritative' &&
+    envelope.data.authority?.disposition === 'allow' &&
+    envelope.data.authority?.terminal === 'success' &&
+    ['available', 'not-applicable'].includes(envelope.data.authority?.governed_generation)
+  const completedNoDraft =
+    invocation.status === 0 &&
+    envelope.data.valid === false &&
+    envelope.data.terminal_state === 'success' &&
+    envelope.data.authority?.authority_level === 'authoritative' &&
+    envelope.data.authority?.disposition === 'block' &&
+    envelope.data.authority?.terminal === 'no-draft' &&
+    envelope.data.authority?.governed_generation === 'absent' &&
+    envelope.data.authority_block?.decision?.decision === 'no-draft'
+  const failedNoDraft =
     invocation.status !== 0 &&
     envelope.data.valid === false &&
     typeof envelope.data.terminal_state === 'string' &&
-    envelope.data.terminal_state.startsWith('no-draft:')
-  if (!success && !noDraft) {
+    envelope.data.terminal_state.startsWith('no-draft:') &&
+    ((envelope.data.authority?.authority_level === 'authoritative' &&
+      envelope.data.authority?.disposition === 'block' &&
+      envelope.data.authority?.terminal === 'no-draft' &&
+      envelope.data.authority?.governed_generation === 'absent') ||
+      (envelope.data.authority?.authority_level === 'unavailable' &&
+        envelope.data.authority?.disposition === 'undetermined' &&
+        envelope.data.authority?.terminal === 'authority-unavailable' &&
+        envelope.data.authority?.governed_generation === 'absent'))
+  if (!success && !completedNoDraft && !failedNoDraft) {
     return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
   }
 
-  // `mdp run` exits nonzero for a canonical no-draft result. Do not turn that
-  // decision state into an MCP transport error. Do not wrap, reinterpret, or
-  // promote assurance: the exact CLI data object is the MCP tool result.
+  // A canonical no-draft result is decision data, not an MCP transport error.
+  // Do not wrap, reinterpret, or promote assurance: the exact CLI data object
+  // is the MCP tool result.
   return toolResult(envelope.data)
 }
 

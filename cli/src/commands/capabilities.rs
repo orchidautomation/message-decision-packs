@@ -1,3 +1,4 @@
+use crate::authority::{SUPPORTED_COMMAND_SURFACES, SUPPORTED_PROJECTION_SURFACES};
 use crate::commands::decision_trace::{
     DECISION_TRACE_V1, MAX_MERMAID_BYTES, MAX_TRACE_EDGES, MAX_TRACE_LABEL_BYTES, MAX_TRACE_NODES,
     MAX_TRACE_SOURCE_BYTES,
@@ -29,6 +30,14 @@ use crate::run_contracts::{
 use serde_json::{Value, json};
 
 pub(crate) fn capabilities() -> Value {
+    let authority_surfaces = SUPPORTED_COMMAND_SURFACES
+        .iter()
+        .map(|(command, role)| json!({"command": command, "role": role}))
+        .collect::<Vec<_>>();
+    let authority_projections = SUPPORTED_PROJECTION_SURFACES
+        .iter()
+        .map(|(surface, role)| json!({"surface": surface, "role": role}))
+        .collect::<Vec<_>>();
     let conformance_contracts = conformance_schemas()
         .into_iter()
         .map(|(schema_target, contract, _)| {
@@ -137,6 +146,18 @@ pub(crate) fn capabilities() -> Value {
             "run_execution": {"contract": RUN_EXECUTION_V1, "schema_target": "run-execution-v1"},
             "canonical_authority_block": {"contract": CANONICAL_AUTHORITY_BLOCK_V1, "schema_target": "canonical-authority-block-v1"},
             "assurance": "Vector-valued evidence; v0 labels and driver assertions never silently elevate."
+        },
+        "authority_conformance": {
+            "contract": "mdp.authority-conformance-corpus.v1",
+            "source": "plugin/assets/authority-conformance/corpus.json",
+            "authority_owner": "rust-cli",
+            "authority_levels": ["unavailable", "informational", "authoritative"],
+            "dispositions": ["undetermined", "allow", "block"],
+            "projection_rule": "preserve-or-reduce; authoritative disposition is immutable on faithful projections",
+            "governed_generation_rule": "available only for authoritative allow after every required gate obligation passes",
+            "transport_rule": "well-formed decisions are data; MCP errors are transport-owned only",
+            "registered_commands": authority_surfaces,
+            "registered_projections": authority_projections
         },
         "model_step_contracts": {
             "resolution": MODEL_STEP_RESOLUTION_V1,

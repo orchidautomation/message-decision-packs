@@ -1,4 +1,5 @@
 use crate::artifact_hash::{AuthorityJsonLimits, parse_authority_json};
+use crate::authority::SourceAuthority;
 use crate::run_contracts::RunRequestV1;
 use crate::run_runtime::{RunFailure, RunFailureKind, execute_run};
 use anyhow::Result;
@@ -49,11 +50,18 @@ fn failure_result(execution_id: &str, kind: RunFailureKind, reason_code: &str) -
             "This is a sanitized runner-failed result, not a verified run receipt.",
         ),
     };
+    let authority = match kind {
+        RunFailureKind::PolicyBlocked => SourceAuthority::block(reason_code, "run-policy"),
+        RunFailureKind::Preflight | RunFailureKind::RunnerFailed => {
+            SourceAuthority::unavailable(reason_code, "run-availability")
+        }
+    };
     json!({
         "contract": "mdp.run-execution.v1",
         "valid": false,
         "execution_id": execution_id,
         "terminal_state": terminal_state,
+        "authority": authority,
         "run_dir": null,
         "bundle_sha256": null,
         "receipt_sha256": null,

@@ -7,6 +7,10 @@ description: Use when applying an existing proposal MDP to supplied RFP, capture
 
 Use an approved proposal pack to produce bounded review support for supplied pursuit material.
 
+## Authority Monotonicity
+
+The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
+
 ## Select One Mode
 
 Map explicit user intent to one job ID:

@@ -1,6 +1,7 @@
 use crate::artifact_hash::{
     canonical_json_sha256, canonical_json_sha256_for_domain, pack_content_snapshot, sha256_hex,
 };
+use crate::authority::{ProjectionFidelity, SourceAuthority};
 use crate::commands::prompt_output::{
     validate_prompt_output_file_with_inputs, validate_prompt_output_file_with_lineage_inputs,
 };
@@ -71,6 +72,7 @@ pub(crate) struct RunExecution {
     pub(crate) valid: bool,
     pub(crate) execution_id: String,
     pub(crate) terminal_state: TerminalState,
+    pub(crate) authority: SourceAuthority,
     pub(crate) run_dir: String,
     pub(crate) bundle_sha256: String,
     pub(crate) receipt_sha256: String,
@@ -685,11 +687,26 @@ where
         },
         "authority_notice": "Only this block and its hash-bound artifacts are authoritative; surrounding conversation commentary is outside the receipt."
     });
+    let authority = SourceAuthority::from_run(
+        receipt.terminal_state,
+        receipt
+            .decision
+            .as_ref()
+            .map(|decision| decision.decision.as_str()),
+        receipt.output.is_some(),
+    );
+    debug_assert!(authority.permits_projection(
+        authority.authority_level,
+        authority.disposition,
+        authority.governed_generation,
+        ProjectionFidelity::Faithful,
+    ));
     Ok(RunExecution {
         contract: "mdp.run-execution.v1".into(),
-        valid: receipt.terminal_state.is_success(),
+        valid: authority.disposition == crate::authority::DecisionDisposition::Allow,
         execution_id: request.execution_id.clone(),
         terminal_state: receipt.terminal_state,
+        authority,
         run_dir: output_root.display().to_string(),
         bundle_sha256,
         receipt_sha256: receipt.receipt_sha256,

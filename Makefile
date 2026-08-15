@@ -5,12 +5,26 @@ PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validat
 PYTHONDONTWRITEBYTECODE ?= 1
 export PYTHONDONTWRITEBYTECODE
 
-.PHONY: validate validate-cli validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms install-cli demo
+.PHONY: validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms install-cli demo
 
-validate: validate-cli validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms
+validate: validate-cli validate-authority-conformance validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms
 
 validate-cli:
 	cd cli && $(CARGO) fmt --check && $(CARGO) test
+
+validate-authority-conformance:
+	cd cli && PROPTEST_CASES=256 PROPTEST_RNG_SEED=4d4450323130617574686f72697479 $(CARGO) test authority::tests
+	cd cli && $(CARGO) test detached_fit_rejects_dangling_input_contract_before_legacy_fallback
+	cd cli && $(CARGO) test raw_run_decision_cannot_self_certify_trace_authority
+	cd cli && $(CARGO) test computed_profile_activation_blocks_drafting_without_hiding_contracts
+	cd cli && $(CARGO) test gtm_template_preserves_blocked_gate_without_fit_fallback
+	node --test scripts/test-run-mcp-server.mjs
+	bash scripts/test-proposal-mcp-server.sh
+	node scripts/test-native-model-driver.mjs
+	node scripts/test-authority-conformance.mjs
+
+validate-authority-mutations:
+	bash scripts/test-authority-mutations.sh
 
 validate-run-v1-golden:
 	node scripts/test-run-v1-golden.mjs

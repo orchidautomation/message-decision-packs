@@ -321,7 +321,7 @@ If a prospect row has no explicit `persona`, the CLI can use pack-owned `.mdp/ma
 
 Direct persona/job commands such as `route`, `emit-brief`, and `sample-leads` use the same pack-owned persona mappings. JSON output includes `requested_persona` and `persona_resolution` when an alias is resolved.
 
-If fit returns `disqualified` or `insufficient-context`, do not draft unless the user explicitly overrides.
+If fit returns `disqualified` or `insufficient-context`, do not draft from that result. Supply new evidence and run a new MDP evaluation; only a new ready result can grant draft authority.
 
 When fit is acceptable, build the brief:
 

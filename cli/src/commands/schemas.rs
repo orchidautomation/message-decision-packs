@@ -2070,14 +2070,95 @@ fn canonical_authority_block_v1_schema() -> Value {
     })
 }
 
-fn run_execution_v1_schema() -> Value {
+fn source_authority_schema() -> Value {
     json!({
+        "type": "object",
+        "required": [
+            "authority_level", "disposition", "terminal", "governed_generation",
+            "obligations", "reason_codes"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "authority_level": {"enum": ["unavailable", "informational", "authoritative"]},
+            "disposition": {"enum": ["undetermined", "allow", "block"]},
+            "terminal": {"enum": ["authority-unavailable", "diagnostic-complete", "success", "no-draft"]},
+            "governed_generation": {"enum": ["not-applicable", "absent", "available"]},
+            "obligations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["id", "result"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": {"type": "string", "minLength": 1},
+                        "result": {"enum": ["pass", "fail", "missing", "malformed", "unknown", "unsupported", "not-applicable"]}
+                    }
+                }
+            },
+            "reason_codes": string_array()
+        },
+        "oneOf": [
+            {
+                "properties": {
+                    "authority_level": {"const": "unavailable"},
+                    "disposition": {"const": "undetermined"},
+                    "terminal": {"const": "authority-unavailable"},
+                    "governed_generation": {"enum": ["absent", "not-applicable"]},
+                    "obligations": {
+                        "items": {"properties": {"result": {"enum": ["pass", "missing", "malformed", "unknown", "unsupported", "not-applicable"]}}},
+                        "contains": {"properties": {"result": {"enum": ["missing", "malformed", "unknown", "unsupported"]}}, "required": ["result"]}
+                    },
+                    "reason_codes": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+                }
+            },
+            {
+                "properties": {
+                    "authority_level": {"const": "informational"},
+                    "disposition": {"const": "undetermined"},
+                    "terminal": {"const": "diagnostic-complete"},
+                    "governed_generation": {"enum": ["absent", "not-applicable"]},
+                    "obligations": {"items": {"properties": {"result": {"enum": ["pass", "not-applicable"]}}}}
+                }
+            },
+            {
+                "properties": {
+                    "authority_level": {"const": "authoritative"},
+                    "disposition": {"const": "allow"},
+                    "terminal": {"const": "success"},
+                    "governed_generation": {"enum": ["available", "not-applicable"]},
+                    "obligations": {"items": {"properties": {"result": {"enum": ["pass", "not-applicable"]}}}},
+                    "reason_codes": {"type": "array", "maxItems": 0}
+                }
+            },
+            {
+                "properties": {
+                    "authority_level": {"const": "authoritative"},
+                    "disposition": {"const": "block"},
+                    "terminal": {"const": "no-draft"},
+                    "governed_generation": {"const": "absent"},
+                    "obligations": {
+                        "items": {"properties": {"result": {"enum": ["pass", "fail", "not-applicable"]}}},
+                        "contains": {"properties": {"result": {"const": "fail"}}, "required": ["result"]}
+                    },
+                    "reason_codes": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+                }
+            }
+        ],
+        "allOf": [{
+            "if": {"properties": {"governed_generation": {"const": "available"}}, "required": ["governed_generation"]},
+            "then": {"properties": {"obligations": {"minItems": 1}}}
+        }]
+    })
+}
+
+fn run_execution_v1_schema() -> Value {
+    let mut schema = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "MDP Run Execution v1",
         "description": "Stable mdp run command payload. Preflight refusal is an explicit non-verifiable terminal result; all later terminal states bind a published receipt.",
         "type": "object",
         "required": [
-            "contract", "valid", "execution_id", "terminal_state", "run_dir",
+            "contract", "valid", "execution_id", "terminal_state", "authority", "run_dir",
             "bundle_sha256", "receipt_sha256", "authority_block"
         ],
         "additionalProperties": false,
@@ -2086,6 +2167,7 @@ fn run_execution_v1_schema() -> Value {
             "valid": {"type": "boolean"},
             "execution_id": {"type": "string"},
             "terminal_state": terminal_state_schema(),
+            "authority": source_authority_schema(),
             "run_dir": {"type": ["string", "null"]},
             "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
@@ -2093,15 +2175,22 @@ fn run_execution_v1_schema() -> Value {
         },
         "allOf": [
             {
-                "if": {"properties": {"terminal_state": {"const": "success"}}},
+                "if": {
+                    "properties": {
+                        "authority": {
+                            "properties": {"disposition": {"const": "allow"}},
+                            "required": ["disposition"]
+                        }
+                    },
+                    "required": ["authority"]
+                },
                 "then": {"properties": {"valid": {"const": true}}},
                 "else": {"properties": {"valid": {"const": false}}}
             },
             {
-                "if": {"properties": {"terminal_state": {"const": "no-draft:preflight-refused"}}},
+                "if": {"properties": {"run_dir": {"type": "null"}}, "required": ["run_dir"]},
                 "then": {
                     "properties": {
-                        "run_dir": {"type": "null"},
                         "bundle_sha256": {"type": "null"},
                         "receipt_sha256": {"type": "null"}
                     }
@@ -2113,9 +2202,68 @@ fn run_execution_v1_schema() -> Value {
                         "receipt_sha256": sha256_schema()
                     }
                 }
+            },
+            {
+                "if": {"properties": {"terminal_state": {"const": "success"}}, "required": ["terminal_state"]},
+                "then": {"properties": {
+                    "authority": {"properties": {
+                        "authority_level": {"const": "authoritative"},
+                        "disposition": {"enum": ["allow", "block"]}
+                    }},
+                    "authority_block": {"properties": {"terminal_state": {"const": "success"}}}
+                }}
+            },
+            {
+                "if": {"properties": {"terminal_state": {"enum": ["no-draft:runner-failed", "no-draft:audit-incomplete"]}}, "required": ["terminal_state"]},
+                "then": {"properties": {"authority": {"properties": {
+                    "authority_level": {"const": "unavailable"},
+                    "disposition": {"const": "undetermined"},
+                    "terminal": {"const": "authority-unavailable"}
+                }}}}
+            },
+            {
+                "if": {"properties": {"terminal_state": {"enum": ["no-draft:output-invalid", "no-draft:decision-invalid", "no-draft:policy-blocked"]}}, "required": ["terminal_state"]},
+                "then": {"properties": {"authority": {"properties": {
+                    "authority_level": {"const": "authoritative"},
+                    "disposition": {"const": "block"},
+                    "terminal": {"const": "no-draft"}
+                }}}}
+            },
+            {
+                "if": {"properties": {"terminal_state": {"const": "no-draft:preflight-refused"}}, "required": ["terminal_state"]},
+                "then": {"properties": {"authority": {"oneOf": [
+                    {"properties": {
+                        "authority_level": {"const": "unavailable"},
+                        "disposition": {"const": "undetermined"},
+                        "terminal": {"const": "authority-unavailable"}
+                    }},
+                    {"properties": {
+                        "authority_level": {"const": "authoritative"},
+                        "disposition": {"const": "block"},
+                        "terminal": {"const": "no-draft"}
+                    }}
+                ]}}}
             }
         ]
-    })
+    });
+    let all_of = schema["allOf"]
+        .as_array_mut()
+        .expect("run execution schema allOf clauses");
+    for terminal in [
+        "success",
+        "no-draft:preflight-refused",
+        "no-draft:runner-failed",
+        "no-draft:output-invalid",
+        "no-draft:decision-invalid",
+        "no-draft:audit-incomplete",
+        "no-draft:policy-blocked",
+    ] {
+        all_of.push(json!({
+            "if": {"properties": {"terminal_state": {"const": terminal}}, "required": ["terminal_state"]},
+            "then": {"properties": {"authority_block": {"properties": {"terminal_state": {"const": terminal}}}}}
+        }));
+    }
+    schema
 }
 
 fn proof_output_draft_schema() -> Value {
@@ -3145,7 +3293,7 @@ fn human_brief_schema() -> Value {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "MDP Human Brief v0",
         "type": "object",
-        "required": ["artifact_type", "pack_id", "pack_version", "source_artifact_type", "template_id", "decision", "sections", "audit"],
+        "required": ["artifact_type", "pack_id", "pack_version", "source_artifact_type", "template_id", "decision", "authority", "sections", "audit"],
         "additionalProperties": false,
         "properties": {
             "artifact_type": {"const": "mdp.human-brief.v0"},
@@ -3154,6 +3302,18 @@ fn human_brief_schema() -> Value {
             "source_artifact_type": {"type": "string"},
             "template_id": {"type": "string"},
             "decision": {"enum": ["ready", "needs-review", "no-draft", "proof-gap", "blocked"]},
+            "authority": {
+                "type": "object",
+                "required": ["projection_only", "projection_level", "source_disposition", "governed_generation", "fidelity"],
+                "additionalProperties": false,
+                "properties": {
+                    "projection_only": {"const": true},
+                    "projection_level": {"const": "informational"},
+                    "source_disposition": {"enum": ["allow", "block", "undetermined"]},
+                    "governed_generation": {"const": false},
+                    "fidelity": {"enum": ["faithful", "unavailable"]}
+                }
+            },
             "title": {"type": "string"},
             "sections": {
                 "type": "array",
@@ -5068,6 +5228,54 @@ mod tests {
             driver["properties"]["prompt"]["properties"]["authority"]["additionalProperties"],
             false
         );
+    }
+
+    #[test]
+    fn run_authority_schema_rejects_cross_field_upgrades_and_missing_gates() {
+        let execution = schema(SchemaTarget::RunExecutionV1);
+        let authority_schema = &execution["properties"]["authority"];
+        let valid_allow = json!({
+            "authority_level": "authoritative",
+            "disposition": "allow",
+            "terminal": "success",
+            "governed_generation": "available",
+            "obligations": [{"id": "decision", "result": "pass"}],
+            "reason_codes": []
+        });
+        draft202012::validate(authority_schema, &valid_allow)
+            .expect("canonical allow authority should validate");
+
+        for invalid in [
+            json!({
+                "authority_level": "authoritative",
+                "disposition": "allow",
+                "terminal": "success",
+                "governed_generation": "available",
+                "obligations": [{"id": "decision", "result": "missing"}],
+                "reason_codes": []
+            }),
+            json!({
+                "authority_level": "authoritative",
+                "disposition": "allow",
+                "terminal": "success",
+                "governed_generation": "available",
+                "obligations": [],
+                "reason_codes": []
+            }),
+            json!({
+                "authority_level": "authoritative",
+                "disposition": "block",
+                "terminal": "success",
+                "governed_generation": "available",
+                "obligations": [{"id": "decision", "result": "fail"}],
+                "reason_codes": ["blocked"]
+            }),
+        ] {
+            assert!(
+                draft202012::validate(authority_schema, &invalid).is_err(),
+                "contradictory authority profile must fail closed: {invalid}"
+            );
+        }
     }
 
     #[test]

@@ -1183,16 +1183,37 @@ fn project_run_execution(data: &Value, source: TraceSource) -> DecisionTrace {
         .collect::<Vec<_>>();
     let decision = data["authority_block"]["decision"]["decision"].as_str();
     let decision_blocks_output = decision.is_some_and(|value| blocks_output(value, &reason_codes));
-    let success =
-        terminal == "success" && data["valid"].as_bool() == Some(true) && !decision_blocks_output;
+    let source_authoritative = data["authority"]["authority_level"] == "authoritative"
+        && matches!(
+            data["authority"]["disposition"].as_str(),
+            Some("allow" | "block")
+        )
+        && matches!(
+            data["authority"]["terminal"].as_str(),
+            Some("success" | "no-draft")
+        );
+    let success = source_authoritative
+        && data["authority"]["disposition"] == "allow"
+        && data["authority"]["governed_generation"] == "available"
+        && terminal == "success"
+        && data["valid"].as_bool() == Some(true)
+        && !decision_blocks_output;
+    let receipt_referenced =
+        source_authoritative && data["authority_block"]["verification"].is_object();
     let mut builder = TraceBuilder::new(source);
-    builder.authority.decision_authority = if success {
+    builder.authority.decision_authority = if source_authoritative && receipt_referenced {
         "run-receipt-reference"
+    } else if source_authoritative {
+        "source-artifact"
     } else {
         "none"
     };
     builder.authority.output_authority = success;
-    builder.authority.verification_state = if success { "referenced" } else { "not-created" };
+    builder.authority.verification_state = if receipt_referenced {
+        "referenced"
+    } else {
+        "not-created"
+    };
     builder.add_designed("preflight", "gate", "Run preflight boundary", "designed");
     builder.add_designed(
         "publication",
@@ -1228,7 +1249,13 @@ fn project_run_execution(data: &Value, source: TraceSource) -> DecisionTrace {
         }
         .into(),
     );
-    builder.finish(if success { "available" } else { "blocked" })
+    builder.finish(if success {
+        "available"
+    } else if source_authoritative {
+        "blocked"
+    } else {
+        "unavailable"
+    })
 }
 
 fn add_field_reasons(

@@ -502,7 +502,7 @@ fn fit_prospect_with_signal_authority(
         "signal_authority": signal_authority.unwrap_or_else(legacy_signal_authority),
         "decision": match status {
             "fit" => "Proceed to route/brief with stated assumptions.",
-            "disqualified" => "Do not draft outbound copy unless the user overrides the disqualifier.",
+            "disqualified" => "Do not draft outbound copy from this result. Supply new evidence and run a new evaluation.",
             _ => "Ask for more context before drafting.",
         }
     }))
