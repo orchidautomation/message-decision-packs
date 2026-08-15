@@ -198,7 +198,13 @@ pub(crate) fn capabilities() -> Value {
             "version_matrix": source_lineage_version_matrix(),
             "attempt_statuses": DecisionInputAttemptStatus::ALL,
             "requirement_classes": ["required", "optional", "conditional", "hard-gate"],
-            "boundary": "The pack and CLI own questions and deterministic decisions. The customer or host owns source collection, provider access, model calls, copy generation, and sequencing."
+            "boundary": "The pack and CLI own questions and deterministic decisions. The customer or host owns source collection, provider access, model calls, copy generation, and sequencing.",
+            "job_ingress": {
+                "contract": "mdp.job-ingress.v1",
+                "governed_default": "A selected job with a direct or transitive decision-input contract requires lineage-validated normalized input.",
+                "detached_behavior": "blocked with governed_job_requires_normalized_input; never fit, ready, or draft authority",
+                "legacy_boundary": "Detached prospect compatibility applies only to a selected job with no direct or transitive decision-input contract binding."
+            }
         },
         "target_contracts": {
             "manifest_target": "Optional for existing/reference packs; required by the target-aware GTM authoring path.",
@@ -456,6 +462,10 @@ mod tests {
         assert_eq!(
             result["decision_input_contracts"]["requirements"],
             REQUIREMENTS_CONTRACT
+        );
+        assert_eq!(
+            result["decision_input_contracts"]["job_ingress"]["contract"],
+            "mdp.job-ingress.v1"
         );
         assert!(
             result["commands"]

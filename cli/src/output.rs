@@ -283,6 +283,9 @@ fn summarize(command: &str, data: &Value) -> Value {
             }).unwrap_or_default()
         }),
         "fit" => json!({
+            "valid": data["valid"],
+            "job_id": data["job_id"],
+            "ingress": data["ingress"],
             "status": data["status"],
             "decision": data["decision"],
             "scope": data["scope"],
@@ -299,6 +302,7 @@ fn summarize(command: &str, data: &Value) -> Value {
         }),
         "brief" => json!({
             "contract": data["contract"],
+            "valid": data["valid"],
             "channel": data["channel"],
             "persona": data["persona"],
             "job": data["job"],
@@ -306,6 +310,7 @@ fn summarize(command: &str, data: &Value) -> Value {
             "scope": data["scope"],
             "portfolio_sensitive": data["portfolio_sensitive"],
             "fit_status": data["fit"]["status"],
+            "ingress": data["fit"]["ingress"],
             "signal_authority": signal_authority_summary(&data["fit"]["signal_authority"]),
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],

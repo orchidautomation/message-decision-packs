@@ -75,6 +75,7 @@ pub(crate) fn render_pack_readme(
         "Select one exact canonical job.",
         "Inspect its resolved product foundation and diagnostics.",
         "Load only the referenced cards, entries, contracts, sources, and gaps.",
+        "Use detached prospect input only when the selected job has no direct or transitive Decision Input Contract; governed jobs require the exact normalized envelope and lineage artifacts.",
         "Stop on blocked authority; never fill a gap from this README.",
         "Apply the job output and review boundaries before using the result.",
     ] {

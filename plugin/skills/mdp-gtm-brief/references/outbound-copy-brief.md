@@ -4,13 +4,25 @@ Read this only for `outbound-copy-brief`.
 
 ## Workflow
 
-1. Run `mdp fit` on the supplied prospect JSON. Stop on insufficient or disqualified.
-2. Build bounded pre-draft context:
+1. Run `mdp requirements --dir PACK_ROOT --job outbound-copy-brief` and inspect
+   the resolved Decision Input Contracts. If any are present, require the exact
+   validated normalized input and lineage artifacts compiled for that job;
+   never extract or substitute a detached prospect. If none are present, the
+   selected job may use the supplied legacy prospect JSON. Stop on insufficient
+   or disqualified fit.
+2. Build bounded pre-draft context. For a truly ungoverned job:
 
 ```bash
 mdp --json brief --context --dir PACK_ROOT --prospect PROSPECT_JSON --channel CHANNEL \
   --job outbound-copy-brief --routed-context-out ROUTED_CONTEXT_JSON
 ```
+
+For a governed v2 job, replace `--prospect PROSPECT_JSON` with the exact
+`--normalized-input`, `--prompt`, `--source-binding`,
+`--source-attempt-request`, and `--collected-attempt-results` artifacts. For
+another supported normalized contract version, follow the exact argument set
+compiled by `mdp requirements`. Treat
+`governed_job_requires_normalized_input` as terminal.
 
 Require `data.context.minimality.status: ready` and
 `data.routed_context_artifact.status: saved`; do not load

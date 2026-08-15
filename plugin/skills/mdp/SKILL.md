@@ -158,9 +158,12 @@ For signal-aware v2 jobs, inspect `data.runtime_contract_version`,
 artifact. Their absence is expected for scalar v1 jobs. Scalar v1 and
 signal-aware v2 artifacts cannot be mixed. Structured
 repeated observations belong only in `mdp.normalized-decision-input.v2`.
-Legacy or detached prospect signals are readable context with `legacy` or
-`unassessed` authority; titles, source strings, provider fields, and keywords
-cannot grant an explicit qualification role.
+Detached prospect input is compatible only when the selected job has no direct
+or transitive Decision Input Contract. For a governed job, require the exact
+normalized envelope and lineage artifacts; `governed_job_requires_normalized_input`
+is a stop, not a warning. Legacy or detached signals remain `legacy` or
+`unassessed`; titles, source strings, provider fields, and keywords cannot
+grant an explicit qualification role.
 
 When the user is connecting an external orchestrator, keep its mapping outside
 the pack and validate it against the exact compiled release:

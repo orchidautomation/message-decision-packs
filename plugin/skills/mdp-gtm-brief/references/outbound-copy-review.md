@@ -5,6 +5,11 @@ Read this only for `outbound-copy-review` and only when the user supplies copy.
 ## Workflow
 
 1. Establish the prospect fit and bounded context used by the draft.
+   Run `mdp requirements --dir PACK_ROOT --job outbound-copy-review` first. If
+   the job resolves any Decision Input Contract, require its exact validated
+   normalized input and lineage artifacts; detached prospect input is terminally
+   blocked. Use a detached prospect only when the resolved contract list is
+   empty.
    Require minimality `ready`, preserve the exact context digest, and use only
    `context.model_context`. A blocked/unassessed budget or whole-card fallback
    stops governed review.

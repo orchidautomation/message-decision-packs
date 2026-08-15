@@ -5,11 +5,11 @@ use crate::cli::{
 };
 use crate::commands::briefs::prospect_brief_from_fit_with_context;
 use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
-use crate::commands::routing::fit_normalized;
+use crate::commands::routing::{fit_for_job, fit_normalized};
 use crate::commands::{
     AssembleConformancePaths, BehavioralEvidencePaths, RunReceiptOptions, TargetInitOptions,
     assemble_conformance, author_proof_output_file, capabilities, check_claims_scoped,
-    compile_candidate_file, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, fit, gaps,
+    compile_candidate_file, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, gaps,
     init_pack_targeted, init_pack_targeted_dry_run, pack, project_conformance_file,
     project_conformance_report, project_run_files, project_source_file,
     prospect_brief_with_context, render_human_brief_file, render_human_brief_markdown,
@@ -497,14 +497,15 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                     job.as_deref(),
                 )?
             } else {
-                fit(
+                fit_for_job(
                     &dir,
                     prospect
                         .as_deref()
                         .ok_or_else(|| anyhow!("--prospect is required"))?,
+                    job.as_deref(),
                 )?
             };
-            print_output(json_mode, summary_mode, "fit", data)
+            print_checked(json_mode, summary_mode, "fit", data)
         }
         Commands::CheckClaims {
             dir,
@@ -603,6 +604,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 data = export_routed_context(data, &path, dry_run)?;
             }
             if readable && !json_mode && !summary_mode {
+                let valid = data["valid"].as_bool().unwrap_or(true);
                 let markdown = render_readable_prospect_brief(&data);
                 if let Some(path) = out {
                     if dry_run {
@@ -616,7 +618,10 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 } else {
                     println!("{markdown}");
                 }
-                return Ok(());
+                if valid {
+                    return Ok(());
+                }
+                std::process::exit(1);
             }
             if let Some(path) = out {
                 if dry_run {
@@ -628,7 +633,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             } else {
                 data = attach_stdout_artifact(data);
             }
-            print_output(json_mode, summary_mode, "brief", data)
+            print_checked(json_mode, summary_mode, "brief", data)
         }
         Commands::Copy {
             dir,

@@ -44,7 +44,7 @@ pub(crate) use proof_output::{
     author_proof_output_file, verify_output_file, verify_output_readable_file, verify_output_value,
 };
 pub(crate) use requirements::requirements;
-pub(crate) use routing::{check_claims_scoped, fit, route_scoped};
+pub(crate) use routing::{check_claims_scoped, route_scoped};
 pub(crate) use run::run_request_file;
 pub(crate) use run_receipt::{RunReceiptOptions, run_receipt};
 pub(crate) use run_verification::verify_run_files;

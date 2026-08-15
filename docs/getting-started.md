@@ -206,8 +206,10 @@ mdp --json fit --dir PACK_ROOT --job JOB_ID \
 ```
 
 `brief --context` accepts the same lineage arguments. Do not extract an edited
-prospect and pass it through `--prospect`; that is the legacy compatibility
-path and is reported as legacy/unassessed. Explicit `fit`, `why-now`,
+prospect and pass it through `--prospect`. Detached input is compatible only
+for a selected job with no direct or transitive Decision Input Contract. A
+governed job fails closed with `governed_job_requires_normalized_input` and no
+draft authority. Explicit `fit`, `why-now`,
 `person-resolution`, and `disqualifier` roles come from pack projections, not
 keywords. Stale, weak, blocked, errored, malformed, or unresolved-conflict
 observations stay ineligible and no-draft.

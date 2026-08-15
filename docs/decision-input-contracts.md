@@ -277,11 +277,16 @@ mdp --json brief --context --dir PACK_ROOT --job JOB_ID --channel linkedin \
   --collected-attempt-results COLLECTED_ATTEMPT_RESULTS.json
 ```
 
-The detached `--prospect` form is the compatibility path. Its evidence
-authority is `legacy` or `unassessed`, even if its prose contains words such as
-“strong fit,” “urgent,” or a non-empty source string. Missing lineage,
-ineligible observations, and unresolved conflicts remain bounded diagnostics
-and no-draft states; agents must explain them rather than drafting around them.
+The detached `--prospect` form is compatible only when the selected job has no
+direct or transitive Decision Input Contract binding. Select `--job`
+explicitly whenever a pack declares multiple jobs. A governed job invoked with
+detached input returns `mdp.job-ingress.v1` status `blocked`, diagnostic code
+`governed_job_requires_normalized_input`, a non-success exit, and no fit or
+draft authority. Its evidence remains `legacy` or `unassessed`; words such as
+“strong fit,” “urgent,” or a non-empty source string cannot cross that boundary.
+Missing lineage, ineligible observations, and unresolved conflicts remain
+bounded diagnostics and no-draft states; agents must explain them rather than
+drafting around them.
 
 ## Resource And Egress Safety
 

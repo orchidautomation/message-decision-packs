@@ -5,7 +5,9 @@ use crate::commands::prompt_output::{
     validate_prompt_output_file_with_inputs, validate_prompt_output_file_with_lineage_inputs,
 };
 use crate::commands::requirements::requirements;
-use crate::commands::routing::{fit, fit_normalized};
+use crate::commands::routing::{
+    fit, fit_normalized, fit_prospect_with_governed_authority, resolve_job_ingress,
+};
 use crate::commands::schemas::prompt_output_schema_for_ref;
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, NORMALIZED_DECISION_INPUT_CONTRACT,
@@ -942,6 +944,11 @@ where
         let bound_prompt =
             required_typed_input(&staged, "bound-prompt", "mdp.prompt.v0", "application/yaml")?;
         let normalized_value: Value = serde_json::from_slice(&fs::read(&normalized.staged_path)?)?;
+        let normalized_job_id = normalized_value["job_id"]
+            .as_str()
+            .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "normalized-job-missing"))?;
+        let ingress = resolve_job_ingress(&manifest, Some(normalized_job_id))
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "job-ingress-invalid"))?;
         let prompt_manifest_path = normalized_value["normalization"]
             .as_array()
             .and_then(|items| items.first())
@@ -1010,10 +1017,28 @@ where
                         &source_binding.expect("v2 source binding").staged_path,
                         &source_attempt.staged_path,
                         &attempt_results.staged_path,
-                        request
-                            .job_identity
-                            .as_ref()
-                            .map(|identity| identity.job_id.as_str()),
+                        Some(normalized_job_id),
+                    )?
+                } else if ingress
+                    .as_ref()
+                    .is_some_and(|ingress| ingress.is_governed())
+                {
+                    let prospect: crate::models::Prospect =
+                        serde_json::from_value(prospect.clone()).map_err(|_| {
+                            run_failure(
+                                RunFailureKind::PolicyBlocked,
+                                "normalized-prospect-invalid",
+                            )
+                        })?;
+                    fit_prospect_with_governed_authority(
+                        &staged_pack,
+                        prospect,
+                        normalized_job_id,
+                        json!({
+                            "normalized_output_sha256": normalized.initial_sha256,
+                            "source_attempt_request_sha256": source_attempt.initial_sha256,
+                            "collected_attempt_results_sha256": attempt_results.initial_sha256
+                        }),
                     )?
                 } else {
                     fit(&staged_pack, &prospect_path)?
