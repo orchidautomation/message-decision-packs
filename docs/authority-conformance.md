@@ -33,7 +33,11 @@ The focused property suite uses 256 cases and transformation sequences of at mos
 make validate-authority-mutations
 ```
 
-The mutation job pins `cargo-mutants` 27.1.0, permits at most 24 candidates, uses two workers and a 40-second per-mutant timeout, and has a 12-minute CI job limit.
+The mutation gate pins `cargo-mutants` 27.1.0, permits at most 24 candidates,
+splits the selected candidates across two isolated CI shards, and uses a
+40-second per-mutant timeout with a 12-minute limit per shard. The aggregate
+`authority-mutations` check passes only when both shards pass. Local runs remain
+unsharded unless `0/2` or `1/2` is passed explicitly.
 
 ## Review and release proof
 

@@ -32,16 +32,31 @@ jobs:
           python3 -m unittest scripts/test_skill_eval_harness.py
           python3 scripts/skill-eval-harness.py --mdp-bin cli/target/debug/mdp
 
-  authority-mutations:
+  authority-mutation-shard:
+    name: authority-mutation-shard-${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["0/2", "1/2"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install pinned cargo-mutants
         run: cargo install cargo-mutants --version 27.1.0 --locked
       - name: Kill focused authority mutants
-        run: bash scripts/test-authority-mutations.sh
+        run: bash scripts/test-authority-mutations.sh "${{ matrix.shard }}"
+
+  authority-mutations:
+    if: always()
+    needs: authority-mutation-shard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every authority mutation shard
+        env:
+          SHARD_RESULT: ${{ needs.authority-mutation-shard.result }}
+        run: test "$SHARD_RESULT" = success
 
   pluxx:
     runs-on: ubuntu-latest
