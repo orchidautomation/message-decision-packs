@@ -115,6 +115,7 @@ pub(crate) const SUPPORTED_COMMAND_SURFACES: &[(&str, SurfaceRole)] = &[
     ("copy", SurfaceRole::Projection),
     ("emit-brief", SurfaceRole::Projection),
     ("pack", SurfaceRole::ArtifactWriter),
+    ("readme", SurfaceRole::ArtifactWriter),
     ("schema", SurfaceRole::Projection),
 ];
 

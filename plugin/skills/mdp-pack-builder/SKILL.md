@@ -95,7 +95,21 @@ Scaffold or update `.mdp/README.md` only as concise secondary navigation over
 structured authority. It cannot satisfy readiness. Because it is inside
 `.mdp/`, changing it changes the portable pack hash even when foundation
 resolution is unchanged. Do not turn it, the registry, or a new card kind into
-a company wiki or an eleventh primitive.
+a company wiki or an eleventh primitive. The generated README owns one
+machine-generated inventory block delimited by `<!-- mdp:readme-inventory v1 begin -->`
+and `<!-- mdp:readme-inventory v1 end -->`; it projects exact card entry
+counts, prompt ids, and source ids from loaded structured authority. Never
+hand-author or hand-maintain numeric inventory inside or outside that block.
+After any card, prompt, or source change, regenerate only the owned block:
+
+```bash
+mdp --json readme refresh --dir PACK_ROOT
+```
+
+Do not finish the authoring loop while `mdp --json readme check --dir PACK_ROOT`
+reports `stale`; a fresh generated pack must keep its owned inventory fresh,
+and `validate --strict` treats `readme_inventory_drift` as a blocker. Legacy
+READMEs without the owned marker remain orientation-only and unassessed.
 
 Foundation `ready` is veto-only: it never establishes sufficient-for-job or
 self-standing status and never overrides another failed gate or explicit

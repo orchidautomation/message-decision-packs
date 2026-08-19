@@ -1,7 +1,7 @@
 use crate::artifact_hash::{canonical_json_bytes, sha256_hex};
 use crate::cli::{
     Cli, Commands, ConformanceCommand, ConformanceReportVisibility, HumanBriefFormat,
-    SampleLeadsFormat, TraceFormat,
+    ReadmeCommand, SampleLeadsFormat, TraceFormat,
 };
 use crate::commands::briefs::prospect_brief_from_fit_with_context;
 use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
@@ -9,10 +9,10 @@ use crate::commands::routing::{fit_for_job, fit_normalized};
 use crate::commands::{
     AssembleConformancePaths, BehavioralEvidencePaths, RunReceiptOptions, TargetInitOptions,
     assemble_conformance, author_proof_output_file, capabilities, check_claims_scoped,
-    compile_candidate_file, demo_copy, doctor, emit_brief_scoped, eval_pack, explain, gaps,
-    init_pack_targeted, init_pack_targeted_dry_run, pack, project_conformance_file,
+    check_readme, compile_candidate_file, demo_copy, doctor, emit_brief_scoped, eval_pack, explain,
+    gaps, init_pack_targeted, init_pack_targeted_dry_run, pack, project_conformance_file,
     project_conformance_report, project_prompt_output_validation_file, project_run_files,
-    project_source_file, prospect_brief_with_context, render_human_brief_file,
+    project_source_file, prospect_brief_with_context, refresh_readme, render_human_brief_file,
     render_human_brief_markdown, render_mermaid, render_readable_prospect_brief, requirements,
     route_scoped, run_receipt, run_request_file, sample_leads, schema, skills,
     validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
@@ -190,6 +190,15 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             let data = apply_strict(validate_pack(&dir)?, strict, StrictWarningSource::Issues);
             print_checked(json_mode, summary_mode, "validate", data)
         }
+        Commands::Readme { command } => match command {
+            ReadmeCommand::Check { dir } => {
+                print_checked(json_mode, summary_mode, "readme-check", check_readme(&dir)?)
+            }
+            ReadmeCommand::Refresh { dir, out, dry_run } => {
+                let data = refresh_readme(&dir, out.as_deref(), dry_run)?;
+                print_output(json_mode, summary_mode, "readme-refresh", data)
+            }
+        },
         Commands::ValidatePromptOutput {
             dir,
             file,
