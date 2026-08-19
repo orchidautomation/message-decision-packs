@@ -284,6 +284,13 @@ mdp --json eval --dir <pack-root>
 
 Use `--strict` on `validate` or `eval` for a blocking quality gate. Use `mdp <command> --help` rather than guessing flags.
 
+Card-level `personas` and entry-level `applies_to` values are machine-readable
+persona selectors. They must match `manifest.personas` case-insensitively;
+authored capitalization is preserved. Default validation reports dangling
+selectors as compatibility warnings, while `validate --strict` blocks them.
+Empty selector lists remain universal, and persona-like words in titles,
+descriptions, or bodies are prose rather than declarations.
+
 ## Cold-model Conformance
 
 When asked whether an exact released job is self-standing or qualified, run

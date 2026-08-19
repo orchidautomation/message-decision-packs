@@ -332,6 +332,55 @@ gtm_fixture="$proposal_fixture/gtm-pack"
 cp -R "$ROOT/examples/clay-audiences-self-serve-enterprise-expansion" "$gtm_fixture"
 "$mdp_bin" --json validate --dir "$gtm_fixture" >/tmp/mdp-release-install-gtm-validate.json
 
+persona_fixture_root="$proposal_fixture/persona-reference-packs"
+declared_persona_fixture="$persona_fixture_root/declared"
+undeclared_persona_fixture="$persona_fixture_root/undeclared"
+for fixture in "$declared_persona_fixture" "$undeclared_persona_fixture"; do
+  "$mdp_bin" --json init --dir "$fixture" >/dev/null
+done
+cp "$ROOT/cli/tests/fixtures/persona-references/declared-card.yaml" \
+  "$declared_persona_fixture/.mdp/cards/personas.yaml"
+cp "$ROOT/cli/tests/fixtures/persona-references/undeclared-card.yaml" \
+  "$undeclared_persona_fixture/.mdp/cards/personas.yaml"
+python3 - "$declared_persona_fixture" "$undeclared_persona_fixture" <<'PY'
+import pathlib, sys
+for root_arg in sys.argv[1:]:
+    path = pathlib.Path(root_arg) / ".mdp" / "manifest.yaml"
+    raw = path.read_text()
+    marker = "personas:\n- GTM Engineering\n- PMM\n- PM\ntarget_personas:"
+    replacement = "personas:\n- GTM Engineering\n- PMM\n- PM\n- Buyer\ntarget_personas:"
+    if raw.count(marker) != 1:
+        raise SystemExit(f"unexpected starter persona marker count in {path}")
+    path.write_text(raw.replace(marker, replacement))
+PY
+
+declared_route="$("$mdp_bin" --json route --entries --dir "$declared_persona_fixture" --persona Buyer --job outbound-copy-brief)"
+if ! printf '%s\n' "$declared_route" | grep -F 'declared-buyer' >/dev/null; then
+  echo "Installed CLI did not route the declared case-insensitive persona selector." >&2
+  printf '%s\n' "$declared_route" >&2
+  exit 1
+fi
+
+undeclared_default="$("$mdp_bin" --json validate --dir "$undeclared_persona_fixture")"
+undeclared_summary="$("$mdp_bin" --json --summary validate --dir "$undeclared_persona_fixture")"
+for output in "$undeclared_default" "$undeclared_summary"; do
+  if ! printf '%s\n' "$output" | grep -F 'card_entry_applies_to_persona_undeclared' >/dev/null; then
+    echo "Installed CLI validation output omitted the undeclared persona diagnostic." >&2
+    printf '%s\n' "$output" >&2
+    exit 1
+  fi
+done
+if "$mdp_bin" --json validate --strict --dir "$undeclared_persona_fixture" \
+  >"$proposal_fixture/undeclared-persona-strict.json"; then
+  echo "Installed CLI strict validation accepted an undeclared persona selector." >&2
+  exit 1
+fi
+if ! grep -F 'card_entry_applies_to_persona_undeclared' \
+  "$proposal_fixture/undeclared-persona-strict.json" >/dev/null; then
+  echo "Installed CLI strict validation omitted the undeclared persona diagnostic." >&2
+  exit 1
+fi
+
 printf '{}\n' > "$proposal_fixture/invalid-prompt-output.json"
 python3 - "$proposal_fixture" "$gtm_fixture" <<'PY'
 import json, pathlib, sys

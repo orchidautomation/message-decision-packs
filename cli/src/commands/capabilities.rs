@@ -216,6 +216,15 @@ pub(crate) fn capabilities() -> Value {
             "context_dimensions": "Optional profile-owned applicability dimensions such as product, capability, solution, or segment; agnostic primitives remain unchanged.",
             "entry_scope": "OR within an entry dimension and AND across dimensions; unscoped entries are global."
         },
+        "persona_reference_integrity": {
+            "authority": "manifest.personas",
+            "matching": "case-insensitive; authored display values are preserved",
+            "selectors": ["manifest.cards[].personas", "loaded cards[].personas", "loaded cards[].entries[].applies_to"],
+            "empty_selector_behavior": "empty lists and empty values retain universal/no-selector compatibility",
+            "prose_behavior": "titles, descriptions, and bodies are not interpreted as persona references",
+            "default_validation": "undeclared selectors emit path-specific warnings while preserving legacy validity",
+            "strict_validation": "warnings fail mdp validate --strict"
+        },
         "decision_input_contracts": {
             "requirements": REQUIREMENTS_CONTRACT,
             "requirements_contracts": [REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2],

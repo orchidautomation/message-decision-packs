@@ -1372,6 +1372,58 @@ mod tests {
     }
 
     #[test]
+    fn declared_persona_selector_routes_case_insensitively_and_preserves_authored_value() {
+        let root = temp_pack("declared-persona-selector");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest_value: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest_value["personas"]
+            .as_sequence_mut()
+            .expect("manifest personas")
+            .push(serde_yaml::Value::String("Buyer".into()));
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest_value).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let card_path = root.join(".mdp/cards/personas.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        let mut card: serde_yaml::Value = serde_yaml::from_str(&raw).expect("card should parse");
+        card["entries"][0]["title"] = serde_yaml::Value::String("Unrelated audience".into());
+        card["entries"][0]["body"] =
+            serde_yaml::Value::String("No persona words appear in this prose.".into());
+        card["entries"][0]["applies_to"] =
+            serde_yaml::from_str("- buyer\n").expect("applicability should parse");
+        std::fs::write(
+            &card_path,
+            serde_yaml::to_string(&card).expect("card should serialize"),
+        )
+        .expect("card should be writable");
+
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let details = route_entry_details(
+            &root,
+            &manifest,
+            "BUYER",
+            "outbound-copy-brief",
+            true,
+            &ScopeResolution::default(),
+        )
+        .expect("route details should compile");
+        let selected = details
+            .context_entries
+            .iter()
+            .find(|entry| entry["card_id"] == "personas" && entry["entry_id"] == "gtm-engineering")
+            .expect("declared selector should remain reachable");
+        assert_eq!(selected["reason_codes"], json!(["persona_applicability"]));
+        assert_eq!(selected["applies_to"], json!(["buyer"]));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn select_cards_respects_route_card_limit_after_base_cards() {
         let selected = select_cards(&manifest(2), Some("PMM"), Some("linkedin outbound copy"));
         let ids: Vec<&str> = selected
