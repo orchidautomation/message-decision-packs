@@ -158,6 +158,18 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
   ICP detail, proof, certifications, compliance status, RFP requirements,
   pricing, past performance, or approval to clear a finding.
 - Check source receipts, freshness, confidence, approved claims/proof, avoid rules, output rules, and gaps for internal consistency.
+- Audit gap-versus-guardrail classification on every selected required facet.
+  Approved terminology, case-scoped proof, and case-specific outcomes with
+  explicit no-extrapolation rules are entries plus avoid/output guardrails, not
+  gaps. Flag approved boundaries misrepresented as `gaps` (a ready job blocked by
+  authoring defect) and real holes relabeled as boundaries (a `gaps` entry that
+  still describes unresolved authority). The CLI never infers gap meaning from
+  prose; this judgment is the reviewer's.
+- Require the builder's post-build conformance loop on review: for every
+  advertised canonical job, `skills --job` and `requirements --job` must be run
+  and their `product_foundation.status`, selected facet IDs, entry refs, and gap
+  refs reported. Reject a handoff that calls the pack complete or ready while a
+  job is `pack_ready: false` or foundation `blocked`.
 - Cross-reference every non-empty manifest card `personas`, loaded card
   `personas`, and entry `applies_to` selector against the manifest's declared
   `personas`, `target_personas`, and `operator_roles` case-insensitively. Default

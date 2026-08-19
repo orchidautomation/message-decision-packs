@@ -39,3 +39,14 @@ Each full job entry must also declare required primitives and the `prospect` inp
 ## Deterministic Checks
 
 Use `mdp fit` for qualification, `mdp brief --context` for bounded pre-draft context, and `mdp check-claims` for supplied text. Author pack rules so those commands can decide; do not add prose-only parallel gates.
+
+## Approved Boundaries Versus Genuine Gaps
+
+Classify scoped or limited authority as entries, not gaps. Case-led proof,
+case-specific outcomes, and approved-but-bounded terminology are entries in
+the matching facet plus explicit `avoid`/`output` rules in a guardrail facet.
+A facet with such entries and no `gaps` is `ready`. Reserve `gaps` for authority
+no approved source establishes at all (missing alternatives, missing outcomes,
+missing certifications). Misrepresenting an approved boundary as a gap blocks a
+ready job and falsely describes the pack as incomplete; the builder and
+reviewer own this judgment, and the CLI never infers it from prose.

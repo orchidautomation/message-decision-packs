@@ -756,6 +756,192 @@ mod tests {
         assert!(result["recommendation"].is_null());
     }
 
+    fn add_genuine_gap_to_facet(root: &std::path::Path, facet_id: &str) {
+        // Author a genuine missing-authority gap entry in the gaps card.
+        let gaps_path = root.join(".mdp/cards/gaps.yaml");
+        let raw = std::fs::read_to_string(&gaps_path).expect("gaps card should be readable");
+        let mut gaps: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("gaps card should parse");
+        let new_entry: serde_yaml::Value = serde_yaml::from_str(
+            r#"
+- id: missing-portfolio-alternatives
+  title: Missing portfolio-wide alternatives evidence
+  body: No approved source establishes portfolio-wide alternative positioning. Do not extrapolate from one case; route to the responsible reviewer.
+  applies_to: []
+  evidence: []
+  avoid: []
+"#,
+        )
+        .expect("gap entry should parse");
+        if let serde_yaml::Value::Sequence(new_entries) = new_entry {
+            if let Some(existing) = gaps["entries"].as_sequence_mut() {
+                existing.extend(new_entries);
+            }
+        }
+        std::fs::write(
+            &gaps_path,
+            serde_yaml::to_string(&gaps).expect("gaps should serialize"),
+        )
+        .expect("gaps card should be writable");
+
+        // Bind that gap ref onto the selected facet so a genuine hole blocks the
+        // job while approved boundaries remain entries on other facets.
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        let facets = manifest["profile"]["product_foundation"]["facets"]
+            .as_sequence_mut()
+            .expect("facets should be a sequence");
+        for facet in facets.iter_mut() {
+            if facet["id"].as_str() == Some(facet_id) {
+                facet["gaps"] = serde_yaml::from_str(
+                    "- card_id: gaps\n  entry_id: missing-portfolio-alternatives\n",
+                )
+                .expect("gap ref should parse");
+            }
+        }
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    #[test]
+    fn skills_approved_boundary_entries_stay_ready_while_genuine_gap_blocks_job() {
+        let root = temp_root("skills-gap-classification");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        // The starter authors approved boundaries (no-unsourced-claims,
+        // no-context-no-copy, no-false-urgency) as entries on proof-boundaries,
+        // avoid-rules, and output-rules facets. Keep those as entries. Add one
+        // genuine missing-authority gap onto the alternatives facet so only the
+        // job that requires alternatives blocks.
+        add_genuine_gap_to_facet(&root, "alternatives");
+
+        let ready = skills(Some(&root), Some("prospect-fit-or-brief"));
+        assert_eq!(ready["valid"], true);
+        assert_eq!(ready["status"], "ready");
+        assert_eq!(ready["job_routes"][0]["pack_ready"], true);
+        assert_eq!(
+            ready["job_routes"][0]["product_foundation"]["status"],
+            "ready"
+        );
+        assert!(
+            ready["job_routes"][0]["product_foundation"]["selected_facet_ids"]
+                .as_array()
+                .expect("selected facet ids")
+                .iter()
+                .any(|id| id == "proof-boundaries")
+        );
+
+        let blocked = skills(Some(&root), Some("outbound-copy-review"));
+        assert_eq!(blocked["valid"], true);
+        assert_eq!(blocked["job_routes"][0]["pack_ready"], false);
+        assert_eq!(
+            blocked["job_routes"][0]["product_foundation"]["status"],
+            "blocked"
+        );
+        assert!(
+            blocked["job_routes"][0]["product_foundation"]["diagnostics"]
+                .as_array()
+                .expect("foundation diagnostics")
+                .iter()
+                .any(|diagnostic| {
+                    diagnostic["code"] == "product_foundation_selected_facet_has_gaps"
+                })
+        );
+        assert_eq!(blocked["recommendation"]["pack_ready"], false);
+
+        let requirements =
+            crate::commands::requirements::requirements(&root, "outbound-copy-review")
+                .expect("requirements should compile");
+        let selected = requirements["product_foundation"]["selected_facets"]
+            .as_array()
+            .expect("selected facets should be present");
+        let alternatives = selected
+            .iter()
+            .find(|facet| facet["id"] == "alternatives")
+            .expect("alternatives facet should be selected");
+        assert!(
+            alternatives["gap_refs"]
+                .as_array()
+                .expect("gap refs")
+                .iter()
+                .any(|reference| {
+                    reference["card_id"] == "gaps"
+                        && reference["entry_id"] == "missing-portfolio-alternatives"
+                })
+        );
+        assert!(
+            alternatives["entries"]
+                .as_array()
+                .is_some_and(|entries| !entries.is_empty())
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skills_pack_with_every_job_blocked_cannot_be_called_ready() {
+        let root = temp_root("skills-all-jobs-blocked");
+        init_pack(&root, "Example Message Pack", "gtm", true, false)
+            .expect("starter pack should initialize");
+        // proof-boundaries is required by all three canonical GTM jobs, so a
+        // genuine gap on it blocks every advertised job at once.
+        add_genuine_gap_to_facet(&root, "proof-boundaries");
+
+        let all_routes = skills(Some(&root), None);
+        assert_eq!(all_routes["valid"], true);
+        // The CLI surfaces every advertised job as pack_ready:false; the builder
+        // handoff must not upgrade this into a complete/ready claim.
+        assert!(
+            all_routes["job_routes"]
+                .as_array()
+                .expect("job routes")
+                .iter()
+                .all(|route| route["pack_ready"] == false)
+        );
+        assert!(
+            all_routes["job_routes"]
+                .as_array()
+                .expect("job routes")
+                .iter()
+                .all(|route| route["product_foundation"]["status"] == "blocked")
+        );
+        assert!(
+            all_routes["job_routes"]
+                .as_array()
+                .expect("job routes")
+                .iter()
+                .all(|route| {
+                    route["product_foundation"]["diagnostics"]
+                        .as_array()
+                        .expect("foundation diagnostics")
+                        .iter()
+                        .any(|diagnostic| {
+                            diagnostic["code"] == "product_foundation_selected_facet_has_gaps"
+                        })
+                })
+        );
+
+        for job_id in [
+            "prospect-fit-or-brief",
+            "outbound-copy-brief",
+            "outbound-copy-review",
+        ] {
+            let selected = skills(Some(&root), Some(job_id));
+            assert_eq!(selected["recommendation"]["pack_ready"], false);
+            assert_eq!(
+                selected["job_routes"][0]["product_foundation"]["status"],
+                "blocked"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     fn temp_root(name: &str) -> std::path::PathBuf {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)

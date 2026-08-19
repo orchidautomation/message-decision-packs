@@ -101,6 +101,39 @@ Foundation `ready` is veto-only: it never establishes sufficient-for-job or
 self-standing status and never overrides another failed gate or explicit
 `profile_eval.activation.status: needs-review|blocked`.
 
+## Classify Established Authority And Boundaries, Not Gaps
+
+A selected required gap is a hard veto, so the gap list is for genuinely
+unresolved job insufficiency, not for recording every limit or policy. Before
+classifying a facet, decide whether the source establishes authority, an
+approved boundary, or a real hole.
+
+- **Established authority** belongs in `entries` of the matching facet kind.
+  Approved terminology, scoped proof, allowed outcomes, differentiators, and
+  approved motions/CTAs are entries in `claims`, `outcomes`, `differentiators`,
+  `proof_boundaries`, `terminology`, and related facets.
+- **Approved boundary or partial-but-usable authority** belongs in `entries` of
+  a guardrail facet (`proof_boundaries`, `product_exclusions`, or the relevant
+  `avoid`/`output` cards). A rule such as “case-specific outcomes are allowed;
+  generic averages are prohibited” is one avoid/output entry, not a gap. So is
+  “approved terminology is set; naming outside it requires review” and
+  “case-led proof is allowed; portfolio-wide extrapolation is prohibited.” The
+  facet is `ready` because the boundary is explicit authority.
+- **Genuine unresolved insufficiency** belongs in `gaps`. Use a gap ref only
+  when no approved source establishes the required authority at all — missing
+  alternatives, missing outcomes, missing proof, or missing certifications.
+  A gap must name what is not established and who must resolve it, never what is
+  already approved and bounded.
+
+Do not represent an approved boundary as a gap to “be safe.” That misrepresents a
+ready job as incomplete and blocks the pack while describing established
+authority as unresolved. Conversely, do not close a real gap by relabeling
+missing authority as a boundary; an explicit selected required gap is still a
+veto, and a closed-looking gap that points at unresolved authority still blocks.
+Keep this classification in the builder and reviewer; the Rust CLI never infers
+gap meaning from prose, and it never auto-closes a gap from keywords such as
+“approved” or “resolved.”
+
 ## Authoring Loop
 
 1. Preserve source receipts: source ID, file or URL, snippet, observed/as-of date, confidence, and approval class.
@@ -269,6 +302,33 @@ mdp --json eval --strict --dir PACK_ROOT
 
 Do not finish while normal validation has errors. Use strict validation as the final authoring gate unless the user explicitly accepts documented warnings.
 
+## Post-Build Job Conformance Loop
+
+After strict validation passes, prove exact-job readiness for every advertised
+canonical job. A pack is not complete while any advertised job is `pack_ready:
+false`; do not describe it as complete, ready, or shippable in that state.
+
+For each exact canonical `jobs[].id`:
+
+```bash
+mdp --json skills --dir PACK_ROOT --job JOB_ID
+mdp --json requirements --dir PACK_ROOT --job JOB_ID
+```
+
+Inspect, for every job:
+
+- `product_foundation.status` — `ready`, `blocked`, or `unassessed`.
+- `selected_facet_ids` and, from `requirements`, each selected facet's exact
+  `entry_refs` and `gap_refs`. Confirm approved authority is classified as
+  entries and only genuine unresolved insufficiency appears as `gap_refs`.
+- `pack_ready`, missing primitives, profile activation, and the compiled model
+  task. A `false` value is a real blocker, not a warning to restate as done.
+
+Run the loop for every advertised job even when one job is already ready; a
+single ready job never authorizes calling the pack complete while a sibling job
+is blocked. Re-author entries/gaps and re-run the loop instead of upgrading a
+`false` result in prose.
+
 ## Boundaries
 
 - Build decision context, not source-collection infrastructure or execution automation.
@@ -282,3 +342,11 @@ Do not finish while normal validation has errors. Use strict validation as the f
 ## Response
 
 Report the profile, sources accepted/excluded, files changed, job bindings, commands run, validation/eval state, and remaining gaps or required human review.
+
+The handoff must report exact-job readiness honestly. List each advertised
+canonical job with its `product_foundation.status`, selected facet IDs, entry
+refs, gap refs, and `pack_ready`. If any advertised job is `pack_ready: false` or
+foundation `blocked`, state that explicitly and name the unresolved gap or
+failed gate; do not describe the pack as complete, ready, or shippable while a
+job remains blocked. A pack with every advertised job `pack_ready: false` is
+blocked, not complete, even when `validate --strict` reports no issues.
