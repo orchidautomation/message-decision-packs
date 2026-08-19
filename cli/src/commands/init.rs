@@ -474,6 +474,13 @@ fn init_gtm_pack(
     let evals_dir = pack_dir.join("evals");
     let prompts_dir = pack_dir.join("prompts");
     let examples_dir = root.join("examples");
+    let decision_input_scenarios_path = examples_dir.join("decision-input-scenarios.json");
+    if decision_input_scenarios_path.exists() && !force {
+        return Err(anyhow!(
+            "{} already exists; pass --force to overwrite",
+            decision_input_scenarios_path.display()
+        ));
+    }
     fs::create_dir_all(&cards_dir).with_context(|| format!("creating {}", cards_dir.display()))?;
     fs::create_dir_all(&briefs_dir)
         .with_context(|| format!("creating {}", briefs_dir.display()))?;
@@ -550,13 +557,6 @@ fn init_gtm_pack(
         .map(target_prospect)
         .unwrap_or_else(|| starter_prospect(template));
     write_json_file(&prospect_path, &prospect)?;
-    let decision_input_scenarios_path = examples_dir.join("decision-input-scenarios.json");
-    if decision_input_scenarios_path.exists() && !force {
-        return Err(anyhow!(
-            "{} already exists; pass --force to overwrite",
-            decision_input_scenarios_path.display()
-        ));
-    }
     write_json_file(&decision_input_scenarios_path, &decision_input_scenarios())?;
     Ok(init_payload(
         root,
@@ -643,6 +643,7 @@ fn init_gtm_pack_dry_run(
     } else {
         "clay-row.json"
     });
+    let decision_input_scenarios_path = examples_dir.join("decision-input-scenarios.json");
     let mut payload = init_payload(
         root,
         &pack_dir,
@@ -693,6 +694,10 @@ fn init_gtm_pack_dry_run(
         ));
     }
     write_plan.push(planned_json_write_after_dirs(&prospect_path, force));
+    write_plan.push(planned_json_write_after_dirs(
+        &decision_input_scenarios_path,
+        force,
+    ));
     if let Some(object) = payload.as_object_mut() {
         object.insert("dry_run".to_string(), json!(true));
         object.insert("template".to_string(), json!(template));
@@ -1984,6 +1989,34 @@ mod tests {
             .expect("prospect plan should be present");
         assert_eq!(prospect_plan["action"], "blocked");
         assert_eq!(prospect_plan["would_write"], false);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn init_dry_run_reports_existing_decision_input_scenarios_before_writes() {
+        let root = std::env::temp_dir().join(format!("mdp-dry-run-scenarios-conflict-{}", nonce()));
+        let examples_dir = root.join("examples");
+        let scenarios_path = examples_dir.join("decision-input-scenarios.json");
+        std::fs::create_dir_all(&examples_dir).expect("examples dir should be created");
+        std::fs::write(&scenarios_path, "{}").expect("scenario fixture should be written");
+
+        let result = init_pack_dry_run(&root, "Dry Run Pack", "gtm", false, false)
+            .expect("dry run should return plan");
+        let scenario_plan = result["write_plan"]
+            .as_array()
+            .expect("write plan array")
+            .iter()
+            .find(|entry| entry["path"] == scenarios_path.display().to_string())
+            .expect("scenario plan should be present");
+        assert_eq!(scenario_plan["action"], "blocked");
+        assert_eq!(scenario_plan["would_write"], false);
+
+        let err = init_pack(&root, "Dry Run Pack", "gtm", false, false)
+            .expect_err("existing scenarios should fail before writing the pack");
+        assert!(err.to_string().contains("decision-input-scenarios.json"));
+        assert!(!root.join(".mdp").exists());
+        assert_eq!(std::fs::read_to_string(&scenarios_path).unwrap(), "{}");
 
         let _ = std::fs::remove_dir_all(root);
     }

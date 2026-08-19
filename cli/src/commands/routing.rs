@@ -418,13 +418,18 @@ fn fit_prospect_with_signal_authority(
         signal_authority.as_ref(),
     );
     let scope = scope_from_prospect(&manifest, &prospect);
+    let contact_policy = prospect
+        .attributes
+        .get("contact_policy")
+        .and_then(Value::as_str);
+    let contact_policy_needs_review = contact_policy == Some("needs-review");
     let mut portfolio_sensitive = false;
     let mut compatible_scoped_entry_count = 0usize;
 
-    if signal_authority
-        .as_ref()
-        .is_some_and(|authority| authority["roles"]["disqualifier"] == true)
-    {
+    if signal_authority.as_ref().is_some_and(|authority| {
+        authority["roles"]["disqualifier"] == true
+            && !matches!(contact_policy, Some("clear" | "needs-review"))
+    }) {
         disqualifiers.push(json!({
             "entry_id": "signal-role:disqualifier",
             "title": "Declared sourced-signal disqualifier",
@@ -477,6 +482,22 @@ fn fit_prospect_with_signal_authority(
     context["portfolio_sensitive"] = json!(portfolio_sensitive);
     if !scope_ready {
         context["ready"] = json!(false);
+    }
+    if contact_policy_needs_review {
+        context["ready"] = json!(false);
+        if let Some(missing) = context["missing"].as_array_mut() {
+            missing.push(json!("attributes.contact_policy"));
+            missing.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+            missing.dedup();
+        }
+        if let Some(missing_requirements) = context["missing_requirements"].as_array_mut() {
+            missing_requirements.push(json!({
+                "scope": "attribute",
+                "field": "contact_policy",
+                "path": "attributes.contact_policy",
+                "reason": "contact policy requires human review before qualification"
+            }));
+        }
     }
 
     let status = if !disqualifiers.is_empty() {
@@ -3024,6 +3045,41 @@ optional:
             result["signal_authority"]["accepted"][0]["signal_id"],
             "buying::declared"
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn contact_policy_projection_only_disqualifies_do_not_contact() {
+        let root = temp_pack("signal-aware-contact-policy");
+        let authority = super::signal_eligibility(&json!({
+            "status": "lineage-validated",
+            "logical_signals": [{
+                "qualified_projection_id": "gtm.prospect-context#contact-policy",
+                "kind": "contact_policy",
+                "roles": ["disqualifier"],
+                "observation_ids": ["obs-policy"]
+            }]
+        }));
+        let prospect_path = root.join("examples/clay-row.json");
+        let mut prospect = crate::pack_io::read_prospect(&prospect_path).expect("prospect fixture");
+        prospect
+            .attributes
+            .insert("contact_policy".to_string(), json!("clear"));
+        let clear_result =
+            super::fit_prospect_with_signal_authority(&root, prospect, Some(authority.clone()))
+                .expect("clear contact policy should fit");
+        assert_ne!(clear_result["status"], "disqualified");
+        assert!(clear_result["disqualifiers"].as_array().unwrap().is_empty());
+
+        let mut prospect = crate::pack_io::read_prospect(&prospect_path).expect("prospect fixture");
+        prospect
+            .attributes
+            .insert("contact_policy".to_string(), json!("do-not-contact"));
+        let blocked_result =
+            super::fit_prospect_with_signal_authority(&root, prospect, Some(authority))
+                .expect("do-not-contact policy should be evaluated");
+        assert_eq!(blocked_result["status"], "disqualified");
+
         let _ = std::fs::remove_dir_all(root);
     }
 
