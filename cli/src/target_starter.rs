@@ -2,7 +2,10 @@ use crate::models::{
     Card, CardKind, Entry, EntryConstraints, Manifest, PersonaMapping, ProductFoundationBinding,
     ProductFoundationFacet, ProductFoundationFacetKind, ProductFoundationRegistry, TargetIdentity,
 };
-use crate::starter::{foundation_binding, foundation_refs, starter_manifest, starter_prompts};
+use crate::starter::{
+    decision_input_contract_eval, foundation_binding, foundation_refs, generated_starter_manifest,
+    generated_starter_prompts,
+};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -14,7 +17,7 @@ pub(crate) fn target_manifest(
     template: &str,
     target: &TargetIdentity,
 ) -> Manifest {
-    let mut manifest = starter_manifest(name, slug, template);
+    let mut manifest = generated_starter_manifest(name, slug, template);
     manifest.description = Some(format!(
         "Evidence-gated messaging decisions for {}. Product claims, ICP detail, and proof remain gaps until sources support them.",
         target.name
@@ -48,6 +51,21 @@ pub(crate) fn target_manifest(
         .lead_input_requirements
         .attribute_definitions
         .clear();
+    manifest
+        .lead_input_requirements
+        .attribute_definitions
+        .insert(
+            "contact_policy".to_string(),
+            crate::models::ValueContract {
+                value_type: Some("string".to_string()),
+                enum_values: strings(&["clear", "do-not-contact", "needs-review"]),
+                description: Some(
+                    "Reviewed host-owned permission state; MDP does not collect or change it."
+                        .to_string(),
+                ),
+                ..crate::models::ValueContract::default()
+            },
+        );
     if let Some(profile) = manifest.profile.as_mut() {
         profile.context_dimensions =
             BTreeMap::from([("segment".to_string(), vec!["target-segment".to_string()])]);
@@ -611,7 +629,7 @@ pub(crate) fn target_prompts(
     target: &TargetIdentity,
     include_output_schemas: bool,
 ) -> Vec<(&'static str, Value)> {
-    starter_prompts(include_output_schemas)
+    generated_starter_prompts(include_output_schemas)
         .into_iter()
         .map(|(name, mut prompt)| {
             remove_starter_identifiers(&mut prompt);
@@ -639,6 +657,7 @@ pub(crate) fn target_prompts(
 
 pub(crate) fn target_evals(target: &TargetIdentity) -> Vec<(&'static str, Value)> {
     vec![
+        decision_input_contract_eval(),
         (
             "target-route.yaml",
             json!({
@@ -655,6 +674,7 @@ pub(crate) fn target_evals(target: &TargetIdentity) -> Vec<(&'static str, Value)
             json!({
                 "id": "fit-insufficient-context",
                 "command": "fit",
+                "job": "prospect-fit-or-brief",
                 "profile_eval": {"category": "insufficient-context", "primitives": ["actors", "decision-criteria", "source-signals", "gaps"], "jobs": ["prospect-fit-or-brief"]},
                 "prospect": target_prospect(target),
                 "expect_status": "insufficient-context"
@@ -665,6 +685,7 @@ pub(crate) fn target_evals(target: &TargetIdentity) -> Vec<(&'static str, Value)
             json!({
                 "id": "account-context-missing",
                 "command": "fit",
+                "job": "prospect-fit-or-brief",
                 "profile_eval": {"category": "account-context-missing", "primitives": ["source-signals", "gaps"], "jobs": ["prospect-fit-or-brief"]},
                 "prospect": {
                     "name": "Example Person",
@@ -734,6 +755,20 @@ fn strings(values: &[&str]) -> Vec<String> {
 }
 
 fn neutralize_prompt_example(prompt: &mut Value, target: &TargetIdentity) {
+    if prompt["output_contract"]["contract"] == "mdp.normalized-decision-input.v2" {
+        let example = &mut prompt["output_contract"]["example"];
+        example["attributes"]["company_name"]["value"] = json!("Example Prospect Company");
+        example["normalized_prospect"]["company"] = json!("Example Prospect Company");
+        example["normalized_prospect"]["background"] = json!(format!(
+            "Synthetic prospect context for testing {} pack wiring; not evidence about a real account.",
+            target.name
+        ));
+        example["normalized_prospect"]["persona"] = json!("Operator");
+        example["attributes"]["persona"]["value"] = json!("Operator");
+        example["normalized_prospect"]["segment"] = json!("target-segment");
+        example["attributes"]["segment"]["value"] = json!("target-segment");
+        return;
+    }
     let evidence_input = prompt
         .get("inputs")
         .and_then(Value::as_object)

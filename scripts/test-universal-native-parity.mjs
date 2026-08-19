@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -94,8 +94,17 @@ try {
     invoke(mdp, ['--json', 'schema', 'prompt-output']),
     'public prompt-output schema',
   ).data
-  const resolvedOutputSchema = (step) => {
+  const resolvedOutputSchema = (step, normalizedOutputSchema) => {
     if (step.output_contract.schema) return step.output_contract.schema
+    if (['mdp.normalized-decision-input.v1', 'mdp.normalized-decision-input.v2'].includes(step.output_contract.schema_ref)) {
+      assert.ok(normalizedOutputSchema && typeof normalizedOutputSchema === 'object')
+      assert.equal(
+        normalizedOutputSchema.properties?.contract?.const,
+        step.output_contract.schema_ref,
+        `${step.prompt_id} requirements expose the wrong normalized output schema`,
+      )
+      return normalizedOutputSchema
+    }
     assert.equal(
       step.output_contract.schema_ref,
       'mdp.prompt-output.prospect-normalization.v0',
@@ -135,8 +144,8 @@ try {
       required: Object.keys(example).sort(),
     }
   }
-  const providerSchemaForStep = (step) => {
-    const canonical = structuredClone(resolvedOutputSchema(step))
+  const providerSchemaForStep = (step, normalizedOutputSchema) => {
+    const canonical = structuredClone(resolvedOutputSchema(step, normalizedOutputSchema))
     assert.equal(canonical.type, 'object')
     assert.ok(canonical.properties && typeof canonical.properties === 'object')
     const required = step.output_contract.required_top_level
@@ -187,7 +196,12 @@ try {
             (typeof step.output_contract.schema_ref === 'string' && step.output_contract.schema_ref.length > 0),
           `${step.prompt_id} has neither an inline schema nor a schema_ref`,
         )
-        bindings.push({ profile: profile.profile, jobId, step })
+        bindings.push({
+          profile: profile.profile,
+          jobId,
+          step,
+          normalizedOutputSchema: envelope.data.normalized_output_schema,
+        })
 
         const prior = uniquePrompts.get(step.prompt_id)
         const authority = {
@@ -205,11 +219,14 @@ try {
   assert.equal(uniquePrompts.size, 8)
 
   for (const [index, binding] of bindings.entries()) {
-    const { profile, jobId, step } = binding
-    const outputSchema = providerSchemaForStep(step)
+    const { profile, jobId, step, normalizedOutputSchema } = binding
+    const outputSchema = providerSchemaForStep(step, normalizedOutputSchema)
     const providerExample = Object.fromEntries(
       step.output_contract.required_top_level.map((field) => [field, step.output_contract.example[field]]),
     )
+    if (step.output_contract.schema_ref?.startsWith('mdp.normalized-decision-input.')) {
+      providerExample.job_id = jobId
+    }
     const output = JSON.stringify(providerExample)
     const request = {
       contract: DRIVER_REQUEST_CONTRACT,
@@ -262,13 +279,12 @@ try {
     assert.equal(result.provider_observation.response_id, `resp_parity_${index + 1}`)
     assert.equal(result.provider_observation.model, 'gpt-test-synthetic')
 
-    // Normalization uses the public canonical prompt-output contract directly,
-    // so prove the returned bytes pass the same CLI validator used by `mdp run`.
-    // Governed generation/review output additionally needs runtime-created
-    // invocation and routed-context receipts and is covered by the canonical
-    // driver-v2/run tests; here its complete schema and authority hashes are
-    // still checked for every binding without making a live provider call.
-    if (step.phase === 'normalization') {
+    // Legacy normalization can be validated from output bytes alone. Governed
+    // Decision Input normalization additionally requires the exact binding,
+    // attempt-request, and collected-results artifacts; canonical run tests
+    // cover that lineage path. Here the job-compiled schema and authority hashes
+    // are still checked for every binding without making a live provider call.
+    if (step.phase === 'normalization' && step.output_contract.schema_ref === 'mdp.prompt-output.prospect-normalization.v0') {
       const outputPath = join(scratch, `canonical-output-${index + 1}.json`)
       writeFileSync(outputPath, `${canonicalJsonBytes(providerExample)}\n`)
       const validation = expectJson(
@@ -353,6 +369,10 @@ try {
       invoke(mdp, ['--json', 'run', '--request', runRequestPath, '--out-dir', runDir]),
       `${profile}/${jobId}/${step.phase} canonical v2 offline run`,
     )
+    assert.ok(
+      existsSync(join(runDir, 'run-bundle.json')),
+      `${profile}/${jobId}/${step.phase} did not stage a run bundle: ${JSON.stringify(execution)}`,
+    )
     const bundle = JSON.parse(readFileSync(join(runDir, 'run-bundle.json'), 'utf8'))
     const audit = JSON.parse(readFileSync(join(runDir, 'runner-audit.json'), 'utf8'))
     const receipt = JSON.parse(readFileSync(join(runDir, 'run-receipt.json'), 'utf8'))
@@ -392,8 +412,8 @@ try {
       inputs: bundle.inputs.map((authority, i) => ({
         authority, content_utf8: readFileSync(runInputs[i].source_path, 'utf8'),
       })),
-      canonical_output_schema: resolvedOutputSchema(step),
-      canonical_output_schema_sha256: sha256CanonicalJson(resolvedOutputSchema(step)),
+      canonical_output_schema: resolvedOutputSchema(step, normalizedOutputSchema),
+      canonical_output_schema_sha256: sha256CanonicalJson(resolvedOutputSchema(step, normalizedOutputSchema)),
       provider_output_schema: projectedProviderSchema,
       provider_output_schema_sha256: sha256CanonicalJson(projectedProviderSchema),
       provider_policy: {
@@ -445,8 +465,8 @@ try {
   }
 
   for (const binding of [bindings.find(({ profile }) => profile === 'gtm'), bindings.find(({ profile }) => profile === 'proposal')]) {
-    const { profile, jobId, step } = binding
-    const outputSchema = providerSchemaForStep(step)
+    const { profile, jobId, step, normalizedOutputSchema } = binding
+    const outputSchema = providerSchemaForStep(step, normalizedOutputSchema)
     const request = {
       contract: DRIVER_REQUEST_CONTRACT,
       execution_id: `parity-${profile}-dry-run`,

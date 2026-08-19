@@ -1,6 +1,7 @@
 use crate::commands::briefs::prospect_brief_from_value;
 use crate::commands::health::{KNOWN_PRIMITIVES, KNOWN_PROFILE_EVAL_CATEGORIES, gaps, issue};
 use crate::commands::prompt_output::validate_prompt_output_value_with_source_audit;
+use crate::commands::requirements::requirements;
 use crate::commands::routing::{check_claims_scoped, fit_prospect_for_job, route_scoped};
 use crate::commands::{verify_output_file, verify_output_value};
 use crate::constants::DEFAULT_DIR;
@@ -44,6 +45,10 @@ struct EvalFixture {
     expect_draft_status: Option<String>,
     expect_valid: Option<bool>,
     expect_normalization_ready: Option<bool>,
+    expect_available: Option<bool>,
+    expect_runtime_contract_version: Option<String>,
+    expect_attempt_statuses: Option<Vec<String>>,
+    expect_no_draft_outcomes: Option<Vec<String>>,
     expect_issue_codes_contains: Option<Vec<String>>,
     expect_scope_issue_codes_contains: Option<Vec<String>>,
     expect_entry_gap_reasons_contains: Option<Vec<String>>,
@@ -177,6 +182,10 @@ fn run_fixture(
             ParsedProspect::Invalid(output) => output,
         },
         "gaps" => gaps(root)?,
+        "requirements" => requirements(
+            root,
+            fixture.job.as_deref().expect("validated requirements job"),
+        )?,
         "validate-prompt-output" => validate_prompt_output_fixture(root, path, fixture)?,
         "verify-output" => validate_proof_output_fixture(root, path, fixture)?,
         "check-claims" => check_claims_scoped(
@@ -277,6 +286,9 @@ fn validate_fixture(
                     "fixture must define prompt_id or prompt",
                 ));
             }
+        }
+        "requirements" => {
+            require(path, fixture.job.as_ref(), "job", &mut issues);
         }
         "verify-output" => {
             if fixture.proof_output.is_some() && fixture.proof_output_file.is_some() {
@@ -562,6 +574,84 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
                 "error",
                 path.display().to_string(),
                 format!("expected valid {expected_valid}, got {}", output["valid"]),
+            ));
+        }
+    }
+    if let Some(expected_available) = fixture.expect_available {
+        if output["available"].as_bool() != Some(expected_available) {
+            issues.push(issue(
+                "eval_requirements_availability_mismatch",
+                "error",
+                path.display().to_string(),
+                format!(
+                    "expected requirements available {expected_available}, got {}",
+                    output["available"]
+                ),
+            ));
+        }
+    }
+    if let Some(expected_version) = &fixture.expect_runtime_contract_version {
+        if output["runtime_contract_version"] != expected_version.as_str() {
+            issues.push(issue(
+                "eval_requirements_runtime_version_mismatch",
+                "error",
+                path.display().to_string(),
+                format!(
+                    "expected runtime contract version {expected_version}, got {}",
+                    output["runtime_contract_version"]
+                ),
+            ));
+        }
+    }
+    if let Some(expected_statuses) = &fixture.expect_attempt_statuses {
+        let expected = expected_statuses.iter().cloned().collect::<BTreeSet<_>>();
+        for contract in output["decision_input_contracts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            for attribute in contract["attributes"].as_array().into_iter().flatten() {
+                let actual = attribute["status_behavior"]
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|statuses| statuses.keys().cloned())
+                    .collect::<BTreeSet<_>>();
+                if actual != expected {
+                    issues.push(issue(
+                        "eval_requirements_attempt_status_coverage_mismatch",
+                        "error",
+                        path.display().to_string(),
+                        format!(
+                            "attribute {} attempt statuses {:?} did not equal {:?}",
+                            attribute["id"], actual, expected
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    if let Some(expected_outcomes) = &fixture.expect_no_draft_outcomes {
+        let actual = output["no_draft_policy"]["blocked_outcomes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+        let expected = expected_outcomes.iter().cloned().collect::<BTreeSet<_>>();
+        let draft_allowed_const =
+            output["normalized_output_schema"]["properties"]["draft_allowed"]["const"].as_bool();
+        if actual != expected || draft_allowed_const != Some(false) {
+            issues.push(issue(
+                "eval_requirements_no_draft_outcome_mismatch",
+                "error",
+                path.display().to_string(),
+                format!(
+                    "expected no-draft outcomes {:?} with draft_allowed false, got {:?} and {}",
+                    expected,
+                    actual,
+                    output["normalized_output_schema"]["properties"]["draft_allowed"]["const"]
+                ),
             ));
         }
     }

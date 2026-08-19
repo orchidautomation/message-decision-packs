@@ -1,6 +1,7 @@
 command: fit
 expect_status: insufficient-context
 id: account-context-missing
+job: prospect-fit-or-brief
 profile_eval:
   category: account-context-missing
   jobs:

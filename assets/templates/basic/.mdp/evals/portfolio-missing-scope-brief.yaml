@@ -1,10 +1,8 @@
 channel: linkedin
 command: brief
 expect_draft_status: no-draft
-expect_entry_gap_reasons_contains:
-- scope_dimension_missing
 id: portfolio-missing-scope-brief
-job: portfolio scope example
+job: outbound-copy-brief
 profile_eval:
   category: insufficient-context
   jobs:

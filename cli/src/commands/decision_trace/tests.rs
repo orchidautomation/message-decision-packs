@@ -176,13 +176,6 @@ fn invalid_and_unbound_validation_results_have_stable_diagnostics() {
 }
 
 fn prompt_output_trace_fixture() -> (std::path::PathBuf, std::path::PathBuf, serde_json::Value) {
-    let pack_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../plugin/assets/templates/basic");
-    let prompt: serde_json::Value = serde_yaml::from_slice(
-        &std::fs::read(pack_root.join(".mdp/prompts/normalize-prospect.yaml")).unwrap(),
-    )
-    .unwrap();
-    let output = prompt["output_contract"]["example"].clone();
     let root = std::env::temp_dir().join(format!(
         "mdp-prompt-output-trace-{}-{}",
         std::process::id(),
@@ -191,7 +184,13 @@ fn prompt_output_trace_fixture() -> (std::path::PathBuf, std::path::PathBuf, ser
             .unwrap()
             .as_nanos()
     ));
-    std::fs::create_dir(&root).unwrap();
+    let pack_root = root.join("pack");
+    crate::commands::init::init_pack(&pack_root, "Trace Pack", "gtm", true, false).unwrap();
+    let prompt: serde_json::Value = serde_yaml::from_slice(
+        &std::fs::read(pack_root.join(".mdp/prompts/normalize-prospect.yaml")).unwrap(),
+    )
+    .unwrap();
+    let output = prompt["output_contract"]["example"].clone();
     let output_path = root.join("prompt-output.json");
     std::fs::write(&output_path, serde_json::to_vec_pretty(&output).unwrap()).unwrap();
     let validation = validate_prompt_output_file(

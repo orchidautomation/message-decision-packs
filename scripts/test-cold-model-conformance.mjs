@@ -22,6 +22,7 @@ import { spawnSync } from "node:child_process";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const mdp = process.env.MDP_BIN || join(repoRoot, "cli", "target", "debug", "mdp");
 const fixtureRoot = join(repoRoot, "examples", "cold-model-conformance", "fixtures");
+const legacyBasicOverlay = join(fixtureRoot, "legacy-basic");
 const smoke = process.argv.includes("--smoke");
 const keep = process.argv.includes("--keep");
 const root = mkdtempSync(join(tmpdir(), "mdp-cold-model-conformance-"));
@@ -165,6 +166,11 @@ function writeJson(path, value) {
 
 function readSeed(name) {
   return JSON.parse(readFileSync(join(fixtureRoot, `${name}.json`), "utf8"));
+}
+
+function copyLegacyBasicPack(destination) {
+  cpSync(join(repoRoot, "plugin", "assets", "templates", "basic"), destination, { recursive: true });
+  cpSync(legacyBasicOverlay, destination, { recursive: true });
 }
 
 function lifecycle(accessClass = "synthetic") {
@@ -600,7 +606,7 @@ function compileReplay(jobId = "outbound-copy-brief", seedName = "generation") {
   const stage = join(root, `compile-replay-${jobId}`);
   const candidateRoot = join(stage, "candidate");
   const pack = join(candidateRoot, "pack");
-  cpSync(join(repoRoot, "plugin", "assets", "templates", "basic"), pack, { recursive: true });
+  copyLegacyBasicPack(pack);
   mkdirSync(join(candidateRoot, "evidence"), { recursive: true });
   const requirements = output(invoke(["--json", "requirements", "--dir", pack, "--job", jobId]), `${jobId} requirements compile`);
   const skills = output(invoke(["--json", "skills", "--dir", pack, "--job", jobId]), `${jobId} skills compile`);
@@ -807,7 +813,7 @@ const deterministicFixtures = new Map();
 function compileNormalizationJob() {
   const stage = join(root, "compile-replay-prospect-fit-or-brief");
   const pack = join(stage, "pack");
-  cpSync(join(repoRoot, "plugin", "assets", "templates", "basic"), pack, { recursive: true });
+  copyLegacyBasicPack(pack);
   const requirementsArgs = ["--json", "requirements", "--dir", pack, "--job", "prospect-fit-or-brief"];
   const firstRequirements = output(invoke(requirementsArgs), "normalization requirements compile 1");
   const secondRequirements = output(invoke(requirementsArgs), "normalization requirements compile 2");

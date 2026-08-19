@@ -7426,7 +7426,7 @@ excluded: []
             &root,
             &prospect_path,
             "linkedin",
-            None,
+            Some("outbound-copy-brief"),
             true,
         )
         .expect("target-aware brief should generate");
@@ -7790,7 +7790,7 @@ expect_load_order_contains:
         std::fs::write(
             &manifest_path,
             raw.replace(
-                "  gaps:\n    cards:\n    - gaps\n    evals:\n    - fit-insufficient-context\n    - brief-insufficient-context\n    - account-context-missing\n    - account-only-no-draft\n    - prompt-output-missing-readiness-boolean\n    - prompt-output-missing-required-field\n    - prompt-output-validation\n",
+                "  gaps:\n    cards:\n    - gaps\n    evals:\n    - fit-insufficient-context\n    - brief-insufficient-context\n    - account-context-missing\n    - account-only-no-draft\n    - decision-input-contract\n",
                 "",
             ),
         )

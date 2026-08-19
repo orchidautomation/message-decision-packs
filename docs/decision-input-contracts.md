@@ -43,6 +43,36 @@ handoff to a collector and normalization host. It includes:
 Legacy jobs without a binding return `available: false`; existing packs keep
 their `lead_input_requirements` fit/readiness behavior.
 
+## New Generated GTM Packs
+
+Fresh `mdp init --template gtm` output declares
+`gtm.prospect-context@1.0.0` and binds it transitively through the shared
+`prospect` input contract. The binding covers all three prospect-driven
+canonical jobs:
+
+- `prospect-fit-or-brief`
+- `outbound-copy-brief`
+- `outbound-copy-review`
+
+The minimum contract asks for reviewed person and company identity, persona,
+segment, a why-now trigger, and contact policy. Trigger and contact-policy
+decisions may contain repeated sourced observations, so the starter declares
+explicit signal projections and compiles the signal-aware v2 artifact matrix.
+The generated `examples/decision-input-scenarios.json` fixture records the
+attempted-complete, insufficient, disqualified, human-review, malformed, and
+provider-error outcomes without performing collection or provider execution.
+
+A generated pack must not be presented as governed or self-standing until
+`requirements --job` reports `available: true` with the expected contract
+ID/version, requirements digest, schemas, and runtime version for every
+prospect-driven canonical job. Prompt prose, normalized field names,
+`signals`, and `lead_input_requirements` never imply a Decision Input Contract.
+
+This is a greenfield authoring rule, not a silent migration. A genuinely legacy
+pack with no direct or transitive binding stays structurally compatible under
+ordinary non-strict validation, reports the Decision Input contract as
+unavailable, and remains legacy/unassessed rather than governed.
+
 ## Public Contract-Version Matrix
 
 `data.contract_version_matrix` is authoritative for the selected job. The

@@ -497,6 +497,18 @@ mod tests {
             .join(name)
     }
 
+    fn legacy_basic_template(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-model-steps-{name}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        crate::commands::init::init_pack(&root, "Model Steps Pack", "gtm", true, false).unwrap();
+        root
+    }
+
     #[test]
     fn resolves_all_shipped_job_step_bindings_in_phase_order() {
         let mut bindings = Vec::new();
@@ -560,7 +572,7 @@ mod tests {
 
     #[test]
     fn rejects_ambiguous_legacy_normalizers() {
-        let root = template("basic");
+        let root = legacy_basic_template("ambiguous");
         let mut manifest = read_manifest(&root).unwrap();
         manifest.input_contracts.push(InputContract {
             id: "other".into(),
@@ -575,7 +587,7 @@ mod tests {
 
     #[test]
     fn coalesces_equivalent_legacy_prompt_path_and_id_aliases() {
-        let root = template("basic");
+        let root = legacy_basic_template("aliases");
         let mut manifest = read_manifest(&root).unwrap();
         manifest.input_contracts.push(InputContract {
             id: "prompt-id-alias".into(),
@@ -595,7 +607,7 @@ mod tests {
 
     #[test]
     fn rejects_conflicting_legacy_and_decision_input_normalization_authority() {
-        let root = template("basic");
+        let root = legacy_basic_template("conflicting");
         let mut manifest = read_manifest(&root).unwrap();
         let mut job = manifest.jobs[0].clone();
         let mut decision_input = crate::models::DecisionInputContract::default();
@@ -631,7 +643,7 @@ mod tests {
 
     #[test]
     fn resolves_future_decision_input_normalization_when_legacy_authority_is_absent() {
-        let root = template("basic");
+        let root = legacy_basic_template("future");
         let mut manifest = read_manifest(&root).unwrap();
         manifest.input_contracts[0].prompt = None;
         let mut job = manifest.jobs[0].clone();
@@ -692,7 +704,7 @@ mod tests {
 
     #[test]
     fn model_task_coalescing_selects_the_canonical_prompt_path_over_a_legacy_alias() {
-        let source = template("basic");
+        let source = legacy_basic_template("canonical-alias");
         let mut manifest = read_manifest(&source).unwrap();
         let root = std::env::temp_dir().join(format!(
             "mdp-model-step-canonical-alias-{}",

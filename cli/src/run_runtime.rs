@@ -1320,24 +1320,8 @@ fn validate_native_request_size_before_bundle(
         &visible_inputs,
     );
 
-    let canonical_output_schema = match (
-        step.output_contract.schema.clone(),
-        step.output_contract.schema_ref.as_deref(),
-    ) {
-        (Some(schema), _) => schema,
-        (None, Some(schema_ref)) => prompt_output_schema_for_ref(schema_ref).ok_or_else(|| {
-            run_failure(
-                RunFailureKind::PolicyBlocked,
-                "output-schema-ref-unsupported",
-            )
-        })?,
-        (None, None) => {
-            return Err(run_failure(
-                RunFailureKind::PolicyBlocked,
-                "output-schema-missing",
-            ));
-        }
-    };
+    let canonical_output_schema =
+        canonical_output_schema_for_step(staged_pack, &identity.job_id, &step)?;
     let provider_schema_source = if step.output_contract.schema_ref.is_some() {
         let example = required_output_example(
             &step.output_contract.example,
@@ -1433,24 +1417,8 @@ where
         provenance_refs: vec![bundle_sha256.into()],
     };
 
-    let canonical_output_schema = match (
-        step.output_contract.schema.clone(),
-        step.output_contract.schema_ref.as_deref(),
-    ) {
-        (Some(schema), _) => schema,
-        (None, Some(schema_ref)) => prompt_output_schema_for_ref(schema_ref).ok_or_else(|| {
-            run_failure(
-                RunFailureKind::PolicyBlocked,
-                "output-schema-ref-unsupported",
-            )
-        })?,
-        (None, None) => {
-            return Err(run_failure(
-                RunFailureKind::PolicyBlocked,
-                "output-schema-missing",
-            ));
-        }
-    };
+    let canonical_output_schema =
+        canonical_output_schema_for_step(staged_pack, &identity.job_id, &step)?;
     let canonical_output_schema_sha256 = canonical_json_sha256(&canonical_output_schema)?;
     let provider_schema_source = if step.output_contract.schema_ref.is_some() {
         let example = required_output_example(
@@ -1697,6 +1665,51 @@ fn validate_selected_prompt(
         ));
     }
     Ok(())
+}
+
+fn canonical_output_schema_for_step(
+    staged_pack: &Path,
+    job_id: &str,
+    step: &CompiledModelStepV1,
+) -> Result<Value> {
+    if let Some(schema) = &step.output_contract.schema {
+        return Ok(schema.clone());
+    }
+    let schema_ref = step
+        .output_contract
+        .schema_ref
+        .as_deref()
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "output-schema-missing"))?;
+    if matches!(
+        schema_ref,
+        NORMALIZED_DECISION_INPUT_CONTRACT | NORMALIZED_DECISION_INPUT_CONTRACT_V2
+    ) {
+        let compiled = requirements(staged_pack, job_id)
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "job-readiness-unavailable"))?;
+        let schema = compiled
+            .get("normalized_output_schema")
+            .filter(|value| value.is_object())
+            .cloned()
+            .ok_or_else(|| {
+                run_failure(
+                    RunFailureKind::PolicyBlocked,
+                    "output-schema-ref-unsupported",
+                )
+            })?;
+        if schema["properties"]["contract"]["const"] != schema_ref {
+            return Err(run_failure(
+                RunFailureKind::PolicyBlocked,
+                "output-schema-ref-unsupported",
+            ));
+        }
+        return Ok(schema);
+    }
+    prompt_output_schema_for_ref(schema_ref).ok_or_else(|| {
+        run_failure(
+            RunFailureKind::PolicyBlocked,
+            "output-schema-ref-unsupported",
+        )
+    })
 }
 
 fn validate_generative_job_gates(
@@ -3028,10 +3041,10 @@ mod tests {
     #[test]
     fn post_bundle_driver_failure_publishes_a_safe_no_draft_receipt() {
         let root = temp_path("generative-driver-failure");
-        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let pack = repository.join("plugin/assets/templates/basic");
+        let pack = root.join("pack");
         let raw = root.join("raw-row.json");
         fs::create_dir_all(&root).unwrap();
+        crate::commands::init::init_pack(&pack, "Driver Failure Pack", "gtm", true, false).unwrap();
         fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
         let request = generative_request_fixture(&pack, &raw);
         let run = root.join("published-run");
@@ -3108,10 +3121,11 @@ mod tests {
     #[test]
     fn successful_provider_observation_is_bound_even_when_local_output_validation_blocks() {
         let root = temp_path("generative-provider-observation");
-        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let pack = repository.join("plugin/assets/templates/basic");
+        let pack = root.join("pack");
         let raw = root.join("raw-row.json");
         fs::create_dir_all(&root).unwrap();
+        crate::commands::init::init_pack(&pack, "Provider Observation Pack", "gtm", true, false)
+            .unwrap();
         fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
         let request = generative_request_fixture(&pack, &raw);
         let run = root.join("published-run");
@@ -3230,10 +3244,10 @@ mod tests {
     #[test]
     fn post_bundle_deadline_exhaustion_still_publishes_a_safe_no_draft_receipt() {
         let root = temp_path("generative-deadline-receipt");
-        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let pack = repository.join("plugin/assets/templates/basic");
+        let pack = root.join("pack");
         let raw = root.join("raw-row.json");
         fs::create_dir_all(&root).unwrap();
+        crate::commands::init::init_pack(&pack, "Deadline Pack", "gtm", true, false).unwrap();
         fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
         let mut request = generative_request_fixture(&pack, &raw);
         request.execution_policy.timeout_ms = 5_000;
