@@ -33,6 +33,16 @@ deterministic CLI.
 
 ## Minimal Shape
 
+For a newly generated GTM pack, the minimum prospect contract must answer the
+person/account identity, persona and segment, why-now trigger, and reviewed
+contact-policy questions needed by the three canonical prospect jobs. Bind the
+contract through their shared prospect `input_contracts[]` entry or bind it to
+each job directly. If the decision consumes repeated sourced trigger or
+contact-policy observations, declare explicit projections and use v2; a
+scalar-only decision may remain v1. Do not present the pack as governed until
+all three `requirements --job` calls are available and return the expected
+contract ID/version, requirements digest, schemas, and runtime version.
+
 ```yaml
 decision_input_contracts:
 - id: example.expansion
@@ -123,6 +133,11 @@ Commit only synthetic or explicitly sanitized fixtures. Show:
 - a blocked or ambiguous hard gate requiring human review;
 - a malformed contract/payload rejection;
 - a provider error preserved outside the decision engine.
+
+Name or otherwise identify the six closed scenarios: `attempted-complete`,
+`insufficient`, `disqualified`, `human-review`, `malformed`, and
+`provider-error`. Every normalization scenario keeps `draft_allowed: false`;
+`ready` permits deterministic evaluation, not copy generation.
 
 Reject meaningful normalized prospect fields without a declared `output_path`;
 only compiler-declared non-decision provenance/safety markers may remain

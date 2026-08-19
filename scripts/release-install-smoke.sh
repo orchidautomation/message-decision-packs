@@ -328,6 +328,28 @@ proposal_fixture="$(mktemp -d)"
 trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
 "$mdp_bin" --json init --template proposal --dir "$proposal_fixture" >/tmp/mdp-release-install-init.json
 "$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
+installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
+"$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-init.json
+"$mdp_bin" --json validate --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-validate.json
+"$mdp_bin" --json eval --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-eval.json
+"$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-gaps.json
+for job_id in prospect-fit-or-brief outbound-copy-brief outbound-copy-review; do
+  requirements_json="$proposal_fixture/installed-gtm-$job_id-requirements.json"
+  "$mdp_bin" --json requirements --dir "$installed_gtm_fixture" --job "$job_id" >"$requirements_json"
+  python3 - "$requirements_json" "$job_id" <<'PY'
+import json, pathlib, sys
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+job_id = sys.argv[2]
+data = payload["data"]
+assert data["valid"] is True, job_id
+assert data["available"] is True, job_id
+assert data["runtime_contract_version"] == "v2", job_id
+assert data["decision_input_contracts"][0]["id"] == "gtm.prospect-context", job_id
+assert data["decision_input_contracts"][0]["version"] == "1.0.0", job_id
+assert data["normalized_output_schema"]["properties"]["contract"]["const"] == "mdp.normalized-decision-input.v2", job_id
+assert len(data["requirements_sha256"]) == 64, job_id
+PY
+done
 gtm_fixture="$proposal_fixture/gtm-pack"
 cp -R "$ROOT/examples/clay-audiences-self-serve-enterprise-expansion" "$gtm_fixture"
 "$mdp_bin" --json validate --dir "$gtm_fixture" >/tmp/mdp-release-install-gtm-validate.json

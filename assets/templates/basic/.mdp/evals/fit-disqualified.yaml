@@ -1,6 +1,7 @@
 command: fit
 expect_status: disqualified
 id: fit-disqualified
+job: prospect-fit-or-brief
 profile_eval:
   category: refusal
   jobs:

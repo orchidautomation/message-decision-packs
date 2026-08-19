@@ -1,14 +1,8 @@
 channel: linkedin
 command: brief
-expect_draft_status: ready
-expect_entry_titles_contains:
-- Scope qualifies primitives
-- Codex plugin portfolio angle
-expect_entry_titles_excludes:
-- Local CLI portfolio angle
-- Portfolio routing capability angle
+expect_draft_status: no-draft
 id: portfolio-agent-plugin-brief
-job: portfolio scope example
+job: outbound-copy-brief
 profile_eval:
   category: proceed
   jobs:

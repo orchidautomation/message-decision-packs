@@ -47,6 +47,16 @@ mdp --json explain --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 ```
 
+Every newly initialized or one-prompt-generated GTM pack must keep the starter
+prospect Decision Input Contract or replace it with an equally complete
+pack-specific contract before it is presented as governed or self-standing.
+Bind all prospect-driven canonical jobs directly or transitively through
+`input_contracts[]`, then require `requirements.data.available: true` for each
+exact job ID. An empty declaration is not a placeholder that passes this gate.
+Do not infer a contract from prompt prose, field names, `signals`, or
+`lead_input_requirements`. Existing unbound packs remain compatible and
+unassessed; upgrading them is an explicit authoring decision.
+
 ## Load Only The Needed References
 
 - Read [references/source-intake.md](references/source-intake.md) when planning sources, extracting evidence, normalizing messy material, or mapping profile vocabulary to primitives.
@@ -97,7 +107,8 @@ self-standing status and never overrides another failed gate or explicit
 2. Map reviewed facts into universal primitives; keep profile terminology in labels and entries.
 3. Separate observed evidence from inferred decisions. Put unresolved or unsupported material in gaps.
 4. Keep every prospect-facing surface about the resolved external target. Pack, CLI, schema, prompt, card, eval, starter, and prior-target vocabulary is internal implementation context only.
-5. When a job depends on collected or normalized data, author and bind its
+5. For a new generated GTM pack, and whenever any job depends on collected or
+   normalized data, author and bind its
    `decision_input_contracts` before writing the normalization prompt. Compile
    the job-specific questions and policy:
 
@@ -116,6 +127,9 @@ roles. Never derive roles from prose or provider fields, and never use
 last-write-wins, newest, highest-confidence, or another positive winner rule.
 Signal-aware normalization must declare `mdp.normalized-decision-input.v2`;
 structured observations never belong in the legacy prospect signal array.
+The canonical prospect-driven jobs are `prospect-fit-or-brief`,
+`outbound-copy-brief`, and `outbound-copy-review`; all three must compile the
+same intended minimum prospect contract before the pack is called governed.
 
 If an external orchestrator will consume the job, hand its integration owner
 the complete requirements result plus `mdp --json schema source-binding`.

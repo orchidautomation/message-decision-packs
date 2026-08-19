@@ -3314,6 +3314,24 @@ mod tests {
         root
     }
 
+    fn generated_gtm_pack(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-gtm-{name}-{nonce}"));
+        crate::commands::init::init_pack_targeted(
+            &root,
+            "Basic MDP Template",
+            "gtm",
+            &crate::commands::init::TargetInitOptions::default(),
+            true,
+            false,
+        )
+        .expect("generated GTM pack should initialize");
+        root
+    }
+
     fn scalar_clay_example(name: &str) -> PathBuf {
         let root = temporary_clay_example(name);
         let manifest_path = root.join(".mdp/manifest.yaml");
@@ -4884,6 +4902,109 @@ conditional:
             error.to_string(),
             "unknown profile job write something persuasive"
         );
+    }
+
+    #[test]
+    fn generated_gtm_jobs_share_the_signal_aware_prospect_contract() {
+        let root = generated_gtm_pack("generated-dic");
+
+        for job_id in [
+            "prospect-fit-or-brief",
+            "outbound-copy-brief",
+            "outbound-copy-review",
+        ] {
+            let compiled = requirements(&root, job_id).expect("requirements should compile");
+            assert_eq!(compiled["valid"], true, "{job_id}");
+            assert_eq!(compiled["available"], true, "{job_id}");
+            assert_eq!(compiled["runtime_contract_version"], "v2", "{job_id}");
+            assert_eq!(
+                compiled["normalized_output_schema"]["properties"]["contract"]["const"],
+                "mdp.normalized-decision-input.v2",
+                "{job_id}"
+            );
+            assert_eq!(
+                compiled["decision_input_contracts"][0]["id"],
+                "gtm.prospect-context"
+            );
+            assert_eq!(compiled["decision_input_contracts"][0]["version"], "1.0.0");
+            assert!(
+                compiled["requirements_sha256"]
+                    .as_str()
+                    .is_some_and(|receipt| receipt.len() == 64),
+                "{job_id}"
+            );
+        }
+
+        let scenarios: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("examples/decision-input-scenarios.json"))
+                .expect("scenario fixture should load"),
+        )
+        .expect("scenario fixture should be valid JSON");
+        let ids = scenarios["scenarios"]
+            .as_array()
+            .expect("scenarios should be an array")
+            .iter()
+            .filter_map(|scenario| scenario["id"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            ids,
+            BTreeSet::from([
+                "attempted-complete",
+                "insufficient",
+                "disqualified",
+                "human-review",
+                "malformed",
+                "provider-error",
+            ])
+        );
+        assert!(
+            scenarios["scenarios"]
+                .as_array()
+                .expect("scenarios should be an array")
+                .iter()
+                .all(|scenario| scenario["draft_allowed"] == false)
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_unbound_job_does_not_infer_a_contract_from_legacy_or_prompt_fields() {
+        let root = generated_gtm_pack("legacy-unbound");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should read");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["decision_input_contracts"] = serde_yaml::Value::Sequence(Vec::new());
+        manifest["input_contracts"][0]["decision_input_contracts"] =
+            serde_yaml::Value::Sequence(Vec::new());
+        for job in manifest["jobs"]
+            .as_sequence_mut()
+            .expect("jobs should be an array")
+        {
+            job["decision_input_contracts"] = serde_yaml::Value::Sequence(Vec::new());
+        }
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should write");
+
+        let compiled = requirements(&root, "prospect-fit-or-brief")
+            .expect("legacy requirements should respond");
+        assert_eq!(compiled["valid"], true);
+        assert_eq!(compiled["available"], false);
+        assert_eq!(compiled["status"], "unavailable");
+        assert_eq!(compiled["decision_input_contracts"], json!([]));
+        assert!(
+            compiled["diagnostics"]
+                .as_array()
+                .expect("diagnostics should be an array")
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "decision_input_contract_not_bound")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

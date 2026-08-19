@@ -481,7 +481,7 @@ mod tests {
         std::fs::write(
             &manifest_path,
             raw.replace(
-                "  gaps:\n    cards:\n    - gaps\n    evals:\n    - fit-insufficient-context\n    - brief-insufficient-context\n    - account-context-missing\n    - account-only-no-draft\n    - prompt-output-missing-readiness-boolean\n    - prompt-output-missing-required-field\n    - prompt-output-validation\n",
+                "  gaps:\n    cards:\n    - gaps\n    evals:\n    - fit-insufficient-context\n    - brief-insufficient-context\n    - account-context-missing\n    - account-only-no-draft\n    - decision-input-contract\n",
                 "",
             ),
         )

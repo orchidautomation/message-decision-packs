@@ -6,8 +6,9 @@ use crate::pack_io::{
 };
 use crate::pack_readme::render_pack_readme;
 use crate::starter::{
-    starter_cards, starter_evals, starter_manifest, starter_prompts, starter_prospect,
-    starter_source_ledger,
+    decision_input_scenarios, generated_starter_evals, generated_starter_manifest,
+    generated_starter_prompts, starter_cards, starter_evals, starter_manifest, starter_prompts,
+    starter_prospect, starter_source_ledger,
 };
 use crate::target_starter::{
     target_cards, target_evals, target_manifest, target_prompts, target_prospect,
@@ -409,14 +410,19 @@ pub(crate) fn init_pack(
     force: bool,
     include_output_schemas: bool,
 ) -> Result<Value> {
-    init_pack_targeted(
-        root,
-        name,
-        template,
-        &TargetInitOptions::default(),
-        force,
-        include_output_schemas,
-    )
+    match template {
+        "gtm" => init_gtm_pack(
+            root,
+            name,
+            template,
+            None,
+            force,
+            include_output_schemas,
+            false,
+        ),
+        "proposal" => init_proposal_pack(root, name, force),
+        _ => Err(unsupported_template(template)),
+    }
 }
 
 pub(crate) fn init_pack_targeted(
@@ -443,6 +449,7 @@ pub(crate) fn init_pack_targeted(
             target.as_ref(),
             force,
             include_output_schemas,
+            true,
         ),
         "proposal" => init_proposal_pack(root, name, force),
         _ => Err(unsupported_template(template)),
@@ -456,6 +463,7 @@ fn init_gtm_pack(
     target: Option<&TargetIdentity>,
     force: bool,
     include_output_schemas: bool,
+    governed: bool,
 ) -> Result<Value> {
     validate_target_destination(root, target)?;
     let pack_dir = root.join(DEFAULT_DIR);
@@ -466,6 +474,13 @@ fn init_gtm_pack(
     let evals_dir = pack_dir.join("evals");
     let prompts_dir = pack_dir.join("prompts");
     let examples_dir = root.join("examples");
+    let decision_input_scenarios_path = examples_dir.join("decision-input-scenarios.json");
+    if decision_input_scenarios_path.exists() && !force {
+        return Err(anyhow!(
+            "{} already exists; pass --force to overwrite",
+            decision_input_scenarios_path.display()
+        ));
+    }
     fs::create_dir_all(&cards_dir).with_context(|| format!("creating {}", cards_dir.display()))?;
     fs::create_dir_all(&briefs_dir)
         .with_context(|| format!("creating {}", briefs_dir.display()))?;
@@ -478,6 +493,8 @@ fn init_gtm_pack(
     let manifest_path = pack_dir.join("manifest.yaml");
     let manifest = if let Some(target) = target {
         target_manifest(name, &slug, template, target)
+    } else if governed {
+        generated_starter_manifest(name, &slug, template)
     } else {
         starter_manifest(name, &slug, template)
     };
@@ -493,13 +510,25 @@ fn init_gtm_pack(
     for (filename, card) in &cards {
         write_yaml(&cards_dir.join(filename), &card, force)?;
     }
-    let evals = target.map(target_evals).unwrap_or_else(starter_evals);
+    let evals = target.map(target_evals).unwrap_or_else(|| {
+        if governed {
+            generated_starter_evals()
+        } else {
+            starter_evals()
+        }
+    });
     for (filename, eval) in evals {
         write_yaml(&evals_dir.join(filename), &eval, force)?;
     }
     let prompts = target
         .map(|target| target_prompts(target, include_output_schemas))
-        .unwrap_or_else(|| starter_prompts(include_output_schemas));
+        .unwrap_or_else(|| {
+            if governed {
+                generated_starter_prompts(include_output_schemas)
+            } else {
+                starter_prompts(include_output_schemas)
+            }
+        });
     for (filename, prompt) in &prompts {
         write_yaml(&prompts_dir.join(filename), &prompt, force)?;
     }
@@ -528,6 +557,7 @@ fn init_gtm_pack(
         .map(target_prospect)
         .unwrap_or_else(|| starter_prospect(template));
     write_json_file(&prospect_path, &prospect)?;
+    write_json_file(&decision_input_scenarios_path, &decision_input_scenarios())?;
     Ok(init_payload(
         root,
         &pack_dir,
@@ -613,6 +643,7 @@ fn init_gtm_pack_dry_run(
     } else {
         "clay-row.json"
     });
+    let decision_input_scenarios_path = examples_dir.join("decision-input-scenarios.json");
     let mut payload = init_payload(
         root,
         &pack_dir,
@@ -663,6 +694,10 @@ fn init_gtm_pack_dry_run(
         ));
     }
     write_plan.push(planned_json_write_after_dirs(&prospect_path, force));
+    write_plan.push(planned_json_write_after_dirs(
+        &decision_input_scenarios_path,
+        force,
+    ));
     if let Some(object) = payload.as_object_mut() {
         object.insert("dry_run".to_string(), json!(true));
         object.insert("template".to_string(), json!(template));
@@ -1621,8 +1656,15 @@ mod tests {
             .expect("system clock should be after unix epoch")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-golden-{nonce}"));
-        init_pack(&root, "Basic MDP Template", "gtm", true, false)
-            .expect("starter pack should initialize");
+        init_pack_targeted(
+            &root,
+            "Basic MDP Template",
+            "gtm",
+            &TargetInitOptions::default(),
+            true,
+            false,
+        )
+        .expect("starter pack should initialize");
         let plugin_template =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugin/assets/templates/basic");
 
@@ -1656,13 +1698,13 @@ mod tests {
         .expect("normalization prompt should be readable");
         assert!(normalization_prompt.contains("format: mdp.prompt.v1"));
         assert!(normalization_prompt.contains("kind: normalization"));
-        assert!(normalization_prompt.contains("version: '1'"));
+        assert!(normalization_prompt.contains("version: gtm-prospect-context.v2"));
         assert!(normalization_prompt.contains("producer: source"));
-        assert!(normalization_prompt.contains("lead_input_requirements.value_contracts"));
-        assert!(normalization_prompt.contains("lead_input_requirements.attribute_definitions"));
-        assert!(normalization_prompt.contains("name: runtime_context"));
-        assert!(normalization_prompt.contains("Do not hardcode fiscal year or infer customer-specific calendars from the current date."));
-        assert!(normalization_prompt.contains("Invalid-value example:"));
+        assert!(normalization_prompt.contains("name: decision_input_requirements"));
+        assert!(normalization_prompt.contains("name: source_binding_sha256"));
+        assert!(normalization_prompt.contains("mdp.normalized-decision-input.v2"));
+        assert!(normalization_prompt.contains("Repeated observations use v2 projections."));
+        assert!(normalization_prompt.contains("Do not browse, scrape, enrich, send, sequence, mutate CRM records, or call external systems."));
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1947,6 +1989,34 @@ mod tests {
             .expect("prospect plan should be present");
         assert_eq!(prospect_plan["action"], "blocked");
         assert_eq!(prospect_plan["would_write"], false);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn init_dry_run_reports_existing_decision_input_scenarios_before_writes() {
+        let root = std::env::temp_dir().join(format!("mdp-dry-run-scenarios-conflict-{}", nonce()));
+        let examples_dir = root.join("examples");
+        let scenarios_path = examples_dir.join("decision-input-scenarios.json");
+        std::fs::create_dir_all(&examples_dir).expect("examples dir should be created");
+        std::fs::write(&scenarios_path, "{}").expect("scenario fixture should be written");
+
+        let result = init_pack_dry_run(&root, "Dry Run Pack", "gtm", false, false)
+            .expect("dry run should return plan");
+        let scenario_plan = result["write_plan"]
+            .as_array()
+            .expect("write plan array")
+            .iter()
+            .find(|entry| entry["path"] == scenarios_path.display().to_string())
+            .expect("scenario plan should be present");
+        assert_eq!(scenario_plan["action"], "blocked");
+        assert_eq!(scenario_plan["would_write"], false);
+
+        let err = init_pack(&root, "Dry Run Pack", "gtm", false, false)
+            .expect_err("existing scenarios should fail before writing the pack");
+        assert!(err.to_string().contains("decision-input-scenarios.json"));
+        assert!(!root.join(".mdp").exists());
+        assert_eq!(std::fs::read_to_string(&scenarios_path).unwrap(), "{}");
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -1,6 +1,7 @@
 command: fit
 expect_status: insufficient-context
 id: fit-insufficient-context
+job: prospect-fit-or-brief
 profile_eval:
   category: insufficient-context
   jobs:

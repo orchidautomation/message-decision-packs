@@ -1,0 +1,73 @@
+{
+  "attempt_statuses": [
+    "observed",
+    "not_found",
+    "not_applicable",
+    "blocked",
+    "error"
+  ],
+  "contract": "mdp.decision-input-scenarios.v1",
+  "decision_input_contract": "gtm.prospect-context@1.0.0",
+  "normalized_schema_ref": "mdp.normalized-decision-input.v2",
+  "note": "Provider-neutral expected outcomes only. Collection and provider execution remain host-owned.",
+  "runtime_contract_version": "v2",
+  "scenarios": [
+    {
+      "attempt_statuses": [
+        "observed",
+        "not_applicable"
+      ],
+      "attempted_complete": true,
+      "draft_allowed": false,
+      "expected_outcome": "ready",
+      "id": "attempted-complete"
+    },
+    {
+      "attempt_statuses": [
+        "observed",
+        "not_found"
+      ],
+      "attempted_complete": true,
+      "draft_allowed": false,
+      "expected_outcome": "insufficient-context",
+      "id": "insufficient"
+    },
+    {
+      "attempt_statuses": [
+        "observed"
+      ],
+      "attempted_complete": true,
+      "draft_allowed": false,
+      "expected_outcome": "disqualified",
+      "id": "disqualified"
+    },
+    {
+      "attempt_statuses": [
+        "observed",
+        "blocked"
+      ],
+      "attempted_complete": true,
+      "draft_allowed": false,
+      "expected_outcome": "human-review",
+      "id": "human-review"
+    },
+    {
+      "attempt_statuses": [],
+      "attempted_complete": false,
+      "draft_allowed": false,
+      "expected_outcome": "malformed",
+      "id": "malformed"
+    },
+    {
+      "attempt_statuses": [
+        "observed",
+        "error"
+      ],
+      "attempted_complete": true,
+      "draft_allowed": false,
+      "expected_outcome": "provider-error",
+      "id": "provider-error"
+    }
+  ],
+  "synthetic": true
+}

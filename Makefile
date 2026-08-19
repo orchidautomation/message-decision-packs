@@ -43,8 +43,11 @@ validate-run-mcp:
 	node --test scripts/test-run-mcp-server.mjs
 
 validate-template:
-	cd cli && $(CARGO) run -- --json validate --dir ../plugin/assets/templates/basic >/tmp/mdp-template-validate.json
-	cd cli && $(CARGO) run -- --json eval --dir ../plugin/assets/templates/basic >/tmp/mdp-template-eval.json
+	cd cli && $(CARGO) run -- --json validate --strict --dir ../plugin/assets/templates/basic >/tmp/mdp-template-validate.json
+	cd cli && $(CARGO) run -- --json eval --strict --dir ../plugin/assets/templates/basic >/tmp/mdp-template-eval.json
+	cd cli && $(CARGO) run -- --json requirements --dir ../plugin/assets/templates/basic --job prospect-fit-or-brief >/tmp/mdp-template-fit-requirements.json
+	cd cli && $(CARGO) run -- --json requirements --dir ../plugin/assets/templates/basic --job outbound-copy-brief >/tmp/mdp-template-brief-requirements.json
+	cd cli && $(CARGO) run -- --json requirements --dir ../plugin/assets/templates/basic --job outbound-copy-review >/tmp/mdp-template-review-requirements.json
 	cd cli && $(CARGO) run -- --json validate --dir ../plugin/assets/templates/proposal >/tmp/mdp-proposal-template-validate.json
 	cd cli && $(CARGO) run -- --json eval --dir ../plugin/assets/templates/proposal >/tmp/mdp-proposal-template-eval.json
 	cd cli && $(CARGO) run -- init --template proposal --dir /tmp/mdp-proposal-init-smoke --force >/tmp/mdp-proposal-init-smoke.json

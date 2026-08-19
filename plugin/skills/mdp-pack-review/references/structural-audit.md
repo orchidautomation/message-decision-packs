@@ -20,6 +20,11 @@ Read this for pack shape, evidence, and content quality.
   the exact questions, requirement classes, output paths, source policy,
   applicability, attempt statuses, provenance, confidence, freshness,
   sensitivity, and status dispositions.
+- For newly generated GTM packs, require a declared prospect contract and a
+  direct or shared-input transitive binding for all three canonical prospect
+  jobs. Each must report `available: true`; repeated sourced observations must
+  compile the v2 matrix with explicit projections. Preserve legacy unbound
+  packs as `unassessed` and do not manufacture governance from legacy fields.
 - Require hard gates to define all five statuses explicitly, align required
   normalized fields with `lead_input_requirements`, and enforce no-draft for
   unresolved or unsafe outcomes.

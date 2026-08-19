@@ -1,0 +1,26 @@
+command: requirements
+expect_attempt_statuses:
+- observed
+- not_found
+- not_applicable
+- blocked
+- error
+expect_available: true
+expect_no_draft_outcomes:
+- insufficient-context
+- disqualified
+- human-review
+- malformed
+- provider-error
+expect_runtime_contract_version: v2
+id: decision-input-contract
+job: prospect-fit-or-brief
+profile_eval:
+  category: prompt-output-validation
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - source-signals
+  - decision-criteria
+  - boundaries
+  - gaps

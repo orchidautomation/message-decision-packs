@@ -2,7 +2,7 @@ channel: linkedin
 command: brief
 expect_draft_status: no-draft
 id: account-only-no-draft
-job: linkedin outbound copy
+job: outbound-copy-brief
 profile_eval:
   category: account-only-no-draft
   jobs:

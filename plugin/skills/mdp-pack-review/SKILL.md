@@ -39,6 +39,15 @@ mdp --json eval --strict --dir PACK_ROOT
 Run `requirements` for each job that binds a decision-input contract. A legacy
 job may report the contract as unavailable without becoming invalid.
 
+For a new generated GTM pack, treat an unavailable contract on any
+prospect-driven canonical job as a blocking authoring finding. Require at least
+one declared prospect Decision Input Contract and direct or transitive bindings
+for `prospect-fit-or-brief`, `outbound-copy-brief`, and
+`outbound-copy-review`. Do not apply that migration gate to a genuinely legacy
+unbound pack during ordinary non-strict validation; report it as compatible
+and unassessed, never governed or self-standing. Never infer a binding from
+prompt prose, field names, `signals`, or `lead_input_requirements`.
+
 For every available result, inspect `runtime_contract_version`, the public
 `contract_version_matrix`, and compiled signal projections before reviewing
 artifacts. Reject mixed v1/v2 chains. Structured repeated observations belong
