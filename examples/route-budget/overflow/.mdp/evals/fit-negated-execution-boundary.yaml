@@ -1,0 +1,27 @@
+command: fit
+expect_status: fit
+id: fit-negated-execution-boundary
+profile_eval:
+  category: proceed
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - decision-criteria
+  - boundaries
+  - source-signals
+prospect:
+  background: building repeatable agent-assisted GTM workflows across supplied rows and review steps
+  company: ExampleCo
+  company_domain: example.com
+  company_url: https://example.com
+  name: Jordan Smith
+  persona: GTM Engineering
+  segment: agent-assisted GTM
+  signals:
+  - id: review-boundary
+    source: synthetic example row
+    title: Review workflow, not auto-send
+  source_kind: synthetic-example
+  synthetic: true
+  title: GTM Engineering Lead
+  trigger: Needs message context and explicitly says do not auto-send the campaign

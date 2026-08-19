@@ -1,0 +1,705 @@
+id: buyer-case-studies
+kind: claims
+title: Synthetic Buyer case studies
+description: Synthetic Buyer-persona case studies for route-budget preflight demonstration.
+personas:
+- Buyer
+tags:
+- buyer
+- case-study
+- synthetic
+- route-budget
+entries:
+- id: buyer-case-001
+  title: Buyer case study 1
+  body: "Buyer context note 1: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-002
+  title: Buyer case study 2
+  body: "Buyer context note 2: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-003
+  title: Buyer case study 3
+  body: "Buyer context note 3: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-004
+  title: Buyer case study 4
+  body: "Buyer context note 4: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-005
+  title: Buyer case study 5
+  body: "Buyer context note 5: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-006
+  title: Buyer case study 6
+  body: "Buyer context note 6: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-007
+  title: Buyer case study 7
+  body: "Buyer context note 7: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-008
+  title: Buyer case study 8
+  body: "Buyer context note 8: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-009
+  title: Buyer case study 9
+  body: "Buyer context note 9: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-010
+  title: Buyer case study 10
+  body: "Buyer context note 10: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-011
+  title: Buyer case study 11
+  body: "Buyer context note 11: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-012
+  title: Buyer case study 12
+  body: "Buyer context note 12: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-013
+  title: Buyer case study 13
+  body: "Buyer context note 13: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-014
+  title: Buyer case study 14
+  body: "Buyer context note 14: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-015
+  title: Buyer case study 15
+  body: "Buyer context note 15: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-016
+  title: Buyer case study 16
+  body: "Buyer context note 16: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-017
+  title: Buyer case study 17
+  body: "Buyer context note 17: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-018
+  title: Buyer case study 18
+  body: "Buyer context note 18: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-019
+  title: Buyer case study 19
+  body: "Buyer context note 19: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-020
+  title: Buyer case study 20
+  body: "Buyer context note 20: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-021
+  title: Buyer case study 21
+  body: "Buyer context note 21: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-022
+  title: Buyer case study 22
+  body: "Buyer context note 22: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-023
+  title: Buyer case study 23
+  body: "Buyer context note 23: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-024
+  title: Buyer case study 24
+  body: "Buyer context note 24: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-025
+  title: Buyer case study 25
+  body: "Buyer context note 25: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-026
+  title: Buyer case study 26
+  body: "Buyer context note 26: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-027
+  title: Buyer case study 27
+  body: "Buyer context note 27: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-028
+  title: Buyer case study 28
+  body: "Buyer context note 28: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-029
+  title: Buyer case study 29
+  body: "Buyer context note 29: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-030
+  title: Buyer case study 30
+  body: "Buyer context note 30: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-031
+  title: Buyer case study 31
+  body: "Buyer context note 31: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-032
+  title: Buyer case study 32
+  body: "Buyer context note 32: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-033
+  title: Buyer case study 33
+  body: "Buyer context note 33: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-034
+  title: Buyer case study 34
+  body: "Buyer context note 34: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-035
+  title: Buyer case study 35
+  body: "Buyer context note 35: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-036
+  title: Buyer case study 36
+  body: "Buyer context note 36: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-037
+  title: Buyer case study 37
+  body: "Buyer context note 37: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-038
+  title: Buyer case study 38
+  body: "Buyer context note 38: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-039
+  title: Buyer case study 39
+  body: "Buyer context note 39: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-040
+  title: Buyer case study 40
+  body: "Buyer context note 40: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-041
+  title: Buyer case study 41
+  body: "Buyer context note 41: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-042
+  title: Buyer case study 42
+  body: "Buyer context note 42: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-043
+  title: Buyer case study 43
+  body: "Buyer context note 43: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-044
+  title: Buyer case study 44
+  body: "Buyer context note 44: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-045
+  title: Buyer case study 45
+  body: "Buyer context note 45: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-046
+  title: Buyer case study 46
+  body: "Buyer context note 46: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-047
+  title: Buyer case study 47
+  body: "Buyer context note 47: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-048
+  title: Buyer case study 48
+  body: "Buyer context note 48: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-049
+  title: Buyer case study 49
+  body: "Buyer context note 49: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-050
+  title: Buyer case study 50
+  body: "Buyer context note 50: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-051
+  title: Buyer case study 51
+  body: "Buyer context note 51: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-052
+  title: Buyer case study 52
+  body: "Buyer context note 52: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-053
+  title: Buyer case study 53
+  body: "Buyer context note 53: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-054
+  title: Buyer case study 54
+  body: "Buyer context note 54: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-055
+  title: Buyer case study 55
+  body: "Buyer context note 55: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-056
+  title: Buyer case study 56
+  body: "Buyer context note 56: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-057
+  title: Buyer case study 57
+  body: "Buyer context note 57: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-058
+  title: Buyer case study 58
+  body: "Buyer context note 58: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-059
+  title: Buyer case study 59
+  body: "Buyer context note 59: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-060
+  title: Buyer case study 60
+  body: "Buyer context note 60: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-061
+  title: Buyer case study 61
+  body: "Buyer context note 61: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-062
+  title: Buyer case study 62
+  body: "Buyer context note 62: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-063
+  title: Buyer case study 63
+  body: "Buyer context note 63: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-064
+  title: Buyer case study 64
+  body: "Buyer context note 64: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-065
+  title: Buyer case study 65
+  body: "Buyer context note 65: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-066
+  title: Buyer case study 66
+  body: "Buyer context note 66: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-067
+  title: Buyer case study 67
+  body: "Buyer context note 67: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-068
+  title: Buyer case study 68
+  body: "Buyer context note 68: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-069
+  title: Buyer case study 69
+  body: "Buyer context note 69: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-070
+  title: Buyer case study 70
+  body: "Buyer context note 70: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-071
+  title: Buyer case study 71
+  body: "Buyer context note 71: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-072
+  title: Buyer case study 72
+  body: "Buyer context note 72: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-073
+  title: Buyer case study 73
+  body: "Buyer context note 73: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-074
+  title: Buyer case study 74
+  body: "Buyer context note 74: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-075
+  title: Buyer case study 75
+  body: "Buyer context note 75: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-076
+  title: Buyer case study 76
+  body: "Buyer context note 76: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-077
+  title: Buyer case study 77
+  body: "Buyer context note 77: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-078
+  title: Buyer case study 78
+  body: "Buyer context note 78: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-079
+  title: Buyer case study 79
+  body: "Buyer context note 79: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-080
+  title: Buyer case study 80
+  body: "Buyer context note 80: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-081
+  title: Buyer case study 81
+  body: "Buyer context note 81: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-082
+  title: Buyer case study 82
+  body: "Buyer context note 82: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-083
+  title: Buyer case study 83
+  body: "Buyer context note 83: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-084
+  title: Buyer case study 84
+  body: "Buyer context note 84: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-085
+  title: Buyer case study 85
+  body: "Buyer context note 85: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-086
+  title: Buyer case study 86
+  body: "Buyer context note 86: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-087
+  title: Buyer case study 87
+  body: "Buyer context note 87: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-088
+  title: Buyer case study 88
+  body: "Buyer context note 88: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-089
+  title: Buyer case study 89
+  body: "Buyer context note 89: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-090
+  title: Buyer case study 90
+  body: "Buyer context note 90: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-091
+  title: Buyer case study 91
+  body: "Buyer context note 91: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-092
+  title: Buyer case study 92
+  body: "Buyer context note 92: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-093
+  title: Buyer case study 93
+  body: "Buyer context note 93: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-094
+  title: Buyer case study 94
+  body: "Buyer context note 94: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-095
+  title: Buyer case study 95
+  body: "Buyer context note 95: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-096
+  title: Buyer case study 96
+  body: "Buyer context note 96: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-097
+  title: Buyer case study 97
+  body: "Buyer context note 97: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-098
+  title: Buyer case study 98
+  body: "Buyer context note 98: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-099
+  title: Buyer case study 99
+  body: "Buyer context note 99: a synthetic persona-scoped case-study entry used only to exercise route-budget preflight. It contains enough canonical prose to contribute measurable bytes to the routed context for the Buyer persona on the outbound-copy-brief job without asserting any real customer outcome, certification, compliance status, or past performance."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []

@@ -1,0 +1,69 @@
+id: output-rules
+kind: output-rules
+title: Output rules
+description: Global style, formatting, and output-structure rules generated text must follow.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- guardrail
+- style
+- format
+entries:
+- id: no-em-dashes
+  title: No em dashes
+  body: Do not use em dashes in generated copy. Use commas, periods, colons, or shorter sentences instead.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  - PM
+  evidence: []
+  avoid:
+  - —
+- id: plain-text-by-default
+  title: Plain text by default
+  body: For outbound email or LinkedIn copy, default to plain text. Do not include links, attachments, images, HTML, tracking parameters, or decorative formatting unless the user explicitly asks and the pack supports it.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid:
+  - http://
+  - https://
+  - <html
+  - <img
+  - utm_
+- id: initial-email-shape
+  title: Initial email shape
+  body: 'When drafting an initial cold email, aim for roughly 90-125 words, use a short non-clickbait subject, and avoid fake Re: or Fwd: framing. Put detailed narrative structure in copy-patterns, not here.'
+  applies_to:
+  - PMM
+  evidence: []
+  avoid: []
+- id: no-fake-personalization
+  title: No fake personalization
+  body: Do not imply the sender read, watched, met, noticed, or personally researched something unless that source context is present. Use hypotheses when the source signal is weak.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid: []
+- id: honor-paragraph-count
+  title: Honor paragraph count
+  body: If the user or pack states a paragraph count, match it exactly. Do not add setup, recap, or explanation paragraphs outside the requested structure.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  - PM
+  evidence: []
+  avoid: []
+- id: no-meta-commentary
+  title: No meta commentary
+  body: Do not explain why the copy works, describe the structure, or include drafting notes unless the user asks for critique or rationale.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  - PM
+  evidence: []
+  avoid: []

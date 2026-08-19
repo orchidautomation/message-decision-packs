@@ -5,7 +5,9 @@ use crate::commands::prompt_output::{
 use crate::commands::requirements::{requirements, resolve_job_decision_inputs};
 use crate::models::{CardKind, Manifest, QualificationGates};
 use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
-use crate::routing::{entry_context_scoped, entry_route_scoped, select_cards};
+use crate::routing::{
+    entry_context_scoped, entry_route_scoped, route_budget_preflight, select_cards,
+};
 use crate::scope::{
     match_entry_scope, parse_scope_selectors, resolve_runtime_scope, scope_from_prospect,
 };
@@ -20,6 +22,46 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
+
+pub(crate) fn route_budget_preflight_command(root: &Path, strict: bool) -> Result<Value> {
+    let manifest = read_manifest(root)?;
+    let mut data = route_budget_preflight(root, &manifest)?;
+    let near_budget_count = data["near_budget_count"].as_u64().unwrap_or(0) as usize;
+    let unassessed_generation_count =
+        data["unassessed_generation_count"].as_u64().unwrap_or(0) as usize;
+    let mut strict_warnings = Vec::new();
+    if strict {
+        if near_budget_count > 0 {
+            strict_warnings.push(json!({
+                "code": "route_budget_near_budget",
+                "severity": "error",
+                "message": format!("{near_budget_count} route(s) use 90% or more of a declared context budget; narrow applicability before generation handoff")
+            }));
+        }
+        if unassessed_generation_count > 0 {
+            strict_warnings.push(json!({
+                "code": "route_budget_unassessed_generation_job",
+                "severity": "error",
+                "message": format!("{unassessed_generation_count} generation/review job(s) declare a model_task without a context_budget; declare positive entry and byte budgets before claiming governed generation")
+            }));
+        }
+    }
+    if let Some(object) = data.as_object_mut() {
+        object.insert(
+            "strict".to_string(),
+            json!({
+                "enabled": strict,
+                "warnings_fail": strict,
+                "warning_count": strict_warnings.len()
+            }),
+        );
+        if !strict_warnings.is_empty() {
+            object.insert("valid".to_string(), json!(false));
+            object.insert("strict_warnings".to_string(), Value::Array(strict_warnings));
+        }
+    }
+    Ok(data)
+}
 
 #[cfg(test)]
 pub(crate) fn route(

@@ -1,0 +1,38 @@
+id: claims
+kind: claims
+title: Approved claims
+description: Claims an agent may use only when the route and source context support them.
+personas:
+- PMM
+- GTM Engineering
+tags:
+- claim
+- proof
+- evidence
+entries:
+- id: modular-pack-routing
+  title: Versioned decision context
+  body: MDP is versioned decision context for agents. It lets teams store messaging decisions in a manifest plus modular cards so agents load relevant context instead of a giant prompt.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: local-offline
+  title: Local offline CLI
+  body: MDP is a local/offline standard, CLI, and plugin for modular GTM messaging context.
+  applies_to:
+  - GTM Engineering
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: versionable-context
+  title: Version-declared context
+  body: Each MDP pack declares a version in its manifest alongside the card references for its modular message context.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence:
+  - mdp-pack-manifest
+  avoid: []

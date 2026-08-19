@@ -6,6 +6,20 @@ MDP compiles a job-specific context instead of handing a model the whole pack. A
 
 Required safety and output guardrails are selected before measurement. MDP blocks when they do not fit; it does not drop or truncate guardrails to satisfy a budget.
 
+A generation-time `mdp route-budget` preflight evaluates every declared
+canonical job that carries a `context_budget` against every relevant manifest
+persona using the default (unfiltered) portfolio scope. It fails when any
+route's selected entry count or canonical byte size exceeds the declared
+budget, and reports selected/excluded counts, reason-code distributions, and
+the largest contributing cards without leaking entry bodies. Legacy packs
+without a declared `context_budget` remain `unassessed` and valid so their
+runtime fail-closed behavior is preserved. `validate --strict` runs the same
+preflight and surfaces overflow as blocking errors, so the builder's existing
+strict gate catches persona-wide `applies_to` stamping before generation
+handoff. The preflight never raises `max_entries` or `max_bytes`, truncates,
+or ranks away required guardrails; the fix is narrower structured
+applicability.
+
 For a ready governed generation or review job, let MDP write the exact canonical `context.model_context` bytes and supply that file as the required `routed_context` prompt input:
 
 ```bash

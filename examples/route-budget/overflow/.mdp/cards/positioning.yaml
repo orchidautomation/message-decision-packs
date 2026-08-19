@@ -1,0 +1,42 @@
+id: positioning
+kind: positioning
+title: Positioning and boundaries
+description: Category and product truth that every routed brief should preserve.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- positioning
+- category
+- boundary
+entries:
+- id: decision-layer
+  title: Versioned decision context for agents
+  body: MDP is versioned decision context for agents. It stores the rules, approved evidence, boundaries, gaps, and job-specific context an agent may use.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  - PM
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: not-execution-system
+  title: Not an execution system
+  body: MDP is not an agent runtime, graph database, orchestration framework, persistent memory layer, or universal company graph. It does not call models, send messages, update CRM records, enrich leads, scrape data, sequence outreach, replace workflow execution tools, or prove that a source claim is true.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  - PM
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: progressive-disclosure
+  title: Progressive disclosure
+  body: The pack is a small manifest plus modular cards. Agents should load only the cards returned by route or brief commands.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence:
+  - mdp-reference-contract
+  avoid: []

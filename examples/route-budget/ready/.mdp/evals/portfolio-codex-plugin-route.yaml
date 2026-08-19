@@ -1,0 +1,20 @@
+command: route
+expect_entry_titles_contains:
+- Scope qualifies primitives
+- Codex plugin portfolio angle
+expect_entry_titles_excludes:
+- Local CLI portfolio angle
+- Portfolio routing capability angle
+id: portfolio-codex-plugin-route
+job: portfolio scope example
+persona: PMM
+profile_eval:
+  category: job-routing
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - output-contracts
+  - routing-jobs
+scope:
+- product=agent-plugin

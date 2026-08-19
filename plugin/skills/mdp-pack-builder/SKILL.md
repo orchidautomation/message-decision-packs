@@ -209,6 +209,24 @@ and exact Decision Input Contract receipts.
      every self-standing generation/review job. Require `routed_context` as a
      pack-produced prompt input and `context_sha256` in governed output. Never
      meet a budget by dropping safety/output guardrails or permitting whole-card access.
+     A persona label is a structural selector, not a pack-wide inclusion switch.
+     Scope `applies_to` to the exact persona/job that needs the entry; do not
+     stamp a single persona across case-study, claims, or hooks authority to
+     make it reachable. Keep card `personas` and entry `applies_to` selectors
+     declared in `manifest.personas`, favor structured `scope` over prose
+     persona mentions, and select evidence by the entry's declared job relevance.
+     Before declaring the pack finished, run the deterministic route-budget
+     preflight for every declared persona/job route:
+
+     ```bash
+     mdp --json route-budget --strict --dir PACK_ROOT
+     ```
+
+     It fails when any route's selected entry count or canonical byte size
+     exceeds the declared budget and reports the reason-code distribution and
+     largest contributing cards without leaking entry bodies. `validate --strict`
+     runs the same preflight; both must be green before a greenfield generation
+     claim. Narrow applicability to fit the budget; do not raise limits.
 
    - Only when the selected prompt is the job-bound
      `decision-input-normalization` prompt producing
@@ -311,6 +329,7 @@ mdp --json validate --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 mdp --json eval --dir PACK_ROOT
 mdp --json validate --strict --dir PACK_ROOT
+mdp --json route-budget --strict --dir PACK_ROOT
 mdp --json eval --strict --dir PACK_ROOT
 ```
 

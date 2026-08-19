@@ -108,6 +108,18 @@ removing guardrails. Governed-output fixtures must bind the exact canonical
 `routed_context` bytes and reject pack-global but unselected or wrong-kind
 identifiers. Exclusion diagnostics must never include bodies.
 
+Run the generation-time preflight before accepting a greenfield generation
+claim:
+
+```bash
+mdp --json route-budget --strict --dir PACK_ROOT
+```
+
+It evaluates every declared persona/job route against its declared budget and
+fails on overflow or near-budget; `validate --strict` runs the same gate. A
+persona label stamped across case-study or claims authority to widen
+inclusion is a high-severity finding even when the runtime still blocks.
+
 When a source binding is supplied, also run:
 
 ```bash

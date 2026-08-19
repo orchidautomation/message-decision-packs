@@ -46,7 +46,7 @@ pub(crate) use proof_output::{
 };
 pub(crate) use readme::{check_readme, refresh_readme};
 pub(crate) use requirements::requirements;
-pub(crate) use routing::{check_claims_scoped, route_scoped};
+pub(crate) use routing::{check_claims_scoped, route_budget_preflight_command, route_scoped};
 pub(crate) use run::run_request_file;
 pub(crate) use run_receipt::{RunReceiptOptions, run_receipt};
 pub(crate) use run_verification::verify_run_files;

@@ -14,10 +14,10 @@ use crate::commands::{
     project_conformance_report, project_prompt_output_validation_file, project_run_files,
     project_source_file, prospect_brief_with_context, refresh_readme, render_human_brief_file,
     render_human_brief_markdown, render_mermaid, render_readable_prospect_brief, requirements,
-    route_scoped, run_receipt, run_request_file, sample_leads, schema, skills,
-    validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
-    validate_source_binding_file, verify_output_file, verify_output_readable_file,
-    verify_run_files,
+    route_budget_preflight_command, route_scoped, run_receipt, run_request_file, sample_leads,
+    schema, skills, validate_behavioral_files, validate_pack,
+    validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
+    verify_output_readable_file, verify_run_files,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -187,7 +187,11 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             validate_source_binding_file(&dir, &job, &file)?,
         ),
         Commands::Validate { dir, strict } => {
-            let data = apply_strict(validate_pack(&dir)?, strict, StrictWarningSource::Issues);
+            let mut data = validate_pack(&dir)?;
+            if strict {
+                data = merge_route_budget_preflight(data, &dir);
+            }
+            let data = apply_strict(data, strict, StrictWarningSource::Issues);
             print_checked(json_mode, summary_mode, "validate", data)
         }
         Commands::Readme { command } => match command {
@@ -479,6 +483,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             summary_mode,
             "route",
             route_scoped(&dir, &persona, &job, &scope, entries, eval_fixture)?,
+        ),
+        Commands::RouteBudget { dir, strict } => print_checked(
+            json_mode,
+            summary_mode,
+            "route-budget",
+            route_budget_preflight_command(&dir, strict)?,
         ),
         Commands::SampleLeads {
             dir,
@@ -821,6 +831,81 @@ fn prepare_conformance_dry_run(data: Value, path: &Path) -> Result<Value> {
 enum StrictWarningSource {
     Issues,
     ConstraintWarnings,
+}
+
+fn merge_route_budget_preflight(mut data: Value, dir: &Path) -> Value {
+    let preflight = match route_budget_preflight_command(dir, true) {
+        Ok(value) => value,
+        Err(error) => {
+            if let Some(object) = data.as_object_mut() {
+                object.insert(
+                    "issues".to_string(),
+                    json!([{
+                        "code": "route_budget_preflight_failed",
+                        "severity": "error",
+                        "path": ".mdp/manifest.yaml",
+                        "message": format!("route-budget preflight could not compile: {error}")
+                    }]),
+                );
+                object.insert("valid".to_string(), json!(false));
+            }
+            return data;
+        }
+    };
+    let mut issues = data["issues"].as_array().cloned().unwrap_or_default();
+    for route in preflight["routes"].as_array().into_iter().flatten() {
+        let persona = route["persona"].as_str().unwrap_or("");
+        let job = route["job"].as_str().unwrap_or("");
+        let path = format!(".mdp/manifest.yaml#/jobs/{job}/context_budget");
+        for diagnostic in route["diagnostics"].as_array().into_iter().flatten() {
+            let code = match diagnostic.as_str() {
+                Some("context_entry_budget_exceeded") => "route_budget_entry_overflow",
+                Some("context_byte_budget_exceeded") => "route_budget_byte_overflow",
+                Some("near_context_budget") => "route_budget_near_budget",
+                _ => continue,
+            };
+            let budget = route["budget"].as_object();
+            let detail = budget
+                .map(|budget| {
+                    format!(
+                        "persona '{persona}' job '{job}': {actual_entries}/{max_entries} entries, {actual_bytes}/{max_bytes} bytes",
+                        actual_entries = budget["actual_entries"],
+                        max_entries = budget["max_entries"],
+                        actual_bytes = budget["actual_bytes"],
+                        max_bytes = budget["max_bytes"]
+                    )
+                })
+                .unwrap_or_else(|| format!("persona '{persona}' job '{job}' exceeds a declared context budget"));
+            issues.push(json!({
+                "code": code,
+                "severity": "error",
+                "path": path,
+                "message": detail
+            }));
+        }
+    }
+    for warning in preflight["strict_warnings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        issues.push(warning.clone());
+    }
+    let error_count = issues
+        .iter()
+        .filter(|issue| issue["severity"] == "error")
+        .count();
+    let warning_count = issues
+        .iter()
+        .filter(|issue| issue["severity"] == "warning")
+        .count();
+    if let Some(object) = data.as_object_mut() {
+        object.insert("issues".to_string(), Value::Array(issues));
+        object.insert("error_count".to_string(), json!(error_count));
+        object.insert("warning_count".to_string(), json!(warning_count));
+        object.insert("valid".to_string(), json!(error_count == 0));
+    }
+    data
 }
 
 fn apply_strict(mut data: Value, strict: bool, source: StrictWarningSource) -> Value {

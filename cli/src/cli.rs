@@ -339,6 +339,13 @@ pub(crate) enum Commands {
         #[arg(long, help = "Include an eval fixture scaffold based on this route")]
         eval_fixture: bool,
     },
+    #[command(about = "Preflight every declared persona/job route against its context budget")]
+    RouteBudget {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long, help = "Fail on near-budget and unassessed generation warnings")]
+        strict: bool,
+    },
     #[command(about = "Generate clearly fake prospect fixtures for outbound-copy testing")]
     SampleLeads {
         #[arg(long, default_value = ".")]

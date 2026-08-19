@@ -269,6 +269,29 @@ fn summarize(command: &str, data: &Value) -> Value {
             "minimality": data["entry_route"]["minimality"],
             "eval_fixture": data["eval_fixture"]
         }),
+        "route-budget" => json!({
+            "contract": data["contract"],
+            "valid": data["valid"],
+            "strict": data["strict"],
+            "pack_id": data["pack_id"],
+            "route_count": data["route_count"],
+            "overflow_count": data["overflow_count"],
+            "near_budget_count": data["near_budget_count"],
+            "unassessed_generation_count": data["unassessed_generation_count"],
+            "routes": data["routes"].as_array().map(|routes| routes.iter().map(|route| json!({
+                "persona": route["persona"],
+                "job": route["job"],
+                "status": route["status"],
+                "budget": route["budget"],
+                "selected_count": route["selected_count"],
+                "excluded_count": route["excluded_count"],
+                "diagnostics": route["diagnostics"],
+                "reason_distribution": route["reason_distribution"],
+                "excluded_reason_distribution": route["excluded_reason_distribution"],
+                "largest_contributing_cards": route["largest_contributing_cards"]
+            })).collect::<Vec<_>>()).unwrap_or_default(),
+            "strict_warnings": data["strict_warnings"]
+        }),
         "sample-leads" => json!({
             "contract": data["contract"],
             "persona": data["inputs"]["persona"],
@@ -451,6 +474,7 @@ fn context_summary(context: &Value) -> Value {
             "selected_count": context["minimality"]["selected_count"],
             "excluded_count": context["minimality"]["excluded_count"],
             "excluded": context["minimality"]["excluded"],
+            "largest_contributing_cards": context["minimality"]["largest_contributing_cards"],
             "diagnostics": context["minimality"]["diagnostics"]
         }
     })

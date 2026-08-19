@@ -32,6 +32,7 @@ mdp --json skills --dir .
 mdp --json skills --dir . --job prospect-fit-or-brief
 mdp --json --summary route --entries --dir . --persona "PMM" --job "linkedin outbound copy"
 mdp --json route --entries --dir . --persona "PMM" --job "portfolio scope example" --scope product=local-cli
+mdp --json route-budget --strict --dir .
 mdp --json fit --dir . --prospect <prospect.json>
 mdp --json --summary brief --context --dir . --prospect <prospect.json> --channel linkedin
 mdp --json check-claims --dir . --text "<draft copy>" --persona "PMM" --job "linkedin outbound copy"

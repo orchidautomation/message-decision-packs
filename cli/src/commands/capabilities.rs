@@ -272,6 +272,7 @@ pub(crate) fn capabilities() -> Value {
             command("render-brief", "mdp.human-brief.v0", "writes-files-with-out", false, true, true, &["--dir", "--file", "--template", "--format", "--out", "--strict"]),
             command("explain", "mdp.explain.v0", "read-only", false, false, false, &["--dir", "--persona"]),
             command("route", "mdp.route.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--scope", "--entries", "--eval-fixture"]),
+            command("route-budget", "mdp.route-budget.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("sample-leads", "mdp.sample-leads.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--count", "--seed", "--format"]),
             command("fit", "mdp.fit.v0", "read-only", false, false, false, &["--dir", "--prospect", "--normalized-input", "--prompt", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--job"]),
             command("check-claims", "mdp.claim-check.v0", "read-only", false, false, true, &["--dir", "--text", "--file", "--subject", "--persona", "--job", "--scope", "--strict"]),

@@ -1,0 +1,82 @@
+id: avoid-rules
+kind: avoid-rules
+title: Avoid rules
+description: Category and claim boundaries agents must keep intact.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- guardrail
+- avoid
+entries:
+- id: not-execution
+  title: Do not claim execution
+  body: Do not describe the decision pack as an agent runtime, graph database, orchestration framework, persistent memory layer, AI SDR, sequencer, CRM, enrichment provider, scraper, BI tool, meeting booker, sender, AI-owned response system, or generic RevOps automation system. Do not claim its hashes prove source truth.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  - PM
+  evidence:
+  - mdp-reference-contract
+  avoid:
+  - agent runtime
+  - graph database
+  - graph engineering platform
+  - orchestration framework
+  - persistent memory layer
+  - memory layer
+  - source truth
+  - universal company graph
+  - proves source truth
+  - AI SDR
+  - sequencer
+  - CRM replacement
+  - generic automation
+  - scraper
+  - update CRM
+  - updates CRM
+  - sends for you
+  - auto-sends
+  - books meetings
+  - launches campaigns
+  - AI can own the response
+- id: no-unsourced-claims
+  title: No unsourced claims
+  body: Do not add quantified outcomes, integrations, customer names, compliance/security approval, production adoption, design partner, paid pilot, market validation, commercial traction, weak trust claims, fake personalization, RFP/proposal-platform replacement, or product capability claims unless they are present in the claims card or supplied source material.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid:
+  - guaranteed
+  - proven ROI
+  - doubles reply rates
+  - fully automated
+  - connect to your CRM
+  - connects to your CRM
+  - native CRM integration
+  - security-approved
+  - handles compliance
+  - compliance approval
+  - customers already use
+  - customers rely on
+  - customer adoption
+  - design partner
+  - design partners
+  - paid pilot
+  - paid pilots
+  - production adoption
+  - production use
+  - validated adoption
+  - ARR conversion
+  - workshop conversion
+  - workshops converted
+  - market validated
+  - market validation
+  - I loved your recent LinkedIn post
+  - bypasses procurement
+  - bypass legal
+  - replace proposal management software
+  - replaces proposal management software
+  - best-in-class

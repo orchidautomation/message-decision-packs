@@ -1,0 +1,12 @@
+command: check-claims
+expect_valid: true
+id: claim-check-negated-execution-boundary
+profile_eval:
+  category: proceed
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - evidence-proof
+  - boundaries
+  - output-contracts
+text: MDP is not an AI SDR. It does not auto-send. It does not send emails.

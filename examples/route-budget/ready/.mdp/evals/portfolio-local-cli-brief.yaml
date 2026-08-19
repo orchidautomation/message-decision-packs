@@ -1,0 +1,40 @@
+channel: linkedin
+command: brief
+expect_draft_status: ready
+expect_entry_titles_contains:
+- Scope qualifies primitives
+- Local CLI portfolio angle
+expect_entry_titles_excludes:
+- Codex plugin portfolio angle
+- Portfolio routing capability angle
+id: portfolio-local-cli-brief
+job: portfolio scope example
+profile_eval:
+  category: proceed
+  jobs:
+  - prospect-fit-or-brief
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - source-signals
+  - output-contracts
+  - routing-jobs
+prospect:
+  attributes:
+    product: local-cli
+  company: ExampleCo
+  company_domain: example.com
+  name: Alex Rivera
+  persona: GTM Engineering
+  segment: agent-assisted GTM
+  signals:
+  - confidence: medium
+    freshness: recent
+    id: portfolio-context-standardization
+    source: synthetic portfolio eval fixture
+    state_as: supplied
+    title: Standardizing portfolio messaging context
+  source_kind: synthetic-example
+  synthetic: true
+  title: Revenue Operations Lead
+  trigger: standardizing outbound context before agents draft or route campaign briefs

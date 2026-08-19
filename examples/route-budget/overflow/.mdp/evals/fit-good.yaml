@@ -1,0 +1,31 @@
+command: fit
+expect_status: fit
+id: fit-good
+profile_eval:
+  category: proceed
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+prospect:
+  background: synthetic RevOps owner evaluating repeatable agent-assisted GTM workflows across source rows, Codex, and review notes
+  company: ExampleCo
+  company_domain: example.com
+  company_url: https://example.com
+  linkedin_url: https://www.linkedin.com/in/example-mdp-demo
+  name: Alex Rivera
+  persona: GTM Engineering
+  segment: agent-assisted GTM
+  signals:
+  - confidence: medium
+    freshness: recent
+    id: revops-owner-context-standardization
+    source: synthetic example row
+    state_as: hypothesis
+    title: RevOps owner standardizing campaign context
+  source_kind: synthetic-example
+  synthetic: true
+  title: Revenue Operations Lead
+  trigger: standardizing outbound context before agents draft or route campaign briefs
