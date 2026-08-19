@@ -136,6 +136,36 @@
         {"id": "builder-prop-val-boundary", "category": "boundary", "criterion": "Preserves human review and no-submission limits.", "required": true}
       ]
     },
+    {
+      "id": "builder-gtm-approved-boundary-train", "split": "train", "scenario_family": "output-gtm-approved-boundary-entry", "skill_id": "mdp-pack-builder", "mode": "gtm-authoring", "risk_tier": "elevated", "fixture": "synthetic:approved-bounded-policy",
+      "prompt": "Author approved terminology, case-scoped proof, and no-extrapolation outcomes as entries and guardrails, not as gaps, then run the per-job conformance loop.",
+      "expected_output": "Approved boundaries become entry refs with avoid/output rules; selected facets have no gap refs and report ready; the pack is not blocked by established policy.",
+      "assertions": [
+        {"id": "builder-approved-train-content", "category": "content", "criterion": "Classifies approved terminology, case-scoped proof, and bounded outcomes as entries plus avoid/output guardrails rather than gaps.", "required": true},
+        {"id": "builder-approved-train-evidence", "category": "evidence", "criterion": "Cites the exact approved source receipts behind each boundary entry and keeps genuine missing authority as the only gap refs.", "required": true},
+        {"id": "builder-approved-train-boundary", "category": "boundary", "criterion": "Does not let the CLI infer gap meaning from prose and never auto-closes a gap from keywords such as approved or resolved.", "required": true}
+      ]
+    },
+    {
+      "id": "builder-gtm-partial-authority-train", "split": "train", "scenario_family": "output-gtm-partial-authority-guardrail", "skill_id": "mdp-pack-builder", "mode": "gtm-authoring", "risk_tier": "elevated", "fixture": "synthetic:partial-usable-authority",
+      "prompt": "Author partial-but-usable authority with explicit avoid and output rules as guardrail entries so the facet is ready, then prove per-job readiness.",
+      "expected_output": "Partial authority with no-extrapolation rules resolves to entry refs and a ready foundation; the job is not blocked by the partial scope.",
+      "assertions": [
+        {"id": "builder-partial-train-content", "category": "content", "criterion": "Authors partial authority as entries with explicit avoid/output rules instead of relabeling it as a gap.", "required": true},
+        {"id": "builder-partial-train-evidence", "category": "evidence", "criterion": "Records the approved scope of each partial authority entry and the boundary that prevents extrapolation.", "required": true},
+        {"id": "builder-partial-train-boundary", "category": "boundary", "criterion": "Keeps the selected required facet free of gap refs while the authority is approved and bounded.", "required": true}
+      ]
+    },
+    {
+      "id": "builder-gtm-blocking-gap-validation", "split": "validation", "scenario_family": "output-gtm-blocking-gap-honest", "skill_id": "mdp-pack-builder", "mode": "gtm-authoring", "risk_tier": "elevated", "fixture": "synthetic:truly-missing-authority",
+      "prompt": "Author a GTM pack where alternatives and outcomes are genuinely missing, keep them as gap refs, run the per-job conformance loop, and report the blocked job.",
+      "expected_output": "Genuine missing authority stays as gap refs; the affected job is pack_ready:false and the handoff reports blocked with the gap instead of calling the pack complete.",
+      "assertions": [
+        {"id": "builder-blocking-val-content", "category": "content", "criterion": "Keeps truly missing alternatives and outcomes as selected required gap refs rather than relabeling them as boundaries.", "required": true},
+        {"id": "builder-blocking-val-evidence", "criterion": "Names each gap, its missing authority, and the required resolver without inventing proof.", "category": "evidence", "required": true},
+        {"id": "builder-blocking-val-boundary", "category": "boundary", "criterion": "Reports the blocked job explicitly and never describes the pack as complete or ready while the job is pack_ready:false.", "required": true}
+      ]
+    },
 
     {
       "id": "review-structural-train", "split": "train", "scenario_family": "output-review-structure", "skill_id": "mdp-pack-review", "mode": "structural", "risk_tier": "elevated", "fixture": "synthetic:malformed-pack",

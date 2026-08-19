@@ -61,6 +61,14 @@ Read this for pack shape, evidence, and content quality.
   control-character rejection, renderer escaping, locator non-dereference, and
   absence of raw provider records or credentials.
 - Check that gaps remain explicit and are not contradicted by confident prose elsewhere.
+- Distinguish approved boundaries from genuine gaps on selected required
+  facets. Approved terminology, case-scoped proof, and case-specific outcomes
+  with explicit no-extrapolation rules are entries plus avoid/output guardrails;
+  a facet holding them and no `gaps` is `ready`. Flag a `gaps` ref that
+  describes an already-approved boundary (a ready job blocked by authoring
+  defect) and a closed-looking gap that still points at unresolved authority.
+  The CLI never infers gap meaning from prose; this classification is the
+  reviewer's.
 - Check that privacy, access, no-invention, human-review, and no-execution boundaries are concrete.
 - Confirm the public projection excludes paths, raw content, identities,
   provider/session data, evaluator rationale, reviewer identity, private
