@@ -1,0 +1,680 @@
+format: mdp.v0
+id: basic-mdp-template
+name: Basic MDP Template
+version: 0.1.0
+description: A modular message decision pack for agent-readable ICP, pains, triggers, proof, CTA policy, avoid-rules, output rules, and copy guidance.
+profile:
+  id: gtm
+  label: GTM Messaging
+  version: mdp.profile.v0
+  context_dimensions:
+    capability:
+    - portfolio-routing
+    - bounded-context
+    product:
+    - local-cli
+    - agent-plugin
+    segment:
+    - agent-assisted-gtm
+    solution:
+    - gtm-messaging
+    - agent-enablement
+  context_dimension_dependencies:
+    capability:
+    - product
+    solution:
+    - product
+  product_foundation:
+    facets:
+    - id: product-identity
+      kind: product_identity
+      entries:
+      - card_id: positioning
+        entry_id: decision-layer
+      - card_id: positioning
+        entry_id: progressive-disclosure
+    - id: product-exclusions
+      kind: product_exclusions
+      entries:
+      - card_id: positioning
+        entry_id: not-execution-system
+      - card_id: avoid-rules
+        entry_id: not-execution
+    - id: actors
+      kind: actors
+      entries:
+      - card_id: personas
+        entry_id: gtm-engineering
+      - card_id: personas
+        entry_id: pmm
+      - card_id: personas
+        entry_id: pm
+    - id: operating-context
+      kind: operating_context
+      entries:
+      - card_id: signals
+        entry_id: source-row-signal
+      - card_id: signals
+        entry_id: linkedin-profile-signal
+      - card_id: signals
+        entry_id: company-context-signal
+    - id: problems
+      kind: problems
+      entries:
+      - card_id: pains
+        entry_id: agent-context-drift
+      - card_id: pains
+        entry_id: handoff-friction
+      - card_id: pains
+        entry_id: claim-inconsistency
+    - id: outcomes
+      kind: outcomes
+      entries:
+      - card_id: claims
+        entry_id: modular-pack-routing
+      - card_id: claims
+        entry_id: local-offline
+      - card_id: claims
+        entry_id: versionable-context
+    - id: differentiators
+      kind: differentiators
+      entries:
+      - card_id: positioning
+        entry_id: progressive-disclosure
+      - card_id: claims
+        entry_id: local-offline
+    - id: alternatives
+      kind: alternatives
+      entries:
+      - card_id: objections
+        entry_id: why-not-prompt
+      - card_id: objections
+        entry_id: why-not-sequencer
+    - id: claims
+      kind: claims
+      entries:
+      - card_id: claims
+        entry_id: modular-pack-routing
+      - card_id: claims
+        entry_id: local-offline
+      - card_id: claims
+        entry_id: versionable-context
+    - id: proof-boundaries
+      kind: proof_boundaries
+      entries:
+      - card_id: avoid-rules
+        entry_id: no-unsourced-claims
+      - card_id: fit-rules
+        entry_id: no-context-no-copy
+    - id: offers
+      kind: offers
+      entries:
+      - card_id: motions
+        entry_id: copy-brief
+      - card_id: motions
+        entry_id: agent-preflight
+      - card_id: motions
+        entry_id: source-row-to-brief
+    - id: motions
+      kind: motions
+      entries:
+      - card_id: motions
+        entry_id: copy-brief
+      - card_id: motions
+        entry_id: agent-preflight
+      - card_id: motions
+        entry_id: source-row-to-brief
+    - id: calls-to-action
+      kind: calls_to_action
+      entries:
+      - card_id: ctas
+        entry_id: soft-ask
+      - card_id: ctas
+        entry_id: calendar-second
+      - card_id: ctas
+        entry_id: no-false-urgency
+      - card_id: ctas
+        entry_id: reply-path
+    - id: narrative-posture
+      kind: narrative_posture
+      entries:
+      - card_id: output-rules
+        entry_id: plain-text-by-default
+      - card_id: output-rules
+        entry_id: no-fake-personalization
+      - card_id: copy-patterns
+        entry_id: claim-gap
+    - id: known-gaps
+      kind: gaps
+      gaps:
+      - card_id: gaps
+        entry_id: missing-company-proof
+      - card_id: gaps
+        entry_id: unclear-fit
+      - card_id: gaps
+        entry_id: hosted-api-not-included
+personas:
+- GTM Engineering
+- PMM
+- PM
+- Buyer
+target_personas:
+- GTM Engineering
+- PMM
+- PM
+operator_roles:
+- GTM Engineering
+- PMM
+supported_channels:
+- linkedin
+- email
+- call-prep
+- agent-brief
+persona_mappings:
+- persona: GTM Engineering
+  title_keywords:
+  - gtm engineering
+  - gtm engineer
+  - growth engineer
+  - growth engineering
+  - revops
+  - revenue operations
+  - sales ops
+  - sales operations
+  - growth ops
+- persona: PMM
+  title_keywords:
+  - pmm
+  - product marketing
+  - demand gen
+  - demand generation
+  - growth marketing
+  - messaging
+  - positioning
+- persona: PM
+  title_keywords:
+  - product manager
+  - head of product
+  - vp product
+  - chief product officer
+lead_input_requirements:
+  required_fields:
+  - name
+  - title
+  - company_domain
+  - trigger
+  - persona
+  - segment
+  - signals
+  required_signal_fields:
+  - source
+  required_attributes: []
+  value_contracts:
+    segment:
+      type: string
+      enum:
+      - agent-assisted GTM
+      description: Pack-owned segment labels accepted from normalization prompts.
+    source_kind:
+      type: string
+      enum:
+      - user-provided-row
+      - csv-row
+      - crm-export-row
+      - clay-row
+      - deepline-row
+      - private-scratch-row
+      - sanitized-example
+      - synthetic-example
+      description: Provider-neutral source markers accepted from normalization prompts.
+  attribute_definitions:
+    capability:
+      type: string
+      enum:
+      - portfolio-routing
+      - bounded-context
+      description: Optional capability context; select product with capability.
+    fiscal_year:
+      type: string
+      description: Optional reviewed account metadata. Keep proof in signals, not attributes.
+    product:
+      type: string
+      enum:
+      - local-cli
+      - agent-plugin
+      description: Optional pack-owned product context used for entry scope routing.
+    solution:
+      type: string
+      enum:
+      - gtm-messaging
+      - agent-enablement
+      description: Optional solution context; select product with solution.
+required_primitives:
+- actors
+- decision-criteria
+- source-signals
+- needs-requirements
+- evidence-proof
+- boundaries
+- output-contracts
+- routing-jobs
+- gaps
+- evals
+primitive_map:
+  actors:
+    cards:
+    - personas
+    input_contracts:
+    - prospect
+  boundaries:
+    cards:
+    - avoid-rules
+    - objections
+    - positioning
+  decision-criteria:
+    cards:
+    - fit-rules
+  evals:
+    evals:
+    - fit-good
+    - fit-insufficient-context
+    - fit-disqualified
+    - claim-check-unsupported
+    - claim-check-customer-proof
+    - claim-check-commercial-traction
+    - claim-check-output-rule
+    - linkedin-copy-route
+    - email-initial-route
+    - call-prep-route
+    - account-context-present
+    - account-context-missing
+    - account-only-no-draft
+    - prompt-output-missing-readiness-boolean
+    - prompt-output-missing-required-field
+    - prompt-output-validation
+    - portfolio-local-cli-route
+    - portfolio-codex-plugin-route
+    - portfolio-missing-scope-route
+  evidence-proof:
+    cards:
+    - claims
+    - positioning
+  gaps:
+    cards:
+    - gaps
+    evals:
+    - fit-insufficient-context
+    - brief-insufficient-context
+    - account-context-missing
+    - account-only-no-draft
+    - prompt-output-missing-readiness-boolean
+    - prompt-output-missing-required-field
+    - prompt-output-validation
+  needs-requirements:
+    cards:
+    - pains
+  output-contracts:
+    cards:
+    - output-rules
+    - copy-patterns
+    - ctas
+    - hooks
+    - portfolio-examples
+    - channel-policies
+  routing-jobs:
+    cards:
+    - channel-policies
+    - motions
+    jobs:
+    - prospect-fit-or-brief
+    - outbound-copy-brief
+    - outbound-copy-review
+  source-signals:
+    cards:
+    - signals
+    prompts:
+    - normalize-prospect-row
+    input_contracts:
+    - prospect
+    evals:
+    - account-context-present
+    - account-context-missing
+    - prompt-output-missing-readiness-boolean
+    - prompt-output-missing-required-field
+    - prompt-output-validation
+input_contracts:
+- id: prospect
+  description: Reviewed prospect/source-row input contract for person, account, and relationship context.
+  schema_ref: mdp.input.prospect.v0
+  prompt: prompts/normalize-prospect.yaml
+  normalizes:
+  - account
+  - person
+  - relationship
+jobs:
+- id: prospect-fit-or-brief
+  skill_id: mdp-gtm-brief
+  label: Prospect row to fit decision or brief
+  description: Normalize supplied row context, check fit, and route a bounded local brief.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - operating-context
+    - problems
+    - claims
+    - proof-boundaries
+    optional:
+    - known-gaps
+  context_budget:
+    max_entries: 48
+    max_bytes: 49152
+- id: outbound-copy-brief
+  skill_id: mdp-gtm-brief
+  label: Outbound copy brief
+  description: Produce grounded copy guidance after fit, proof, guardrails, and output contracts are loaded.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - operating-context
+    - problems
+    - outcomes
+    - differentiators
+    - claims
+    - proof-boundaries
+    - offers
+    - motions
+    - calls-to-action
+    - narrative-posture
+    optional:
+    - known-gaps
+  model_task:
+    kind: generation
+    prompt: generate-outbound-copy-v1
+  context_budget:
+    max_entries: 64
+    max_bytes: 65536
+- id: outbound-copy-review
+  skill_id: mdp-gtm-brief
+  label: Supplied outbound copy review
+  description: Evaluate a supplied copy draft against fit, proof, guardrails, and output rules.
+  required_primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - evidence-proof
+  - boundaries
+  - output-contracts
+  - routing-jobs
+  - gaps
+  input_contracts:
+  - prospect
+  product_foundation:
+    required:
+    - product-identity
+    - product-exclusions
+    - actors
+    - alternatives
+    - claims
+    - proof-boundaries
+    - calls-to-action
+    - narrative-posture
+    optional:
+    - known-gaps
+  model_task:
+    kind: review
+    prompt: review-outbound-copy-v1
+  context_budget:
+    max_entries: 64
+    max_bytes: 65536
+profile_eval:
+  required_categories:
+  - proceed
+  - insufficient-context
+  - refusal
+  - unsafe-output
+  - job-routing
+  - account-context-present
+  - account-context-missing
+  - account-only-no-draft
+  - prompt-output-validation
+  activation:
+    status: ready
+    summary: Starter GTM profile includes primitive coverage, account-context fixtures, no-draft coverage, and prompt-output validation.
+cards:
+- id: personas
+  path: cards/personas.yaml
+  kind: personas
+  description: Who the decision pack serves and what each persona needs.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - persona
+- id: positioning
+  path: cards/positioning.yaml
+  kind: positioning
+  description: Category, product boundaries, value pillars, and what this pack is not.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - positioning
+  - category
+  - boundary
+- id: fit-rules
+  path: cards/fit-rules.yaml
+  kind: fit-rules
+  description: ICP, fit, disqualification, and no-message rules.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - fit
+  - icp
+  - disqualifier
+  - no-message
+- id: signals
+  path: cards/signals.yaml
+  kind: signals
+  description: Structured buying signals, triggers, and source interpretation rules.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - signal
+  - trigger
+  - source
+  - clay
+  - deepline
+  - linkedin
+- id: pains
+  path: cards/pains.yaml
+  kind: pains
+  description: Buyer pains, triggers, and evidence requirements.
+  personas:
+  - PMM
+  - PM
+  tags:
+  - pain
+  - trigger
+- id: claims
+  path: cards/claims.yaml
+  kind: claims
+  description: Approved claims and proof requirements an agent may use.
+  personas:
+  - PMM
+  - GTM Engineering
+  tags:
+  - claim
+  - proof
+  - evidence
+- id: buyer-case-studies
+  path: cards/buyer-case-studies.yaml
+  kind: claims
+  description: Synthetic Buyer-persona case studies for route-budget preflight demonstration.
+  personas:
+  - Buyer
+  tags:
+  - buyer
+  - case-study
+  - synthetic
+  - route-budget
+- id: motions
+  path: cards/motions.yaml
+  kind: motions
+  description: Approved GTM motions and motion boundaries.
+  personas:
+  - GTM Engineering
+  - PMM
+  tags:
+  - motion
+  - workflow
+- id: channel-policies
+  path: cards/channel-policies.yaml
+  kind: channel-policies
+  description: Channel-specific policy for LinkedIn, email, call prep, and agent briefs.
+  personas:
+  - GTM Engineering
+  - PMM
+  tags:
+  - channel
+  - linkedin
+  - email
+  - initial
+  - follow-up
+  - call
+  - prep
+  - agent
+  - brief
+- id: hooks
+  path: cards/hooks.yaml
+  kind: hooks
+  description: Messaging hooks that can be reused after evidence checks.
+  personas:
+  - PMM
+  tags:
+  - hook
+  - copy
+  - message
+- id: portfolio-examples
+  path: cards/portfolio-examples.yaml
+  kind: hooks
+  description: Synthetic portfolio scope demonstration.
+  personas: []
+  tags:
+  - portfolio
+  - scope
+  - example
+- id: ctas
+  path: cards/ctas.yaml
+  kind: ctas
+  description: CTA rules, reply paths, and ask boundaries for outbound copy.
+  personas:
+  - PMM
+  - GTM Engineering
+  tags:
+  - cta
+  - ask
+  - reply
+  - copy
+  - outbound
+  - message
+- id: avoid-rules
+  path: cards/avoid-rules.yaml
+  kind: avoid-rules
+  description: Claims and categories the agent must avoid.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - guardrail
+  - avoid
+- id: output-rules
+  path: cards/output-rules.yaml
+  kind: output-rules
+  description: Global style, formatting, and output-structure rules for generated text.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - guardrail
+  - style
+  - format
+- id: copy-patterns
+  path: cards/copy-patterns.yaml
+  kind: copy-patterns
+  description: Copy structures and brief patterns for GTM outputs.
+  personas:
+  - PMM
+  tags:
+  - copy
+  - brief
+  - outbound
+  - message
+- id: objections
+  path: cards/objections.yaml
+  kind: objections
+  description: Expected objections, category confusion, and approved response logic.
+  personas:
+  - PMM
+  - GTM Engineering
+  tags:
+  - objection
+  - alternative
+  - response
+- id: gaps
+  path: cards/gaps.yaml
+  kind: gaps
+  description: Known gaps and open questions agents must surface instead of filling in.
+  personas:
+  - GTM Engineering
+  - PMM
+  - PM
+  tags:
+  - gap
+  - unknown
+  - open-question
+policy:
+  progressive_disclosure: true
+  load_manifest_first: true
+  max_cards_per_route: 13
+  json_contract: mdp.cli.v0
+  no_auth_required: true
+provenance:
+  owner: local
+  created_by: mdp init
+  notes:
+  - This pack is guidance and evidence context, not an execution system.
+  - Agents should load only routed cards unless the user asks for a full audit.

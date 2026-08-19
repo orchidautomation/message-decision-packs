@@ -11,7 +11,7 @@ use crate::runtime_context::current_runtime_context;
 use crate::scope::{ScopeResolution, match_entry_scope};
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 struct EntryRouteDetails {
@@ -163,6 +163,153 @@ pub(crate) fn entry_route(
     job: &str,
 ) -> Result<Value> {
     entry_route_scoped(root, manifest, persona, job, &ScopeResolution::default())
+}
+
+/// Deterministic generation-time preflight that evaluates every declared
+/// canonical job that carries a `context_budget` against every relevant
+/// manifest persona using the default (unfiltered) portfolio scope. It fails
+/// when any route's selected entry count or canonical byte size exceeds the
+/// declared budget, and reports selected/excluded counts, reason-code
+/// distributions, and the largest contributing cards without leaking entry
+/// bodies. Universal guardrails and product-foundation requirements remain
+/// selected; the preflight never truncates or ranks them away to satisfy a
+/// budget. Legacy packs without a declared `context_budget` remain
+/// `unassessed` and valid so their runtime fail-closed behavior is preserved.
+pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result<Value> {
+    let scope = ScopeResolution::default();
+    let mut routes = Vec::new();
+    let mut overflow_count = 0usize;
+    let mut near_budget_count = 0usize;
+    let mut unassessed_generation_count = 0usize;
+
+    for job in &manifest.jobs {
+        let Some(budget) = job.context_budget.as_ref() else {
+            if job.model_task.is_some() {
+                unassessed_generation_count += 1;
+            }
+            routes.push(json!({
+                "persona": Value::Null,
+                "job": job.id,
+                "status": "unassessed",
+                "reason": "context_budget_not_declared",
+                "budget": Value::Null,
+                "selected_count": Value::Null,
+                "excluded_count": Value::Null,
+                "diagnostics": ["context_budget_not_declared"],
+                "reason_distribution": {},
+                "excluded_reason_distribution": {},
+                "largest_contributing_cards": []
+            }));
+            continue;
+        };
+        for persona in &manifest.personas {
+            let route = entry_route_scoped(root, manifest, persona, &job.id, &scope)?;
+            let minimality = &route["minimality"];
+            let budget_value = &minimality["budget"];
+            let max_entries = budget.max_entries;
+            let max_bytes = budget.max_bytes;
+            let actual_entries = budget_value["actual_entries"].as_u64().unwrap_or(0) as usize;
+            let actual_bytes = budget_value["actual_bytes"].as_u64().unwrap_or(0) as usize;
+            let selected_count = minimality["selected_count"].as_u64().unwrap_or(0) as usize;
+            let excluded_count = minimality["excluded_count"].as_u64().unwrap_or(0) as usize;
+            // The preflight is a budget gate. Runtime blocks such as
+            // full-card fallback remain owned by `route --entries` and
+            // `brief --context` minimality so legacy fail-closed behavior is
+            // preserved; only budget overflow and near-budget signals surface
+            // here so generation handoff can narrow applicability.
+            let entry_overflow = actual_entries > max_entries;
+            let byte_overflow = actual_bytes > max_bytes;
+            let near_entries = max_entries > 0
+                && actual_entries > 0
+                && !entry_overflow
+                && actual_entries * 100 >= max_entries * 90;
+            let near_bytes = max_bytes > 0
+                && actual_bytes > 0
+                && !byte_overflow
+                && actual_bytes * 100 >= max_bytes * 90;
+            if entry_overflow || byte_overflow {
+                overflow_count += 1;
+            }
+            let mut diagnostics: Vec<Value> = Vec::new();
+            if entry_overflow {
+                diagnostics.push(json!("context_entry_budget_exceeded"));
+            }
+            if byte_overflow {
+                diagnostics.push(json!("context_byte_budget_exceeded"));
+            }
+            if near_entries || near_bytes {
+                near_budget_count += 1;
+                diagnostics.push(json!("near_context_budget"));
+            }
+            let status = if entry_overflow || byte_overflow {
+                "blocked"
+            } else {
+                "ready"
+            };
+            let reason_distribution = route_reason_distribution(&route);
+            let excluded_reason_distribution = route_excluded_reason_distribution(minimality);
+            let largest_contributing_cards = minimality["largest_contributing_cards"].clone();
+            routes.push(json!({
+                "persona": persona,
+                "job": job.id,
+                "status": status,
+                "budget": {
+                    "max_entries": max_entries,
+                    "max_bytes": max_bytes,
+                    "actual_entries": actual_entries,
+                    "actual_bytes": actual_bytes
+                },
+                "selected_count": selected_count,
+                "excluded_count": excluded_count,
+                "diagnostics": diagnostics,
+                "reason_distribution": reason_distribution,
+                "excluded_reason_distribution": excluded_reason_distribution,
+                "largest_contributing_cards": largest_contributing_cards,
+                "context_sha256": minimality["context_sha256"].clone()
+            }));
+        }
+    }
+
+    let valid = overflow_count == 0;
+    Ok(json!({
+        "contract": "mdp.route-budget.v0",
+        "valid": valid,
+        "pack_id": manifest.id,
+        "scope": "default",
+        "route_count": routes.len(),
+        "overflow_count": overflow_count,
+        "near_budget_count": near_budget_count,
+        "unassessed_generation_count": unassessed_generation_count,
+        "routes": routes
+    }))
+}
+
+fn route_reason_distribution(route: &Value) -> Value {
+    let mut counts: BTreeMap<&str, u64> = BTreeMap::new();
+    for entry in route["matches"].as_array().into_iter().flatten() {
+        if let Some(reason) = entry["reason"].as_str() {
+            *counts.entry(reason).or_default() += 1;
+        }
+    }
+    let mut distribution = serde_json::Map::new();
+    for (reason, count) in counts {
+        distribution.insert(reason.to_string(), json!(count));
+    }
+    Value::Object(distribution)
+}
+
+fn route_excluded_reason_distribution(minimality: &Value) -> Value {
+    let mut counts: BTreeMap<&str, u64> = BTreeMap::new();
+    for entry in minimality["excluded"].as_array().into_iter().flatten() {
+        if let Some(reason_code) = entry["reason_code"].as_str() {
+            *counts.entry(reason_code).or_default() += 1;
+        }
+    }
+    let mut distribution = serde_json::Map::new();
+    for (reason_code, count) in counts {
+        distribution.insert(reason_code.to_string(), json!(count));
+    }
+    Value::Object(distribution)
 }
 
 pub(crate) fn entry_route_scoped(
@@ -466,6 +613,7 @@ fn context_minimality(
     let selected_count = selected_authority_count(model_visible_projection);
     let canonical_context = canonical_json_bytes(model_visible_projection)?;
     let actual_bytes = canonical_context.len();
+    let largest_contributing_cards = largest_contributing_cards(model_visible_projection);
     let mut diagnostics = Vec::new();
     if !full_card_required.is_empty() {
         diagnostics.push("full_card_fallback_required");
@@ -488,6 +636,7 @@ fn context_minimality(
         "selected_count": selected_count,
         "excluded_count": excluded.len(),
         "excluded": excluded,
+        "largest_contributing_cards": largest_contributing_cards,
         "diagnostics": diagnostics
     }))
 }
@@ -518,6 +667,57 @@ fn selected_authority_count(model_visible_projection: &Value) -> usize {
         }
     }
     selected.len()
+}
+
+/// Groups the model-visible routed context by contributing card and reports the
+/// canonical JSON byte size of each card's selected entries. Entry bodies are
+/// never included in the returned diagnostics; only stable identifiers, kinds,
+/// counts, and byte sizes escape. The byte size is the canonical JSON size of
+/// that card's entry slice, not the marginal contribution to the full context,
+/// so callers can identify which cards dominate a declared budget.
+fn largest_contributing_cards(model_visible_projection: &Value) -> Vec<Value> {
+    let Some(entries) = model_visible_projection["entries"].as_array() else {
+        return Vec::new();
+    };
+    let mut groups: BTreeMap<String, (Value, Vec<&Value>)> = BTreeMap::new();
+    for entry in entries {
+        let Some(card_id) = entry["card_id"].as_str() else {
+            continue;
+        };
+        let card_kind = entry["card_kind"].clone();
+        groups
+            .entry(card_id.to_string())
+            .or_insert_with(|| (card_kind, Vec::new()))
+            .1
+            .push(entry);
+    }
+    let mut contributions = Vec::new();
+    for (card_id, (card_kind, card_entries)) in groups {
+        let slice = Value::Array(card_entries.into_iter().cloned().collect());
+        let bytes = canonical_json_bytes(&slice)
+            .map(|bytes| bytes.len())
+            .unwrap_or(0);
+        contributions.push(json!({
+            "card_id": card_id,
+            "card_kind": card_kind,
+            "entry_count": slice.as_array().map(Vec::len).unwrap_or(0),
+            "canonical_bytes": bytes
+        }));
+    }
+    contributions.sort_by(|left, right| {
+        right["canonical_bytes"]
+            .as_u64()
+            .unwrap_or(0)
+            .cmp(&left["canonical_bytes"].as_u64().unwrap_or(0))
+            .then_with(|| {
+                left["card_id"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(right["card_id"].as_str().unwrap_or(""))
+            })
+    });
+    contributions.truncate(8);
+    contributions
 }
 
 fn apply_selection_authority(entries: &mut [Value], foundation_load_order: &[Value]) {
@@ -1768,6 +1968,267 @@ mod tests {
                 .is_empty()
         );
 
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn add_buyer_persona_and_case_studies(root: &Path, count: usize) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["personas"]
+            .as_sequence_mut()
+            .expect("personas")
+            .push(serde_yaml::Value::String("Buyer".to_string()));
+        manifest["target_personas"]
+            .as_sequence_mut()
+            .expect("target personas")
+            .push(serde_yaml::Value::String("Buyer".to_string()));
+        manifest["cards"].as_sequence_mut().expect("cards").push(
+            serde_yaml::to_value(crate::models::CardRef {
+                id: "buyer-case-studies".to_string(),
+                path: "cards/buyer-case-studies.yaml".to_string(),
+                kind: CardKind::Claims,
+                description: "Synthetic Buyer case studies for route-budget preflight.".to_string(),
+                personas: vec!["Buyer".to_string()],
+                tags: vec!["buyer".to_string(), "route-budget".to_string()],
+            })
+            .expect("card ref should serialize"),
+        );
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let card_path = root.join(".mdp/cards/buyer-case-studies.yaml");
+        let mut lines = vec![
+            "id: buyer-case-studies".to_string(),
+            "kind: claims".to_string(),
+            "title: Synthetic Buyer case studies".to_string(),
+            "description: Synthetic Buyer case studies for route-budget preflight.".to_string(),
+            "personas:".to_string(),
+            "- Buyer".to_string(),
+            "tags:".to_string(),
+            "- buyer".to_string(),
+            "- route-budget".to_string(),
+            "entries:".to_string(),
+        ];
+        for index in 1..=count {
+            lines.push(format!("- id: buyer-case-{index:03}"));
+            lines.push(format!("  title: Buyer case study {index}"));
+            let body = format!(
+                "Buyer context note {index}: a synthetic persona-scoped entry used only to exercise route-budget preflight without asserting any real customer outcome, certification, compliance status, or past performance."
+            );
+            lines.push(format!(
+                "  body: {}",
+                serde_yaml::to_string(&body)
+                    .expect("body should serialize")
+                    .trim()
+            ));
+            lines.push("  applies_to:".to_string());
+            lines.push("  - Buyer".to_string());
+            lines.push("  evidence: []".to_string());
+            lines.push("  avoid: []".to_string());
+        }
+        std::fs::write(card_path, lines.join("\n") + "\n").expect("card should be writable");
+    }
+
+    #[test]
+    fn preflight_fails_when_persona_wide_applicability_overflows_budget() {
+        let root = temp_pack("route-budget-overflow");
+        add_buyer_persona_and_case_studies(&root, 99);
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+
+        assert_eq!(preflight["contract"], "mdp.route-budget.v0");
+        assert_eq!(preflight["valid"], false);
+        assert_eq!(preflight["overflow_count"], 3);
+        let buyer_brief = preflight["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .find(|route| route["persona"] == "Buyer" && route["job"] == "outbound-copy-brief")
+            .expect("buyer outbound-copy-brief route should be present");
+        assert_eq!(buyer_brief["status"], "blocked");
+        assert_eq!(buyer_brief["budget"]["max_entries"], 64);
+        assert_eq!(buyer_brief["budget"]["max_bytes"], 65536);
+        assert!(
+            buyer_brief["budget"]["actual_entries"]
+                .as_u64()
+                .expect("actual entries")
+                > 64
+        );
+        assert!(
+            buyer_brief["budget"]["actual_bytes"]
+                .as_u64()
+                .expect("actual bytes")
+                > 65536
+        );
+        assert!(
+            buyer_brief["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .any(|value| value == "context_entry_budget_exceeded")
+        );
+        assert!(
+            buyer_brief["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .any(|value| value == "context_byte_budget_exceeded")
+        );
+        assert_eq!(buyer_brief["reason_distribution"]["persona applies"], 99);
+        let largest = buyer_brief["largest_contributing_cards"]
+            .as_array()
+            .expect("largest contributing cards");
+        assert_eq!(largest[0]["card_id"], "buyer-case-studies");
+        assert_eq!(largest[0]["entry_count"], 99);
+        assert!(
+            largest
+                .iter()
+                .all(|card| card.get("body").is_none() && card.get("entries").is_none())
+        );
+        assert!(
+            preflight["routes"]
+                .as_array()
+                .expect("routes")
+                .iter()
+                .flat_map(|route| route["largest_contributing_cards"]
+                    .as_array()
+                    .into_iter()
+                    .flatten())
+                .all(|card| card.get("body").is_none())
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preflight_passes_when_narrow_applicability_fits_budget() {
+        let root = temp_pack("route-budget-ready");
+        add_buyer_persona_and_case_studies(&root, 5);
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+
+        assert_eq!(preflight["valid"], true);
+        assert_eq!(preflight["overflow_count"], 0);
+        let buyer_brief = preflight["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .find(|route| route["persona"] == "Buyer" && route["job"] == "outbound-copy-brief")
+            .expect("buyer outbound-copy-brief route should be present");
+        assert_eq!(buyer_brief["status"], "ready");
+        assert!(
+            buyer_brief["budget"]["actual_entries"]
+                .as_u64()
+                .expect("actual entries")
+                <= 64
+        );
+        assert!(
+            buyer_brief["budget"]["actual_bytes"]
+                .as_u64()
+                .expect("actual bytes")
+                <= 65536
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preflight_reports_excluded_reason_distribution_without_bodies() {
+        let root = temp_pack("route-budget-distribution");
+        add_buyer_persona_and_case_studies(&root, 5);
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+        let buyer_brief = preflight["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .find(|route| route["persona"] == "Buyer" && route["job"] == "outbound-copy-brief")
+            .expect("buyer outbound-copy-brief route should be present");
+        let excluded_distribution = buyer_brief["excluded_reason_distribution"]
+            .as_object()
+            .expect("excluded reason distribution");
+        assert!(!excluded_distribution.is_empty());
+        assert!(
+            preflight["routes"]
+                .as_array()
+                .expect("routes")
+                .iter()
+                .flat_map(|route| route["largest_contributing_cards"]
+                    .as_array()
+                    .into_iter()
+                    .flatten())
+                .all(|card| card.get("body").is_none())
+        );
+        assert!(
+            preflight.to_string().contains("not_applicable")
+                || preflight.to_string().contains("policy_incompatible")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preflight_preserves_legacy_jobs_without_a_context_budget() {
+        let root = temp_pack("route-budget-legacy");
+        // The starter pack declares context budgets on all three jobs. Strip
+        // one budget to model a legacy job that must remain runtime fail-closed.
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest readable");
+        let mut value: serde_yaml::Value = serde_yaml::from_str(&raw).expect("manifest parses");
+        for job in value["jobs"].as_sequence_mut().expect("jobs") {
+            if job["id"].as_str() == Some("prospect-fit-or-brief") {
+                job["context_budget"] = serde_yaml::Value::Null;
+            }
+        }
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&value).expect("manifest serializes"),
+        )
+        .expect("manifest writable");
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+
+        assert_eq!(preflight["valid"], true);
+        let legacy = preflight["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .find(|route| route["job"] == "prospect-fit-or-brief")
+            .expect("legacy route should be present");
+        assert_eq!(legacy["status"], "unassessed");
+        assert_eq!(legacy["budget"], Value::Null);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn minimality_reports_largest_contributing_cards_without_entry_bodies() {
+        let root = temp_pack("route-budget-minimality");
+        add_buyer_persona_and_case_studies(&root, 5);
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let route = entry_route_scoped(
+            &root,
+            &manifest,
+            "Buyer",
+            "outbound-copy-brief",
+            &ScopeResolution::default(),
+        )
+        .expect("route should compile");
+        let minimality = &route["minimality"];
+        let largest = minimality["largest_contributing_cards"]
+            .as_array()
+            .expect("largest contributing cards");
+        assert!(!largest.is_empty());
+        assert!(largest[0].get("card_id").is_some());
+        assert!(largest[0].get("canonical_bytes").is_some());
+        assert!(largest[0].get("entry_count").is_some());
+        assert!(largest.iter().all(|card| card.get("body").is_none()));
         let _ = std::fs::remove_dir_all(root);
     }
 }

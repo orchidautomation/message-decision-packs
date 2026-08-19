@@ -1,0 +1,47 @@
+id: buyer-case-studies
+kind: claims
+title: Synthetic Buyer case studies
+description: Synthetic Buyer-persona case studies for route-budget preflight demonstration.
+personas:
+- Buyer
+tags:
+- buyer
+- case-study
+- synthetic
+- route-budget
+entries:
+- id: buyer-case-001
+  title: Buyer case study 1
+  body: "Buyer context note 1: a short synthetic persona-scoped entry kept narrow so the routed context fits the declared budget."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-002
+  title: Buyer case study 2
+  body: "Buyer context note 2: a short synthetic persona-scoped entry kept narrow so the routed context fits the declared budget."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-003
+  title: Buyer case study 3
+  body: "Buyer context note 3: a short synthetic persona-scoped entry kept narrow so the routed context fits the declared budget."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-004
+  title: Buyer case study 4
+  body: "Buyer context note 4: a short synthetic persona-scoped entry kept narrow so the routed context fits the declared budget."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []
+- id: buyer-case-005
+  title: Buyer case study 5
+  body: "Buyer context note 5: a short synthetic persona-scoped entry kept narrow so the routed context fits the declared budget."
+  applies_to:
+  - Buyer
+  evidence: []
+  avoid: []

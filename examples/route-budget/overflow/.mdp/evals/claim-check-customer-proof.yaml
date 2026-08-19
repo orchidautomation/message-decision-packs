@@ -1,0 +1,19 @@
+command: check-claims
+expect_guardrail_terms_contains:
+- customers already use
+- design partner
+- paid pilot
+- production use
+expect_unsupported_claims_contains:
+- customer proof
+expect_valid: false
+id: claim-check-customer-proof
+profile_eval:
+  category: unsafe-output
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - evidence-proof
+  - boundaries
+  - output-contracts
+text: The attributes prove MDP customers already use the pack in production use with a design partner and paid pilot.

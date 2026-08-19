@@ -1,0 +1,21 @@
+command: route
+expect_entry_titles_contains:
+- Agent brief
+expect_load_order_contains:
+- .mdp/cards/personas.yaml
+- .mdp/cards/avoid-rules.yaml
+- .mdp/cards/output-rules.yaml
+- .mdp/cards/fit-rules.yaml
+- .mdp/cards/signals.yaml
+- .mdp/cards/channel-policies.yaml
+id: revops-owner-agent-brief-route
+job: agent brief for RevOps owner source row
+persona: GTM Engineering
+profile_eval:
+  category: job-routing
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - source-signals
+  - routing-jobs

@@ -1,0 +1,18 @@
+{
+  "name": "Dana Rivera",
+  "title": "VP Product Marketing",
+  "company": "Acme Synthetics",
+  "company_domain": "acme-synthetics.example",
+  "source_kind": "synthetic-example",
+  "segment": "agent-assisted GTM",
+  "persona": "PMM",
+  "trigger": "Team adopted a local CLI for outbound copy and wants versioned context.",
+  "background": "Synthetic prospect for route-budget demonstration only.",
+  "signals": [
+    {
+      "id": "pmm-signal-1",
+      "title": "PMM asked about route-budget guardrails",
+      "source": "synthetic-example"
+    }
+  ]
+}

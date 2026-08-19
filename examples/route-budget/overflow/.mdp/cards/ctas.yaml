@@ -1,0 +1,50 @@
+id: ctas
+kind: ctas
+title: CTA rules
+description: Calls to action, reply paths, and ask boundaries for outbound copy.
+personas:
+- PMM
+- GTM Engineering
+tags:
+- cta
+- ask
+- reply
+- copy
+- outbound
+- message
+entries:
+- id: soft-ask
+  title: Soft ask
+  body: 'Default to a low-friction ask that optimizes for a human reply: compare notes, sanity-check the hypothesis, ask who owns the problem, or ask whether the angle is worth a quick look.'
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: calendar-second
+  title: Calendar second
+  body: Do not make the first CTA a calendar booking unless fit is strong, the reason for urgency is sourced, and the channel policy allows it. Use a reply-path question first when fit or ownership is uncertain.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: no-false-urgency
+  title: No false urgency
+  body: Do not manufacture urgency or imply the prospect has asked for help unless the source row says so.
+  applies_to:
+  - PMM
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: reply-path
+  title: Reply path
+  body: When the best next step is not a meeting, ask a routing question that helps identify the owner, priority, or current workflow.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence:
+  - mdp-reference-contract
+  avoid: []

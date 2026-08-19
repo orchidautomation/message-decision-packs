@@ -1,0 +1,33 @@
+channel: linkedin
+command: brief
+expect_draft_status: no-draft
+id: account-only-no-draft
+job: linkedin outbound copy
+profile_eval:
+  category: account-only-no-draft
+  jobs:
+  - outbound-copy-brief
+  primitives:
+  - actors
+  - decision-criteria
+  - source-signals
+  - output-contracts
+  - gaps
+prospect:
+  background: account-only row says the company is standardizing qualification data across agent-assisted GTM workflows
+  company: Northstar Cloud
+  company_domain: northstarcloud.com
+  company_url: https://northstarcloud.com
+  name: N/A
+  segment: agent-assisted GTM
+  signals:
+  - confidence: medium
+    freshness: recent
+    id: qualification-data-standardization
+    source: synthetic account-only row
+    state_as: supplied
+    title: Standardizing prospect qualification data
+  source_kind: synthetic-example
+  synthetic: true
+  title: N/A
+  trigger: standardizing prospect qualification data before routing new campaigns

@@ -106,6 +106,7 @@ pub(crate) const SUPPORTED_COMMAND_SURFACES: &[(&str, SurfaceRole)] = &[
     ("render-brief", SurfaceRole::Projection),
     ("explain", SurfaceRole::Projection),
     ("route", SurfaceRole::Projection),
+    ("route-budget", SurfaceRole::Verifier),
     ("sample-leads", SurfaceRole::ArtifactWriter),
     ("fit", SurfaceRole::AuthorityOrigin),
     ("check-claims", SurfaceRole::Verifier),

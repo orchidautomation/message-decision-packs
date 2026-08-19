@@ -1,0 +1,78 @@
+command: validate-prompt-output
+expect_normalization_ready: false
+expect_valid: true
+id: account-only-normalization-output
+profile_eval:
+  category: prompt-output-validation
+  jobs:
+  - prospect-fit-or-brief
+  primitives:
+  - actors
+  - source-signals
+  - gaps
+prompt_id: normalize-prospect-row
+prompt_output:
+  card_patches: []
+  contract: mdp.prompt-output.v0
+  gaps:
+  - No person name or title was present in the source row; provide a reviewed contact before drafting.
+  normalization_trace:
+    fit_readiness:
+      has_company_domain: true
+      has_persona: false
+      has_segment: true
+      has_signal_source: true
+      has_signals: true
+      has_trigger: true
+      no_draft_reason: No person name or title was present in the source row; provide a reviewed contact before drafting.
+      ready_for_brief: false
+      ready_for_mdp_fit: false
+    missing_required:
+    - field: name
+      path: normalized_prospect.name
+      reason: not_available_in_source
+      source_evidence: Raw row contained account context but no named person.
+    - field: title
+      path: normalized_prospect.title
+      reason: not_available_in_source
+      source_evidence: Raw row contained account context but no person title.
+    - field: persona
+      reason: not_extractable_without_person
+      source_evidence: No reviewed person or role was supplied.
+    persona:
+      confidence: unknown
+      matched_keywords: []
+      needs_review: true
+      source: N/A
+    preserved_raw_fields:
+    - raw_row.company
+    - raw_row.account_note
+    - company_domain
+    - source_kind
+  normalized_prospect:
+    company: Northstar Cloud
+    company_domain: northstarcloud.com
+    name: N/A
+    segment: agent-assisted GTM
+    signals:
+    - id: qualification-data-standardization
+      source: raw_row.account_note
+      title: Standardizing prospect qualification data
+    source_kind: synthetic-example
+    synthetic: true
+    title: N/A
+    trigger: standardizing prospect qualification data before routing new campaigns
+  prompt_id: normalize-prospect-row
+  rejected_claims: []
+  source_summary:
+    account_name: Northstar Cloud
+    company_domain: northstarcloud.com
+    company_name: Northstar Cloud
+    confidence: medium
+    inputs_used:
+    - raw_row
+    - company_domain
+    - existing_pack_context
+    - source_kind
+    person_name: N/A
+    person_title: N/A

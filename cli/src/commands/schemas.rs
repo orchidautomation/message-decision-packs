@@ -3418,10 +3418,20 @@ fn context_schema() -> Value {
                     "reason_code": {"enum": ["policy_incompatible", "not_applicable", "scope_incompatible"]}
                 }
             }},
+            "largest_contributing_cards": {"type": "array", "items": {
+                "type": "object",
+                "required": ["card_id", "card_kind", "entry_count", "canonical_bytes"],
+                "additionalProperties": false,
+                "properties": {
+                    "card_id": {"type": "string"}, "card_kind": {"type": "string"},
+                    "entry_count": {"type": "integer", "minimum": 0},
+                    "canonical_bytes": {"type": "integer", "minimum": 0}
+                }
+            }},
             "diagnostics": {"type": "array", "items": {"enum": [
                 "canonical_job_not_declared", "context_budget_not_declared",
                 "full_card_fallback_required", "context_entry_budget_exceeded",
-                "context_byte_budget_exceeded"
+                "context_byte_budget_exceeded", "near_context_budget"
             ]}}
         }
     });

@@ -1,0 +1,37 @@
+id: gaps
+kind: gaps
+title: Known gaps
+description: Durable gaps and open questions agents should surface instead of inventing answers.
+personas:
+- GTM Engineering
+- PMM
+- PM
+tags:
+- gap
+- unknown
+- open-question
+entries:
+- id: missing-company-proof
+  title: Missing company-specific proof
+  body: If a prospect/account row lacks concrete source context, ask for source material or state the personalization gap before drafting.
+  applies_to:
+  - PMM
+  - GTM Engineering
+  evidence: []
+  avoid: []
+- id: unclear-fit
+  title: Unclear fit
+  body: If role, segment, or trigger does not map to a fit rule, return insufficient-context instead of forcing a message.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence: []
+  avoid: []
+- id: hosted-api-not-included
+  title: Hosted API not included
+  body: The MVP is local/offline. Do not imply a hosted API exists unless the user has deployed one separately.
+  applies_to:
+  - GTM Engineering
+  - PMM
+  evidence: []
+  avoid: []
