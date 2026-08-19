@@ -18,7 +18,7 @@ validate-route-budget:
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow.json'))['data']; assert d['valid'] is False and d['overflow_count']>0, 'overflow fixture should fail preflight'"
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-ready.json'))['data']; assert d['valid'] is True and d['overflow_count']==0, 'ready fixture should pass strict preflight'"
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow-route.json'))['data']; assert d['draft_status']=='blocked'; m=d['entry_route']['minimality']; assert 'context_entry_budget_exceeded' in m['diagnostics']"
-	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-ready-brief.json'))['data']; assert d['draft_status']=='ready' and d['context']['minimality']['status']=='ready'"
+	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-ready-brief.json'))['data']; assert d['context']['minimality']['status']=='ready', 'ready fixture minimality should be ready; draft_status may be no-draft under the MDP-215 DIC boundary for a detached prospect'"
 
 
 validate-cli:
