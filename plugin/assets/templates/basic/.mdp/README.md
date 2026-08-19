@@ -4,6 +4,7 @@
 ## Authority
 
 This README is orientation only. The manifest, referenced card entries, source ledger, contracts, and explicit gaps remain the machine authority. README prose cannot satisfy readiness or override structured authority.
+The inventory block below is a machine-generated projection of loaded structured authority; refresh it with `mdp readme refresh` and never hand-maintain its counts.
 
 ## Thesis
 
@@ -71,6 +72,8 @@ A modular message decision pack for agent-readable ICP, pains, triggers, proof, 
 - `mdp --json requirements --job outbound-copy-brief --dir .`
 - `mdp --json skills --job outbound-copy-review --dir .`
 - `mdp --json requirements --job outbound-copy-review --dir .`
+- `mdp --json readme check --dir .`
+- `mdp --json readme refresh --dir .`
 - `mdp --json schema prompt-output-validation-v1`
 
 ## Gaps
@@ -78,3 +81,55 @@ A modular message decision pack for agent-readable ICP, pains, triggers, proof, 
 - Missing company-specific proof: If a prospect/account row lacks concrete source context, ask for source material or state the personalization gap before drafting.
 - Unclear fit: If role, segment, or trigger does not map to a fit rule, return insufficient-context instead of forcing a message.
 - Hosted API not included: The MVP is local/offline. Do not imply a hosted API exists unless the user has deployed one separately.
+
+<!-- mdp:readme-inventory v1 begin -->
+
+## Inventory
+
+Machine-generated from loaded structured authority. Do not edit by hand; run `mdp readme refresh` to update. This block is a projection of the manifest, cards, sources, and prompts; it cannot satisfy a product-foundation facet, close a gap, or override structured authority.
+
+- cards: 16
+- card entries: 54
+- prompts: 12
+- sources: 3
+
+### Card entries
+
+- `avoid-rules` (avoid-rules): 2 entries
+- `channel-policies` (channel-policies): 6 entries
+- `claims` (claims): 3 entries
+- `copy-patterns` (copy-patterns): 3 entries
+- `ctas` (ctas): 4 entries
+- `fit-rules` (fit-rules): 3 entries
+- `gaps` (gaps): 3 entries
+- `hooks` (hooks): 3 entries
+- `motions` (motions): 3 entries
+- `objections` (objections): 2 entries
+- `output-rules` (output-rules): 6 entries
+- `pains` (pains): 3 entries
+- `personas` (personas): 3 entries
+- `portfolio-examples` (hooks): 4 entries
+- `positioning` (positioning): 3 entries
+- `signals` (signals): 3 entries
+
+### Sources
+
+- `mdp-reference-contract`
+- `mdp-pack-manifest`
+- `example-prospect`
+
+### Prompts
+
+- `extract-avoid-rules`
+- `extract-claims-proof`
+- `extract-cta-channel-policy`
+- `extract-fit-rules`
+- `extract-gaps`
+- `extract-hooks`
+- `extract-icp-persona`
+- `extract-output-rules`
+- `extract-pains`
+- `generate-outbound-copy-v1`
+- `normalize-prospect-row`
+- `review-outbound-copy-v1`
+<!-- mdp:readme-inventory v1 end -->

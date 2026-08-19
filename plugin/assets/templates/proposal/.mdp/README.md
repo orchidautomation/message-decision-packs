@@ -4,6 +4,7 @@
 ## Authority
 
 This README is orientation only. The manifest, referenced card entries, source ledger, contracts, and explicit gaps remain the machine authority. README prose cannot satisfy readiness or override structured authority.
+The inventory block below is a machine-generated projection of loaded structured authority; refresh it with `mdp readme refresh` and never hand-maintain its counts.
 
 ## Thesis
 
@@ -69,6 +70,8 @@ This public sample is synthetic review support. It does not certify compliance, 
 - `mdp --json requirements --job proof-review --dir .`
 - `mdp --json skills --job red-team-review --dir .`
 - `mdp --json requirements --job red-team-review --dir .`
+- `mdp --json readme check --dir .`
+- `mdp --json readme refresh --dir .`
 - `mdp --json schema prompt-output-validation-v1`
 
 ## Gaps
@@ -76,3 +79,45 @@ This public sample is synthetic review support. It does not certify compliance, 
 - Missing RFP text: If the actual RFP text or requirement source is missing, do not infer mandatory requirements. Ask for approved source material or keep the requirement as a gap.
 - Missing proof: If proof, certification, reference, or past performance is not approved, mark a proof gap and avoid claim-bearing language.
 - Public safety gap: If a source appears private, customer-specific, access-controlled, or regulated, keep it out of the public template and move the work to private scratch or a customer-controlled pack.
+
+<!-- mdp:readme-inventory v1 begin -->
+
+## Inventory
+
+Machine-generated from loaded structured authority. Do not edit by hand; run `mdp readme refresh` to update. This block is a projection of the manifest, cards, sources, and prompts; it cannot satisfy a product-foundation facet, close a gap, or override structured authority.
+
+- cards: 13
+- card entries: 40
+- prompts: 5
+- sources: 3
+
+### Card entries
+
+- `bid-no-bid-rules` (fit-rules): 3 entries
+- `compliance-boundaries` (avoid-rules): 2 entries
+- `evaluation-criteria` (fit-rules): 2 entries
+- `gaps` (gaps): 3 entries
+- `opportunity-context` (signals): 3 entries
+- `proof-library` (claims): 3 entries
+- `proposal-boundaries` (avoid-rules): 3 entries
+- `proposal-output-rules` (output-rules): 3 entries
+- `proposal-roles` (personas): 3 entries
+- `requirement-signals` (signals): 3 entries
+- `requirements-matrix` (pains): 3 entries
+- `review-gates` (motions): 5 entries
+- `review-outputs` (copy-patterns): 4 entries
+
+### Sources
+
+- `synthetic-rfp-summary`
+- `synthetic-proof-inventory`
+- `proposal-safety-boundary`
+
+### Prompts
+
+- `normalize-opportunity`
+- `review-bid-no-bid-v1`
+- `review-proposal-compliance-v1`
+- `review-proposal-proof-v1`
+- `review-proposal-red-team-v1`
+<!-- mdp:readme-inventory v1 end -->

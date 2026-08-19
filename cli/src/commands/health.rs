@@ -340,6 +340,9 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         &mut issues,
     );
     validate_target_identity(root, &manifest, &mut issues)?;
+    if let Some(drift_issue) = crate::commands::readme::readme_drift_issue(root) {
+        issues.push(drift_issue);
+    }
     let error_count = issue_count(&issues, "error");
     let warning_count = issue_count(&issues, "warning");
     Ok(json!({

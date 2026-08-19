@@ -108,6 +108,11 @@ pub(crate) enum Commands {
         #[arg(long, help = "Fail validation-style flows on warnings where supported")]
         strict: bool,
     },
+    #[command(about = "Check or refresh the generated README inventory block")]
+    Readme {
+        #[command(subcommand)]
+        command: ReadmeCommand,
+    },
     #[command(about = "Validate model-produced prompt output JSON against a prompt contract")]
     ValidatePromptOutput {
         #[arg(long, default_value = ".")]
@@ -574,6 +579,27 @@ pub(crate) enum ConformanceCommand {
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum ReadmeCommand {
+    #[command(about = "Check the generated README inventory block against loaded authority")]
+    Check {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
+    #[command(about = "Regenerate only the owned README inventory block")]
+    Refresh {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(
+            long,
+            help = "Write the refreshed README to a file instead of in place"
+        )]
+        out: Option<PathBuf>,
+        #[arg(long, help = "Show the refreshed README without writing it")]
         dry_run: bool,
     },
 }
