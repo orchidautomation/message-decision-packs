@@ -1,0 +1,43 @@
+id: personas
+kind: personas
+title: Core personas with a synthetic undeclared selector
+description: Public-safe fixture for deterministic persona-reference validation.
+personas:
+- GTM Engineering
+- PMM
+- PM
+- Buyer
+tags:
+- persona
+entries:
+- id: gtm-engineering
+  title: GTM Engineering
+  body: Needs precise contracts, data boundaries, approved workflows, and machine-readable routing.
+  applies_to:
+  - GTM Engineering
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: pmm
+  title: PMM
+  body: Needs pains, triggers, hooks, proof points, CTA policy, and copy constraints without losing source fidelity.
+  applies_to:
+  - PMM
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: pm
+  title: PM
+  body: Needs product boundaries, roadmap-relevant pain evidence, and clear decisions about what the product is not.
+  applies_to:
+  - PM
+  evidence:
+  - mdp-reference-contract
+  avoid: []
+- id: undeclared-architect
+  title: Synthetic workflow owner
+  body: A solutions architect may appear in prose without becoming a selector.
+  applies_to:
+  - Architect
+  evidence: []
+  avoid: []
