@@ -167,6 +167,13 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         .iter()
         .map(|persona| persona.to_lowercase())
         .collect();
+    let selector_names: BTreeSet<String> = manifest
+        .personas
+        .iter()
+        .chain(manifest.target_personas.iter())
+        .chain(manifest.operator_roles.iter())
+        .map(|value| value.to_lowercase())
+        .collect();
     for (index, mapping) in manifest.persona_mappings.iter().enumerate() {
         if mapping.persona.trim().is_empty() {
             issues.push(issue(
@@ -221,7 +228,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         }
         validate_persona_selector(
             &card_ref.personas,
-            &persona_names,
+            &selector_names,
             ".mdp/manifest.yaml",
             &format!("/cards/{card_index}/personas"),
             "manifest_card_persona_undeclared",
@@ -249,7 +256,12 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
                     .filter(|entry| !entry.scope.is_empty())
                     .count();
                 validate_card_shape(&path, &display_path, &mut issues);
-                validate_card_persona_references(&card, &persona_names, &display_path, &mut issues);
+                validate_card_persona_references(
+                    &card,
+                    &selector_names,
+                    &display_path,
+                    &mut issues,
+                );
                 validate_card_entry_scopes(
                     &card,
                     manifest.profile.as_ref(),
@@ -8297,6 +8309,58 @@ output_contract:
         card["entries"][0]["title"] = YamlValue::String("For solutions architects".into());
         card["entries"][0]["body"] =
             YamlValue::String("A marketer may collaborate on this prose-only example.".into());
+        std::fs::write(
+            card_path,
+            serde_yaml::to_string(&card).expect("card should serialize"),
+        )
+        .expect("card should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        assert!(
+            result["issues"]
+                .as_array()
+                .expect("issues")
+                .iter()
+                .all(|issue| {
+                    !matches!(
+                        issue["code"].as_str(),
+                        Some(
+                            "manifest_card_persona_undeclared"
+                                | "card_persona_undeclared"
+                                | "card_entry_applies_to_persona_undeclared"
+                        )
+                    )
+                })
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn persona_references_accept_declared_operator_roles_and_target_personas() {
+        let root = temp_pack("persona-reference-routable-roles");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["operator_roles"] =
+            serde_yaml::from_str("- GTM Engineering\n- Operator\n").expect("roles should parse");
+        manifest["target_personas"] =
+            serde_yaml::from_str("- Target Buyer\n").expect("target personas should parse");
+        manifest["cards"][0]["personas"] = serde_yaml::from_str("- Operator\n- target buyer\n")
+            .expect("card personas should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let card_path = root.join(".mdp/cards/personas.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        let mut card: YamlValue = serde_yaml::from_str(&raw).expect("card should parse");
+        card["personas"] = serde_yaml::from_str("- operator\n- TARGET BUYER\n")
+            .expect("card personas should parse");
+        card["entries"][0]["applies_to"] = serde_yaml::from_str("- Operator\n- target buyer\n")
+            .expect("entry applicability should parse");
         std::fs::write(
             card_path,
             serde_yaml::to_string(&card).expect("card should serialize"),

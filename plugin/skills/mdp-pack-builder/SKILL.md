@@ -239,7 +239,8 @@ Runner contract acceptance and integration support are separate. Consult [canoni
 7. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
 8. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target. Decision-input examples also need synthetic expected outcomes for ready, insufficient-context, disqualified, human-review, malformed, and provider-error.
    Declare every non-empty card-level `personas` and entry-level `applies_to`
-   selector in `manifest.personas`. Matching is case-insensitive and preserves
+   selector in the manifest's declared `personas`, `target_personas`, or
+   `operator_roles`. Matching is case-insensitive and preserves
    authored display values. Keep universal selectors empty; do not promote
    role words found only in titles or prose into manifest personas.
 9. Validate, fix, and repeat:

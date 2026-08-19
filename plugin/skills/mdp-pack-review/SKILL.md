@@ -150,8 +150,9 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
   pricing, past performance, or approval to clear a finding.
 - Check source receipts, freshness, confidence, approved claims/proof, avoid rules, output rules, and gaps for internal consistency.
 - Cross-reference every non-empty manifest card `personas`, loaded card
-  `personas`, and entry `applies_to` selector against `manifest.personas`
-  case-insensitively. Default warnings preserve legacy validation, but strict
+  `personas`, and entry `applies_to` selector against the manifest's declared
+  `personas`, `target_personas`, and `operator_roles` case-insensitively. Default
+  warnings preserve legacy validation, but strict
   validation must block dangling selectors. Empty selectors remain universal;
   role mentions in titles, descriptions, and bodies remain unrestricted prose.
 - For each decision-input contract, verify that every attribute states an answerable question, requirement class, output path, value contract, decision effects, allowed source classes, provenance, confidence, freshness, sensitivity, and effective behavior for all five attempt statuses. Hard gates must map every status explicitly and include no-draft behavior.

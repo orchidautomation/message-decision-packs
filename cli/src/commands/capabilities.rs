@@ -217,7 +217,7 @@ pub(crate) fn capabilities() -> Value {
             "entry_scope": "OR within an entry dimension and AND across dimensions; unscoped entries are global."
         },
         "persona_reference_integrity": {
-            "authority": "manifest.personas",
+            "authority": "manifest.personas plus manifest.target_personas and manifest.operator_roles",
             "matching": "case-insensitive; authored display values are preserved",
             "selectors": ["manifest.cards[].personas", "loaded cards[].personas", "loaded cards[].entries[].applies_to"],
             "empty_selector_behavior": "empty lists and empty values retain universal/no-selector compatibility",
