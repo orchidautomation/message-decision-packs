@@ -1,4 +1,5 @@
 command: route
+expect_draft_status: blocked
 expect_entry_titles_contains:
 - Scope qualifies primitives
 - Codex plugin portfolio angle

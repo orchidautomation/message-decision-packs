@@ -1134,6 +1134,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "linkedin outbound copy",
+                "expect_draft_status": "blocked",
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
                     ".mdp/cards/avoid-rules.yaml",
@@ -1158,6 +1159,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "linkedin follow up message",
+                "expect_draft_status": "blocked",
                 "expect_load_order_contains": [
                     ".mdp/cards/channel-policies.yaml",
                     ".mdp/cards/copy-patterns.yaml"
@@ -1221,6 +1223,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "initial email outbound message",
+                "expect_draft_status": "blocked",
                 "expect_load_order_contains": [
                     ".mdp/cards/channel-policies.yaml",
                     ".mdp/cards/copy-patterns.yaml"
@@ -1241,6 +1244,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "email follow up",
+                "expect_draft_status": "blocked",
                 "expect_load_order_contains": [
                     ".mdp/cards/channel-policies.yaml",
                     ".mdp/cards/copy-patterns.yaml"
@@ -1743,6 +1747,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "portfolio scope example",
+                "expect_draft_status": "blocked",
                 "scope": ["product=local-cli"],
                 "expect_entry_titles_contains": ["Scope qualifies primitives", "Local CLI portfolio angle"],
                 "expect_entry_titles_excludes": ["Codex plugin portfolio angle", "Portfolio routing capability angle"]
@@ -1760,6 +1765,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "portfolio scope example",
+                "expect_draft_status": "blocked",
                 "scope": ["product=agent-plugin"],
                 "expect_entry_titles_contains": ["Scope qualifies primitives", "Codex plugin portfolio angle"],
                 "expect_entry_titles_excludes": ["Local CLI portfolio angle", "Portfolio routing capability angle"]
@@ -1866,6 +1872,14 @@ pub(crate) fn starter_evals() -> Vec<(&'static str, Value)> {
                 }
                 Some("brief-insufficient-context") | Some("account-only-no-draft") => {
                     eval["job"] = json!("linkedin outbound copy");
+                }
+                Some("linkedin-copy-route")
+                | Some("linkedin-follow-up-route")
+                | Some("email-initial-route")
+                | Some("email-follow-up-route")
+                | Some("portfolio-local-cli-route")
+                | Some("portfolio-codex-plugin-route") => {
+                    eval["expect_draft_status"] = json!("ready");
                 }
                 Some("portfolio-local-cli-brief") | Some("portfolio-agent-plugin-brief") => {
                     eval["job"] = json!("portfolio scope example");
