@@ -985,29 +985,18 @@ cards:
   path: cards/objections.yaml
   kind: objections
   description: Expected objections, category confusion, and approved response logic.
-  personas:
-  - PMM
-  - GTM Engineering
-  tags:
-  - objection
-  - alternative
-  - response
+  personas: []
+  tags: []
 - id: gaps
   path: cards/gaps.yaml
   kind: gaps
   description: Known gaps and open questions agents must surface instead of filling in.
-  personas:
-  - GTM Engineering
-  - PMM
-  - PM
-  tags:
-  - gap
-  - unknown
-  - open-question
+  personas: []
+  tags: []
 policy:
   progressive_disclosure: true
   load_manifest_first: true
-  max_cards_per_route: 13
+  max_cards_per_route: 14
   json_contract: mdp.cli.v0
   no_auth_required: true
 provenance:
