@@ -296,6 +296,7 @@ pub(crate) fn capabilities() -> Value {
             {"code": "invalid_proof_output", "meaning": "A proof-output artifact is malformed or references missing or incompatible pack IDs"},
             {"code": "invalid_human_brief", "meaning": "A human-brief source artifact is malformed or missing required gate/proof fields"},
             {"code": "insufficient_context", "meaning": "A fit or drafting path lacks enough context to proceed"},
+            {"code": "route_card_cap_excluded_applicable", "meaning": "The configured route-card cap excluded an otherwise applicable card"},
             {"code": "write_conflict", "meaning": "A write would overwrite an existing file without explicit permission"},
             {"code": "invalid_argument", "meaning": "CLI arguments are missing, conflicting, or unsupported"},
             {"code": "mdp_error", "meaning": "Fallback for uncategorized MDP errors"}

@@ -3307,6 +3307,7 @@ fn card_kind_name(kind: &CardKind) -> &'static str {
 mod tests {
     use super::*;
     use crate::commands::init::init_pack;
+    use crate::routing::narrow_starter_route_candidates_for_tests;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_pack_with_template(name: &str, template: &str) -> PathBuf {
@@ -3317,6 +3318,9 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-prompt-output-{name}-{nonce}"));
         init_pack(&root, "Example Message Pack", template, true, false)
             .expect("starter pack should initialize");
+        if template == "gtm" {
+            narrow_starter_route_candidates_for_tests(&root);
+        }
         root
     }
 

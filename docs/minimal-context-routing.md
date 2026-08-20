@@ -6,6 +6,14 @@ MDP compiles a job-specific context instead of handing a model the whole pack. A
 
 Required safety and output guardrails are selected before measurement. MDP blocks when they do not fit; it does not drop or truncate guardrails to satisfy a budget.
 
+The manifest's `policy.max_cards_per_route` is also fail-closed. If the cap
+would exclude an otherwise applicable card, the route is blocked with a
+`route_card_cap_excluded_applicable` diagnostic. The `route_card_cap` receipt
+names the cap, selected card IDs/kinds, excluded applicable card IDs/kinds, and
+the deterministic `max_cards_per_route_reached` reason without exposing entry
+bodies. Base guardrails remain selected; they are never silently evicted to
+make room under the cap.
+
 A generation-time `mdp route-budget` preflight evaluates every declared
 canonical job that carries a `context_budget` against every relevant manifest
 persona using the default (unfiltered) portfolio scope. It fails when any

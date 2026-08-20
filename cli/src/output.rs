@@ -259,6 +259,7 @@ fn summarize(command: &str, data: &Value) -> Value {
             "job": data["job"],
             "scope": data["scope"],
             "portfolio_sensitive": data["portfolio_sensitive"],
+            "route_card_cap": data["route_card_cap"],
             "draft_status": data["draft_status"],
             "profile_activation": data["profile_activation"],
             "card_count": array_len(&data["load_order"]),
@@ -276,6 +277,7 @@ fn summarize(command: &str, data: &Value) -> Value {
             "pack_id": data["pack_id"],
             "route_count": data["route_count"],
             "overflow_count": data["overflow_count"],
+            "route_card_cap_exclusion_count": data["route_card_cap_exclusion_count"],
             "near_budget_count": data["near_budget_count"],
             "unassessed_generation_count": data["unassessed_generation_count"],
             "routes": data["routes"].as_array().map(|routes| routes.iter().map(|route| json!({
@@ -288,7 +290,8 @@ fn summarize(command: &str, data: &Value) -> Value {
                 "diagnostics": route["diagnostics"],
                 "reason_distribution": route["reason_distribution"],
                 "excluded_reason_distribution": route["excluded_reason_distribution"],
-                "largest_contributing_cards": route["largest_contributing_cards"]
+                "largest_contributing_cards": route["largest_contributing_cards"],
+                "route_card_cap": route["route_card_cap"]
             })).collect::<Vec<_>>()).unwrap_or_default(),
             "strict_warnings": data["strict_warnings"]
         }),
@@ -335,6 +338,7 @@ fn summarize(command: &str, data: &Value) -> Value {
             "persona": data["persona"],
             "job": data["job"],
             "draft_status": data["draft_status"],
+            "route_card_cap": data["route_card_cap"],
             "scope": data["scope"],
             "portfolio_sensitive": data["portfolio_sensitive"],
             "fit_status": data["fit"]["status"],
@@ -361,6 +365,7 @@ fn summarize(command: &str, data: &Value) -> Value {
             "scope": data["scope"],
             "portfolio_sensitive": data["portfolio_sensitive"],
             "draft_status": data["draft_status"],
+            "route_card_cap": data["route_card_cap"],
             "required_card_count": array_len(&data["required_load_order"]),
             "required_load_order": data["required_load_order"],
             "product_foundation": product_foundation_summary(&data["product_foundation"]),
@@ -459,6 +464,7 @@ fn context_summary(context: &Value) -> Value {
         "reason": context["reason"],
         "scope": context["scope"],
         "portfolio_sensitive": context["portfolio_sensitive"],
+        "route_card_cap": context["route_card_cap"],
         "profile_activation": context["profile_activation"],
         "entry_count": context["summary"]["entry_count"],
         "required_entry_count": context["summary"]["required_entry_count"],

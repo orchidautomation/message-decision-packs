@@ -20,6 +20,7 @@ struct EntryRouteDetails {
     gaps: Vec<Value>,
     full_card_required: Vec<Value>,
     excluded: Vec<Value>,
+    route_card_cap: Value,
     portfolio_sensitive: bool,
     compatible_scoped_entry_count: usize,
     scoped_decision_candidate_count: usize,
@@ -44,16 +45,33 @@ enum MessageLifecycle {
     FollowUp,
 }
 
+pub(crate) const ROUTE_CARD_CAP_DIAGNOSTIC: &str = "route_card_cap_excluded_applicable";
+const ROUTE_CARD_CAP_REASON: &str = "max_cards_per_route_reached";
+
+struct CardSelection {
+    selected: Vec<Value>,
+    route_card_cap: Value,
+}
+
 pub(crate) fn select_cards(
     manifest: &Manifest,
     persona: Option<&str>,
     job: Option<&str>,
 ) -> Vec<Value> {
+    select_cards_with_diagnostics(manifest, persona, job).selected
+}
+
+fn select_cards_with_diagnostics(
+    manifest: &Manifest,
+    persona: Option<&str>,
+    job: Option<&str>,
+) -> CardSelection {
     let persona_lower = persona.map(|p| p.to_lowercase());
     let job_tokens = tokens(job.unwrap_or(""));
     let is_message_job = is_message_job(&job_tokens);
     let mut selected = Vec::new();
     let mut candidates = Vec::new();
+    let mut excluded_cards = Vec::new();
 
     for card in &manifest.cards {
         if is_base_guardrail(&card.kind) {
@@ -98,11 +116,112 @@ pub(crate) fn select_cards(
     candidates.sort_by_key(|(priority, index, _)| (*priority, *index));
     for (_, _, card) in candidates {
         if selected.len() >= manifest.policy.max_cards_per_route {
-            break;
+            excluded_cards.push(json!({
+                "id": card["id"],
+                "kind": card["kind"],
+                "reason": ROUTE_CARD_CAP_REASON
+            }));
+            continue;
         }
         selected.push(card);
     }
-    selected
+
+    let diagnostics = if excluded_cards.is_empty() {
+        Vec::new()
+    } else {
+        vec![json!(ROUTE_CARD_CAP_DIAGNOSTIC)]
+    };
+    let route_card_cap = json!({
+        "status": if excluded_cards.is_empty() { "ready" } else { "blocked" },
+        "max_cards_per_route": manifest.policy.max_cards_per_route,
+        "selected_cards": selected.iter().map(card_identity).collect::<Vec<_>>(),
+        "excluded_cards": excluded_cards,
+        "diagnostics": diagnostics
+    });
+
+    CardSelection {
+        selected,
+        route_card_cap,
+    }
+}
+
+fn card_identity(card: &Value) -> Value {
+    json!({
+        "id": card["id"],
+        "kind": card["kind"]
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn narrow_starter_route_candidates_for_tests(root: &Path) {
+    let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+    let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+    let mut manifest: serde_yaml::Value =
+        serde_yaml::from_str(&raw).expect("manifest should parse");
+    for card in manifest["cards"].as_sequence_mut().expect("cards") {
+        if matches!(card["id"].as_str(), Some("gaps") | Some("objections")) {
+            card["description"] = serde_yaml::Value::String(
+                "Unrelated synthetic route-cap fixture card.".to_string(),
+            );
+            card["personas"] = serde_yaml::Value::Sequence(Vec::new());
+            card["tags"] = serde_yaml::Value::Sequence(Vec::new());
+        }
+    }
+    std::fs::write(
+        manifest_path,
+        serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+    )
+    .expect("manifest should be writable");
+}
+
+#[cfg(test)]
+pub(crate) fn add_supplemental_persona_card_for_tests(root: &Path) {
+    use crate::models::{Card, CardRef};
+
+    let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+    let mut manifest = crate::pack_io::read_manifest(root).expect("manifest should load");
+    manifest.cards.push(CardRef {
+        id: "supplemental-personas".to_string(),
+        path: "cards/supplemental-personas.yaml".to_string(),
+        kind: CardKind::Personas,
+        description: "Synthetic supplemental persona guardrail with neutral applicability."
+            .to_string(),
+        personas: Vec::new(),
+        tags: Vec::new(),
+    });
+    std::fs::write(
+        manifest_path,
+        serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+    )
+    .expect("manifest should be writable");
+
+    let card = Card {
+        id: "supplemental-personas".to_string(),
+        kind: CardKind::Personas,
+        title: "Supplemental Personas".to_string(),
+        description: "Synthetic supplemental persona guardrail.".to_string(),
+        personas: Vec::new(),
+        tags: Vec::new(),
+        entries: vec![Entry {
+            id: "neutral-persona".to_string(),
+            title: "Neutral synthetic persona".to_string(),
+            body: "Synthetic neutral applicability entry for route-cap regression coverage."
+                .to_string(),
+            applies_to: Vec::new(),
+            scope: BTreeMap::new(),
+            evidence: vec!["mdp-1-education-thesis".to_string()],
+            avoid: Vec::new(),
+            exact_paragraphs: None,
+            constraints: Default::default(),
+            metadata: BTreeMap::new(),
+        }],
+    };
+    std::fs::write(
+        root.join(DEFAULT_DIR)
+            .join("cards/supplemental-personas.yaml"),
+        serde_yaml::to_string(&card).expect("card should serialize"),
+    )
+    .expect("card should be writable");
 }
 
 fn is_message_job(job_tokens: &[String]) -> bool {
@@ -173,12 +292,14 @@ pub(crate) fn entry_route(
 /// distributions, and the largest contributing cards without leaking entry
 /// bodies. Universal guardrails and product-foundation requirements remain
 /// selected; the preflight never truncates or ranks them away to satisfy a
-/// budget. Legacy packs without a declared `context_budget` remain
-/// `unassessed` and valid so their runtime fail-closed behavior is preserved.
+/// budget. Legacy packs without a declared context budget remain
+/// budget-unassessed, but cap-caused authority loss is still a blocking
+/// preflight diagnostic.
 pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result<Value> {
     let scope = ScopeResolution::default();
     let mut routes = Vec::new();
     let mut overflow_count = 0usize;
+    let mut route_card_cap_exclusion_count = 0usize;
     let mut near_budget_count = 0usize;
     let mut unassessed_generation_count = 0usize;
 
@@ -187,23 +308,60 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             if job.model_task.is_some() {
                 unassessed_generation_count += 1;
             }
-            routes.push(json!({
-                "persona": Value::Null,
-                "job": job.id,
-                "status": "unassessed",
-                "reason": "context_budget_not_declared",
-                "budget": Value::Null,
-                "selected_count": Value::Null,
-                "excluded_count": Value::Null,
-                "diagnostics": ["context_budget_not_declared"],
-                "reason_distribution": {},
-                "excluded_reason_distribution": {},
-                "largest_contributing_cards": []
-            }));
+            if manifest.personas.is_empty() {
+                routes.push(json!({
+                    "persona": Value::Null,
+                    "job": job.id,
+                    "status": "unassessed",
+                    "reason": "context_budget_not_declared",
+                    "budget": Value::Null,
+                    "selected_count": Value::Null,
+                    "excluded_count": Value::Null,
+                    "diagnostics": ["context_budget_not_declared"],
+                    "reason_distribution": {},
+                    "excluded_reason_distribution": {},
+                    "largest_contributing_cards": [],
+                    "route_card_cap": Value::Null
+                }));
+            } else {
+                for persona in &manifest.personas {
+                    let route_card_cap =
+                        select_cards_with_diagnostics(manifest, Some(persona), Some(&job.id))
+                            .route_card_cap;
+                    let route_card_cap_blocked = route_card_cap["status"] == "blocked";
+                    if route_card_cap_blocked {
+                        route_card_cap_exclusion_count += 1;
+                    }
+                    let diagnostics = if route_card_cap_blocked {
+                        json!(["context_budget_not_declared", ROUTE_CARD_CAP_DIAGNOSTIC])
+                    } else {
+                        json!(["context_budget_not_declared"])
+                    };
+                    routes.push(json!({
+                        "persona": persona,
+                        "job": job.id,
+                        "status": if route_card_cap_blocked { "blocked" } else { "unassessed" },
+                        "reason": "context_budget_not_declared",
+                        "budget": Value::Null,
+                        "selected_count": Value::Null,
+                        "excluded_count": Value::Null,
+                        "diagnostics": diagnostics,
+                        "reason_distribution": {},
+                        "excluded_reason_distribution": {},
+                        "largest_contributing_cards": [],
+                        "route_card_cap": route_card_cap
+                    }));
+                }
+            }
             continue;
         };
         for persona in &manifest.personas {
             let route = entry_route_scoped(root, manifest, persona, &job.id, &scope)?;
+            let route_card_cap = route["route_card_cap"].clone();
+            let route_card_cap_blocked = route_card_cap["status"] == "blocked";
+            if route_card_cap_blocked {
+                route_card_cap_exclusion_count += 1;
+            }
             let minimality = &route["minimality"];
             let budget_value = &minimality["budget"];
             let max_entries = budget.max_entries;
@@ -241,7 +399,10 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                 near_budget_count += 1;
                 diagnostics.push(json!("near_context_budget"));
             }
-            let status = if entry_overflow || byte_overflow {
+            if route_card_cap_blocked {
+                diagnostics.push(json!(ROUTE_CARD_CAP_DIAGNOSTIC));
+            }
+            let status = if entry_overflow || byte_overflow || route_card_cap_blocked {
                 "blocked"
             } else {
                 "ready"
@@ -265,12 +426,13 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                 "reason_distribution": reason_distribution,
                 "excluded_reason_distribution": excluded_reason_distribution,
                 "largest_contributing_cards": largest_contributing_cards,
-                "context_sha256": minimality["context_sha256"].clone()
+                "context_sha256": minimality["context_sha256"].clone(),
+                "route_card_cap": route_card_cap
             }));
         }
     }
 
-    let valid = overflow_count == 0;
+    let valid = overflow_count == 0 && route_card_cap_exclusion_count == 0;
     Ok(json!({
         "contract": "mdp.route-budget.v0",
         "valid": valid,
@@ -278,6 +440,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
         "scope": "default",
         "route_count": routes.len(),
         "overflow_count": overflow_count,
+        "route_card_cap_exclusion_count": route_card_cap_exclusion_count,
         "near_budget_count": near_budget_count,
         "unassessed_generation_count": unassessed_generation_count,
         "routes": routes
@@ -351,6 +514,7 @@ pub(crate) fn entry_route_scoped(
         &model_visible_projection,
         &details.full_card_required,
         &details.excluded,
+        &details.route_card_cap,
     )?;
     let blocked = validation_blocked
         || profile_activation_blocked
@@ -370,6 +534,7 @@ pub(crate) fn entry_route_scoped(
         "profile_activation": profile_activation,
         "matches": details.matches,
         "gaps": details.gaps,
+        "route_card_cap": details.route_card_cap,
         "minimality": minimality,
         "policy": policy
     }))
@@ -442,6 +607,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
         &model_visible_projection,
         &details.full_card_required,
         &details.excluded,
+        &details.route_card_cap,
     )?;
     let minimality_blocked = minimality["status"] == "blocked";
     if validation_blocked
@@ -468,6 +634,8 @@ pub(crate) fn entry_context_with_runtime_scoped(
             "profile activation requires review or is blocked"
         } else if profile_activation_blocked {
             "computed profile activation is blocked"
+        } else if details.route_card_cap["status"] == "blocked" {
+            "route card cap excluded applicable authority"
         } else if minimality_blocked {
             "minimal context contract is blocked"
         } else {
@@ -501,6 +669,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
             "product_foundation_load_order": product_foundation_load_order,
             "profile_activation": profile_activation,
             "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
+            "route_card_cap": details.route_card_cap.clone(),
             "entries": entries,
             "gaps": details.gaps,
             "full_card_required": [],
@@ -541,6 +710,7 @@ pub(crate) fn entry_context_with_runtime_scoped(
         "product_foundation_load_order": product_foundation_load_order,
         "profile_activation": profile_activation,
         "source_load_order": if details.portfolio_sensitive { Vec::<Value>::new() } else { load_order.clone() },
+        "route_card_cap": details.route_card_cap.clone(),
         "entries": details.context_entries,
         "gaps": details.gaps,
         "full_card_required": details.full_card_required,
@@ -590,23 +760,33 @@ fn context_minimality(
     model_visible_projection: &Value,
     full_card_required: &[Value],
     excluded: &[Value],
+    route_card_cap: &Value,
 ) -> Result<Value> {
+    let route_card_cap_blocked = route_card_cap["status"] == "blocked";
     let Some(job) = manifest.jobs.iter().find(|job| job.id == job_id) else {
+        let mut diagnostics = vec![json!("canonical_job_not_declared")];
+        if route_card_cap_blocked {
+            diagnostics.push(json!(ROUTE_CARD_CAP_DIAGNOSTIC));
+        }
         return Ok(json!({
-            "status": "unassessed",
+            "status": if route_card_cap_blocked { "blocked" } else { "unassessed" },
             "context_sha256": Value::Null,
             "budget": Value::Null,
             "excluded": excluded,
-            "diagnostics": ["canonical_job_not_declared"]
+            "diagnostics": diagnostics
         }));
     };
     let Some(budget) = job.context_budget.as_ref() else {
+        let mut diagnostics = vec![json!("context_budget_not_declared")];
+        if route_card_cap_blocked {
+            diagnostics.push(json!(ROUTE_CARD_CAP_DIAGNOSTIC));
+        }
         return Ok(json!({
-            "status": "unassessed",
+            "status": if route_card_cap_blocked { "blocked" } else { "unassessed" },
             "context_sha256": Value::Null,
             "budget": Value::Null,
             "excluded": excluded,
-            "diagnostics": ["context_budget_not_declared"]
+            "diagnostics": diagnostics
         }));
     };
 
@@ -617,6 +797,9 @@ fn context_minimality(
     let mut diagnostics = Vec::new();
     if !full_card_required.is_empty() {
         diagnostics.push("full_card_fallback_required");
+    }
+    if route_card_cap_blocked {
+        diagnostics.push(ROUTE_CARD_CAP_DIAGNOSTIC);
     }
     if selected_count > budget.max_entries {
         diagnostics.push("context_entry_budget_exceeded");
@@ -797,7 +980,9 @@ fn route_entry_details(
     include_context: bool,
     scope: &ScopeResolution,
 ) -> Result<EntryRouteDetails> {
-    let selected = select_cards(manifest, Some(persona), Some(job));
+    let selection = select_cards_with_diagnostics(manifest, Some(persona), Some(job));
+    let selected = selection.selected;
+    let route_card_cap = selection.route_card_cap;
     let selected_ids: BTreeSet<String> = selected
         .iter()
         .filter_map(|value| value["id"].as_str().map(str::to_string))
@@ -945,6 +1130,7 @@ fn route_entry_details(
         gaps,
         full_card_required,
         excluded,
+        route_card_cap,
         portfolio_sensitive,
         compatible_scoped_entry_count,
         scoped_decision_candidate_count,
@@ -1155,7 +1341,7 @@ fn has_token(tokens: &[String], needle: &str) -> bool {
 mod tests {
     use super::*;
     use crate::commands::init::init_pack;
-    use crate::models::{CardRef, LeadInputRequirements, Policy, Provenance};
+    use crate::models::{CardRef, Entry, LeadInputRequirements, Policy, Provenance};
     use crate::pack_io::read_manifest;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1168,6 +1354,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-routing-{name}-{nonce}"));
         init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         root
     }
 
@@ -1293,6 +1480,14 @@ mod tests {
         .expect("manifest should be writable");
     }
 
+    fn add_supplemental_persona_card(root: &Path) {
+        add_supplemental_persona_card_for_tests(root);
+    }
+
+    fn narrow_route_candidates_for_exact_cap(root: &Path) {
+        narrow_starter_route_candidates_for_tests(root);
+    }
+
     fn manifest(max_cards_per_route: usize) -> Manifest {
         Manifest {
             format: "mdp.v0".to_string(),
@@ -1393,6 +1588,7 @@ mod tests {
     #[test]
     fn opted_in_context_exposes_stable_minimality_digest_and_safe_exclusions() {
         let root = temp_pack("minimality-ready");
+        narrow_route_candidates_for_exact_cap(&root);
         set_context_budget(&root, "outbound-copy-brief", 100, 1_000_000);
         let manifest = read_manifest(&root).expect("manifest should load");
         let scope = ScopeResolution::default();
@@ -1553,6 +1749,7 @@ mod tests {
     #[test]
     fn route_and_context_share_the_same_minimality_digest() {
         let root = temp_pack("minimality-parity");
+        narrow_route_candidates_for_exact_cap(&root);
         set_context_budget(&root, "outbound-copy-brief", 100, 1_000_000);
         let manifest = read_manifest(&root).expect("manifest should load");
         let scope = ScopeResolution::default();
@@ -1631,6 +1828,185 @@ mod tests {
             .filter_map(|card| card["id"].as_str())
             .collect();
         assert_eq!(ids, vec!["personas", "avoid-rules", "output-rules"]);
+    }
+
+    #[test]
+    fn route_card_cap_blocks_applicable_authority_displaced_by_supplemental_base_card() {
+        let root = temp_pack("route-card-cap-pressure");
+        let scope = ScopeResolution::default();
+        narrow_route_candidates_for_exact_cap(&root);
+        let manifest = read_manifest(&root).expect("manifest should load");
+
+        let exact_cap_route =
+            entry_route_scoped(&root, &manifest, "PMM", "outbound-copy-brief", &scope)
+                .expect("exact-cap route should compile");
+        assert_eq!(exact_cap_route["status"], "ready", "{exact_cap_route}");
+        assert_eq!(exact_cap_route["route_card_cap"]["status"], "ready");
+        assert_eq!(exact_cap_route["route_card_cap"]["max_cards_per_route"], 13);
+        assert_eq!(
+            exact_cap_route["route_card_cap"]["selected_cards"]
+                .as_array()
+                .expect("selected cards")
+                .len(),
+            13
+        );
+        assert!(
+            exact_cap_route["route_card_cap"]["selected_cards"]
+                .as_array()
+                .expect("selected cards")
+                .iter()
+                .any(|card| card["id"] == "motions" && card["kind"] == "motions")
+        );
+        assert_eq!(
+            exact_cap_route["route_card_cap"]["excluded_cards"],
+            json!([])
+        );
+
+        add_supplemental_persona_card(&root);
+        let manifest = read_manifest(&root).expect("manifest should reload");
+        let displaced_route =
+            entry_route_scoped(&root, &manifest, "PMM", "outbound-copy-brief", &scope)
+                .expect("cap-pressure route should compile");
+
+        assert_eq!(displaced_route["status"], "blocked");
+        assert_eq!(displaced_route["minimality"]["status"], "blocked");
+        assert_eq!(
+            displaced_route["minimality"]["diagnostics"],
+            json!(["full_card_fallback_required", ROUTE_CARD_CAP_DIAGNOSTIC])
+        );
+        let cap_receipt = &displaced_route["route_card_cap"];
+        assert_eq!(cap_receipt["status"], "blocked");
+        assert_eq!(cap_receipt["max_cards_per_route"], 13);
+        assert_eq!(cap_receipt["selected_cards"].as_array().unwrap().len(), 13);
+        assert!(
+            cap_receipt["selected_cards"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|card| card["id"] == "supplemental-personas" && card["kind"] == "personas")
+        );
+        assert!(
+            !cap_receipt["selected_cards"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|card| card["id"] == "motions")
+        );
+        assert_eq!(
+            cap_receipt["excluded_cards"],
+            json!([{
+                "id": "motions",
+                "kind": "motions",
+                "reason": "max_cards_per_route_reached"
+            }])
+        );
+        assert_eq!(
+            cap_receipt["diagnostics"],
+            json!([ROUTE_CARD_CAP_DIAGNOSTIC])
+        );
+        assert!(!cap_receipt.to_string().contains("body"));
+
+        let route_command =
+            crate::commands::routing::route(&root, "PMM", "outbound-copy-brief", false, false)
+                .expect("route command should compile");
+        assert_eq!(route_command["draft_status"], "blocked");
+        assert_eq!(route_command["route_card_cap"], cap_receipt.clone());
+
+        let brief_command =
+            crate::commands::briefs::emit_brief(&root, "PMM", None, Some("outbound-copy-brief"))
+                .expect("brief command should compile");
+        assert_eq!(brief_command["draft_status"], "blocked");
+        assert_eq!(brief_command["route_card_cap"], cap_receipt.clone());
+        assert_eq!(
+            brief_command["context"]["route_card_cap"],
+            cap_receipt.clone()
+        );
+        assert!(
+            brief_command["context"]["entries"]
+                .as_array()
+                .expect("brief context entries")
+                .is_empty()
+        );
+
+        let context =
+            entry_context_scoped(&root, &manifest, "PMM", "outbound-copy-brief", true, &scope)
+                .expect("cap-pressure context should compile");
+        assert_eq!(context["status"], "blocked");
+        assert_eq!(
+            context["reason"],
+            "route card cap excluded applicable authority"
+        );
+        assert_eq!(context["route_card_cap"], cap_receipt.clone());
+        assert!(context["entries"].as_array().expect("entries").is_empty());
+
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+        assert_eq!(preflight["valid"], false);
+        assert!(
+            preflight["route_card_cap_exclusion_count"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+        let preflight_route = preflight["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .find(|route| route["persona"] == "PMM" && route["job"] == "outbound-copy-brief")
+            .expect("PMM outbound-copy-brief route should be present");
+        assert_eq!(preflight_route["status"], "blocked");
+        assert!(
+            preflight_route["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|diagnostic| diagnostic == ROUTE_CARD_CAP_DIAGNOSTIC)
+        );
+        assert_eq!(preflight_route["route_card_cap"], cap_receipt.clone());
+
+        let strict_preflight =
+            crate::commands::routing::route_budget_preflight_command(&root, true)
+                .expect("strict preflight should compile");
+        assert_eq!(strict_preflight["valid"], false);
+        assert_eq!(strict_preflight["strict"]["enabled"], true);
+        assert_eq!(
+            strict_preflight["routes"]
+                .as_array()
+                .expect("strict routes")
+                .iter()
+                .find(|route| {
+                    route["persona"] == "PMM" && route["job"] == "outbound-copy-brief"
+                })
+                .expect("strict PMM outbound-copy-brief route")["route_card_cap"],
+            cap_receipt.clone()
+        );
+
+        let mut no_budget_manifest = read_manifest(&root).expect("manifest should reload");
+        no_budget_manifest
+            .jobs
+            .iter_mut()
+            .find(|job| job.id == "outbound-copy-brief")
+            .expect("outbound-copy-brief job should be present")
+            .context_budget = None;
+        let no_budget_preflight = route_budget_preflight(&root, &no_budget_manifest)
+            .expect("no-budget preflight should compile");
+        assert_eq!(no_budget_preflight["valid"], false);
+        assert!(
+            no_budget_preflight["route_card_cap_exclusion_count"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+        let no_budget_route = no_budget_preflight["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .find(|route| route["persona"] == "PMM" && route["job"] == "outbound-copy-brief")
+            .expect("no-budget PMM outbound-copy-brief route should be present");
+        assert_eq!(no_budget_route["status"], "blocked");
+        assert_eq!(no_budget_route["budget"], Value::Null);
+        assert_eq!(no_budget_route["route_card_cap"], cap_receipt.clone());
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1829,6 +2205,7 @@ mod tests {
     #[test]
     fn unrelated_job_foundation_validation_does_not_block_selected_job() {
         let root = temp_pack("unrelated-invalid-foundation");
+        narrow_route_candidates_for_exact_cap(&root);
         set_unrelated_job_condition_fact(&root, "unknown-fact");
         let manifest = read_manifest(&root).expect("manifest should load");
 

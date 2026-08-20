@@ -8,6 +8,7 @@ use crate::constants::DEFAULT_DIR;
 use crate::models::Prospect;
 use crate::pack_io::read_manifest;
 use crate::prospect_validation::validate_prospect_value;
+use crate::routing::ROUTE_CARD_CAP_DIAGNOSTIC;
 use crate::scope::parse_scope_selectors;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -209,7 +210,81 @@ fn run_fixture(
     };
 
     assert_expected(path, fixture, &output, &mut issues);
+    assert_route_card_cap_is_expected(path, fixture, &output, &mut issues);
     Ok(fixture_result(path, fixture, output, issues))
+}
+
+fn assert_route_card_cap_is_expected(
+    path: &Path,
+    fixture: &EvalFixture,
+    output: &Value,
+    issues: &mut Vec<Value>,
+) {
+    if output["route_card_cap"]["status"] != "blocked" {
+        return;
+    }
+    let expected_draft_status = fixture.expect_draft_status.as_deref();
+    if matches!(expected_draft_status, Some("blocked") | Some("no-draft")) {
+        return;
+    }
+    let receipt =
+        serde_json::to_string(&output["route_card_cap"]).unwrap_or_else(|_| "{}".to_string());
+    issues.push(issue(
+        "eval_route_card_cap_excluded_applicable",
+        "error",
+        path.display().to_string(),
+        format!(
+            "{ROUTE_CARD_CAP_DIAGNOSTIC} requires an explicit blocked/no-draft expectation; {receipt}"
+        ),
+    ));
+}
+
+#[cfg(test)]
+mod route_card_cap_tests {
+    use super::*;
+
+    #[test]
+    fn cap_pressure_requires_an_explicit_non_ready_eval_expectation() {
+        let fixture: EvalFixture = serde_yaml::from_str(
+            "id: route-cap\ncommand: route\npersona: PMM\njob: outbound-copy-brief\n",
+        )
+        .expect("fixture should parse");
+        let output = json!({
+            "route_card_cap": {
+                "status": "blocked",
+                "max_cards_per_route": 13,
+                "selected_cards": [{"id": "motions", "kind": "motions"}],
+                "excluded_cards": [{"id": "copy-patterns", "kind": "copy-patterns", "reason": "max_cards_per_route_reached"}],
+                "diagnostics": [ROUTE_CARD_CAP_DIAGNOSTIC]
+            }
+        });
+        let mut issues = Vec::new();
+
+        assert_route_card_cap_is_expected(
+            Path::new(".mdp/evals/route-cap.yaml"),
+            &fixture,
+            &output,
+            &mut issues,
+        );
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0]["code"], "eval_route_card_cap_excluded_applicable");
+        assert!(issues[0]["message"].as_str().unwrap().contains("motions"));
+        assert!(!issues[0]["message"].as_str().unwrap().contains("body"));
+
+        let blocked_fixture: EvalFixture = serde_yaml::from_str(
+            "id: route-cap\ncommand: route\npersona: PMM\njob: outbound-copy-brief\nexpect_draft_status: blocked\n",
+        )
+        .expect("blocked fixture should parse");
+        let mut accepted = Vec::new();
+        assert_route_card_cap_is_expected(
+            Path::new(".mdp/evals/route-cap.yaml"),
+            &blocked_fixture,
+            &output,
+            &mut accepted,
+        );
+        assert!(accepted.is_empty());
+    }
 }
 
 fn validate_fixture(
@@ -836,6 +911,7 @@ fn default_command() -> String {
 mod tests {
     use super::*;
     use crate::commands::init::init_pack;
+    use crate::routing::narrow_starter_route_candidates_for_tests;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -847,6 +923,20 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-{name}-{nonce}"));
         init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
+        let manifest_path = root.join(".mdp").join("manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        // These eval tests exercise fixture contracts, not route-card caps. Keep
+        // their generated starter routes out of the cap-pressure compatibility
+        // path; dedicated routing coverage owns the cap-at-13 behavior.
+        manifest["policy"]["max_cards_per_route"] = serde_yaml::Value::Number(64.into());
+        std::fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
         root
     }
 

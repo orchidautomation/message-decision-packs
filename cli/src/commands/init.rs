@@ -1053,6 +1053,7 @@ mod tests {
     use super::*;
     use crate::artifact_hash::pack_content_sha256;
     use crate::product_foundation::{ProductFoundationStatus, resolve_product_foundation_for_pack};
+    use crate::routing::narrow_starter_route_candidates_for_tests;
     use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1124,6 +1125,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-minimal-context-{}", nonce()));
         init_pack(&root, "Basic MDP Template", "gtm", true, false)
             .expect("generic GTM pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         let manifest = read_manifest(&root).expect("manifest should parse");
         let total_entries = manifest
             .cards

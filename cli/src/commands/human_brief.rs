@@ -948,6 +948,7 @@ mod tests {
     use super::*;
     use crate::commands::briefs::prospect_brief_with_context;
     use crate::commands::init::init_pack;
+    use crate::routing::narrow_starter_route_candidates_for_tests;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -959,6 +960,9 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-human-brief-{template}-{nonce}"));
         init_pack(&root, "Human Brief Pack", template, true, false)
             .expect("starter pack should initialize");
+        if template == "gtm" {
+            narrow_starter_route_candidates_for_tests(&root);
+        }
         root
     }
 
