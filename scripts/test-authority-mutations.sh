@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECTED_VERSION="27.1.0"
 MAX_CANDIDATES=24
+BUILD_TIMEOUT_SECONDS=120
+TEST_TIMEOUT_SECONDS=60
 
 if ! command -v cargo-mutants >/dev/null 2>&1; then
   echo "cargo-mutants ${EXPECTED_VERSION} is required; install with: cargo install cargo-mutants --version ${EXPECTED_VERSION} --locked" >&2
@@ -34,4 +36,9 @@ printf 'authority mutation candidates=%s version=%s\n' "$candidate_count" "$actu
 # The CLI embeds repository-level plugin and script assets with include_str!, so
 # cargo-mutants' crate-only scratch copy cannot compile the unmutated baseline.
 # CI runs in a disposable checkout, making the single-worker in-place mode safe.
-cargo mutants --file 'src/authority/mod.rs' --re "$selector" --timeout 40 --in-place
+cargo mutants \
+  --file 'src/authority/mod.rs' \
+  --re "$selector" \
+  --build-timeout "$BUILD_TIMEOUT_SECONDS" \
+  --timeout "$TEST_TIMEOUT_SECONDS" \
+  --in-place
