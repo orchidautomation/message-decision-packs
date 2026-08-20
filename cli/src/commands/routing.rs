@@ -253,7 +253,7 @@ pub(crate) fn fit_normalized(
     authority["normalized_output_sha256"] = json!(sha256_hex(&normalized_bytes));
     authority["projected_prospect_sha256"] =
         json!(canonical_json_sha256(&normalized["normalized_prospect"])?);
-    let result = fit_prospect_with_signal_authority(root, prospect, Some(authority))?;
+    let result = fit_prospect_with_signal_authority(root, prospect, Some(authority), true)?;
     let decision_input_contracts = compiled["decision_input_contracts"]
         .as_array()
         .into_iter()
@@ -275,7 +275,7 @@ pub(crate) fn fit_prospect_for_job(
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let ingress = resolve_job_ingress(&manifest, requested_job)?;
-    let result = fit_prospect_with_signal_authority(root, prospect, None)?;
+    let result = fit_prospect_with_signal_authority(root, prospect, None, false)?;
     Ok(match ingress {
         Some(ingress) if ingress.is_governed() => block_detached_governed_fit(result, &ingress),
         Some(ingress) => attach_legacy_job_ingress(result, &ingress),
@@ -302,7 +302,7 @@ pub(crate) fn fit_prospect_with_governed_authority(
     authority["trust_boundary"] = json!(
         "validated normalized-input lineage; does not attest host authenticity or source truth"
     );
-    let result = fit_prospect_with_signal_authority(root, prospect, Some(authority))?;
+    let result = fit_prospect_with_signal_authority(root, prospect, Some(authority), false)?;
     Ok(attach_accepted_job_ingress(result, job_id, None))
 }
 
@@ -442,6 +442,7 @@ fn fit_prospect_with_signal_authority(
     root: &Path,
     mut prospect: crate::models::Prospect,
     signal_authority: Option<Value>,
+    use_lineage_validated_signal_observations: bool,
 ) -> Result<Value> {
     let manifest = read_manifest(root)?;
     let company_domain_normalization = normalize_company_domain_for_fit(&mut prospect);
@@ -459,6 +460,7 @@ fn fit_prospect_with_signal_authority(
         &persona_resolution,
         company_domain_normalization,
         signal_authority.as_ref(),
+        use_lineage_validated_signal_observations,
     );
     let scope = scope_from_prospect(&manifest, &prospect);
     let contact_policy = prospect
@@ -578,7 +580,10 @@ fn fit_context(
     persona_resolution: &crate::utils::PersonaResolution,
     company_domain_normalization: Value,
     signal_authority: Option<&Value>,
+    use_lineage_validated_signal_observations: bool,
 ) -> Value {
+    let authoritative_signal_count = use_lineage_validated_signal_observations
+        .then(|| lineage_validated_signal_count(signal_authority).unwrap_or(0));
     let has_trigger = prospect
         .trigger
         .as_ref()
@@ -592,11 +597,17 @@ fn fit_context(
         .background
         .as_ref()
         .is_some_and(|value| present(value));
-    let has_signal = !prospect.signals.is_empty();
-    let has_source = prospect
-        .signals
-        .iter()
-        .any(|signal| signal.source.as_ref().is_some_and(|value| present(value)));
+    let has_signal = authoritative_signal_count
+        .map(|count| count > 0)
+        .unwrap_or_else(|| !prospect.signals.is_empty());
+    let has_source = authoritative_signal_count
+        .map(|count| count > 0)
+        .unwrap_or_else(|| {
+            prospect
+                .signals
+                .iter()
+                .any(|signal| signal.source.as_ref().is_some_and(|value| present(value)))
+        });
 
     let mut missing_requirements = Vec::new();
     let mut invalid_requirements = Vec::new();
@@ -622,7 +633,14 @@ fn fit_context(
     }
 
     for field in &manifest.lead_input_requirements.required_fields {
-        if !prospect_field_present(field, prospect, persona_resolution) {
+        let field_present = if field == "signals" {
+            authoritative_signal_count
+                .map(|count| count > 0)
+                .unwrap_or_else(|| prospect_field_present(field, prospect, persona_resolution))
+        } else {
+            prospect_field_present(field, prospect, persona_resolution)
+        };
+        if !field_present {
             missing_requirements.push(json!({
                 "scope": "prospect",
                 "field": field,
@@ -632,24 +650,37 @@ fn fit_context(
         }
     }
 
-    for field in &manifest.lead_input_requirements.required_signal_fields {
-        if prospect.signals.is_empty() {
-            missing_requirements.push(json!({
-                "scope": "signal",
-                "field": field,
-                "path": "signals",
-                "reason": "required signal field cannot be checked because prospect.signals is empty"
-            }));
-            continue;
-        }
-        for (index, signal) in prospect.signals.iter().enumerate() {
-            if !signal_field_present(field, signal) {
+    if let Some(count) = authoritative_signal_count {
+        if count == 0 {
+            for field in &manifest.lead_input_requirements.required_signal_fields {
                 missing_requirements.push(json!({
                     "scope": "signal",
                     "field": field,
-                    "path": format!("signals[{index}].{field}"),
-                    "reason": "required by manifest.lead_input_requirements.required_signal_fields"
+                    "path": "signal_observations",
+                    "reason": "required signal field cannot be checked because no lineage-validated signal observations are eligible"
                 }));
+            }
+        }
+    } else {
+        for field in &manifest.lead_input_requirements.required_signal_fields {
+            if prospect.signals.is_empty() {
+                missing_requirements.push(json!({
+                    "scope": "signal",
+                    "field": field,
+                    "path": "signals",
+                    "reason": "required signal field cannot be checked because prospect.signals is empty"
+                }));
+                continue;
+            }
+            for (index, signal) in prospect.signals.iter().enumerate() {
+                if !signal_field_present(field, signal) {
+                    missing_requirements.push(json!({
+                        "scope": "signal",
+                        "field": field,
+                        "path": format!("signals[{index}].{field}"),
+                        "reason": "required by manifest.lead_input_requirements.required_signal_fields"
+                    }));
+                }
             }
         }
     }
@@ -710,6 +741,13 @@ fn fit_context(
         "missing_requirements": missing_requirements,
         "invalid_requirements": invalid_requirements
     })
+}
+
+fn lineage_validated_signal_count(signal_authority: Option<&Value>) -> Option<usize> {
+    signal_authority
+        .filter(|authority| authority["authority_class"] == "lineage-validated")
+        .and_then(|authority| authority["eligible_signal_count"].as_u64())
+        .map(|count| count as usize)
 }
 
 fn qualification_gate_context(
@@ -3065,8 +3103,9 @@ optional:
     #[test]
     fn signal_aware_fit_gates_use_roles_not_legacy_signal_prose() {
         let root = temp_pack("signal-aware-role-gates");
-        let prospect = crate::pack_io::read_prospect(&root.join("examples/clay-row.json"))
+        let mut prospect = crate::pack_io::read_prospect(&root.join("examples/clay-row.json"))
             .expect("prospect fixture");
+        prospect.signals.clear();
         let authority = super::signal_eligibility(&json!({
             "status": "lineage-validated",
             "logical_signals": [{
@@ -3078,10 +3117,20 @@ optional:
             }]
         }));
 
-        let result = super::fit_prospect_with_signal_authority(&root, prospect, Some(authority))
-            .expect("signal-aware fit");
+        let result =
+            super::fit_prospect_with_signal_authority(&root, prospect, Some(authority), true)
+                .expect("signal-aware fit");
 
         assert_eq!(result["status"], "fit");
+        assert_eq!(result["context"]["has_signals"], true);
+        assert_eq!(result["context"]["has_signal_source"], true);
+        assert!(
+            !result["context"]["missing"]
+                .as_array()
+                .expect("missing requirements")
+                .iter()
+                .any(|item| item == "signals" || item == "signals.source")
+        );
         assert_eq!(
             result["context"]["qualification_gate"]["signals"]["source_backed_count"],
             1
@@ -3090,6 +3139,36 @@ optional:
             result["signal_authority"]["accepted"][0]["signal_id"],
             "buying::declared"
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn signal_aware_fit_does_not_fallback_to_legacy_signals_when_none_are_eligible() {
+        let root = temp_pack("signal-aware-no-eligible-signals");
+        let prospect = crate::pack_io::read_prospect(&root.join("examples/clay-row.json"))
+            .expect("prospect fixture");
+        let authority = super::signal_eligibility(&json!({
+            "status": "lineage-validated",
+            "logical_signals": [{
+                "qualified_projection_id": "buying::unqualified",
+                "kind": "opaque-profile-kind",
+                "roles": [],
+                "observation_ids": ["obs-rejected"]
+            }]
+        }));
+
+        let result =
+            super::fit_prospect_with_signal_authority(&root, prospect, Some(authority), true)
+                .expect("signal-aware fit should fail closed");
+
+        assert_eq!(result["status"], "insufficient-context");
+        assert_eq!(result["context"]["has_signals"], false);
+        assert_eq!(result["context"]["has_signal_source"], false);
+        let missing = result["context"]["missing"]
+            .as_array()
+            .expect("missing requirements");
+        assert!(missing.iter().any(|item| item == "signals"));
+        assert!(missing.iter().any(|item| item == "signal_observations"));
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -3107,21 +3186,28 @@ optional:
         }));
         let prospect_path = root.join("examples/clay-row.json");
         let mut prospect = crate::pack_io::read_prospect(&prospect_path).expect("prospect fixture");
+        prospect.signals.clear();
         prospect
             .attributes
             .insert("contact_policy".to_string(), json!("clear"));
-        let clear_result =
-            super::fit_prospect_with_signal_authority(&root, prospect, Some(authority.clone()))
-                .expect("clear contact policy should fit");
+        let clear_result = super::fit_prospect_with_signal_authority(
+            &root,
+            prospect,
+            Some(authority.clone()),
+            true,
+        )
+        .expect("clear contact policy should fit");
+        assert_eq!(clear_result["status"], "fit");
         assert_ne!(clear_result["status"], "disqualified");
         assert!(clear_result["disqualifiers"].as_array().unwrap().is_empty());
 
         let mut prospect = crate::pack_io::read_prospect(&prospect_path).expect("prospect fixture");
+        prospect.signals.clear();
         prospect
             .attributes
             .insert("contact_policy".to_string(), json!("do-not-contact"));
         let blocked_result =
-            super::fit_prospect_with_signal_authority(&root, prospect, Some(authority))
+            super::fit_prospect_with_signal_authority(&root, prospect, Some(authority), true)
                 .expect("do-not-contact policy should be evaluated");
         assert_eq!(blocked_result["status"], "disqualified");
 
