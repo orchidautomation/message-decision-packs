@@ -167,6 +167,9 @@ pub(crate) fn narrow_starter_route_candidates_for_tests(root: &Path) {
             card["tags"] = serde_yaml::Value::Sequence(Vec::new());
         }
     }
+    // Keep the synthetic route-cap fixtures on the original exact-cap contract
+    // while the shipped starter can leave one additional slot for scoped cards.
+    manifest["policy"]["max_cards_per_route"] = serde_yaml::Value::Number(13.into());
     std::fs::write(
         manifest_path,
         serde_yaml::to_string(&manifest).expect("manifest should serialize"),

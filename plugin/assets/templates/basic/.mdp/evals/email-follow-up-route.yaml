@@ -1,5 +1,5 @@
 command: route
-expect_draft_status: blocked
+expect_draft_status: ready
 expect_entry_titles_contains:
 - Email follow-up
 expect_entry_titles_excludes:

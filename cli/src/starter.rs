@@ -192,10 +192,10 @@ pub(crate) fn generated_starter_manifest(name: &str, slug: &str, _template: &str
             card_ref("avoid-rules", "cards/avoid-rules.yaml", CardKind::AvoidRules, "Claims and categories the agent must avoid.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"]),
             card_ref("output-rules", "cards/output-rules.yaml", CardKind::OutputRules, "Global style, formatting, and output-structure rules for generated text.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"]),
             card_ref("copy-patterns", "cards/copy-patterns.yaml", CardKind::CopyPatterns, "Copy structures and brief patterns for GTM outputs.", &["PMM"], &["copy", "brief", "outbound", "message"]),
-            card_ref("objections", "cards/objections.yaml", CardKind::Objections, "Expected objections, category confusion, and approved response logic.", &["PMM", "GTM Engineering"], &["objection", "alternative", "response"]),
-            card_ref("gaps", "cards/gaps.yaml", CardKind::Gaps, "Known gaps and open questions agents must surface instead of filling in.", &["GTM Engineering", "PMM", "PM"], &["gap", "unknown", "open-question"]),
+            card_ref("objections", "cards/objections.yaml", CardKind::Objections, "Expected objections, category confusion, and approved response logic.", &[], &[]),
+            card_ref("gaps", "cards/gaps.yaml", CardKind::Gaps, "Known gaps and open questions agents must surface instead of filling in.", &[], &[]),
         ],
-        policy: Policy { progressive_disclosure: true, load_manifest_first: true, max_cards_per_route: 13, json_contract: "mdp.cli.v0".to_string(), no_auth_required: true },
+        policy: Policy { progressive_disclosure: true, load_manifest_first: true, max_cards_per_route: 14, json_contract: "mdp.cli.v0".to_string(), no_auth_required: true },
         provenance: Provenance { owner: "local".to_string(), created_by: "mdp init".to_string(), notes: vec!["This pack is guidance and evidence context, not an execution system.".to_string(), "Agents should load only routed cards unless the user asks for a full audit.".to_string()] },
     }
 }
@@ -1134,7 +1134,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "linkedin outbound copy",
-                "expect_draft_status": "blocked",
+                "expect_draft_status": "ready",
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
                     ".mdp/cards/avoid-rules.yaml",
@@ -1159,7 +1159,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "linkedin follow up message",
-                "expect_draft_status": "blocked",
+                "expect_draft_status": "ready",
                 "expect_load_order_contains": [
                     ".mdp/cards/channel-policies.yaml",
                     ".mdp/cards/copy-patterns.yaml"
@@ -1223,7 +1223,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "initial email outbound message",
-                "expect_draft_status": "blocked",
+                "expect_draft_status": "ready",
                 "expect_load_order_contains": [
                     ".mdp/cards/channel-policies.yaml",
                     ".mdp/cards/copy-patterns.yaml"
@@ -1244,7 +1244,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "email follow up",
-                "expect_draft_status": "blocked",
+                "expect_draft_status": "ready",
                 "expect_load_order_contains": [
                     ".mdp/cards/channel-policies.yaml",
                     ".mdp/cards/copy-patterns.yaml"
@@ -1747,7 +1747,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "portfolio scope example",
-                "expect_draft_status": "blocked",
+                "expect_draft_status": "ready",
                 "scope": ["product=local-cli"],
                 "expect_entry_titles_contains": ["Scope qualifies primitives", "Local CLI portfolio angle"],
                 "expect_entry_titles_excludes": ["Codex plugin portfolio angle", "Portfolio routing capability angle"]
@@ -1765,7 +1765,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "portfolio scope example",
-                "expect_draft_status": "blocked",
+                "expect_draft_status": "ready",
                 "scope": ["product=agent-plugin"],
                 "expect_entry_titles_contains": ["Scope qualifies primitives", "Codex plugin portfolio angle"],
                 "expect_entry_titles_excludes": ["Local CLI portfolio angle", "Portfolio routing capability angle"]

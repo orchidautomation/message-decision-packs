@@ -171,6 +171,18 @@ function readSeed(name) {
 function copyLegacyBasicPack(destination) {
   cpSync(join(repoRoot, "plugin", "assets", "templates", "basic"), destination, { recursive: true });
   cpSync(legacyBasicOverlay, destination, { recursive: true });
+  const manifestPath = join(destination, ".mdp", "manifest.yaml");
+  const manifest = readFileSync(manifestPath, "utf8");
+  const uncappedFixture = manifest.replace(
+    /^  max_cards_per_route: \d+$/m,
+    "  max_cards_per_route: 64",
+  );
+  assert.notEqual(
+    uncappedFixture,
+    manifest,
+    "cold-model fixture should declare a route-card cap",
+  );
+  writeFileSync(manifestPath, uncappedFixture);
 }
 
 function lifecycle(accessClass = "synthetic") {
