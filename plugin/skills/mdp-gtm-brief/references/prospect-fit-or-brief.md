@@ -103,5 +103,10 @@ Use `--out BRIEF_JSON --dry-run` before a requested durable write. Use `--readab
   detached input, extract `normalized_prospect`, or draft from the blocked context.
 - Report `lineage-validated`, `legacy`, and `unassessed` exactly. Lineage
   validation proves internal linkage, not host authenticity or truth.
+- For a lineage-validated v2 normalized input, accepted signal observations are
+  the canonical signal set for readiness and qualification. Do not require a
+  duplicate `normalized_prospect.signals[]` value to satisfy a pack's legacy
+  `signals`/`signals.source` readiness declarations; scalar/v1 and explicitly
+  supported legacy paths remain bounded to their prospect `signals[]` input.
 - Preserve conflict receipts and stop no-draft on unresolved conflict. Never
   choose a newest or highest-confidence positive winner.

@@ -2697,6 +2697,7 @@ fn value_contract_json_schema(contract: &ValueContract) -> Value {
 mod tests {
     use super::*;
     use crate::commands::init::init_pack;
+    use crate::commands::routing::fit_normalized;
     use crate::models::{
         DecisionInputConfidencePolicy, DecisionInputDecisionEffect, DecisionInputFreshnessPolicy,
         DecisionInputProvenanceField, DecisionInputProvenancePolicy, DecisionInputSensitivity,
@@ -3106,7 +3107,30 @@ mod tests {
     }
 
     fn signal_projection_fixture(name: &str) -> SignalProjectionFixture {
+        signal_projection_fixture_from_root(signal_aware_clay_example(name))
+    }
+
+    fn signal_projection_fixture_with_legacy_signal_requirements(
+        name: &str,
+    ) -> SignalProjectionFixture {
         let root = signal_aware_clay_example(name);
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should read");
+        let mut manifest: serde_yaml::Value = serde_yaml::from_str(&raw).expect("manifest parses");
+        manifest["lead_input_requirements"]["required_fields"]
+            .as_sequence_mut()
+            .expect("required fields should be a sequence")
+            .push(serde_yaml::Value::String("signals".to_string()));
+        manifest["lead_input_requirements"]["required_signal_fields"]
+            .as_sequence_mut()
+            .expect("required signal fields should be a sequence")
+            .push(serde_yaml::Value::String("source".to_string()));
+        std::fs::write(&manifest_path, serde_yaml::to_string(&manifest).unwrap())
+            .expect("manifest should be writable");
+        signal_projection_fixture_from_root(root)
+    }
+
+    fn signal_projection_fixture_from_root(root: PathBuf) -> SignalProjectionFixture {
         let compiled = requirements(&root, "prospect-fit-or-brief").unwrap();
         let contract_id = compiled["decision_input_contracts"][0]["id"].clone();
         let contract_version = compiled["decision_input_contracts"][0]["version"].clone();
@@ -3243,6 +3267,66 @@ mod tests {
             results_sha256,
             output,
         }
+    }
+
+    #[test]
+    fn signal_aware_fit_consumes_lineage_validated_observations_for_legacy_signal_requirements() {
+        let mut fixture =
+            signal_projection_fixture_with_legacy_signal_requirements("fit-v2-signal-authority");
+        let normalized_path = fixture.root.join("normalized.json");
+        let binding_path = fixture.root.join("binding.json");
+        let request_path = fixture.root.join("request.json");
+        let results_path = fixture.root.join("results.json");
+        let write_json = |path: &Path, value: &Value| {
+            let bytes = serde_json::to_vec(value).unwrap();
+            std::fs::write(path, &bytes).expect("fixture should be writable");
+            crate::artifact_hash::sha256_hex(&bytes)
+        };
+        let binding_sha256 = write_json(&binding_path, &fixture.binding);
+        fixture.request["source_binding_sha256"] = json!(&binding_sha256);
+        let request_sha256 = write_json(&request_path, &fixture.request);
+        fixture.results["source_binding_sha256"] = json!(&binding_sha256);
+        fixture.results["source_attempt_request_sha256"] = json!(&request_sha256);
+        let results_sha256 = write_json(&results_path, &fixture.results);
+        fixture.output["source_binding_sha256"] = json!(&binding_sha256);
+        fixture.output["source_attempt_request_sha256"] = json!(&request_sha256);
+        fixture.output["collected_attempt_results_sha256"] = json!(&results_sha256);
+        for observation in fixture.output["signal_observations"]
+            .as_array_mut()
+            .expect("signal observations should be an array")
+        {
+            observation["receipt"]["source_binding_sha256"] = json!(&binding_sha256);
+            observation["receipt"]["source_attempt_request_sha256"] = json!(&request_sha256);
+            observation["receipt"]["collected_results_sha256"] = json!(&results_sha256);
+        }
+        write_json(&normalized_path, &fixture.output);
+        let result = fit_normalized(
+            &fixture.root,
+            &normalized_path,
+            &fixture.prompt_path,
+            &binding_path,
+            &request_path,
+            &results_path,
+            Some("prospect-fit-or-brief"),
+        )
+        .expect("lineage-validated v2 fit should succeed");
+
+        assert_eq!(result["status"], "fit");
+        assert_eq!(result["context"]["has_signals"], true);
+        assert_eq!(result["context"]["has_signal_source"], true);
+        assert!(
+            result["context"]["missing"]
+                .as_array()
+                .expect("missing requirements")
+                .iter()
+                .all(|item| item != "signals" && item != "signals.source")
+        );
+        assert_eq!(
+            result["signal_authority"]["authority_class"],
+            "lineage-validated"
+        );
+
+        let _ = std::fs::remove_dir_all(fixture.root);
     }
 
     fn signal_observation(

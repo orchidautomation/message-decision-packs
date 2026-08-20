@@ -116,6 +116,15 @@ qualification. Structured repeated observations exist only in
 `mdp.normalized-decision-input.v2`; putting structured observations in a
 legacy prospect `signals` array does not upgrade them.
 
+Once a v2 envelope is lineage-validated, its accepted signal projections are
+the canonical signal representation for fit and brief readiness. A pack may
+retain legacy `lead_input_requirements.required_fields: signals` or
+`required_signal_fields` declarations for compatibility; on the v2 path those
+requirements are checked against eligible signal observations, not against a
+duplicated `normalized_prospect.signals[]` array. If no eligible observations
+exist, the requirements still fail closed. Scalar/v1 and explicitly supported
+legacy paths continue to evaluate the prospect `signals[]` representation.
+
 Every accepted observation remains separately inspectable and deterministically
 ordered. Equal meaningful typed values may form one logical signal for
 cardinality while retaining all observation receipts. Differing supported
