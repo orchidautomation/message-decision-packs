@@ -57,6 +57,7 @@ pub(crate) fn emit_brief_scoped(
         "scope": scope,
         "portfolio_sensitive": portfolio_sensitive,
         "draft_status": context["status"],
+        "route_card_cap": context["route_card_cap"].clone(),
         "inputs": {"persona": resolved_persona, "requested_persona": persona, "motion": motion, "job": job_text},
         "required_load_order": if portfolio_sensitive { Vec::<String>::new() } else { load_order },
         "product_foundation": context["product_foundation"].clone(),
@@ -217,6 +218,7 @@ pub(crate) fn prospect_brief_from_fit_with_context(
         "portfolio_sensitive": portfolio_sensitive,
         "fit": fit_result,
         "draft_status": draft_status,
+        "route_card_cap": context["route_card_cap"].clone(),
         "draft_decision": if draft_status == "ready" { "Proceed with routed brief using stated assumptions." } else { "Do not draft outbound copy from this result. Supply new evidence and run a new evaluation." },
         "no_draft_reason": no_draft_reason,
         "job": job_text,
@@ -960,6 +962,7 @@ pub(crate) fn demo_copy(root: &Path, prospect_path: &Path, channel: &str) -> Res
 mod tests {
     use super::*;
     use crate::commands::init::init_pack;
+    use crate::routing::narrow_starter_route_candidates_for_tests;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -971,6 +974,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-{name}-{nonce}"));
         init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         root
     }
 
@@ -1140,6 +1144,7 @@ mod tests {
     #[test]
     fn canonical_default_preserves_channel_specific_entry_routing() {
         let root = temp_pack("canonical-default-channel-routing");
+        narrow_starter_route_candidates_for_tests(&root);
         let prospect_path = root.join("examples").join("clay-row.json");
 
         let result = prospect_brief_with_context(&root, &prospect_path, "linkedin", None, true)

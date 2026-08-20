@@ -121,6 +121,7 @@ pub(crate) fn route_scoped(
         "product_foundation_load_order": routed_entries["product_foundation_load_order"].clone(),
         "profile_activation": routed_entries["profile_activation"].clone(),
         "portfolio_sensitive": portfolio_sensitive,
+        "route_card_cap": routed_entries["route_card_cap"].clone(),
         "draft_status": if routed_entries["status"] == "blocked" { "blocked" } else { "ready" }
     });
     if include_entries || include_eval_fixture || portfolio_sensitive {
@@ -2418,6 +2419,7 @@ mod tests {
     use super::*;
     use crate::commands::init::init_pack;
     use crate::pack_io::read_card_by_id;
+    use crate::routing::narrow_starter_route_candidates_for_tests;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -2429,6 +2431,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-{name}-{nonce}"));
         init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         root
     }
 
@@ -4062,6 +4065,7 @@ optional:
     #[test]
     fn claim_check_enforces_route_scoped_exact_paragraphs() {
         let root = temp_pack("route-scoped-paragraph-count");
+        narrow_starter_route_candidates_for_tests(&root);
         add_initial_linkedin_exact_paragraphs(&root, 3);
 
         for (draft, actual) in [
@@ -4180,6 +4184,7 @@ optional:
     #[test]
     fn claim_check_flags_route_scoped_structured_constraint_violations() {
         let root = temp_pack("structured-constraints-check");
+        narrow_starter_route_candidates_for_tests(&root);
         let result = check_claims(
             &root,
             Some("Hi Alex, can we compare notes? See https://example.com? Thanks?"),
@@ -4216,6 +4221,7 @@ optional:
     #[test]
     fn claim_check_reports_target_word_count_as_warning_not_failure() {
         let root = temp_pack("structured-constraints-target");
+        narrow_starter_route_candidates_for_tests(&root);
         let draft = [
             "Alex, saw your team is standardizing outbound context across notes and research.",
             "That usually creates small mismatches between what reps know, what campaigns say, and what agents load before drafting.",

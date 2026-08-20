@@ -21,6 +21,7 @@ use crate::commands::{
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
+use crate::routing::ROUTE_CARD_CAP_DIAGNOSTIC;
 use crate::run_replay::{
     LOCAL_LEDGER_DURABILITY_LIMITATION, ReplayConsumeRequest, compare_and_consume,
 };
@@ -862,11 +863,19 @@ fn merge_route_budget_preflight(mut data: Value, dir: &Path) -> Value {
                 Some("context_entry_budget_exceeded") => "route_budget_entry_overflow",
                 Some("context_byte_budget_exceeded") => "route_budget_byte_overflow",
                 Some("near_context_budget") => "route_budget_near_budget",
+                Some(ROUTE_CARD_CAP_DIAGNOSTIC) => ROUTE_CARD_CAP_DIAGNOSTIC,
                 _ => continue,
             };
             let budget = route["budget"].as_object();
-            let detail = budget
-                .map(|budget| {
+            let detail = if code == ROUTE_CARD_CAP_DIAGNOSTIC {
+                let receipt = serde_json::to_string(&route["route_card_cap"])
+                    .unwrap_or_else(|_| "{}".to_string());
+                format!(
+                    "persona '{persona}' job '{job}': applicable authority was excluded by max_cards_per_route; {receipt}"
+                )
+            } else {
+                budget
+                    .map(|budget| {
                     format!(
                         "persona '{persona}' job '{job}': {actual_entries}/{max_entries} entries, {actual_bytes}/{max_bytes} bytes",
                         actual_entries = budget["actual_entries"],
@@ -874,12 +883,17 @@ fn merge_route_budget_preflight(mut data: Value, dir: &Path) -> Value {
                         actual_bytes = budget["actual_bytes"],
                         max_bytes = budget["max_bytes"]
                     )
-                })
-                .unwrap_or_else(|| format!("persona '{persona}' job '{job}' exceeds a declared context budget"));
+                    })
+                    .unwrap_or_else(|| format!("persona '{persona}' job '{job}' exceeds a declared context budget"))
+            };
             issues.push(json!({
                 "code": code,
                 "severity": "error",
-                "path": path,
+                "path": if code == ROUTE_CARD_CAP_DIAGNOSTIC {
+                    ".mdp/manifest.yaml#/policy/max_cards_per_route"
+                } else {
+                    &path
+                },
                 "message": detail
             }));
         }
@@ -1223,6 +1237,9 @@ mod tests {
     use super::*;
     use crate::cli::{Cli, Commands};
     use crate::commands::init::init_pack;
+    use crate::routing::{
+        add_supplemental_persona_card_for_tests, narrow_starter_route_candidates_for_tests,
+    };
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -1245,6 +1262,47 @@ mod tests {
     }
 
     #[test]
+    fn strict_validation_reports_route_card_cap_exclusions() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-route-card-cap-validate-{nonce}"));
+        init_pack(&root, "Route Card Cap Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
+        add_supplemental_persona_card_for_tests(&root);
+
+        let data = validate_pack(&root).expect("pack validation should run");
+        let merged = merge_route_budget_preflight(data, &root);
+        assert_eq!(merged["valid"], false);
+        let cap_issue = merged["issues"]
+            .as_array()
+            .expect("validation issues")
+            .iter()
+            .find(|issue| issue["code"] == ROUTE_CARD_CAP_DIAGNOSTIC)
+            .expect("route-card cap issue should be reported");
+        assert_eq!(
+            cap_issue["path"],
+            ".mdp/manifest.yaml#/policy/max_cards_per_route"
+        );
+        assert!(
+            cap_issue["message"]
+                .as_str()
+                .expect("cap issue message")
+                .contains("motions")
+        );
+        assert!(
+            !cap_issue["message"]
+                .as_str()
+                .expect("cap issue message")
+                .contains("body")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn brief_out_writes_self_describing_file() {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1252,6 +1310,7 @@ mod tests {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("mdp-brief-out-{nonce}"));
         init_pack(&root, "Brief Out Pack", "gtm", true, false).expect("pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         let prospect = root.join("examples").join("clay-row.json");
         let out = root.join(".mdp").join("briefs").join("brief.json");
         let routed_context_out = root.join(".mdp").join("briefs").join("routed-context.json");
@@ -1306,6 +1365,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-brief-aliased-out-{nonce}"));
         init_pack(&root, "Brief Aliased Out Pack", "gtm", true, false)
             .expect("pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         let prospect = root.join("examples").join("clay-row.json");
         let routed_context_out = root.join(".mdp").join("briefs").join("routed-context.json");
 
@@ -1386,6 +1446,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-brief-dangling-alias-{nonce}"));
         init_pack(&root, "Brief Dangling Alias Pack", "gtm", true, false)
             .expect("pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         let prospect = root.join("examples").join("clay-row.json");
         let output_dir = root.join(".mdp").join("briefs");
         let out = output_dir.join("brief.json");
@@ -1441,6 +1502,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-emit-brief-hard-link-{nonce}"));
         init_pack(&root, "Emit Brief Hard Link Pack", "gtm", true, false)
             .expect("pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         let output_dir = root.join(".mdp").join("briefs");
         let out = output_dir.join("brief.json");
         let routed_context_out = output_dir.join("routed-context.json");
@@ -1491,6 +1553,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-emit-brief-aliased-out-{nonce}"));
         init_pack(&root, "Emit Brief Aliased Out Pack", "gtm", true, false)
             .expect("pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         let out = root.join(".mdp").join("briefs").join("brief.json");
         std::fs::write(&out, b"existing artifact").expect("fixture artifact should write");
         let aliased_routed_context_out = out
@@ -1537,6 +1600,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mdp-readable-brief-out-{nonce}"));
         init_pack(&root, "Readable Brief Out Pack", "gtm", true, false)
             .expect("pack should initialize");
+        narrow_starter_route_candidates_for_tests(&root);
         let prospect = root.join("examples").join("clay-row.json");
         let out = root.join(".mdp").join("briefs").join("brief.md");
 

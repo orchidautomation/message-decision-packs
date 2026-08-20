@@ -3254,8 +3254,8 @@ fn canonical_skill_id_array_schema() -> Value {
 
 fn brief_schema() -> Value {
     json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MDP Brief Contracts v0", "oneOf": [
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "scope", "portfolio_sensitive", "draft_status", "required_load_order", "context", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "draft_status": {"enum": ["ready", "blocked"]}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "context": context_schema(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
-        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "scope", "portfolio_sensitive", "fit", "draft_status", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "valid": {"type": "boolean"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"], "properties": {"valid": {"type": "boolean"}, "job_id": {"type": "string"}, "ingress": job_ingress_schema(), "signal_authority": {"type": "object", "required": ["contract", "authority_class", "eligible_signal_count", "roles", "accepted", "rejected"], "properties": {"contract": {"const": "mdp.signal-qualification-authority.v1"}, "authority_class": {"enum": ["lineage-validated", "legacy", "unassessed"]}, "eligible_signal_count": {"type": "integer", "minimum": 0}, "roles": {"type": "object"}, "accepted": {"type": "array"}, "rejected": {"type": "array"}}}}}, "draft_status": {"enum": ["ready", "no-draft"]}, "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "inputs", "scope", "portfolio_sensitive", "draft_status", "route_card_cap", "required_load_order", "context", "decision_trace", "output_requirements"], "properties": {"contract": {"const": "mdp.brief.v0"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "inputs": {"type": "object", "required": ["persona", "job"], "properties": {"persona": {"type": "string"}, "motion": {"type": ["string", "null"]}, "job": {"type": "string"}}}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "draft_status": {"enum": ["ready", "blocked"]}, "route_card_cap": route_card_cap_schema(), "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "context": context_schema(), "decision_trace": {"type": "array"}, "output_requirements": {"type": "object"}}},
+        {"type": "object", "required": ["contract", "pack", "runtime_context", "channel", "prospect", "prospect_source", "persona", "scope", "portfolio_sensitive", "fit", "draft_status", "route_card_cap", "job", "required_load_order", "route", "decision_trace", "agent_instruction"], "properties": {"contract": {"const": "mdp.message-brief.v0"}, "valid": {"type": "boolean"}, "pack": pack_schema(), "runtime_context": runtime_context_schema(), "channel": {"type": "string"}, "prospect": {"type": "object"}, "prospect_source": {"type": "object", "required": ["kind", "synthetic", "guidance"], "properties": {"kind": {"type": "string"}, "synthetic": {"type": "boolean"}, "guidance": {"type": "string"}}}, "persona": {"type": "string"}, "persona_resolution": {"type": "object"}, "scope": scope_resolution_schema(), "portfolio_sensitive": {"type": "boolean"}, "fit": {"type": "object", "required": ["contract", "status", "matches", "disqualifiers"], "properties": {"valid": {"type": "boolean"}, "job_id": {"type": "string"}, "ingress": job_ingress_schema(), "signal_authority": {"type": "object", "required": ["contract", "authority_class", "eligible_signal_count", "roles", "accepted", "rejected"], "properties": {"contract": {"const": "mdp.signal-qualification-authority.v1"}, "authority_class": {"enum": ["lineage-validated", "legacy", "unassessed"]}, "eligible_signal_count": {"type": "integer", "minimum": 0}, "roles": {"type": "object"}, "accepted": {"type": "array"}, "rejected": {"type": "array"}}}}}, "draft_status": {"enum": ["ready", "no-draft"]}, "route_card_cap": route_card_cap_schema(), "draft_decision": {"type": "string"}, "no_draft_reason": {"type": ["string", "null"]}, "job": {"type": "string"}, "required_load_order": string_array(), "product_foundation": product_foundation_resolution_schema(), "product_foundation_load_order": product_foundation_load_order_schema(), "route": {"type": "array"}, "context": context_schema(), "decision_trace": {"type": "array"}, "agent_instruction": {"type": "string"}}}
     ]})
 }
 
@@ -3386,6 +3386,11 @@ fn context_entries_schema_with_authority(require_selection_authority: bool) -> V
 fn context_schema() -> Value {
     let mut schema = context_schema_base();
     schema["additionalProperties"] = json!(false);
+    schema["required"]
+        .as_array_mut()
+        .expect("context required fields should be an array")
+        .push(json!("route_card_cap"));
+    schema["properties"]["route_card_cap"] = route_card_cap_schema();
     schema["properties"]["minimality"] = json!({
         "type": "object",
         "required": ["status", "context_sha256", "budget", "excluded", "diagnostics"],
@@ -3431,7 +3436,8 @@ fn context_schema() -> Value {
             "diagnostics": {"type": "array", "items": {"enum": [
                 "canonical_job_not_declared", "context_budget_not_declared",
                 "full_card_fallback_required", "context_entry_budget_exceeded",
-                "context_byte_budget_exceeded", "near_context_budget"
+                "context_byte_budget_exceeded", "near_context_budget",
+                "route_card_cap_excluded_applicable"
             ]}}
         }
     });
@@ -3443,6 +3449,35 @@ fn context_schema() -> Value {
         ]
     });
     schema
+}
+
+fn route_card_cap_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["status", "max_cards_per_route", "selected_cards", "excluded_cards", "diagnostics"],
+        "additionalProperties": false,
+        "properties": {
+            "status": {"enum": ["ready", "blocked"]},
+            "max_cards_per_route": {"type": "integer", "minimum": 1},
+            "selected_cards": {"type": "array", "items": {
+                "type": "object",
+                "required": ["id", "kind"],
+                "additionalProperties": false,
+                "properties": {"id": {"type": "string"}, "kind": {"type": "string"}}
+            }},
+            "excluded_cards": {"type": "array", "items": {
+                "type": "object",
+                "required": ["id", "kind", "reason"],
+                "additionalProperties": false,
+                "properties": {
+                    "id": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "reason": {"const": "max_cards_per_route_reached"}
+                }
+            }},
+            "diagnostics": {"type": "array", "items": {"enum": ["route_card_cap_excluded_applicable"]}}
+        }
+    })
 }
 
 pub(crate) fn routed_context_schema() -> Value {
@@ -4380,6 +4415,7 @@ fn attribute_schema() -> Value {
 mod tests {
     use super::*;
     use crate::commands::briefs::emit_brief;
+    use crate::commands::init::init_pack;
     use crate::conformance::{
         AccessClass, AssertionEvaluationStatus, BehavioralEvaluation, BehavioralQualification,
         BehavioralStatus, BehavioralTrialEvaluation, ConformanceAssertionEvaluation,
@@ -4390,6 +4426,7 @@ mod tests {
     };
     use jsonschema::draft202012;
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn conformance_schemas_are_closed_versioned_and_compile() {
@@ -5749,10 +5786,14 @@ mod tests {
 
     #[test]
     fn routed_context_schema_validates_live_entries_and_rejects_malformed_entries() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("CLI crate should have a repository parent")
-            .join("plugin/assets/templates/basic");
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-routed-context-schema-{nonce}"));
+        init_pack(&root, "Schema Pack", "gtm", true, false)
+            .expect("schema fixture pack should initialize");
+        crate::routing::narrow_starter_route_candidates_for_tests(&root);
         let output = emit_brief(&root, "PMM", None, Some("prospect-fit-or-brief"))
             .expect("basic brief should emit");
         let routed_context = output["context"]["model_context"].clone();
@@ -5777,6 +5818,7 @@ mod tests {
             draft202012::validate(&schema, &missing_reason_codes).is_err(),
             "standalone routed entries should require reason codes"
         );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
