@@ -1,6 +1,12 @@
 use crate::artifact_hash::canonical_json_sha256;
 use crate::constants::DEFAULT_DIR;
-use crate::models::{Manifest, ProfileJob, PromptFile, PromptInput, PromptOutputContract};
+use crate::constants::{
+    GOVERNED_HOST_ENVELOPE_CONTRACT, GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
+    GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS,
+};
+use crate::models::{
+    Manifest, ProfileJob, PromptFile, PromptHostEnvelope, PromptInput, PromptOutputContract,
+};
 use crate::pack_io::{read_canonical_prompt_by_id, read_prompt, resolve_pack_path};
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -409,6 +415,7 @@ fn compile_step(
             prompt.id
         ));
     }
+    validate_host_envelope(&prompt)?;
     let prompt_json = serde_json::to_value(&prompt)?;
     let prompt_sha256 = canonical_json_sha256(&prompt_json)?;
     let output_contract_json = serde_json::to_value(&prompt.output_contract)?;
@@ -439,6 +446,79 @@ fn compile_step(
         output_contract: prompt.output_contract,
         output_contract_sha256,
     })
+}
+
+pub(crate) fn validate_host_envelope(prompt: &PromptFile) -> Result<()> {
+    let Some(envelope) = prompt.output_contract.host_envelope.as_ref() else {
+        return Ok(());
+    };
+    if prompt.output_contract.output_kind.as_deref() != Some("governed-artifact") {
+        return Err(anyhow!("host envelope requires governed-artifact output"));
+    }
+    if !prompt
+        .inputs
+        .iter()
+        .any(|input| input.required && input.name == "routed_context")
+    {
+        return Err(anyhow!(
+            "host envelope requires a required routed_context input"
+        ));
+    }
+    validate_host_envelope_declaration(&prompt.output_contract, envelope)
+}
+
+pub(crate) fn validate_host_envelope_declaration(
+    output_contract: &PromptOutputContract,
+    envelope: &PromptHostEnvelope,
+) -> Result<()> {
+    if envelope.contract != GOVERNED_HOST_ENVELOPE_CONTRACT {
+        return Err(anyhow!("unsupported host envelope contract"));
+    }
+    if envelope.owned_top_level
+        != GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
+            .iter()
+            .map(|field| (*field).to_string())
+            .collect::<Vec<_>>()
+    {
+        return Err(anyhow!(
+            "host envelope owned fields do not match the fixed MDP allowlist"
+        ));
+    }
+    if envelope.semantic_required_top_level
+        != GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS
+            .iter()
+            .map(|field| (*field).to_string())
+            .collect::<Vec<_>>()
+    {
+        return Err(anyhow!(
+            "host envelope semantic fields do not match the fixed MDP allowlist"
+        ));
+    }
+    let required = &output_contract.required_top_level;
+    if envelope
+        .owned_top_level
+        .iter()
+        .chain(envelope.semantic_required_top_level.iter())
+        .any(|field| !required.contains(field))
+        || required.iter().any(|field| {
+            !envelope.owned_top_level.contains(field)
+                && !envelope.semantic_required_top_level.contains(field)
+        })
+    {
+        return Err(anyhow!(
+            "host envelope does not cover the final required fields"
+        ));
+    }
+    if output_contract
+        .schema
+        .as_ref()
+        .is_none_or(|schema| schema["properties"].as_object().is_none())
+    {
+        return Err(anyhow!(
+            "host envelope requires a closed inline final schema"
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn compiled_model_step_schema() -> Value {
@@ -479,10 +559,10 @@ pub(crate) fn compiled_model_step_schema() -> Value {
 mod tests {
     use super::{
         ModelStepPhase, compiled_model_step_schema, resolve_model_steps,
-        resolve_selected_model_step,
+        resolve_selected_model_step, validate_host_envelope,
     };
     use crate::models::{InputContract, ProfileJob};
-    use crate::pack_io::read_manifest;
+    use crate::pack_io::{read_manifest, read_prompt};
     use serde_json::to_value;
     use std::collections::BTreeSet;
     use std::fs;
@@ -537,6 +617,27 @@ mod tests {
             )
             .unwrap();
         }
+    }
+
+    #[test]
+    fn host_envelope_declaration_is_closed_and_versioned() {
+        let path = template("basic").join(".mdp/prompts/generate-outbound-copy.yaml");
+        let prompt = read_prompt(&path).unwrap();
+        validate_host_envelope(&prompt).unwrap();
+
+        let mut forged = prompt.clone();
+        forged
+            .output_contract
+            .host_envelope
+            .as_mut()
+            .unwrap()
+            .owned_top_level[0] = "artifact".into();
+        assert!(validate_host_envelope(&forged).is_err());
+
+        let mut legacy = prompt;
+        legacy.version = Some("2".into());
+        legacy.output_contract.host_envelope = None;
+        validate_host_envelope(&legacy).unwrap();
     }
 
     #[test]

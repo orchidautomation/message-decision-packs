@@ -19,6 +19,9 @@ Read this only for `outbound-copy-review` and only when the user supplies copy.
    channel policies, gaps, guardrails, foundation references, or any
    evidence-backed entry; quota diagnostics must remain body-free. With no
    quota map, preserve the legacy classification and receipt behavior.
+   For a prompt declaring `mdp.governed-host-envelope.v1`, review the
+   semantic payload only; MDP injects and validates deterministic provenance
+   after generation, and model-supplied envelope fields must fail closed.
 2. Run the deterministic check with the relevant route selectors:
 
 ```bash

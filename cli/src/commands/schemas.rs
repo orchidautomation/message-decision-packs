@@ -9,13 +9,14 @@ use crate::conformance::{
     PUBLICATION_APPROVAL_V1,
 };
 use crate::constants::{
-    FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
-    NORMALIZED_DECISION_INPUT_CONTRACT_V2, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
-    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_OUTPUT_VALIDATION_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
-    PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
-    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
-    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    FORMAT_VERSION, GOVERNED_HOST_ENVELOPE_CONTRACT, GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
+    GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS, NATIVE_NORMALIZE_REQUEST_CONTRACT,
+    NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_OUTPUT_VALIDATION_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
+    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
+    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::model_steps::{
     COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1, compiled_model_step_schema,
@@ -4241,6 +4242,16 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                                 ,"artifact"
                                 ,"selected_authority"
                             ]
+                        }
+                    },
+                    "host_envelope": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["contract", "owned_top_level", "semantic_required_top_level"],
+                        "properties": {
+                            "contract": {"const": GOVERNED_HOST_ENVELOPE_CONTRACT},
+                            "owned_top_level": {"const": GOVERNED_HOST_ENVELOPE_OWNED_FIELDS},
+                            "semantic_required_top_level": {"const": GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS}
                         }
                     },
                     "entry_defaults": {

@@ -768,7 +768,16 @@ pub(crate) struct PromptOutputContract {
     pub(crate) schema_ref: Option<String>,
     #[serde(default)]
     pub(crate) schema: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) host_envelope: Option<PromptHostEnvelope>,
     pub(crate) example: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub(crate) struct PromptHostEnvelope {
+    pub(crate) contract: String,
+    pub(crate) owned_top_level: Vec<String>,
+    pub(crate) semantic_required_top_level: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

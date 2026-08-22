@@ -1090,7 +1090,7 @@ mod tests {
                     .expect("job-owned prompt should parse");
                 assert_eq!(prompt.id, binding.prompt);
                 assert_eq!(prompt.kind.as_deref(), Some(binding.kind.as_str()));
-                assert_eq!(prompt.version.as_deref(), Some("2"));
+                assert_eq!(prompt.version.as_deref(), Some("3"));
                 assert_eq!(
                     prompt.output_contract.output_kind.as_deref(),
                     Some("governed-artifact")
@@ -1341,7 +1341,7 @@ mod tests {
                 .expect("proposal job-owned prompt should parse");
             assert_eq!(prompt.id, binding.prompt);
             assert_eq!(prompt.kind.as_deref(), Some("review"));
-            assert_eq!(prompt.version.as_deref(), Some("2"));
+            assert_eq!(prompt.version.as_deref(), Some("3"));
             let prompt_value =
                 serde_json::to_value(&prompt).expect("proposal job-owned prompt should serialize");
             let input_names = prompt_value["inputs"]
@@ -1426,16 +1426,9 @@ mod tests {
             let final_checklist = prompt_value["final_checklist"]
                 .as_array()
                 .expect("governed proposal prompt should declare a final checklist");
-            for required_check in [
-                "prompt_sha256 matches the host-provided canonical prompt hash.",
-                "invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.",
-            ] {
-                assert!(
-                    final_checklist.iter().any(|check| check == required_check),
-                    "{} must state the detached hash boundary exactly",
-                    job.id
-                );
-            }
+            assert!(final_checklist.iter().any(|check| {
+                check == "MDP adds and validates prompt, context, receipt, and input-inventory provenance after generation."
+            }));
             assert!(
                 final_checklist.iter().all(|check| {
                     check.as_str().is_none_or(|text| {

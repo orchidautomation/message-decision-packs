@@ -30,6 +30,11 @@ excluded bodies or open `full_card_required` paths. The downstream host must
 hash those exact bytes in `mdp.prompt-invocation.v1`, and validation must pass
 both `--invocation-receipt` and `--routed-context`.
 
+For a prompt declaring `mdp.governed-host-envelope.v1`, provide only the
+semantic authority, artifact, gap, and rejected-claim fields. The host owns the
+deterministic prompt, job, context, receipt, and input-inventory envelope; do
+not echo or invent those values.
+
 When the selected job declares `context_budget.optional_kind_quotas`, also
 inspect `data.context.minimality.allocation`. It must show the
 `required-first` strategy, required reservations, and deterministic optional

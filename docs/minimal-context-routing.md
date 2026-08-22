@@ -4,7 +4,7 @@ MDP compiles a job-specific context instead of handing a model the whole pack. A
 
 `mdp route --entries` and `mdp brief --context` expose the same `minimality` receipt: status, the SHA-256 of the exact model-visible `mdp.routed-context.v1` object, authored and actual budgets, selected/excluded counts, safe excluded references, and fail-closed diagnostics. Excluded bodies are never included.
 
-Required safety and output guardrails are selected before measurement. MDP blocks when they do not fit; it does not drop or truncate guardrails to satisfy a budget.
+Required safety and output guardrails are selected before measurement. MDP blocks when they do not fit; it does not drop or truncate guardrails to satisfy a budget. For a governed host-envelope prompt, `context_sha256` is injected from the exact staged routed-context authority after these checks; the model cannot author or replace that identity.
 
 Jobs may additionally declare an opt-in `context_budget.optional_kind_quotas`
 map, for example:

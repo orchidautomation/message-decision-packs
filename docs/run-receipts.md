@@ -11,7 +11,7 @@ A receipt assurance value describes one invocation; it is not a public integrati
 
 ## Unified Execution Contracts (v1)
 
-The v1 family separates what an operator asked to run, the immutable bytes the runtime staged, what a driver claims happened, the receipt MDP issued, and what a later verifier could recompute. Each contract is a closed Draft 2020-12 JSON Schema: unknown fields are rejected instead of becoming unaudited side channels.
+The v1 family separates what an operator asked to run, the immutable bytes the runtime staged, what a driver claims happened, the receipt MDP issued, and what a later verifier could recompute. Governed host-envelope prompts return semantic model output first; MDP injects the exact prompt, context, receipt, and input-inventory identities before the existing receipt and authority checks. Each contract is a closed Draft 2020-12 JSON Schema: unknown fields are rejected instead of becoming unaudited side channels.
 
 | Contract | CLI schema target | Authority |
 | --- | --- | --- |

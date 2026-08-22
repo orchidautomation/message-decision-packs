@@ -5295,10 +5295,22 @@ fn validate_prompt_shape(path: &Path, display_path: &str, issues: &mut Vec<Value
             "entry_defaults",
             "schema_ref",
             "schema",
+            "host_envelope",
             "example",
         ],
         &format!("{display_path}#/output_contract"),
         "prompt_output_contract_unknown_field",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(
+            yaml_get(&value, "output_contract").unwrap_or(&YamlValue::Null),
+            "host_envelope",
+        )
+        .unwrap_or(&YamlValue::Null),
+        &["contract", "owned_top_level", "semantic_required_top_level"],
+        &format!("{display_path}#/output_contract/host_envelope"),
+        "prompt_host_envelope_unknown_field",
         issues,
     );
     validate_object_keys(

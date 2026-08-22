@@ -62,6 +62,9 @@ Read this for pack shape, evidence, and content quality.
   no-draft when unresolved.
 - Treat `lineage-validated` as internal consistency only. Flag claims of host
   authenticity, authorization, signer identity, non-repudiation, or truth.
+- For `mdp.governed-host-envelope.v1`, confirm deterministic provenance is
+  host-owned and the semantic provider schema excludes the fixed envelope
+  fields; a model echo is not provenance authority.
 - Check input ceilings, bounded diagnostics, field allowlists,
   control-character rejection, renderer escaping, locator non-dereference, and
   absence of raw provider records or credentials.
