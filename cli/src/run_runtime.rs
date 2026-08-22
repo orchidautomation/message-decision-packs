@@ -58,6 +58,8 @@ const MAX_POLICY_INPUT_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_NATIVE_DECLARED_INPUT_BYTES: u64 = 128 * 1024;
 const MAX_NATIVE_SERIALIZED_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_POLICY_OUTPUT_BYTES: u64 = 1024 * 1024;
+const MAX_POLICY_DIAGNOSTICS: usize = 4;
+const MAX_POLICY_DIAGNOSTIC_BYTES: usize = 4096;
 const DRIVER_RESULT_ENVELOPE_BYTES: u64 = 64 * 1024;
 const MAX_FINALIZATION_RESERVE_MS: u64 = 250;
 const OFFICIAL_OPENAI_RESPONSES_ENDPOINT: &str = "https://api.openai.com/v1/responses";
@@ -88,15 +90,69 @@ pub(crate) enum RunFailureKind {
     RunnerFailed,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunDiagnostic {
+    pub(crate) stage: &'static str,
+    pub(crate) gate: &'static str,
+    pub(crate) code: &'static str,
+    pub(crate) input: Option<&'static str>,
+    pub(crate) field: Option<&'static str>,
+    pub(crate) expected: DiagnosticValue,
+    pub(crate) observed: DiagnosticValue,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DiagnosticValue {
+    pub(crate) kind: &'static str,
+    pub(crate) value: DiagnosticScalar,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
+pub(crate) enum DiagnosticScalar {
+    Text(&'static str),
+    Count(u64),
+}
+
 #[derive(Debug)]
 pub(crate) struct RunFailure {
     kind: RunFailureKind,
     code: &'static str,
+    diagnostics: Vec<RunDiagnostic>,
 }
 
 impl RunFailure {
     fn new(kind: RunFailureKind, code: &'static str) -> Self {
-        Self { kind, code }
+        let diagnostics = if matches!(kind, RunFailureKind::PolicyBlocked) {
+            vec![fallback_policy_diagnostic(code)]
+        } else {
+            Vec::new()
+        };
+        Self {
+            kind,
+            code,
+            diagnostics,
+        }
+    }
+
+    fn with_diagnostic(
+        kind: RunFailureKind,
+        code: &'static str,
+        diagnostic: RunDiagnostic,
+    ) -> Self {
+        let mut failure = Self {
+            kind,
+            code,
+            diagnostics: if matches!(kind, RunFailureKind::PolicyBlocked) {
+                vec![diagnostic]
+            } else {
+                Vec::new()
+            },
+        };
+        failure.bound_diagnostics();
+        failure
     }
 
     pub(crate) fn kind(&self) -> RunFailureKind {
@@ -105,6 +161,20 @@ impl RunFailure {
 
     pub(crate) fn code(&self) -> &'static str {
         self.code
+    }
+
+    pub(crate) fn diagnostics(&self) -> &[RunDiagnostic] {
+        &self.diagnostics
+    }
+
+    fn bound_diagnostics(&mut self) {
+        self.diagnostics.truncate(MAX_POLICY_DIAGNOSTICS);
+        while self.diagnostics.len() > 1
+            && serde_json::to_vec(&self.diagnostics)
+                .is_ok_and(|bytes| bytes.len() > MAX_POLICY_DIAGNOSTIC_BYTES)
+        {
+            self.diagnostics.pop();
+        }
     }
 }
 
@@ -118,6 +188,117 @@ impl std::error::Error for RunFailure {}
 
 fn run_failure(kind: RunFailureKind, code: &'static str) -> anyhow::Error {
     anyhow::Error::new(RunFailure::new(kind, code))
+}
+
+fn run_failure_with_diagnostic(
+    kind: RunFailureKind,
+    code: &'static str,
+    diagnostic: RunDiagnostic,
+) -> anyhow::Error {
+    anyhow::Error::new(RunFailure::with_diagnostic(kind, code, diagnostic))
+}
+
+fn diagnostic_value(kind: &'static str, value: &'static str) -> DiagnosticValue {
+    DiagnosticValue {
+        kind,
+        value: DiagnosticScalar::Text(value),
+    }
+}
+
+fn count_value(value: usize) -> DiagnosticValue {
+    DiagnosticValue {
+        kind: "count",
+        value: DiagnosticScalar::Count(value as u64),
+    }
+}
+
+fn policy_diagnostic(
+    stage: &'static str,
+    gate: &'static str,
+    code: &'static str,
+    input: Option<&'static str>,
+    field: Option<&'static str>,
+    expected: DiagnosticValue,
+    observed: DiagnosticValue,
+) -> RunDiagnostic {
+    RunDiagnostic {
+        stage,
+        gate,
+        code,
+        input,
+        field,
+        expected,
+        observed,
+    }
+}
+
+fn fallback_policy_diagnostic(code: &str) -> RunDiagnostic {
+    let (stage, gate, category, input, field, expected, observed) = match code {
+        "draft-readiness-blocked" | "job-readiness-blocked" | "job-readiness-unavailable" => (
+            "generative-preflight",
+            "routed-context-readiness",
+            "readiness-failure",
+            None,
+            None,
+            diagnostic_value("readiness", "ready"),
+            diagnostic_value("readiness", "blocked"),
+        ),
+        "required-model-input-missing" => (
+            "generative-preflight",
+            "declared-inputs",
+            "missing-required-field",
+            None,
+            None,
+            count_value(1),
+            count_value(0),
+        ),
+        "undeclared-model-input" => (
+            "generative-preflight",
+            "declared-inputs",
+            "disallowed-field",
+            None,
+            Some("/unknown-field"),
+            diagnostic_value("field", "declared-input"),
+            diagnostic_value("field", "unknown-field"),
+        ),
+        "routed-context-invalid" => (
+            "generative-preflight",
+            "routed-context-schema",
+            "internal-contract-mismatch",
+            Some("routed_context"),
+            None,
+            diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+            diagnostic_value("contract", "unavailable"),
+        ),
+        "routed-context-stale-binding" => (
+            "generative-preflight",
+            "routed-context-readiness",
+            "stale-binding",
+            Some("routed_context"),
+            None,
+            diagnostic_value("binding", "matched"),
+            diagnostic_value("binding", "mismatch"),
+        ),
+        "source-integrity-failed" => (
+            "source-integrity",
+            "declared-input-immutability",
+            "stale-binding",
+            None,
+            None,
+            diagnostic_value("binding", "unchanged"),
+            diagnostic_value("binding", "changed"),
+        ),
+        _ => (
+            "run-preflight",
+            "policy",
+            "internal-contract-mismatch",
+            None,
+            None,
+            diagnostic_value("binding", "available"),
+            diagnostic_value("binding", "unavailable"),
+        ),
+    };
+    policy_diagnostic(stage, gate, category, input, field, expected, observed)
 }
 
 struct RunDeadline {
@@ -1903,6 +2084,157 @@ fn validate_generative_job_gates(
     Ok(())
 }
 
+fn routed_context_field_pointer(name: &str) -> &'static str {
+    match name {
+        "contract" => "/contract",
+        "job" => "/job",
+        "persona" => "/persona",
+        "scope" => "/scope",
+        "product_foundation" => "/product_foundation",
+        "product_foundation_load_order" => "/product_foundation_load_order",
+        "entries" => "/entries",
+        "gaps" => "/gaps",
+        "policy" => "/policy",
+        _ => "/unknown-field",
+    }
+}
+
+fn safe_contract_value(value: Option<&Value>) -> &'static str {
+    match value.and_then(Value::as_str) {
+        Some(ROUTED_CONTEXT_CONTRACT) => ROUTED_CONTEXT_CONTRACT,
+        Some("mdp.routed-context.v0") => "mdp.routed-context.v0",
+        Some(_) => "other",
+        None => "missing",
+    }
+}
+
+fn routed_context_shape_diagnostic(value: &Value) -> Option<RunDiagnostic> {
+    let object = value.as_object()?;
+    let expected_fields = [
+        "contract",
+        "job",
+        "persona",
+        "scope",
+        "product_foundation",
+        "product_foundation_load_order",
+        "entries",
+        "gaps",
+        "policy",
+    ];
+    if let Some(field) = object
+        .keys()
+        .find(|field| !expected_fields.contains(&field.as_str()))
+    {
+        return Some(policy_diagnostic(
+            "generative-preflight",
+            "routed-context-schema",
+            "disallowed-field",
+            Some("routed_context"),
+            Some(routed_context_field_pointer(field)),
+            diagnostic_value("field", "declared"),
+            diagnostic_value("field", "unknown-field"),
+        ));
+    }
+    if object.get("contract") != Some(&json!(ROUTED_CONTEXT_CONTRACT)) {
+        return Some(policy_diagnostic(
+            "generative-preflight",
+            "routed-context-schema",
+            "wrong-contract",
+            Some("routed_context"),
+            Some("/contract"),
+            diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+            diagnostic_value("contract", safe_contract_value(object.get("contract"))),
+        ));
+    }
+    for field in [
+        "job",
+        "persona",
+        "scope",
+        "product_foundation",
+        "product_foundation_load_order",
+        "entries",
+        "gaps",
+        "policy",
+    ] {
+        if !object.contains_key(field) {
+            return Some(policy_diagnostic(
+                "generative-preflight",
+                "routed-context-schema",
+                "missing-required-field",
+                Some("routed_context"),
+                Some(routed_context_field_pointer(field)),
+                diagnostic_value("field", "present"),
+                diagnostic_value("field", "missing"),
+            ));
+        }
+    }
+    None
+}
+
+fn routed_context_validation_diagnostic(
+    kind: crate::routing::RoutedContextValidationKind,
+) -> RunDiagnostic {
+    use crate::routing::RoutedContextValidationKind;
+    match kind {
+        RoutedContextValidationKind::Contract => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-schema",
+            "wrong-contract",
+            Some("routed_context"),
+            Some("/contract"),
+            diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+            diagnostic_value("contract", "other"),
+        ),
+        RoutedContextValidationKind::Job => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-readiness",
+            "stale-binding",
+            Some("routed_context"),
+            Some("/job"),
+            diagnostic_value("binding", "matched"),
+            diagnostic_value("binding", "mismatch"),
+        ),
+        RoutedContextValidationKind::Scope => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-readiness",
+            "stale-binding",
+            Some("routed_context"),
+            Some("/scope"),
+            diagnostic_value("binding", "matched"),
+            diagnostic_value("binding", "mismatch"),
+        ),
+        RoutedContextValidationKind::Canonical => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-readiness",
+            "stale-binding",
+            Some("routed_context"),
+            None,
+            diagnostic_value("binding", "canonical"),
+            diagnostic_value("binding", "changed"),
+        ),
+        RoutedContextValidationKind::ReadinessBlocked => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-readiness",
+            "readiness-failure",
+            Some("routed_context"),
+            None,
+            diagnostic_value("readiness", "ready"),
+            diagnostic_value("readiness", "blocked"),
+        ),
+        RoutedContextValidationKind::Schema | RoutedContextValidationKind::NotCompiled => {
+            policy_diagnostic(
+                "generative-preflight",
+                "routed-context-schema",
+                "internal-contract-mismatch",
+                Some("routed_context"),
+                None,
+                diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+                diagnostic_value("contract", "unavailable"),
+            )
+        }
+    }
+}
+
 fn validate_generative_input_gates(
     staged_pack: &Path,
     manifest: &crate::models::Manifest,
@@ -1915,10 +2247,47 @@ fn validate_generative_input_gates(
             "routed_context" | "routed-context"
         )
     }) {
-        validate_input_type(input, ROUTED_CONTEXT_CONTRACT, "application/json")
-            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "routed-context-invalid"))?;
+        if input.authority.schema_id != ROUTED_CONTEXT_CONTRACT
+            || input.authority.media_type != "application/json"
+        {
+            return Err(run_failure_with_diagnostic(
+                RunFailureKind::PolicyBlocked,
+                "routed-context-invalid",
+                policy_diagnostic(
+                    "generative-preflight",
+                    "routed-context-schema",
+                    "wrong-contract",
+                    Some("routed_context"),
+                    Some("/contract"),
+                    diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+                    diagnostic_value("contract", "declared-input-mismatch"),
+                ),
+            ));
+        }
         let bytes = fs::read(&input.staged_path)
             .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "routed-context-invalid"))?;
+        let value = serde_json::from_slice::<Value>(&bytes).map_err(|_| {
+            run_failure_with_diagnostic(
+                RunFailureKind::PolicyBlocked,
+                "routed-context-invalid",
+                policy_diagnostic(
+                    "generative-preflight",
+                    "routed-context-schema",
+                    "malformed-json",
+                    Some("routed_context"),
+                    None,
+                    diagnostic_value("json-type", "object"),
+                    diagnostic_value("json-type", "malformed"),
+                ),
+            )
+        })?;
+        if let Some(diagnostic) = routed_context_shape_diagnostic(&value) {
+            return Err(run_failure_with_diagnostic(
+                RunFailureKind::PolicyBlocked,
+                "routed-context-invalid",
+                diagnostic,
+            ));
+        }
         let validation = crate::routing::validate_routed_context_bytes_for_job(
             staged_pack,
             manifest,
@@ -1932,12 +2301,25 @@ fn validate_generative_input_gates(
                 }
                 _ => "routed-context-invalid",
             };
-            run_failure(RunFailureKind::PolicyBlocked, code)
+            run_failure_with_diagnostic(
+                RunFailureKind::PolicyBlocked,
+                code,
+                routed_context_validation_diagnostic(error.kind()),
+            )
         })?;
         if validation.sha256 != input.authority.sha256 {
-            return Err(run_failure(
+            return Err(run_failure_with_diagnostic(
                 RunFailureKind::PolicyBlocked,
                 "routed-context-invalid",
+                policy_diagnostic(
+                    "generative-preflight",
+                    "routed-context-readiness",
+                    "stale-binding",
+                    Some("routed_context"),
+                    None,
+                    diagnostic_value("binding", "matched"),
+                    diagnostic_value("binding", "changed"),
+                ),
             ));
         }
     }
@@ -1950,26 +2332,56 @@ fn validate_step_inputs(step: &CompiledModelStepV1, staged: &[StagedInput]) -> R
         .iter()
         .map(|input| input.name.as_str())
         .collect::<HashSet<_>>();
-    if staged.iter().any(|input| {
+    if let Some(input) = staged.iter().find(|input| {
         is_host_invocation_metadata(&input.logical_name)
             || !declared.contains(input.logical_name.as_str())
     }) {
-        return Err(run_failure(
+        return Err(run_failure_with_diagnostic(
             RunFailureKind::PolicyBlocked,
             "undeclared-model-input",
+            policy_diagnostic(
+                "generative-preflight",
+                "declared-inputs",
+                "disallowed-field",
+                safe_logical_input_name(&input.logical_name),
+                Some("/unknown-field"),
+                diagnostic_value("field", "declared"),
+                diagnostic_value("field", "unknown-field"),
+            ),
         ));
     }
-    if step.declared_inputs.iter().any(|input| {
+    if let Some(input) = step.declared_inputs.iter().find(|input| {
         input.required
             && !is_host_invocation_metadata(&input.name)
             && !staged.iter().any(|item| item.logical_name == input.name)
     }) {
-        return Err(run_failure(
+        return Err(run_failure_with_diagnostic(
             RunFailureKind::PolicyBlocked,
             "required-model-input-missing",
+            policy_diagnostic(
+                "generative-preflight",
+                "declared-inputs",
+                "missing-required-field",
+                safe_logical_input_name(&input.name),
+                None,
+                diagnostic_value("binding", "declared"),
+                diagnostic_value("binding", "missing"),
+            ),
         ));
     }
     Ok(())
+}
+
+fn safe_logical_input_name(name: &str) -> Option<&'static str> {
+    match name {
+        "routed_context" | "routed-context" => Some("routed_context"),
+        "prompt" => Some("prompt"),
+        "prompt_receipt" | "prompt-receipt" => Some("prompt_receipt"),
+        "invocation_receipt_sha256" | "invocation-receipt-sha256" => {
+            Some("invocation_receipt_sha256")
+        }
+        _ => None,
+    }
 }
 
 fn is_host_invocation_metadata(name: &str) -> bool {
@@ -3119,7 +3531,8 @@ mod tests {
         RunFailure, execute_run_inner, execute_run_inner_with_driver,
         governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
         project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
-        seal_driver_request, seal_driver_result, validate_driver_result, validate_request,
+        routed_context_shape_diagnostic, routed_context_validation_diagnostic, seal_driver_request,
+        seal_driver_result, validate_driver_result, validate_request,
     };
     use crate::commands::init::init_pack;
     use crate::run_contracts::{
@@ -3132,6 +3545,75 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn policy_diagnostics_use_bounded_allowlisted_values() {
+        for code in [
+            "malformed-json",
+            "wrong-contract",
+            "missing-required-field",
+            "disallowed-field",
+            "readiness-failure",
+            "stale-binding",
+            "internal-contract-mismatch",
+        ] {
+            let failure = RunFailure::new(
+                super::RunFailureKind::PolicyBlocked,
+                "routed-context-invalid",
+            );
+            let diagnostic = if code == "wrong-contract" {
+                super::policy_diagnostic(
+                    "generative-preflight",
+                    "routed-context-schema",
+                    code,
+                    Some("routed_context"),
+                    Some("/contract"),
+                    super::diagnostic_value("contract", super::ROUTED_CONTEXT_CONTRACT),
+                    super::diagnostic_value("contract", "missing"),
+                )
+            } else {
+                failure.diagnostics()[0].clone()
+            };
+            let encoded = serde_json::to_value(diagnostic).expect("diagnostic should serialize");
+            assert!(encoded["stage"].is_string());
+            assert!(encoded["gate"].is_string());
+            assert!(encoded["input"].is_null() || encoded["input"] == "routed_context");
+            assert!(
+                !serde_json::to_string(&encoded)
+                    .unwrap()
+                    .contains("/private/customer")
+            );
+        }
+        let fallback = RunFailure::new(
+            super::RunFailureKind::PolicyBlocked,
+            "required-model-input-missing",
+        );
+        assert_eq!(fallback.diagnostics()[0].expected.kind, "count");
+        assert!(
+            serde_json::to_vec(fallback.diagnostics()).unwrap().len()
+                <= super::MAX_POLICY_DIAGNOSTIC_BYTES
+        );
+    }
+
+    #[test]
+    fn routed_context_diagnostics_redact_unknown_keys_and_classify_bindings() {
+        let mut wrong =
+            serde_json::json!({"contract": "mdp.routed-context.v1", "job": "synthetic-job"});
+        wrong["attacker_secret"] = serde_json::json!("PRIVATE-SOURCE-BODY");
+        let diagnostic = routed_context_shape_diagnostic(&wrong).expect("unknown field diagnostic");
+        assert_eq!(diagnostic.code, "disallowed-field");
+        assert_eq!(diagnostic.field, Some("/unknown-field"));
+        assert!(
+            !serde_json::to_string(&diagnostic)
+                .unwrap()
+                .contains("attacker_secret")
+        );
+        let stale = routed_context_validation_diagnostic(
+            crate::routing::RoutedContextValidationKind::Canonical,
+        );
+        assert_eq!(stale.code, "stale-binding");
+        assert_eq!(stale.gate, "routed-context-readiness");
+    }
 
     #[test]
     fn rejects_ambient_authority_for_deterministic_run() {

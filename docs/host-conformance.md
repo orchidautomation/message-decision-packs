@@ -90,6 +90,14 @@ MDP hashes the exact provider-request bytes only when the MDP-owned native trans
 
 A host UI may explain a failure, but commentary is not decision authority. Only the CLI-rendered receipt and verification block may authorize downstream use.
 
+For `no-draft:policy-blocked`, consume `authority_block.diagnostics` as a
+bounded explanation of the CLI gate. The stable `reason_codes` and terminal
+state remain authoritative. Diagnostics use logical input names and allowlisted
+contract fields only; hosts must not expect raw bodies, paths, credentials, or
+validator messages. The canonical routed-context gate consumes
+`mdp.routed-context.v1` and its CLI-owned readiness result; it has no top-level
+`status` or `draft_status` requirement. MCP returns this block unchanged.
+
 ## Host Patterns
 
 ### Ephemeral coding agent

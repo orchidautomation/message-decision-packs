@@ -1,7 +1,7 @@
 use crate::artifact_hash::{AuthorityJsonLimits, parse_authority_json};
 use crate::authority::SourceAuthority;
 use crate::run_contracts::RunRequestV1;
-use crate::run_runtime::{RunFailure, RunFailureKind, execute_run};
+use crate::run_runtime::{RunDiagnostic, RunFailure, RunFailureKind, execute_run};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::fs;
@@ -19,20 +19,35 @@ pub(crate) fn run_request_file(request_path: &Path, output_root: &Path) -> Resul
     match execute_run(&request, output_root) {
         Ok(execution) => Ok(serde_json::to_value(execution)?),
         Err(error) => {
-            let (kind, code) = error
-                .downcast_ref::<RunFailure>()
-                .map(|failure| (failure.kind(), failure.code()))
-                .unwrap_or((RunFailureKind::RunnerFailed, "runner-failed"));
-            Ok(failure_result(&request.execution_id, kind, code))
+            if let Some(failure) = error.downcast_ref::<RunFailure>() {
+                Ok(failure_result(
+                    &request.execution_id,
+                    failure.kind(),
+                    failure.code(),
+                    failure.diagnostics(),
+                ))
+            } else {
+                Ok(failure_result(
+                    &request.execution_id,
+                    RunFailureKind::RunnerFailed,
+                    "runner-failed",
+                    &[],
+                ))
+            }
         }
     }
 }
 
 fn preflight_refusal(execution_id: &str, reason_code: &str) -> Value {
-    failure_result(execution_id, RunFailureKind::Preflight, reason_code)
+    failure_result(execution_id, RunFailureKind::Preflight, reason_code, &[])
 }
 
-fn failure_result(execution_id: &str, kind: RunFailureKind, reason_code: &str) -> Value {
+fn failure_result(
+    execution_id: &str,
+    kind: RunFailureKind,
+    reason_code: &str,
+    diagnostics: &[RunDiagnostic],
+) -> Value {
     let (terminal_state, limitation, notice) = match kind {
         RunFailureKind::Preflight => (
             "no-draft:preflight-refused",
@@ -55,6 +70,11 @@ fn failure_result(execution_id: &str, kind: RunFailureKind, reason_code: &str) -
         RunFailureKind::Preflight | RunFailureKind::RunnerFailed => {
             SourceAuthority::unavailable(reason_code, "run-availability")
         }
+    };
+    let diagnostics = if matches!(kind, RunFailureKind::PolicyBlocked) {
+        serde_json::to_value(diagnostics).unwrap_or_else(|_| serde_json::json!([]))
+    } else {
+        serde_json::json!([])
     };
     json!({
         "contract": "mdp.run-execution.v1",
@@ -79,6 +99,7 @@ fn failure_result(execution_id: &str, kind: RunFailureKind, reason_code: &str) -
             "bundle_sha256": null,
             "receipt_sha256": null,
             "verification": null,
+            "diagnostics": diagnostics,
             "authority_notice": notice
         }
     })
@@ -170,6 +191,17 @@ mod tests {
             value["authority_block"]["reason_codes"][0],
             "pack-profile-mismatch"
         );
+        assert_eq!(
+            value["authority_block"]["diagnostics"][0]["stage"],
+            "run-preflight"
+        );
+        assert_eq!(value["authority_block"]["diagnostics"][0]["gate"], "policy");
+        assert_eq!(
+            value["authority_block"]["diagnostics"][0]["code"],
+            "internal-contract-mismatch"
+        );
+        let serialized = serde_json::to_string(&value).unwrap();
+        assert!(!serialized.contains("/private/customer"));
         assert!(!run.exists());
         let _ = fs::remove_dir_all(root);
     }
