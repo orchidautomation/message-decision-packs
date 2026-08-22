@@ -85,6 +85,15 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
         )
         self.assertTrue(any("query_shape typo requires" in error for error in errors))
 
+        payload = copy.deepcopy(self.triggers)
+        case = next(row for row in payload["cases"] if row["id"] == "mdp-operator-train")
+        case["query"] = "This is not a routable request."
+        errors = []
+        HARNESS.validate_triggers(
+            payload, self.coverage, self.skills, self.definitions, errors
+        )
+        self.assertTrue(any("query_shape direct requires" in error for error in errors))
+
     def test_installed_content_drift_fails(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-installed-skills-") as temp:
             installed = Path(temp) / "skills"

@@ -58,6 +58,14 @@ INDIRECT_QUERY_PATTERNS = tuple(
         r"\bsurface .* before final approval",
     )
 )
+DIRECT_QUERY_MARKER = re.compile(
+    r"\b(?:what|which|show|explain|how|coordinate|use|turn|build|create|add|"
+    r"improve|extract|audit|qa|smoke-test|review|test|diagnose|verify|run|"
+    r"check|write|research|upload|give|find|certify|update|tell|help|inspect|"
+    r"interpret|initialize|produce|send|launch|assess|red-team|prioritize|"
+    r"flag|list|approve|fill|scrape|map)\b",
+    re.IGNORECASE,
+)
 HOST_RESULT_KEYS = frozenset(
     {
         "model",
@@ -213,6 +221,10 @@ def validate_query_shape(
         if has_indirect_marker:
             errors.append(
                 f"{case_id}: query_shape direct contains an indirect-intent marker"
+            )
+        if not DIRECT_QUERY_MARKER.search(query):
+            errors.append(
+                f"{case_id}: query_shape direct requires a request/action marker"
             )
 
 
