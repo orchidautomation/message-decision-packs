@@ -567,25 +567,52 @@ fn rebind_chain(
     requirements_sha256: &str,
     job_id: &str,
 ) -> Result<Vec<ChainFile>> {
+    let contracts = compiled["decision_input_contracts"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let contract_versions = contracts
+        .iter()
+        .map(|contract| json!({"id": contract["id"], "version": contract["version"]}))
+        .collect::<Vec<_>>();
+    let normalization = contracts
+        .iter()
+        .map(|contract| {
+            json!({
+                "contract_id": contract["id"],
+                "prompt": contract["normalization"]["prompt"],
+                "prompt_version": contract["normalization"]["prompt_version"]
+            })
+        })
+        .collect::<Vec<_>>();
     let mut binding = inputs[0].clone();
     binding["job_id"] = json!(job_id);
     binding["pack"] = pack.clone();
-    binding["requirements"] = json!({"contract": REQUIREMENTS_CONTRACT_V2, "sha256": requirements_sha256, "decision_input_contracts": compiled["decision_input_contracts"].as_array().into_iter().flatten().map(|contract| json!({"id": contract["id"], "version": contract["version"]})).collect::<Vec<_>>()});
+    binding["requirements"] = json!({"contract": REQUIREMENTS_CONTRACT_V2, "sha256": requirements_sha256, "decision_input_contracts": contract_versions});
     let binding_bytes = serialize(&binding)?;
     let binding_sha256 = sha256_hex(&binding_bytes);
     let mut request = inputs[1].clone();
     request["job_id"] = json!(job_id);
+    request["decision_input_contracts"] = json!(contract_versions);
     request["source_binding_sha256"] = json!(binding_sha256);
     let request_bytes = serialize(&request)?;
     let request_sha256 = sha256_hex(&request_bytes);
     let mut results = inputs[2].clone();
     results["job_id"] = json!(job_id);
+    results["decision_input_contracts"] = json!(contract_versions);
     results["source_binding_sha256"] = json!(binding_sha256);
     results["source_attempt_request_sha256"] = json!(request_sha256);
     let results_bytes = serialize(&results)?;
     let results_sha256 = sha256_hex(&results_bytes);
     let mut normalized = inputs[3].clone();
     normalized["job_id"] = json!(job_id);
+    normalized["decision_input_contracts"] = json!(
+        contracts
+            .iter()
+            .map(|contract| contract["id"].clone())
+            .collect::<Vec<_>>()
+    );
+    normalized["normalization"] = json!(normalization);
     normalized["source_binding_sha256"] = json!(binding_sha256);
     normalized["source_attempt_request_sha256"] = json!(request_sha256);
     normalized["collected_attempt_results_sha256"] = json!(results_sha256);
@@ -1382,6 +1409,97 @@ mod tests {
         let error = validate_synthetic_input(&inputs, "prospect-fit-or-brief", &compiled)
             .expect_err("real provenance must refuse");
         assert_eq!(error.code, "synthetic_chain_real_provenance");
+    }
+
+    #[test]
+    fn rebind_replaces_stale_downstream_contract_lineage() {
+        let root = clay_root();
+        let compiled = requirements(&root, "prospect-fit-or-brief").expect("requirements compile");
+        let manifest = read_manifest(&root).expect("manifest reads");
+        let pack = json!({"id": manifest.id, "version": manifest.version, "sha256": pack_content_sha256(&root).expect("pack hashes")});
+        let requirements_sha256 = compiled["requirements_sha256"].as_str().unwrap();
+        let chain = build_fresh_chain(
+            &compiled,
+            &pack,
+            requirements_sha256,
+            "prospect-fit-or-brief",
+            "2026-01-01T00:00:00Z",
+            0,
+        )
+        .expect("chain builds");
+        let mut inputs: [Value; 4] = chain
+            .iter()
+            .map(|file| file.value.clone())
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("four files");
+        inputs[1]["decision_input_contracts"][0]["version"] = json!("stale-request");
+        inputs[2]["decision_input_contracts"][0]["version"] = json!("stale-results");
+        inputs[3]["decision_input_contracts"] = json!(["stale-contract"]);
+        inputs[3]["normalization"][0]["prompt"] = json!("stale-prompt.yaml");
+        inputs[3]["normalization"][0]["prompt_version"] = json!("stale-prompt-version");
+
+        let rebound = rebind_chain(
+            &inputs,
+            &compiled,
+            &pack,
+            requirements_sha256,
+            "prospect-fit-or-brief",
+        )
+        .expect("chain rebinds");
+        let expected_versions = json!([{
+            "id": compiled["decision_input_contracts"][0]["id"],
+            "version": compiled["decision_input_contracts"][0]["version"]
+        }]);
+        let expected_normalization = json!([{
+            "contract_id": compiled["decision_input_contracts"][0]["id"],
+            "prompt": compiled["decision_input_contracts"][0]["normalization"]["prompt"],
+            "prompt_version": compiled["decision_input_contracts"][0]["normalization"]["prompt_version"]
+        }]);
+        assert_eq!(
+            rebound[0].value["requirements"]["decision_input_contracts"],
+            expected_versions
+        );
+        assert_eq!(
+            rebound[1].value["decision_input_contracts"],
+            expected_versions
+        );
+        assert_eq!(
+            rebound[2].value["decision_input_contracts"],
+            expected_versions
+        );
+        assert_eq!(
+            rebound[3].value["decision_input_contracts"],
+            json!([compiled["decision_input_contracts"][0]["id"]])
+        );
+        assert_eq!(rebound[3].value["normalization"], expected_normalization);
+        assert_eq!(rebound[1].value["source_binding_sha256"], rebound[0].sha256);
+        assert_eq!(rebound[2].value["source_binding_sha256"], rebound[0].sha256);
+        assert_eq!(
+            rebound[2].value["source_attempt_request_sha256"],
+            rebound[1].sha256
+        );
+        assert_eq!(rebound[3].value["source_binding_sha256"], rebound[0].sha256);
+        assert_eq!(
+            rebound[3].value["source_attempt_request_sha256"],
+            rebound[1].sha256
+        );
+        assert_eq!(
+            rebound[3].value["collected_attempt_results_sha256"],
+            rebound[2].sha256
+        );
+        assert!(
+            rebound[3].value["signal_observations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|observation| {
+                    observation["receipt"]["source_binding_sha256"] == rebound[0].sha256
+                        && observation["receipt"]["source_attempt_request_sha256"]
+                            == rebound[1].sha256
+                        && observation["receipt"]["collected_results_sha256"] == rebound[2].sha256
+                })
+        );
     }
 
     #[test]
