@@ -338,7 +338,8 @@ for expected in \
 done
 
 proposal_fixture="$(mktemp -d)"
-trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
+run_fixture="$(mktemp -d)"
+trap 'rm -rf "$proposal_fixture" "$run_fixture"; cleanup' EXIT
 "$mdp_bin" --json init --template proposal --dir "$proposal_fixture" >/tmp/mdp-release-install-init.json
 "$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
 installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
@@ -397,7 +398,11 @@ python3 - "$proposal_fixture/installed-gtm-route-budget.json" <<'PY'
 import json, pathlib, sys
 
 payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
-assert payload["data"]["valid"] is True
+data = payload["data"]
+assert data["valid"] is True
+assert data["route_count"] == 9
+assert data["overflow_count"] == 0
+assert data["near_budget_count"] == 0
 PY
 gtm_budget_summary="$("$mdp_bin" --json --summary route-budget --dir "$installed_gtm_fixture")"
 printf '%s\n' "$gtm_budget_summary" >"$proposal_fixture/installed-gtm-route-budget-summary.json"
@@ -490,6 +495,23 @@ for root_arg in sys.argv[1:4]:
         if gaps_raw.count("id: gaps\n") != 1 or "unresolved-public-authority" in gaps_raw:
             raise SystemExit(f"unexpected gaps card fixture state in {gaps_path}")
         gaps_path.write_text(gaps_raw.rstrip() + "\n" + fixture_entries)
+        # The universal entry is intentionally selected for every persona. Give
+        # this synthetic persona-reference fixture the contract maximum so the
+        # allocator cannot admit another optional entry and remain near-budget.
+        # The shipped starter budgets remain asserted above without adjustment.
+        for old, new in [
+            (
+                "context_budget:\n    max_entries: 53\n    max_bytes: 45881",
+                "context_budget:\n    max_entries: 64\n    max_bytes: 65536",
+            ),
+            (
+                "context_budget:\n    max_entries: 52\n    max_bytes: 55673",
+                "context_budget:\n    max_entries: 64\n    max_bytes: 65536",
+            ),
+        ]:
+            if raw.count(old) != 1:
+                raise SystemExit(f"unexpected universal fixture budget marker count in {path}")
+            raw = raw.replace(old, new)
     path.write_text(raw)
 PY
 
@@ -525,7 +547,12 @@ import pathlib
 import sys
 
 payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
-assert payload["data"]["valid"] is True
+data = payload["data"]
+assert data["valid"] is True
+assert data["route_count"] == 12
+assert data["overflow_count"] == 0
+assert data["near_budget_count"] == 0
+assert data["strict_warnings"] == []
 PY
 then
   echo "Installed CLI route-budget did not accept the universal synthetic fixture." >&2
@@ -591,7 +618,7 @@ PY
 
 for profile in proposal gtm; do
   request="$proposal_fixture/$profile-request.json"
-  run_dir="$proposal_fixture/$profile-run"
+  run_dir="$run_fixture/$profile-run"
   if (cd "$install_home" && "$mdp_bin" --json run --request "$request" --out-dir "$run_dir") >"$proposal_fixture/$profile-run.stdout.json" 2>"$proposal_fixture/$profile-run.stderr"; then
     :
   fi
@@ -612,7 +639,7 @@ open(sys.argv[2], "a").write("\n")
 PY
 mcp_run_stdout="$({
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
-  python3 - "$proposal_fixture/mcp-run-request.json" "$proposal_fixture/mcp-run" <<'PY'
+  python3 - "$proposal_fixture/mcp-run-request.json" "$run_fixture/mcp-run" <<'PY'
 import json, sys
 print(json.dumps({"jsonrpc":"2.0", "id":2, "method":"tools/call", "params": {
     "name":"mdp_run", "arguments":{"request_path":sys.argv[1], "output_dir":sys.argv[2]}}}))
@@ -623,7 +650,7 @@ if ! printf '%s\n' "$mcp_run_stdout" | grep -F '"terminal_state"' >/dev/null; th
   printf '%s\n' "$mcp_run_stdout" >&2
   exit 1
 fi
-test -f "$proposal_fixture/mcp-run/run-receipt.json"
+test -f "$run_fixture/mcp-run/run-receipt.json"
 
 activation_output="$(
   HOME="$install_home" \
