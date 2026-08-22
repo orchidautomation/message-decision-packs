@@ -427,6 +427,26 @@ fn compile_step(
                 )
             })?;
     }
+    let routed_context_required = prompt
+        .inputs
+        .iter()
+        .any(|input| input.required && input.name == "routed_context");
+    let mut declared_inputs = Vec::with_capacity(prompt.inputs.len());
+    let mut declared_names = BTreeSet::new();
+    for mut input in prompt.inputs.iter().cloned() {
+        if let Some(canonical) = canonical_lineage_name(&input.name) {
+            input.name = canonical.to_string();
+        }
+        if !declared_names.insert(input.name.clone()) {
+            return Err(anyhow!(
+                "job {} prompt {} declares duplicate runtime input {}",
+                job.id,
+                input.name,
+                input.name
+            ));
+        }
+        declared_inputs.push(input);
+    }
     let prompt_json = serde_json::to_value(&prompt)?;
     let prompt_sha256 = canonical_json_sha256(&prompt_json)?;
     let output_contract_json = serde_json::to_value(&prompt.output_contract)?;
@@ -437,10 +457,6 @@ fn compile_step(
         .unwrap_or(&path)
         .to_string_lossy()
         .replace('\\', "/");
-    let routed_context_required = prompt
-        .inputs
-        .iter()
-        .any(|input| input.required && input.name == "routed_context");
     Ok(CompiledModelStepV1 {
         contract: COMPILED_MODEL_STEP_V1.to_string(),
         step_id: format!("model:{}/{}", job.id, phase.as_str()),
@@ -452,11 +468,26 @@ fn compile_step(
         prompt_version,
         prompt_path,
         prompt_sha256,
-        declared_inputs: prompt.inputs,
+        declared_inputs,
         routed_context_required,
         output_contract: prompt.output_contract,
         output_contract_sha256,
     })
+}
+
+fn canonical_lineage_name(name: &str) -> Option<&'static str> {
+    match name {
+        "source-binding" | "source_binding" => Some("source-binding"),
+        "source-attempt-request" | "source_attempt_request" => Some("source-attempt-request"),
+        "collected-attempt-results" | "collected_attempt_results" => {
+            Some("collected-attempt-results")
+        }
+        "normalized-decision-input"
+        | "normalized_decision_input"
+        | "normalized-input"
+        | "normalized_input" => Some("normalized-decision-input"),
+        _ => None,
+    }
 }
 
 pub(crate) fn compiled_model_step_schema() -> Value {
@@ -569,6 +600,19 @@ mod tests {
         let resolution = resolve_model_steps(&root, &manifest, &job).unwrap();
         assert_eq!(resolution.status, "unassessed");
         assert!(resolution.steps.is_empty());
+    }
+
+    #[test]
+    fn lineage_input_aliases_compile_to_runtime_canonical_names() {
+        assert_eq!(
+            super::canonical_lineage_name("source_binding"),
+            Some("source-binding")
+        );
+        assert_eq!(
+            super::canonical_lineage_name("normalized_input"),
+            Some("normalized-decision-input")
+        );
+        assert_eq!(super::canonical_lineage_name("operator_input"), None);
     }
 
     #[test]

@@ -225,8 +225,17 @@ fn compile_native_run_request_inner(options: &PrepareRunOptions) -> Result<Compi
         }
         let schema = input_authority(input, &manifest, selected_job)?;
         let sha = sha256_hex(&bytes);
+        let logical_name = canonical_lineage_name(&input.name)
+            .unwrap_or(input.name.as_str())
+            .to_string();
+        if authorities.contains_key(&logical_name) {
+            return Err(diagnostic(
+                "declared-input-duplicate-alias",
+                "mdp requirements --dir <pack> --job <job>",
+            ));
+        }
         let authority = ArtifactAuthority {
-            logical_name: input.name.clone(),
+            logical_name: logical_name.clone(),
             schema_id: schema.0,
             media_type: schema.1,
             byte_count: bytes.len() as u64,
@@ -238,8 +247,8 @@ fn compile_native_run_request_inner(options: &PrepareRunOptions) -> Result<Compi
                 schema.2
             },
         };
-        authorities.insert(input.name.clone(), (authority, stable_path));
-        input_values.push(json!({"name": input.name, "sha256": sha, "bytes": bytes.len()}));
+        authorities.insert(logical_name.clone(), (authority, stable_path));
+        input_values.push(json!({"name": logical_name, "sha256": sha, "bytes": bytes.len()}));
     }
     let identity_tuple = json!({
         "contract": RUN_REQUEST_COMPILE_V1,
@@ -596,13 +605,28 @@ fn write_compiled_request_inner(
             .create_new(true)
             .open(&tmp)
             .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
-        transaction.staged.push(tmp.clone());
+        let staged_identity = match file_identity(&tmp) {
+            Ok(identity) => identity,
+            Err(_) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(diagnostic(
+                    "output-path-unwritable",
+                    "mdp prepare-run --help",
+                ));
+            }
+        };
+        transaction.staged.push(OwnedEntry {
+            path: tmp.clone(),
+            identity: staged_identity,
+        });
         file.write_all(bytes)
             .and_then(|_| file.sync_all())
             .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
         staged.push((tmp, (*path).to_path_buf()));
     }
     for (tmp, path) in &staged {
+        let identity = file_identity(tmp)
+            .map_err(|_| diagnostic("output-transaction-failed", "mdp prepare-run --help"))?;
         if fs::hard_link(tmp, path).is_err() {
             return Err(diagnostic(
                 "output-transaction-failed",
@@ -612,7 +636,10 @@ fn write_compiled_request_inner(
         // Register immediately after the no-replace install succeeds.  If
         // removing the staged inode fails, Drop still removes this owned
         // destination and every remaining staged file.
-        transaction.installed.push(path.clone());
+        transaction.installed.push(OwnedEntry {
+            path: path.clone(),
+            identity,
+        });
         fs::remove_file(tmp)
             .map_err(|_| diagnostic("output-transaction-failed", "mdp prepare-run --help"))?;
     }
@@ -622,9 +649,9 @@ fn write_compiled_request_inner(
 
 #[derive(Default)]
 struct OutputTransactionGuard {
-    staged: Vec<PathBuf>,
-    installed: Vec<PathBuf>,
-    created_dirs: Vec<PathBuf>,
+    staged: Vec<OwnedEntry>,
+    installed: Vec<OwnedEntry>,
+    created_dirs: Vec<OwnedDirectory>,
     committed: bool,
 }
 
@@ -633,15 +660,81 @@ impl Drop for OutputTransactionGuard {
         if self.committed {
             return;
         }
-        for path in self.staged.iter().rev() {
-            let _ = fs::remove_file(path);
+        for entry in self.staged.iter().rev() {
+            remove_owned_file(entry);
         }
-        for path in self.installed.iter().rev() {
-            let _ = fs::remove_file(path);
+        for entry in self.installed.iter().rev() {
+            remove_owned_file(entry);
         }
-        for path in self.created_dirs.iter().rev() {
-            let _ = fs::remove_dir(path);
+        for directory in self.created_dirs.iter().rev() {
+            remove_owned_directory(directory);
         }
+    }
+}
+
+#[derive(Clone)]
+struct OwnedEntry {
+    path: PathBuf,
+    identity: FileIdentity,
+}
+
+#[derive(Clone)]
+struct OwnedDirectory {
+    path: PathBuf,
+    identity: FileIdentity,
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FileIdentity {
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(not(unix))]
+#[derive(Clone, PartialEq, Eq)]
+struct FileIdentity {
+    length: u64,
+    modified: Option<SystemTime>,
+}
+
+fn file_identity(path: &Path) -> std::io::Result<FileIdentity> {
+    let metadata = fs::symlink_metadata(path)?;
+    #[cfg(unix)]
+    {
+        Ok(FileIdentity {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(FileIdentity {
+            length: metadata.len(),
+            modified: metadata.modified().ok(),
+        })
+    }
+}
+
+fn identity_matches(path: &Path, expected: &FileIdentity) -> bool {
+    file_identity(path)
+        .map(|actual| actual == *expected)
+        .unwrap_or(false)
+}
+
+fn remove_owned_file(entry: &OwnedEntry) {
+    if identity_matches(&entry.path, &entry.identity) {
+        let _ = fs::remove_file(&entry.path);
+    }
+}
+
+fn remove_owned_directory(directory: &OwnedDirectory) {
+    if identity_matches(&directory.path, &directory.identity)
+        && fs::read_dir(&directory.path)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false)
+    {
+        let _ = fs::remove_dir(&directory.path);
     }
 }
 
@@ -667,7 +760,20 @@ fn ensure_parent_dirs(parent: &Path, transaction: &mut OutputTransactionGuard) -
     for directory in missing.into_iter().rev() {
         fs::create_dir(&directory)
             .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
-        transaction.created_dirs.push(directory);
+        let identity = match file_identity(&directory) {
+            Ok(identity) => identity,
+            Err(_) => {
+                let _ = fs::remove_dir(&directory);
+                return Err(diagnostic(
+                    "output-path-unwritable",
+                    "mdp prepare-run --help",
+                ));
+            }
+        };
+        transaction.created_dirs.push(OwnedDirectory {
+            path: directory,
+            identity,
+        });
     }
     Ok(())
 }
@@ -884,6 +990,21 @@ fn host_metadata(name: &str) -> bool {
     )
 }
 
+fn canonical_lineage_name(name: &str) -> Option<&'static str> {
+    match name {
+        "source-binding" | "source_binding" => Some("source-binding"),
+        "source-attempt-request" | "source_attempt_request" => Some("source-attempt-request"),
+        "collected-attempt-results" | "collected_attempt_results" => {
+            Some("collected-attempt-results")
+        }
+        "normalized-decision-input"
+        | "normalized_decision_input"
+        | "normalized-input"
+        | "normalized_input" => Some("normalized-decision-input"),
+        _ => None,
+    }
+}
+
 fn diagnostic(code: &str, next: &str) -> anyhow::Error {
     anyhow::Error::new(CompilerError(CompilerDiagnostic {
         code: code.into(),
@@ -1042,14 +1163,59 @@ mod tests {
         std::fs::write(&installed, b"request").unwrap();
         {
             let mut guard = super::OutputTransactionGuard::default();
-            guard.staged.push(staged.clone());
-            guard.installed.push(installed.clone());
-            guard.created_dirs.push(owned_dir.clone());
+            guard.staged.push(super::OwnedEntry {
+                path: staged.clone(),
+                identity: super::file_identity(&staged).unwrap(),
+            });
+            guard.installed.push(super::OwnedEntry {
+                path: installed.clone(),
+                identity: super::file_identity(&installed).unwrap(),
+            });
+            guard.created_dirs.push(super::OwnedDirectory {
+                path: owned_dir.clone(),
+                identity: super::file_identity(&owned_dir).unwrap(),
+            });
         }
         assert!(!staged.exists());
         assert!(!installed.exists());
         assert!(sibling.exists());
         assert!(!owned_dir.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn output_transaction_guard_preserves_replacements_after_rollback() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-prepare-transaction-race-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let owned_dir = root.join("new");
+        let installed = owned_dir.join("request.json");
+        std::fs::create_dir_all(&owned_dir).unwrap();
+        std::fs::write(&installed, b"transaction-owned").unwrap();
+        let mut guard = super::OutputTransactionGuard::default();
+        guard.installed.push(super::OwnedEntry {
+            path: installed.clone(),
+            identity: super::file_identity(&installed).unwrap(),
+        });
+        guard.created_dirs.push(super::OwnedDirectory {
+            path: owned_dir.clone(),
+            identity: super::file_identity(&owned_dir).unwrap(),
+        });
+
+        std::fs::remove_file(&installed).unwrap();
+        std::fs::write(&installed, b"replacement").unwrap();
+        std::fs::remove_dir_all(&owned_dir).unwrap();
+        std::fs::create_dir(&owned_dir).unwrap();
+        std::fs::write(&installed, b"replacement").unwrap();
+        std::fs::write(owned_dir.join("operator-owned.txt"), b"keep").unwrap();
+        drop(guard);
+
+        assert_eq!(std::fs::read(&installed).unwrap(), b"replacement");
+        assert!(owned_dir.join("operator-owned.txt").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 

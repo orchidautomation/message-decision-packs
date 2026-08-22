@@ -34,7 +34,8 @@ use clap::Parser;
 use clap::error::ErrorKind;
 
 fn main() {
-    let json_mode = std::env::args().any(|arg| arg == "--json");
+    let raw_args = std::env::args().collect::<Vec<_>>();
+    let json_mode = raw_args.iter().any(|arg| arg == "--json");
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => {
@@ -44,7 +45,7 @@ fn main() {
             );
             let exit_code = if is_display { 0 } else { 2 };
             if json_mode && !is_display {
-                if std::env::args().any(|arg| arg == "prepare-run") {
+                if is_prepare_run_invocation(&raw_args) {
                     println!(
                         "{}",
                         serde_json::json!({
@@ -94,5 +95,75 @@ fn main() {
             let _ = print_error(json_mode, err);
         }
         std::process::exit(1);
+    }
+}
+
+fn is_prepare_run_invocation(args: &[String]) -> bool {
+    let mut value_expected = false;
+    for argument in args.iter().skip(1) {
+        if value_expected {
+            value_expected = false;
+            continue;
+        }
+        if argument.starts_with('-') {
+            if !argument.contains('=') && option_takes_value(argument) {
+                value_expected = true;
+            }
+            continue;
+        }
+        return argument == "prepare-run";
+    }
+    false
+}
+
+fn option_takes_value(argument: &str) -> bool {
+    matches!(
+        argument,
+        "--dir"
+            | "--job"
+            | "--operation"
+            | "--input"
+            | "--model"
+            | "--retention-policy"
+            | "--created-at"
+            | "--out"
+            | "--manifest-out"
+            | "--request"
+            | "--out-dir"
+            | "--receipt"
+            | "--bundle"
+            | "--artifact-root"
+            | "--scope"
+            | "--text"
+            | "--file"
+            | "--prompt"
+            | "--prompt-id"
+            | "--count"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_prepare_run_invocation;
+
+    #[test]
+    fn parse_envelope_routing_uses_subcommand_position() {
+        let args = |values: &[&str]| -> Vec<String> {
+            values.iter().map(|value| (*value).to_string()).collect()
+        };
+        assert!(is_prepare_run_invocation(&args(&[
+            "mdp",
+            "--json",
+            "prepare-run",
+            "--bad"
+        ])));
+        assert!(!is_prepare_run_invocation(&args(&[
+            "mdp",
+            "--json",
+            "validate",
+            "--dir",
+            "prepare-run",
+            "--bad"
+        ])));
     }
 }
