@@ -69,6 +69,39 @@ mdp --json eval --dir /tmp/mdp-demo
 mdp --json copy --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin
 ```
 
+## Deterministic synthetic v2 chain preparation
+
+For a signal-aware job, `rebind-synthetic-chain` builds a complete public-safe
+fixture outside the pack. It is offline and does not collect evidence, call a
+provider, or make synthetic lineage authoritative:
+
+```bash
+mdp --json schema synthetic-v2-chain
+mdp --json rebind-synthetic-chain \
+  --dir PACK_ROOT --job JOB_ID --out-dir /tmp/mdp-chain \
+  --as-of 2026-01-01T00:00:00Z --seed 0 --dry-run
+mdp --json rebind-synthetic-chain \
+  --dir PACK_ROOT --job JOB_ID --out-dir /tmp/mdp-chain \
+  --as-of 2026-01-01T00:00:00Z --seed 0 --apply
+```
+
+The command stages all four exact-byte artifacts, validates the source binding
+and bound prompt output before any destination write, and reports each emitted
+digest. Repeating the same inputs is an `unchanged` no-op. Rebinding uses
+`--input-dir` only for a chain whose source classes are explicitly
+`synthetic_fixture`, whose locators are opaque and non-URL, and whose normalized
+prospect has `source_kind: synthetic-example` and `synthetic: true`; real,
+customer, private, public-web, URL, or ambiguous provenance is refused. Changed
+files require `--apply --force`; force mode writes digest-keyed backups before
+atomic replacement. Generated output must remain outside `.mdp` and the source
+pack.
+
+The preparation flow is deterministic fit → brief → routed-context → clean-run:
+validate the generated files, run `fit --normalized-input` with all three
+lineage inputs, then use the existing `brief --context`/routed-context and
+clean-run commands. Synthetic validation proves fixture consistency only; it
+does not prove source truth or grant copy authority.
+
 Proposal quick path:
 
 ```bash

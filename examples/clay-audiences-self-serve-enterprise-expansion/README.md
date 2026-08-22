@@ -147,6 +147,45 @@ Pack eval fixtures exercise deterministic `ready`, `insufficient-context`, and
 `disqualified` behavior. The contract matrix covers the pre-evaluation
 `human-review`, `malformed`, and `provider-error` host outcomes.
 
+## Deterministic generated-chain proof
+
+This public-safe pack can produce the complete governed v2 fixture chain without
+provider calls or private inputs. Keep generated files in an external directory
+such as `/tmp/mdp-clay-chain`; do not write them into `.mdp`:
+
+```bash
+mdp --json rebind-synthetic-chain \
+  --dir examples/clay-audiences-self-serve-enterprise-expansion \
+  --job prospect-fit-or-brief --out-dir /tmp/mdp-clay-chain \
+  --as-of 2026-01-01T00:00:00Z --seed 0 --dry-run
+mdp --json rebind-synthetic-chain \
+  --dir examples/clay-audiences-self-serve-enterprise-expansion \
+  --job prospect-fit-or-brief --out-dir /tmp/mdp-clay-chain \
+  --as-of 2026-01-01T00:00:00Z --seed 0 --apply
+mdp --json validate-source-binding \
+  --dir examples/clay-audiences-self-serve-enterprise-expansion \
+  --job prospect-fit-or-brief --file /tmp/mdp-clay-chain/source-binding.json
+mdp --json validate-prompt-output \
+  --dir examples/clay-audiences-self-serve-enterprise-expansion \
+  --prompt .mdp/prompts/normalize-prospect.yaml \
+  --source-binding /tmp/mdp-clay-chain/source-binding.json \
+  --source-attempt-request /tmp/mdp-clay-chain/source-attempt-request.json \
+  --collected-attempt-results /tmp/mdp-clay-chain/collected-attempt-results.json \
+  --file /tmp/mdp-clay-chain/normalized-input.json
+```
+
+The same command supports `--input-dir /tmp/mdp-clay-chain` to rebind a clearly
+synthetic chain after pack drift. It refuses real/customer/public-web/private or
+ambiguous provenance, preserves values and statuses, and repairs only current
+identity pins and exact-byte dependent hashes. `--apply --force` is required to
+replace changed files and creates digest-keyed backups. Replaying the same
+pack/job/as-of/seed reports `unchanged` and writes nothing. This is fixture
+scaffolding only; it does not attest source truth or authorize drafting.
+
+The offline operator sequence remains deterministic fit → brief →
+routed-context → clean-run. Generated fixture validation is the upstream proof;
+fit and later brief/routed-context gates still own decision and draft authority.
+
 ## Portable source-binding proof
 
 Two synthetic integration-owned v2 bindings prove that the public contract is
