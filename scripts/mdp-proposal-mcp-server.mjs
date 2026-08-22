@@ -3,6 +3,12 @@ import { spawn } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  MAX_TIMEOUT_MS as DEADLINE_MAX_TIMEOUT_MS,
+  MIN_TIMEOUT_MS,
+  RECOMMENDED_TIMEOUT_MS,
+  validateTransportTimeout,
+} from './lib/deadline-policy.mjs'
 
 const MCP_PROTOCOL_VERSION = '2025-06-18'
 const SERVER_NAME = 'message-decision-packs-proposal'
@@ -13,8 +19,8 @@ const MAX_SOURCE_COUNT = 16
 const MAX_SOURCE_BYTES = 100_000
 const MAX_SOURCE_FILE_BYTES = 5_000_000
 const MAX_TOTAL_SOURCE_BYTES = 20_000_000
-const DEFAULT_TIMEOUT_MS = 120_000
-const MAX_TIMEOUT_MS = 300_000
+const DEFAULT_TIMEOUT_MS = RECOMMENDED_TIMEOUT_MS
+const MAX_TIMEOUT_MS = DEADLINE_MAX_TIMEOUT_MS
 const TERMINATION_GRACE_MS = 250
 const CHILD_ENV_KEYS = [
   'PATH',
@@ -412,7 +418,7 @@ const proposalRunSchema = {
     },
     timeout_ms: {
       type: 'integer',
-      minimum: 100,
+      minimum: MIN_TIMEOUT_MS,
       maximum: MAX_TIMEOUT_MS,
       description: `Child-process deadline in milliseconds. Defaults to ${DEFAULT_TIMEOUT_MS}.`,
     },
@@ -457,7 +463,7 @@ const proposalRunOutputSchema = {
     canonical_authority: { type: ['object', 'null'] },
     timed_out: { type: 'boolean' },
     termination_signal: { type: ['string', 'null'] },
-    timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
+    timeout_ms: { type: 'integer', minimum: MIN_TIMEOUT_MS, maximum: MAX_TIMEOUT_MS },
     stdout: { type: 'string' },
     stderr: { type: 'string' },
     environment: {
@@ -604,9 +610,7 @@ const callProposalRun = async (args) => {
   const skipReview = optionalBoolean(parsedArgs, 'skip_review')
   const requireAuditGrade = optionalBoolean(parsedArgs, 'require_audit_grade')
   const timeoutMs = optionalInteger(parsedArgs, 'timeout_ms') ?? DEFAULT_TIMEOUT_MS
-  if (timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
-    throw new Error(`timeout_ms must be between 100 and ${MAX_TIMEOUT_MS}`)
-  }
+  validateTransportTimeout(timeoutMs)
   if (cleanRunV1 && !packReleaseId) {
     throw new Error('clean_run_v1 requires pack_release_id')
   }

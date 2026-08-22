@@ -27,8 +27,8 @@ use crate::models::{
     MAX_SIGNAL_QUALIFIED_ID_LEN, SIGNAL_OBSERVATION_CONTRACT_V2,
 };
 use crate::run_contracts::{
-    CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_CONFIGURATION_PROJECTION_V1, DRIVER_REQUEST_V1,
-    DRIVER_REQUEST_V2, DRIVER_RESULT_V1, DRIVER_RESULT_V2, MDP_RUNTIME_VERSION,
+    CANONICAL_AUTHORITY_BLOCK_V1, DEADLINE_OBSERVATION_V1, DRIVER_CONFIGURATION_PROJECTION_V1,
+    DRIVER_REQUEST_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V1, DRIVER_RESULT_V2, MDP_RUNTIME_VERSION,
     MODEL_PARAMETERS_PROJECTION_V1, OPENAI_PROVIDER_REQUEST_SCHEMA_ID, PROPOSAL_RUNNER_RESULT_V1,
     PROVIDER_REQUEST_NOT_OBSERVED_V1, PROVIDER_REQUEST_RELATION_V1, RUN_BUNDLE_V1,
     RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
@@ -123,6 +123,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::DriverRequestV2 => driver_request_v2_schema(),
         SchemaTarget::DriverResultV2 => driver_result_v2_schema(),
         SchemaTarget::RunnerAuditV1 => runner_audit_v1_schema(),
+        SchemaTarget::RunPreflightV1 => run_preflight_v1_schema(),
         SchemaTarget::RunReceiptV1 => run_receipt_v1_schema(),
         SchemaTarget::RunVerificationV1 => run_verification_v1_schema(),
         SchemaTarget::RunExecutionV1 => run_execution_v1_schema(),
@@ -2075,6 +2076,7 @@ fn runner_audit_v1_schema() -> Value {
             "provider_response_body_sha256": optional_sha256_schema(),
             "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
             "identity_observations": nullable_object_schema(identity_observation_v1_schema()),
+            "deadline": nullable_object_schema(deadline_observation_v1_schema()),
             "terminal_state": terminal_state_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array()
@@ -2121,9 +2123,56 @@ fn run_receipt_v1_schema() -> Value {
             "compiled_context": nullable_object_schema(artifact_authority_v1_schema()),
             "validation": nullable_object_schema(artifact_authority_v1_schema()),
             "runner_audit": artifact_authority_v1_schema(),
+            "deadline": nullable_object_schema(deadline_observation_v1_schema()),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array(),
             "receipt_sha256": sha256_schema()
+        }
+    })
+}
+
+fn deadline_observation_v1_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["contract", "outcome", "phase", "elapsed_ms", "configured_limit_ms", "effective_limit_ms", "transport_configured_ms", "runtime_configured_ms", "provider_configured_ms", "finalization_reserve_ms", "terminal_state", "warnings"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": DEADLINE_OBSERVATION_V1},
+            "outcome": {"enum": ["timed-out", "cancelled"]},
+            "phase": {"enum": ["preflight", "staging", "driver", "provider", "validation", "finalization", "cancellation", "transport", "cleanup"]},
+            "elapsed_ms": {"type": "integer", "minimum": 0, "maximum": 9007199254740991_u64},
+            "configured_limit_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
+            "effective_limit_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
+            "transport_configured_ms": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 250, "maximum": 300000}]},
+            "runtime_configured_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+            "provider_configured_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+            "finalization_reserve_ms": {"type": "integer", "minimum": 1, "maximum": 250},
+            "terminal_state": terminal_state_schema(),
+            "warnings": {"type": "array", "maxItems": 2, "items": {"enum": ["outer-timeout-cannot-extend-inner", "outer-timeout-truncates-runtime"]}}
+        }
+    })
+}
+
+fn run_preflight_v1_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Run Preflight v1",
+        "type": "object",
+        "required": ["contract", "execution_id", "mode", "recommended_timeout_ms", "runtime_configured_ms", "transport_configured_ms", "provider_configured_ms", "finalization_reserve_ms", "effective_limit_ms", "warnings", "staging", "provider"],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": "mdp.run-preflight.v1"},
+            "execution_id": non_blank_string_schema(),
+            "mode": {"enum": ["deterministic", "generative"]},
+            "recommended_timeout_ms": {"const": 60000},
+            "runtime_configured_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+            "transport_configured_ms": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 250, "maximum": 300000}]},
+            "provider_configured_ms": {"const": 60000},
+            "finalization_reserve_ms": {"const": 250},
+            "effective_limit_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+            "warnings": {"type": "array", "maxItems": 2, "items": {"enum": ["outer-timeout-cannot-extend-inner", "outer-timeout-truncates-runtime"]}},
+            "staging": {"const": "not-started"},
+            "provider": {"const": "not-started"}
         }
     })
 }
@@ -2203,6 +2252,7 @@ fn canonical_authority_block_v1_schema() -> Value {
             "limitations": string_array(),
             "reason_codes": string_array(),
             "diagnostics": {"type": "array", "maxItems": 4, "items": policy_diagnostic_schema()},
+            "deadline": {"anyOf": [{"type": "null"}, deadline_observation_v1_schema()]},
             "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "verification": {

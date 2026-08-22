@@ -214,3 +214,15 @@ mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation is
 For a named GTM pack, pass `--target-name` explicitly. Repeat `--target-alias` and `--exclude-term` when needed; never force-retarget an existing pack directory.
 
 Write a durable artifact only when the user asks for one or the task requires a repository change.
+
+## Clean-run deadlines
+
+The canonical v1 recommendation is `60_000` ms. Inspect the path-free plan
+with `mdp --json run-preflight --request REQUEST_JSON`; it reports runtime,
+provider, transport, reserve, warnings, and the effective bound without
+staging or invoking a provider. A host may pass
+`--transport-timeout-ms`, but the outer guard cannot extend a tighter runtime
+policy. Timeout/cancellation receipts expose a closed phase/limit observation
+and remain no-draft; old v1 receipts without that optional evidence remain
+readable. Interpret phases as safe runtime checkpoints—blocking filesystem
+syscalls are not preempted.

@@ -1,13 +1,23 @@
 use crate::artifact_hash::{AuthorityJsonLimits, parse_authority_json};
 use crate::authority::SourceAuthority;
 use crate::run_contracts::RunRequestV1;
-use crate::run_runtime::{RunDiagnostic, RunFailure, RunFailureKind, execute_run};
+use crate::run_runtime::{
+    RunDiagnostic, RunFailure, RunFailureKind, deadline_preflight, execute_run_with_transport,
+};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 
 pub(crate) fn run_request_file(request_path: &Path, output_root: &Path) -> Result<Value> {
+    run_request_file_with_transport(request_path, output_root, None)
+}
+
+pub(crate) fn run_request_file_with_transport(
+    request_path: &Path,
+    output_root: &Path,
+    transport_timeout_ms: Option<u64>,
+) -> Result<Value> {
     let bytes = match fs::read(request_path) {
         Ok(bytes) => bytes,
         Err(_) => return Ok(preflight_refusal("unavailable", "request-unreadable")),
@@ -16,7 +26,7 @@ pub(crate) fn run_request_file(request_path: &Path, output_root: &Path) -> Resul
         Ok(request) => request,
         Err(_) => return Ok(preflight_refusal("unavailable", "request-invalid")),
     };
-    match execute_run(&request, output_root) {
+    match execute_run_with_transport(&request, output_root, transport_timeout_ms) {
         Ok(execution) => Ok(serde_json::to_value(execution)?),
         Err(error) => {
             if let Some(failure) = error.downcast_ref::<RunFailure>() {
@@ -25,6 +35,7 @@ pub(crate) fn run_request_file(request_path: &Path, output_root: &Path) -> Resul
                     failure.kind(),
                     failure.code(),
                     failure.diagnostics(),
+                    failure.deadline(),
                 ))
             } else {
                 Ok(failure_result(
@@ -32,14 +43,51 @@ pub(crate) fn run_request_file(request_path: &Path, output_root: &Path) -> Resul
                     RunFailureKind::RunnerFailed,
                     "runner-failed",
                     &[],
+                    None,
                 ))
             }
         }
     }
 }
 
+pub(crate) fn run_preflight_file(
+    request_path: &Path,
+    transport_timeout_ms: Option<u64>,
+) -> Result<Value> {
+    let bytes = match fs::read(request_path) {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(preflight_refusal("unavailable", "request-unreadable")),
+    };
+    let request: RunRequestV1 = match parse_authority_json(&bytes, AuthorityJsonLimits::default()) {
+        Ok(request) => request,
+        Err(_) => return Ok(preflight_refusal("unavailable", "request-invalid")),
+    };
+    match deadline_preflight(&request, transport_timeout_ms) {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            if let Some(failure) = error.downcast_ref::<RunFailure>() {
+                Ok(failure_result(
+                    &request.execution_id,
+                    failure.kind(),
+                    failure.code(),
+                    failure.diagnostics(),
+                    failure.deadline(),
+                ))
+            } else {
+                Ok(preflight_refusal(&request.execution_id, "preflight-failed"))
+            }
+        }
+    }
+}
+
 fn preflight_refusal(execution_id: &str, reason_code: &str) -> Value {
-    failure_result(execution_id, RunFailureKind::Preflight, reason_code, &[])
+    failure_result(
+        execution_id,
+        RunFailureKind::Preflight,
+        reason_code,
+        &[],
+        None,
+    )
 }
 
 fn failure_result(
@@ -47,6 +95,7 @@ fn failure_result(
     kind: RunFailureKind,
     reason_code: &str,
     diagnostics: &[RunDiagnostic],
+    deadline: Option<&crate::run_contracts::DeadlineObservationV1>,
 ) -> Value {
     let (terminal_state, limitation, notice) = match kind {
         RunFailureKind::Preflight => (
@@ -100,6 +149,7 @@ fn failure_result(
             "receipt_sha256": null,
             "verification": null,
             "diagnostics": diagnostics,
+            "deadline": deadline,
             "authority_notice": notice
         }
     })

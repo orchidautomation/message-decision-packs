@@ -375,3 +375,16 @@ diagnostics. Those controls reduce accidental context and credential exposure,
 but they do not prove that a provider call occurred or replace the runner audit,
 artifact hashes, or receipt decision. A timeout, termination, malformed result,
 or `require_audit_grade` mismatch is a tool error and must remain blocked.
+
+### One effective deadline
+
+The canonical clean-run recommendation is `60_000` ms. Use
+`mdp run-preflight --request REQUEST.json` to inspect configured runtime and
+provider limits plus the computed effective limit without staging files or
+invoking a provider. Hosts may add `--transport-timeout-ms`, but that outer
+guard cannot extend a tighter request policy. New timeout and cancellation
+receipts carry a bounded `mdp.deadline-observation.v1` projection with phase,
+elapsed/effective limits, warnings, and the canonical no-draft terminal state.
+Older v1 receipts without this optional projection remain readable; evidence is
+unknown rather than inferred. The clock is checked at safe phase boundaries;
+blocking filesystem syscalls are not claimed to be preemptible.

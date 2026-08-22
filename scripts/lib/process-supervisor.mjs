@@ -145,6 +145,7 @@ export const superviseProcess = ({
   recovery = null,
 }) =>
   new Promise((resolveResult) => {
+    const startedAt = performance.now()
     const stdoutChunks = []
     const stderrChunks = []
     let outputBytes = 0
@@ -210,6 +211,22 @@ export const superviseProcess = ({
           overflowed,
           spawnFailed,
           ...termination,
+          deadline: timedOut
+            ? {
+                contract: 'mdp.deadline-observation.v1',
+                outcome: 'timed-out',
+                phase: 'transport',
+                elapsed_ms: Math.min(timeoutMs, Math.max(0, Math.round(performance.now() - startedAt))),
+                configured_limit_ms: timeoutMs,
+                effective_limit_ms: timeoutMs,
+                transport_configured_ms: timeoutMs,
+                runtime_configured_ms: timeoutMs,
+                provider_configured_ms: timeoutMs,
+                finalization_reserve_ms: 250,
+                terminal_state: 'no-draft:runner-failed',
+                warnings: [],
+              }
+            : null,
         })
       if (escalationPromise) escalationPromise.then(finish)
       else finish()

@@ -18,9 +18,10 @@ use crate::constants::{
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
 use crate::run_contracts::{
-    ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState,
-    DRIVER_CONFIGURATION_PROJECTION_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V2, DecisionAuthority,
-    DriverArtifactV2, DriverConfigurationProjectionV1, DriverOutputV2, DriverProviderObservationV2,
+    ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState, DEADLINE_OBSERVATION_V1,
+    DRIVER_CONFIGURATION_PROJECTION_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V2, DeadlineObservationV1,
+    DeadlineOutcome, DeadlinePhase, DecisionAuthority, DriverArtifactV2,
+    DriverConfigurationProjectionV1, DriverOutputV2, DriverProviderObservationV2,
     DriverProviderPolicyV2, DriverRequestV2, DriverResultV2, EvidenceProvenance,
     IdentityObservationV1, MDP_RUNTIME_VERSION, MODEL_PARAMETERS_PROJECTION_V1,
     ModelParametersFactsV1, ModelParametersProjectionV1, OPENAI_PROVIDER_REQUEST_SCHEMA_ID,
@@ -64,6 +65,8 @@ const MAX_POLICY_DIAGNOSTIC_BYTES: usize = 4096;
 const MAX_DIAGNOSTIC_INPUT_BYTES: usize = 64;
 const DRIVER_RESULT_ENVELOPE_BYTES: u64 = 64 * 1024;
 const MAX_FINALIZATION_RESERVE_MS: u64 = 250;
+pub(crate) const RECOMMENDED_TIMEOUT_MS: u64 = 60_000;
+const MAX_TRANSPORT_TIMEOUT_MS: u64 = 300_000;
 const OFFICIAL_OPENAI_RESPONSES_ENDPOINT: &str = "https://api.openai.com/v1/responses";
 const NATIVE_SUBPROCESS_REQUEST_V1: &str = "mdp.native-model-subprocess-request.v1";
 const NATIVE_SUBPROCESS_RESULT_V1: &str = "mdp.native-model-subprocess-result.v1";
@@ -123,6 +126,7 @@ pub(crate) struct RunFailure {
     kind: RunFailureKind,
     code: &'static str,
     diagnostics: Vec<RunDiagnostic>,
+    deadline: Option<DeadlineObservationV1>,
 }
 
 impl RunFailure {
@@ -136,6 +140,7 @@ impl RunFailure {
             kind,
             code,
             diagnostics,
+            deadline: None,
         }
     }
 
@@ -152,6 +157,7 @@ impl RunFailure {
             } else {
                 Vec::new()
             },
+            deadline: None,
         };
         failure.bound_diagnostics();
         failure
@@ -167,6 +173,10 @@ impl RunFailure {
 
     pub(crate) fn diagnostics(&self) -> &[RunDiagnostic] {
         &self.diagnostics
+    }
+
+    pub(crate) fn deadline(&self) -> Option<&DeadlineObservationV1> {
+        self.deadline.as_ref()
     }
 
     fn bound_diagnostics(&mut self) {
@@ -198,6 +208,16 @@ fn run_failure_with_diagnostic(
     diagnostic: RunDiagnostic,
 ) -> anyhow::Error {
     anyhow::Error::new(RunFailure::with_diagnostic(kind, code, diagnostic))
+}
+
+fn run_failure_with_deadline(
+    kind: RunFailureKind,
+    code: &'static str,
+    deadline: DeadlineObservationV1,
+) -> anyhow::Error {
+    let mut failure = RunFailure::new(kind, code);
+    failure.deadline = Some(deadline);
+    anyhow::Error::new(failure)
 }
 
 fn diagnostic_value(kind: &'static str, value: &'static str) -> DiagnosticValue {
@@ -331,48 +351,125 @@ fn source_integrity_input_diagnostic(input: &StagedInput) -> RunDiagnostic {
     source_integrity_diagnostic(&input.logical_name)
 }
 
+#[derive(Debug)]
 struct RunDeadline {
     started_at: Instant,
-    budget: Duration,
+    runtime_configured_ms: u64,
+    transport_configured_ms: Option<u64>,
+    provider_configured_ms: u64,
+    finalization_reserve_ms: u64,
+    effective_limit_ms: u64,
+    warnings: Vec<String>,
 }
 
 struct TransactionOutcome {
     bundle_sha256: String,
     receipt: RunReceiptV1,
     diagnostics: Vec<RunDiagnostic>,
+    deadline: Option<DeadlineObservationV1>,
 }
 
 impl RunDeadline {
-    fn new(timeout_ms: u64) -> Self {
-        Self {
-            started_at: Instant::now(),
-            budget: Duration::from_millis(timeout_ms),
+    fn try_new(runtime_configured_ms: u64, transport_configured_ms: Option<u64>) -> Result<Self> {
+        if runtime_configured_ms < MAX_FINALIZATION_RESERVE_MS {
+            return Err(run_failure(
+                RunFailureKind::Preflight,
+                "deadline-reserve-underflow",
+            ));
         }
+        if let Some(transport) = transport_configured_ms {
+            if !(MAX_FINALIZATION_RESERVE_MS..=MAX_TRANSPORT_TIMEOUT_MS).contains(&transport) {
+                return Err(run_failure(
+                    RunFailureKind::Preflight,
+                    "transport-timeout-invalid",
+                ));
+            }
+        }
+        let transport_effective =
+            transport_configured_ms.map(|value| value.saturating_sub(MAX_FINALIZATION_RESERVE_MS));
+        let effective_limit_ms =
+            runtime_configured_ms.min(transport_effective.unwrap_or(runtime_configured_ms).max(1));
+        let mut warnings = Vec::new();
+        if let Some(transport) = transport_configured_ms {
+            if transport_effective.is_some_and(|value| value < runtime_configured_ms) {
+                warnings.push("outer-timeout-truncates-runtime".into());
+            } else if transport > runtime_configured_ms {
+                warnings.push("outer-timeout-cannot-extend-inner".into());
+            }
+        }
+        Ok(Self {
+            started_at: Instant::now(),
+            runtime_configured_ms,
+            transport_configured_ms,
+            provider_configured_ms: RECOMMENDED_TIMEOUT_MS,
+            finalization_reserve_ms: MAX_FINALIZATION_RESERVE_MS,
+            effective_limit_ms,
+            warnings,
+        })
     }
 
-    fn check(&self) -> Result<()> {
-        if self.started_at.elapsed() >= self.budget {
-            return Err(run_failure(
+    fn check_phase(&self, phase: DeadlinePhase) -> Result<()> {
+        if self.started_at.elapsed() >= Duration::from_millis(self.effective_limit_ms) {
+            return Err(run_failure_with_deadline(
                 RunFailureKind::RunnerFailed,
                 "execution-timeout",
+                self.observation(
+                    DeadlineOutcome::TimedOut,
+                    phase,
+                    TerminalState::NoDraftRunnerFailed,
+                ),
             ));
         }
         Ok(())
     }
 
     fn expired(&self) -> bool {
-        self.started_at.elapsed() >= self.budget
+        self.started_at.elapsed() >= Duration::from_millis(self.effective_limit_ms)
     }
 
     fn driver_timeout_ms(&self) -> Option<u64> {
         let elapsed = self.started_at.elapsed();
-        let remaining = self.budget.checked_sub(elapsed)?;
-        let reserve_ms =
-            MAX_FINALIZATION_RESERVE_MS.min((self.budget.as_millis() as u64 / 10).max(1));
+        let remaining = Duration::from_millis(self.effective_limit_ms).checked_sub(elapsed)?;
+        let reserve_ms = MAX_FINALIZATION_RESERVE_MS
+            .min(self.effective_limit_ms / 10)
+            .max(1);
         let driver_budget = remaining.checked_sub(Duration::from_millis(reserve_ms))?;
         u64::try_from(driver_budget.as_millis())
             .ok()
             .filter(|value| *value > 0)
+    }
+
+    fn remaining_ms(&self) -> u64 {
+        Duration::from_millis(self.effective_limit_ms)
+            .checked_sub(self.started_at.elapsed())
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+            .unwrap_or(0)
+    }
+
+    fn observation(
+        &self,
+        outcome: DeadlineOutcome,
+        phase: DeadlinePhase,
+        terminal_state: TerminalState,
+    ) -> DeadlineObservationV1 {
+        DeadlineObservationV1 {
+            contract: DEADLINE_OBSERVATION_V1.into(),
+            outcome,
+            phase,
+            elapsed_ms: self
+                .started_at
+                .elapsed()
+                .as_millis()
+                .min(u128::from(self.effective_limit_ms)) as u64,
+            configured_limit_ms: self.runtime_configured_ms,
+            effective_limit_ms: self.effective_limit_ms,
+            transport_configured_ms: self.transport_configured_ms,
+            runtime_configured_ms: self.runtime_configured_ms,
+            provider_configured_ms: self.provider_configured_ms,
+            finalization_reserve_ms: self.finalization_reserve_ms,
+            terminal_state,
+            warnings: self.warnings.clone(),
+        }
     }
 }
 
@@ -1026,7 +1123,41 @@ fn resolve_node_executable() -> Result<PathBuf> {
 }
 
 pub(crate) fn execute_run(request: &RunRequestV1, output_root: &Path) -> Result<RunExecution> {
-    execute_run_inner(request, output_root, || Ok(()))
+    execute_run_with_transport(request, output_root, None)
+}
+
+pub(crate) fn execute_run_with_transport(
+    request: &RunRequestV1,
+    output_root: &Path,
+    transport_timeout_ms: Option<u64>,
+) -> Result<RunExecution> {
+    execute_run_inner_with_transport(request, output_root, || Ok(()), transport_timeout_ms)
+}
+
+/// Read-only, path-free deadline preflight. It intentionally does not inspect
+/// the pack or declared inputs; normal run preflight remains authoritative for
+/// those boundaries.
+pub(crate) fn deadline_preflight(
+    request: &RunRequestV1,
+    transport_timeout_ms: Option<u64>,
+) -> Result<Value> {
+    validate_request(request)
+        .map_err(|_| run_failure(RunFailureKind::Preflight, "request-policy-invalid"))?;
+    let deadline = RunDeadline::try_new(request.execution_policy.timeout_ms, transport_timeout_ms)?;
+    Ok(json!({
+        "contract": "mdp.run-preflight.v1",
+        "execution_id": request.execution_id,
+        "mode": request.mode,
+        "recommended_timeout_ms": RECOMMENDED_TIMEOUT_MS,
+        "runtime_configured_ms": request.execution_policy.timeout_ms,
+        "transport_configured_ms": transport_timeout_ms,
+        "provider_configured_ms": RECOMMENDED_TIMEOUT_MS,
+        "finalization_reserve_ms": MAX_FINALIZATION_RESERVE_MS,
+        "effective_limit_ms": deadline.effective_limit_ms,
+        "warnings": deadline.warnings,
+        "staging": "not-started",
+        "provider": "not-started"
+    }))
 }
 
 fn execute_run_inner<F>(
@@ -1037,11 +1168,24 @@ fn execute_run_inner<F>(
 where
     F: FnOnce() -> Result<()>,
 {
-    execute_run_inner_with_driver(
+    execute_run_inner_with_transport(request, output_root, before_post_check, None)
+}
+
+fn execute_run_inner_with_transport<F>(
+    request: &RunRequestV1,
+    output_root: &Path,
+    before_post_check: F,
+    transport_timeout_ms: Option<u64>,
+) -> Result<RunExecution>
+where
+    F: FnOnce() -> Result<()>,
+{
+    execute_run_inner_with_driver_and_transport(
         request,
         output_root,
         before_post_check,
         invoke_native_driver,
+        transport_timeout_ms,
     )
 }
 
@@ -1055,9 +1199,29 @@ where
     F: FnOnce() -> Result<()>,
     D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
 {
+    execute_run_inner_with_driver_and_transport(
+        request,
+        output_root,
+        before_post_check,
+        driver,
+        None,
+    )
+}
+
+fn execute_run_inner_with_driver_and_transport<F, D>(
+    request: &RunRequestV1,
+    output_root: &Path,
+    before_post_check: F,
+    driver: D,
+    transport_timeout_ms: Option<u64>,
+) -> Result<RunExecution>
+where
+    F: FnOnce() -> Result<()>,
+    D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
+{
     validate_request(request)
         .map_err(|_| run_failure(RunFailureKind::Preflight, "request-policy-invalid"))?;
-    let deadline = RunDeadline::new(request.execution_policy.timeout_ms);
+    let deadline = RunDeadline::try_new(request.execution_policy.timeout_ms, transport_timeout_ms)?;
     let final_dir = output_root;
     validate_output_outside_pack(request, final_dir)?;
     if final_dir.exists() {
@@ -1123,12 +1287,13 @@ where
         )
     })?;
     set_private_directory(&transaction_dir)?;
-    deadline.check()?;
+    deadline.check_phase(DeadlinePhase::Staging)?;
 
     let TransactionOutcome {
         bundle_sha256,
         receipt,
         diagnostics,
+        deadline: transaction_deadline,
     } = match execute_transaction(
         request,
         &transaction_dir,
@@ -1143,7 +1308,7 @@ where
         }
     };
     if request.mode == RunMode::Deterministic
-        && let Err(error) = deadline.check()
+        && let Err(error) = deadline.check_phase(DeadlinePhase::Finalization)
     {
         cleanup_failed_transaction(&transaction_dir)?;
         return Err(error);
@@ -1181,6 +1346,7 @@ where
         "limitations": receipt.limitations,
         "bundle_sha256": bundle_sha256,
         "receipt_sha256": receipt.receipt_sha256,
+        "deadline": transaction_deadline,
         "verification": {
             "bundle": output_root.join("run-bundle.json"),
             "receipt": output_root.join("run-receipt.json"),
@@ -1267,11 +1433,11 @@ where
     let source_pack = Path::new(&request.pack_dir);
     validate_pack_source_bounds(source_pack)
         .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "pack-boundary-refused"))?;
-    deadline.check()?;
+    deadline.check_phase(DeadlinePhase::Staging)?;
     let source_snapshot = pack_content_snapshot(source_pack)?;
     validate_pack_snapshot_bounds(&source_snapshot)?;
     copy_pack(source_pack, &staged_pack)?;
-    deadline.check()?;
+    deadline.check_phase(DeadlinePhase::Staging)?;
     let staged_snapshot = pack_content_snapshot(&staged_pack)?;
     if source_snapshot != staged_snapshot {
         return Err(run_failure_with_diagnostic(
@@ -1295,7 +1461,7 @@ where
 
     let staged = stage_inputs(request, &staged_inputs)
         .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "declared-input-refused"))?;
-    deadline.check()?;
+    deadline.check_phase(DeadlinePhase::Staging)?;
     let staged_prompt = match request.prompt.as_ref() {
         Some(prompt) => Some(stage_local_artifact(
             prompt,
@@ -1618,7 +1784,11 @@ where
         (TerminalState::NoDraftPolicyBlocked, None)
     };
     if request.mode == RunMode::Deterministic {
-        deadline.check()?;
+        if deadline.check_phase(DeadlinePhase::Validation).is_err() {
+            terminal_state = TerminalState::NoDraftRunnerFailed;
+            success_values = None;
+            validation = None;
+        }
     } else if deadline.expired() {
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
@@ -1627,7 +1797,11 @@ where
 
     before_post_check()?;
     if request.mode == RunMode::Deterministic {
-        deadline.check()?;
+        if deadline.check_phase(DeadlinePhase::Finalization).is_err() {
+            terminal_state = TerminalState::NoDraftRunnerFailed;
+            success_values = None;
+            validation = None;
+        }
     } else if deadline.expired() {
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
@@ -1681,6 +1855,21 @@ where
         None
     };
 
+    let deadline_observation = (deadline.expired()
+        || (request.mode == RunMode::Generative
+            && terminal_state == TerminalState::NoDraftRunnerFailed
+            && deadline.remaining_ms() <= MAX_FINALIZATION_RESERVE_MS))
+        .then(|| {
+            deadline.observation(
+                DeadlineOutcome::TimedOut,
+                if request.mode == RunMode::Generative {
+                    DeadlinePhase::Provider
+                } else {
+                    DeadlinePhase::Validation
+                },
+                TerminalState::NoDraftRunnerFailed,
+            )
+        });
     let assurance = assurance_dimensions(
         request.mode,
         terminal_state,
@@ -1703,6 +1892,7 @@ where
         provider_response_body_sha256,
         provider_observation,
         identity_observations,
+        deadline: deadline_observation.clone(),
         terminal_state,
         assurance: assurance.clone(),
         limitations: vec![
@@ -1774,6 +1964,7 @@ where
         compiled_context,
         validation: validation_authority,
         runner_audit: audit_authority,
+        deadline: deadline_observation.clone(),
         assurance,
         limitations: audit.limitations,
         receipt_sha256: String::new(),
@@ -1795,6 +1986,7 @@ where
         bundle_sha256,
         receipt,
         diagnostics,
+        deadline: deadline_observation,
     })
 }
 
@@ -3625,7 +3817,7 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        RunFailure, RunFailureKind, execute_run_inner, execute_run_inner_with_driver,
+        RunDeadline, RunFailure, RunFailureKind, execute_run_inner, execute_run_inner_with_driver,
         governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
         project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
         routed_context_shape_diagnostic, routed_context_validation_diagnostic, seal_driver_request,
@@ -3642,6 +3834,26 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn deadline_plan_exposes_one_effective_bound_and_outer_warning() {
+        let plan = RunDeadline::try_new(60_000, Some(120_000)).unwrap();
+        assert_eq!(plan.effective_limit_ms, 60_000);
+        assert!(plan.driver_timeout_ms().unwrap() <= 59_750);
+        assert_eq!(plan.warnings, vec!["outer-timeout-cannot-extend-inner"]);
+        let shorter = RunDeadline::try_new(60_000, Some(30_000)).unwrap();
+        assert_eq!(shorter.effective_limit_ms, 29_750);
+        assert_eq!(shorter.warnings, vec!["outer-timeout-truncates-runtime"]);
+    }
+
+    #[test]
+    fn deadline_plan_rejects_reserve_underflow() {
+        let error = RunDeadline::try_new(249, None).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<RunFailure>().unwrap().code(),
+            "deadline-reserve-underflow"
+        );
+    }
 
     #[test]
     fn policy_diagnostics_use_bounded_allowlisted_values() {

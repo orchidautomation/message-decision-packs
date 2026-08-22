@@ -824,7 +824,7 @@ const buildCleanRunV1Request = ({ args, packRoot, runState, paths }) => ({
     authorized_endpoints: [],
     max_input_bytes: 20_000_000,
     max_output_bytes: 1_048_576,
-    timeout_ms: 30_000,
+    timeout_ms: 60_000,
     retention_policy: 'customer-controlled-workdir',
   },
   driver: null,
@@ -1092,11 +1092,20 @@ const run = async (args) => {
     )
     const cleanRun = await runProcess({
       command: mdpCommand,
-      args: ['--json', 'run', '--request', paths.cleanRunRequest, '--out-dir', paths.cleanRunDir],
+      args: [
+        '--json',
+        'run',
+        '--request',
+        paths.cleanRunRequest,
+        '--out-dir',
+        paths.cleanRunDir,
+        '--transport-timeout-ms',
+        '60000',
+      ],
       stdoutPath: paths.cleanRunStdout,
       stderrPath: paths.cleanRunStderr,
       allowNonZero: true,
-      timeoutMs: 120_000,
+      timeoutMs: 60_000,
       recovery: { outputDir: paths.cleanRunDir, executionId: runState.manifest.run_id },
     })
     canonicalRun = parseCliData(paths.cleanRunStdout)

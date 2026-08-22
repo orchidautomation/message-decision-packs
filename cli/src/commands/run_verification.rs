@@ -494,6 +494,9 @@ fn verify_runner_audit(
     if audit.limitations != receipt.limitations {
         issues.push("runner-audit-limitations-mismatch".to_string());
     }
+    if audit.deadline != receipt.deadline {
+        issues.push("runner-audit-deadline-mismatch".to_string());
+    }
 }
 
 fn verify_identity_observations(
@@ -1008,6 +1011,7 @@ mod tests {
                 resolved_model: Some("gpt-5-mini".into()),
             }),
             identity_observations: Some(observation.clone()),
+            deadline: None,
             terminal_state: TerminalState::Success,
             assurance: vec![],
             limitations: vec![],
@@ -1279,6 +1283,7 @@ mod tests {
             compiled_context: Some(artifact_or_placeholder(root, "context.json")),
             validation: Some(artifact_or_placeholder(root, "validation.json")),
             runner_audit: artifact_or_placeholder(root, "audit.json"),
+            deadline: None,
             assurance: recompute_assurance(
                 bundle.mode,
                 TerminalState::Success,
@@ -1366,6 +1371,7 @@ mod tests {
             provider_response_body_sha256: None,
             provider_observation: None,
             identity_observations: None,
+            deadline: None,
             terminal_state: receipt.terminal_state,
             assurance: receipt.assurance.clone(),
             limitations: vec![],

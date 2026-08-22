@@ -21,14 +21,19 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { superviseProcess } from './lib/process-supervisor.mjs'
+import {
+  MAX_TIMEOUT_MS,
+  MIN_TIMEOUT_MS,
+  RECOMMENDED_TIMEOUT_MS,
+  validateTransportTimeout,
+} from './lib/deadline-policy.mjs'
 
 const MCP_PROTOCOL_VERSION = '2025-06-18'
 const SERVER_NAME = 'message-decision-packs-runner'
 const MAX_JSON_RPC_LINE_BYTES = 1_000_000
 const MAX_REQUEST_FILE_BYTES = 1_048_576
 const MAX_CHILD_BUFFER_BYTES = 1_000_000
-const DEFAULT_TIMEOUT_MS = 120_000
-const MAX_TIMEOUT_MS = 300_000
+const DEFAULT_TIMEOUT_MS = RECOMMENDED_TIMEOUT_MS
 const JSON_RPC_PARSE_ERROR = -32700
 const JSON_RPC_INVALID_REQUEST = -32600
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -267,9 +272,9 @@ const tools = [
         },
         timeout_ms: {
           type: 'integer',
-          minimum: 100,
+          minimum: MIN_TIMEOUT_MS,
           maximum: MAX_TIMEOUT_MS,
-          description: `CLI deadline. Defaults to ${DEFAULT_TIMEOUT_MS}ms.`,
+          description: `Transport guard in milliseconds. The canonical Rust recommendation is ${DEFAULT_TIMEOUT_MS}ms.`,
         },
       },
     },
@@ -287,7 +292,7 @@ const tools = [
         bundle_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-bundle.v1 file.' },
         receipt_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-receipt.v1 file.' },
         artifact_root: { type: 'string', description: 'Optional existing, non-symlink artifact directory.' },
-        timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
+        timeout_ms: { type: 'integer', minimum: MIN_TIMEOUT_MS, maximum: MAX_TIMEOUT_MS },
       },
     },
   },
@@ -319,16 +324,14 @@ const callRun = async (args) => {
   const requestPath = requiredString(parsed, 'request_path')
   const outputDir = canonicalNewOutputDir(requiredString(parsed, 'output_dir'))
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
-    throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
-  }
+  validateTransportTimeout(timeoutMs)
   const frozenRequest = freezeRequestFile(requestPath)
 
   let invocation
   try {
     assertOutputOutsidePack(frozenRequest.packDir, outputDir)
     invocation = await invokeCli(
-      ['--json', 'run', '--request', frozenRequest.path, '--out-dir', outputDir],
+      ['--json', 'run', '--request', frozenRequest.path, '--out-dir', outputDir, '--transport-timeout-ms', String(timeoutMs)],
       dirname(outputDir),
       timeoutMs,
       {
@@ -347,7 +350,7 @@ const callRun = async (args) => {
       : invocation.overflowed
         ? 'cli-output-limit'
         : 'cli-unavailable'
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code, deadline: invocation.deadline }, true)
   }
 
   let envelope
@@ -359,6 +362,7 @@ const callRun = async (args) => {
         ok: false,
         contract: 'mdp.run-mcp-error.v1',
         code: invocation.status === 0 ? 'invalid-cli-output' : 'cli-run-failed',
+        deadline: invocation.deadline,
       },
       true,
     )
@@ -375,7 +379,7 @@ const callRun = async (args) => {
     Array.isArray(envelope.data.authority_block) ||
     envelope.data.authority_block.terminal_state !== envelope.data.terminal_state
   ) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', deadline: invocation.deadline }, true)
   }
 
   const success =
@@ -409,7 +413,7 @@ const callRun = async (args) => {
         envelope.data.authority?.terminal === 'authority-unavailable' &&
         envelope.data.authority?.governed_generation === 'absent'))
   if (!success && !completedNoDraft && !failedNoDraft) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', deadline: invocation.deadline }, true)
   }
 
   // A canonical no-draft result is decision data, not an MCP transport error.
@@ -427,21 +431,19 @@ const callVerifyRun = async (args) => {
     ? null
     : canonicalExistingDir(requiredString(parsed, 'artifact_root'), 'artifact_root')
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
-    throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
-  }
+  validateTransportTimeout(timeoutMs)
   const cliArgs = ['--json', 'verify-run', '--bundle', bundlePath, '--receipt', receiptPath]
   if (artifactRoot) cliArgs.push('--artifact-root', artifactRoot)
   const invocation = await invokeCli(cliArgs, dirname(bundlePath), timeoutMs)
   if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
     const code = invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable'
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code, deadline: invocation.deadline }, true)
   }
   let envelope
   try {
     envelope = JSON.parse(invocation.stdout)
   } catch {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output', deadline: invocation.deadline }, true)
   }
   if (
     envelope?.ok !== true ||
@@ -453,7 +455,7 @@ const callVerifyRun = async (args) => {
     typeof envelope.data.valid !== 'boolean' ||
     (invocation.status === 0) !== envelope.data.valid
   ) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', deadline: invocation.deadline }, true)
   }
   // An invalid verification is a canonical integrity result, not an MCP
   // transport failure. Preserve it exactly so the caller can fail closed on
