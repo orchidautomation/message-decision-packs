@@ -5440,6 +5440,58 @@ mod tests {
     }
 
     #[test]
+    fn governed_artifact_classifies_wrong_routed_context_contract_at_contract_path() {
+        let root = temp_pack("governed-context-contract-mismatch");
+        let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))
+            .expect("prompt should load");
+        let context_path = write_ready_routed_context(&root, "outbound-copy-brief");
+        let mut context: Value =
+            serde_json::from_slice(&std::fs::read(&context_path).expect("context should load"))
+                .expect("context should parse");
+        context["contract"] = json!("mdp.routed-context.v0");
+        let context_bytes =
+            crate::artifact_hash::canonical_json_bytes(&context).expect("context should serialize");
+        std::fs::write(&context_path, &context_bytes).expect("context should write");
+
+        let mut output = ready_governed_example(&prompt);
+        output["context_sha256"] = json!(sha256_hex(&context_bytes));
+        let (receipt_path, receipt_sha256) = write_governed_invocation_receipt(
+            &root,
+            &prompt,
+            "outbound-copy-brief",
+            &["routed_context", "normalized_prospect"],
+        );
+        output["invocation_receipt_sha256"] = json!(receipt_sha256);
+        let output_path = write_json_output(&root, "governed-artifact.json", &output);
+
+        let result = validate_prompt_output_file_with_inputs(
+            &root,
+            &output_path,
+            None,
+            Some(prompt.id.as_str()),
+            None,
+            None,
+            None,
+            Some(&receipt_path),
+            Some(&context_path),
+        )
+        .expect("validation should return diagnostics");
+
+        let issue = result["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .find(|issue| issue["code"] == "governed_artifact_routed_context_contract_mismatch")
+            .expect("wrong contract should retain its governed diagnostic");
+        assert_eq!(
+            issue["path"],
+            format!("{}#/contract", context_path.display())
+        );
+        assert_eq!(result["valid"], false);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn governed_artifact_rejects_self_consistent_host_authored_context() {
         let root = temp_pack("governed-host-authored-context");
         let prompt = read_prompt(&root.join(".mdp/prompts/generate-outbound-copy.yaml"))

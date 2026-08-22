@@ -630,6 +630,15 @@ pub(crate) fn validate_routed_context_value_for_job(
     raw_sha256: &str,
     job: &str,
 ) -> std::result::Result<RoutedContextValidation, RoutedContextValidationError> {
+    if value
+        .get("contract")
+        .and_then(Value::as_str)
+        .is_some_and(|contract| contract != ROUTED_CONTEXT_CONTRACT)
+    {
+        return Err(RoutedContextValidationError::new(
+            RoutedContextValidationKind::Contract,
+        ));
+    }
     jsonschema::draft202012::validate(&routed_context_schema(), value)
         .map_err(|_| RoutedContextValidationError::new(RoutedContextValidationKind::Schema))?;
     if value["contract"] != ROUTED_CONTEXT_CONTRACT {
@@ -2740,6 +2749,35 @@ mod tests {
             validate_routed_context_bytes_for_job(&root, &manifest, &bytes, "outbound-copy-brief")
                 .expect("exact producer bytes should validate");
         assert_eq!(valid.sha256, sha256_hex(&bytes));
+
+        let mut wrong_contract = context.clone();
+        wrong_contract["contract"] = json!("mdp.routed-context.v0");
+        let wrong_contract_bytes =
+            canonical_json_bytes(&wrong_contract).expect("wrong contract should serialize");
+        assert_eq!(
+            validate_routed_context_bytes_for_job(
+                &root,
+                &manifest,
+                &wrong_contract_bytes,
+                "outbound-copy-brief",
+            )
+            .expect_err("wrong contract must fail closed")
+            .kind(),
+            RoutedContextValidationKind::Contract
+        );
+
+        let malformed_bytes = br#"{\"contract\":\"mdp.routed-context.v1\"}"#;
+        assert_eq!(
+            validate_routed_context_bytes_for_job(
+                &root,
+                &manifest,
+                malformed_bytes,
+                "outbound-copy-brief",
+            )
+            .expect_err("schema-invalid context must fail closed")
+            .kind(),
+            RoutedContextValidationKind::Schema
+        );
 
         let mut wrong_job = context.clone();
         wrong_job["job"] = json!("prospect-fit-or-brief");
