@@ -33,6 +33,7 @@ use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -360,6 +361,7 @@ struct RunDeadline {
     finalization_reserve_ms: u64,
     effective_limit_ms: u64,
     warnings: Vec<String>,
+    phase: Cell<DeadlinePhase>,
 }
 
 struct TransactionOutcome {
@@ -382,7 +384,7 @@ impl RunDeadline {
             ));
         }
         if let Some(transport) = transport_configured_ms {
-            if !(MAX_FINALIZATION_RESERVE_MS..=MAX_TRANSPORT_TIMEOUT_MS).contains(&transport) {
+            if !(MAX_FINALIZATION_RESERVE_MS + 1..=MAX_TRANSPORT_TIMEOUT_MS).contains(&transport) {
                 return Err(run_failure(
                     RunFailureKind::Preflight,
                     "transport-timeout-invalid",
@@ -392,7 +394,7 @@ impl RunDeadline {
         let transport_effective =
             transport_configured_ms.map(|value| value.saturating_sub(MAX_FINALIZATION_RESERVE_MS));
         let effective_limit_ms =
-            runtime_configured_ms.min(transport_effective.unwrap_or(runtime_configured_ms).max(1));
+            runtime_configured_ms.min(transport_effective.unwrap_or(runtime_configured_ms));
         let mut warnings = Vec::new();
         if let Some(transport) = transport_configured_ms {
             if transport_effective.is_some_and(|value| value < runtime_configured_ms) {
@@ -409,10 +411,12 @@ impl RunDeadline {
             finalization_reserve_ms: MAX_FINALIZATION_RESERVE_MS,
             effective_limit_ms,
             warnings,
+            phase: Cell::new(DeadlinePhase::Preflight),
         })
     }
 
     fn check_phase(&self, phase: DeadlinePhase) -> Result<()> {
+        self.phase.set(phase);
         if self.started_at.elapsed() >= Duration::from_millis(self.effective_limit_ms) {
             return Err(run_failure_with_deadline(
                 RunFailureKind::RunnerFailed,
@@ -434,10 +438,8 @@ impl RunDeadline {
     fn driver_timeout_ms(&self) -> Option<u64> {
         let elapsed = self.started_at.elapsed();
         let remaining = Duration::from_millis(self.effective_limit_ms).checked_sub(elapsed)?;
-        let reserve_ms = MAX_FINALIZATION_RESERVE_MS
-            .min(self.effective_limit_ms / 10)
-            .max(1);
-        let driver_budget = remaining.checked_sub(Duration::from_millis(reserve_ms))?;
+        let driver_budget =
+            remaining.checked_sub(Duration::from_millis(MAX_FINALIZATION_RESERVE_MS))?;
         u64::try_from(driver_budget.as_millis())
             .ok()
             .filter(|value| *value > 0)
@@ -448,6 +450,14 @@ impl RunDeadline {
             .checked_sub(self.started_at.elapsed())
             .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
             .unwrap_or(0)
+    }
+
+    fn mark_phase(&self, phase: DeadlinePhase) {
+        self.phase.set(phase);
+    }
+
+    fn current_phase(&self) -> DeadlinePhase {
+        self.phase.get()
     }
 
     fn observation(
@@ -519,6 +529,7 @@ struct NativeSubprocessRequestV1<'a> {
     output_schema_sha256: &'a str,
     schema_name: String,
     timeout_ms: u64,
+    deadline_at_ms: u64,
     max_output_tokens: u64,
 }
 
@@ -668,6 +679,12 @@ fn prepare_native_request(
         output_schema_sha256: &provider_output_schema_sha256,
         schema_name: schema_name.clone(),
         timeout_ms: request.execution_policy.timeout_ms,
+        deadline_at_ms: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "driver-timeout-invalid"))?
+            .as_millis()
+            .saturating_add(u128::from(request.execution_policy.timeout_ms))
+            .min(u128::from(u64::MAX)) as u64,
         max_output_tokens: provider_max_output_tokens(request.execution_policy.max_output_bytes),
     };
     if serde_json::to_vec(&native)?.len() > MAX_NATIVE_SERIALIZED_REQUEST_BYTES {
@@ -872,6 +889,15 @@ fn invoke_native_driver(
         &request.prompt_invocation.content_utf8,
         &visible_inputs,
     );
+    let deadline_at = Instant::now()
+        .checked_add(Duration::from_millis(request.provider_policy.timeout_ms))
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "driver-timeout-invalid"))?;
+    let deadline_at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "driver-timeout-invalid"))?
+        .as_millis()
+        .saturating_add(u128::from(request.provider_policy.timeout_ms))
+        .min(u128::from(u64::MAX)) as u64;
     let native = NativeSubprocessRequestV1 {
         contract: NATIVE_SUBPROCESS_REQUEST_V1,
         execution_id: &request.execution_id,
@@ -884,6 +910,7 @@ fn invoke_native_driver(
         output_schema_sha256: &request.provider_output_schema_sha256,
         schema_name: format!("mdp_{}", request.operation.replace([':', '/', '-'], "_")),
         timeout_ms: request.provider_policy.timeout_ms,
+        deadline_at_ms,
         max_output_tokens: provider_max_output_tokens(request.provider_policy.max_output_bytes),
     };
     let request_bytes = serde_json::to_vec(&native)?;
@@ -916,11 +943,7 @@ fn invoke_native_driver(
         .write_all(&request_bytes)
         .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "driver-stdin-failed"))?;
     let driver_stdout_limit = driver_stdout_limit(request.provider_policy.max_output_bytes)?;
-    let (status, stdout_bytes) = supervise_child(
-        &mut child,
-        request.provider_policy.timeout_ms,
-        driver_stdout_limit,
-    )?;
+    let (status, stdout_bytes) = supervise_child(&mut child, deadline_at, driver_stdout_limit)?;
     if !status.success() {
         return Err(run_failure(
             RunFailureKind::RunnerFailed,
@@ -1036,7 +1059,7 @@ fn driver_stdout_limit(max_output_bytes: u64) -> Result<u64> {
 
 fn supervise_child(
     child: &mut Child,
-    timeout_ms: u64,
+    deadline: Instant,
     stdout_limit: u64,
 ) -> Result<(ExitStatus, Vec<u8>)> {
     let stdout = child
@@ -1052,9 +1075,6 @@ fn supervise_child(
             .map(|_| bytes);
         let _ = stdout_tx.send(result);
     });
-    let deadline = Instant::now()
-        .checked_add(Duration::from_millis(timeout_ms))
-        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "driver-timeout-invalid"))?;
     let (status, stdout_bytes) = loop {
         if let Ok(result) = stdout_rx.try_recv() {
             let bytes = result
@@ -1791,6 +1811,7 @@ where
         validation = None;
     }
 
+    deadline.mark_phase(DeadlinePhase::Finalization);
     before_post_check()?;
     if request.mode == RunMode::Deterministic {
         if deadline.check_phase(DeadlinePhase::Finalization).is_err() {
@@ -1802,6 +1823,9 @@ where
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
         validation = None;
+    }
+    if !deadline.expired() {
+        deadline.mark_phase(DeadlinePhase::Cleanup);
     }
     let staged_pack_after = pack_content_snapshot(&staged_pack)?;
     let source_pack_after = pack_content_snapshot(source_pack)?;
@@ -1836,6 +1860,9 @@ where
         success_values = None;
     }
 
+    if !deadline.expired() {
+        deadline.mark_phase(DeadlinePhase::Validation);
+    }
     let validation_authority = if let Some(value) = validation {
         let path = artifacts_dir.join("validation.json");
         write_json_create_new(&path, &value)?;
@@ -1858,11 +1885,7 @@ where
         .then(|| {
             deadline.observation(
                 DeadlineOutcome::TimedOut,
-                if request.mode == RunMode::Generative {
-                    DeadlinePhase::Provider
-                } else {
-                    DeadlinePhase::Validation
-                },
+                deadline.current_phase(),
                 TerminalState::NoDraftRunnerFailed,
             )
         });
@@ -2107,15 +2130,35 @@ where
     if driver_timeout_ms.is_none() {
         return failed_generative_outcome(driver_request, "driver_budget_exhausted");
     }
+    deadline.mark_phase(DeadlinePhase::Driver);
     let result = match driver(&driver_request, driver_identity) {
         Ok(result) => result,
-        Err(_) => {
-            return failed_generative_outcome(driver_request, "driver_invocation_failed");
+        Err(error) => {
+            let code = error
+                .downcast_ref::<RunFailure>()
+                .map(RunFailure::code)
+                .unwrap_or("driver_invocation_failed");
+            if matches!(
+                code,
+                "cancelled" | "driver-cancelled" | "provider-cancelled"
+            ) {
+                return Err(run_failure_with_deadline(
+                    RunFailureKind::RunnerFailed,
+                    "cancelled",
+                    deadline.observation(
+                        DeadlineOutcome::Cancelled,
+                        deadline.current_phase(),
+                        TerminalState::NoDraftRunnerFailed,
+                    ),
+                ));
+            }
+            return failed_generative_outcome(driver_request, code);
         }
     };
     if deadline.expired() {
-        return failed_generative_outcome(driver_request, "driver_deadline_exhausted");
+        return failed_generative_outcome(driver_request, "driver-timeout");
     }
+    deadline.mark_phase(DeadlinePhase::Validation);
     if validate_driver_result(&driver_request, &result).is_err() {
         return Ok(GenerativeOutcome {
             terminal_state: TerminalState::NoDraftRunnerFailed,
@@ -4027,6 +4070,7 @@ mod tests {
         let plan = RunDeadline::try_new(60_000, Some(120_000)).unwrap();
         assert_eq!(plan.effective_limit_ms, 60_000);
         assert!(plan.driver_timeout_ms().unwrap() <= 59_750);
+        assert!(plan.driver_timeout_ms().unwrap() >= 59_700);
         assert_eq!(plan.warnings, vec!["outer-timeout-cannot-extend-inner"]);
         let shorter = RunDeadline::try_new(60_000, Some(30_000)).unwrap();
         assert_eq!(shorter.effective_limit_ms, 29_750);
@@ -4040,6 +4084,20 @@ mod tests {
             error.downcast_ref::<RunFailure>().unwrap().code(),
             "deadline-reserve-underflow"
         );
+    }
+
+    #[test]
+    fn deadline_plan_rejects_limits_that_cannot_preserve_fixed_reserve() {
+        for transport in [Some(250), Some(0)] {
+            let error = RunDeadline::try_new(60_000, transport).unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<RunFailure>().unwrap().code(),
+                "transport-timeout-invalid"
+            );
+        }
+        let plan = RunDeadline::try_new(1_000, None).unwrap();
+        assert!(plan.driver_timeout_ms().unwrap() <= 750);
+        assert!(plan.driver_timeout_ms().unwrap() >= 700);
     }
 
     #[test]
@@ -5367,7 +5425,12 @@ mod tests {
             .spawn()
             .unwrap();
         let started = std::time::Instant::now();
-        let error = super::supervise_child(&mut child, 25, 1024).unwrap_err();
+        let error = super::supervise_child(
+            &mut child,
+            std::time::Instant::now() + std::time::Duration::from_millis(25),
+            1024,
+        )
+        .unwrap_err();
         assert_eq!(
             error.downcast_ref::<super::RunFailure>().unwrap().code(),
             "driver-timeout"
@@ -5387,7 +5450,12 @@ mod tests {
         // Cold Node startup can exceed two seconds on a contended CI runner.
         // Keep the deadline bounded while giving the child enough time to
         // exercise the stdout limit instead of racing the timeout branch.
-        let error = super::supervise_child(&mut child, 10_000, 128).unwrap_err();
+        let error = super::supervise_child(
+            &mut child,
+            std::time::Instant::now() + std::time::Duration::from_secs(10),
+            128,
+        )
+        .unwrap_err();
         assert_eq!(
             error.downcast_ref::<super::RunFailure>().unwrap().code(),
             "driver-result-too-large"

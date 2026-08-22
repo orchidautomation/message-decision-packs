@@ -143,6 +143,7 @@ export const superviseProcess = ({
   maxOutputBytes,
   terminationGraceMs = DEFAULT_GRACE_MS,
   recovery = null,
+  deadlineMetadata = null,
 }) =>
   new Promise((resolveResult) => {
     const startedAt = performance.now()
@@ -211,20 +212,20 @@ export const superviseProcess = ({
           overflowed,
           spawnFailed,
           ...termination,
-          deadline: timedOut
+          deadline: timedOut && deadlineMetadata
             ? {
                 contract: 'mdp.deadline-observation.v1',
                 outcome: 'timed-out',
                 phase: 'transport',
                 elapsed_ms: Math.min(timeoutMs, Math.max(0, Math.round(performance.now() - startedAt))),
-                configured_limit_ms: timeoutMs,
-                effective_limit_ms: timeoutMs,
-                transport_configured_ms: timeoutMs,
-                runtime_configured_ms: timeoutMs,
-                provider_configured_ms: timeoutMs,
+                configured_limit_ms: deadlineMetadata?.configured_limit_ms ?? timeoutMs,
+                effective_limit_ms: deadlineMetadata?.effective_limit_ms ?? timeoutMs,
+                transport_configured_ms: deadlineMetadata?.transport_configured_ms ?? timeoutMs,
+                runtime_configured_ms: deadlineMetadata?.runtime_configured_ms ?? timeoutMs,
+                provider_configured_ms: deadlineMetadata?.provider_configured_ms ?? timeoutMs,
                 finalization_reserve_ms: 250,
                 terminal_state: 'no-draft:runner-failed',
-                warnings: [],
+                warnings: Array.isArray(deadlineMetadata?.warnings) ? deadlineMetadata.warnings : [],
               }
             : null,
         })

@@ -114,19 +114,23 @@ export const runProcess = async ({
   environment = nonProviderEnvironment(),
   timeoutMs = 120_000,
   recovery = null,
+  deadlineAt = null,
 }) => {
+  const remainingMs = deadlineAt === null
+    ? timeoutMs
+    : Math.max(1, Math.min(timeoutMs, Math.ceil(deadlineAt - performance.now())))
   const result = await superviseProcess({
     command,
     args,
     environment,
-    timeoutMs,
+    timeoutMs: remainingMs,
     maxOutputBytes: 20 * 1024 * 1024,
     recovery,
   })
   if (stdoutPath) writeText(stdoutPath, result.stdout || '')
   if (stderrPath) writeText(stderrPath, result.stderr || '')
   const status = result.status ?? 1
-  if (result.timedOut) fail(`Command timed out after ${timeoutMs}ms: ${command[0]}`)
+  if (result.timedOut) fail(`Command timed out after ${remainingMs}ms: ${command[0]}`)
   if (result.overflowed) fail(`Command exceeded the bounded output limit: ${command[0]}`)
   if (result.spawnFailed) fail(`Failed to run ${command[0]}`)
   if (status !== 0 && !allowNonZero) {

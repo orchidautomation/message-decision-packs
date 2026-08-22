@@ -26,6 +26,19 @@ if (args.includes('verify-run')) {
   if (!data.valid) process.exit(1)
   process.exit(0)
 }
+if (args.includes('run-preflight')) {
+  process.stdout.write(JSON.stringify({ ok: true, command: 'run-preflight', data: {
+    contract: 'mdp.run-preflight.v1',
+    execution_id: 'exec-fixture',
+    runtime_configured_ms: 60000,
+    transport_configured_ms: 60000,
+    provider_configured_ms: 60000,
+    finalization_reserve_ms: 250,
+    effective_limit_ms: 59750,
+    warnings: [],
+  }}))
+  process.exit(0)
+}
 const requestPath = args[args.indexOf('--request') + 1]
 const outputDir = args[args.indexOf('--out-dir') + 1]
 if (existsSync(outputDir + '.pause-before-read')) {
@@ -477,7 +490,7 @@ test('bounds hung and overflowing children', async (t) => {
   writeFileSync(hang, JSON.stringify({ test_mode: 'hang' }))
   writeFileSync(overflow, JSON.stringify({ test_mode: 'overflow' }))
   const replies = await rpc(cli, [
-    toolCall(1, 'mdp_run', { request_path: hang, output_dir: join(root, 'hang-run'), timeout_ms: 250 }),
+    toolCall(1, 'mdp_run', { request_path: hang, output_dir: join(root, 'hang-run'), timeout_ms: 500 }),
     toolCall(2, 'mdp_run', { request_path: overflow, output_dir: join(root, 'overflow-run') }),
   ])
   assert.equal(replies[0].result.structuredContent.code, 'cli-timeout')
@@ -492,7 +505,7 @@ test('keeps SIGKILL escalation alive after the child leader exits', async (t) =>
   const marker = join(root, 'descendant-survived')
   writeFileSync(request, JSON.stringify({ test_mode: 'descendant', marker_path: marker }))
   const [reply] = await rpc(fixtureCli(root), [
-    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run'), timeout_ms: 250 }),
+    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run'), timeout_ms: 500 }),
   ])
   assert.equal(reply.result.structuredContent.code, 'cli-timeout')
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 800))

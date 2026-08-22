@@ -88,9 +88,13 @@ The MCP adapter hardens that local boundary:
 
 - it canonicalizes pack, workdir, source, intake, audit, mock-response, CLI, and native-runner paths; rejects missing/wrong-type paths and final-component symlinks; and never interprets a path as a shell command;
 - it runs the proposal runner with a minimal explicit environment allowlist rather than the MCP host's full environment;
-- it bounds child output and applies a `timeout_ms` deadline (120 seconds by default, 300 seconds maximum), terminating timed-out runs and reporting exit status `124`;
+- it bounds child output and applies one parent `timeout_ms` deadline (60,000ms by default, 300,000ms maximum); every child receives only the remaining budget, timed-out runs are terminated, and exit status `124` is reported;
 - it redacts credential-shaped values from returned diagnostics; and
 - it returns the strict `mdp.proposal-mcp-run-result.v0` envelope with top-level `mode`, `decision`, `audit_grade_eligible`, `runner_assurance`, timeout/termination state, bounded diagnostics, and environment-policy metadata.
+
+Host adapters should use the canonical 60,000ms recommendation. A transport
+timeout is a compatibility boundary: it may truncate the request runtime after
+the fixed finalization reserve, but it cannot extend that inner policy.
 
 Clients should branch on those machine-readable fields, not parse the text
 content. Setting `require_audit_grade: true` fails closed unless this invocation
@@ -320,3 +324,4 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 ```
 
 A merged runner change is shipped to installed users only after a release containing that commit is published and the installer smoke test passes.
+- Host adapters should use the canonical 60,000ms recommendation. A transport timeout is a compatibility boundary: it may truncate the request’s runtime policy after the fixed finalization reserve, but it cannot extend that inner policy.

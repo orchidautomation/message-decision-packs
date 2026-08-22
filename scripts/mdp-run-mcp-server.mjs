@@ -233,7 +233,7 @@ const childEnvironment = (includeNativeModel = false) =>
       .map((key) => [key, process.env[key]]),
   )
 
-const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false) =>
+const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null) =>
   superviseProcess({
     command: [process.env.MDP_BIN || 'mdp'],
     args,
@@ -242,6 +242,7 @@ const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = f
     timeoutMs,
     maxOutputBytes: MAX_CHILD_BUFFER_BYTES,
     recovery,
+    deadlineMetadata,
   })
 
 const tools = [
@@ -330,16 +331,45 @@ const callRun = async (args) => {
   let invocation
   try {
     assertOutputOutsidePack(frozenRequest.packDir, outputDir)
+    const parentDeadline = performance.now() + timeoutMs
+    const preflightBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
+    const preflight = await invokeCli(
+      ['--json', 'run-preflight', '--request', frozenRequest.path, '--transport-timeout-ms', String(timeoutMs)],
+      dirname(outputDir),
+      preflightBudget,
+      null,
+      frozenRequest.usesNativeModel,
+    )
+    if (preflight.timedOut || preflight.overflowed || preflight.spawnFailed) {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: preflight.timedOut ? 'cli-timeout' : 'cli-unavailable' }, true)
+    }
+    let preflightEnvelope
+    try {
+      preflightEnvelope = JSON.parse(preflight.stdout)
+    } catch {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true)
+    }
+    const plan = preflightEnvelope?.data
+    if (
+      preflightEnvelope?.ok !== true ||
+      preflightEnvelope?.command !== 'run-preflight' ||
+      !plan ||
+      plan.contract !== 'mdp.run-preflight.v1'
+    ) {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'run-preflight-refused' }, true)
+    }
+    const runBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
     invocation = await invokeCli(
       ['--json', 'run', '--request', frozenRequest.path, '--out-dir', outputDir, '--transport-timeout-ms', String(timeoutMs)],
       dirname(outputDir),
-      timeoutMs,
+      runBudget,
       {
         outputDir,
         executionId: frozenRequest.executionId,
         requestSha256: frozenRequest.sha256,
       },
       frozenRequest.usesNativeModel,
+      plan,
     )
   } finally {
     rmSync(frozenRequest.privateDir, { recursive: true, force: true })

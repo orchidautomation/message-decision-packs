@@ -300,7 +300,7 @@ pub(crate) enum Commands {
         out_dir: PathBuf,
         #[arg(
             long,
-            help = "Host transport guard in milliseconds; does not replace the request policy"
+            help = "Host transport guard in milliseconds (canonical recommendation: 60000); does not replace the request policy"
         )]
         transport_timeout_ms: Option<u64>,
     },
@@ -308,7 +308,10 @@ pub(crate) enum Commands {
     RunPreflight {
         #[arg(long, help = "mdp.run-request.v1 JSON file")]
         request: PathBuf,
-        #[arg(long, help = "Host transport guard in milliseconds")]
+        #[arg(
+            long,
+            help = "Host transport guard in milliseconds (canonical recommendation: 60000)"
+        )]
         transport_timeout_ms: Option<u64>,
     },
     #[command(about = "Verify proof-carrying generated output against loaded pack IDs")]

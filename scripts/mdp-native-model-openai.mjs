@@ -195,6 +195,7 @@ export const validateNativeModelRequest = (request) => {
     'schema_name',
     'max_output_tokens',
     'timeout_ms',
+    'deadline_at_ms',
     'reasoning',
     'metadata',
   ]), 'request')
@@ -221,6 +222,10 @@ export const validateNativeModelRequest = (request) => {
     request.timeout_ms < 1 ||
     request.timeout_ms > MAX_REQUEST_TIMEOUT_MS
   )) throw new TypeError(`timeout_ms must be between 1 and ${MAX_REQUEST_TIMEOUT_MS}`)
+  if ('deadline_at_ms' in request && (
+    !Number.isSafeInteger(request.deadline_at_ms) ||
+    request.deadline_at_ms < 1
+  )) throw new TypeError('deadline_at_ms must be a positive integer')
   if ('reasoning' in request) validateReasoning(request.reasoning)
   if ('metadata' in request) validateMetadata(request.metadata)
   if (Buffer.byteLength(JSON.stringify(request)) > MAX_REQUEST_BYTES) throw new TypeError('request is too large')
@@ -434,7 +439,9 @@ export const executeNativeModelRequest = async (request, options = {}) => {
         providerBodyText,
         environment: options.environment || process.env,
         fetchImpl: options.fetchImpl || globalThis.fetch,
-        timeoutMs: request.timeout_ms || DEFAULT_REQUEST_TIMEOUT_MS,
+        timeoutMs: request.deadline_at_ms
+          ? Math.max(1, Math.min(request.timeout_ms || DEFAULT_REQUEST_TIMEOUT_MS, request.deadline_at_ms - Date.now()))
+          : request.timeout_ms || DEFAULT_REQUEST_TIMEOUT_MS,
       })
       response = providerResult.response
       providerResponseBodySha256 = providerResult.providerResponseBodySha256

@@ -48,7 +48,7 @@ import {
   readJson,
   readTextExcerpt,
   resolveMdpCommand,
-  runProcess,
+  runProcess as runProcessWithDeadline,
   sha256Buffer,
   sha256File,
   writeJson,
@@ -56,9 +56,15 @@ import {
   writeText,
 } from './lib/proposal-runner-runtime.mjs'
 import { buildProposalReadinessReport } from './lib/proposal-readiness-report.mjs'
+import { RECOMMENDED_TIMEOUT_MS } from './lib/deadline-policy.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
+let activeParentDeadline = null
+const runProcess = (options) => runProcessWithDeadline({
+  ...options,
+  deadlineAt: activeParentDeadline,
+})
 
 const usage = () => `
 Usage:
@@ -879,6 +885,7 @@ const run = async (args) => {
   if (!args.dryRun && !args.mockResponse && !args.sourceIntake) {
     fail('Real native runs require --source-intake with operator-approved entries bound to the staged source bytes.')
   }
+  activeParentDeadline = performance.now() + RECOMMENDED_TIMEOUT_MS
 
   const nativeRunner = resolve(args.nativeRunner || join(scriptDir, 'mdp-native-normalize-openai.mjs'))
   assertFile(nativeRunner, 'native runner')
