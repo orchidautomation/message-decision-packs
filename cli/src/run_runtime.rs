@@ -31,6 +31,7 @@ use crate::run_contracts::{
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -96,7 +97,7 @@ pub(crate) struct RunDiagnostic {
     pub(crate) stage: &'static str,
     pub(crate) gate: &'static str,
     pub(crate) code: &'static str,
-    pub(crate) input: Option<&'static str>,
+    pub(crate) input: Option<Cow<'static, str>>,
     pub(crate) field: Option<&'static str>,
     pub(crate) expected: DiagnosticValue,
     pub(crate) observed: DiagnosticValue,
@@ -225,7 +226,7 @@ fn policy_diagnostic(
         stage,
         gate,
         code,
-        input,
+        input: input.map(Cow::Borrowed),
         field,
         expected,
         observed,
@@ -299,6 +300,12 @@ fn fallback_policy_diagnostic(code: &str) -> RunDiagnostic {
         ),
     };
     policy_diagnostic(stage, gate, category, input, field, expected, observed)
+}
+
+fn source_integrity_diagnostic(input: &StagedInput) -> RunDiagnostic {
+    let mut diagnostic = fallback_policy_diagnostic("source-integrity-failed");
+    diagnostic.input = Some(Cow::Owned(input.logical_name.clone()));
+    diagnostic
 }
 
 struct RunDeadline {
@@ -3295,26 +3302,26 @@ fn stage_local_artifact(
 fn check_sources_unchanged(inputs: &[StagedInput]) -> std::result::Result<(), RunDiagnostic> {
     for input in inputs {
         let metadata = fs::symlink_metadata(&input.source_path)
-            .map_err(|_| fallback_policy_diagnostic("source-integrity-failed"))?;
+            .map_err(|_| source_integrity_diagnostic(input))?;
         let source_bytes = read_bounded(
             &input.source_path,
             input.authority.byte_count,
             "declared input",
         )
-        .map_err(|_| fallback_policy_diagnostic("source-integrity-failed"))?;
+        .map_err(|_| source_integrity_diagnostic(input))?;
         let staged_bytes = read_bounded(
             &input.staged_path,
             input.authority.byte_count,
             "staged input",
         )
-        .map_err(|_| fallback_policy_diagnostic("source-integrity-failed"))?;
+        .map_err(|_| source_integrity_diagnostic(input))?;
         if metadata.file_type().is_symlink()
             || !metadata.is_file()
             || metadata.len() != input.authority.byte_count
             || sha256_hex(&source_bytes) != input.initial_sha256
             || sha256_hex(&staged_bytes) != input.initial_sha256
         {
-            return Err(fallback_policy_diagnostic("source-integrity-failed"));
+            return Err(source_integrity_diagnostic(input));
         }
     }
     Ok(())
@@ -4509,6 +4516,10 @@ mod tests {
         assert_eq!(
             result.authority_block["diagnostics"][0]["stage"],
             "source-integrity"
+        );
+        assert_eq!(
+            result.authority_block["diagnostics"][0]["input"],
+            "prompt-output"
         );
         let _ = fs::remove_dir_all(root);
     }
