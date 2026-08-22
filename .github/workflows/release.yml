@@ -56,6 +56,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Set up Node.js
@@ -82,28 +84,19 @@ jobs:
         run: |
           set -euo pipefail
           tag_name="${GITHUB_REF_NAME}"
+          git fetch origin main --no-tags
+          tag_commit="$(git rev-parse "${tag_name}^{commit}")"
+          main_commit="$(git rev-parse 'origin/main^{commit}')"
+          if [ "$tag_commit" != "$main_commit" ]; then
+            echo "Tag ${tag_name} points to ${tag_commit}, not current origin/main ${main_commit}" >&2
+            exit 1
+          fi
           cli_version="$(grep -E '^version = ' cli/Cargo.toml | head -n1 | sed -E 's/version = "([^"]+)"/\1/')"
           if [ "${tag_name#v}" != "$cli_version" ]; then
             echo "Tag ${tag_name} does not match cli/Cargo.toml version ${cli_version}" >&2
             exit 1
           fi
           echo "version=${cli_version}" >> "$GITHUB_OUTPUT"
-      - name: Run CLI checks
-        run: make validate
-      - name: Validate public skills with skills-ref
-        run: make validate-skill-ref
-      - name: Run Pluxx source diagnostics
-        run: pluxx doctor
-      - name: Run Pluxx release checks
-        run: pluxx test
-      - name: Verify generated skill bundles
-        run: python3 scripts/validate-skill-packaging.py --require-bundles
-      - name: Diagnose built host bundles
-        run: |
-          pluxx doctor --consumer ./dist/claude-code
-          pluxx doctor --consumer ./dist/cursor
-          pluxx doctor --consumer ./dist/codex
-          pluxx doctor --consumer ./dist/opencode
       - name: Publish release assets
         shell: bash
         run: |
