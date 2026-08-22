@@ -3963,6 +3963,189 @@ mod tests {
     }
 
     #[test]
+    fn executable_transaction_publishes_safe_no_draft_for_wrapper_rejections() {
+        let root = temp_path("host-envelope-transaction");
+        let pack = root.join("pack");
+        let routed_context = root.join("routed-context.json");
+        let normalized_prospect = root.join("normalized-prospect.json");
+        let supplied_material = root.join("supplied-material.json");
+        fs::create_dir_all(&root).unwrap();
+        init_pack(&pack, "Host Envelope Pack", "proposal", true, false).unwrap();
+
+        let brief =
+            crate::commands::briefs::emit_brief(&pack, "Proposal Lead", None, Some("proof-review"))
+                .unwrap();
+        let routed_context_bytes =
+            crate::artifact_hash::canonical_json_bytes(&brief["context"]["model_context"]).unwrap();
+        fs::write(&routed_context, &routed_context_bytes).unwrap();
+        fs::write(&normalized_prospect, b"{}\n").unwrap();
+        fs::write(&supplied_material, b"{}\n").unwrap();
+
+        let driver_sha =
+            crate::artifact_hash::sha256_hex(super::BUNDLED_NATIVE_DRIVER_SOURCE.as_bytes());
+        let mut request = RunRequestV1 {
+            contract: "mdp.run-request.v1".into(),
+            execution_id: "host-envelope-transaction".into(),
+            created_at: "2026-08-22T00:00:00Z".into(),
+            profile: "proposal".into(),
+            operation: "model:proof-review/review".into(),
+            mode: RunMode::Generative,
+            job_identity: Some(JobIdentity {
+                job_id: "proof-review".into(),
+                idempotency_key: "host-envelope-transaction".into(),
+            }),
+            pack_dir: pack.display().to_string(),
+            pack_release_id: "host-envelope-test-release".into(),
+            prompt: Some(LocalArtifactInput {
+                logical_name: "review-proposal-proof-v1".into(),
+                source_path: pack
+                    .join(".mdp/prompts/review-proposal-proof.yaml")
+                    .display()
+                    .to_string(),
+                schema_id: "mdp.prompt.v1".into(),
+                media_type: "application/yaml".into(),
+                provenance_refs: vec![],
+            }),
+            inputs: vec![
+                LocalArtifactInput {
+                    logical_name: "routed_context".into(),
+                    source_path: routed_context.display().to_string(),
+                    schema_id: "mdp.routed-context.v1".into(),
+                    media_type: "application/json".into(),
+                    provenance_refs: vec![],
+                },
+                LocalArtifactInput {
+                    logical_name: "normalized_prospect".into(),
+                    source_path: normalized_prospect.display().to_string(),
+                    schema_id: "mdp.synthetic-normalized-prospect.v1".into(),
+                    media_type: "application/json".into(),
+                    provenance_refs: vec![],
+                },
+                LocalArtifactInput {
+                    logical_name: "supplied_material".into(),
+                    source_path: supplied_material.display().to_string(),
+                    schema_id: "mdp.synthetic-supplied-material.v1".into(),
+                    media_type: "application/json".into(),
+                    provenance_refs: vec![],
+                },
+            ],
+            execution_policy: ExecutionPolicy {
+                environment_allowlist: vec!["OPENAI_API_KEY".into()],
+                filesystem_mode: "private-staging".into(),
+                tool_mode: "none".into(),
+                network_mode: "authorized-endpoints-only".into(),
+                authorized_endpoints: vec![super::OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into()],
+                max_input_bytes: 131_072,
+                max_output_bytes: 1_048_576,
+                timeout_ms: 30_000,
+                retention_policy: "receipt-only".into(),
+            },
+            driver: Some(DriverIdentity {
+                driver_id: "mdp-native-openai".into(),
+                implementation: super::BUNDLED_NATIVE_DRIVER_ID.into(),
+                version: super::MDP_RUNTIME_VERSION.into(),
+                build_sha256: None,
+                executable_sha256: Some(driver_sha),
+                image_digest: None,
+                configuration_sha256: "0".repeat(64),
+                dependency_lock_sha256: Some("1".repeat(64)),
+                identity_provenance: EvidenceProvenance::MdpObserved,
+            }),
+            model: Some(ModelIdentity {
+                provider: "openai".into(),
+                requested_model: "gpt-5-mini".into(),
+                resolved_model: None,
+                authorized_endpoint: super::OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into(),
+                parameters_sha256: "2".repeat(64),
+                session_behavior: AssuranceEvidenceState::NotApplicable,
+                cache_behavior: AssuranceEvidenceState::Unknown,
+                storage_behavior: AssuranceEvidenceState::Declared,
+            }),
+        };
+        refresh_test_native_declarations(&mut request);
+
+        for (index, (model_output, diagnostic_code)) in [
+            ("{", "semantic-output-malformed"),
+            (
+                r#"{"contract":"mdp.prompt-output.v0","selected_authority":[],"artifact":{},"gaps":[],"rejected_claims":[]}"#,
+                "host-owned-field-injection",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let run = root.join(format!("published-run-{index}"));
+            let model_output = model_output.to_string();
+            let result = execute_run_inner_with_driver(
+                &request,
+                &run,
+                || Ok(()),
+                move |driver_request, _| {
+                    let mut result = DriverResultV2 {
+                        contract: DRIVER_RESULT_V2.into(),
+                        execution_id: driver_request.execution_id.clone(),
+                        operation: driver_request.operation.clone(),
+                        terminal_state: TerminalState::Success,
+                        output: Some(DriverOutputV2 {
+                            schema_id: "mdp.prompt-output.v0".into(),
+                            media_type: "application/json".into(),
+                            byte_count: model_output.len() as u64,
+                            sha256: crate::artifact_hash::sha256_hex(model_output.as_bytes()),
+                            content_utf8: model_output,
+                        }),
+                        provider_request_body_sha256: Some("3".repeat(64)),
+                        provider_request_schema_id: Some(
+                            "openai.responses.json-schema-request.v1".into(),
+                        ),
+                        provider_response_body_sha256: Some("4".repeat(64)),
+                        provider_output_schema_sha256: Some(
+                            driver_request.provider_output_schema_sha256.clone(),
+                        ),
+                        provider_observation: Some(DriverProviderObservationV2 {
+                            provider: "openai".into(),
+                            response_id: Some("resp_host_transaction".into()),
+                            resolved_model: Some("gpt-5-mini".into()),
+                        }),
+                        diagnostic_code: None,
+                        result_sha256: String::new(),
+                    };
+                    seal_driver_result(&mut result)?;
+                    Ok(result)
+                },
+            )
+            .unwrap();
+
+            assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
+            assert!(run.join("run-bundle.json").is_file());
+            assert!(run.join("runner-audit.json").is_file());
+            assert!(run.join("run-receipt.json").is_file());
+            assert!(!run.join("artifacts/output.json").exists());
+            assert!(!run.join("private").exists());
+
+            let receipt: serde_json::Value =
+                serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap())
+                    .unwrap();
+            assert!(receipt["output"].is_null());
+            assert!(receipt["decision"].is_null());
+            let audit: crate::run_contracts::RunnerAuditV1 =
+                serde_json::from_slice(&fs::read(run.join("runner-audit.json")).unwrap())
+                    .unwrap();
+            assert_eq!(audit.diagnostic_code.as_deref(), Some(diagnostic_code));
+            assert_eq!(audit.provider_response_body_sha256, Some("4".repeat(64)));
+            assert_eq!(
+                crate::commands::run_verification::verify_run_files(
+                    Some(&run.join("run-bundle.json")),
+                    &run.join("run-receipt.json"),
+                    Some(&run),
+                )
+                .unwrap()["valid"],
+                true
+            );
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn driver_result_binds_projected_schema_and_exact_output_bytes() {
         let mut request = sample_driver_request();
         seal_driver_request(&mut request).unwrap();
