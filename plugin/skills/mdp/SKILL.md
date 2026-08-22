@@ -57,6 +57,13 @@ mdp --json verify-run --bundle <new-run-directory>/run-bundle.json \
   --artifact-root <new-run-directory>
 ```
 
+`<new-run-directory>` must be a new directory outside the active pack,
+including when the path uses `..` or a symlink alias. The CLI and MCP adapter
+reject an in-pack output before writing a parent, claim, or transaction.
+Generated run bundles, receipts, traces, and evidence are control-plane
+artifacts, not authored pack content; validation reports existing in-pack
+artifacts for manual relocation and never deletes them.
+
 For `mode: generative`, `operation` must be one stable step ID from
 `requirements.data.model_steps`. One run executes one declared normalization,
 generation, or review step and emits one receipt. The customer host must

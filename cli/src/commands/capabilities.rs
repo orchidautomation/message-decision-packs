@@ -144,6 +144,11 @@ pub(crate) fn capabilities() -> Value {
             "run_receipt": {"contract": RUN_RECEIPT_V1, "schema_target": "run-receipt-v1"},
             "run_verification": {"contract": RUN_VERIFICATION_V1, "schema_target": "run-verification-v1"},
             "run_execution": {"contract": RUN_EXECUTION_V1, "schema_target": "run-execution-v1"},
+            "output_directory": {
+                "policy": "new external directory outside the active pack",
+                "generated_artifact_inside_pack": "output-directory-inside-pack",
+                "cleanup": "validation and preflight never delete existing pack artifacts"
+            },
             "canonical_authority_block": {"contract": CANONICAL_AUTHORITY_BLOCK_V1, "schema_target": "canonical-authority-block-v1"},
             "assurance": "Vector-valued evidence; v0 labels and driver assertions never silently elevate."
         },
@@ -298,6 +303,7 @@ pub(crate) fn capabilities() -> Value {
             {"code": "insufficient_context", "meaning": "A fit or drafting path lacks enough context to proceed"},
             {"code": "route_card_cap_excluded_applicable", "meaning": "The configured route-card cap excluded an otherwise applicable card"},
             {"code": "write_conflict", "meaning": "A write would overwrite an existing file without explicit permission"},
+            {"code": "output-directory-inside-pack", "meaning": "A clean-run output directory resolves to the active pack or one of its descendants"},
             {"code": "invalid_argument", "meaning": "CLI arguments are missing, conflicting, or unsupported"},
             {"code": "mdp_error", "meaning": "Fallback for uncategorized MDP errors"}
         ],

@@ -124,6 +124,13 @@ mdp --json verify-run --bundle NEW_RUN_DIRECTORY/run-bundle.json \
   --artifact-root NEW_RUN_DIRECTORY
 ```
 
+Use an external customer-controlled scratch/work directory for
+`NEW_RUN_DIRECTORY`; it must not equal or descend from `PACK_ROOT`. The CLI
+and MCP adapter canonicalize the relationship, reject unsafe paths before
+writing, and return `output-directory-inside-pack`. Existing generated
+directories under a pack are reported for manual relocation; validation never
+deletes them.
+
 For MCP-capable coding-agent hosts, launch the profile-neutral local stdio
 adapter from the source checkout or installed plugin bundle:
 

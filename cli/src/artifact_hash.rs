@@ -1,4 +1,4 @@
-use crate::constants::DEFAULT_DIR;
+use crate::constants::{DEFAULT_DIR, GENERATED_PACK_DIRECTORIES};
 use anyhow::{Context, Result, anyhow};
 use serde::de::{
     DeserializeOwned, DeserializeSeed, Error as DeError, MapAccess, SeqAccess, Visitor,
@@ -11,7 +11,6 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const GENERATED_PACK_DIRECTORIES: &[&str] = &["briefs", "traces"];
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Clone, Copy, Debug)]

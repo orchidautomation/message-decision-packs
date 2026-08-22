@@ -214,6 +214,38 @@ test('passes only file paths to a bounded CLI child and returns its authority un
   assert.equal(invocation.env_keys.includes('MDP_MCP_SECRET_MARKER'), false)
 })
 
+test('rejects output roots inside the request pack before spawning the CLI', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const cli = fixtureCli(root)
+  const pack = join(root, 'pack')
+  const nested = join(pack, 'nested')
+  const alias = join(root, 'pack-alias')
+  mkdirSync(nested, { recursive: true })
+  symlinkSync(pack, alias)
+  const request = join(root, 'run-request.json')
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', pack_dir: pack }))
+  const unsafe = [
+    join(pack, 'direct-run'),
+    join(pack, 'nested', 'nested-run'),
+    join(pack, '..', 'pack', 'canonical-run'),
+    join(alias, 'symlink-run'),
+  ]
+  const safe = join(root, 'external-scratch', 'safe-run')
+  mkdirSync(dirname(safe), { recursive: true })
+  const replies = await rpc(cli, [
+    ...unsafe.map((output, index) => toolCall(index + 1, 'mdp_run', { request_path: request, output_dir: output })),
+    toolCall(unsafe.length + 1, 'mdp_run', { request_path: request, output_dir: safe }),
+  ])
+  for (const [index, output] of unsafe.entries()) {
+    assert.equal(replies[index].error.code, -32602)
+    assert.match(replies[index].error.message, /outside the active pack/)
+    assert.equal(existsSync(`${output}.invocation.json`), false)
+  }
+  assert.equal(replies[unsafe.length].result.isError, false)
+  assert.equal(existsSync(`${safe}.invocation.json`), true)
+})
+
 test('forwards native model permission and credential only for generative requests', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))

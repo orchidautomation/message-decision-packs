@@ -1,7 +1,8 @@
 use crate::constants::{
-    DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, NORMALIZED_DECISION_INPUT_CONTRACT,
-    NORMALIZED_DECISION_INPUT_CONTRACT_V2, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
-    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, GENERATED_PACK_DIRECTORIES,
+    NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 
 use crate::models::{
@@ -28,7 +29,7 @@ use serde_json::{Value, json};
 use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub(crate) const KNOWN_PRIMITIVES: &[&str] = &[
     "actors",
@@ -339,7 +340,8 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
         &product_foundation_index,
         &mut issues,
     );
-    validate_target_identity(root, &manifest, &mut issues)?;
+    let generated_roots = validate_generated_artifact_boundaries(root, &mut issues)?;
+    validate_target_identity(root, &manifest, &generated_roots, &mut issues)?;
     if let Some(drift_issue) = crate::commands::readme::readme_drift_issue(root) {
         issues.push(drift_issue);
     }
@@ -471,6 +473,7 @@ pub(crate) fn profile_activation_decision(
 fn validate_target_identity(
     root: &Path,
     manifest: &Manifest,
+    generated_roots: &[PathBuf],
     issues: &mut Vec<Value>,
 ) -> Result<()> {
     let Some(target) = manifest.target.as_ref() else {
@@ -555,7 +558,7 @@ fn validate_target_identity(
         }
     }
 
-    let files = target_scan_files(root)?;
+    let files = target_scan_files(root, manifest, generated_roots)?;
     for path in files {
         let display = display_target_scan_path(root, &path);
         for excluded in &target.excluded_terms {
@@ -681,28 +684,165 @@ fn target_source_direct_claims(root: &Path, allowed_ids: &[String]) -> Result<Ve
         .collect())
 }
 
-fn target_scan_files(root: &Path) -> Result<Vec<std::path::PathBuf>> {
-    let mut files = Vec::new();
-    for directory in [root.join(DEFAULT_DIR), root.join("examples")] {
-        collect_scan_files(&directory, &mut files)?;
+fn validate_generated_artifact_boundaries(
+    root: &Path,
+    issues: &mut Vec<Value>,
+) -> Result<Vec<PathBuf>> {
+    let mut generated_roots = Vec::new();
+    for directory in GENERATED_PACK_DIRECTORIES {
+        let path = root.join(DEFAULT_DIR).join(directory);
+        let is_non_empty_real_directory = fs::symlink_metadata(&path)
+            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+            && fs::read_dir(&path)?.next().is_some();
+        if is_non_empty_real_directory {
+            generated_roots.push(path);
+        }
     }
-    files.sort();
-    Ok(files)
+    collect_clean_run_roots(root, root, &mut generated_roots)?;
+    generated_roots.sort();
+    generated_roots.dedup();
+
+    let mut top_level_roots = Vec::new();
+    for path in generated_roots {
+        if top_level_roots
+            .iter()
+            .any(|existing: &PathBuf| path.starts_with(existing))
+        {
+            continue;
+        }
+        let display = display_target_scan_path(root, &path);
+        issues.push(issue(
+            "generated_artifact_inside_pack",
+            "error",
+            &display,
+            "generated clean-run artifacts must live outside the active pack; move this directory to an external scratch/output root; validation does not delete existing files",
+        ));
+        top_level_roots.push(path);
+    }
+    Ok(top_level_roots)
 }
 
-fn collect_scan_files(directory: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<()> {
-    if !directory.exists() {
+fn collect_clean_run_roots(
+    pack_root: &Path,
+    directory: &Path,
+    roots: &mut Vec<PathBuf>,
+) -> Result<()> {
+    let metadata = match fs::symlink_metadata(directory) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+    if directory != pack_root && is_clean_run_root(directory) {
+        roots.push(directory.to_path_buf());
         return Ok(());
     }
     for entry in fs::read_dir(directory)? {
         let path = entry?.path();
-        if path.is_dir() {
-            collect_scan_files(&path, files)?;
-        } else if matches!(
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
+            collect_clean_run_roots(pack_root, &path, roots)?;
+        }
+    }
+    Ok(())
+}
+
+fn is_clean_run_root(directory: &Path) -> bool {
+    let bundle = directory.join("run-bundle.json");
+    let receipt = directory.join("run-receipt.json");
+    let artifacts = directory.join("artifacts");
+    [bundle, receipt]
+        .iter()
+        .all(|path| fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file()))
+        && fs::symlink_metadata(artifacts).is_ok_and(|metadata| metadata.is_dir())
+}
+
+fn target_scan_files(
+    root: &Path,
+    manifest: &Manifest,
+    generated_roots: &[PathBuf],
+) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for relative in ["manifest.yaml", "sources.yaml"] {
+        add_scan_file(&root.join(DEFAULT_DIR).join(relative), &mut files);
+    }
+    for card in &manifest.cards {
+        if let Ok(path) = resolve_pack_path(root, &card.path) {
+            add_scan_file(&path, &mut files);
+        }
+    }
+    for directory in [
+        root.join(DEFAULT_DIR).join("prompts"),
+        root.join(DEFAULT_DIR).join("evals"),
+    ] {
+        collect_top_level_scan_files(&directory, &mut files)?;
+    }
+    collect_scan_files(&root.join("examples"), generated_roots, &mut files)?;
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
+fn add_scan_file(path: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return;
+    };
+    if metadata.is_file()
+        && matches!(
             path.extension().and_then(|extension| extension.to_str()),
             Some("yaml" | "yml" | "json" | "md" | "txt")
-        ) {
-            files.push(path);
+        )
+    {
+        files.push(path.to_path_buf());
+    }
+}
+
+fn collect_top_level_scan_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+    let Ok(metadata) = fs::symlink_metadata(directory) else {
+        return Ok(());
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        add_scan_file(&path, files);
+    }
+    Ok(())
+}
+
+fn collect_scan_files(
+    directory: &Path,
+    generated_roots: &[PathBuf],
+    files: &mut Vec<PathBuf>,
+) -> Result<()> {
+    if generated_roots
+        .iter()
+        .any(|root| directory.starts_with(root))
+    {
+        return Ok(());
+    }
+    let Ok(metadata) = fs::symlink_metadata(directory) else {
+        return Ok(());
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
+            collect_scan_files(&path, generated_roots, files)?;
+        } else {
+            add_scan_file(&path, files);
         }
     }
     Ok(())
@@ -806,35 +946,11 @@ fn is_external_surface(display: &str, pointer: &str, text: &str, root: &Value) -
             ],
         );
     }
-    if display.starts_with(".mdp/briefs/") || display.starts_with(".mdp/traces/") {
-        let external_field = pointer.split('/').any(|segment| {
-            matches!(
-                segment,
-                "body"
-                    | "copy"
-                    | "draft"
-                    | "subject"
-                    | "message"
-                    | "positioning"
-                    | "claim"
-                    | "claims"
-                    | "pain"
-                    | "pains"
-                    | "hook"
-                    | "hooks"
-                    | "cta"
-                    | "audience"
-                    | "job"
-                    | "label"
-            )
-        });
-        return external_field || has_external_positioning_intent(text);
-    }
     false
 }
 
 fn is_raw_external_surface(display: &str) -> bool {
-    display.starts_with(".mdp/briefs/") || display.starts_with(".mdp/traces/")
+    display.starts_with("examples/")
 }
 
 fn strip_internal_implementation_tokens(text: &str, allow_contract_token: bool) -> String {
@@ -955,24 +1071,6 @@ fn has_explicit_positioning_instruction(text: &str) -> bool {
             .iter()
             .any(|term| clause.contains(term))
     })
-}
-
-fn has_external_positioning_intent(text: &str) -> bool {
-    has_explicit_positioning_instruction(text)
-        || positioning_clauses(text).into_iter().any(|clause| {
-            !has_positioning_negation(&clause)
-                && [
-                    " is a ",
-                    " is the ",
-                    " helps ",
-                    " improves ",
-                    " enables ",
-                    " provides ",
-                    " delivers ",
-                ]
-                .iter()
-                .any(|term| clause.contains(term))
-        })
 }
 
 fn has_positioning_negation(text: &str) -> bool {
@@ -7272,7 +7370,19 @@ excluded: []
             .collect::<BTreeSet<_>>();
         assert!(contamination_paths.contains(".mdp/cards/positioning.yaml#/entries/0/body"));
         assert!(!contamination_paths.contains(".mdp/briefs/outbound.md:1"));
-        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:2"));
+        assert!(!contamination_paths.contains(".mdp/briefs/outbound.md:2"));
+        assert_eq!(
+            result["issues"]
+                .as_array()
+                .expect("issues array")
+                .iter()
+                .filter(|issue| {
+                    issue["code"] == "generated_artifact_inside_pack"
+                        && issue["path"] == ".mdp/briefs"
+                })
+                .count(),
+            1
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -7391,14 +7501,27 @@ excluded: []
             .collect::<BTreeSet<_>>();
         assert!(contamination_paths.contains(".mdp/prompts/claims-proof.yaml#/instructions/0"));
         assert!(contamination_paths.contains(".mdp/prompts/hooks.yaml#/description"));
-        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:1"));
-        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:2"));
-        assert!(!contamination_paths.contains(".mdp/briefs/outbound.md:3"));
-        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:4"));
-        assert!(!contamination_paths.contains(".mdp/briefs/outbound.md:5"));
-        assert!(contamination_paths.contains(".mdp/briefs/outbound.md:6"));
-        assert!(contamination_paths.contains(".mdp/traces/outbound.json#/label"));
-        assert!(!contamination_paths.contains(".mdp/traces/trace-metadata.json#/label"));
+        assert!(
+            !contamination_paths
+                .iter()
+                .any(|path| path.starts_with(".mdp/briefs/"))
+        );
+        assert!(
+            !contamination_paths
+                .iter()
+                .any(|path| path.starts_with(".mdp/traces/"))
+        );
+        let placement_paths = result["issues"]
+            .as_array()
+            .expect("issues array")
+            .iter()
+            .filter(|issue| issue["code"] == "generated_artifact_inside_pack")
+            .filter_map(|issue| issue["path"].as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            placement_paths,
+            BTreeSet::from([".mdp/briefs", ".mdp/traces"])
+        );
         assert!(!contamination_paths.contains(".mdp/prompts/gaps.yaml#/instructions/0"));
 
         let _ = std::fs::remove_dir_all(root);
@@ -7541,6 +7664,62 @@ excluded: []
             contamination.is_empty(),
             "generated files must remain target-isolated: {contamination:?}"
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn generated_run_roots_are_reported_once_without_weakening_authored_example_checks() {
+        let root = targeted_pack("Company B", &[]);
+        let generated = root.join("examples/generated-run");
+        std::fs::create_dir_all(generated.join("artifacts/nested"))
+            .expect("run root should be writable");
+        for marker in ["run-bundle.json", "run-receipt.json"] {
+            std::fs::write(
+                generated.join(marker),
+                "{\"contract\":\"mdp.run-receipt.v1\",\"MDP\":\"control-plane\"}\n",
+            )
+            .expect("run marker should be writable");
+        }
+        std::fs::write(
+            generated.join("artifacts/nested/control.json"),
+            "{\"label\":\"MDP generated evidence\"}\n",
+        )
+        .expect("generated artifact should be writable");
+        std::fs::create_dir_all(generated.join("nested-run/artifacts"))
+            .expect("nested run should be writable");
+        for marker in ["run-bundle.json", "run-receipt.json"] {
+            std::fs::write(generated.join("nested-run").join(marker), "{}\n")
+                .expect("nested marker should be writable");
+        }
+        let authored = root.join("examples/prospect-facing.json");
+        std::fs::write(
+            &authored,
+            "{\"copy\":\"MDP is the prospect-facing product\"}\n",
+        )
+        .expect("authored example should be writable");
+
+        let result = validate_pack(&root).expect("validate should return diagnostics");
+        let issues = result["issues"].as_array().expect("issues array");
+        let generated_paths = issues
+            .iter()
+            .filter(|issue| issue["code"] == "generated_artifact_inside_pack")
+            .filter_map(|issue| issue["path"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(generated_paths, vec!["examples/generated-run"]);
+        assert!(issues.iter().all(|issue| {
+            !issue["path"]
+                .as_str()
+                .is_some_and(|path| path.starts_with("examples/generated-run/"))
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "target_contamination_internal_vocabulary"
+                && issue["path"]
+                    .as_str()
+                    .is_some_and(|path| path.starts_with("examples/prospect-facing.json"))
+        }));
+        assert!(generated.join("run-bundle.json").is_file());
+        assert!(generated.join("nested-run/run-receipt.json").is_file());
 
         let _ = std::fs::remove_dir_all(root);
     }

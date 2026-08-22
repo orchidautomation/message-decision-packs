@@ -4819,7 +4819,7 @@ optional:
     }
 
     #[test]
-    fn generated_briefs_and_traces_do_not_stale_requirements() {
+    fn generated_briefs_and_traces_invalidate_requirements_without_mutating_pack_hash() {
         let root = temporary_clay_example("generated-artifacts");
         let before = requirements(&root, "prospect-fit-or-brief")
             .expect("requirements should compile before generated artifacts");
@@ -4836,7 +4836,14 @@ optional:
         let after = requirements(&root, "prospect-fit-or-brief")
             .expect("requirements should compile after generated artifacts");
         assert_eq!(after["pack"]["sha256"], before["pack"]["sha256"]);
-        assert_eq!(after["requirements_sha256"], before["requirements_sha256"]);
+        assert_eq!(after["valid"], false);
+        assert_eq!(after["status"], "invalid");
+        assert!(after["diagnostics"].as_array().is_some_and(|diagnostics| {
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic["code"] == "generated_artifact_inside_pack")
+        }));
+        assert_ne!(after["requirements_sha256"], before["requirements_sha256"]);
 
         let _ = std::fs::remove_dir_all(root);
     }
