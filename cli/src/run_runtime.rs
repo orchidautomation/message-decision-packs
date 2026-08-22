@@ -33,7 +33,7 @@ use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::borrow::Cow;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -355,6 +355,7 @@ fn source_integrity_input_diagnostic(input: &StagedInput) -> RunDiagnostic {
 #[derive(Debug)]
 struct RunDeadline {
     started_at: Instant,
+    started_wall_ms: u64,
     runtime_configured_ms: u64,
     transport_configured_ms: Option<u64>,
     provider_configured_ms: u64,
@@ -362,6 +363,7 @@ struct RunDeadline {
     effective_limit_ms: u64,
     warnings: Vec<String>,
     phase: Cell<DeadlinePhase>,
+    terminal: RefCell<Option<DeadlineObservationV1>>,
 }
 
 struct TransactionOutcome {
@@ -405,6 +407,11 @@ impl RunDeadline {
         }
         Ok(Self {
             started_at: Instant::now(),
+            started_wall_ms: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| run_failure(RunFailureKind::Preflight, "deadline-clock-invalid"))?
+                .as_millis()
+                .min(u128::from(u64::MAX)) as u64,
             runtime_configured_ms,
             transport_configured_ms,
             provider_configured_ms: RECOMMENDED_TIMEOUT_MS,
@@ -412,20 +419,25 @@ impl RunDeadline {
             effective_limit_ms,
             warnings,
             phase: Cell::new(DeadlinePhase::Preflight),
+            terminal: RefCell::new(None),
         })
     }
 
     fn check_phase(&self, phase: DeadlinePhase) -> Result<()> {
         self.phase.set(phase);
         if self.started_at.elapsed() >= Duration::from_millis(self.effective_limit_ms) {
+            self.record_terminal(self.observation(
+                DeadlineOutcome::TimedOut,
+                phase,
+                TerminalState::NoDraftRunnerFailed,
+            ));
             return Err(run_failure_with_deadline(
                 RunFailureKind::RunnerFailed,
                 "execution-timeout",
-                self.observation(
-                    DeadlineOutcome::TimedOut,
-                    phase,
-                    TerminalState::NoDraftRunnerFailed,
-                ),
+                self.terminal
+                    .borrow()
+                    .clone()
+                    .expect("terminal deadline observation was recorded"),
             ));
         }
         Ok(())
@@ -443,6 +455,41 @@ impl RunDeadline {
         u64::try_from(driver_budget.as_millis())
             .ok()
             .filter(|value| *value > 0)
+    }
+
+    fn provider_deadline(&self) -> Instant {
+        self.started_at
+            + Duration::from_millis(
+                self.effective_limit_ms
+                    .saturating_sub(self.finalization_reserve_ms),
+            )
+    }
+
+    fn provider_deadline_at_ms(&self) -> u64 {
+        self.started_wall_ms.saturating_add(
+            self.effective_limit_ms
+                .saturating_sub(self.finalization_reserve_ms),
+        )
+    }
+
+    fn record_terminal(&self, observation: DeadlineObservationV1) {
+        let mut terminal = self.terminal.borrow_mut();
+        if terminal.is_none() {
+            *terminal = Some(observation);
+        }
+    }
+
+    fn terminal_observation(&self) -> Option<DeadlineObservationV1> {
+        self.terminal.borrow().clone()
+    }
+
+    fn record_cancelled(&self, phase: DeadlinePhase) {
+        self.phase.set(phase);
+        self.record_terminal(self.observation(
+            DeadlineOutcome::Cancelled,
+            phase,
+            TerminalState::NoDraftRunnerFailed,
+        ));
     }
 
     fn remaining_ms(&self) -> u64 {
@@ -609,6 +656,7 @@ fn prepare_native_request(
     staged_pack: &Path,
     staged_prompt: &StagedInput,
     staged_inputs: &[StagedInput],
+    deadline: &RunDeadline,
 ) -> Result<PreparedNativeRequest> {
     let identity = request
         .job_identity
@@ -679,12 +727,7 @@ fn prepare_native_request(
         output_schema_sha256: &provider_output_schema_sha256,
         schema_name: schema_name.clone(),
         timeout_ms: request.execution_policy.timeout_ms,
-        deadline_at_ms: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "driver-timeout-invalid"))?
-            .as_millis()
-            .saturating_add(u128::from(request.execution_policy.timeout_ms))
-            .min(u128::from(u64::MAX)) as u64,
+        deadline_at_ms: deadline.provider_deadline_at_ms(),
         max_output_tokens: provider_max_output_tokens(request.execution_policy.max_output_bytes),
     };
     if serde_json::to_vec(&native)?.len() > MAX_NATIVE_SERIALIZED_REQUEST_BYTES {
@@ -833,6 +876,7 @@ struct NativeSubprocessResultV1 {
 fn invoke_native_driver(
     request: &DriverRequestV2,
     identity: &crate::run_contracts::DriverIdentity,
+    provider_deadline: Instant,
 ) -> Result<DriverResultV2> {
     if identity.driver_id != "mdp-native-openai" {
         return Err(run_failure(
@@ -889,15 +933,6 @@ fn invoke_native_driver(
         &request.prompt_invocation.content_utf8,
         &visible_inputs,
     );
-    let deadline_at = Instant::now()
-        .checked_add(Duration::from_millis(request.provider_policy.timeout_ms))
-        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "driver-timeout-invalid"))?;
-    let deadline_at_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "driver-timeout-invalid"))?
-        .as_millis()
-        .saturating_add(u128::from(request.provider_policy.timeout_ms))
-        .min(u128::from(u64::MAX)) as u64;
     let native = NativeSubprocessRequestV1 {
         contract: NATIVE_SUBPROCESS_REQUEST_V1,
         execution_id: &request.execution_id,
@@ -910,7 +945,7 @@ fn invoke_native_driver(
         output_schema_sha256: &request.provider_output_schema_sha256,
         schema_name: format!("mdp_{}", request.operation.replace([':', '/', '-'], "_")),
         timeout_ms: request.provider_policy.timeout_ms,
-        deadline_at_ms,
+        deadline_at_ms: request.provider_policy.deadline_at_ms,
         max_output_tokens: provider_max_output_tokens(request.provider_policy.max_output_bytes),
     };
     let request_bytes = serde_json::to_vec(&native)?;
@@ -943,7 +978,8 @@ fn invoke_native_driver(
         .write_all(&request_bytes)
         .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "driver-stdin-failed"))?;
     let driver_stdout_limit = driver_stdout_limit(request.provider_policy.max_output_bytes)?;
-    let (status, stdout_bytes) = supervise_child(&mut child, deadline_at, driver_stdout_limit)?;
+    let (status, stdout_bytes) =
+        supervise_child(&mut child, provider_deadline, driver_stdout_limit)?;
     if !status.success() {
         return Err(run_failure(
             RunFailureKind::RunnerFailed,
@@ -1217,7 +1253,7 @@ where
         request,
         output_root,
         before_post_check,
-        driver,
+        move |request, identity, _deadline| driver(request, identity),
         None,
     )
 }
@@ -1231,7 +1267,11 @@ fn execute_run_inner_with_driver_and_transport<F, D>(
 ) -> Result<RunExecution>
 where
     F: FnOnce() -> Result<()>,
-    D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
+    D: FnOnce(
+        &DriverRequestV2,
+        &crate::run_contracts::DriverIdentity,
+        Instant,
+    ) -> Result<DriverResultV2>,
 {
     validate_request(request)
         .map_err(|_| run_failure(RunFailureKind::Preflight, "request-policy-invalid"))?;
@@ -1426,7 +1466,11 @@ fn execute_transaction<F, D>(
 ) -> Result<TransactionOutcome>
 where
     F: FnOnce() -> Result<()>,
-    D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
+    D: FnOnce(
+        &DriverRequestV2,
+        &crate::run_contracts::DriverIdentity,
+        Instant,
+    ) -> Result<DriverResultV2>,
 {
     let private_dir = transaction_dir.join("private");
     let staged_pack = private_dir.join("pack");
@@ -1525,6 +1569,7 @@ where
                 &staged_pack,
                 staged_prompt.as_ref().expect("generative prompt validated"),
                 &staged,
+                deadline,
             )?;
             let (driver, model, observations, model_facts) =
                 bind_native_identity(request, &prepared)?;
@@ -1579,7 +1624,7 @@ where
         let prompt = staged_prompt.as_ref().ok_or_else(|| {
             run_failure(RunFailureKind::PolicyBlocked, "generative-prompt-missing")
         })?;
-        let outcome = execute_generative_step(
+        let outcome = execute_generative_step_with_deadline(
             request,
             &staged_pack,
             prompt,
@@ -1806,6 +1851,11 @@ where
             validation = None;
         }
     } else if deadline.expired() {
+        deadline.record_terminal(deadline.observation(
+            DeadlineOutcome::TimedOut,
+            DeadlinePhase::Provider,
+            TerminalState::NoDraftRunnerFailed,
+        ));
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
         validation = None;
@@ -1820,6 +1870,11 @@ where
             validation = None;
         }
     } else if deadline.expired() {
+        deadline.record_terminal(deadline.observation(
+            DeadlineOutcome::TimedOut,
+            DeadlinePhase::Finalization,
+            TerminalState::NoDraftRunnerFailed,
+        ));
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
         validation = None;
@@ -1878,17 +1933,15 @@ where
         None
     };
 
-    let deadline_observation = (deadline.expired()
-        || (request.mode == RunMode::Generative
-            && terminal_state == TerminalState::NoDraftRunnerFailed
-            && deadline.remaining_ms() <= MAX_FINALIZATION_RESERVE_MS))
-        .then(|| {
-            deadline.observation(
-                DeadlineOutcome::TimedOut,
-                deadline.current_phase(),
-                TerminalState::NoDraftRunnerFailed,
-            )
-        });
+    if request.mode == RunMode::Generative
+        && terminal_state.is_success()
+        && deadline.check_phase(DeadlinePhase::Finalization).is_err()
+    {
+        terminal_state = TerminalState::NoDraftRunnerFailed;
+        success_values = None;
+        validation = None;
+    }
+    let deadline_observation = deadline.terminal_observation();
     let assurance = assurance_dimensions(
         request.mode,
         terminal_state,
@@ -2058,6 +2111,42 @@ fn execute_generative_step<D>(
 where
     D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
 {
+    execute_generative_step_with_deadline(
+        request,
+        staged_pack,
+        staged_prompt,
+        staged_inputs,
+        private_dir,
+        bundle,
+        bundle_sha256,
+        prepared,
+        driver_identity,
+        deadline,
+        move |request, identity, _deadline| driver(request, identity),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_generative_step_with_deadline<D>(
+    request: &RunRequestV1,
+    staged_pack: &Path,
+    staged_prompt: &StagedInput,
+    staged_inputs: &[StagedInput],
+    private_dir: &Path,
+    bundle: &RunBundleV1,
+    bundle_sha256: &str,
+    prepared: &PreparedNativeRequest,
+    driver_identity: &crate::run_contracts::DriverIdentity,
+    deadline: &RunDeadline,
+    driver: D,
+) -> Result<GenerativeOutcome>
+where
+    D: FnOnce(
+        &DriverRequestV2,
+        &crate::run_contracts::DriverIdentity,
+        Instant,
+    ) -> Result<DriverResultV2>,
+{
     let identity = request
         .job_identity
         .as_ref()
@@ -2120,6 +2209,7 @@ where
             requested_model: model.requested_model.clone(),
             authorized_endpoint: model.authorized_endpoint.clone(),
             timeout_ms: driver_timeout_ms.unwrap_or(1),
+            deadline_at_ms: deadline.provider_deadline_at_ms(),
             max_output_bytes: request.execution_policy.max_output_bytes,
         },
         execution_policy_sha256: policy_hash,
@@ -2131,7 +2221,11 @@ where
         return failed_generative_outcome(driver_request, "driver_budget_exhausted");
     }
     deadline.mark_phase(DeadlinePhase::Driver);
-    let result = match driver(&driver_request, driver_identity) {
+    let result = match driver(
+        &driver_request,
+        driver_identity,
+        deadline.provider_deadline(),
+    ) {
         Ok(result) => result,
         Err(error) => {
             let code = error
@@ -2142,20 +2236,29 @@ where
                 code,
                 "cancelled" | "driver-cancelled" | "provider-cancelled"
             ) {
-                return Err(run_failure_with_deadline(
-                    RunFailureKind::RunnerFailed,
-                    "cancelled",
-                    deadline.observation(
-                        DeadlineOutcome::Cancelled,
-                        deadline.current_phase(),
-                        TerminalState::NoDraftRunnerFailed,
-                    ),
+                deadline.record_cancelled(DeadlinePhase::Cancellation);
+                return failed_generative_outcome(driver_request, "cancelled");
+            }
+            if matches!(
+                code,
+                "driver-timeout" | "provider-timeout" | "execution-timeout"
+            ) {
+                deadline.record_terminal(deadline.observation(
+                    DeadlineOutcome::TimedOut,
+                    DeadlinePhase::Provider,
+                    TerminalState::NoDraftRunnerFailed,
                 ));
+                return failed_generative_outcome(driver_request, "driver-timeout");
             }
             return failed_generative_outcome(driver_request, code);
         }
     };
     if deadline.expired() {
+        deadline.record_terminal(deadline.observation(
+            DeadlineOutcome::TimedOut,
+            DeadlinePhase::Provider,
+            TerminalState::NoDraftRunnerFailed,
+        ));
         return failed_generative_outcome(driver_request, "driver-timeout");
     }
     deadline.mark_phase(DeadlinePhase::Validation);
@@ -5392,6 +5495,49 @@ mod tests {
     }
 
     #[test]
+    fn post_bundle_cancellation_publishes_sanitized_no_draft_receipt() {
+        let root = temp_path("generative-cancellation-receipt");
+        let pack = root.join("pack");
+        let raw = root.join("raw-row.json");
+        fs::create_dir_all(&root).unwrap();
+        crate::commands::init::init_pack(&pack, "Cancellation Pack", "gtm", true, false).unwrap();
+        fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
+        let request = generative_request_fixture(&pack, &raw);
+        let run = root.join("published-run");
+        let result = execute_run_inner_with_driver(
+            &request,
+            &run,
+            || Ok(()),
+            |_, _| {
+                Err(super::run_failure(
+                    RunFailureKind::RunnerFailed,
+                    "cancelled",
+                ))
+            },
+        )
+        .unwrap();
+        assert_eq!(result.terminal_state, TerminalState::NoDraftRunnerFailed);
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
+        assert_eq!(receipt["terminal_state"], "no-draft:runner-failed");
+        assert_eq!(receipt["deadline"]["outcome"], "cancelled");
+        assert_eq!(receipt["deadline"]["phase"], "cancellation");
+        assert!(receipt["output"].is_null());
+        assert!(receipt["decision"].is_null());
+        assert!(!run.join("private").exists());
+        assert_eq!(
+            crate::commands::run_verification::verify_run_files(
+                Some(&run.join("run-bundle.json")),
+                &run.join("run-receipt.json"),
+                Some(&run),
+            )
+            .unwrap()["valid"],
+            true
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn native_driver_never_executes_a_request_selected_path() {
         let mut request = sample_driver_request();
         seal_driver_request(&mut request).unwrap();
@@ -5408,7 +5554,12 @@ mod tests {
             dependency_lock_sha256: Some("c".repeat(64)),
             identity_provenance: EvidenceProvenance::MdpObserved,
         };
-        let error = super::invoke_native_driver(&request, &identity).unwrap_err();
+        let error = super::invoke_native_driver(
+            &request,
+            &identity,
+            std::time::Instant::now() + std::time::Duration::from_millis(30_000),
+        )
+        .unwrap_err();
         assert_eq!(
             error.downcast_ref::<super::RunFailure>().unwrap().code(),
             "driver-implementation-not-bundled"
@@ -6152,6 +6303,7 @@ mod tests {
                 requested_model: "gpt-5-mini".into(),
                 authorized_endpoint: super::OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into(),
                 timeout_ms: 30_000,
+                deadline_at_ms: 59_750,
                 max_output_bytes: 1_048_576,
             },
             execution_policy_sha256: "f".repeat(64),
@@ -6254,6 +6406,7 @@ mod tests {
             &staged_pack,
             &staged_prompt,
             &staged,
+            &super::RunDeadline::new(30_000),
         ) else {
             let _ = fs::remove_dir_all(root);
             return;

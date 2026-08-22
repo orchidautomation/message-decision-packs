@@ -144,6 +144,7 @@ export const superviseProcess = ({
   terminationGraceMs = DEFAULT_GRACE_MS,
   recovery = null,
   deadlineMetadata = null,
+  signal = null,
 }) =>
   new Promise((resolveResult) => {
     const startedAt = performance.now()
@@ -152,6 +153,7 @@ export const superviseProcess = ({
     let outputBytes = 0
     let overflowed = false
     let timedOut = false
+    let cancelled = false
     let spawnFailed = false
     let escalationPromise = null
     let finishRequested = false
@@ -197,6 +199,15 @@ export const superviseProcess = ({
       timedOut = true
       escalate()
     }, timeoutMs)
+    const cancel = () => {
+      if (finishRequested || timedOut || cancelled) return
+      cancelled = true
+      escalate()
+    }
+    if (signal) {
+      if (signal.aborted) cancel()
+      else signal.addEventListener('abort', cancel, { once: true })
+    }
 
     child.on('close', (code, signal) => {
       if (finishRequested) return
@@ -204,25 +215,26 @@ export const superviseProcess = ({
       clearTimeout(timeout)
       const finish = (termination = { processGroupClosed: true, recovered: false }) =>
         resolveResult({
-          status: timedOut ? 124 : overflowed || spawnFailed ? 1 : (code ?? 1),
+          status: timedOut || cancelled ? 124 : overflowed || spawnFailed ? 1 : (code ?? 1),
           signal,
           stdout: Buffer.concat(stdoutChunks).toString('utf8'),
           stderr: Buffer.concat(stderrChunks).toString('utf8'),
           timedOut,
+          cancelled,
           overflowed,
           spawnFailed,
           ...termination,
-          deadline: timedOut && deadlineMetadata
+          deadline: (timedOut || cancelled) && deadlineMetadata
             ? {
                 contract: 'mdp.deadline-observation.v1',
-                outcome: 'timed-out',
-                phase: 'transport',
+                outcome: cancelled ? 'cancelled' : 'timed-out',
+                phase: cancelled ? 'cancellation' : 'transport',
                 elapsed_ms: Math.min(timeoutMs, Math.max(0, Math.round(performance.now() - startedAt))),
-                configured_limit_ms: deadlineMetadata?.configured_limit_ms ?? timeoutMs,
-                effective_limit_ms: deadlineMetadata?.effective_limit_ms ?? timeoutMs,
-                transport_configured_ms: deadlineMetadata?.transport_configured_ms ?? timeoutMs,
-                runtime_configured_ms: deadlineMetadata?.runtime_configured_ms ?? timeoutMs,
-                provider_configured_ms: deadlineMetadata?.provider_configured_ms ?? timeoutMs,
+                configured_limit_ms: deadlineMetadata.configured_limit_ms,
+                effective_limit_ms: deadlineMetadata.effective_limit_ms,
+                transport_configured_ms: deadlineMetadata.transport_configured_ms,
+                runtime_configured_ms: deadlineMetadata.runtime_configured_ms,
+                provider_configured_ms: deadlineMetadata.provider_configured_ms,
                 finalization_reserve_ms: 250,
                 terminal_state: 'no-draft:runner-failed',
                 warnings: Array.isArray(deadlineMetadata?.warnings) ? deadlineMetadata.warnings : [],

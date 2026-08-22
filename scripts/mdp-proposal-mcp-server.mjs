@@ -442,6 +442,7 @@ const proposalRunOutputSchema = {
     'timed_out',
     'termination_signal',
     'timeout_ms',
+    'inner_timeout_ms',
     'stdout',
     'stderr',
     'environment',
@@ -464,6 +465,7 @@ const proposalRunOutputSchema = {
     timed_out: { type: 'boolean' },
     termination_signal: { type: ['string', 'null'] },
     timeout_ms: { type: 'integer', minimum: MIN_TIMEOUT_MS, maximum: MAX_TIMEOUT_MS },
+    inner_timeout_ms: { const: RECOMMENDED_TIMEOUT_MS },
     stdout: { type: 'string' },
     stderr: { type: 'string' },
     environment: {
@@ -639,6 +641,7 @@ const callProposalRun = async (args) => {
   if (skipReview) runnerArgs.push('--skip-review')
   if (requireAuditGrade) runnerArgs.push('--require-audit-grade')
   if (maxSourceBytes !== null) runnerArgs.push('--max-source-bytes', String(maxSourceBytes))
+  runnerArgs.push('--timeout-ms', String(timeoutMs))
 
   const result = await runNode(runnerPath, runnerArgs, timeoutMs, !dryRun && !mockResponsePath)
   let parsed = null
@@ -674,6 +677,7 @@ const callProposalRun = async (args) => {
     timed_out: result.timedOut,
     termination_signal: result.signal,
     timeout_ms: timeoutMs,
+    inner_timeout_ms: RECOMMENDED_TIMEOUT_MS,
     stdout: parsed ? '' : compact(result.stdout, 12_000),
     stderr: result.stderr ? compact(result.stderr, 12_000) : '',
     environment: {

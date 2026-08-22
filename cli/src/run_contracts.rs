@@ -534,6 +534,7 @@ pub(crate) struct DriverProviderPolicyV2 {
     pub(crate) requested_model: String,
     pub(crate) authorized_endpoint: String,
     pub(crate) timeout_ms: u64,
+    pub(crate) deadline_at_ms: u64,
     pub(crate) max_output_bytes: u64,
 }
 

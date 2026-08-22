@@ -27,15 +27,25 @@ if (args.includes('verify-run')) {
   process.exit(0)
 }
 if (args.includes('run-preflight')) {
+  const transportTimeout = Number(args[args.indexOf('--transport-timeout-ms') + 1] || 60000)
+  const runtimeTimeout = 60000
   process.stdout.write(JSON.stringify({ ok: true, command: 'run-preflight', data: {
     contract: 'mdp.run-preflight.v1',
     execution_id: 'exec-fixture',
+    mode: 'deterministic',
+    recommended_timeout_ms: 60000,
     runtime_configured_ms: 60000,
-    transport_configured_ms: 60000,
+    transport_configured_ms: transportTimeout,
     provider_configured_ms: 60000,
     finalization_reserve_ms: 250,
-    effective_limit_ms: 59750,
-    warnings: [],
+    effective_limit_ms: Math.min(runtimeTimeout, transportTimeout - 250),
+    warnings: transportTimeout > runtimeTimeout
+      ? ['outer-timeout-cannot-extend-inner']
+      : transportTimeout - 250 < runtimeTimeout
+        ? ['outer-timeout-truncates-runtime']
+        : [],
+    staging: 'not-started',
+    provider: 'not-started',
   }}))
   process.exit(0)
 }

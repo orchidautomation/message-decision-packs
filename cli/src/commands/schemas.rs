@@ -1080,6 +1080,7 @@ fn proposal_mcp_run_result_schema() -> Value {
             "timed_out",
             "termination_signal",
             "timeout_ms",
+            "inner_timeout_ms",
             "stdout",
             "stderr",
             "environment",
@@ -1110,7 +1111,8 @@ fn proposal_mcp_run_result_schema() -> Value {
             },
             "timed_out": {"type": "boolean"},
             "termination_signal": {"type": ["string", "null"]},
-            "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 300000},
+            "timeout_ms": {"type": "integer", "minimum": 251, "maximum": 300000},
+            "inner_timeout_ms": {"const": 60000},
             "stdout": {"type": "string"},
             "stderr": {"type": "string"},
             "environment": {
@@ -1924,13 +1926,14 @@ fn driver_artifact_v2_schema() -> Value {
 fn driver_provider_policy_v2_schema() -> Value {
     json!({
         "type": "object",
-        "required": ["provider", "requested_model", "authorized_endpoint", "timeout_ms", "max_output_bytes"],
+        "required": ["provider", "requested_model", "authorized_endpoint", "timeout_ms", "deadline_at_ms", "max_output_bytes"],
         "additionalProperties": false,
         "properties": {
             "provider": {"const": "openai"},
             "requested_model": non_blank_string_schema(),
             "authorized_endpoint": {"const": "https://api.openai.com/v1/responses"},
             "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
+            "deadline_at_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
             "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576}
         }
     })
@@ -2148,8 +2151,8 @@ fn deadline_observation_v1_schema() -> Value {
             "elapsed_ms": {"type": "integer", "minimum": 0, "maximum": 9007199254740991_u64},
             "configured_limit_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
             "effective_limit_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
-            "transport_configured_ms": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 250, "maximum": 300000}]},
-            "runtime_configured_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+            "transport_configured_ms": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 251, "maximum": 300000}]},
+            "runtime_configured_ms": {"type": "integer", "minimum": 251, "maximum": 60000},
             "provider_configured_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
             "finalization_reserve_ms": {"type": "integer", "minimum": 1, "maximum": 250},
             "terminal_state": terminal_state_schema(),
@@ -2170,8 +2173,8 @@ fn run_preflight_v1_schema() -> Value {
             "execution_id": non_blank_string_schema(),
             "mode": {"enum": ["deterministic", "generative"]},
             "recommended_timeout_ms": {"const": 60000},
-            "runtime_configured_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
-            "transport_configured_ms": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 250, "maximum": 300000}]},
+            "runtime_configured_ms": {"type": "integer", "minimum": 251, "maximum": 60000},
+            "transport_configured_ms": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 251, "maximum": 300000}]},
             "provider_configured_ms": {"const": 60000},
             "finalization_reserve_ms": {"const": 250},
             "effective_limit_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
@@ -6271,6 +6274,7 @@ mod tests {
             "requested_model": "gpt-5-mini",
             "authorized_endpoint": "https://api.openai.com/v1/responses",
             "timeout_ms": 60000,
+            "deadline_at_ms": 70000,
             "max_output_bytes": 1048576
         });
         draft202012::validate(&policy_schema, &policy).unwrap();
