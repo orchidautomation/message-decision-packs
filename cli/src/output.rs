@@ -293,6 +293,20 @@ fn summarize(command: &str, data: &Value) -> Value {
                     .collect::<Vec<_>>()
             }).unwrap_or_default()
         }),
+        "rebind-synthetic-chain" => json!({
+            "contract": data["contract"],
+            "valid": data["valid"],
+            "status": data["status"],
+            "mode": data["mode"],
+            "job_id": data["job_id"],
+            "pack_sha256": data["pack"]["sha256"],
+            "file_count": array_len(&data["files"]),
+            "files": data["files"].as_array().map(|files| files.iter().map(|file| json!({
+                "name": file["name"], "action": file["action"], "bytes": file["bytes"], "sha256": file["sha256"], "backup": file["backup"]
+            })).collect::<Vec<_>>()).unwrap_or_default(),
+            "source_binding_valid": data["validation"]["source_binding"]["valid"],
+            "prompt_output_valid": data["validation"]["prompt_output"]["valid"]
+        }),
         "fit" => json!({
             "valid": data["valid"],
             "job_id": data["job_id"],

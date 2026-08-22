@@ -31,6 +31,7 @@ use crate::run_contracts::{
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -58,6 +59,9 @@ const MAX_POLICY_INPUT_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_NATIVE_DECLARED_INPUT_BYTES: u64 = 128 * 1024;
 const MAX_NATIVE_SERIALIZED_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_POLICY_OUTPUT_BYTES: u64 = 1024 * 1024;
+const MAX_POLICY_DIAGNOSTICS: usize = 4;
+const MAX_POLICY_DIAGNOSTIC_BYTES: usize = 4096;
+const MAX_DIAGNOSTIC_INPUT_BYTES: usize = 64;
 const DRIVER_RESULT_ENVELOPE_BYTES: u64 = 64 * 1024;
 const MAX_FINALIZATION_RESERVE_MS: u64 = 250;
 const OFFICIAL_OPENAI_RESPONSES_ENDPOINT: &str = "https://api.openai.com/v1/responses";
@@ -88,15 +92,69 @@ pub(crate) enum RunFailureKind {
     RunnerFailed,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunDiagnostic {
+    pub(crate) stage: &'static str,
+    pub(crate) gate: &'static str,
+    pub(crate) code: &'static str,
+    pub(crate) input: Option<Cow<'static, str>>,
+    pub(crate) field: Option<&'static str>,
+    pub(crate) expected: DiagnosticValue,
+    pub(crate) observed: DiagnosticValue,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DiagnosticValue {
+    pub(crate) kind: &'static str,
+    pub(crate) value: DiagnosticScalar,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
+pub(crate) enum DiagnosticScalar {
+    Text(&'static str),
+    Count(u64),
+}
+
 #[derive(Debug)]
 pub(crate) struct RunFailure {
     kind: RunFailureKind,
     code: &'static str,
+    diagnostics: Vec<RunDiagnostic>,
 }
 
 impl RunFailure {
     fn new(kind: RunFailureKind, code: &'static str) -> Self {
-        Self { kind, code }
+        let diagnostics = if matches!(kind, RunFailureKind::PolicyBlocked) {
+            vec![fallback_policy_diagnostic(code)]
+        } else {
+            Vec::new()
+        };
+        Self {
+            kind,
+            code,
+            diagnostics,
+        }
+    }
+
+    fn with_diagnostic(
+        kind: RunFailureKind,
+        code: &'static str,
+        diagnostic: RunDiagnostic,
+    ) -> Self {
+        let mut failure = Self {
+            kind,
+            code,
+            diagnostics: if matches!(kind, RunFailureKind::PolicyBlocked) {
+                vec![diagnostic]
+            } else {
+                Vec::new()
+            },
+        };
+        failure.bound_diagnostics();
+        failure
     }
 
     pub(crate) fn kind(&self) -> RunFailureKind {
@@ -105,6 +163,20 @@ impl RunFailure {
 
     pub(crate) fn code(&self) -> &'static str {
         self.code
+    }
+
+    pub(crate) fn diagnostics(&self) -> &[RunDiagnostic] {
+        &self.diagnostics
+    }
+
+    fn bound_diagnostics(&mut self) {
+        self.diagnostics.truncate(MAX_POLICY_DIAGNOSTICS);
+        while self.diagnostics.len() > 1
+            && serde_json::to_vec(&self.diagnostics)
+                .is_ok_and(|bytes| bytes.len() > MAX_POLICY_DIAGNOSTIC_BYTES)
+        {
+            self.diagnostics.pop();
+        }
     }
 }
 
@@ -120,9 +192,154 @@ fn run_failure(kind: RunFailureKind, code: &'static str) -> anyhow::Error {
     anyhow::Error::new(RunFailure::new(kind, code))
 }
 
+fn run_failure_with_diagnostic(
+    kind: RunFailureKind,
+    code: &'static str,
+    diagnostic: RunDiagnostic,
+) -> anyhow::Error {
+    anyhow::Error::new(RunFailure::with_diagnostic(kind, code, diagnostic))
+}
+
+fn diagnostic_value(kind: &'static str, value: &'static str) -> DiagnosticValue {
+    DiagnosticValue {
+        kind,
+        value: DiagnosticScalar::Text(value),
+    }
+}
+
+fn count_value(value: usize) -> DiagnosticValue {
+    DiagnosticValue {
+        kind: "count",
+        value: DiagnosticScalar::Count(value as u64),
+    }
+}
+
+fn policy_diagnostic(
+    stage: &'static str,
+    gate: &'static str,
+    code: &'static str,
+    input: Option<&'static str>,
+    field: Option<&'static str>,
+    expected: DiagnosticValue,
+    observed: DiagnosticValue,
+) -> RunDiagnostic {
+    RunDiagnostic {
+        stage,
+        gate,
+        code,
+        input: input.map(Cow::Borrowed),
+        field,
+        expected,
+        observed,
+    }
+}
+
+fn fallback_policy_diagnostic(code: &str) -> RunDiagnostic {
+    let (stage, gate, category, input, field, expected, observed) = match code {
+        "draft-readiness-blocked" | "job-readiness-blocked" | "job-readiness-unavailable" => (
+            "generative-preflight",
+            "routed-context-readiness",
+            "readiness-failure",
+            None,
+            None,
+            diagnostic_value("readiness", "ready"),
+            diagnostic_value("readiness", "blocked"),
+        ),
+        "required-model-input-missing" => (
+            "generative-preflight",
+            "declared-inputs",
+            "missing-required-field",
+            None,
+            None,
+            count_value(1),
+            count_value(0),
+        ),
+        "undeclared-model-input" => (
+            "generative-preflight",
+            "declared-inputs",
+            "disallowed-field",
+            None,
+            Some("/unknown-field"),
+            diagnostic_value("field", "declared-input"),
+            diagnostic_value("field", "unknown-field"),
+        ),
+        "routed-context-invalid" => (
+            "generative-preflight",
+            "routed-context-schema",
+            "internal-contract-mismatch",
+            Some("routed_context"),
+            None,
+            diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+            diagnostic_value("contract", "unavailable"),
+        ),
+        "routed-context-stale-binding" => (
+            "generative-preflight",
+            "routed-context-readiness",
+            "stale-binding",
+            Some("routed_context"),
+            None,
+            diagnostic_value("binding", "matched"),
+            diagnostic_value("binding", "mismatch"),
+        ),
+        "source-integrity-failed" => (
+            "source-integrity",
+            "declared-input-immutability",
+            "stale-binding",
+            None,
+            None,
+            diagnostic_value("binding", "unchanged"),
+            diagnostic_value("binding", "changed"),
+        ),
+        _ => (
+            "run-preflight",
+            "policy",
+            "internal-contract-mismatch",
+            None,
+            None,
+            diagnostic_value("binding", "available"),
+            diagnostic_value("binding", "unavailable"),
+        ),
+    };
+    policy_diagnostic(stage, gate, category, input, field, expected, observed)
+}
+
+fn bounded_diagnostic_input(name: &str) -> String {
+    let mut value = name
+        .bytes()
+        .map(|byte| {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
+                byte as char
+            } else {
+                '_'
+            }
+        })
+        .take(MAX_DIAGNOSTIC_INPUT_BYTES)
+        .collect::<String>();
+    if value.is_empty() {
+        value.push_str("unknown");
+    }
+    value
+}
+
+fn source_integrity_diagnostic(subject: &str) -> RunDiagnostic {
+    let mut diagnostic = fallback_policy_diagnostic("source-integrity-failed");
+    diagnostic.input = Some(Cow::Owned(bounded_diagnostic_input(subject)));
+    diagnostic
+}
+
+fn source_integrity_input_diagnostic(input: &StagedInput) -> RunDiagnostic {
+    source_integrity_diagnostic(&input.logical_name)
+}
+
 struct RunDeadline {
     started_at: Instant,
     budget: Duration,
+}
+
+struct TransactionOutcome {
+    bundle_sha256: String,
+    receipt: RunReceiptV1,
+    diagnostics: Vec<RunDiagnostic>,
 }
 
 impl RunDeadline {
@@ -908,7 +1125,11 @@ where
     set_private_directory(&transaction_dir)?;
     deadline.check()?;
 
-    let (bundle_sha256, receipt) = match execute_transaction(
+    let TransactionOutcome {
+        bundle_sha256,
+        receipt,
+        diagnostics,
+    } = match execute_transaction(
         request,
         &transaction_dir,
         &deadline,
@@ -951,7 +1172,7 @@ where
     })?;
     drop(transaction_guard);
 
-    let authority_block = json!({
+    let mut authority_block = json!({
         "contract": "mdp.canonical-authority-block.v1",
         "execution_id": request.execution_id,
         "terminal_state": receipt.terminal_state,
@@ -967,6 +1188,9 @@ where
         },
         "authority_notice": "Only this block and its hash-bound artifacts are authoritative; surrounding conversation commentary is outside the receipt."
     });
+    if !diagnostics.is_empty() {
+        authority_block["diagnostics"] = serde_json::to_value(&diagnostics)?;
+    }
     let authority = SourceAuthority::from_run(
         receipt.terminal_state,
         receipt
@@ -1019,7 +1243,7 @@ fn execute_transaction<F, D>(
     deadline: &RunDeadline,
     before_post_check: F,
     driver: D,
-) -> Result<(String, RunReceiptV1)>
+) -> Result<TransactionOutcome>
 where
     F: FnOnce() -> Result<()>,
     D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
@@ -1050,7 +1274,11 @@ where
     deadline.check()?;
     let staged_snapshot = pack_content_snapshot(&staged_pack)?;
     if source_snapshot != staged_snapshot {
-        return Err(anyhow!("pack changed while it was being staged"));
+        return Err(run_failure_with_diagnostic(
+            RunFailureKind::PolicyBlocked,
+            "source-integrity-failed",
+            source_integrity_diagnostic("pack"),
+        ));
     }
     let manifest = read_manifest(&staged_pack)?;
     let profile_id = manifest
@@ -1098,7 +1326,11 @@ where
         verify_sources_unchanged(std::slice::from_ref(prompt))?;
     }
     if pack_content_snapshot(source_pack)? != source_snapshot {
-        return Err(anyhow!("pack changed while declared inputs were staged"));
+        return Err(run_failure_with_diagnostic(
+            RunFailureKind::PolicyBlocked,
+            "source-integrity-failed",
+            source_integrity_diagnostic("pack"),
+        ));
     }
 
     let policy_hash = canonical_json_sha256_for_domain(
@@ -1403,14 +1635,33 @@ where
     }
     let staged_pack_after = pack_content_snapshot(&staged_pack)?;
     let source_pack_after = pack_content_snapshot(source_pack)?;
-    let sources_unchanged = verify_sources_unchanged(&staged).is_ok()
-        && staged_prompt
-            .as_ref()
-            .is_none_or(|prompt| verify_sources_unchanged(std::slice::from_ref(prompt)).is_ok());
-    if staged_pack_after != staged_snapshot
-        || source_pack_after != source_snapshot
-        || !sources_unchanged
-    {
+    let mut diagnostics = Vec::new();
+    let staged_sources_unchanged = match check_sources_unchanged(&staged) {
+        Ok(()) => true,
+        Err(diagnostic) => {
+            diagnostics.push(diagnostic);
+            false
+        }
+    };
+    let prompt_unchanged =
+        staged_prompt.as_ref().is_none_or(|prompt| {
+            match check_sources_unchanged(std::slice::from_ref(prompt)) {
+                Ok(()) => true,
+                Err(diagnostic) => {
+                    if diagnostics.is_empty() {
+                        diagnostics.push(diagnostic);
+                    }
+                    false
+                }
+            }
+        });
+    let sources_unchanged = staged_sources_unchanged && prompt_unchanged;
+    let pack_unchanged =
+        staged_pack_after == staged_snapshot && source_pack_after == source_snapshot;
+    if !pack_unchanged || !sources_unchanged {
+        if diagnostics.is_empty() {
+            diagnostics.push(source_integrity_diagnostic("pack"));
+        }
         terminal_state = TerminalState::NoDraftAuditIncomplete;
         success_values = None;
     }
@@ -1540,7 +1791,11 @@ where
             "internal run verification failed before artifact publication"
         ));
     }
-    Ok((bundle_sha256, receipt))
+    Ok(TransactionOutcome {
+        bundle_sha256,
+        receipt,
+        diagnostics,
+    })
 }
 
 fn gtm_lineage_schema_ids(signal_aware: bool) -> (&'static str, &'static str) {
@@ -1685,6 +1940,16 @@ where
         });
     }
     if !result.terminal_state.is_success() {
+        if result.terminal_state == TerminalState::NoDraftPolicyBlocked {
+            // A driver policy refusal is still a CLI policy block. Route it
+            // through the typed failure carrier so execute_transaction cleans
+            // up the private transaction and the public CLI result remains a
+            // receipt-free, diagnostic-bearing no-draft response.
+            return Err(run_failure(
+                RunFailureKind::PolicyBlocked,
+                "driver-policy-blocked",
+            ));
+        }
         return Ok(GenerativeOutcome {
             terminal_state: result.terminal_state,
             success: None,
@@ -1903,6 +2168,157 @@ fn validate_generative_job_gates(
     Ok(())
 }
 
+fn routed_context_field_pointer(name: &str) -> &'static str {
+    match name {
+        "contract" => "/contract",
+        "job" => "/job",
+        "persona" => "/persona",
+        "scope" => "/scope",
+        "product_foundation" => "/product_foundation",
+        "product_foundation_load_order" => "/product_foundation_load_order",
+        "entries" => "/entries",
+        "gaps" => "/gaps",
+        "policy" => "/policy",
+        _ => "/unknown-field",
+    }
+}
+
+fn safe_contract_value(value: Option<&Value>) -> &'static str {
+    match value.and_then(Value::as_str) {
+        Some(ROUTED_CONTEXT_CONTRACT) => ROUTED_CONTEXT_CONTRACT,
+        Some("mdp.routed-context.v0") => "mdp.routed-context.v0",
+        Some(_) => "other",
+        None => "missing",
+    }
+}
+
+fn routed_context_shape_diagnostic(value: &Value) -> Option<RunDiagnostic> {
+    let object = value.as_object()?;
+    let expected_fields = [
+        "contract",
+        "job",
+        "persona",
+        "scope",
+        "product_foundation",
+        "product_foundation_load_order",
+        "entries",
+        "gaps",
+        "policy",
+    ];
+    if let Some(field) = object
+        .keys()
+        .find(|field| !expected_fields.contains(&field.as_str()))
+    {
+        return Some(policy_diagnostic(
+            "generative-preflight",
+            "routed-context-schema",
+            "disallowed-field",
+            Some("routed_context"),
+            Some(routed_context_field_pointer(field)),
+            diagnostic_value("field", "declared"),
+            diagnostic_value("field", "unknown-field"),
+        ));
+    }
+    if object.get("contract") != Some(&json!(ROUTED_CONTEXT_CONTRACT)) {
+        return Some(policy_diagnostic(
+            "generative-preflight",
+            "routed-context-schema",
+            "wrong-contract",
+            Some("routed_context"),
+            Some("/contract"),
+            diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+            diagnostic_value("contract", safe_contract_value(object.get("contract"))),
+        ));
+    }
+    for field in [
+        "job",
+        "persona",
+        "scope",
+        "product_foundation",
+        "product_foundation_load_order",
+        "entries",
+        "gaps",
+        "policy",
+    ] {
+        if !object.contains_key(field) {
+            return Some(policy_diagnostic(
+                "generative-preflight",
+                "routed-context-schema",
+                "missing-required-field",
+                Some("routed_context"),
+                Some(routed_context_field_pointer(field)),
+                diagnostic_value("field", "present"),
+                diagnostic_value("field", "missing"),
+            ));
+        }
+    }
+    None
+}
+
+fn routed_context_validation_diagnostic(
+    kind: crate::routing::RoutedContextValidationKind,
+) -> RunDiagnostic {
+    use crate::routing::RoutedContextValidationKind;
+    match kind {
+        RoutedContextValidationKind::Contract => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-schema",
+            "wrong-contract",
+            Some("routed_context"),
+            Some("/contract"),
+            diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+            diagnostic_value("contract", "other"),
+        ),
+        RoutedContextValidationKind::Job => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-readiness",
+            "stale-binding",
+            Some("routed_context"),
+            Some("/job"),
+            diagnostic_value("binding", "matched"),
+            diagnostic_value("binding", "mismatch"),
+        ),
+        RoutedContextValidationKind::Scope => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-readiness",
+            "stale-binding",
+            Some("routed_context"),
+            Some("/scope"),
+            diagnostic_value("binding", "matched"),
+            diagnostic_value("binding", "mismatch"),
+        ),
+        RoutedContextValidationKind::Canonical => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-readiness",
+            "stale-binding",
+            Some("routed_context"),
+            None,
+            diagnostic_value("binding", "canonical"),
+            diagnostic_value("binding", "changed"),
+        ),
+        RoutedContextValidationKind::ReadinessBlocked => policy_diagnostic(
+            "generative-preflight",
+            "routed-context-readiness",
+            "readiness-failure",
+            Some("routed_context"),
+            None,
+            diagnostic_value("readiness", "ready"),
+            diagnostic_value("readiness", "blocked"),
+        ),
+        RoutedContextValidationKind::Schema | RoutedContextValidationKind::NotCompiled => {
+            policy_diagnostic(
+                "generative-preflight",
+                "routed-context-schema",
+                "internal-contract-mismatch",
+                Some("routed_context"),
+                None,
+                diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+                diagnostic_value("contract", "unavailable"),
+            )
+        }
+    }
+}
+
 fn validate_generative_input_gates(
     staged_pack: &Path,
     manifest: &crate::models::Manifest,
@@ -1915,10 +2331,47 @@ fn validate_generative_input_gates(
             "routed_context" | "routed-context"
         )
     }) {
-        validate_input_type(input, ROUTED_CONTEXT_CONTRACT, "application/json")
-            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "routed-context-invalid"))?;
+        if input.authority.schema_id != ROUTED_CONTEXT_CONTRACT
+            || input.authority.media_type != "application/json"
+        {
+            return Err(run_failure_with_diagnostic(
+                RunFailureKind::PolicyBlocked,
+                "routed-context-invalid",
+                policy_diagnostic(
+                    "generative-preflight",
+                    "routed-context-schema",
+                    "wrong-contract",
+                    Some("routed_context"),
+                    Some("/contract"),
+                    diagnostic_value("contract", ROUTED_CONTEXT_CONTRACT),
+                    diagnostic_value("contract", "declared-input-mismatch"),
+                ),
+            ));
+        }
         let bytes = fs::read(&input.staged_path)
             .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "routed-context-invalid"))?;
+        let value = serde_json::from_slice::<Value>(&bytes).map_err(|_| {
+            run_failure_with_diagnostic(
+                RunFailureKind::PolicyBlocked,
+                "routed-context-invalid",
+                policy_diagnostic(
+                    "generative-preflight",
+                    "routed-context-schema",
+                    "malformed-json",
+                    Some("routed_context"),
+                    None,
+                    diagnostic_value("json-type", "object"),
+                    diagnostic_value("json-type", "malformed"),
+                ),
+            )
+        })?;
+        if let Some(diagnostic) = routed_context_shape_diagnostic(&value) {
+            return Err(run_failure_with_diagnostic(
+                RunFailureKind::PolicyBlocked,
+                "routed-context-invalid",
+                diagnostic,
+            ));
+        }
         let validation = crate::routing::validate_routed_context_bytes_for_job(
             staged_pack,
             manifest,
@@ -1932,12 +2385,25 @@ fn validate_generative_input_gates(
                 }
                 _ => "routed-context-invalid",
             };
-            run_failure(RunFailureKind::PolicyBlocked, code)
+            run_failure_with_diagnostic(
+                RunFailureKind::PolicyBlocked,
+                code,
+                routed_context_validation_diagnostic(error.kind()),
+            )
         })?;
         if validation.sha256 != input.authority.sha256 {
-            return Err(run_failure(
+            return Err(run_failure_with_diagnostic(
                 RunFailureKind::PolicyBlocked,
                 "routed-context-invalid",
+                policy_diagnostic(
+                    "generative-preflight",
+                    "routed-context-readiness",
+                    "stale-binding",
+                    Some("routed_context"),
+                    None,
+                    diagnostic_value("binding", "matched"),
+                    diagnostic_value("binding", "changed"),
+                ),
             ));
         }
     }
@@ -1950,26 +2416,56 @@ fn validate_step_inputs(step: &CompiledModelStepV1, staged: &[StagedInput]) -> R
         .iter()
         .map(|input| input.name.as_str())
         .collect::<HashSet<_>>();
-    if staged.iter().any(|input| {
+    if let Some(input) = staged.iter().find(|input| {
         is_host_invocation_metadata(&input.logical_name)
             || !declared.contains(input.logical_name.as_str())
     }) {
-        return Err(run_failure(
+        return Err(run_failure_with_diagnostic(
             RunFailureKind::PolicyBlocked,
             "undeclared-model-input",
+            policy_diagnostic(
+                "generative-preflight",
+                "declared-inputs",
+                "disallowed-field",
+                safe_logical_input_name(&input.logical_name),
+                Some("/unknown-field"),
+                diagnostic_value("field", "declared"),
+                diagnostic_value("field", "unknown-field"),
+            ),
         ));
     }
-    if step.declared_inputs.iter().any(|input| {
+    if let Some(input) = step.declared_inputs.iter().find(|input| {
         input.required
             && !is_host_invocation_metadata(&input.name)
             && !staged.iter().any(|item| item.logical_name == input.name)
     }) {
-        return Err(run_failure(
+        return Err(run_failure_with_diagnostic(
             RunFailureKind::PolicyBlocked,
             "required-model-input-missing",
+            policy_diagnostic(
+                "generative-preflight",
+                "declared-inputs",
+                "missing-required-field",
+                safe_logical_input_name(&input.name),
+                None,
+                diagnostic_value("binding", "declared"),
+                diagnostic_value("binding", "missing"),
+            ),
         ));
     }
     Ok(())
+}
+
+fn safe_logical_input_name(name: &str) -> Option<&'static str> {
+    match name {
+        "routed_context" | "routed-context" => Some("routed_context"),
+        "prompt" => Some("prompt"),
+        "prompt_receipt" | "prompt-receipt" => Some("prompt_receipt"),
+        "invocation_receipt_sha256" | "invocation-receipt-sha256" => {
+            Some("invocation_receipt_sha256")
+        }
+        _ => None,
+    }
 }
 
 fn is_host_invocation_metadata(name: &str) -> bool {
@@ -2826,29 +3322,42 @@ fn stage_local_artifact(
     })
 }
 
-fn verify_sources_unchanged(inputs: &[StagedInput]) -> Result<()> {
+fn check_sources_unchanged(inputs: &[StagedInput]) -> std::result::Result<(), RunDiagnostic> {
     for input in inputs {
-        let metadata = fs::symlink_metadata(&input.source_path)?;
+        let metadata = fs::symlink_metadata(&input.source_path)
+            .map_err(|_| source_integrity_input_diagnostic(input))?;
         let source_bytes = read_bounded(
             &input.source_path,
             input.authority.byte_count,
             "declared input",
-        )?;
+        )
+        .map_err(|_| source_integrity_input_diagnostic(input))?;
         let staged_bytes = read_bounded(
             &input.staged_path,
             input.authority.byte_count,
             "staged input",
-        )?;
+        )
+        .map_err(|_| source_integrity_input_diagnostic(input))?;
         if metadata.file_type().is_symlink()
             || !metadata.is_file()
             || metadata.len() != input.authority.byte_count
             || sha256_hex(&source_bytes) != input.initial_sha256
             || sha256_hex(&staged_bytes) != input.initial_sha256
         {
-            return Err(anyhow!("declared input mutated during execution"));
+            return Err(source_integrity_input_diagnostic(input));
         }
     }
     Ok(())
+}
+
+fn verify_sources_unchanged(inputs: &[StagedInput]) -> Result<()> {
+    check_sources_unchanged(inputs).map_err(|diagnostic| {
+        run_failure_with_diagnostic(
+            RunFailureKind::PolicyBlocked,
+            "source-integrity-failed",
+            diagnostic,
+        )
+    })
 }
 
 fn required_input<'a>(inputs: &'a [StagedInput], name: &str) -> Result<&'a StagedInput> {
@@ -3116,10 +3625,11 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        RunFailure, execute_run_inner, execute_run_inner_with_driver,
+        RunFailure, RunFailureKind, execute_run_inner, execute_run_inner_with_driver,
         governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
         project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
-        seal_driver_request, seal_driver_result, validate_driver_result, validate_request,
+        routed_context_shape_diagnostic, routed_context_validation_diagnostic, seal_driver_request,
+        seal_driver_result, validate_driver_result, validate_request,
     };
     use crate::commands::init::init_pack;
     use crate::run_contracts::{
@@ -3132,6 +3642,91 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn policy_diagnostics_use_bounded_allowlisted_values() {
+        for code in [
+            "malformed-json",
+            "wrong-contract",
+            "missing-required-field",
+            "disallowed-field",
+            "readiness-failure",
+            "stale-binding",
+            "internal-contract-mismatch",
+        ] {
+            let failure = RunFailure::new(
+                super::RunFailureKind::PolicyBlocked,
+                "routed-context-invalid",
+            );
+            let diagnostic = if code == "wrong-contract" {
+                super::policy_diagnostic(
+                    "generative-preflight",
+                    "routed-context-schema",
+                    code,
+                    Some("routed_context"),
+                    Some("/contract"),
+                    super::diagnostic_value("contract", super::ROUTED_CONTEXT_CONTRACT),
+                    super::diagnostic_value("contract", "missing"),
+                )
+            } else {
+                failure.diagnostics()[0].clone()
+            };
+            let encoded = serde_json::to_value(diagnostic).expect("diagnostic should serialize");
+            assert!(encoded["stage"].is_string());
+            assert!(encoded["gate"].is_string());
+            assert!(encoded["input"].is_null() || encoded["input"] == "routed_context");
+            assert!(
+                !serde_json::to_string(&encoded)
+                    .unwrap()
+                    .contains("/private/customer")
+            );
+        }
+        let fallback = RunFailure::new(
+            super::RunFailureKind::PolicyBlocked,
+            "required-model-input-missing",
+        );
+        assert_eq!(fallback.diagnostics()[0].expected.kind, "count");
+        assert!(
+            serde_json::to_vec(fallback.diagnostics()).unwrap().len()
+                <= super::MAX_POLICY_DIAGNOSTIC_BYTES
+        );
+    }
+
+    #[test]
+    fn routed_context_diagnostics_redact_unknown_keys_and_classify_bindings() {
+        let mut wrong =
+            serde_json::json!({"contract": "mdp.routed-context.v1", "job": "synthetic-job"});
+        wrong["attacker_secret"] = serde_json::json!("PRIVATE-SOURCE-BODY");
+        let diagnostic = routed_context_shape_diagnostic(&wrong).expect("unknown field diagnostic");
+        assert_eq!(diagnostic.code, "disallowed-field");
+        assert_eq!(diagnostic.field, Some("/unknown-field"));
+        assert!(
+            !serde_json::to_string(&diagnostic)
+                .unwrap()
+                .contains("attacker_secret")
+        );
+        let stale = routed_context_validation_diagnostic(
+            crate::routing::RoutedContextValidationKind::Canonical,
+        );
+        assert_eq!(stale.code, "stale-binding");
+        assert_eq!(stale.gate, "routed-context-readiness");
+    }
+
+    #[test]
+    fn driver_policy_block_uses_receipt_free_sanitized_failure() {
+        let failure = RunFailure::new(RunFailureKind::PolicyBlocked, "driver-policy-blocked");
+        assert_eq!(failure.code(), "driver-policy-blocked");
+        assert_eq!(failure.diagnostics().len(), 1);
+        let diagnostic = &failure.diagnostics()[0];
+        assert_eq!(diagnostic.stage, "run-preflight");
+        assert_eq!(diagnostic.gate, "policy");
+        assert_eq!(diagnostic.code, "internal-contract-mismatch");
+        assert!(diagnostic.input.is_none());
+        let encoded = serde_json::to_string(&failure.diagnostics()).unwrap();
+        assert!(encoded.len() <= super::MAX_POLICY_DIAGNOSTIC_BYTES);
+        assert!(!encoded.contains("OPENAI_API_KEY"));
+        assert!(!encoded.contains("native_model_calls_not_allowed"));
+    }
 
     #[test]
     fn rejects_ambient_authority_for_deterministic_run() {
@@ -3427,6 +4022,52 @@ mod tests {
             .unwrap()["valid"],
             true
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn post_bundle_driver_policy_block_returns_sanitized_failure_without_receipt() {
+        let root = temp_path("generative-driver-policy-block");
+        let pack = root.join("pack");
+        let raw = root.join("raw-row.json");
+        fs::create_dir_all(&root).unwrap();
+        crate::commands::init::init_pack(&pack, "Driver Policy Pack", "gtm", true, false).unwrap();
+        fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
+        let request = generative_request_fixture(&pack, &raw);
+        let run = root.join("published-run");
+        let error = execute_run_inner_with_driver(
+            &request,
+            &run,
+            || Ok(()),
+            |driver_request, _| {
+                let mut result = DriverResultV2 {
+                    contract: DRIVER_RESULT_V2.into(),
+                    execution_id: driver_request.execution_id.clone(),
+                    operation: driver_request.operation.clone(),
+                    terminal_state: TerminalState::NoDraftPolicyBlocked,
+                    output: None,
+                    provider_request_body_sha256: None,
+                    provider_request_schema_id: None,
+                    provider_response_body_sha256: None,
+                    provider_output_schema_sha256: Some(
+                        driver_request.provider_output_schema_sha256.clone(),
+                    ),
+                    provider_observation: None,
+                    diagnostic_code: Some("native_model_calls_not_allowed".into()),
+                    result_sha256: String::new(),
+                };
+                seal_driver_result(&mut result)?;
+                Ok(result)
+            },
+        )
+        .unwrap_err();
+        let failure = error.downcast_ref::<RunFailure>().unwrap();
+        assert!(matches!(failure.kind(), RunFailureKind::PolicyBlocked));
+        assert_eq!(failure.code(), "driver-policy-blocked");
+        assert_eq!(failure.diagnostics()[0].stage, "run-preflight");
+        assert_eq!(failure.diagnostics()[0].gate, "policy");
+        assert_eq!(failure.diagnostics()[0].code, "internal-contract-mismatch");
+        assert!(!run.exists());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -3891,6 +4532,18 @@ mod tests {
         })
         .unwrap();
         assert_eq!(result.terminal_state, TerminalState::NoDraftAuditIncomplete);
+        assert_eq!(
+            result.authority_block["diagnostics"][0]["code"],
+            "stale-binding"
+        );
+        assert_eq!(
+            result.authority_block["diagnostics"][0]["stage"],
+            "source-integrity"
+        );
+        assert_eq!(
+            result.authority_block["diagnostics"][0]["input"],
+            "prompt-output"
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -3923,6 +4576,11 @@ mod tests {
         })
         .unwrap();
         assert_eq!(result.terminal_state, TerminalState::NoDraftAuditIncomplete);
+        assert_eq!(
+            result.authority_block["diagnostics"][0]["code"],
+            "stale-binding"
+        );
+        assert_eq!(result.authority_block["diagnostics"][0]["input"], "pack");
         let receipt: serde_json::Value =
             serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
         assert!(receipt["output"].is_null());

@@ -164,6 +164,9 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RouteBudgetSummaryV1 => route_budget_summary_schema(),
         SchemaTarget::DecisionInput => decision_input_envelope_schema(),
         SchemaTarget::SourceBinding => source_binding_schema(),
+        SchemaTarget::SyntheticV2Chain => {
+            crate::commands::synthetic_chain::synthetic_v2_chain_schema()
+        }
         SchemaTarget::Prospect => {
             let mut value = prospect_schema();
             if let Some(object) = value.as_object_mut() {
@@ -2150,6 +2153,38 @@ fn run_verification_v1_schema() -> Value {
     })
 }
 
+fn diagnostic_value_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["kind", "value"],
+        "additionalProperties": false,
+        "properties": {
+            "kind": {"enum": ["contract", "field", "json-type", "readiness", "binding", "count"]},
+            "value": {"oneOf": [
+                {"type": "string", "minLength": 1, "maxLength": 64},
+                {"type": "integer", "minimum": 0, "maximum": 1000000}
+            ]}
+        }
+    })
+}
+
+fn policy_diagnostic_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["stage", "gate", "code", "input", "field", "expected", "observed"],
+        "additionalProperties": false,
+        "properties": {
+            "stage": {"enum": ["run-preflight", "generative-preflight", "source-integrity"]},
+            "gate": {"enum": ["policy", "routed-context-schema", "routed-context-readiness", "declared-inputs", "declared-input-immutability"]},
+            "code": {"enum": ["malformed-json", "wrong-contract", "missing-required-field", "disallowed-field", "readiness-failure", "stale-binding", "internal-contract-mismatch"]},
+            "input": {"anyOf": [{"type": "null"}, {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$"}]},
+            "field": {"enum": [null, "/contract", "/job", "/persona", "/scope", "/product_foundation", "/product_foundation_load_order", "/entries", "/gaps", "/policy", "/unknown-field"]},
+            "expected": diagnostic_value_schema(),
+            "observed": diagnostic_value_schema()
+        }
+    })
+}
+
 fn canonical_authority_block_v1_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2170,6 +2205,7 @@ fn canonical_authority_block_v1_schema() -> Value {
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array(),
             "reason_codes": string_array(),
+            "diagnostics": {"type": "array", "maxItems": 4, "items": policy_diagnostic_schema()},
             "bundle_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "receipt_sha256": {"anyOf": [sha256_schema(), {"type": "null"}]},
             "verification": {
@@ -2191,7 +2227,7 @@ fn canonical_authority_block_v1_schema() -> Value {
         },
         "allOf": [
             {
-                "if": {"properties": {"terminal_state": {"const": "no-draft:preflight-refused"}}},
+                "if": {"properties": {"terminal_state": {"enum": ["no-draft:preflight-refused", "no-draft:policy-blocked"]}}},
                 "then": {
                     "required": ["reason_codes"],
                     "properties": {
@@ -2206,6 +2242,19 @@ fn canonical_authority_block_v1_schema() -> Value {
                         "bundle_sha256": sha256_schema(),
                         "receipt_sha256": sha256_schema(),
                         "verification": {"type": "object"}
+                    }
+                }
+            },
+            {
+                "if": {"properties": {"terminal_state": {"const": "no-draft:policy-blocked"}}, "required": ["terminal_state"]},
+                "then": {
+                    "required": ["diagnostics"],
+                    "properties": {
+                        "decision": {"type": "null"},
+                        "bundle_sha256": {"type": "null"},
+                        "receipt_sha256": {"type": "null"},
+                        "verification": {"type": "null"},
+                        "diagnostics": {"minItems": 1}
                     }
                 }
             }
@@ -5865,6 +5914,54 @@ mod tests {
                 "contradictory authority profile must fail closed: {invalid}"
             );
         }
+    }
+
+    #[test]
+    fn policy_block_requires_closed_bounded_diagnostics() {
+        let schema = schema(SchemaTarget::CanonicalAuthorityBlockV1);
+        let diagnostic = json!({
+            "stage": "generative-preflight",
+            "gate": "routed-context-schema",
+            "code": "wrong-contract",
+            "input": "routed_context",
+            "field": "/contract",
+            "expected": {"kind": "contract", "value": "mdp.routed-context.v1"},
+            "observed": {"kind": "contract", "value": "missing"}
+        });
+        let mut blocked = json!({
+            "contract": CANONICAL_AUTHORITY_BLOCK_V1,
+            "execution_id": "synthetic-exec",
+            "terminal_state": "no-draft:policy-blocked",
+            "decision": null,
+            "assurance": [],
+            "limitations": ["synthetic limitation"],
+            "reason_codes": ["routed-context-invalid"],
+            "diagnostics": [diagnostic],
+            "bundle_sha256": null,
+            "receipt_sha256": null,
+            "verification": null,
+            "authority_notice": "synthetic authority notice"
+        });
+        draft202012::validate(&schema, &blocked)
+            .expect("bounded policy diagnostic should validate");
+        blocked["diagnostics"][0]["input"] = json!("prompt-output");
+        draft202012::validate(&schema, &blocked)
+            .expect("bounded source-integrity input should validate");
+        blocked["diagnostics"][0]["input"] = json!("x".repeat(65));
+        assert!(draft202012::validate(&schema, &blocked).is_err());
+        blocked["diagnostics"] = json!([]);
+        assert!(draft202012::validate(&schema, &blocked).is_err());
+        blocked["diagnostics"] = json!([{
+            "stage": "generative-preflight",
+            "gate": "routed-context-schema",
+            "code": "wrong-contract",
+            "input": "routed_context",
+            "field": "/contract",
+            "expected": {"kind": "contract", "value": "mdp.routed-context.v1"},
+            "observed": {"kind": "contract", "value": "missing"},
+            "unexpected": "must-be-rejected"
+        }]);
+        assert!(draft202012::validate(&schema, &blocked).is_err());
     }
 
     #[test]
