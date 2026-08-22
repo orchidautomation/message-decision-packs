@@ -11,9 +11,9 @@ use crate::commands::routing::{
 };
 use crate::commands::schemas::prompt_output_schema_for_ref;
 use crate::constants::{
-    COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, NORMALIZED_DECISION_INPUT_CONTRACT,
-    NORMALIZED_DECISION_INPUT_CONTRACT_V2, ROUTED_CONTEXT_CONTRACT,
-    SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
+    COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, GENERATED_PACK_DIRECTORIES,
+    NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+    ROUTED_CONTEXT_CONTRACT, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
 };
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
@@ -42,7 +42,6 @@ const PROPOSAL_PROFILE: &str = "proposal";
 const VALIDATE_EXISTING_OUTPUT: &str = "validate-existing-output";
 const GTM_PROFILE: &str = "gtm";
 const QUALIFY: &str = "qualify";
-const GENERATED_PACK_DIRECTORIES: &[&str] = &["briefs", "traces"];
 const MAX_PACK_FILES: usize = 10_000;
 const MAX_PACK_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_EXECUTION_ID_BYTES: usize = 128;
@@ -572,6 +571,7 @@ where
         .map_err(|_| run_failure(RunFailureKind::Preflight, "request-policy-invalid"))?;
     let deadline = RunDeadline::new(request.execution_policy.timeout_ms);
     let final_dir = output_root;
+    validate_output_outside_pack(request, final_dir)?;
     if final_dir.exists() {
         return Err(run_failure(
             RunFailureKind::Preflight,
@@ -584,6 +584,7 @@ where
         .unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)
         .with_context(|| format!("creating run output parent {}", parent.display()))?;
+    validate_output_outside_pack(request, final_dir)?;
     let leaf = final_dir
         .file_name()
         .and_then(|name| name.to_str())
@@ -655,8 +656,16 @@ where
         cleanup_failed_transaction(&transaction_dir)?;
         return Err(error);
     }
+    if let Err(error) = validate_output_outside_pack(request, final_dir) {
+        let _ = cleanup_failed_transaction(&transaction_dir);
+        return Err(error);
+    }
     fs::remove_dir_all(transaction_dir.join("private"))
         .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "private-cleanup-failed"))?;
+    if let Err(error) = validate_output_outside_pack(request, final_dir) {
+        let _ = cleanup_failed_transaction(&transaction_dir);
+        return Err(error);
+    }
     if fs::symlink_metadata(final_dir).is_ok() {
         return Err(run_failure(
             RunFailureKind::Preflight,
@@ -2418,6 +2427,88 @@ fn validate_output_leaf(leaf: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_output_outside_pack(request: &RunRequestV1, output_root: &Path) -> Result<()> {
+    let pack_root = fs::canonicalize(&request.pack_dir)
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "pack-boundary-refused"))?;
+    let output_root = canonicalize_new_output_path(output_root)
+        .map_err(|_| run_failure(RunFailureKind::Preflight, "output-directory-path-invalid"))?;
+    if output_root == pack_root || output_root.starts_with(&pack_root) {
+        return Err(run_failure(
+            RunFailureKind::Preflight,
+            "output-directory-inside-pack",
+        ));
+    }
+    Ok(())
+}
+
+fn canonicalize_new_output_path(path: &Path) -> Result<PathBuf> {
+    match canonicalize_new_output_path_inner(path) {
+        Ok(path) => Ok(path),
+        Err(error)
+            if path
+                .components()
+                .any(|component| matches!(component, Component::ParentDir)) =>
+        {
+            canonicalize_new_output_path_inner(&lexically_normalize_path(path)).map_err(|_| error)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn canonicalize_new_output_path_inner(path: &Path) -> Result<PathBuf> {
+    let mut existing = path.to_path_buf();
+    let mut missing_components = Vec::new();
+    loop {
+        match fs::symlink_metadata(&existing) {
+            Ok(metadata) if metadata.is_dir() || metadata.file_type().is_symlink() => break,
+            Ok(_) => {
+                return Err(anyhow!(
+                    "output directory ancestor is not a directory: {}",
+                    existing.display()
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let component = existing
+                    .file_name()
+                    .ok_or_else(|| anyhow!("output directory has no canonical ancestor"))?;
+                missing_components.push(component.to_owned());
+                existing = existing
+                    .parent()
+                    .ok_or_else(|| anyhow!("output directory has no canonical ancestor"))?
+                    .to_path_buf();
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let mut canonical = fs::canonicalize(existing)?;
+    for component in missing_components.iter().rev() {
+        if component == ".." {
+            canonical.pop();
+        } else if component != "." {
+            canonical.push(component);
+        }
+    }
+    Ok(canonical)
+}
+
+fn lexically_normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if normalized.file_name().is_some_and(|name| name != "..") {
+                    normalized.pop();
+                } else {
+                    normalized.push(component.as_os_str());
+                }
+            }
+            component => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
+}
+
 fn is_sha256(value: &str) -> bool {
     value.len() == 64
         && value
@@ -3790,6 +3881,61 @@ mod tests {
 
         assert!(execute_run_inner(&request, &run, || Ok(())).is_err());
         assert!(!run.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_directory_must_resolve_outside_pack_before_any_write() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_path("output-containment");
+        let pack = root.join("pack");
+        init_pack(&pack, "Proposal Run", "proposal", true, false).unwrap();
+        let output = root.join("invalid.json");
+        fs::write(&output, "{}\n").unwrap();
+        let output_paths = [
+            pack.clone(),
+            pack.join("nested").join("run"),
+            pack.join("nested").join("..").join("canonical-run"),
+        ];
+        for (index, output_path) in output_paths.iter().enumerate() {
+            let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
+            request.execution_id = format!("inside-pack-{index}");
+            let error = execute_run_inner(&request, output_path, || Ok(())).unwrap_err();
+            assert_eq!(
+                error
+                    .downcast_ref::<super::RunFailure>()
+                    .expect("containment failure should be sanitized")
+                    .code(),
+                "output-directory-inside-pack",
+                "output path {} (case {index})",
+                output_path.display()
+            );
+        }
+
+        let pack_alias = root.join("pack-alias");
+        symlink(&pack, &pack_alias).unwrap();
+        let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
+        request.execution_id = "inside-pack-symlink".into();
+        let error =
+            execute_run_inner(&request, &pack_alias.join("symlink-run"), || Ok(())).unwrap_err();
+        assert_eq!(
+            error
+                .downcast_ref::<super::RunFailure>()
+                .expect("symlink containment failure should be sanitized")
+                .code(),
+            "output-directory-inside-pack"
+        );
+
+        let safe_output = root.join("pack-scratch").join("run");
+        let mut request = request_fixture(pack.to_str().unwrap(), output.to_str().unwrap());
+        request.execution_id = "outside-pack".into();
+        let result = execute_run_inner(&request, &safe_output, || Ok(())).unwrap();
+        assert_eq!(result.terminal_state, TerminalState::NoDraftOutputInvalid);
+        assert!(safe_output.join("run-receipt.json").is_file());
+        assert!(!pack.join("nested").exists());
+        assert!(pack_alias.exists());
         let _ = fs::remove_dir_all(root);
     }
 

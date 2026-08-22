@@ -64,6 +64,13 @@ mdp --json verify-run \
   --artifact-root <new-run-directory>
 ```
 
+Keep `<new-run-directory>` outside the pack that produced the request (for
+example, `/tmp/mdp-clean-run-<id>` or a customer-controlled job workdir). A
+path equal to or beneath the active pack is refused before any output parent,
+claim, or transaction is created. Generated run evidence is control-plane
+output, not authored pack content; validation reports legacy in-pack evidence
+with a move-outside-pack diagnostic and does not delete it.
+
 The result separates declared, observed, enforced, verified, unknown,
 redacted, unsupported, and not-applicable evidence. Deterministic GTM runs do
 not call a model and therefore mark inference dimensions `not-applicable`.

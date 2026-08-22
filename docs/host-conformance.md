@@ -43,6 +43,14 @@ The [synthetic conformance envelopes](../examples/run-conformance/) demonstrate 
 
 The host supplies `mdp.run-request.v1` to the local CLI. MDP resolves and freezes the pack release and declared artifacts, then creates `mdp.run-bundle.v1`. For the bundled native path, the operation selects one resolver-emitted model-step ID and the CLI creates a closed `mdp.driver-request.v2` containing the exact model-visible bytes. External v1 drivers continue to receive content-addressed staged authority through `mdp.driver-request.v1`.
 
+The run output root is also a filesystem boundary: place it in a new external
+customer-controlled scratch/work directory, never at the active pack root or
+under it. The Rust CLI and stdio MCP adapter compare canonical path components
+and refuse unsafe roots before creating output parents, claims, or
+transactions. If a pack already contains generated run evidence, validation
+returns one remediation diagnostic for the generated root and does not delete
+the evidence.
+
 An external v1 driver follows one bounded protocol:
 
 1. Receive exactly one UTF-8 `mdp.driver-request.v1` JSON object on stdin.

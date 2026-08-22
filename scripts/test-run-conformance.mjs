@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -448,6 +448,26 @@ try {
     writeJson(retryRequest, request("reuse-attempt"));
     expectPreflightRefusal(invoke(["--json", "run", "--request", retryRequest, "--out-dir", baseline.outDir]), "output directory reuse", "output-directory-reused");
     assert.equal(readFileSync(marker, "utf8"), "preserve\n");
+  });
+
+  record("in-pack output roots are refused before parent, claim, or transaction writes", () => {
+    const alias = join(root, "pack-alias");
+    symlinkSync(pack, alias);
+    const cases = [
+      join(pack, "direct-run"),
+      join(pack, "nested", "run"),
+      join(pack, "..", basename(pack), "canonical-run"),
+      join(alias, "symlink-run"),
+    ];
+    for (const [index, outDir] of cases.entries()) {
+      const requestPath = join(root, `inside-pack-${index}.request.json`);
+      writeJson(requestPath, request(`inside-pack-${index}`));
+      const result = invoke(["--json", "run", "--request", requestPath, "--out-dir", outDir]);
+      expectPreflightRefusal(result, `in-pack output ${index}`, "output-directory-inside-pack");
+      assert.equal(existsSync(outDir), false);
+      assert.equal(existsSync(join(dirname(outDir), `.${basename(outDir)}.mdp-run.claim`)), false);
+    }
+    assert.equal(existsSync(join(pack, "nested")), false);
   });
 
   record("invalid output produces an explicit no-draft receipt and no output authority", () => {

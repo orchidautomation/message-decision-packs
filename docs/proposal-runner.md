@@ -181,6 +181,12 @@ mdp --json run \
   --out-dir <workdir>/artifacts/clean-run-v1
 ```
 
+`<workdir>` must be external to `<pack-root>` and customer-controlled. The
+clean-run output directory may not equal or descend from the active pack;
+canonical CLI and MCP preflight rejects that relationship before writing.
+Generated evidence belongs to the control plane, and validation does not
+delete older in-pack artifacts; move them manually to the external workdir.
+
 The request uses the deterministic `proposal` / `validate-existing-output`
 operation. JavaScript does not set v1 hashes, assurance, terminal state, or
 receipt values. Consumers must treat `canonical_run` and

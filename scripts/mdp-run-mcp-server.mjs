@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { superviseProcess } from './lib/process-supervisor.mjs'
@@ -174,6 +174,7 @@ const freezeRequestFile = (value) => {
       privateDir,
       sha256: createHash('sha256').update(bytes).digest('hex'),
       executionId: typeof parsed?.execution_id === 'string' ? parsed.execution_id : null,
+      packDir: typeof parsed?.pack_dir === 'string' ? parsed.pack_dir : null,
       usesNativeModel: parsed?.contract === 'mdp.run-request.v1' && parsed?.mode === 'generative',
     }
   } catch (error) {
@@ -202,10 +203,22 @@ const canonicalNewOutputDir = (value) => {
   if (!leaf || leaf === '.' || leaf === '..') throw new Error('output_dir must name a new directory')
   const requestedParent = dirname(requested)
   if (!existsSync(requestedParent)) throw new Error('output_dir parent does not exist')
-  if (lstatSync(requestedParent).isSymbolicLink()) throw new Error('output_dir parent must not be a symlink')
   const parent = realpathSync(requestedParent)
   if (!statSync(parent).isDirectory()) throw new Error('output_dir parent must be a directory')
   return join(parent, leaf)
+}
+
+const assertOutputOutsidePack = (packDir, outputDir) => {
+  if (typeof packDir !== 'string' || packDir.trim() === '') return
+  const requestedPack = resolve(packDir)
+  if (!existsSync(requestedPack)) return
+  const pack = realpathSync(requestedPack)
+  if (!statSync(pack).isDirectory()) return
+  const output = resolve(outputDir)
+  const pathFromPack = relative(pack, output)
+  const insidePack = pathFromPack === '' ||
+    (!pathFromPack.startsWith(`..${sep}`) && pathFromPack !== '..' && !pathFromPack.startsWith(sep))
+  if (insidePack) throw new Error('output_dir must be outside the active pack')
 }
 
 const childEnvironment = (includeNativeModel = false) =>
@@ -313,6 +326,7 @@ const callRun = async (args) => {
 
   let invocation
   try {
+    assertOutputOutsidePack(frozenRequest.packDir, outputDir)
     invocation = await invokeCli(
       ['--json', 'run', '--request', frozenRequest.path, '--out-dir', outputDir],
       dirname(outputDir),

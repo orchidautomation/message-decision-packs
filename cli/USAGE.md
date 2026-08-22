@@ -134,6 +134,13 @@ mdp --json verify-run \
   --artifact-root NEW_RUN_DIRECTORY
 ```
 
+`NEW_RUN_DIRECTORY` must be a new external directory outside the active pack.
+The CLI rejects roots that resolve to the pack or a descendant, including
+canonical and symlink aliases, before creating output-side state. Existing
+generated evidence under a pack is reported for manual relocation; validation
+does not delete it. See `mdp --json capabilities` for the stable
+`output-directory-inside-pack` error code.
+
 One run executes one normalization, generation, or review step and emits one
 receipt. The customer host sequences normalization → deterministic fit/routing
 → generation/review as separate operations. MDP does not collect, batch,
