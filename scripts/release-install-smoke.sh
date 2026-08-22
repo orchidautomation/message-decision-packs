@@ -87,6 +87,7 @@ PLUXX_RUNTIME_STORE_ROOT="$install_home/.pluxx/runtimes" \
   bash "$installer" --version "$version" "${install_args[@]}"
 
 mdp_bin="$install_dir/mdp"
+node_bin="$(command -v node)"
 if [ ! -x "$mdp_bin" ]; then
   echo "Installed mdp binary not found or not executable: $mdp_bin" >&2
   exit 1
@@ -330,6 +331,10 @@ trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
 "$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
 installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
 "$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-init.json
+MDP_BIN="$mdp_bin" \
+MDP_PARITY_GTM_PACK="$installed_gtm_fixture" \
+MDP_PARITY_PROPOSAL_PACK="$proposal_fixture" \
+  "$node_bin" "$codex_plugin_root/scripts/test-universal-native-parity.mjs"
 "$mdp_bin" --json validate --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-validate.json
 "$mdp_bin" --json eval --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-eval.json
 "$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-gaps.json
@@ -439,7 +444,6 @@ for name, value in [("proposal-request.json", proposal), ("gtm-request.json", gt
     (root / name).write_text(json.dumps(value, indent=2) + "\n")
 PY
 
-node_bin="$(command -v node)"
 for profile in proposal gtm; do
   request="$proposal_fixture/$profile-request.json"
   run_dir="$proposal_fixture/$profile-run"

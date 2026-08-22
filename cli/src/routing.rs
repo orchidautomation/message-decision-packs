@@ -1,5 +1,6 @@
-use crate::artifact_hash::{canonical_json_bytes, sha256_hex};
+use crate::artifact_hash::{canonical_json_bytes, canonical_json_sha256, sha256_hex};
 use crate::commands::health::{profile_activation_decision, validate_pack};
+use crate::commands::schemas::routed_context_schema;
 use crate::constants::{DEFAULT_DIR, ROUTED_CONTEXT_CONTRACT};
 use crate::models::{CardKind, Entry, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
@@ -8,10 +9,11 @@ use crate::product_foundation::{
     resolve_product_foundation_for_pack, validation_errors_block_job,
 };
 use crate::runtime_context::current_runtime_context;
-use crate::scope::{ScopeResolution, match_entry_scope};
+use crate::scope::{ContextScope, ScopeResolution, match_entry_scope, resolve_runtime_scope};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::path::Path;
 
 struct EntryRouteDetails {
@@ -561,6 +563,119 @@ pub(crate) fn entry_context_scoped(
         &runtime_context,
         scope,
     )
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(crate) enum RoutedContextValidationKind {
+    Schema,
+    Contract,
+    Job,
+    Scope,
+    Canonical,
+    NotCompiled,
+    ReadinessBlocked,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(crate) struct RoutedContextValidationError {
+    kind: RoutedContextValidationKind,
+}
+
+impl RoutedContextValidationError {
+    fn new(kind: RoutedContextValidationKind) -> Self {
+        Self { kind }
+    }
+
+    pub(crate) fn kind(self) -> RoutedContextValidationKind {
+        self.kind
+    }
+}
+
+impl fmt::Display for RoutedContextValidationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self.kind {
+            RoutedContextValidationKind::Schema
+            | RoutedContextValidationKind::Contract
+            | RoutedContextValidationKind::Job
+            | RoutedContextValidationKind::Scope
+            | RoutedContextValidationKind::Canonical
+            | RoutedContextValidationKind::NotCompiled => "routed-context-invalid",
+            RoutedContextValidationKind::ReadinessBlocked => "draft-readiness-blocked",
+        })
+    }
+}
+
+impl std::error::Error for RoutedContextValidationError {}
+
+#[derive(Debug)]
+pub(crate) struct RoutedContextValidation {
+    pub(crate) sha256: String,
+}
+
+pub(crate) fn validate_routed_context_bytes_for_job(
+    root: &Path,
+    manifest: &Manifest,
+    bytes: &[u8],
+    job: &str,
+) -> std::result::Result<RoutedContextValidation, RoutedContextValidationError> {
+    let value = serde_json::from_slice::<Value>(bytes)
+        .map_err(|_| RoutedContextValidationError::new(RoutedContextValidationKind::Schema))?;
+    validate_routed_context_value_for_job(root, manifest, &value, &sha256_hex(bytes), job)
+}
+
+pub(crate) fn validate_routed_context_value_for_job(
+    root: &Path,
+    manifest: &Manifest,
+    value: &Value,
+    raw_sha256: &str,
+    job: &str,
+) -> std::result::Result<RoutedContextValidation, RoutedContextValidationError> {
+    jsonschema::draft202012::validate(&routed_context_schema(), value)
+        .map_err(|_| RoutedContextValidationError::new(RoutedContextValidationKind::Schema))?;
+    if value["contract"] != ROUTED_CONTEXT_CONTRACT {
+        return Err(RoutedContextValidationError::new(
+            RoutedContextValidationKind::Contract,
+        ));
+    }
+    if value["job"].as_str() != Some(job) {
+        return Err(RoutedContextValidationError::new(
+            RoutedContextValidationKind::Job,
+        ));
+    }
+    let requested_scope =
+        serde_json::from_value::<ContextScope>(value["scope"]["requested"].clone())
+            .map_err(|_| RoutedContextValidationError::new(RoutedContextValidationKind::Scope))?;
+    let scope = resolve_runtime_scope(manifest, requested_scope);
+    if serde_json::to_value(&scope).ok().as_ref() != Some(&value["scope"]) {
+        return Err(RoutedContextValidationError::new(
+            RoutedContextValidationKind::Scope,
+        ));
+    }
+    let canonical_sha256 = canonical_json_sha256(value)
+        .map_err(|_| RoutedContextValidationError::new(RoutedContextValidationKind::Canonical))?;
+    if canonical_sha256 != raw_sha256 {
+        return Err(RoutedContextValidationError::new(
+            RoutedContextValidationKind::Canonical,
+        ));
+    }
+    let persona = value["persona"]
+        .as_str()
+        .ok_or_else(|| RoutedContextValidationError::new(RoutedContextValidationKind::Schema))?;
+    let compiled = entry_context_scoped(root, manifest, persona, job, true, &scope)
+        .map_err(|_| RoutedContextValidationError::new(RoutedContextValidationKind::NotCompiled))?;
+    if compiled["status"] != "ready" || compiled["model_context"].is_null() {
+        return Err(RoutedContextValidationError::new(
+            RoutedContextValidationKind::ReadinessBlocked,
+        ));
+    }
+    if compiled["model_context"] != *value {
+        return Err(RoutedContextValidationError::new(
+            RoutedContextValidationKind::NotCompiled,
+        ));
+    }
+    Ok(RoutedContextValidation {
+        sha256: canonical_sha256,
+    })
 }
 
 pub(crate) fn entry_context_with_runtime_scoped(
@@ -2609,6 +2724,67 @@ mod tests {
         assert!(largest[0].get("canonical_bytes").is_some());
         assert!(largest[0].get("entry_count").is_some());
         assert!(largest.iter().all(|card| card.get("body").is_none()));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn routed_context_validator_accepts_exact_emitted_bytes_and_rejects_drift() {
+        let root = temp_pack("routed-context-validator");
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let output =
+            crate::commands::briefs::emit_brief(&root, "PMM", None, Some("outbound-copy-brief"))
+                .expect("brief should emit");
+        let context = output["context"]["model_context"].clone();
+        let bytes = canonical_json_bytes(&context).expect("context should canonicalize");
+        let valid =
+            validate_routed_context_bytes_for_job(&root, &manifest, &bytes, "outbound-copy-brief")
+                .expect("exact producer bytes should validate");
+        assert_eq!(valid.sha256, sha256_hex(&bytes));
+
+        let mut wrong_job = context.clone();
+        wrong_job["job"] = json!("prospect-fit-or-brief");
+        let wrong_job_bytes = canonical_json_bytes(&wrong_job).expect("wrong job should serialize");
+        assert_eq!(
+            validate_routed_context_bytes_for_job(
+                &root,
+                &manifest,
+                &wrong_job_bytes,
+                "outbound-copy-brief",
+            )
+            .expect_err("wrong job must fail closed")
+            .kind(),
+            RoutedContextValidationKind::Job
+        );
+
+        let pretty_bytes = serde_json::to_vec_pretty(&context).expect("context should serialize");
+        assert_eq!(
+            validate_routed_context_bytes_for_job(
+                &root,
+                &manifest,
+                &pretty_bytes,
+                "outbound-copy-brief",
+            )
+            .expect_err("non-canonical bytes must fail closed")
+            .kind(),
+            RoutedContextValidationKind::Canonical
+        );
+
+        let mut changed = context;
+        changed["entries"][0]["body"] = json!("synthetic changed authority");
+        let changed_bytes =
+            canonical_json_bytes(&changed).expect("changed context should serialize");
+        assert_eq!(
+            validate_routed_context_bytes_for_job(
+                &root,
+                &manifest,
+                &changed_bytes,
+                "outbound-copy-brief",
+            )
+            .expect_err("changed context must fail closed")
+            .kind(),
+            RoutedContextValidationKind::NotCompiled
+        );
+
         let _ = std::fs::remove_dir_all(root);
     }
 }

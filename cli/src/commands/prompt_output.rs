@@ -1,6 +1,5 @@
 use crate::artifact_hash::{canonical_json_sha256, pack_content_sha256, sha256_hex};
 use crate::commands::requirements::validate_normalized_decision_input_with_projection;
-use crate::commands::schemas::routed_context_schema;
 use crate::constants::{
     DEFAULT_DIR, PROMPT_OUTPUT_CONTRACT, PROMPT_OUTPUT_VALIDATION_CONTRACT,
     ROUTED_CONTEXT_CONTRACT, SOURCE_AUDIT_CONTRACT,
@@ -11,7 +10,6 @@ use crate::pack_io::{
 };
 use crate::product_foundation::{ProductFoundationStatus, resolve_product_foundation_for_pack};
 use crate::runtime_context::validate_runtime_context;
-use crate::scope::{ContextScope, resolve_runtime_scope};
 use crate::utils::{normalize_supplied_company_domain, resolve_pack_persona_label};
 use crate::value_contracts::normalized_prospect_contract_violations;
 use anyhow::{Result, anyhow};
@@ -833,48 +831,43 @@ fn validate_governed_artifact_authority(
     if requires_routed_context {
         match routed_context {
             Some((context, context_path, raw_sha256)) => {
-                let mut context_verified = true;
-                if let Err(error) =
-                    jsonschema::draft202012::validate(&routed_context_schema(), context)
-                {
-                    context_verified = false;
-                    issues.push(issue(
-                        "governed_artifact_routed_context_schema_mismatch",
-                        "error",
-                        context_path,
-                        format!(
-                            "routed context does not satisfy {ROUTED_CONTEXT_CONTRACT}: {error}"
+                let validation = crate::routing::validate_routed_context_value_for_job(
+                    root, manifest, context, raw_sha256, &job.id,
+                );
+                let context_verified = validation.is_ok();
+                if let Err(error) = validation {
+                    let (code, issue_path, message) = match error.kind() {
+                        crate::routing::RoutedContextValidationKind::Schema => (
+                            "governed_artifact_routed_context_schema_mismatch",
+                            context_path.to_string(),
+                            format!("routed context must satisfy {ROUTED_CONTEXT_CONTRACT}"),
                         ),
-                    ));
-                }
-                if context["contract"] != ROUTED_CONTEXT_CONTRACT {
-                    context_verified = false;
-                    issues.push(issue(
-                        "governed_artifact_routed_context_contract_mismatch",
-                        "error",
-                        format!("{context_path}#/contract"),
-                        format!("routed context contract must be {ROUTED_CONTEXT_CONTRACT}"),
-                    ));
-                }
-                if context["job"].as_str() != Some(job.id.as_str()) {
-                    context_verified = false;
-                    issues.push(issue(
-                        "governed_artifact_routed_context_job_mismatch",
-                        "error",
-                        format!("{context_path}#/job"),
-                        format!("routed context job must be {}", job.id),
-                    ));
+                        crate::routing::RoutedContextValidationKind::Contract => (
+                            "governed_artifact_routed_context_contract_mismatch",
+                            format!("{context_path}#/contract"),
+                            format!("routed context contract must be {ROUTED_CONTEXT_CONTRACT}"),
+                        ),
+                        crate::routing::RoutedContextValidationKind::Job => (
+                            "governed_artifact_routed_context_job_mismatch",
+                            format!("{context_path}#/job"),
+                            format!("routed context job must be {}", job.id),
+                        ),
+                        crate::routing::RoutedContextValidationKind::Canonical => (
+                            "governed_artifact_routed_context_not_canonical",
+                            context_path.to_string(),
+                            "routed context file bytes must be canonical JSON".to_string(),
+                        ),
+                        crate::routing::RoutedContextValidationKind::Scope
+                        | crate::routing::RoutedContextValidationKind::NotCompiled
+                        | crate::routing::RoutedContextValidationKind::ReadinessBlocked => (
+                            "governed_artifact_routed_context_not_compiled",
+                            context_path.to_string(),
+                            "routed context must exactly match MDP's compiled model context for the declared pack, job, persona, and scope".to_string(),
+                        ),
+                    };
+                    issues.push(issue(code, "error", issue_path, message));
                 }
                 let canonical_sha256 = canonical_json_sha256(context).ok();
-                if canonical_sha256.as_deref() != Some(raw_sha256) {
-                    context_verified = false;
-                    issues.push(issue(
-                        "governed_artifact_routed_context_not_canonical",
-                        "error",
-                        context_path,
-                        "routed context file bytes must be canonical JSON",
-                    ));
-                }
                 if output["context_sha256"].as_str() != canonical_sha256.as_deref() {
                     issues.push(issue(
                         "governed_artifact_context_sha256_mismatch",
@@ -898,37 +891,6 @@ fn validate_governed_artifact_authority(
                         "error",
                         invocation_receipt.map_or(path, |(_, receipt_path, _)| receipt_path),
                         "prompt invocation receipt must bind the exact routed context bytes",
-                    ));
-                }
-                let compiled_context = context["persona"]
-                    .as_str()
-                    .zip(
-                        serde_json::from_value::<ContextScope>(
-                            context["scope"]["requested"].clone(),
-                        )
-                        .ok(),
-                    )
-                    .and_then(|(persona, requested_scope)| {
-                        let scope = resolve_runtime_scope(manifest, requested_scope);
-                        if serde_json::to_value(&scope).ok().as_ref() != Some(&context["scope"]) {
-                            return None;
-                        }
-                        crate::routing::entry_context_scoped(
-                            root, manifest, persona, &job.id, true, &scope,
-                        )
-                        .ok()
-                    });
-                if compiled_context
-                    .as_ref()
-                    .and_then(|compiled| compiled.get("model_context"))
-                    != Some(context)
-                {
-                    context_verified = false;
-                    issues.push(issue(
-                        "governed_artifact_routed_context_not_compiled",
-                        "error",
-                        context_path,
-                        "routed context must exactly match MDP's compiled model context for the declared pack, job, persona, and scope",
                     ));
                 }
                 for entry in context_verified

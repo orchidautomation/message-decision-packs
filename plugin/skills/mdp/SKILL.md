@@ -249,6 +249,12 @@ artifact to be saved, and use only that bounded authority. Never open excluded
 entries or the whole pack. Validate the returned governed artifact
 with its prompt ID and the exact host-created invocation receipt:
 
+The routed-context file is the exact closed `mdp.routed-context.v1`
+model-context object emitted by MDP. It has no top-level `status` or
+`draft_status` readiness field. Before generative execution, MDP rechecks its
+schema, canonical bytes, job, persona/scope, and current staged-pack
+compilation; blocked, stale, or changed context remains no-draft authority.
+
 ```bash
 mdp --json validate-prompt-output --dir PACK_ROOT \
   --prompt-id PROMPT_ID \
