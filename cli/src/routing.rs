@@ -2,7 +2,7 @@ use crate::artifact_hash::{canonical_json_bytes, canonical_json_sha256, sha256_h
 use crate::commands::health::{profile_activation_decision, validate_pack};
 use crate::commands::schemas::routed_context_schema;
 use crate::constants::{DEFAULT_DIR, ROUTED_CONTEXT_CONTRACT};
-use crate::models::{CardKind, Entry, Manifest};
+use crate::models::{CardKind, Entry, JobContextBudget, Manifest};
 use crate::pack_io::{read_card, resolve_pack_path};
 use crate::product_foundation::{
     ProductFoundationResolution, apply_validation_errors_for_job, resolution_json,
@@ -351,7 +351,6 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                         "budget": Value::Null,
                         "selected_count": Value::Null,
                         "excluded_count": Value::Null,
-                        "allocation": empty_allocation_receipt(),
                         "diagnostics": diagnostics,
                         "reason_distribution": {},
                         "excluded_reason_distribution": {},
@@ -417,7 +416,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             let reason_distribution = route_reason_distribution(&route);
             let excluded_reason_distribution = route_excluded_reason_distribution(minimality);
             let largest_contributing_cards = minimality["largest_contributing_cards"].clone();
-            routes.push(json!({
+            let mut route_receipt = json!({
                 "persona": persona,
                 "job": job.id,
                 "status": status,
@@ -429,14 +428,17 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                 },
                 "selected_count": selected_count,
                 "excluded_count": excluded_count,
-                "allocation": minimality["allocation"].clone(),
                 "diagnostics": diagnostics,
                 "reason_distribution": reason_distribution,
                 "excluded_reason_distribution": excluded_reason_distribution,
                 "largest_contributing_cards": largest_contributing_cards,
                 "context_sha256": minimality["context_sha256"].clone(),
                 "route_card_cap": route_card_cap
-            }));
+            });
+            if !minimality["allocation"].is_null() {
+                route_receipt["allocation"] = minimality["allocation"].clone();
+            }
+            routes.push(route_receipt);
         }
     }
 
@@ -507,15 +509,15 @@ pub(crate) fn entry_route_scoped(
     let profile_activation_blocked = profile_activation["status"] == "blocked";
     let mut details = route_entry_details(root, manifest, persona, job, true, scope)?;
     let product_foundation_load_order = foundation_load_order(&product_foundation);
-    apply_selection_authority(&mut details.context_entries, &product_foundation_load_order);
-    allocate_context_entries(
-        &mut details,
-        manifest
-            .jobs
-            .iter()
-            .find(|candidate| candidate.id == job)
-            .and_then(|candidate| candidate.context_budget.as_ref()),
-    );
+    let context_budget = manifest
+        .jobs
+        .iter()
+        .find(|candidate| candidate.id == job)
+        .and_then(|candidate| candidate.context_budget.as_ref());
+    if optional_quota_enabled(context_budget) {
+        apply_selection_authority(&mut details.context_entries, &product_foundation_load_order);
+        allocate_context_entries(&mut details, context_budget);
+    }
     let (policy, model_visible_projection) = routed_context_projection(
         job,
         persona,
@@ -730,15 +732,15 @@ pub(crate) fn entry_context_with_runtime_scoped(
     let mut details = route_entry_details(root, manifest, persona, job, true, scope)?;
     let scope_blocked = !details.scope_ready(scope);
     let product_foundation_load_order = foundation_load_order(&product_foundation);
-    apply_selection_authority(&mut details.context_entries, &product_foundation_load_order);
-    allocate_context_entries(
-        &mut details,
-        manifest
-            .jobs
-            .iter()
-            .find(|candidate| candidate.id == job)
-            .and_then(|candidate| candidate.context_budget.as_ref()),
-    );
+    let context_budget = manifest
+        .jobs
+        .iter()
+        .find(|candidate| candidate.id == job)
+        .and_then(|candidate| candidate.context_budget.as_ref());
+    if optional_quota_enabled(context_budget) {
+        apply_selection_authority(&mut details.context_entries, &product_foundation_load_order);
+        allocate_context_entries(&mut details, context_budget);
+    }
     let foundation_blocked = product_foundation.blocks_activation();
     let (ready_policy, model_visible_projection) = routed_context_projection(
         job,
@@ -921,7 +923,6 @@ fn context_minimality(
             "status": if route_card_cap_blocked { "blocked" } else { "unassessed" },
             "context_sha256": Value::Null,
             "budget": Value::Null,
-            "allocation": allocation,
             "excluded": excluded,
             "diagnostics": diagnostics
         }));
@@ -935,7 +936,6 @@ fn context_minimality(
             "status": if route_card_cap_blocked { "blocked" } else { "unassessed" },
             "context_sha256": Value::Null,
             "budget": Value::Null,
-            "allocation": allocation,
             "excluded": excluded,
             "diagnostics": diagnostics
         }));
@@ -958,7 +958,7 @@ fn context_minimality(
     if actual_bytes > budget.max_bytes {
         diagnostics.push("context_byte_budget_exceeded");
     }
-    Ok(json!({
+    let mut receipt = json!({
         "status": if diagnostics.is_empty() { "ready" } else { "blocked" },
         "context_sha256": sha256_hex(&canonical_context),
         "budget": {
@@ -969,11 +969,14 @@ fn context_minimality(
         },
         "selected_count": selected_count,
         "excluded_count": excluded.len(),
-        "allocation": allocation,
         "excluded": excluded,
         "largest_contributing_cards": largest_contributing_cards,
         "diagnostics": diagnostics
-    }))
+    });
+    if !allocation.is_null() {
+        receipt["allocation"] = allocation.clone();
+    }
+    Ok(receipt)
 }
 
 fn selected_authority_count(model_visible_projection: &Value) -> usize {
@@ -1055,6 +1058,10 @@ fn largest_contributing_cards(model_visible_projection: &Value) -> Vec<Value> {
     contributions
 }
 
+fn optional_quota_enabled(budget: Option<&JobContextBudget>) -> bool {
+    budget.is_some_and(|budget| !budget.optional_kind_quotas.is_empty())
+}
+
 fn apply_selection_authority(entries: &mut [Value], foundation_load_order: &[Value]) {
     let foundation_refs = foundation_load_order
         .iter()
@@ -1079,12 +1086,15 @@ fn apply_selection_authority(entries: &mut [Value], foundation_load_order: &[Val
                 "product_foundation_requirement",
                 Some("product_foundation_requirement"),
             )
-        } else if matches!(card_kind, Some(CardKind::Claims))
-            && entry["evidence"]
-                .as_array()
-                .is_some_and(|evidence| !evidence.is_empty())
+        } else if matches!(card_kind, Some(CardKind::Gaps)) {
+            ("gap_requirement", Some("gap_requirement"))
+        } else if entry["evidence"]
+            .as_array()
+            .is_some_and(|evidence| !evidence.is_empty())
         {
             ("evidence_dependency", Some("evidence_dependency"))
+        } else if matches!(card_kind, Some(CardKind::ChannelPolicies)) {
+            ("output_requirement", Some("output_requirement"))
         } else if entry["metadata"]["required"] == true {
             ("output_requirement", Some("output_requirement"))
         } else {
@@ -1103,17 +1113,6 @@ fn apply_selection_authority(entries: &mut [Value], foundation_load_order: &[Val
             reason_codes.push(json!(reason_code));
         }
     }
-}
-
-fn empty_allocation_receipt() -> Value {
-    json!({
-        "strategy": "required-first",
-        "required_count": 0,
-        "optional_selected_count": 0,
-        "optional_excluded_count": 0,
-        "required_by_kind": {},
-        "quotas": {}
-    })
 }
 
 fn allocate_context_entries(
@@ -1386,7 +1385,7 @@ fn route_entry_details(
         compatible_scoped_entry_count,
         scoped_decision_candidate_count,
         compatible_scoped_decision_count,
-        allocation: empty_allocation_receipt(),
+        allocation: Value::Null,
     })
 }
 
@@ -1807,6 +1806,80 @@ mod tests {
         .expect("manifest should be writable");
     }
 
+    fn add_evidence_backed_entries(root: &Path, card_id: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let manifest_raw = std::fs::read_to_string(&manifest_path).expect("manifest should load");
+        let manifest: serde_yaml::Value =
+            serde_yaml::from_str(&manifest_raw).expect("manifest should parse");
+        let card_ref = manifest["cards"]
+            .as_sequence()
+            .expect("cards")
+            .iter()
+            .find(|card| card["id"] == card_id)
+            .expect("card reference should exist");
+        let card_path = root.join(".mdp").join(
+            card_ref["path"]
+                .as_str()
+                .expect("card path should be a string"),
+        );
+        let raw = std::fs::read_to_string(&card_path).expect("card should load");
+        let mut card: serde_yaml::Value = serde_yaml::from_str(&raw).expect("card should parse");
+        let template = card["entries"][0].clone();
+        for suffix in ["one", "two"] {
+            let mut entry = template.clone();
+            entry["id"] = serde_yaml::Value::String(format!("{card_id}-evidence-{suffix}"));
+            entry["title"] =
+                serde_yaml::Value::String(format!("Evidence-backed {card_id} {suffix}"));
+            entry["body"] = serde_yaml::Value::String(
+                "Evidence-backed PMM outbound context for deterministic allocation coverage."
+                    .to_string(),
+            );
+            entry["applies_to"] = serde_yaml::from_str("- PMM\n").expect("persona selector");
+            entry["evidence"] =
+                serde_yaml::from_str("- mdp-reference-contract\n").expect("evidence reference");
+            card["entries"]
+                .as_sequence_mut()
+                .expect("entries")
+                .push(entry);
+        }
+        std::fs::write(
+            card_path,
+            serde_yaml::to_string(&card).expect("card should serialize"),
+        )
+        .expect("card should write");
+    }
+
+    fn make_card_entries_optional_for_tests(root: &Path, card_id: &str) {
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let manifest_raw = std::fs::read_to_string(&manifest_path).expect("manifest should load");
+        let manifest: serde_yaml::Value =
+            serde_yaml::from_str(&manifest_raw).expect("manifest should parse");
+        let card_ref = manifest["cards"]
+            .as_sequence()
+            .expect("cards")
+            .iter()
+            .find(|card| card["id"] == card_id)
+            .expect("card reference should exist");
+        let card_path = root.join(".mdp").join(
+            card_ref["path"]
+                .as_str()
+                .expect("card path should be a string"),
+        );
+        let raw = std::fs::read_to_string(&card_path).expect("card should load");
+        let mut card: serde_yaml::Value = serde_yaml::from_str(&raw).expect("card should parse");
+        for entry in card["entries"].as_sequence_mut().expect("entries") {
+            if let Some(object) = entry.as_mapping_mut() {
+                object.remove(serde_yaml::Value::String("evidence".to_string()));
+                object.remove(serde_yaml::Value::String("metadata".to_string()));
+            }
+        }
+        std::fs::write(
+            card_path,
+            serde_yaml::to_string(&card).expect("card should serialize"),
+        )
+        .expect("card should write");
+    }
+
     fn add_supplemental_persona_card(root: &Path) {
         add_supplemental_persona_card_for_tests(root);
     }
@@ -1967,6 +2040,7 @@ mod tests {
     #[test]
     fn required_first_allocator_bounds_optional_kinds_without_displacing_authority() {
         let root = temp_pack("required-first-allocation");
+        make_card_entries_optional_for_tests(&root, "hooks");
         set_context_budget(&root, "outbound-copy-brief", 100, 1_000_000);
         set_optional_kind_quotas(
             &root,
@@ -2018,6 +2092,19 @@ mod tests {
             first["minimality"]["allocation"],
             route["minimality"]["allocation"]
         );
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+        let preflight_route = preflight["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .find(|candidate| {
+                candidate["persona"] == "PMM" && candidate["job"] == "outbound-copy-brief"
+            })
+            .expect("PMM outbound-copy-brief preflight route");
+        assert_eq!(
+            preflight_route["allocation"],
+            first["minimality"]["allocation"]
+        );
         assert!(
             first["minimality"]["allocation"]["optional_excluded_count"]
                 .as_u64()
@@ -2051,9 +2138,92 @@ mod tests {
     }
 
     #[test]
+    fn legacy_context_preserves_classification_and_receipt_shape_without_quotas() {
+        let root = temp_pack("legacy-context-compatibility");
+        set_context_budget(&root, "outbound-copy-brief", 100, 1_000_000);
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let scope = ScopeResolution::default();
+        let route = entry_route_scoped(&root, &manifest, "PMM", "outbound-copy-brief", &scope)
+            .expect("legacy route should compile");
+        let context =
+            entry_context_scoped(&root, &manifest, "PMM", "outbound-copy-brief", true, &scope)
+                .expect("legacy context should compile");
+
+        for entry in context["entries"].as_array().expect("context entries") {
+            let card_kind =
+                serde_json::from_value::<CardKind>(entry["card_kind"].clone()).expect("card kind");
+            let expected_class = if entry["selection"] == "guardrail" {
+                "universal_guardrail"
+            } else {
+                "persona_or_job_match"
+            };
+            assert_eq!(entry["status"], entry_status(&card_kind));
+            assert_eq!(entry["selection_class"], expected_class);
+        }
+        assert!(route["minimality"].get("allocation").is_none());
+        assert!(context["minimality"].get("allocation").is_none());
+        assert_eq!(route["minimality"], context["minimality"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn evidence_backed_non_claim_entries_are_reserved_before_quotas() {
+        let root = temp_pack("evidence-backed-reservations");
+        for card_id in ["pains", "copy-patterns", "motions", "signals"] {
+            add_evidence_backed_entries(&root, card_id);
+        }
+        set_context_budget(&root, "outbound-copy-brief", 100, 1_000_000);
+        set_optional_kind_quotas(
+            &root,
+            "outbound-copy-brief",
+            &[
+                ("pains", 1),
+                ("copy-patterns", 1),
+                ("motions", 1),
+                ("signals", 1),
+            ],
+        );
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let context = entry_context_scoped(
+            &root,
+            &manifest,
+            "PMM",
+            "outbound-copy-brief",
+            true,
+            &ScopeResolution::default(),
+        )
+        .expect("context should compile");
+        let entries = context["entries"].as_array().expect("entries");
+        for card_id in ["pains", "copy-patterns", "motions", "signals"] {
+            for suffix in ["one", "two"] {
+                let entry_id = format!("{card_id}-evidence-{suffix}");
+                let entry = entries
+                    .iter()
+                    .find(|entry| entry["entry_id"] == entry_id)
+                    .expect("evidence-backed entry should remain selected");
+                assert_eq!(entry["status"], "required");
+                assert_eq!(entry["selection_class"], "evidence_dependency");
+                assert!(
+                    !context["minimality"]["excluded"]
+                        .as_array()
+                        .expect("excluded")
+                        .iter()
+                        .any(|excluded| excluded["entry_id"] == entry_id)
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn context_budget_overflow_blocks_without_dropping_guardrails() {
         let root = temp_pack("minimality-overflow");
         set_context_budget(&root, "outbound-copy-brief", 1, 1_000_000);
+        set_optional_kind_quotas(
+            &root,
+            "outbound-copy-brief",
+            &[("hooks", 1), ("pains", 1), ("ctas", 1)],
+        );
         let manifest = read_manifest(&root).expect("manifest should load");
 
         let context = entry_context_scoped(
@@ -2076,6 +2246,12 @@ mod tests {
                 .any(|code| code == "context_entry_budget_exceeded")
         );
         assert_eq!(context["minimality"]["budget"]["max_entries"], 1);
+        assert!(
+            context["minimality"]["allocation"]["required_count"]
+                .as_u64()
+                .expect("required count")
+                > 1
+        );
         assert!(
             context["minimality"]["budget"]["actual_entries"]
                 .as_u64()

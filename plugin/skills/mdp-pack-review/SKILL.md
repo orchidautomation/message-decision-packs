@@ -107,7 +107,8 @@ status/digest/counts. When `optional_kind_quotas` is present, verify that
 `minimality.allocation` reports required reservations and quota utilization
 consistently across route/context/brief/route-budget. Quotas may exclude only
 supporting entries and must never remove guardrails, foundation entries/gaps,
-evidence-backed claims, or explicitly required output entries. Budget overflow
+channel policies, any evidence-backed entry, or explicitly required output
+entries. `channel-policies` and `gaps` must be rejected as quota kinds. Budget overflow
 and whole-card fallback must block without removing guardrails. Governed-output fixtures must bind the exact canonical
 `routed_context` bytes and reject pack-global but unselected or wrong-kind
 identifiers. Exclusion diagnostics must never include bodies.

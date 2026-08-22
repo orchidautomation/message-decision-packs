@@ -3525,7 +3525,7 @@ fn context_entries_schema_with_authority(require_selection_authority: bool) -> V
             .expect("context entry required fields should be an array")
             .extend([json!("selection_class"), json!("reason_codes")]);
     }
-    json!({"type": "array", "items": {"type": "object", "required": required, "additionalProperties": false, "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}, "selection_class": {"enum": ["product_foundation_requirement", "persona_or_job_match", "evidence_dependency", "output_requirement", "universal_guardrail"]}, "reason_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["product_foundation_requirement", "persona_applicability", "job_match", "persona_text_match", "evidence_dependency", "output_requirement", "fit_guardrail", "output_rule_guardrail", "avoid_rule_guardrail"]}}}}})
+    json!({"type": "array", "items": {"type": "object", "required": required, "additionalProperties": false, "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "card_path": {"type": "string"}, "entry_id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "applies_to": string_array(), "scope": scope_map_schema(), "evidence": string_array(), "avoid": string_array(), "exact_paragraphs": {"type": ["integer", "null"], "minimum": 1}, "constraints": constraints_schema(), "metadata": metadata_schema(), "status": {"enum": ["required", "supporting"]}, "selection": {"enum": ["matched", "guardrail"]}, "reason": {"type": "string"}, "selection_class": {"enum": ["product_foundation_requirement", "gap_requirement", "persona_or_job_match", "evidence_dependency", "output_requirement", "universal_guardrail"]}, "reason_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["product_foundation_requirement", "gap_requirement", "persona_applicability", "job_match", "persona_text_match", "evidence_dependency", "output_requirement", "fit_guardrail", "output_rule_guardrail", "avoid_rule_guardrail"]}}}}})
 }
 
 fn context_schema() -> Value {
@@ -6113,6 +6113,7 @@ mod tests {
             entries["items"]["properties"]["selection_class"]["enum"],
             json!([
                 "product_foundation_requirement",
+                "gap_requirement",
                 "persona_or_job_match",
                 "evidence_dependency",
                 "output_requirement",

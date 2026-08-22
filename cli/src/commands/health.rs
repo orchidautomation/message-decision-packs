@@ -7039,9 +7039,10 @@ excluded: []
         let valid = validate_pack(&root).expect("valid quota pack should return diagnostics");
         assert_eq!(valid["valid"], true, "issues: {}", valid["issues"]);
 
-        manifest["jobs"][0]["context_budget"]["optional_kind_quotas"] =
-            serde_yaml::from_str("fit-rules: 2\nhooks: 0\nunknown-kind: 1\n")
-                .expect("quota should parse");
+        manifest["jobs"][0]["context_budget"]["optional_kind_quotas"] = serde_yaml::from_str(
+            "fit-rules: 2\nchannel-policies: 2\ngaps: 2\nhooks: 0\nunknown-kind: 1\n",
+        )
+        .expect("quota should parse");
         std::fs::write(
             &manifest_path,
             serde_yaml::to_string(&manifest).expect("manifest should serialize"),
@@ -7058,6 +7059,16 @@ excluded: []
             issue["code"] == "profile_job_optional_kind_quota_kind_invalid"
                 && issue["path"]
                     == ".mdp/manifest.yaml#/jobs/0/context_budget/optional_kind_quotas/unknown-kind"
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_job_optional_kind_quota_protected_kind"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/jobs/0/context_budget/optional_kind_quotas/channel-policies"
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_job_optional_kind_quota_protected_kind"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/jobs/0/context_budget/optional_kind_quotas/gaps"
         }));
         assert!(issues.iter().any(|issue| {
             issue["code"] == "profile_job_optional_kind_quota_limit_invalid"

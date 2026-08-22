@@ -13,6 +13,12 @@ Read this only for `outbound-copy-review` and only when the user supplies copy.
    Require minimality `ready`, preserve the exact context digest, and use only
    `context.model_context`. A blocked/unassessed budget or whole-card fallback
    stops governed review.
+   When `optional_kind_quotas` is declared, require the shared
+   `minimality.allocation` receipt to report `required-first`, reservations,
+   and deterministic optional exclusions. Never accept quota displacement of
+   channel policies, gaps, guardrails, foundation references, or any
+   evidence-backed entry; quota diagnostics must remain body-free. With no
+   quota map, preserve the legacy classification and receipt behavior.
 2. Run the deterministic check with the relevant route selectors:
 
 ```bash

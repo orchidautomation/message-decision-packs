@@ -685,11 +685,16 @@ impl CardKind {
     pub(crate) fn optional_quota_allowed(&self) -> bool {
         !matches!(
             self,
-            Self::Personas | Self::AvoidRules | Self::OutputRules | Self::FitRules
+            Self::Personas
+                | Self::AvoidRules
+                | Self::OutputRules
+                | Self::FitRules
+                | Self::ChannelPolicies
+                | Self::Gaps
         )
     }
 
-    pub(crate) fn optional_quota_names() -> [&'static str; 11] {
+    pub(crate) fn optional_quota_names() -> [&'static str; 9] {
         [
             "pains",
             "motions",
@@ -699,9 +704,7 @@ impl CardKind {
             "claims",
             "signals",
             "positioning",
-            "channel-policies",
             "objections",
-            "gaps",
         ]
     }
 }

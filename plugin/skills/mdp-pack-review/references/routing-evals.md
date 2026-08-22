@@ -25,9 +25,10 @@ Check selected cards, excluded cards, gaps, portfolio scope, and entry-level evi
 When a job declares `context_budget.optional_kind_quotas`, also compare the
 `minimality.allocation` receipt across route, context, brief, and route-budget.
 Required reservations must remain present under quota pressure, quota
-exclusions must be body-free and deterministic, and the existing entry/byte
-budgets plus `route_card_cap_excluded_applicable` gate must still block when
-their limits are exceeded.
+exclusions must be body-free and deterministic. Evidence-backed entries of
+every card kind, channel policies, and gaps must remain reserved; the existing
+entry/byte budgets plus `route_card_cap_excluded_applicable` gate must still
+block when their limits are exceeded.
 
 ## Prompt And Output Gates
 
