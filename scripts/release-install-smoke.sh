@@ -343,12 +343,51 @@ trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
 "$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
 installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
 "$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-init.json
+installed_runtime_version="$("$mdp_bin" --version | awk '{print $2}')"
+MDP_RUNTIME_VERSION="$installed_runtime_version" \
 MDP_BIN="$mdp_bin" \
 MDP_PARITY_GTM_PACK="$installed_gtm_fixture" \
 MDP_PARITY_PROPOSAL_PACK="$proposal_fixture" \
   "$node_bin" "$codex_plugin_root/scripts/test-universal-native-parity.mjs"
 "$mdp_bin" --json validate --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-validate.json
 "$mdp_bin" --json eval --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-eval.json
+gtm_route="$("$mdp_bin" --json route --entries \
+  --dir "$installed_gtm_fixture" \
+  --persona PMM \
+  --job outbound-copy-brief \
+  --scope product=local-cli)"
+printf '%s\n' "$gtm_route" >"$proposal_fixture/installed-gtm-route.json"
+python3 - "$proposal_fixture/installed-gtm-route.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+route = payload["data"]
+assert route["draft_status"] == "ready"
+assert route["entry_route"]["route_card_cap"]["status"] == "ready"
+assert route["entry_route"]["matches"]
+PY
+gtm_brief="$("$mdp_bin" --json emit-brief \
+  --dir "$installed_gtm_fixture" \
+  --persona PMM \
+  --job outbound-copy-brief \
+  --scope product=local-cli \
+  --dry-run)"
+printf '%s\n' "$gtm_brief" >"$proposal_fixture/installed-gtm-brief.json"
+python3 - "$proposal_fixture/installed-gtm-brief.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert payload["data"]["draft_status"] == "ready"
+assert payload["data"]["context"]["minimality"]["status"] == "ready"
+PY
+gtm_budget="$("$mdp_bin" --json route-budget --strict --dir "$installed_gtm_fixture")"
+printf '%s\n' "$gtm_budget" >"$proposal_fixture/installed-gtm-route-budget.json"
+python3 - "$proposal_fixture/installed-gtm-route-budget.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert payload["data"]["valid"] is True
+PY
 "$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-gaps.json
 for job_id in prospect-fit-or-brief outbound-copy-brief outbound-copy-review; do
   requirements_json="$proposal_fixture/installed-gtm-$job_id-requirements.json"
@@ -374,29 +413,88 @@ cp -R "$ROOT/examples/clay-audiences-self-serve-enterprise-expansion" "$gtm_fixt
 persona_fixture_root="$proposal_fixture/persona-reference-packs"
 declared_persona_fixture="$persona_fixture_root/declared"
 undeclared_persona_fixture="$persona_fixture_root/undeclared"
-for fixture in "$declared_persona_fixture" "$undeclared_persona_fixture"; do
+universal_persona_fixture="$persona_fixture_root/universal"
+for fixture in "$declared_persona_fixture" "$undeclared_persona_fixture" "$universal_persona_fixture"; do
   "$mdp_bin" --json init --dir "$fixture" >/dev/null
 done
 cp "$ROOT/cli/tests/fixtures/persona-references/declared-card.yaml" \
   "$declared_persona_fixture/.mdp/cards/personas.yaml"
 cp "$ROOT/cli/tests/fixtures/persona-references/undeclared-card.yaml" \
   "$undeclared_persona_fixture/.mdp/cards/personas.yaml"
-python3 - "$declared_persona_fixture" "$undeclared_persona_fixture" <<'PY'
+python3 - "$declared_persona_fixture" "$undeclared_persona_fixture" "$universal_persona_fixture" \
+  "$ROOT/cli/tests/fixtures/persona-references/universal-gap-card.yaml" <<'PY'
 import pathlib, sys
-for root_arg in sys.argv[1:]:
+for root_arg in sys.argv[1:4]:
     path = pathlib.Path(root_arg) / ".mdp" / "manifest.yaml"
     raw = path.read_text()
     marker = "personas:\n- GTM Engineering\n- PMM\n- PM\ntarget_personas:"
     replacement = "personas:\n- GTM Engineering\n- PMM\n- PM\n- Buyer\ntarget_personas:"
     if raw.count(marker) != 1:
         raise SystemExit(f"unexpected starter persona marker count in {path}")
-    path.write_text(raw.replace(marker, replacement))
+    raw = raw.replace(marker, replacement)
+    if root_arg == sys.argv[3]:
+        card_marker = """- id: gaps
+  path: cards/gaps.yaml
+  kind: gaps
+  description: Known gaps and open questions agents must surface instead of filling in.
+  personas:
+  - GTM Engineering
+  - PMM"""
+        card_replacement = """- id: gaps
+  path: cards/gaps.yaml
+  kind: gaps
+  description: Known gaps and open questions agents must surface instead of filling in.
+  personas: []"""
+        if raw.count(card_marker) != 1:
+            raise SystemExit(f"unexpected gaps card marker count in {path}")
+        raw = raw.replace(card_marker, card_replacement)
+        gaps_path = path.parent / "cards" / "gaps.yaml"
+        gaps_raw = gaps_path.read_text()
+        fixture_path = pathlib.Path(sys.argv[4])
+        fixture_entries = fixture_path.read_text().split("entries:\n", 1)[1]
+        if gaps_raw.count("id: gaps\n") != 1 or "unresolved-public-authority" in gaps_raw:
+            raise SystemExit(f"unexpected gaps card fixture state in {gaps_path}")
+        gaps_path.write_text(gaps_raw.rstrip() + "\n" + fixture_entries)
+    path.write_text(raw)
 PY
 
 declared_route="$("$mdp_bin" --json route --entries --dir "$declared_persona_fixture" --persona Buyer --job outbound-copy-brief)"
 if ! printf '%s\n' "$declared_route" | grep -F 'declared-buyer' >/dev/null; then
   echo "Installed CLI did not route the declared case-insensitive persona selector." >&2
   printf '%s\n' "$declared_route" >&2
+  exit 1
+fi
+
+universal_route="$("$mdp_bin" --json route --entries --dir "$universal_persona_fixture" --persona Buyer --job outbound-copy-brief)"
+printf '%s\n' "$universal_route" > "$proposal_fixture/universal-persona-route.json"
+python3 - "$proposal_fixture/universal-persona-route.json" <<'PY'
+import json, pathlib, sys
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+route = payload["data"]["entry_route"]
+matches = route["matches"]
+excluded = route["minimality"]["excluded"]
+assert any(entry["entry_id"] == "unresolved-public-authority" for entry in matches)
+assert not any(entry["entry_id"] == "scoped-comparison" for entry in matches)
+assert not any(
+    entry["entry_id"] == "unresolved-public-authority"
+    and entry["reason_code"] == "not_applicable"
+    for entry in excluded
+)
+PY
+
+universal_budget="$("$mdp_bin" --json route-budget --strict --dir "$universal_persona_fixture")"
+printf '%s\n' "$universal_budget" > "$proposal_fixture/universal-route-budget.json"
+if ! python3 - "$proposal_fixture/universal-route-budget.json" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert payload["data"]["valid"] is True
+PY
+then
+  echo "Installed CLI route-budget did not accept the universal synthetic fixture." >&2
+  printf '%s\n' "$universal_budget" >&2
   exit 1
 fi
 

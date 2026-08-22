@@ -2,8 +2,8 @@ use crate::commands::health::issue;
 use crate::commands::routing::check_claims;
 use crate::models::{Card, CardKind, Entry, Manifest, PromptFile, ProofOutputConstraints};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
-use crate::routing::select_cards;
-use crate::utils::{resolve_persona_label, routable_persona};
+use crate::routing::{select_cards, selector_is_universal, selector_matches_persona};
+use crate::utils::{declared_persona_labels, resolve_persona_label, routable_persona};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -1222,9 +1222,7 @@ fn validate_route(
     }
     let persona_resolution = resolve_persona_label(&inventory.manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution).to_string();
-    if !inventory
-        .manifest
-        .personas
+    if !declared_persona_labels(&inventory.manifest)
         .iter()
         .any(|candidate| candidate == &resolved_persona)
     {
@@ -1569,9 +1567,8 @@ fn resolve_card_entry_ref(
         }
         let is_guardrail_role = matches!(role, "constrains" | "supports-gap");
         if !is_guardrail_role
-            && entry.applies_to.is_empty()
-            && !card.personas.is_empty()
-            && !contains_case_insensitive(&card.personas, &route.persona)
+            && selector_is_universal(&entry.applies_to)
+            && !selector_matches_persona(&card.personas, &route.persona)
         {
             issues.push(issue(
                 "proof_output_incompatible_ref",
@@ -1580,10 +1577,7 @@ fn resolve_card_entry_ref(
                 format!("card {card_id} is not scoped to persona {}", route.persona),
             ));
         }
-        if !is_guardrail_role
-            && !entry.applies_to.is_empty()
-            && !contains_case_insensitive(&entry.applies_to, &route.persona)
-        {
+        if !is_guardrail_role && !selector_matches_persona(&entry.applies_to, &route.persona) {
             issues.push(issue(
                 "proof_output_incompatible_ref",
                 "error",
@@ -2158,12 +2152,6 @@ fn primitive_for_card<'a>(manifest: &'a Manifest, card_id: &str) -> Option<&'a s
         .map(|(primitive, _)| primitive.as_str())
 }
 
-fn contains_case_insensitive(values: &[String], needle: &str) -> bool {
-    values
-        .iter()
-        .any(|candidate| candidate.eq_ignore_ascii_case(needle))
-}
-
 fn job_matches(manifest: &Manifest, job: &str) -> bool {
     let job = job.trim();
     if job.is_empty() {
@@ -2191,9 +2179,7 @@ fn route_ref_matches(persona: &str, job: &str, inventory: &PackInventory) -> boo
     }
     let persona_resolution = resolve_persona_label(&inventory.manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution);
-    inventory
-        .manifest
-        .personas
+    declared_persona_labels(&inventory.manifest)
         .iter()
         .any(|candidate| candidate == resolved_persona)
         && job_matches(&inventory.manifest, job)
@@ -2342,6 +2328,38 @@ mod tests {
 
         assert_eq!(result["valid"], false);
         assert!(issue_codes(&result).contains(&"proof_output_scope_unsupported"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn proof_route_persona_union_deduplicates_trimmed_case_insensitive_labels() {
+        let root = temp_proposal_pack("proof-persona-sources");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["target_personas"] =
+            serde_yaml::from_str("- ' Proposal Lead '\n- proposal lead\n")
+                .expect("target personas");
+        manifest["operator_roles"] =
+            serde_yaml::from_str("- ' proposal lead '\n- Operator\n").expect("operator roles");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let manifest = crate::pack_io::read_manifest(&root).expect("manifest should load");
+        assert_eq!(
+            declared_persona_labels(&manifest),
+            vec![
+                "Proposal Lead".to_string(),
+                "Solution Owner".to_string(),
+                "Executive Reviewer".to_string(),
+                "Operator".to_string(),
+            ]
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -182,7 +182,25 @@ function copyLegacyBasicPack(destination) {
     manifest,
     "cold-model fixture should declare a route-card cap",
   );
-  writeFileSync(manifestPath, uncappedFixture);
+  let scopedCardIsolatedFixture = uncappedFixture;
+  for (const cardId of ["portfolio-examples", "channel-policies"]) {
+    const cardStart = scopedCardIsolatedFixture.indexOf(`- id: ${cardId}\n`);
+    assert.notEqual(cardStart, -1, `cold-model fixture should contain ${cardId}`);
+    const personasStart = scopedCardIsolatedFixture.indexOf("  personas:", cardStart);
+    const tagsStart = scopedCardIsolatedFixture.indexOf("  tags:\n", personasStart);
+    assert.ok(personasStart > cardStart && tagsStart > personasStart, `${cardId} selector block should be bounded`);
+    scopedCardIsolatedFixture = `${scopedCardIsolatedFixture.slice(0, personasStart)}  personas:\n  - Route Cap Excluded\n${scopedCardIsolatedFixture.slice(tagsStart)}`;
+  }
+  scopedCardIsolatedFixture = scopedCardIsolatedFixture.replace(
+    /^target_personas:\n/m,
+    "target_personas:\n- Route Cap Excluded\n",
+  );
+  assert.notEqual(
+    scopedCardIsolatedFixture,
+    uncappedFixture,
+    "cold-model fixture should isolate the scoped portfolio card",
+  );
+  writeFileSync(manifestPath, scopedCardIsolatedFixture);
 }
 
 function lifecycle(accessClass = "synthetic") {
@@ -633,7 +651,9 @@ function compileReplay(jobId = "outbound-copy-brief", seedName = "generation") {
   });
 
   const routedPath = join(candidateRoot, "evidence", "routed-context.json");
-  const persona = jobId === "outbound-copy-review" ? "PM" : "PMM";
+  // Review uses PMM so this conformance fixture exercises declared selectors;
+  // the corrected router must not rely on prose overlap such as "PM" in "PMM".
+  const persona = "PMM";
   const routed = output(invoke(["--json", "emit-brief", "--dir", pack, "--persona", persona, "--job", jobId, "--routed-context-out", routedPath]), `${jobId} routed context compile`);
   const routedBytes = readFileSync(routedPath);
   assert.equal(routed.context.minimality.status, "ready");

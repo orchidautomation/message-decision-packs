@@ -1,0 +1,25 @@
+id: universal-gap-card
+kind: gaps
+title: Synthetic universal applicability gaps
+description: Public-safe fixture proving structured empty selectors are universal.
+personas: []
+tags:
+- gap
+- synthetic
+entries:
+- id: unresolved-public-authority
+  title: Neutral unresolved authority
+  body: This synthetic gap has no actor words in its prose and is reachable through structured emptiness.
+  applies_to: []
+  scope: {}
+  evidence: []
+  avoid: []
+- id: scoped-comparison
+  title: PMM-only comparison
+  body: This synthetic comparison remains limited to one declared persona.
+  applies_to:
+  - ""
+  - PMM
+  scope: {}
+  evidence: []
+  avoid: []

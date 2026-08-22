@@ -10,6 +10,7 @@ use crate::product_foundation::{
 };
 use crate::runtime_context::current_runtime_context;
 use crate::scope::{ContextScope, ScopeResolution, match_entry_scope, resolve_runtime_scope};
+use crate::utils::declared_persona_labels;
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -69,7 +70,6 @@ fn select_cards_with_diagnostics(
     persona: Option<&str>,
     job: Option<&str>,
 ) -> CardSelection {
-    let persona_lower = persona.map(|p| p.to_lowercase());
     let job_tokens = tokens(job.unwrap_or(""));
     let is_message_job = is_message_job(&job_tokens);
     let mut selected = Vec::new();
@@ -86,14 +86,8 @@ fn select_cards_with_diagnostics(
         if is_base_guardrail(&card.kind) {
             continue;
         }
-        let persona_match = persona_lower
-            .as_ref()
-            .map(|p| {
-                card.personas
-                    .iter()
-                    .any(|candidate| candidate.to_lowercase() == *p)
-                    || card.description.to_lowercase().contains(p)
-            })
+        let persona_match = persona
+            .map(|requested| selector_matches_persona(&card.personas, requested))
             .unwrap_or(false);
         let job_match = !job_tokens.is_empty()
             && (token_overlap(&job_tokens, &tokens(&card.description))
@@ -166,10 +160,23 @@ pub(crate) fn narrow_starter_route_candidates_for_tests(root: &Path) {
             card["description"] = serde_yaml::Value::String(
                 "Unrelated synthetic route-cap fixture card.".to_string(),
             );
-            card["personas"] = serde_yaml::Value::Sequence(Vec::new());
             card["tags"] = serde_yaml::Value::Sequence(Vec::new());
         }
+        if matches!(
+            card["id"].as_str(),
+            Some("gaps")
+                | Some("objections")
+                | Some("portfolio-examples")
+                | Some("channel-policies")
+        ) {
+            card["personas"] =
+                serde_yaml::from_str("- Route Cap Excluded\n").expect("nonmatching persona");
+        }
     }
+    manifest["target_personas"]
+        .as_sequence_mut()
+        .expect("target personas")
+        .push(serde_yaml::Value::String("Route Cap Excluded".to_string()));
     // Keep the synthetic route-cap fixtures on the original exact-cap contract
     // while the shipped starter can leave one additional slot for scoped cards.
     manifest["policy"]["max_cards_per_route"] = serde_yaml::Value::Number(13.into());
@@ -303,6 +310,7 @@ pub(crate) fn entry_route(
 /// preflight diagnostic.
 pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result<Value> {
     let scope = ScopeResolution::default();
+    let declared_personas = declared_persona_labels(manifest);
     let mut routes = Vec::new();
     let mut overflow_count = 0usize;
     let mut route_card_cap_exclusion_count = 0usize;
@@ -314,7 +322,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             if job.model_task.is_some() {
                 unassessed_generation_count += 1;
             }
-            if manifest.personas.is_empty() {
+            if declared_personas.is_empty() {
                 routes.push(json!({
                     "persona": Value::Null,
                     "job": job.id,
@@ -330,7 +338,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                     "route_card_cap": Value::Null
                 }));
             } else {
-                for persona in &manifest.personas {
+                for persona in &declared_personas {
                     let route_card_cap =
                         select_cards_with_diagnostics(manifest, Some(persona), Some(&job.id))
                             .route_card_cap;
@@ -361,7 +369,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             }
             continue;
         };
-        for persona in &manifest.personas {
+        for persona in &declared_personas {
             let route = entry_route_scoped(root, manifest, persona, &job.id, &scope)?;
             let route_card_cap = route["route_card_cap"].clone();
             let route_card_cap_blocked = route_card_cap["status"] == "blocked";
@@ -1237,7 +1245,6 @@ fn route_entry_details(
         .iter()
         .filter_map(|value| value["id"].as_str().map(str::to_string))
         .collect();
-    let persona_lower = persona.to_lowercase();
     let job_tokens = tokens(job);
     let mut matches = Vec::new();
     let mut context_entries = Vec::new();
@@ -1259,25 +1266,15 @@ fn route_entry_details(
         let mut selected_entry_count = 0usize;
 
         for entry in &card.entries {
-            let entry_text = format!(
-                "{} {} {}",
-                entry.title,
-                entry.body,
-                entry.applies_to.join(" ")
-            )
-            .to_lowercase();
-            let applies = entry
-                .applies_to
-                .iter()
-                .any(|candidate| candidate.eq_ignore_ascii_case(persona));
+            let entry_text = format!("{} {}", entry.title, entry.body).to_lowercase();
+            let applies = selector_matches_persona(&entry.applies_to, persona);
             let entry_tokens = tokens(&entry_text);
             let job_match = token_overlap(&job_tokens, &entry_tokens);
-            let persona_match = entry_text.contains(&persona_lower);
             let entry_allowed =
                 entry_policy_compatible(&card.kind, manifest, &job_tokens, &entry_tokens);
             let matched = !(matches!(card.kind, CardKind::ChannelPolicies) && !job_match)
                 && entry_allowed
-                && (applies || job_match || persona_match);
+                && (applies || job_match);
             let guardrail = is_context_guardrail(&card.kind, entry);
             let scope_match = match_entry_scope(scope, &entry.scope);
             if !entry_allowed {
@@ -1511,6 +1508,18 @@ pub(crate) fn tokens(input: &str) -> Vec<String> {
 pub(crate) fn token_overlap(left: &[String], right: &[String]) -> bool {
     left.iter()
         .any(|token| right.iter().any(|other| other == token))
+}
+
+pub(crate) fn selector_is_universal(values: &[String]) -> bool {
+    values.iter().all(|value| value.trim().is_empty())
+}
+
+pub(crate) fn selector_matches_persona(values: &[String], persona: &str) -> bool {
+    selector_is_universal(values)
+        || values.iter().any(|value| {
+            let candidate = value.trim();
+            !candidate.is_empty() && candidate.eq_ignore_ascii_case(persona.trim())
+        })
 }
 
 fn entry_policy_compatible(
@@ -1983,6 +1992,135 @@ mod tests {
             ids,
             vec!["personas", "avoid-rules", "output-rules", "ctas", "motions"]
         );
+    }
+
+    #[test]
+    fn selector_helpers_treat_empty_and_blank_values_as_universal() {
+        assert!(selector_is_universal(&[]));
+        assert!(selector_is_universal(&["".to_string(), "  ".to_string()]));
+        assert!(!selector_is_universal(&[
+            "  PMM  ".to_string(),
+            "".to_string()
+        ]));
+        assert!(selector_matches_persona(
+            &["  pMm  ".to_string(), "".to_string()],
+            "PMM"
+        ));
+        assert!(!selector_matches_persona(
+            &["  pMm  ".to_string(), "".to_string()],
+            "Buyer"
+        ));
+        assert!(selector_matches_persona(
+            &["".to_string(), "  ".to_string()],
+            "Buyer"
+        ));
+        let mixed = vec!["".to_string(), "PMM".to_string()];
+        assert!(selector_matches_persona(&mixed, "PMM"));
+        assert!(!selector_matches_persona(&mixed, "Buyer"));
+        assert_eq!(mixed, vec!["".to_string(), "PMM".to_string()]);
+    }
+
+    #[test]
+    fn universal_card_and_entry_route_without_prose_persona_inference() {
+        let root = temp_pack("universal-gap-routing");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["personas"]
+            .as_sequence_mut()
+            .expect("personas")
+            .push(serde_yaml::Value::String("Buyer".to_string()));
+        manifest["target_personas"]
+            .as_sequence_mut()
+            .expect("target personas")
+            .push(serde_yaml::Value::String("Buyer".to_string()));
+        manifest["policy"]["max_cards_per_route"] = serde_yaml::Value::Number(100.into());
+        let gaps_ref = manifest["cards"]
+            .as_sequence_mut()
+            .expect("cards")
+            .iter_mut()
+            .find(|card| card["id"] == "gaps")
+            .expect("gaps card ref");
+        gaps_ref["personas"] = serde_yaml::Value::Sequence(Vec::new());
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let card_path = root.join(".mdp/cards/gaps.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("card should be readable");
+        let mut card: serde_yaml::Value = serde_yaml::from_str(&raw).expect("card should parse");
+        card["personas"] = serde_yaml::Value::Sequence(Vec::new());
+        card["entries"] = serde_yaml::from_str(
+            r#"
+- id: unresolved-public-authority
+  title: Neutral unresolved authority
+  body: This synthetic gap has no actor words in its prose and is reachable through structured emptiness.
+  applies_to: []
+  evidence: []
+  avoid: []
+- id: scoped-comparison
+  title: PMM-only comparison
+  body: This synthetic comparison remains limited to one declared persona.
+  applies_to:
+  - PMM
+  evidence: []
+  avoid: []
+"#,
+        )
+        .expect("fixture entries should parse");
+        std::fs::write(
+            &card_path,
+            serde_yaml::to_string(&card).expect("card should serialize"),
+        )
+        .expect("card should be writable");
+
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let details = route_entry_details(
+            &root,
+            &manifest,
+            "Buyer",
+            "neutral review",
+            true,
+            &ScopeResolution::default(),
+        )
+        .expect("route details should compile");
+
+        assert!(
+            details
+                .matches
+                .iter()
+                .any(|entry| entry["entry_id"] == "unresolved-public-authority")
+        );
+        assert!(
+            details
+                .context_entries
+                .iter()
+                .any(|entry| entry["entry_id"] == "unresolved-public-authority")
+        );
+        assert!(!details.excluded.iter().any(|entry| {
+            entry["entry_id"] == "unresolved-public-authority"
+                && entry["reason_code"] == "not_applicable"
+        }));
+        assert!(
+            details
+                .excluded
+                .iter()
+                .any(|entry| entry["entry_id"] == "scoped-comparison"
+                    && entry["reason_code"] == "not_applicable")
+        );
+        assert_eq!(
+            details
+                .context_entries
+                .iter()
+                .find(|entry| entry["entry_id"] == "unresolved-public-authority")
+                .expect("universal context entry")["applies_to"],
+            json!([])
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -2461,7 +2599,7 @@ mod tests {
         assert_eq!(displaced_route["minimality"]["status"], "blocked");
         assert_eq!(
             displaced_route["minimality"]["diagnostics"],
-            json!(["full_card_fallback_required", ROUTE_CARD_CAP_DIAGNOSTIC])
+            json!([ROUTE_CARD_CAP_DIAGNOSTIC])
         );
         let cap_receipt = &displaced_route["route_card_cap"];
         assert_eq!(cap_receipt["status"], "blocked");
@@ -2529,6 +2667,7 @@ mod tests {
         assert!(context["entries"].as_array().expect("entries").is_empty());
 
         let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+
         assert_eq!(preflight["valid"], false);
         assert!(
             preflight["route_card_cap_exclusion_count"]
@@ -3061,19 +3200,19 @@ mod tests {
             .find(|route| route["persona"] == "Buyer" && route["job"] == "outbound-copy-brief")
             .expect("buyer outbound-copy-brief route should be present");
         assert_eq!(buyer_brief["status"], "blocked");
-        assert_eq!(buyer_brief["budget"]["max_entries"], 64);
-        assert_eq!(buyer_brief["budget"]["max_bytes"], 65536);
+        assert_eq!(buyer_brief["budget"]["max_entries"], 52);
+        assert_eq!(buyer_brief["budget"]["max_bytes"], 55673);
         assert!(
             buyer_brief["budget"]["actual_entries"]
                 .as_u64()
                 .expect("actual entries")
-                > 64
+                > 52
         );
         assert!(
             buyer_brief["budget"]["actual_bytes"]
                 .as_u64()
                 .expect("actual bytes")
-                > 65536
+                > 55673
         );
         assert!(
             buyer_brief["diagnostics"]
@@ -3111,6 +3250,40 @@ mod tests {
                     .flatten())
                 .all(|card| card.get("body").is_none())
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn route_budget_preflight_uses_all_declared_persona_sources() {
+        let root = temp_pack("route-budget-persona-sources");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["target_personas"] =
+            serde_yaml::from_str("- ' Buyer '\n- buyer\n").expect("target personas");
+        manifest["operator_roles"] =
+            serde_yaml::from_str("- Operator\n- ' operator '\n").expect("operator roles");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+        let personas: BTreeSet<&str> = preflight["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .filter_map(|route| route["persona"].as_str())
+            .collect();
+        assert!(personas.contains("PMM"));
+        assert!(personas.contains(" Buyer "));
+        assert!(personas.contains("Operator"));
+        assert_eq!(personas.len(), 5);
+        assert_eq!(preflight["route_count"], 15);
+
         let _ = std::fs::remove_dir_all(root);
     }
 

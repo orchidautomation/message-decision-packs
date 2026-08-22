@@ -287,6 +287,27 @@ pub(crate) fn resolve_pack_persona_label(
     None
 }
 
+pub(crate) fn declared_persona_labels(manifest: &Manifest) -> Vec<String> {
+    let mut labels = Vec::new();
+    for label in manifest
+        .personas
+        .iter()
+        .chain(manifest.target_personas.iter())
+        .chain(manifest.operator_roles.iter())
+    {
+        let normalized = label.trim();
+        if normalized.is_empty()
+            || labels
+                .iter()
+                .any(|existing: &String| existing.trim().eq_ignore_ascii_case(normalized))
+        {
+            continue;
+        }
+        labels.push(label.clone());
+    }
+    labels
+}
+
 #[cfg(test)]
 pub(crate) fn infer_persona(title: &str) -> &str {
     builtin_persona_match(title)

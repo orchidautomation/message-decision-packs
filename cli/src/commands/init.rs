@@ -1141,9 +1141,9 @@ mod tests {
         for (job_id, persona) in [
             ("prospect-fit-or-brief", "PMM"),
             ("outbound-copy-brief", "PMM"),
-            // Exercise review as supplied copy for the PM target persona, not as another
-            // PMM generation route with channel-specific drafting policy.
-            ("outbound-copy-review", "PM"),
+            // Exercise review as supplied copy for a persona with declared entry
+            // selectors, not through prose overlap such as PM inside PMM.
+            ("outbound-copy-review", "PMM"),
         ] {
             let job = manifest
                 .jobs

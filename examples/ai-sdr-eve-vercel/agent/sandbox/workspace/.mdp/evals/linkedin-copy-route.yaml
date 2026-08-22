@@ -1,4 +1,5 @@
 command: route
+expect_draft_status: ready
 expect_entry_titles_contains:
 - LinkedIn initial touch
 - Answer-engine visibility hook
@@ -13,9 +14,6 @@ expect_load_order_contains:
 - .mdp/cards/channel-policies.yaml
 - .mdp/cards/hooks.yaml
 - .mdp/cards/ctas.yaml
-expect_load_order_excludes:
-- .mdp/cards/motions.yaml
-- .mdp/cards/objections.yaml
 id: linkedin-aeo-copy-route
 job: linkedin outbound copy
 persona: AEO Lead

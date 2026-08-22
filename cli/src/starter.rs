@@ -187,15 +187,15 @@ pub(crate) fn generated_starter_manifest(name: &str, slug: &str, _template: &str
             card_ref("motions", "cards/motions.yaml", CardKind::Motions, "Approved GTM motions and motion boundaries.", &["GTM Engineering", "PMM"], &["motion", "workflow"]),
             card_ref("channel-policies", "cards/channel-policies.yaml", CardKind::ChannelPolicies, "Channel-specific policy for LinkedIn, email, call prep, and agent briefs.", &["GTM Engineering", "PMM"], &["channel", "linkedin", "email", "initial", "follow-up", "call", "prep", "agent", "brief"]),
             card_ref("hooks", "cards/hooks.yaml", CardKind::Hooks, "Messaging hooks that can be reused after evidence checks.", &["PMM"], &["hook", "copy", "message"]),
-            card_ref("portfolio-examples", "cards/portfolio-examples.yaml", CardKind::Hooks, "Synthetic portfolio scope demonstration.", &[], &["portfolio", "scope", "example"]),
+            card_ref("portfolio-examples", "cards/portfolio-examples.yaml", CardKind::Hooks, "Synthetic portfolio scope demonstration.", &["GTM Engineering"], &["portfolio", "scope", "example"]),
             card_ref("ctas", "cards/ctas.yaml", CardKind::Ctas, "CTA rules, reply paths, and ask boundaries for outbound copy.", &["PMM", "GTM Engineering"], &["cta", "ask", "reply", "copy", "outbound", "message"]),
             card_ref("avoid-rules", "cards/avoid-rules.yaml", CardKind::AvoidRules, "Claims and categories the agent must avoid.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "avoid"]),
             card_ref("output-rules", "cards/output-rules.yaml", CardKind::OutputRules, "Global style, formatting, and output-structure rules for generated text.", &["GTM Engineering", "PMM", "PM"], &["guardrail", "style", "format"]),
             card_ref("copy-patterns", "cards/copy-patterns.yaml", CardKind::CopyPatterns, "Copy structures and brief patterns for GTM outputs.", &["PMM"], &["copy", "brief", "outbound", "message"]),
-            card_ref("objections", "cards/objections.yaml", CardKind::Objections, "Expected objections, category confusion, and approved response logic.", &[], &[]),
-            card_ref("gaps", "cards/gaps.yaml", CardKind::Gaps, "Known gaps and open questions agents must surface instead of filling in.", &[], &[]),
+            card_ref("objections", "cards/objections.yaml", CardKind::Objections, "Expected objections, category confusion, and approved response logic.", &["PMM", "GTM Engineering"], &[]),
+            card_ref("gaps", "cards/gaps.yaml", CardKind::Gaps, "Known gaps and open questions agents must surface instead of filling in.", &["GTM Engineering", "PMM"], &[]),
         ],
-        policy: Policy { progressive_disclosure: true, load_manifest_first: true, max_cards_per_route: 14, json_contract: "mdp.cli.v0".to_string(), no_auth_required: true },
+        policy: Policy { progressive_disclosure: true, load_manifest_first: true, max_cards_per_route: 16, json_contract: "mdp.cli.v0".to_string(), no_auth_required: true },
         provenance: Provenance { owner: "local".to_string(), created_by: "mdp init".to_string(), notes: vec!["This pack is guidance and evidence context, not an execution system.".to_string(), "Agents should load only routed cards unless the user asks for a full audit.".to_string()] },
     }
 }
@@ -417,8 +417,8 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             ])),
             model_task: None,
             context_budget: Some(crate::models::JobContextBudget {
-                max_entries: 48,
-                max_bytes: 49_152,
+                max_entries: 53,
+                max_bytes: 45_881,
                 optional_kind_quotas: BTreeMap::new(),
             }),
         },
@@ -462,8 +462,8 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 prompt: "generate-outbound-copy-v1".to_string(),
             }),
             context_budget: Some(crate::models::JobContextBudget {
-                max_entries: 64,
-                max_bytes: 65_536,
+                max_entries: 52,
+                max_bytes: 55_673,
                 optional_kind_quotas: BTreeMap::new(),
             }),
         },
@@ -1137,6 +1137,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "linkedin outbound copy",
+                "scope": ["product=local-cli"],
                 "expect_draft_status": "ready",
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
@@ -1162,6 +1163,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "linkedin follow up message",
+                "scope": ["product=local-cli"],
                 "expect_draft_status": "ready",
                 "expect_load_order_contains": [
                     ".mdp/cards/channel-policies.yaml",
@@ -1183,6 +1185,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "GTM Engineering",
                 "job": "agent brief for RevOps owner source row",
+                "scope": ["product=local-cli"],
                 "expect_load_order_contains": [
                     ".mdp/cards/personas.yaml",
                     ".mdp/cards/avoid-rules.yaml",
@@ -1226,6 +1229,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "initial email outbound message",
+                "scope": ["product=local-cli"],
                 "expect_draft_status": "ready",
                 "expect_load_order_contains": [
                     ".mdp/cards/channel-policies.yaml",
@@ -1247,6 +1251,7 @@ pub(crate) fn generated_starter_evals() -> Vec<(&'static str, Value)> {
                 ),
                 "persona": "PMM",
                 "job": "email follow up",
+                "scope": ["product=local-cli"],
                 "expect_draft_status": "ready",
                 "expect_load_order_contains": [
                     ".mdp/cards/channel-policies.yaml",

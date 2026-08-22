@@ -25,3 +25,5 @@ profile_eval:
   - actors
   - routing-jobs
   - output-contracts
+scope:
+- product=local-cli

@@ -1,4 +1,5 @@
 command: route
+expect_draft_status: ready
 expect_entry_titles_contains:
 - "Isn't this just SEO?"
 - Need proof first
@@ -6,8 +7,6 @@ expect_load_order_contains:
 - .mdp/cards/personas.yaml
 - .mdp/cards/avoid-rules.yaml
 - .mdp/cards/objections.yaml
-expect_load_order_excludes:
-- .mdp/cards/motions.yaml
 id: objection-response-route
 job: objection response
 persona: AEO Lead

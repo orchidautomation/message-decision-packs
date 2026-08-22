@@ -77,6 +77,14 @@ The generated starter prospect is synthetic. Rows created by `sample-leads` are 
 
 Current GTM packs can keep qualification policy in `manifest.yaml` `qualification_gates`, including required public-person resolution and source-backed fit or why-now signal coverage. Portfolio packs can declare product, capability, solution, or segment dimensions and scope existing card entries to them. Pass explicit `--scope dimension=value` selectors to `route` and route-scoped `check-claims`; `fit` and `brief` derive declared scope from prospect attributes. Routed output rules, including `exact_paragraphs`, are enforced only for the selected persona, job, and scope.
 
+Applicability selectors are structured routing metadata: empty or blank-only
+card `personas` and entry `applies_to` lists are universal for persona
+matching, while non-empty values match exactly and case-insensitively. Persona
+words in prose are not selectors. Universal applicability still goes through
+job/channel policy, scope, guardrail, route-card-cap, and context-budget gates;
+use `route --entries`, `brief --context`, and `route-budget` together when
+checking a pack.
+
 Proposal review uses the same local primitives with a different profile vocabulary:
 
 ```bash

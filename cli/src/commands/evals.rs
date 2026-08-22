@@ -542,13 +542,33 @@ fn parse_prospect(path: &Path, fixture: &EvalFixture) -> Result<ParsedProspect> 
         .with_context(|| format!("{} invalid prospect", path.display()))
 }
 
+fn load_order_for_assertions(output: &Value) -> Vec<Value> {
+    if let Some(load_order) = output["load_order"]
+        .as_array()
+        .filter(|load_order| !load_order.is_empty())
+    {
+        return load_order.clone();
+    }
+    if let Some(required_load_order) = output["required_load_order"]
+        .as_array()
+        .filter(|load_order| !load_order.is_empty())
+    {
+        return required_load_order.clone();
+    }
+    if output["portfolio_sensitive"] == true && output["draft_status"] == "ready" {
+        return output["route"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|card| card["path"].as_str().map(Value::from))
+            .collect();
+    }
+    Vec::new()
+}
+
 fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &mut Vec<Value>) {
     if let Some(expected) = &fixture.expect_load_order_contains {
-        let actual = output["load_order"]
-            .as_array()
-            .or_else(|| output["required_load_order"].as_array())
-            .cloned()
-            .unwrap_or_default();
+        let actual = load_order_for_assertions(output);
         for expected_path in expected {
             if !actual.iter().any(|value| value == expected_path) {
                 issues.push(issue(
@@ -561,11 +581,7 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
         }
     }
     if let Some(excluded) = &fixture.expect_load_order_excludes {
-        let actual = output["load_order"]
-            .as_array()
-            .or_else(|| output["required_load_order"].as_array())
-            .cloned()
-            .unwrap_or_default();
+        let actual = load_order_for_assertions(output);
         for excluded_path in excluded {
             if actual.iter().any(|value| value == excluded_path) {
                 issues.push(issue(
@@ -938,6 +954,78 @@ mod tests {
         )
         .expect("manifest should be writable");
         root
+    }
+
+    fn set_route_card_cap(root: &Path, cap: usize) {
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let raw = fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["policy"]["max_cards_per_route"] = serde_yaml::Value::Number(cap.into());
+        fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn failed_fixture_ids(result: &Value) -> BTreeSet<String> {
+        result["fixtures"]
+            .as_array()
+            .expect("fixtures array")
+            .iter()
+            .filter(|fixture| fixture["valid"] == false)
+            .filter_map(|fixture| fixture["id"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn actual_gtm_starter_cap_sweep_proves_minimum_strict_eval_boundary() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-gtm-cap-sweep-{nonce}"));
+        init_pack(&root, "Actual GTM Starter", "gtm", true, false)
+            .expect("actual GTM starter should initialize");
+
+        set_route_card_cap(&root, 14);
+        let cap14 = eval_pack(&root).expect("cap 14 eval should complete");
+        assert_eq!(cap14["valid"], false, "cap 14 must fail: {cap14}");
+        let cap14_failed = failed_fixture_ids(&cap14);
+        assert!(
+            cap14_failed.contains("portfolio-local-cli-route"),
+            "cap 14 must block the documented strict route: {cap14}"
+        );
+
+        set_route_card_cap(&root, 15);
+        let cap15 = eval_pack(&root).expect("cap 15 eval should complete");
+        assert_eq!(cap15["valid"], false, "cap 15 must fail: {cap15}");
+        let cap15_failed = failed_fixture_ids(&cap15);
+        for fixture_id in ["portfolio-local-cli-route", "portfolio-codex-plugin-route"] {
+            assert!(
+                cap15_failed.contains(fixture_id),
+                "cap 15 must block {fixture_id}: {cap15}"
+            );
+        }
+
+        set_route_card_cap(&root, 16);
+        let cap16 = eval_pack(&root).expect("cap 16 eval should complete");
+        assert_eq!(cap16["valid"], true, "cap 16 must pass: {cap16}");
+        assert_eq!(
+            cap16["fixtures"].as_array().expect("fixtures array").len(),
+            35
+        );
+        assert!(
+            cap16["fixtures"]
+                .as_array()
+                .expect("fixtures array")
+                .iter()
+                .all(|fixture| fixture["valid"] == true),
+            "every strict fixture must pass at cap 16: {cap16}"
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

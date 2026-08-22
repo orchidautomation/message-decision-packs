@@ -215,6 +215,11 @@ and exact Decision Input Contract receipts.
      make it reachable. Keep card `personas` and entry `applies_to` selectors
      declared in `manifest.personas`, favor structured `scope` over prose
      persona mentions, and select evidence by the entry's declared job relevance.
+     Leave selectors empty only when the card or entry is genuinely global for
+     every persona. Empty or blank-only selectors are universal for persona
+     applicability; they do not suppress a card or bypass job, scope, policy,
+     guardrail, cap, or context-budget gates. Never rely on persona words in
+     titles or prose to make a selector match.
      Before declaring the pack finished, run the deterministic route-budget
      preflight for every declared persona/job route:
 

@@ -20,8 +20,10 @@ import {
 } from './mdp-native-model-openai.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const runtimeVersion = readFileSync(join(repoRoot, 'cli', 'Cargo.toml'), 'utf8')
-  .match(/^version = "([^"]+)"/m)?.[1]
+const runtimeVersion = process.env.MDP_RUNTIME_VERSION
+  || (existsSync(join(repoRoot, 'cli', 'Cargo.toml'))
+    ? readFileSync(join(repoRoot, 'cli', 'Cargo.toml'), 'utf8').match(/^version = "([^"]+)"/m)?.[1]
+    : undefined)
 if (!runtimeVersion) throw new Error('unable to read CLI runtime version')
 const mdp = process.env.MDP_BIN || join(repoRoot, 'cli', 'target', 'debug', 'mdp')
 const driver = join(repoRoot, 'scripts', 'mdp-native-model-openai.mjs')
@@ -344,7 +346,10 @@ try {
     // has resolved and sealed the selected prompt, ordered inputs, schemas,
     // driver request/result, bundle, audit, and receipt authorities.
     const pack = profiles.find((candidate) => candidate.profile === profile).pack
-    const persona = profile === 'proposal' ? 'Proposal Lead' : 'PM'
+    // Use a persona with explicit entry selectors; the router must not infer
+    // PM from prose such as the substring inside PMM.
+    const persona = profile === 'proposal' ? 'Proposal Lead' : 'PMM'
+    const routeScopeArgs = profile === 'gtm' ? ['--scope', 'product=local-cli'] : []
     const runInputs = step.declared_inputs
       .filter((input) => input.required && !['prompt_receipt', 'invocation_receipt_sha256'].includes(input.name))
       .map((input, inputIndex) => {
@@ -354,7 +359,7 @@ try {
           const emitted = expectJson(
             invoke(mdp, [
               '--json', 'emit-brief', '--dir', pack, '--persona', persona,
-              '--job', jobId, '--routed-context-out', inputPath,
+              '--job', jobId, ...routeScopeArgs, '--routed-context-out', inputPath,
             ]),
             `${profile}/${jobId}/${step.phase} emitted routed context`,
           )

@@ -7,6 +7,7 @@ use crate::models::{CardKind, Manifest, QualificationGates};
 use crate::pack_io::{read_cards_by_id_or_kind, read_manifest, read_prospect};
 use crate::routing::{
     entry_context_scoped, entry_route_scoped, route_budget_preflight, select_cards,
+    selector_is_universal,
 };
 use crate::scope::{
     match_entry_scope, parse_scope_selectors, resolve_runtime_scope, scope_from_prospect,
@@ -496,14 +497,15 @@ fn fit_prospect_with_signal_authority(
                 compatible_scoped_entry_count += 1;
             }
             let entry_text = format!("{} {}", entry.title, entry.body).to_lowercase();
-            let applies = entry.applies_to.iter().any(|candidate| {
-                haystack.contains(&candidate.to_lowercase())
-                    || prospect
-                        .segment
-                        .as_ref()
-                        .map(|s| s.eq_ignore_ascii_case(candidate))
-                        .unwrap_or(false)
-            });
+            let applies = selector_is_universal(&entry.applies_to)
+                || entry.applies_to.iter().any(|candidate| {
+                    haystack.contains(&candidate.trim().to_lowercase())
+                        || prospect
+                            .segment
+                            .as_ref()
+                            .map(|s| s.eq_ignore_ascii_case(candidate.trim()))
+                            .unwrap_or(false)
+                });
             let keyword_match = entry_text
                 .split(|c: char| !c.is_ascii_alphanumeric())
                 .filter(|token| token.len() >= 5)
@@ -3223,6 +3225,39 @@ optional:
         let result = fit(&root, &prospect_path).expect("fit should succeed");
 
         assert_eq!(result["status"], "fit");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fit_accepts_universal_empty_selector_without_persona_prose() {
+        let root = temp_pack("fit-universal-selector");
+        let card_path = root.join(".mdp/cards/fit-rules.yaml");
+        let raw = std::fs::read_to_string(&card_path).expect("fit card should be readable");
+        let mut card: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("fit card should parse");
+        card["entries"]
+            .as_sequence_mut()
+            .expect("fit entries")
+            .push(
+                serde_yaml::from_str("id: universal-fit-rule\ntitle: Neutral synthetic fit rule\nbody: This synthetic fit rule contains no actor words and is reachable through structured emptiness.\napplies_to: []\nevidence: []\navoid: []\n")
+                    .expect("universal fit entry should parse"),
+            );
+        std::fs::write(
+            &card_path,
+            serde_yaml::to_string(&card).expect("fit card should serialize"),
+        )
+        .expect("fit card should be writable");
+
+        let result = fit(&root, &root.join("examples/clay-row.json"))
+            .expect("fit should evaluate universal selector");
+        assert!(
+            result["matches"]
+                .as_array()
+                .expect("fit matches")
+                .iter()
+                .any(|entry| entry["id"] == "universal-fit-rule")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

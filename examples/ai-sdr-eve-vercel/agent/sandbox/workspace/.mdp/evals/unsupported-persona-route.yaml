@@ -1,4 +1,5 @@
 command: route
+expect_draft_status: ready
 expect_load_order_contains:
 - .mdp/cards/personas.yaml
 - .mdp/cards/avoid-rules.yaml

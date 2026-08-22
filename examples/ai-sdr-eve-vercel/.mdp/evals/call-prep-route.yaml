@@ -1,4 +1,5 @@
 command: route
+expect_draft_status: ready
 expect_entry_titles_contains:
 - Call prep
 - Brand narrative hook

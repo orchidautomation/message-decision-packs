@@ -201,8 +201,12 @@ Read [references/structural-audit.md](references/structural-audit.md) for manife
   `personas`, and entry `applies_to` selector against the manifest's declared
   `personas`, `target_personas`, and `operator_roles` case-insensitively. Default
   warnings preserve legacy validation, but strict
-  validation must block dangling selectors. Empty selectors remain universal;
-  role mentions in titles, descriptions, and bodies remain unrestricted prose.
+validation must block dangling selectors. Empty selectors remain universal;
+role mentions in titles, descriptions, and bodies remain unrestricted prose.
+For routing QA, prove that behavior with a neutral universal-gap fixture across
+`route --entries`, `brief --context`, and `route-budget`; also test an ordinary
+entry, a scoped entry, a guardrail, and a non-empty selector. Confirm universal
+applicability does not bypass scope, policy, caps, or budgets.
 - For each decision-input contract, verify that every attribute states an answerable question, requirement class, output path, value contract, decision effects, allowed source classes, provenance, confidence, freshness, sensitivity, and effective behavior for all five attempt statuses. Hard gates must map every status explicitly and include no-draft behavior.
 - Verify that required and hard-gate output paths agree with `lead_input_requirements`, that conditional dependencies resolve, and that the compiled source request attempts every declared attribute.
 - Verify normalization prompt identity/version, the normalized JSON envelope, explicit `draft_allowed: false`, and synthetic coverage for ready, insufficient-context, disqualified, human-review, malformed, and provider-error.
