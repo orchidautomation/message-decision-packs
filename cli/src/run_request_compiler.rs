@@ -6,6 +6,8 @@
 use crate::artifact_hash::{
     canonical_json_bytes, canonical_json_sha256_for_domain, pack_content_snapshot, sha256_hex,
 };
+use crate::cli::SchemaTarget;
+use crate::commands::schemas::schema;
 use crate::constants::{DEFAULT_DIR, ROUTED_CONTEXT_CONTRACT};
 use crate::model_steps::{CompiledModelStepV1, resolve_model_steps, resolve_selected_model_step};
 use crate::models::Manifest;
@@ -22,6 +24,7 @@ use anyhow::{Result, anyhow};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 #[cfg(unix)]
@@ -56,6 +59,16 @@ pub(crate) struct CompilerDiagnostic {
     pub(crate) message: String,
     pub(crate) next_command: String,
 }
+
+#[derive(Debug)]
+pub(crate) struct CompilerError(pub(crate) CompilerDiagnostic);
+
+impl fmt::Display for CompilerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.message)
+    }
+}
+impl std::error::Error for CompilerError {}
 
 #[derive(Clone, Debug)]
 pub(crate) struct CompiledRunRequest {
@@ -200,16 +213,20 @@ pub(crate) fn compile_native_run_request(
                 "mdp prepare-run --input <name>=<path>",
             ));
         }
-        let schema = schema_for_input(&input.name);
+        let schema = input_authority(input, &manifest, &options.job);
         let sha = sha256_hex(&bytes);
         let authority = ArtifactAuthority {
             logical_name: input.name.clone(),
-            schema_id: schema.0.into(),
-            media_type: schema.1.into(),
+            schema_id: schema.0,
+            media_type: schema.1,
             byte_count: bytes.len() as u64,
             sha256: sha.clone(),
             provenance: EvidenceProvenance::MdpObserved,
-            provenance_refs: vec![format!("model-step:{}", step.step_id)],
+            provenance_refs: if schema.2.is_empty() {
+                vec![format!("model-step:{}", step.step_id)]
+            } else {
+                schema.2
+            },
         };
         authorities.insert(input.name.clone(), (authority, stable_path));
         input_values.push(json!({"name": input.name, "sha256": sha, "bytes": bytes.len()}));
@@ -234,18 +251,18 @@ pub(crate) fn compile_native_run_request(
         implementation: "bundled:mdp-native-model-openai".into(),
         version: env!("CARGO_PKG_VERSION").into(),
         build_sha256: None,
-        executable_sha256: Some("0".repeat(64)),
+        executable_sha256: None,
         image_digest: None,
-        configuration_sha256: "0".repeat(64),
-        dependency_lock_sha256: Some("0".repeat(64)),
-        identity_provenance: EvidenceProvenance::MdpObserved,
+        configuration_sha256: String::new(),
+        dependency_lock_sha256: None,
+        identity_provenance: EvidenceProvenance::CompilerDerived,
     };
     let temp_model = ModelIdentity {
         provider: "openai".into(),
         requested_model: options.model.clone(),
         resolved_model: None,
         authorized_endpoint: ENDPOINT.into(),
-        parameters_sha256: "0".repeat(64),
+        parameters_sha256: String::new(),
         session_behavior: crate::run_contracts::AssuranceEvidenceState::Declared,
         cache_behavior: crate::run_contracts::AssuranceEvidenceState::Declared,
         storage_behavior: crate::run_contracts::AssuranceEvidenceState::Declared,
@@ -302,6 +319,7 @@ pub(crate) fn compile_native_run_request(
             "mdp requirements --dir <pack> --job <job>",
         )
     })?;
+    validate_governed_lineage(&root, &options.job, &prompt_path, &authorities)?;
     let (driver, model, observations, model_facts) =
         compiler_observe_native_identity(&request, &prepared).map_err(|_| {
             diagnostic(
@@ -352,6 +370,8 @@ pub(crate) fn compile_native_run_request(
             .unwrap_or_else(|| "<request.json>".to_string())
     );
     let concise = json!({"contract": RUN_REQUEST_COMPILE_V1, "status": "ready", "execution_id": execution_id, "job": options.job, "operation": step.step_id, "pack_sha256": snapshot.sha256, "prompt_sha256": step.prompt_sha256, "input_sha256s": input_values.iter().map(|v| json!({"name":v["name"],"sha256":v["sha256"]})).collect::<Vec<_>>(), "driver_configuration_sha256": driver.configuration_sha256, "model_parameters_sha256": model.parameters_sha256, "endpoint": ENDPOINT, "max_input_bytes": MAX_INPUT_BYTES, "max_output_bytes": request.execution_policy.max_output_bytes, "timeout_ms": request.execution_policy.timeout_ms, "data_boundary": "private-staging", "provider_authorization": "required-at-execution", "anticipated_assurance": ["derived", "observed", "anticipated"], "request_sha256": request_sha, "next_command": next_command});
+    jsonschema::draft202012::validate(&schema(SchemaTarget::RunRequestCompileV1), &concise)
+        .map_err(|_| diagnostic("compiled-output-invalid", "mdp prepare-run --help"))?;
     Ok(CompiledRunRequest {
         request,
         request_bytes,
@@ -361,17 +381,165 @@ pub(crate) fn compile_native_run_request(
     })
 }
 
+fn validate_governed_lineage(
+    root: &Path,
+    job: &str,
+    prompt: &Path,
+    authorities: &BTreeMap<String, (ArtifactAuthority, PathBuf)>,
+) -> Result<()> {
+    let read_named = |needles: &[&str]| -> Result<Option<(Value, String, String)>> {
+        let Some((_, (_, path))) = authorities
+            .iter()
+            .find(|(name, _)| needles.iter().any(|needle| name.contains(needle)))
+        else {
+            return Ok(None);
+        };
+        let bytes = read_regular(path, MAX_INPUT_BYTES, "governed lineage artifact")?;
+        let sha = sha256_hex(&bytes);
+        let value = serde_json::from_slice(&bytes).map_err(|_| {
+            diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            )
+        })?;
+        Ok(Some((value, path.to_string_lossy().into_owned(), sha)))
+    };
+    let binding = read_named(&["source_binding", "source-binding"])?;
+    let request = read_named(&["source_attempt_request", "source-attempt-request"])?;
+    let results = read_named(&["collected_attempt_results", "collected-attempt-results"])?;
+    let normalized = read_named(&[
+        "normalized_input",
+        "normalized-input",
+        "normalized_decision_input",
+    ])?;
+    let Some((binding_value, binding_path, binding_sha)) = binding else {
+        return Ok(());
+    };
+    let compiled = crate::commands::requirements::requirements(root, job).map_err(|_| {
+        diagnostic(
+            "governed-lineage-invalid",
+            "mdp requirements --dir <pack> --job <job>",
+        )
+    })?;
+    let result = crate::commands::source_binding::validate_source_binding_v2(
+        &compiled,
+        &binding_value,
+        &binding_path,
+    )
+    .map_err(|_| {
+        diagnostic(
+            "governed-lineage-invalid",
+            "mdp requirements --dir <pack> --job <job>",
+        )
+    })?;
+    if result["valid"] != true {
+        return Err(diagnostic(
+            "governed-lineage-invalid",
+            "mdp requirements --dir <pack> --job <job>",
+        ));
+    }
+    if let Some((normalized_value, normalized_path, _)) = normalized {
+        let request_ref = request
+            .as_ref()
+            .map(|(value, path, sha)| (value, path.as_str(), sha.as_str()));
+        let results_ref = results
+            .as_ref()
+            .map(|(value, path, sha)| (value, path.as_str(), sha.as_str()));
+        let validation =
+            crate::commands::requirements::validate_normalized_decision_input_with_projection(
+                root,
+                &normalized_value,
+                &normalized_path,
+                prompt,
+                Some((&binding_value, &binding_path, &binding_sha)),
+                request_ref,
+                results_ref,
+                None,
+            )
+            .map_err(|_| {
+                diagnostic(
+                    "governed-lineage-invalid",
+                    "mdp requirements --dir <pack> --job <job>",
+                )
+            })?;
+        if !validation.issues.is_empty() {
+            return Err(diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn write_compiled_request(
     compiled: &CompiledRunRequest,
     options: &PrepareRunOptions,
 ) -> Result<()> {
-    if let Some(path) = &options.out {
-        atomic_write(path, &compiled.request_bytes)?;
+    let manifest_bytes = canonical_json_bytes(&compiled.manifest)?;
+    let targets: Vec<(&Path, &[u8])> = [
+        options
+            .out
+            .as_deref()
+            .map(|p| (p, compiled.request_bytes.as_slice())),
+        options
+            .manifest_out
+            .as_deref()
+            .map(|p| (p, manifest_bytes.as_slice())),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if targets.len() == 2 && output_alias(targets[0].0, targets[1].0) {
+        return Err(diagnostic(
+            "output-path-collision",
+            "mdp prepare-run --help",
+        ));
     }
-    if let Some(path) = &options.manifest_out {
-        atomic_write(path, &canonical_json_bytes(&compiled.manifest)?)?;
+    let mut staged = Vec::new();
+    for (index, (path, bytes)) in targets.iter().enumerate() {
+        if path.exists() {
+            return Err(diagnostic("output-path-exists", "mdp prepare-run --help"));
+        }
+        let parent = path
+            .parent()
+            .ok_or_else(|| diagnostic("output-path-invalid", "mdp prepare-run --help"))?;
+        fs::create_dir_all(parent)
+            .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
+        let tmp = path.with_extension(format!("{}.{}.tmp", std::process::id(), index));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
+        file.write_all(bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
+        staged.push((tmp, (*path).to_path_buf()));
+    }
+    let mut installed = Vec::new();
+    for (tmp, path) in &staged {
+        if fs::rename(tmp, path).is_err() {
+            for (left, _) in &staged {
+                let _ = fs::remove_file(left);
+            }
+            for installed_path in installed {
+                let _ = fs::remove_file(installed_path);
+            }
+            return Err(diagnostic(
+                "output-transaction-failed",
+                "mdp prepare-run --help",
+            ));
+        }
+        installed.push(path.clone());
     }
     Ok(())
+}
+
+fn output_alias(a: &Path, b: &Path) -> bool {
+    let aa = fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
+    let bb = fs::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
+    aa == bb
 }
 
 fn select_step(
@@ -484,15 +652,70 @@ fn read_regular(path: &Path, max: u64, label: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn schema_for_input(name: &str) -> (&'static str, &'static str) {
-    match name {
-        "routed_context" | "routed-context" => (ROUTED_CONTEXT_CONTRACT, "application/json"),
-        "normalized_input" | "normalized-input" => {
-            ("mdp.normalized-decision-input.v2", "application/json")
-        }
-        "source_binding" | "source-binding" => ("mdp.source-binding.v2", "application/json"),
-        _ => ("mdp.declared-input.v1", "application/json"),
+fn input_authority(
+    input: &crate::models::PromptInput,
+    manifest: &Manifest,
+    job: &str,
+) -> (String, String, Vec<String>) {
+    if let Some(schema) = &input.schema_ref {
+        return (
+            schema.clone(),
+            input
+                .media_type
+                .clone()
+                .unwrap_or_else(|| "application/json".into()),
+            input.provenance_refs.clone(),
+        );
     }
+    if input.name == "routed_context" || input.name == "routed-context" {
+        return (
+            ROUTED_CONTEXT_CONTRACT.into(),
+            "application/json".into(),
+            vec![format!("job:{job}")],
+        );
+    }
+    if let Some(contract) = manifest
+        .input_contracts
+        .iter()
+        .find(|c| c.id == input.name || c.prompt.as_deref() == Some(&input.name))
+    {
+        return (
+            contract
+                .schema_ref
+                .clone()
+                .unwrap_or_else(|| "mdp.declared-input.v1".into()),
+            input
+                .media_type
+                .clone()
+                .unwrap_or_else(|| "application/json".into()),
+            vec![format!("input-contract:{}", contract.id)],
+        );
+    }
+    if let Some(contract) = manifest
+        .decision_input_contracts
+        .iter()
+        .find(|c| c.id == input.name)
+    {
+        return (
+            "mdp.normalized-decision-input.v2".into(),
+            input
+                .media_type
+                .clone()
+                .unwrap_or_else(|| "application/json".into()),
+            vec![format!(
+                "decision-input-contract:{}:{}",
+                contract.id, contract.version
+            )],
+        );
+    }
+    (
+        "mdp.declared-input.v1".into(),
+        input
+            .media_type
+            .clone()
+            .unwrap_or_else(|| "application/json".into()),
+        input.provenance_refs.clone(),
+    )
 }
 
 fn host_metadata(name: &str) -> bool {
@@ -506,21 +729,12 @@ fn host_metadata(name: &str) -> bool {
 }
 
 fn diagnostic(code: &str, next: &str) -> anyhow::Error {
-    anyhow!("{code}: preparation refused; next safe command: {next}")
-}
-
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow!("output path has no parent"))?;
-    fs::create_dir_all(parent)?;
-    let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
-    let mut file = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    drop(file);
-    fs::rename(tmp, path)?;
-    Ok(())
+    anyhow::Error::new(CompilerError(CompilerDiagnostic {
+        code: code.into(),
+        contract: RUN_REQUEST_COMPILE_V1.into(),
+        message: format!("{code}: preparation refused"),
+        next_command: next.into(),
+    }))
 }
 
 fn now_utc() -> String {
@@ -555,7 +769,9 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, parse_input_mappings};
+    use super::{civil_from_days, diagnostic, input_authority, output_alias, parse_input_mappings};
+    use crate::models::{Manifest, PromptInput};
+    use serde_json::json;
     #[test]
     fn mappings_reject_duplicates() {
         assert!(parse_input_mappings(&["a=x".into(), "a=y".into()]).is_err());
@@ -563,5 +779,59 @@ mod tests {
     #[test]
     fn civil_epoch_is_stable() {
         assert_eq!(civil_from_days(0), (1970, 1, 1));
+    }
+    #[test]
+    fn compiler_diagnostic_is_structured_and_bounded() {
+        let error = diagnostic("lineage-stale", "mdp requirements --dir <pack> --job <job>");
+        let failure = error.downcast_ref::<super::CompilerError>().unwrap();
+        assert_eq!(failure.0.contract, super::RUN_REQUEST_COMPILE_V1);
+        assert!(!failure.0.next_command.is_empty());
+    }
+    #[test]
+    fn emitted_concise_shape_is_accepted_by_closed_schema() {
+        let value = json!({
+            "contract": super::RUN_REQUEST_COMPILE_V1, "status":"ready", "execution_id":"mdp-run-test", "job":"job", "operation":"step",
+            "pack_sha256":"a".repeat(64), "prompt_sha256":"b".repeat(64), "input_sha256s":[], "driver_configuration_sha256":"c".repeat(64), "model_parameters_sha256":"d".repeat(64),
+            "endpoint":"https://api.openai.com/v1/responses", "max_input_bytes":131072, "max_output_bytes":1048576, "timeout_ms":30000,
+            "data_boundary":"private-staging", "provider_authorization":"required-at-execution", "anticipated_assurance":["derived","observed","anticipated"], "request_sha256":"e".repeat(64), "next_command":"mdp run --request request.json"
+        });
+        assert!(
+            jsonschema::draft202012::validate(
+                &crate::commands::schemas::schema(crate::cli::SchemaTarget::RunRequestCompileV1),
+                &value
+            )
+            .is_ok()
+        );
+    }
+    #[test]
+    fn custom_declared_input_authority_wins_over_name_heuristics() {
+        let input = PromptInput {
+            name: "raw_row".into(),
+            description: String::new(),
+            required: true,
+            default: String::new(),
+            missing_behavior: String::new(),
+            producer: None,
+            schema_ref: Some("custom.schema.v9".into()),
+            media_type: Some("application/x-custom".into()),
+            provenance_refs: vec!["contract:custom".into()],
+        };
+        let manifest = serde_json::from_value::<Manifest>(json!({"format":"mdp.pack.v1","id":"x","name":"x","version":"1","description":null,"personas":[],"jobs":[],"cards":[],"policy":{"progressive_disclosure":false,"load_manifest_first":true,"max_cards_per_route":1,"json_contract":"x","no_auth_required":true},"provenance":{"owner":"x","created_by":"x","notes":[]}})).unwrap();
+        let authority = input_authority(&input, &manifest, "job");
+        assert_eq!(
+            authority,
+            (
+                "custom.schema.v9".into(),
+                "application/x-custom".into(),
+                vec!["contract:custom".into()]
+            )
+        );
+    }
+    #[test]
+    fn output_alias_rejects_same_path_before_write() {
+        assert!(output_alias(
+            std::path::Path::new("/tmp/request.json"),
+            std::path::Path::new("/tmp/./request.json")
+        ));
     }
 }

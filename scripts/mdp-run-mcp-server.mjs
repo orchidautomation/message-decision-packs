@@ -384,6 +384,9 @@ const callPrepareRun = async (args) => {
   }
   let envelope
   try { envelope = JSON.parse(invocation.stdout) } catch { return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true) }
+  if (envelope?.ok === false && envelope?.command === 'prepare-run' && envelope.data?.contract === 'mdp.run-request-compile.v1') {
+    return toolResult(envelope.data)
+  }
   if (envelope?.ok !== true || envelope?.command !== 'prepare-run' || !envelope.data || envelope.data.contract !== 'mdp.run-request-compile.v1' || envelope.data.status !== 'ready') {
     return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.status === 0 ? 'invalid-cli-contract' : 'prepare-run-refused' }, true)
   }

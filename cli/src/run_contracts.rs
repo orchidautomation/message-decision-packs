@@ -56,6 +56,7 @@ impl TerminalState {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum EvidenceProvenance {
+    CompilerDerived,
     MdpObserved,
     ProviderReturned,
     CustomerAttested,

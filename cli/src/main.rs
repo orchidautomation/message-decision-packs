@@ -29,6 +29,7 @@ mod value_contracts;
 
 use crate::cli::Cli;
 use crate::output::print_error;
+use crate::run_request_compiler::CompilerError;
 use clap::Parser;
 use clap::error::ErrorKind;
 
@@ -52,7 +53,25 @@ fn main() {
     };
     let json_mode = cli.json;
     if let Err(err) = app::run(cli) {
-        let _ = print_error(json_mode, err);
+        if json_mode {
+            if let Some(failure) = err.downcast_ref::<CompilerError>() {
+                let diagnostic = &failure.0;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "ok": false, "command": "prepare-run", "data": {
+                            "contract": diagnostic.contract, "status": "blocked",
+                            "diagnostics": [diagnostic], "next_command": diagnostic.next_command
+                        }
+                    }))
+                    .unwrap_or_else(|_| "{\"ok\":false}".into())
+                );
+            } else {
+                let _ = print_error(json_mode, err);
+            }
+        } else {
+            let _ = print_error(json_mode, err);
+        }
         std::process::exit(1);
     }
 }
