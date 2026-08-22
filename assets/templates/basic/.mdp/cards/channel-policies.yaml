@@ -68,6 +68,14 @@ entries:
   evidence:
   - mdp-reference-contract
   avoid: []
+- id: outbound-copy-review
+  title: Draft review
+  body: For a supplied draft review, apply the supplied channel and lifecycle policy when present. When the draft omits channel/lifecycle context, record the gap; do not infer a channel and do not open a full channel card.
+  applies_to:
+  - PM
+  evidence:
+  - mdp-reference-contract
+  avoid: []
 - id: call-prep
   title: Call prep
   body: Return likely persona, pains, allowed claims, avoid-rules, open questions, and the exact cards loaded. Do not pretend this is CRM history.
