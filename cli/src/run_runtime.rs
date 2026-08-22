@@ -4132,6 +4132,12 @@ mod tests {
                     .unwrap();
             assert_eq!(audit.diagnostic_code.as_deref(), Some(diagnostic_code));
             assert_eq!(audit.provider_response_body_sha256, Some("4".repeat(64)));
+            let observation = audit
+                .provider_observation
+                .expect("successful provider observation must survive host rejection");
+            assert_eq!(observation.provider, "openai");
+            assert_eq!(observation.response_id.as_deref(), Some("resp_host_transaction"));
+            assert_eq!(observation.resolved_model.as_deref(), Some("gpt-5-mini"));
             assert_eq!(
                 crate::commands::run_verification::verify_run_files(
                     Some(&run.join("run-bundle.json")),
