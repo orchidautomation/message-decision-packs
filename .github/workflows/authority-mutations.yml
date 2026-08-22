@@ -1,0 +1,81 @@
+name: Authority mutations
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "cli/src/**"
+      - "cli/Cargo.toml"
+      - "cli/Cargo.lock"
+      - "plugin/assets/authority-conformance/corpus.json"
+      - "assets/authority-conformance/corpus.json"
+      - "scripts/test-authority-mutations.sh"
+      - ".github/workflows/authority-mutations.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "cli/src/**"
+      - "cli/Cargo.toml"
+      - "cli/Cargo.lock"
+      - "plugin/assets/authority-conformance/corpus.json"
+      - "assets/authority-conformance/corpus.json"
+      - "scripts/test-authority-mutations.sh"
+      - ".github/workflows/authority-mutations.yml"
+
+concurrency:
+  group: authority-mutations-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  authority-mutation-tool:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned cargo-mutants
+        run: |
+          cargo install cargo-mutants --version 27.1.0 --locked
+          mkdir -p "$RUNNER_TEMP/cargo-mutants-bin"
+          cp "$HOME/.cargo/bin/cargo-mutants" "$RUNNER_TEMP/cargo-mutants-bin/cargo-mutants"
+      - name: Upload pinned cargo-mutants
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-mutants-27.1.0
+          path: ${{ runner.temp }}/cargo-mutants-bin/cargo-mutants
+          if-no-files-found: error
+
+  authority-mutation-shard:
+    name: authority-mutation-shard-${{ matrix.shard }}
+    needs: authority-mutation-tool
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["0/2", "1/2"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Download pinned cargo-mutants
+        uses: actions/download-artifact@v8
+        with:
+          name: cargo-mutants-27.1.0
+          path: ${{ runner.temp }}/cargo-mutants-bin
+      - name: Add cargo-mutants to PATH
+        run: |
+          chmod +x "$RUNNER_TEMP/cargo-mutants-bin/cargo-mutants"
+          echo "$RUNNER_TEMP/cargo-mutants-bin" >> "$GITHUB_PATH"
+      - name: Kill focused authority mutants
+        run: bash scripts/test-authority-mutations.sh "${{ matrix.shard }}"
+
+  authority-mutations:
+    if: always()
+    needs: authority-mutation-shard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every authority mutation shard
+        env:
+          SHARD_RESULT: ${{ needs.authority-mutation-shard.result }}
+        run: test "$SHARD_RESULT" = success
