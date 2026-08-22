@@ -554,12 +554,12 @@ impl Drop for TransactionGuard {
 }
 
 #[derive(Clone)]
-struct StagedInput {
-    logical_name: String,
-    authority: ArtifactAuthority,
-    source_path: PathBuf,
-    staged_path: PathBuf,
-    initial_sha256: String,
+pub(crate) struct StagedInput {
+    pub(crate) logical_name: String,
+    pub(crate) authority: ArtifactAuthority,
+    pub(crate) source_path: PathBuf,
+    pub(crate) staged_path: PathBuf,
+    pub(crate) initial_sha256: String,
 }
 
 #[derive(Serialize)]
@@ -580,17 +580,17 @@ struct NativeSubprocessRequestV1<'a> {
     max_output_tokens: u64,
 }
 
-struct PreparedNativeRequest {
-    step: CompiledModelStepV1,
-    invocation_value: Value,
-    invocation_bytes: Vec<u8>,
-    invocation_sha256: String,
-    visible_input: String,
-    canonical_output_schema: Value,
-    canonical_output_schema_sha256: String,
-    provider_output_schema: Value,
-    provider_output_schema_sha256: String,
-    schema_name: String,
+pub(crate) struct PreparedNativeRequest {
+    pub(crate) step: CompiledModelStepV1,
+    pub(crate) invocation_value: Value,
+    pub(crate) invocation_bytes: Vec<u8>,
+    pub(crate) invocation_sha256: String,
+    pub(crate) visible_input: String,
+    pub(crate) canonical_output_schema: Value,
+    pub(crate) canonical_output_schema_sha256: String,
+    pub(crate) provider_output_schema: Value,
+    pub(crate) provider_output_schema_sha256: String,
+    pub(crate) schema_name: String,
 }
 
 fn driver_configuration_projection(
@@ -750,6 +750,30 @@ fn prepare_native_request(
     })
 }
 
+/// The single runtime identity material authority shared by preparation and
+/// execution. Callers may derive declarations, but never substitute values.
+fn runtime_identity_material() -> Result<(String, String)> {
+    let source_sha256 = sha256_hex(BUNDLED_NATIVE_DRIVER_SOURCE.as_bytes());
+    let node = resolve_node_executable()?;
+    let node_sha256 = sha256_hex(&read_bounded(&node, 200 * 1024 * 1024, "node executable")?);
+    Ok((source_sha256, node_sha256))
+}
+
+/// Hash the exact identity declaration carried by the closed request.  This
+/// is deliberately separate from the projection hash: the declaration is
+/// caller/request material, while the projection is the runtime observation.
+pub(crate) fn canonical_driver_declaration_hash(
+    driver: &crate::run_contracts::DriverIdentity,
+) -> Result<String> {
+    canonical_json_sha256_for_domain("mdp.driver-declaration.v1", &serde_json::to_value(driver)?)
+}
+
+pub(crate) fn canonical_model_declaration_hash(
+    model: &crate::run_contracts::ModelIdentity,
+) -> Result<String> {
+    canonical_json_sha256_for_domain("mdp.model-declaration.v1", &serde_json::to_value(model)?)
+}
+
 fn bind_native_identity(
     request: &RunRequestV1,
     prepared: &PreparedNativeRequest,
@@ -767,9 +791,7 @@ fn bind_native_identity(
         .model
         .as_ref()
         .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "model-identity-required"))?;
-    let source_sha256 = sha256_hex(BUNDLED_NATIVE_DRIVER_SOURCE.as_bytes());
-    let node = resolve_node_executable()?;
-    let node_sha256 = sha256_hex(&read_bounded(&node, 200 * 1024 * 1024, "node executable")?);
+    let (source_sha256, node_sha256) = runtime_identity_material()?;
     if declared_driver.executable_sha256.as_deref() != Some(source_sha256.as_str()) {
         return Err(run_failure(
             RunFailureKind::PolicyBlocked,
@@ -819,11 +841,119 @@ fn bind_native_identity(
     let mut observed_model = declared_model.clone();
     observed_model.parameters_sha256 = model_observed_sha256.clone();
     let identity_observations = IdentityObservationV1 {
-        driver_declaration_sha256: declared_driver.configuration_sha256.clone(),
+        driver_declaration_sha256: canonical_driver_declaration_hash(declared_driver)?,
         driver_observed_sha256,
         driver_projection,
         driver_facts,
-        model_declaration_sha256: declared_model.parameters_sha256.clone(),
+        model_declaration_sha256: canonical_model_declaration_hash(declared_model)?,
+        model_observed_sha256,
+        model_projection,
+        provider_request: ProviderRequestObservationV1 {
+            provider_request_body_sha256: None,
+            provider_request_schema_id: None,
+            relation: PROVIDER_REQUEST_NOT_OBSERVED_V1.into(),
+        },
+    };
+    Ok((
+        observed_driver,
+        observed_model,
+        identity_observations,
+        model_facts,
+    ))
+}
+
+/// Prepare the exact native payload used by execution without creating a run
+/// directory. This is intentionally crate-private: the compiler is the only
+/// caller outside the execution transaction, and both paths share the same
+/// model-step, routed-context, output-schema, and request-size gates.
+pub(crate) fn compiler_prepare_native_request(
+    request: &RunRequestV1,
+    manifest: &crate::models::Manifest,
+    pack_root: &Path,
+    prompt_path: PathBuf,
+    prompt_authority: ArtifactAuthority,
+    inputs: Vec<(String, ArtifactAuthority, PathBuf)>,
+) -> Result<PreparedNativeRequest> {
+    let staged_prompt = StagedInput {
+        logical_name: "prompt".into(),
+        authority: prompt_authority,
+        source_path: prompt_path.clone(),
+        staged_path: prompt_path,
+        initial_sha256: String::new(),
+    };
+    let staged_inputs = inputs
+        .into_iter()
+        .map(|(logical_name, authority, path)| StagedInput {
+            logical_name,
+            authority,
+            source_path: path.clone(),
+            staged_path: path,
+            initial_sha256: String::new(),
+        })
+        .collect::<Vec<_>>();
+    // Compilation only uses the prepared payload for bounded-size and
+    // identity derivation checks; execution creates and owns the real
+    // deadline that is passed to the native driver.
+    let deadline = RunDeadline::try_new(request.execution_policy.timeout_ms, None)?;
+    prepare_native_request(
+        request,
+        manifest,
+        pack_root,
+        &staged_prompt,
+        &staged_inputs,
+        &deadline,
+    )
+}
+
+/// Derive runtime-observed driver/model identities for preparation. Unlike
+/// `bind_native_identity`, this helper does not compare caller declarations;
+/// it computes the declarations that the compiler will place into the closed
+/// v1 request. Runtime still re-observes and compares them before execution.
+pub(crate) fn compiler_observe_native_identity(
+    request: &RunRequestV1,
+    prepared: &PreparedNativeRequest,
+) -> Result<(
+    crate::run_contracts::DriverIdentity,
+    crate::run_contracts::ModelIdentity,
+    IdentityObservationV1,
+    ModelParametersFactsV1,
+)> {
+    let declared_driver = request
+        .driver
+        .as_ref()
+        .ok_or_else(|| anyhow!("driver identity is required"))?;
+    let declared_model = request
+        .model
+        .as_ref()
+        .ok_or_else(|| anyhow!("model identity is required"))?;
+    let (source_sha256, node_sha256) = runtime_identity_material()?;
+    let driver_projection =
+        driver_configuration_projection(declared_driver, source_sha256, node_sha256);
+    let driver_facts = (&driver_projection).into();
+    let driver_observed_sha256 =
+        projection_hash(DRIVER_CONFIGURATION_PROJECTION_V1, &driver_projection)?;
+    let model_facts = model_parameters_facts(
+        declared_model,
+        prepared,
+        request.execution_policy.timeout_ms,
+        request.execution_policy.max_output_bytes,
+    );
+    let model_projection: ModelParametersProjectionV1 = (&model_facts).into();
+    let model_observed_sha256 = projection_hash(MODEL_PARAMETERS_PROJECTION_V1, &model_projection)?;
+    let mut observed_driver = declared_driver.clone();
+    observed_driver.executable_sha256 = Some(driver_projection.bundled_source_sha256.clone());
+    observed_driver.dependency_lock_sha256 = Some(driver_projection.node_executable_sha256.clone());
+    observed_driver.version = MDP_RUNTIME_VERSION.into();
+    observed_driver.configuration_sha256 = driver_observed_sha256.clone();
+    observed_driver.identity_provenance = EvidenceProvenance::MdpObserved;
+    let mut observed_model = declared_model.clone();
+    observed_model.parameters_sha256 = model_observed_sha256.clone();
+    let identity_observations = IdentityObservationV1 {
+        driver_declaration_sha256: canonical_driver_declaration_hash(&observed_driver)?,
+        driver_observed_sha256: driver_observed_sha256.clone(),
+        driver_projection,
+        driver_facts,
+        model_declaration_sha256: canonical_model_declaration_hash(&observed_model)?,
         model_observed_sha256,
         model_projection,
         provider_request: ProviderRequestObservationV1 {
@@ -3480,6 +3610,10 @@ fn staged_authority_name_is_exact(authority_name: &str, logical_name: &str) -> b
         .strip_prefix("declared/")
         .and_then(|name| name.split_once('-'))
         .is_some_and(|(_, name)| name == logical_name)
+}
+
+pub(crate) fn compiler_validate_request(request: &RunRequestV1) -> Result<()> {
+    validate_request(request)
 }
 
 fn validate_request(request: &RunRequestV1) -> Result<()> {

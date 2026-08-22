@@ -89,6 +89,39 @@ pub(crate) enum Commands {
         #[arg(long, help = "Closed profile job id to compile")]
         job: String,
     },
+    #[command(about = "Compile an offline, sealed native run request without executing it")]
+    PrepareRun {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long, help = "Closed profile job id to compile")]
+        job: String,
+        #[arg(
+            long,
+            help = "Exact model step id (model:<job>/<phase>); optional when unambiguous"
+        )]
+        operation: Option<String>,
+        #[arg(
+            long = "input",
+            value_name = "LOGICAL_NAME=PATH",
+            help = "Declared local input path; repeat for each input"
+        )]
+        inputs: Vec<String>,
+        #[arg(long, help = "Requested model name")]
+        model: String,
+        #[arg(long, default_value = "receipt-only")]
+        retention_policy: String,
+        #[arg(long, help = "RFC3339 UTC timestamp for deterministic preparation")]
+        created_at: Option<String>,
+        #[arg(long, help = "Write the exact closed mdp.run-request.v1 bytes")]
+        out: Option<PathBuf>,
+        #[arg(long, help = "Write the full compiler manifest")]
+        manifest_out: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "Include the full compiler manifest and request in JSON output"
+        )]
+        full: bool,
+    },
     #[command(about = "Generate or safely rebind a complete synthetic v2 input chain")]
     RebindSyntheticChain {
         #[arg(long, default_value = ".")]
@@ -680,6 +713,7 @@ pub(crate) enum SchemaTarget {
     RunReceipt,
     RunnerAudit,
     RunRequestV1,
+    RunRequestCompileV1,
     RunBundleV1,
     DriverRequestV1,
     DriverResultV1,
@@ -1056,6 +1090,49 @@ mod tests {
     }
 
     #[test]
+    fn prepare_run_accepts_only_path_or_scalar_compiler_inputs() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "prepare-run",
+            "--dir",
+            "pack",
+            "--job",
+            "job",
+            "--operation",
+            "model:job/generation",
+            "--input",
+            "routed_context=route.json",
+            "--model",
+            "gpt-test",
+            "--created-at",
+            "2026-01-01T00:00:00Z",
+            "--out",
+            "request.json",
+            "--manifest-out",
+            "manifest.json",
+            "--full",
+        ])
+        .expect("prepare-run should parse");
+        assert!(
+            matches!(parsed.command, Commands::PrepareRun { full: true, inputs, .. } if inputs == vec!["routed_context=route.json"])
+        );
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "prepare-run",
+                "--job",
+                "job",
+                "--model",
+                "gpt-test",
+                "--execution-id",
+                "caller-authored"
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
     fn validate_source_binding_requires_job_pack_and_file() {
         let parsed = Cli::try_parse_from([
             "mdp",
@@ -1219,6 +1296,7 @@ mod tests {
     fn v1_execution_schema_targets_use_explicit_versioned_names() {
         let targets = [
             ("run-request-v1", SchemaTarget::RunRequestV1),
+            ("run-request-compile-v1", SchemaTarget::RunRequestCompileV1),
             ("run-bundle-v1", SchemaTarget::RunBundleV1),
             ("driver-request-v1", SchemaTarget::DriverRequestV1),
             ("driver-result-v1", SchemaTarget::DriverResultV1),

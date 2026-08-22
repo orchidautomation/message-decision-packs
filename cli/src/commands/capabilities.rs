@@ -27,6 +27,7 @@ use crate::run_contracts::{
     DRIVER_RESULT_V2, PROPOSAL_RUNNER_RESULT_V1, RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1,
     RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
 };
+use crate::run_request_compiler::RUN_REQUEST_COMPILE_V1;
 use serde_json::{Value, json};
 
 pub(crate) fn capabilities() -> Value {
@@ -53,6 +54,13 @@ pub(crate) fn capabilities() -> Value {
             "offline_by_default": true,
             "auth_required": false,
             "init_templates": ["gtm", "proposal"]
+        },
+        "prepare_run": {
+            "contract": RUN_REQUEST_COMPILE_V1,
+            "offline": true,
+            "provider_authorization": "required-at-execution",
+            "execution_authority": "mdp.run",
+            "forbidden_caller_fields": ["execution_id", "idempotency_key", "pack_release_id", "prompt_path", "driver_hash", "policy_hash", "model_parameter_hash"]
         },
         "global_options": [
             {"name": "--json", "description": "Emit stable machine-readable JSON"},
@@ -280,6 +288,7 @@ pub(crate) fn capabilities() -> Value {
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
+            command("prepare-run", RUN_REQUEST_COMPILE_V1, "read-only-unless-out", false, true, false, &["--dir", "--job", "--operation", "--input", "--model", "--retention-policy", "--created-at", "--out", "--manifest-out", "--full"]),
             command("rebind-synthetic-chain", "mdp.synthetic-v2-chain.v1", "writes-external-chain", true, false, false, &["--dir", "--job", "--out-dir", "--input-dir", "--as-of", "--seed", "--dry-run", "--apply", "--force"]),
             command("validate-source-binding", SOURCE_BINDING_VALIDATION_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--file"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
@@ -311,6 +320,12 @@ pub(crate) fn capabilities() -> Value {
         "stable_error_codes": [
             {"code": "pack_not_found", "meaning": "A pack manifest or required .mdp path could not be read"},
             {"code": "invalid_manifest", "meaning": "A pack manifest could not be parsed or uses invalid structure"},
+            {"code": "model-step-ambiguous", "meaning": "The selected job has more than one model step; provide an exact --operation"},
+            {"code": "declared-input-missing", "meaning": "A required model-step input was not provided"},
+            {"code": "declared-input-authority-missing", "meaning": "A selected step/job input has no explicit schema authority"},
+            {"code": "declared-input-unsafe", "meaning": "An input was not a regular single-link non-symlink file"},
+            {"code": "governed-lineage-duplicate-alias", "meaning": "A governed lineage artifact was supplied through duplicate aliases"},
+            {"code": "identity-observation-unavailable", "meaning": "MDP-231 runtime identity observations could not be established"},
             {"code": "invalid_prospect", "meaning": "A prospect input uses unsupported fields or invalid structure"},
             {"code": "missing_card", "meaning": "A referenced card could not be found or read"},
             {"code": "readme_inventory_drift", "meaning": "The generated README inventory block does not match loaded structured authority"},
