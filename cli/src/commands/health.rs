@@ -1,13 +1,14 @@
 use crate::constants::{
     DEFAULT_DIR, FORMAT_NAME, FORMAT_VERSION, GENERATED_PACK_DIRECTORIES,
-    NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
-    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    GOVERNED_HOST_ENVELOPE_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V2, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
+    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 
 use crate::models::{
     Card, CardKind, DecisionInputAttemptStatus, DecisionInputContract, DecisionInputDecisionEffect,
-    DecisionInputDisposition, DecisionInputRequirement, InputContract, MAX_SIGNAL_CONTRIBUTORS,
+    DecisionInputDisposition, DecisionInputRequirement, GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
+    GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS, InputContract, MAX_SIGNAL_CONTRIBUTORS,
     MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN, MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE,
     MAX_SIGNAL_PROJECTIONS_PER_CONTRACT, Manifest, PrimitiveMapping, ProductFoundationBinding,
     ProductFoundationConditionFact, ProductFoundationEntryRef, ProductFoundationFacetKind, Profile,
@@ -5295,10 +5296,22 @@ fn validate_prompt_shape(path: &Path, display_path: &str, issues: &mut Vec<Value
             "entry_defaults",
             "schema_ref",
             "schema",
+            "host_envelope",
             "example",
         ],
         &format!("{display_path}#/output_contract"),
         "prompt_output_contract_unknown_field",
+        issues,
+    );
+    validate_object_keys(
+        yaml_get(
+            yaml_get(&value, "output_contract").unwrap_or(&YamlValue::Null),
+            "host_envelope",
+        )
+        .unwrap_or(&YamlValue::Null),
+        &["contract", "owned_top_level", "semantic_required_top_level"],
+        &format!("{display_path}#/output_contract/host_envelope"),
+        "prompt_host_envelope_unknown_field",
         issues,
     );
     validate_object_keys(
@@ -5569,6 +5582,9 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
         ));
     }
 
+    if prompt.output_contract.host_envelope.is_some() {
+        validate_prompt_host_envelope(prompt, path, issues);
+    }
     if output_kind == "governed-artifact" {
         match prompt
             .inputs
@@ -5741,6 +5757,73 @@ fn validate_prompt_output_contract(prompt: &PromptFile, path: &str, issues: &mut
     }
     if output_kind == "prospect-normalization" {
         validate_prompt_normalization_example(prompt, path, issues);
+    }
+}
+
+fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut Vec<Value>) {
+    let Some(envelope) = prompt.output_contract.host_envelope.as_ref() else {
+        return;
+    };
+    let envelope_path = format!("{path}#/output_contract/host_envelope");
+    if envelope.contract != GOVERNED_HOST_ENVELOPE_CONTRACT {
+        issues.push(issue(
+            "prompt_host_envelope_contract",
+            "error",
+            format!("{envelope_path}/contract"),
+            format!("host envelope contract must be {GOVERNED_HOST_ENVELOPE_CONTRACT}"),
+        ));
+    }
+    let mut validate_fields = |fields: &[String], expected: &[&str], field_name: &str| {
+        let actual = fields.iter().map(String::as_str).collect::<BTreeSet<_>>();
+        let expected = expected.iter().copied().collect::<BTreeSet<_>>();
+        if fields.len() != actual.len() || actual != expected {
+            issues.push(issue(
+                "prompt_host_envelope_fields",
+                "error",
+                format!("{envelope_path}/{field_name}"),
+                format!("{field_name} must contain the fixed MDP field set without duplicates"),
+            ));
+        }
+    };
+    validate_fields(
+        &envelope.owned_top_level,
+        GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
+        "owned_top_level",
+    );
+    validate_fields(
+        &envelope.semantic_required_top_level,
+        GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS,
+        "semantic_required_top_level",
+    );
+    let expected_required_top_level = GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
+        .iter()
+        .chain(GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
+        .copied()
+        .collect::<Vec<_>>();
+    validate_fields(
+        &prompt.output_contract.required_top_level,
+        &expected_required_top_level,
+        "required_top_level",
+    );
+    if prompt.output_contract.output_kind.as_deref() != Some("governed-artifact") {
+        issues.push(issue(
+            "prompt_host_envelope_output_kind",
+            "error",
+            envelope_path,
+            "host envelope is supported only for governed-artifact outputs",
+        ));
+    }
+    if !prompt
+        .inputs
+        .iter()
+        .any(|input| input.required && input.name == "routed_context")
+    {
+        issues.push(issue(
+            "prompt_host_envelope_routed_context_missing",
+            "error",
+            format!("{path}#/inputs"),
+            "host envelope requires a required routed_context input",
+        ));
     }
 }
 

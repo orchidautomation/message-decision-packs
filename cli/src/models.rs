@@ -1,4 +1,4 @@
-use crate::constants::NORMALIZED_DECISION_INPUT_CONTRACT;
+use crate::constants::{GOVERNED_HOST_ENVELOPE_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -768,7 +768,87 @@ pub(crate) struct PromptOutputContract {
     pub(crate) schema_ref: Option<String>,
     #[serde(default)]
     pub(crate) schema: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) host_envelope: Option<PromptHostEnvelope>,
     pub(crate) example: serde_json::Value,
+}
+
+pub(crate) const GOVERNED_HOST_ENVELOPE_OWNED_FIELDS: &[&str] = &[
+    "contract",
+    "prompt_id",
+    "job_id",
+    "prompt_version",
+    "prompt_sha256",
+    "context_sha256",
+    "invocation_receipt_sha256",
+    "source_summary",
+];
+
+pub(crate) const GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS: &[&str] =
+    &["selected_authority", "artifact", "gaps", "rejected_claims"];
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PromptHostEnvelope {
+    pub(crate) contract: String,
+    pub(crate) owned_top_level: Vec<String>,
+    pub(crate) semantic_required_top_level: Vec<String>,
+}
+
+impl PromptHostEnvelope {
+    pub(crate) fn validate(
+        &self,
+        output_kind: Option<&str>,
+        has_routed_context: bool,
+        required_top_level: &[String],
+    ) -> Result<(), String> {
+        if self.contract != GOVERNED_HOST_ENVELOPE_CONTRACT {
+            return Err("host envelope contract must be mdp.governed-host-envelope.v1".into());
+        }
+        validate_fixed_fields(
+            &self.owned_top_level,
+            GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
+            "owned_top_level",
+        )?;
+        validate_fixed_fields(
+            &self.semantic_required_top_level,
+            GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS,
+            "semantic_required_top_level",
+        )?;
+        let expected_required_top_level = GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
+            .iter()
+            .chain(GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
+            .copied()
+            .collect::<Vec<_>>();
+        validate_fixed_fields(
+            required_top_level,
+            &expected_required_top_level,
+            "required_top_level",
+        )?;
+        if output_kind != Some("governed-artifact") {
+            return Err("host envelope is supported only for governed-artifact outputs".into());
+        }
+        if !has_routed_context {
+            return Err("host envelope requires a required routed_context input".into());
+        }
+        Ok(())
+    }
+}
+
+fn validate_fixed_fields(fields: &[String], expected: &[&str], name: &str) -> Result<(), String> {
+    if fields.len() != expected.len() {
+        return Err(format!("{name} must contain the fixed MDP field set"));
+    }
+    let mut actual = fields.iter().map(String::as_str).collect::<Vec<_>>();
+    actual.sort_unstable();
+    let mut expected = expected.to_vec();
+    expected.sort_unstable();
+    if actual != expected {
+        return Err(format!(
+            "{name} contains an unknown, missing, or duplicate field"
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

@@ -3526,7 +3526,7 @@ optional:
             "model:outbound-copy-brief/generation"
         );
         assert_eq!(compiled["model_task"]["kind"], "generation");
-        assert_eq!(compiled["model_task"]["prompt_version"], "2");
+        assert_eq!(compiled["model_task"]["prompt_version"], "3");
         assert_eq!(
             compiled["model_task"]["host_boundary"]["model_call_included"],
             false

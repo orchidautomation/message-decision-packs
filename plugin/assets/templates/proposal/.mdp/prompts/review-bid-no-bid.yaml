@@ -1,6 +1,6 @@
 format: mdp.prompt.v1
 id: review-bid-no-bid-v1
-version: "2"
+version: "3"
 kind: review
 title: Review bid or no-bid decision
 description: Evaluate whether declared opportunity authority supports bid, no-bid, pause, or escalation.
@@ -53,8 +53,6 @@ inputs:
   producer: host
 instructions:
 - Use only declared inputs and the exact mdp.routed-context.v1 authority for this job.
-- Return strict JSON only, preserve exact selected authority identifiers, and echo invocation_receipt_sha256 exactly from the separately declared host input.
-- Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.
 - Surface missing proof, requirements, or review authority as structured gaps instead of inventing facts.
 procedure:
 - Confirm the canonical job, prompt version, declared inputs, and selected authority.
@@ -67,8 +65,6 @@ ambiguity_policy:
 - Represent missing or conflicting facts in gaps and use a bounded non-success status.
 provenance_policy:
 - Retain exact authority identifiers for every selected claim, proof item, and review gate.
-- Echo invocation_receipt_sha256 from the host-computed detached hash input for the exact prompt_receipt bytes; do not calculate or invent it.
-- Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.
 evidence_policy:
 - Unsupported certifications, compliance status, past performance, pricing, or customer proof must be rejected or escalated.
 negative_examples:
@@ -76,15 +72,18 @@ negative_examples:
 - Do not invent past performance, customer results, certifications, or requirement coverage.
 final_checklist:
 - Output is strict JSON.
-- prompt_sha256 matches the host-provided canonical prompt hash.
-- invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.
-- context_sha256 exactly echoes the SHA-256 recorded for routed_context in prompt_receipt.inputs without recalculation or invention.
+- MDP wraps and validates prompt, context, receipt, and input identities after generation.
+- Return only semantic governed fields.
 - All selected identifiers are declared.
 - Missing requirements and unsupported claims are explicit.
 - No external submission, send, CRM update, or model call is implied.
 output_contract:
   contract: mdp.prompt-output.v0
   output_kind: governed-artifact
+  host_envelope:
+    contract: mdp.governed-host-envelope.v1
+    owned_top_level: [contract, prompt_id, job_id, prompt_version, prompt_sha256, context_sha256, invocation_receipt_sha256, source_summary]
+    semantic_required_top_level: [selected_authority, artifact, gaps, rejected_claims]
   strict_json_only: true
   required_top_level: [contract, prompt_id, job_id, prompt_version, prompt_sha256, invocation_receipt_sha256, context_sha256, source_summary, selected_authority, artifact, gaps, rejected_claims]
   entry_defaults:
@@ -102,7 +101,7 @@ output_contract:
       contract: {const: mdp.prompt-output.v0}
       prompt_id: {const: review-bid-no-bid-v1}
       job_id: {const: bid-no-bid-review}
-      prompt_version: {const: "2"}
+      prompt_version: {const: "3"}
       prompt_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
       invocation_receipt_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
       context_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
@@ -131,7 +130,7 @@ output_contract:
     contract: mdp.prompt-output.v0
     prompt_id: review-bid-no-bid-v1
     job_id: bid-no-bid-review
-    prompt_version: "2"
+    prompt_version: "3"
     prompt_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
     invocation_receipt_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
     context_sha256: "0000000000000000000000000000000000000000000000000000000000000000"

@@ -9,19 +9,20 @@ use crate::conformance::{
     PUBLICATION_APPROVAL_V1,
 };
 use crate::constants::{
-    FORMAT_VERSION, NATIVE_NORMALIZE_REQUEST_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
-    NORMALIZED_DECISION_INPUT_CONTRACT_V2, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1,
-    PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT, PROMPT_OUTPUT_VALIDATION_CONTRACT,
-    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF, PROPOSAL_MCP_RUN_RESULT_CONTRACT,
-    PROPOSAL_READINESS_REPORT_CONTRACT, PROPOSAL_RUN_MANIFEST_CONTRACT,
-    PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT,
-    SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
+    FORMAT_VERSION, GOVERNED_HOST_ENVELOPE_CONTRACT, NATIVE_NORMALIZE_REQUEST_CONTRACT,
+    NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+    PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_OUTPUT_VALIDATION_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    PROPOSAL_MCP_RUN_RESULT_CONTRACT, PROPOSAL_READINESS_REPORT_CONTRACT,
+    PROPOSAL_RUN_MANIFEST_CONTRACT, PROPOSAL_RUNNER_RESULT_CONTRACT, RUN_RECEIPT_CONTRACT,
+    RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT, SOURCE_INTAKE_CONTRACT,
 };
 use crate::model_steps::{
     COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1, compiled_model_step_schema,
 };
 use crate::models::{
-    CardKind, DecisionInputAttemptStatus, MAX_SIGNAL_ATTEMPTS, MAX_SIGNAL_CONTRIBUTORS,
+    CardKind, DecisionInputAttemptStatus, GOVERNED_HOST_ENVELOPE_OWNED_FIELDS,
+    GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS, MAX_SIGNAL_ATTEMPTS, MAX_SIGNAL_CONTRIBUTORS,
     MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN, MAX_SIGNAL_LOCATOR_LEN,
     MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE, MAX_SIGNAL_PROJECTIONS_PER_CONTRACT,
     MAX_SIGNAL_QUALIFIED_ID_LEN, SIGNAL_OBSERVATION_CONTRACT_V2,
@@ -2078,6 +2079,7 @@ fn runner_audit_v1_schema() -> Value {
             "provider_response_body_sha256": optional_sha256_schema(),
             "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
             "identity_observations": nullable_object_schema(identity_observation_v1_schema()),
+            "diagnostic_code": {"type": ["string", "null"]},
             "terminal_state": terminal_state_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array()
@@ -4595,6 +4597,28 @@ fn prompt_schema(card_kinds: [&str; 15]) -> Value {
                         "description": "Compact reference to the response schema family. The CLI derives the concrete schema from this ref, output_kind, prompt_id, and target_card_kinds."
                     },
                     "schema": prompt_response_schema_contract(),
+                    "host_envelope": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["contract", "owned_top_level", "semantic_required_top_level"],
+                        "properties": {
+                            "contract": {"const": GOVERNED_HOST_ENVELOPE_CONTRACT},
+                            "owned_top_level": {
+                                "type": "array",
+                                "minItems": 8,
+                                "maxItems": 8,
+                                "uniqueItems": true,
+                                "items": {"enum": GOVERNED_HOST_ENVELOPE_OWNED_FIELDS}
+                            },
+                            "semantic_required_top_level": {
+                                "type": "array",
+                                "minItems": 4,
+                                "maxItems": 4,
+                                "uniqueItems": true,
+                                "items": {"enum": GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS}
+                            }
+                        }
+                    },
                     "example": {
                         "anyOf": [
                             prompt_output_schema(card_kinds),
@@ -4627,6 +4651,7 @@ fn governed_artifact_example_schema() -> Value {
             "context_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "source_summary": {
                 "type": "object",
+                "additionalProperties": false,
                 "required": ["inputs_used"],
                 "properties": {"inputs_used": {"type": "array", "items": {"type": "string"}}}
             },

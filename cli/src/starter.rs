@@ -1,6 +1,7 @@
 use crate::constants::{
-    FORMAT_VERSION, PROMPT_CARD_PATCH_SCHEMA_REF, PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION,
-    PROMPT_OUTPUT_CONTRACT, PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
+    FORMAT_VERSION, GOVERNED_HOST_ENVELOPE_CONTRACT, PROMPT_CARD_PATCH_SCHEMA_REF,
+    PROMPT_FORMAT_V1, PROMPT_FORMAT_VERSION, PROMPT_OUTPUT_CONTRACT,
+    PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF,
 };
 use crate::models::{
     Card, CardKind, CardRef, CountConstraint, DecisionInputAttemptStatus, DecisionInputAttribute,
@@ -2605,7 +2606,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
     );
     schema_properties.insert("prompt_id".to_string(), json!({"const": id}));
     schema_properties.insert("job_id".to_string(), json!({"const": job_id}));
-    schema_properties.insert("prompt_version".to_string(), json!({"const": "2"}));
+    schema_properties.insert("prompt_version".to_string(), json!({"const": "3"}));
     schema_properties.insert(
         "prompt_sha256".to_string(),
         json!({"type": "string", "pattern": "^[0-9a-f]{64}$"}),
@@ -2666,7 +2667,7 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
     json!({
         "format": PROMPT_FORMAT_V1,
         "id": id,
-        "version": "2",
+        "version": "3",
         "kind": kind,
         "title": if is_review { "Review outbound copy" } else { "Generate outbound copy" },
         "description": objective,
@@ -2677,25 +2678,25 @@ fn outbound_model_task_prompt(job_id: &str, id: &str, kind: &str) -> Value {
         "inputs": outbound_model_task_inputs(is_review),
         "instructions": [
             "Use only declared inputs and the exact mdp.routed-context.v1 authority for this job.",
-            "Return strict JSON only, preserve exact selected authority identifiers, and echo the exact invocation receipt SHA-256 supplied by the host.",
-            "Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it.",
+            "Return strict JSON only and preserve exact selected authority identifiers; MDP wraps deterministic provenance after generation.",
             "If evidence or authority is insufficient, return structured gaps or refusal instead of inventing facts."
         ],
         "procedure": ["Confirm the job, prompt version, declared inputs, and selected authority.", "Apply the pack-owned selection and evidence rules.", "Return the exact governed artifact schema."],
         "selection_rules": ["Choose only angle, CTA, claim, and evidence identifiers present in selected authority.", "Select at most one card-qualified authority reference for each bare artifact identifier.", "Never load the whole pack or borrow authority from another job."],
         "ambiguity_policy": ["Represent missing or conflicting facts in gaps and use a bounded non-success status."],
-        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Treat prompt_receipt as the exact receipt content and echo the separately supplied invocation_receipt_sha256; the receipt cannot contain its own hash.", "Echo context_sha256 exactly from the SHA-256 recorded for routed_context in prompt_receipt.inputs; do not recalculate or invent it."],
+        "provenance_policy": ["Retain the exact authority identifiers used to produce or review the artifact.", "Treat prompt_receipt as host authority; do not author deterministic provenance fields."],
         "evidence_policy": ["Do not state a claim unless its selected evidence supports it; generated text must still pass mdp verify-output."],
         "negative_examples": ["Do not invent customer proof, integrations, outcomes, timing, or recipient facts.", "Do not silently choose an undeclared claim or CTA."],
-        "final_checklist": ["Output is strict JSON.", "prompt_sha256 matches the host-provided canonical prompt hash.", "invocation_receipt_sha256 exactly echoes the separately supplied host value for the exact prompt_receipt bytes.", "context_sha256 exactly echoes the SHA-256 recorded for routed_context in prompt_receipt.inputs without recalculation or invention.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
+        "final_checklist": ["Output is strict JSON.", "MDP wraps and validates prompt, context, receipt, and input identities after generation.", "Return only semantic governed fields.", "All selected identifiers are declared and unambiguous.", "Gaps and rejected claims are explicit.", "Generated copy is substantive before status is ready and remains ready for separate verify-output validation."],
         "output_contract": {
             "contract": PROMPT_OUTPUT_CONTRACT,
             "output_kind": "governed-artifact",
+            "host_envelope": {"contract": GOVERNED_HOST_ENVELOPE_CONTRACT, "owned_top_level": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "context_sha256", "invocation_receipt_sha256", "source_summary"], "semantic_required_top_level": ["selected_authority", "artifact", "gaps", "rejected_claims"]},
             "strict_json_only": true,
             "required_top_level": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "invocation_receipt_sha256", "context_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"],
             "entry_defaults": {"body": "N/A", "applies_to": [], "evidence": [], "avoid": [], "confidence": "unknown", "provenance": []},
             "schema": {"type": "object", "additionalProperties": false, "required": ["contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256", "invocation_receipt_sha256", "context_sha256", "source_summary", "selected_authority", "artifact", "gaps", "rejected_claims"], "properties": schema_properties},
-            "example": {"contract": PROMPT_OUTPUT_CONTRACT, "prompt_id": id, "job_id": job_id, "prompt_version": "2", "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "invocation_receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "context_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "source_summary": {"inputs_used": []}, "selected_authority": [], "artifact": example_artifact, "gaps": if is_review { json!(["Supplied draft needs revision before approval."]) } else { json!(["Insufficient selected evidence for a claim-backed draft."]) }, "rejected_claims": []}
+            "example": {"contract": PROMPT_OUTPUT_CONTRACT, "prompt_id": id, "job_id": job_id, "prompt_version": "3", "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "invocation_receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "context_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "source_summary": {"inputs_used": []}, "selected_authority": [], "artifact": example_artifact, "gaps": if is_review { json!(["Supplied draft needs revision before approval."]) } else { json!(["Insufficient selected evidence for a claim-backed draft."]) }, "rejected_claims": []}
         }
     })
 }

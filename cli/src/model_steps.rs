@@ -409,6 +409,24 @@ fn compile_step(
             prompt.id
         ));
     }
+    if let Some(host_envelope) = prompt.output_contract.host_envelope.as_ref() {
+        let has_routed_context = prompt
+            .inputs
+            .iter()
+            .any(|input| input.required && input.name == "routed_context");
+        host_envelope
+            .validate(
+                prompt.output_contract.output_kind.as_deref(),
+                has_routed_context,
+                &prompt.output_contract.required_top_level,
+            )
+            .map_err(|_| {
+                anyhow!(
+                    "prompt {} has an invalid host envelope declaration",
+                    prompt.id
+                )
+            })?;
+    }
     let prompt_json = serde_json::to_value(&prompt)?;
     let prompt_sha256 = canonical_json_sha256(&prompt_json)?;
     let output_contract_json = serde_json::to_value(&prompt.output_contract)?;
