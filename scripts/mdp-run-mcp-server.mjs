@@ -549,6 +549,11 @@ const handleToolCall = async (params, signal = null) => {
 
 const activeRequests = new Map()
 
+const cancelActiveRequest = (requestId) => {
+  const controller = activeRequests.get(String(requestId))
+  if (controller) controller.abort()
+}
+
 const handleRequest = async (message) => {
   if (!message || typeof message !== 'object' || Array.isArray(message)) {
     return errorResponse(null, JSON_RPC_INVALID_REQUEST, 'invalid JSON-RPC message')
@@ -576,9 +581,11 @@ const handleRequest = async (message) => {
       case 'notifications/initialized':
         return null
       case '$/cancelRequest': {
-        const requestId = message.params?.requestId
-        const controller = activeRequests.get(String(requestId))
-        if (controller) controller.abort()
+        cancelActiveRequest(message.params?.requestId)
+        return null
+      }
+      case 'notifications/cancelled': {
+        cancelActiveRequest(message.params?.requestId)
         return null
       }
       case 'ping':
@@ -643,7 +650,8 @@ let queue = Promise.resolve()
 const enqueue = (line) => {
   let parsed
   try { parsed = JSON.parse(line) } catch { parsed = null }
-  const cancellation = parsed && !Array.isArray(parsed) && parsed.method === '$/cancelRequest'
+  const cancellation = parsed && !Array.isArray(parsed) &&
+    (parsed.method === '$/cancelRequest' || parsed.method === 'notifications/cancelled')
   if (cancellation) {
     void handleRequest(parsed)
     return

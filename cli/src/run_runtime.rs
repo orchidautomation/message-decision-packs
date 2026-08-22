@@ -379,7 +379,7 @@ impl RunDeadline {
     }
 
     fn try_new(runtime_configured_ms: u64, transport_configured_ms: Option<u64>) -> Result<Self> {
-        if runtime_configured_ms < MAX_FINALIZATION_RESERVE_MS {
+        if runtime_configured_ms <= MAX_FINALIZATION_RESERVE_MS {
             return Err(run_failure(
                 RunFailureKind::Preflight,
                 "deadline-reserve-underflow",
@@ -1367,6 +1367,12 @@ where
         cleanup_failed_transaction(&transaction_dir)?;
         return Err(error);
     }
+    if request.mode == RunMode::Generative
+        && let Err(error) = deadline.check_phase(DeadlinePhase::Finalization)
+    {
+        let _ = cleanup_failed_transaction(&transaction_dir);
+        return Err(error);
+    }
     if let Err(error) = validate_output_outside_pack(request, final_dir) {
         let _ = cleanup_failed_transaction(&transaction_dir);
         return Err(error);
@@ -1374,6 +1380,12 @@ where
     fs::remove_dir_all(transaction_dir.join("private"))
         .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "private-cleanup-failed"))?;
     if let Err(error) = validate_output_outside_pack(request, final_dir) {
+        let _ = cleanup_failed_transaction(&transaction_dir);
+        return Err(error);
+    }
+    if request.mode == RunMode::Generative
+        && let Err(error) = deadline.check_phase(DeadlinePhase::Finalization)
+    {
         let _ = cleanup_failed_transaction(&transaction_dir);
         return Err(error);
     }
@@ -1853,7 +1865,7 @@ where
     } else if deadline.expired() {
         deadline.record_terminal(deadline.observation(
             DeadlineOutcome::TimedOut,
-            DeadlinePhase::Provider,
+            deadline.current_phase(),
             TerminalState::NoDraftRunnerFailed,
         ));
         terminal_state = TerminalState::NoDraftRunnerFailed;
@@ -2342,6 +2354,14 @@ where
         Some(&invocation_path),
         routed_context.map(|item| item.staged_path.as_path()),
     )?;
+    if deadline.expired() {
+        deadline.record_terminal(deadline.observation(
+            DeadlineOutcome::TimedOut,
+            deadline.current_phase(),
+            TerminalState::NoDraftRunnerFailed,
+        ));
+        return failed_generative_outcome(driver_request, "validation-timeout");
+    }
     let valid = validation["valid"].as_bool() == Some(true);
     Ok(GenerativeOutcome {
         terminal_state: if valid {
@@ -3566,7 +3586,7 @@ fn validate_request(request: &RunRequestV1) -> Result<()> {
         || request.execution_policy.max_input_bytes > MAX_POLICY_INPUT_BYTES
         || request.execution_policy.max_output_bytes == 0
         || request.execution_policy.max_output_bytes > MAX_POLICY_OUTPUT_BYTES
-        || request.execution_policy.timeout_ms == 0
+        || request.execution_policy.timeout_ms <= MAX_FINALIZATION_RESERVE_MS
         || request.execution_policy.timeout_ms > 60_000
     {
         return Err(anyhow!("execution policy limits must be positive"));
@@ -4159,10 +4179,10 @@ mod tests {
     use crate::models::{PromptEntryDefaults, PromptHostEnvelope, PromptOutputContract};
     use crate::run_contracts::{
         ArtifactAuthority, AssuranceEvidenceState, DRIVER_REQUEST_V2, DRIVER_RESULT_V2,
-        DriverArtifactV2, DriverIdentity, DriverOutputV2, DriverProviderObservationV2,
-        DriverProviderPolicyV2, DriverRequestV2, DriverResultV2, EvidenceProvenance,
-        ExecutionPolicy, JobIdentity, LocalArtifactInput, ModelIdentity, PackAuthority,
-        RunBundleV1, RunMode, RunRequestV1, TerminalState,
+        DeadlinePhase, DriverArtifactV2, DriverIdentity, DriverOutputV2,
+        DriverProviderObservationV2, DriverProviderPolicyV2, DriverRequestV2, DriverResultV2,
+        EvidenceProvenance, ExecutionPolicy, JobIdentity, LocalArtifactInput, ModelIdentity,
+        PackAuthority, RunBundleV1, RunMode, RunRequestV1, TerminalState,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -4182,11 +4202,14 @@ mod tests {
 
     #[test]
     fn deadline_plan_rejects_reserve_underflow() {
-        let error = RunDeadline::try_new(249, None).unwrap_err();
-        assert_eq!(
-            error.downcast_ref::<RunFailure>().unwrap().code(),
-            "deadline-reserve-underflow"
-        );
+        for timeout in [250, 249] {
+            let error = RunDeadline::try_new(timeout, None).unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<RunFailure>().unwrap().code(),
+                "deadline-reserve-underflow"
+            );
+        }
+        assert!(RunDeadline::try_new(251, None).is_ok());
     }
 
     #[test]
@@ -4293,6 +4316,27 @@ mod tests {
         let mut request = request_fixture("not-used", "not-used");
         request.execution_policy.network_mode = "allow".into();
         assert!(validate_request(&request).is_err());
+    }
+
+    #[test]
+    fn run_request_timeout_reserves_the_fixed_finalization_window() {
+        let mut request = request_fixture("not-used", "not-used");
+        request.execution_policy.timeout_ms = 250;
+        assert!(validate_request(&request).is_err());
+        request.execution_policy.timeout_ms = 251;
+        assert!(validate_request(&request).is_ok());
+    }
+
+    #[test]
+    fn delayed_output_validation_preserves_the_validation_phase() {
+        let deadline = RunDeadline::try_new(251, None).unwrap();
+        deadline.mark_phase(DeadlinePhase::Validation);
+        std::thread::sleep(std::time::Duration::from_millis(260));
+        assert!(deadline.check_phase(DeadlinePhase::Validation).is_err());
+        assert_eq!(
+            deadline.terminal_observation().unwrap().phase,
+            DeadlinePhase::Validation
+        );
     }
 
     #[test]
@@ -5441,7 +5485,7 @@ mod tests {
     }
 
     #[test]
-    fn post_bundle_deadline_exhaustion_still_publishes_a_safe_no_draft_receipt() {
+    fn late_post_bundle_deadline_discards_transaction_without_success_publication() {
         let root = temp_path("generative-deadline-receipt");
         let pack = root.join("pack");
         let raw = root.join("raw-row.json");
@@ -5482,15 +5526,9 @@ mod tests {
                 seal_driver_result(&mut result)?;
                 Ok(result)
             },
-        )
-        .unwrap();
-
-        assert_eq!(result.terminal_state, TerminalState::NoDraftRunnerFailed);
-        let receipt: serde_json::Value =
-            serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
-        assert!(receipt["output"].is_null());
-        assert!(receipt["decision"].is_null());
-        assert!(!run.join("private").exists());
+        );
+        assert!(result.is_err());
+        assert!(!run.exists());
         let _ = fs::remove_dir_all(root);
     }
 

@@ -222,6 +222,57 @@ test('returns canonical valid and invalid read-only verification data', async (t
   assert.equal(replies[1].result.structuredContent.valid, false)
 })
 
+test('notifications/cancelled aborts a hanging clean run with sanitized cancellation data', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-cancel-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const request = join(root, 'run-request.json')
+  const output = join(root, 'cancelled-run')
+  writeFileSync(request, JSON.stringify({ test_mode: 'hang' }))
+  const child = spawn(process.execPath, [server], {
+    env: { ...process.env, MDP_BIN: fixtureCli(root) },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  const replies = []
+  let outputText = ''
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    outputText += chunk
+    let newline
+    while ((newline = outputText.indexOf('\n')) >= 0) {
+      const line = outputText.slice(0, newline)
+      outputText = outputText.slice(newline + 1)
+      if (line.trim()) replies.push(JSON.parse(line))
+    }
+  })
+  child.stdin.write(`${JSON.stringify(toolCall(1, 'mdp_run', { request_path: request, output_dir: output }))}\n`)
+  const cancelTimer = setTimeout(() => {
+    child.stdin.write(`${JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'notifications/cancelled',
+      params: { requestId: 1 },
+    })}\n`)
+  }, 500)
+  await new Promise((resolvePromise, rejectPromise) => {
+    const deadline = setTimeout(() => rejectPromise(new Error('cancellation response timed out')), 5000)
+    const poll = setInterval(() => {
+      if (replies.some((reply) => reply.id === 1)) {
+        clearTimeout(deadline)
+        clearInterval(poll)
+        resolvePromise()
+      }
+    }, 10)
+    child.once('error', rejectPromise)
+  })
+  clearTimeout(cancelTimer)
+  const reply = replies.find((item) => item.id === 1)
+  assert.equal(reply.result.isError, true)
+  assert.equal(reply.result.structuredContent.code, 'cli-cancelled')
+  assert.equal(reply.result.structuredContent.deadline.outcome, 'cancelled')
+  assert.equal(reply.result.structuredContent.deadline.phase, 'cancellation')
+  assert.equal(JSON.stringify(reply).includes(root), false)
+  child.kill('SIGKILL')
+})
+
 test('passes only file paths to a bounded CLI child and returns its authority unchanged', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))

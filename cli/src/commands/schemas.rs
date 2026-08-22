@@ -1493,7 +1493,7 @@ fn execution_policy_v1_schema() -> Value {
             "authorized_endpoints": {"type": "array", "maxItems": 0},
             "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
             "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
-            "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 9007199254740991_u64},
+            "timeout_ms": {"type": "integer", "minimum": 251, "maximum": 9007199254740991_u64},
             "retention_policy": {"enum": ["receipt-only", "customer-controlled-workdir"]}
         }
     })
@@ -1516,7 +1516,7 @@ fn generative_execution_policy_v1_schema() -> Value {
             "authorized_endpoints": {"const": ["https://api.openai.com/v1/responses"]},
             "max_input_bytes": {"type": "integer", "minimum": 1, "maximum": 131072},
             "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
-            "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+            "timeout_ms": {"type": "integer", "minimum": 251, "maximum": 60000},
             "retention_policy": {"enum": ["receipt-only", "customer-controlled-workdir"]}
         }
     })
