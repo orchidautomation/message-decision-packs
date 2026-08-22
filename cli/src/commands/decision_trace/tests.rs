@@ -536,6 +536,7 @@ fn generative_trace_exposes_only_bound_driver_hashes() {
         provider_request_schema_id: Some("private-provider-schema".into()),
         provider_response_body_sha256: Some("e".repeat(64)),
         provider_observation: None,
+        identity_observations: None,
         terminal_state: TerminalState::Success,
         assurance: vec![crate::run_contracts::AssuranceDimension {
             dimension: "stateless-inference".into(),
@@ -583,6 +584,7 @@ fn trace_runner_audit_requires_exact_contained_authority_bytes() {
         provider_request_schema_id: None,
         provider_response_body_sha256: None,
         provider_observation: None,
+        identity_observations: None,
         terminal_state: TerminalState::Success,
         assurance: vec![],
         limitations: vec![],

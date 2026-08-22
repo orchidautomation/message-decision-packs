@@ -13,7 +13,9 @@ import {
   PROVIDER_REQUEST_SCHEMA_ID,
   SCHEMA_PROJECTION_CONTRACT,
   buildProviderRequestBody,
+  buildModelParametersProjection,
   executeNativeModelRequest,
+  modelParametersProjectionSha256,
   projectOutputSchemaForOpenAI,
   sha256CanonicalJson,
   validateNativeModelRequest,
@@ -59,6 +61,53 @@ assert.deepEqual(buildProviderRequestBody(request), {
   tool_choice: 'none',
   max_output_tokens: 800,
 })
+
+const parametersProjection = buildModelParametersProjection(request)
+assert.deepEqual(parametersProjection, {
+  contract: 'mdp.model-parameters.v1',
+  provider: 'openai',
+  requested_model: 'gpt-test',
+  authorized_endpoint: 'https://api.openai.com/v1/responses',
+  declared_timeout_ms: 25_000,
+  max_output_tokens: 800,
+  structured_output_mode: 'json-schema-strict',
+  schema_name: 'mdp_generate_outbound_copy_v1',
+  provider_output_schema_sha256: sha256CanonicalJson(schema),
+  input_framing: 'one-fresh-user-message:declared-inputs-only',
+  visible_input_sha256: sha256CanonicalJson(request.input),
+  store: false,
+  tool_choice: 'none',
+  continuation_policy: 'none',
+  tools_policy: 'none',
+  reasoning: null,
+  metadata: null,
+})
+assert.match(modelParametersProjectionSha256(request), /^[0-9a-f]{64}$/)
+
+for (const [field, mutate] of [
+  ['model', (value) => `${value}-changed`],
+  ['timeout_ms', (value) => value + 1],
+  ['max_output_tokens', (value) => value + 1],
+  ['schema_name', () => 'changed_schema'],
+  ['input', () => [{ role: 'user', content: 'synthetic changed input' }]],
+  ['reasoning', () => ({ effort: 'low' })],
+  ['metadata', () => ({ synthetic: 'changed' })],
+]) {
+  const changed = { ...request, [field]: mutate(request[field]) }
+  assert.notEqual(
+    modelParametersProjectionSha256(changed),
+    modelParametersProjectionSha256(request),
+    `projection must change when ${field} changes`,
+  )
+}
+
+const secretProjection = JSON.stringify(buildModelParametersProjection({
+  ...request,
+  reasoning: { effort: 'low' },
+  metadata: { sentinel: 'api-key-private-input-sentinel' },
+}))
+assert(!secretProjection.includes('api-key-private-input-sentinel'))
+assert(!secretProjection.includes('OPENAI_API_KEY'))
 
 const conditionalSchema = {
   type: 'object',

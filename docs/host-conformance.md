@@ -130,6 +130,17 @@ These are reference mappings, not verified integration listings. A named product
 
 Hosts report observations; the CLI derives and verifies assurance. A host must never accept a caller-selected label or implement an alternative “audit-grade” boolean.
 
+For the bundled native MDP route, configuration and model-parameter hashes are
+also runtime-bound identities. The request fields are declarations. Rust owns
+the closed `mdp.driver-configuration.v1` and `mdp.model-parameters.v1`
+projections, compares their hashes with those declarations before publication,
+and records the observed values in the bundle and runner audit. The provider
+request-body SHA is separate full-body evidence: it includes model parameters
+and model-visible input, but it does not prove the launcher configuration or
+replace the model-parameter projection. Hosts must keep keys, environment
+values, raw payloads, and private paths out of identity material and ordinary
+diagnostics.
+
 | Dimension | Strongest evidence a typical host can supply | Mandatory downgrade examples |
 | --- | --- | --- |
 | `fresh-invocation` | Observed new process/request with resume and session attachment disabled | New task asserted only; session/cache behavior hidden |

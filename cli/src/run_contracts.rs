@@ -13,6 +13,11 @@ pub(crate) const RUN_VERIFICATION_V1: &str = "mdp.run-verification.v1";
 pub(crate) const RUN_EXECUTION_V1: &str = "mdp.run-execution.v1";
 pub(crate) const CANONICAL_AUTHORITY_BLOCK_V1: &str = "mdp.canonical-authority-block.v1";
 pub(crate) const PROPOSAL_RUNNER_RESULT_V1: &str = "mdp.proposal-runner-result.v1";
+pub(crate) const DRIVER_CONFIGURATION_PROJECTION_V1: &str = "mdp.driver-configuration.v1";
+pub(crate) const MODEL_PARAMETERS_PROJECTION_V1: &str = "mdp.model-parameters.v1";
+pub(crate) const PROVIDER_REQUEST_RELATION_V1: &str =
+    "full-body-includes-model-parameters-and-input";
+pub(crate) const PROVIDER_REQUEST_NOT_OBSERVED_V1: &str = "not-observed";
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -165,6 +170,74 @@ pub(crate) struct ModelIdentity {
     pub(crate) session_behavior: AssuranceEvidenceState,
     pub(crate) cache_behavior: AssuranceEvidenceState,
     pub(crate) storage_behavior: AssuranceEvidenceState,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DriverConfigurationProjectionV1 {
+    pub(crate) contract: String,
+    pub(crate) driver_id: String,
+    pub(crate) implementation: String,
+    pub(crate) runtime_version: String,
+    pub(crate) bundled_source_sha256: String,
+    pub(crate) node_executable_sha256: String,
+    pub(crate) native_request_contract: String,
+    pub(crate) native_result_contract: String,
+    pub(crate) clear_env: bool,
+    pub(crate) allowlisted_environment_names: Vec<String>,
+    pub(crate) filesystem_mode: String,
+    pub(crate) stdin_mode: String,
+    pub(crate) stdout_mode: String,
+    pub(crate) max_request_bytes: u64,
+    pub(crate) max_response_bytes: u64,
+    pub(crate) timeout_enforced: bool,
+    pub(crate) authorized_endpoint: String,
+    pub(crate) redirect_policy: String,
+    pub(crate) proxy_policy: String,
+    pub(crate) storage_policy: String,
+    pub(crate) tool_policy: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ModelParametersProjectionV1 {
+    pub(crate) contract: String,
+    pub(crate) provider: String,
+    pub(crate) requested_model: String,
+    pub(crate) authorized_endpoint: String,
+    pub(crate) declared_timeout_ms: u64,
+    pub(crate) max_output_tokens: u64,
+    pub(crate) structured_output_mode: String,
+    pub(crate) schema_name: String,
+    pub(crate) provider_output_schema_sha256: String,
+    pub(crate) input_framing: String,
+    pub(crate) visible_input_sha256: String,
+    pub(crate) store: bool,
+    pub(crate) tool_choice: String,
+    pub(crate) continuation_policy: String,
+    pub(crate) tools_policy: String,
+    pub(crate) reasoning: Option<String>,
+    pub(crate) metadata: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProviderRequestObservationV1 {
+    pub(crate) provider_request_body_sha256: Option<String>,
+    pub(crate) provider_request_schema_id: Option<String>,
+    pub(crate) relation: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct IdentityObservationV1 {
+    pub(crate) driver_declaration_sha256: String,
+    pub(crate) driver_observed_sha256: String,
+    pub(crate) driver_projection: DriverConfigurationProjectionV1,
+    pub(crate) model_declaration_sha256: String,
+    pub(crate) model_observed_sha256: String,
+    pub(crate) model_projection: ModelParametersProjectionV1,
+    pub(crate) provider_request: ProviderRequestObservationV1,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -338,6 +411,8 @@ pub(crate) struct RunnerAuditV1 {
     pub(crate) provider_response_body_sha256: Option<String>,
     #[serde(default)]
     pub(crate) provider_observation: Option<DriverProviderObservationV2>,
+    #[serde(default)]
+    pub(crate) identity_observations: Option<IdentityObservationV1>,
     pub(crate) terminal_state: TerminalState,
     pub(crate) assurance: Vec<AssuranceDimension>,
     pub(crate) limitations: Vec<String>,
@@ -455,5 +530,6 @@ mod tests {
         .unwrap();
         assert_eq!(audit.provider_response_body_sha256, None);
         assert_eq!(audit.provider_observation, None);
+        assert_eq!(audit.identity_observations, None);
     }
 }

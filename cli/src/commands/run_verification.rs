@@ -3,9 +3,10 @@ use crate::artifact_hash::{
 };
 use crate::constants::RUN_RECEIPT_CONTRACT;
 use crate::run_contracts::{
-    ArtifactAuthority, AssuranceEvidenceState, EvidenceProvenance, RUN_BUNDLE_V1, RUN_RECEIPT_V1,
-    RUN_VERIFICATION_V1, RUNNER_AUDIT_V1, RunBundleV1, RunMode, RunReceiptV1, RunVerificationV1,
-    RunnerAuditV1,
+    ArtifactAuthority, AssuranceEvidenceState, DRIVER_CONFIGURATION_PROJECTION_V1,
+    EvidenceProvenance, MODEL_PARAMETERS_PROJECTION_V1, PROVIDER_REQUEST_NOT_OBSERVED_V1,
+    PROVIDER_REQUEST_RELATION_V1, RUN_BUNDLE_V1, RUN_RECEIPT_V1, RUN_VERIFICATION_V1,
+    RUNNER_AUDIT_V1, RunBundleV1, RunMode, RunReceiptV1, RunVerificationV1, RunnerAuditV1,
 };
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -426,6 +427,7 @@ fn verify_runner_audit(
             }
         }
         RunMode::Generative => {
+            verify_identity_observations(bundle, &audit, issues);
             if !audit
                 .driver_request_sha256
                 .as_deref()
@@ -482,6 +484,151 @@ fn verify_runner_audit(
     if audit.limitations != receipt.limitations {
         issues.push("runner-audit-limitations-mismatch".to_string());
     }
+}
+
+fn verify_identity_observations(
+    bundle: &RunBundleV1,
+    audit: &RunnerAuditV1,
+    issues: &mut Vec<String>,
+) {
+    let Some(observations) = audit.identity_observations.as_ref() else {
+        issues.push("generative-identity-evidence-missing".to_string());
+        return;
+    };
+    let Some(driver) = bundle.driver.as_ref() else {
+        issues.push("generative-driver-identity-missing".to_string());
+        return;
+    };
+    let Some(model) = bundle.model.as_ref() else {
+        issues.push("generative-model-identity-missing".to_string());
+        return;
+    };
+    if !is_canonical_sha256(&observations.driver_declaration_sha256)
+        || !is_canonical_sha256(&observations.driver_observed_sha256)
+        || !is_canonical_sha256(&observations.model_declaration_sha256)
+        || !is_canonical_sha256(&observations.model_observed_sha256)
+    {
+        issues.push("generative-identity-hash-invalid".to_string());
+    }
+    if driver.configuration_sha256 != observations.driver_observed_sha256
+        || model.parameters_sha256 != observations.model_observed_sha256
+    {
+        issues.push("generative-identity-bundle-mismatch".to_string());
+    }
+    if driver.executable_sha256.as_deref()
+        != Some(
+            observations
+                .driver_projection
+                .bundled_source_sha256
+                .as_str(),
+        )
+        || driver.dependency_lock_sha256.as_deref()
+            != Some(
+                observations
+                    .driver_projection
+                    .node_executable_sha256
+                    .as_str(),
+            )
+    {
+        issues.push("generative-driver-fact-mismatch".to_string());
+    }
+    let bundled_source_sha256 = crate::artifact_hash::sha256_hex(include_bytes!(
+        "../../../scripts/mdp-native-model-openai.mjs"
+    ));
+    if observations.driver_projection.bundled_source_sha256 != bundled_source_sha256 {
+        issues.push("generative-driver-source-observation-mismatch".to_string());
+    }
+    match current_node_sha256() {
+        Some(node_sha256)
+            if node_sha256 != observations.driver_projection.node_executable_sha256 =>
+        {
+            issues.push("generative-node-observation-mismatch".to_string())
+        }
+        Some(_) => {}
+        None => issues.push("generative-driver-observation-unavailable".to_string()),
+    }
+    if observations.driver_projection.contract != DRIVER_CONFIGURATION_PROJECTION_V1
+        || observations.model_projection.contract != MODEL_PARAMETERS_PROJECTION_V1
+    {
+        issues.push("generative-identity-projection-contract-mismatch".to_string());
+    }
+    if let Ok(hash) = canonical_json_sha256_for_domain(
+        DRIVER_CONFIGURATION_PROJECTION_V1,
+        &serde_json::to_value(&observations.driver_projection).unwrap_or(Value::Null),
+    ) {
+        if hash != observations.driver_observed_sha256 {
+            issues.push("generative-driver-identity-recompute-mismatch".to_string());
+        }
+    } else {
+        issues.push("generative-driver-identity-recompute-failed".to_string());
+    }
+    if let Ok(hash) = canonical_json_sha256_for_domain(
+        MODEL_PARAMETERS_PROJECTION_V1,
+        &serde_json::to_value(&observations.model_projection).unwrap_or(Value::Null),
+    ) {
+        if hash != observations.model_observed_sha256 {
+            issues.push("generative-model-identity-recompute-mismatch".to_string());
+        }
+    } else {
+        issues.push("generative-model-identity-recompute-failed".to_string());
+    }
+    if observations.provider_request.relation != PROVIDER_REQUEST_RELATION_V1
+        && observations.provider_request.relation != PROVIDER_REQUEST_NOT_OBSERVED_V1
+    {
+        issues.push("generative-provider-request-relation-invalid".to_string());
+    }
+    let body_present = observations
+        .provider_request
+        .provider_request_body_sha256
+        .is_some();
+    let schema_present = observations
+        .provider_request
+        .provider_request_schema_id
+        .is_some();
+    if body_present != schema_present {
+        issues.push("generative-provider-request-evidence-missing".to_string());
+    }
+    if observations.provider_request.relation == PROVIDER_REQUEST_RELATION_V1
+        && !(body_present && schema_present)
+    {
+        issues.push("generative-provider-request-relation-mismatch".to_string());
+    }
+    if observations.provider_request.relation == PROVIDER_REQUEST_NOT_OBSERVED_V1
+        && (body_present || schema_present)
+    {
+        issues.push("generative-provider-request-relation-mismatch".to_string());
+    }
+    if body_present
+        && !observations
+            .provider_request
+            .provider_request_body_sha256
+            .as_deref()
+            .is_some_and(is_canonical_sha256)
+    {
+        issues.push("generative-provider-request-hash-invalid".to_string());
+    }
+    if observations.driver_declaration_sha256 != observations.driver_observed_sha256
+        || observations.model_declaration_sha256 != observations.model_observed_sha256
+    {
+        issues.push("generative-identity-declaration-mismatch".to_string());
+    }
+}
+
+fn current_node_sha256() -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    for directory in std::env::split_paths(&path) {
+        let candidate = directory.join("node");
+        let Ok(resolved) = fs::canonicalize(candidate) else {
+            continue;
+        };
+        let Ok(metadata) = fs::symlink_metadata(&resolved) else {
+            continue;
+        };
+        if metadata.is_file() && !metadata.file_type().is_symlink() {
+            return fs::read(resolved).ok().map(|bytes| sha256_hex(&bytes));
+        }
+    }
+    None
 }
 
 fn provider_request_evidence_issue(
@@ -921,6 +1068,7 @@ mod tests {
             provider_request_schema_id: None,
             provider_response_body_sha256: None,
             provider_observation: None,
+            identity_observations: None,
             terminal_state: receipt.terminal_state,
             assurance: receipt.assurance.clone(),
             limitations: vec![],
