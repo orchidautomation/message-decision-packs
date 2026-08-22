@@ -800,6 +800,7 @@ impl PromptHostEnvelope {
         &self,
         output_kind: Option<&str>,
         has_routed_context: bool,
+        required_top_level: &[String],
     ) -> Result<(), String> {
         if self.contract != GOVERNED_HOST_ENVELOPE_CONTRACT {
             return Err("host envelope contract must be mdp.governed-host-envelope.v1".into());
@@ -813,6 +814,16 @@ impl PromptHostEnvelope {
             &self.semantic_required_top_level,
             GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS,
             "semantic_required_top_level",
+        )?;
+        let expected_required_top_level = GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
+            .iter()
+            .chain(GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
+            .copied()
+            .collect::<Vec<_>>();
+        validate_fixed_fields(
+            required_top_level,
+            &expected_required_top_level,
+            "required_top_level",
         )?;
         if output_kind != Some("governed-artifact") {
             return Err("host envelope is supported only for governed-artifact outputs".into());

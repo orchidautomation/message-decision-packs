@@ -418,6 +418,7 @@ fn compile_step(
             .validate(
                 prompt.output_contract.output_kind.as_deref(),
                 has_routed_context,
+                &prompt.output_contract.required_top_level,
             )
             .map_err(|_| {
                 anyhow!(

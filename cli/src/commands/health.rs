@@ -5795,6 +5795,16 @@ fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut V
         GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS,
         "semantic_required_top_level",
     );
+    let expected_required_top_level = GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
+        .iter()
+        .chain(GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
+        .copied()
+        .collect::<Vec<_>>();
+    validate_fields(
+        &prompt.output_contract.required_top_level,
+        &expected_required_top_level,
+        "required_top_level",
+    );
     if prompt.output_contract.output_kind.as_deref() != Some("governed-artifact") {
         issues.push(issue(
             "prompt_host_envelope_output_kind",
@@ -5814,24 +5824,6 @@ fn validate_prompt_host_envelope(prompt: &PromptFile, path: &str, issues: &mut V
             format!("{path}#/inputs"),
             "host envelope requires a required routed_context input",
         ));
-    }
-    for field in GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
-        .iter()
-        .chain(GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS.iter())
-    {
-        if !prompt
-            .output_contract
-            .required_top_level
-            .iter()
-            .any(|required| required == field)
-        {
-            issues.push(issue(
-                "prompt_host_envelope_required_field_missing",
-                "error",
-                format!("{path}#/output_contract/required_top_level"),
-                format!("host-envelope governed output must require {field}"),
-            ));
-        }
     }
 }
 

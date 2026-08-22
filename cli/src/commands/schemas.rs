@@ -2073,6 +2073,7 @@ fn runner_audit_v1_schema() -> Value {
             "provider_response_body_sha256": optional_sha256_schema(),
             "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
             "identity_observations": nullable_object_schema(identity_observation_v1_schema()),
+            "diagnostic_code": {"type": ["string", "null"]},
             "terminal_state": terminal_state_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array()

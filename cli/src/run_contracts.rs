@@ -576,6 +576,8 @@ pub(crate) struct RunnerAuditV1 {
     pub(crate) provider_observation: Option<DriverProviderObservationV2>,
     #[serde(default)]
     pub(crate) identity_observations: Option<IdentityObservationV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_code: Option<String>,
     pub(crate) terminal_state: TerminalState,
     pub(crate) assurance: Vec<AssuranceDimension>,
     pub(crate) limitations: Vec<String>,

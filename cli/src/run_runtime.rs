@@ -12,9 +12,8 @@ use crate::commands::routing::{
 use crate::commands::schemas::prompt_output_schema_for_ref;
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, GENERATED_PACK_DIRECTORIES,
-    GOVERNED_HOST_ENVELOPE_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
-    NORMALIZED_DECISION_INPUT_CONTRACT_V2, ROUTED_CONTEXT_CONTRACT,
-    SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
+    NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
+    ROUTED_CONTEXT_CONTRACT, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
 };
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
@@ -1153,6 +1152,7 @@ where
     let mut provider_request_schema_id = None;
     let mut provider_response_body_sha256 = None;
     let mut provider_observation = None;
+    let mut diagnostic_code = None;
     let (mut terminal_state, mut success_values) = if request.mode == RunMode::Generative {
         let prompt = staged_prompt.as_ref().ok_or_else(|| {
             run_failure(RunFailureKind::PolicyBlocked, "generative-prompt-missing")
@@ -1176,6 +1176,7 @@ where
         provider_request_schema_id = outcome.provider_request_schema_id.clone();
         provider_response_body_sha256 = outcome.provider_response_body_sha256.clone();
         provider_observation = outcome.provider_observation.clone();
+        diagnostic_code = outcome.diagnostic_code.clone();
         driver_request_sha256 = Some(outcome.driver_request_sha256);
         driver_result_sha256 = Some(outcome.driver_result_sha256);
         validation = outcome.validation;
@@ -1443,6 +1444,7 @@ where
         provider_response_body_sha256,
         provider_observation,
         identity_observations,
+        diagnostic_code,
         terminal_state,
         assurance: assurance.clone(),
         limitations: vec![
@@ -1560,6 +1562,7 @@ struct GenerativeOutcome {
     provider_request_schema_id: Option<String>,
     provider_response_body_sha256: Option<String>,
     provider_observation: Option<DriverProviderObservationV2>,
+    diagnostic_code: Option<String>,
     driver_request_sha256: String,
     driver_result_sha256: String,
 }
@@ -1671,6 +1674,7 @@ where
             provider_request_schema_id: None,
             provider_response_body_sha256: None,
             provider_observation: None,
+            diagnostic_code: None,
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
         });
@@ -1684,6 +1688,7 @@ where
             provider_request_schema_id: result.provider_request_schema_id,
             provider_response_body_sha256: result.provider_response_body_sha256,
             provider_observation: result.provider_observation,
+            diagnostic_code: None,
             driver_request_sha256: driver_request.request_sha256,
             driver_result_sha256: result.result_sha256,
         });
@@ -1691,14 +1696,23 @@ where
     let output = result.output.as_ref().expect("validated success output");
     let output_path = private_dir.join("driver-output.json");
     let output_bytes = if prepared.step.output_contract.host_envelope.is_some() {
-        host_wrap_governed_output(
+        match host_wrap_governed_output(
             &prepared.step,
             staged_inputs,
             &prepared.invocation_value,
             &prepared.invocation_bytes,
             &output.content_utf8,
             &prepared.canonical_output_schema,
-        )?
+        ) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return Ok(host_envelope_failure_outcome(
+                    &driver_request,
+                    result,
+                    sanitized_host_envelope_diagnostic(&error),
+                ));
+            }
+        }
     } else {
         output.content_utf8.as_bytes().to_vec()
     };
@@ -1744,6 +1758,7 @@ where
         provider_request_schema_id: result.provider_request_schema_id,
         provider_response_body_sha256: result.provider_response_body_sha256,
         provider_observation: result.provider_observation,
+        diagnostic_code: None,
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: result.result_sha256,
     })
@@ -1776,9 +1791,47 @@ fn failed_generative_outcome(
         provider_request_schema_id: None,
         provider_response_body_sha256: None,
         provider_observation: None,
+        diagnostic_code: Some(diagnostic_code.into()),
         driver_request_sha256: driver_request.request_sha256,
         driver_result_sha256: failed_result.result_sha256,
     })
+}
+
+fn host_envelope_failure_outcome(
+    driver_request: &DriverRequestV2,
+    result: DriverResultV2,
+    diagnostic_code: &'static str,
+) -> GenerativeOutcome {
+    GenerativeOutcome {
+        terminal_state: TerminalState::NoDraftOutputInvalid,
+        success: None,
+        validation: None,
+        provider_request_body_sha256: result.provider_request_body_sha256,
+        provider_request_schema_id: result.provider_request_schema_id,
+        provider_response_body_sha256: result.provider_response_body_sha256,
+        provider_observation: result.provider_observation,
+        diagnostic_code: Some(diagnostic_code.into()),
+        driver_request_sha256: driver_request.request_sha256.clone(),
+        driver_result_sha256: result.result_sha256,
+    }
+}
+
+fn sanitized_host_envelope_diagnostic(error: &anyhow::Error) -> &'static str {
+    let code = error
+        .downcast_ref::<RunFailure>()
+        .map(RunFailure::code)
+        .unwrap_or("host-envelope-failed");
+    match code {
+        "host-envelope-metadata-missing"
+        | "host-envelope-metadata-invalid"
+        | "semantic-output-malformed"
+        | "semantic-output-not-object"
+        | "host-owned-field-injection"
+        | "semantic-output-invalid"
+        | "host-context-source-missing"
+        | "semantic-output-missing" => code,
+        _ => "host-envelope-failed",
+    }
 }
 
 fn generative_success_artifacts(
@@ -2122,12 +2175,18 @@ fn provider_schema_source_for_contract(
     contract: &crate::models::PromptOutputContract,
 ) -> Result<Value> {
     if let Some(host_envelope) = contract.host_envelope.as_ref() {
-        if host_envelope.contract != GOVERNED_HOST_ENVELOPE_CONTRACT {
-            return Err(run_failure(
-                RunFailureKind::PolicyBlocked,
-                "host-envelope-contract-unsupported",
-            ));
-        }
+        host_envelope
+            .validate(
+                Some("governed-artifact"),
+                true,
+                &contract.required_top_level,
+            )
+            .map_err(|_| {
+                run_failure(
+                    RunFailureKind::PolicyBlocked,
+                    "host-envelope-contract-invalid",
+                )
+            })?;
         return provider_schema_source(schema, &host_envelope.semantic_required_top_level);
     }
     if contract.schema_ref.is_some() {
@@ -2162,6 +2221,7 @@ fn host_wrap_governed_output(
         .validate(
             step.output_contract.output_kind.as_deref(),
             has_routed_context,
+            &step.output_contract.required_top_level,
         )
         .map_err(|_| {
             run_failure(
@@ -3237,11 +3297,11 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        RunFailure, execute_run_inner, execute_run_inner_with_driver,
+        RunFailure, execute_generative_step, execute_run_inner, execute_run_inner_with_driver,
         governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
-        project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
-        provider_schema_source_for_contract, seal_driver_request, seal_driver_result,
-        validate_driver_result, validate_request,
+        host_wrap_governed_output, project_output_schema_for_openai, provider_max_output_tokens,
+        provider_schema_source, provider_schema_source_for_contract, seal_driver_request,
+        seal_driver_result, validate_driver_result, validate_request,
     };
     use crate::commands::init::init_pack;
     use crate::models::{PromptEntryDefaults, PromptHostEnvelope, PromptOutputContract};
@@ -3253,7 +3313,7 @@ mod tests {
         RunBundleV1, RunMode, RunRequestV1, TerminalState,
     };
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -3412,12 +3472,22 @@ mod tests {
             "properties": {
                 "contract": {"type": "string"},
                 "prompt_id": {"type": "string"},
+                "job_id": {"type": "string"},
+                "prompt_version": {"type": "string"},
+                "prompt_sha256": {"type": "string"},
+                "context_sha256": {"type": "string"},
+                "invocation_receipt_sha256": {"type": "string"},
+                "source_summary": {"type": "object"},
                 "selected_authority": {"type": "object"},
                 "artifact": {"type": "object"},
                 "gaps": {"type": "array"},
                 "rejected_claims": {"type": "array"}
             },
-            "required": ["contract", "prompt_id", "selected_authority", "artifact", "gaps", "rejected_claims"],
+            "required": [
+                "contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256",
+                "context_sha256", "invocation_receipt_sha256", "source_summary",
+                "selected_authority", "artifact", "gaps", "rejected_claims"
+            ],
             "additionalProperties": false
         });
         let contract = PromptOutputContract {
@@ -3427,6 +3497,12 @@ mod tests {
             required_top_level: vec![
                 "contract".into(),
                 "prompt_id".into(),
+                "job_id".into(),
+                "prompt_version".into(),
+                "prompt_sha256".into(),
+                "context_sha256".into(),
+                "invocation_receipt_sha256".into(),
+                "source_summary".into(),
                 "selected_authority".into(),
                 "artifact".into(),
                 "gaps".into(),
@@ -3463,6 +3539,427 @@ mod tests {
         assert!(source["properties"].get("contract").is_none());
         assert!(source["properties"].get("prompt_id").is_none());
         assert!(source["properties"].get("artifact").is_some());
+
+        let mut invalid_contract = contract;
+        invalid_contract.required_top_level.push("extra".into());
+        let error = provider_schema_source_for_contract(&canonical, &invalid_contract).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<RunFailure>().unwrap().code(),
+            "host-envelope-contract-invalid"
+        );
+    }
+
+    fn host_envelope_test_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "contract": {"const": crate::constants::PROMPT_OUTPUT_CONTRACT},
+                "prompt_id": {"type": "string"},
+                "job_id": {"type": "string"},
+                "prompt_version": {"type": "string"},
+                "prompt_sha256": {"type": "string"},
+                "context_sha256": {"type": "string"},
+                "invocation_receipt_sha256": {"type": "string"},
+                "source_summary": {"type": "object"},
+                "selected_authority": {"type": "object"},
+                "artifact": {"type": "object"},
+                "gaps": {"type": "array"},
+                "rejected_claims": {"type": "array"}
+            },
+            "required": [
+                "contract", "prompt_id", "job_id", "prompt_version", "prompt_sha256",
+                "context_sha256", "invocation_receipt_sha256", "source_summary",
+                "selected_authority", "artifact", "gaps", "rejected_claims"
+            ],
+            "additionalProperties": false
+        })
+    }
+
+    fn host_envelope_test_step() -> crate::model_steps::CompiledModelStepV1 {
+        let owned = crate::models::GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
+            .iter()
+            .map(|field| (*field).to_string())
+            .collect::<Vec<_>>();
+        let semantic = crate::models::GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS
+            .iter()
+            .map(|field| (*field).to_string())
+            .collect::<Vec<_>>();
+        let mut required_top_level = owned.clone();
+        required_top_level.extend(semantic.iter().cloned());
+        crate::model_steps::CompiledModelStepV1 {
+            contract: crate::model_steps::COMPILED_MODEL_STEP_V1.into(),
+            step_id: "model:outbound-copy-review/review".into(),
+            job_id: "outbound-copy-review".into(),
+            skill_id: "mdp-gtm-brief".into(),
+            phase: crate::model_steps::ModelStepPhase::Review,
+            authority: crate::model_steps::ModelStepAuthorityV1 {
+                kind: "job".into(),
+                ids: vec!["outbound-copy-review".into()],
+            },
+            prompt_id: "review-outbound-copy-v1".into(),
+            prompt_version: "3".into(),
+            prompt_path: "prompts/review-outbound-copy.yaml".into(),
+            prompt_sha256: "a".repeat(64),
+            declared_inputs: vec![],
+            routed_context_required: true,
+            output_contract: PromptOutputContract {
+                contract: crate::constants::PROMPT_OUTPUT_CONTRACT.into(),
+                output_kind: Some("governed-artifact".into()),
+                strict_json_only: true,
+                required_top_level,
+                entry_defaults: PromptEntryDefaults {
+                    body: "".into(),
+                    applies_to: vec![],
+                    evidence: vec![],
+                    avoid: vec![],
+                    confidence: "unknown".into(),
+                    provenance: vec![],
+                },
+                schema_ref: None,
+                schema: Some(host_envelope_test_schema()),
+                host_envelope: Some(PromptHostEnvelope {
+                    contract: crate::constants::GOVERNED_HOST_ENVELOPE_CONTRACT.into(),
+                    owned_top_level: owned,
+                    semantic_required_top_level: semantic,
+                }),
+                example: serde_json::json!({}),
+            },
+            output_contract_sha256: "b".repeat(64),
+        }
+    }
+
+    fn host_staged_context(context_sha256: &str) -> Vec<super::StagedInput> {
+        vec![super::StagedInput {
+            logical_name: "routed_context".into(),
+            authority: ArtifactAuthority {
+                logical_name: "routed_context".into(),
+                schema_id: "mdp.routed-context.v1".into(),
+                media_type: "application/json".into(),
+                byte_count: 1,
+                sha256: context_sha256.into(),
+                provenance: EvidenceProvenance::MdpObserved,
+                provenance_refs: vec![],
+            },
+            source_path: PathBuf::new(),
+            staged_path: PathBuf::new(),
+            initial_sha256: context_sha256.into(),
+        }]
+    }
+
+    fn host_semantic_output() -> serde_json::Value {
+        serde_json::json!({
+            "selected_authority": {},
+            "artifact": {},
+            "gaps": [],
+            "rejected_claims": []
+        })
+    }
+
+    #[test]
+    fn host_wraps_valid_semantics_and_recomputes_receipt_and_context() {
+        let step = host_envelope_test_step();
+        let invocation = serde_json::json!({"inputs": [{"name": "routed_context"}]});
+        let invocation_bytes = serde_json::to_vec(&invocation).unwrap();
+        let wrapped = host_wrap_governed_output(
+            &step,
+            &host_staged_context(&"c".repeat(64)),
+            &invocation,
+            &invocation_bytes,
+            &serde_json::to_string(&host_semantic_output()).unwrap(),
+            &host_envelope_test_schema(),
+        )
+        .unwrap();
+        let wrapped: serde_json::Value = serde_json::from_slice(&wrapped).unwrap();
+        assert_eq!(wrapped["prompt_id"], "review-outbound-copy-v1");
+        assert_eq!(wrapped["context_sha256"], "c".repeat(64));
+        assert_eq!(
+            wrapped["invocation_receipt_sha256"],
+            crate::artifact_hash::sha256_hex(&invocation_bytes)
+        );
+        assert_eq!(wrapped["artifact"], serde_json::json!({}));
+
+        let altered_invocation = b"{\"inputs\":[]}\n";
+        let altered_receipt = host_wrap_governed_output(
+            &step,
+            &host_staged_context(&"c".repeat(64)),
+            &invocation,
+            altered_invocation,
+            &serde_json::to_string(&host_semantic_output()).unwrap(),
+            &host_envelope_test_schema(),
+        )
+        .unwrap();
+        let altered_receipt: serde_json::Value = serde_json::from_slice(&altered_receipt).unwrap();
+        assert_ne!(
+            wrapped["invocation_receipt_sha256"],
+            altered_receipt["invocation_receipt_sha256"]
+        );
+
+        let altered_context = host_wrap_governed_output(
+            &step,
+            &host_staged_context(&"d".repeat(64)),
+            &invocation,
+            &invocation_bytes,
+            &serde_json::to_string(&host_semantic_output()).unwrap(),
+            &host_envelope_test_schema(),
+        )
+        .unwrap();
+        let altered_context: serde_json::Value = serde_json::from_slice(&altered_context).unwrap();
+        assert_ne!(wrapped["context_sha256"], altered_context["context_sha256"]);
+    }
+
+    #[test]
+    fn host_wrapper_rejects_malformed_semantics_and_owned_injection() {
+        let step = host_envelope_test_step();
+        let staged = host_staged_context(&"c".repeat(64));
+        let invocation = serde_json::json!({"inputs": [{"name": "routed_context"}]});
+        let invocation_bytes = serde_json::to_vec(&invocation).unwrap();
+        for (output, expected) in [
+            ("{", "semantic-output-malformed"),
+            (
+                &serde_json::json!({
+                    "contract": "mdp.prompt-output.v0",
+                    "selected_authority": {}, "artifact": {}, "gaps": [], "rejected_claims": []
+                })
+                .to_string(),
+                "host-owned-field-injection",
+            ),
+        ] {
+            let error = host_wrap_governed_output(
+                &step,
+                &staged,
+                &invocation,
+                &invocation_bytes,
+                output,
+                &host_envelope_test_schema(),
+            )
+            .unwrap_err();
+            assert_eq!(error.downcast_ref::<RunFailure>().unwrap().code(), expected);
+        }
+    }
+
+    #[test]
+    fn host_wrapper_failure_outcome_is_safe_and_preserves_observed_hashes() {
+        let mut request = sample_driver_request();
+        seal_driver_request(&mut request).unwrap();
+        let mut result = DriverResultV2 {
+            contract: DRIVER_RESULT_V2.into(),
+            execution_id: request.execution_id.clone(),
+            operation: request.operation.clone(),
+            terminal_state: TerminalState::Success,
+            output: Some(DriverOutputV2 {
+                schema_id: "mdp.prompt-output.v0".into(),
+                media_type: "application/json".into(),
+                content_utf8: "{}".into(),
+                byte_count: 2,
+                sha256: crate::artifact_hash::sha256_hex(b"{}"),
+            }),
+            provider_request_body_sha256: Some("d".repeat(64)),
+            provider_request_schema_id: Some("openai.responses.json-schema-request.v1".into()),
+            provider_response_body_sha256: Some("e".repeat(64)),
+            provider_output_schema_sha256: Some(request.provider_output_schema_sha256.clone()),
+            provider_observation: Some(DriverProviderObservationV2 {
+                provider: "openai".into(),
+                response_id: Some("resp_host_wrap".into()),
+                resolved_model: Some("gpt-5-mini".into()),
+            }),
+            diagnostic_code: None,
+            result_sha256: String::new(),
+        };
+        seal_driver_result(&mut result).unwrap();
+        let result_sha256 = result.result_sha256.clone();
+        let outcome =
+            super::host_envelope_failure_outcome(&request, result, "host-owned-field-injection");
+        assert_eq!(outcome.terminal_state, TerminalState::NoDraftOutputInvalid);
+        assert_eq!(
+            outcome.diagnostic_code.as_deref(),
+            Some("host-owned-field-injection")
+        );
+        assert_eq!(outcome.driver_request_sha256, request.request_sha256);
+        assert_eq!(outcome.driver_result_sha256, result_sha256);
+        assert_eq!(outcome.provider_response_body_sha256, Some("e".repeat(64)));
+        assert_eq!(
+            outcome
+                .provider_observation
+                .unwrap()
+                .resolved_model
+                .as_deref(),
+            Some("gpt-5-mini")
+        );
+    }
+
+    fn execute_host_model_case(model_output: &str) -> super::GenerativeOutcome {
+        let root = temp_path("host-envelope-model-case");
+        let prompt_path = root.join("prompt.yaml");
+        let context_path = root.join("routed-context.json");
+        let private_dir = root.join("private");
+        fs::create_dir_all(&private_dir).unwrap();
+        fs::write(&prompt_path, "synthetic prompt\n").unwrap();
+        fs::write(&context_path, "{}\n").unwrap();
+
+        let mut request = request_fixture("synthetic-pack", "synthetic-output");
+        request.profile = "gtm".into();
+        request.operation = "model:outbound-copy-review/review".into();
+        request.mode = RunMode::Generative;
+        request.job_identity = Some(JobIdentity {
+            job_id: "outbound-copy-review".into(),
+            idempotency_key: "host-envelope-test".into(),
+        });
+        request.driver = Some(DriverIdentity {
+            driver_id: "mdp-native-openai".into(),
+            implementation: super::BUNDLED_NATIVE_DRIVER_ID.into(),
+            version: super::MDP_RUNTIME_VERSION.into(),
+            build_sha256: None,
+            executable_sha256: Some("a".repeat(64)),
+            image_digest: None,
+            configuration_sha256: "b".repeat(64),
+            dependency_lock_sha256: Some("c".repeat(64)),
+            identity_provenance: EvidenceProvenance::MdpObserved,
+        });
+        request.model = Some(ModelIdentity {
+            provider: "openai".into(),
+            requested_model: "gpt-5-mini".into(),
+            resolved_model: None,
+            authorized_endpoint: super::OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into(),
+            parameters_sha256: "d".repeat(64),
+            session_behavior: AssuranceEvidenceState::NotApplicable,
+            cache_behavior: AssuranceEvidenceState::Unknown,
+            storage_behavior: AssuranceEvidenceState::Declared,
+        });
+
+        let staged_prompt = super::StagedInput {
+            logical_name: "review-outbound-copy-v1".into(),
+            authority: ArtifactAuthority {
+                logical_name: "review-outbound-copy-v1".into(),
+                schema_id: "mdp.prompt.v1".into(),
+                media_type: "application/yaml".into(),
+                byte_count: 17,
+                sha256: "e".repeat(64),
+                provenance: EvidenceProvenance::MdpObserved,
+                provenance_refs: vec![],
+            },
+            source_path: prompt_path.clone(),
+            staged_path: prompt_path,
+            initial_sha256: "e".repeat(64),
+        };
+        let mut staged_inputs = host_staged_context(&"f".repeat(64));
+        staged_inputs[0].source_path = context_path.clone();
+        staged_inputs[0].staged_path = context_path;
+
+        let step = host_envelope_test_step();
+        let invocation_value = serde_json::json!({
+            "contract": "mdp.prompt-invocation.v1",
+            "job_id": "outbound-copy-review",
+            "inputs": [{"name": "routed_context", "sha256": "f".repeat(64)}]
+        });
+        let mut invocation_bytes = serde_json::to_vec_pretty(&invocation_value).unwrap();
+        invocation_bytes.push(b'\n');
+        let schema = host_envelope_test_schema();
+        let schema_sha256 = crate::artifact_hash::canonical_json_sha256(&schema).unwrap();
+        let prepared = super::PreparedNativeRequest {
+            step,
+            invocation_value,
+            invocation_bytes: invocation_bytes.clone(),
+            invocation_sha256: crate::artifact_hash::sha256_hex(&invocation_bytes),
+            visible_input: String::new(),
+            canonical_output_schema: schema.clone(),
+            canonical_output_schema_sha256: schema_sha256.clone(),
+            provider_output_schema: schema,
+            provider_output_schema_sha256: schema_sha256,
+            schema_name: "mdp_host_envelope_test".into(),
+        };
+        let bundle = RunBundleV1 {
+            contract: "mdp.run-bundle.v1".into(),
+            execution_id: request.execution_id.clone(),
+            created_at: request.created_at.clone(),
+            profile: request.profile.clone(),
+            operation: request.operation.clone(),
+            mode: RunMode::Generative,
+            job_identity: request.job_identity.clone(),
+            pack: PackAuthority {
+                release_id: "synthetic-release".into(),
+                pack_id: "synthetic-pack".into(),
+                version: "0.1.73".into(),
+                profile_id: "gtm".into(),
+                portable_digest: "1".repeat(64),
+                files: vec![],
+            },
+            prompt: Some(staged_prompt.authority.clone()),
+            inputs: staged_inputs
+                .iter()
+                .map(|input| input.authority.clone())
+                .collect(),
+            execution_policy_sha256: "2".repeat(64),
+            driver: request.driver.clone(),
+            model: request.model.clone(),
+            model_facts: None,
+        };
+        let driver_identity = request.driver.clone().unwrap();
+        let output = model_output.to_string();
+        let outcome = execute_generative_step(
+            &request,
+            &root,
+            &staged_prompt,
+            &staged_inputs,
+            &private_dir,
+            &bundle,
+            &"3".repeat(64),
+            &prepared,
+            &driver_identity,
+            &super::RunDeadline::new(30_000),
+            move |driver_request, _| {
+                let mut result = DriverResultV2 {
+                    contract: DRIVER_RESULT_V2.into(),
+                    execution_id: driver_request.execution_id.clone(),
+                    operation: driver_request.operation.clone(),
+                    terminal_state: TerminalState::Success,
+                    output: Some(DriverOutputV2 {
+                        schema_id: "mdp.prompt-output.v0".into(),
+                        media_type: "application/json".into(),
+                        byte_count: output.len() as u64,
+                        sha256: crate::artifact_hash::sha256_hex(output.as_bytes()),
+                        content_utf8: output,
+                    }),
+                    provider_request_body_sha256: Some("4".repeat(64)),
+                    provider_request_schema_id: Some(
+                        "openai.responses.json-schema-request.v1".into(),
+                    ),
+                    provider_response_body_sha256: Some("5".repeat(64)),
+                    provider_output_schema_sha256: Some(
+                        driver_request.provider_output_schema_sha256.clone(),
+                    ),
+                    provider_observation: Some(DriverProviderObservationV2 {
+                        provider: "openai".into(),
+                        response_id: Some("resp_host_case".into()),
+                        resolved_model: Some("gpt-5-mini".into()),
+                    }),
+                    diagnostic_code: None,
+                    result_sha256: String::new(),
+                };
+                seal_driver_result(&mut result)?;
+                Ok(result)
+            },
+        )
+        .unwrap();
+        let _ = fs::remove_dir_all(root);
+        outcome
+    }
+
+    #[test]
+    fn model_call_wrapper_failures_return_safe_no_draft_outcomes() {
+        for (output, code) in [
+            ("{", "semantic-output-malformed"),
+            (
+                r#"{"contract":"mdp.prompt-output.v0","selected_authority":{},"artifact":{},"gaps":[],"rejected_claims":[]}"#,
+                "host-owned-field-injection",
+            ),
+        ] {
+            let outcome = execute_host_model_case(output);
+            assert_eq!(outcome.terminal_state, TerminalState::NoDraftOutputInvalid);
+            assert_eq!(outcome.diagnostic_code.as_deref(), Some(code));
+            assert_eq!(outcome.provider_request_body_sha256, Some("4".repeat(64)));
+            assert_eq!(outcome.provider_response_body_sha256, Some("5".repeat(64)));
+            assert_eq!(outcome.driver_result_sha256.len(), 64);
+        }
     }
 
     #[test]
