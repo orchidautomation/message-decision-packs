@@ -12,8 +12,8 @@ use crate::commands::routing::{
 use crate::commands::schemas::prompt_output_schema_for_ref;
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, NORMALIZED_DECISION_INPUT_CONTRACT,
-    NORMALIZED_DECISION_INPUT_CONTRACT_V2, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2,
-    SOURCE_BINDING_CONTRACT_V2,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V2, ROUTED_CONTEXT_CONTRACT,
+    SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
 };
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
@@ -1280,7 +1280,7 @@ fn validate_native_request_size_before_bundle(
     validate_generative_job_gates(staged_pack, &identity.job_id, step.phase)?;
     validate_selected_prompt(staged_pack, staged_prompt, &step)?;
     validate_step_inputs(&step, staged_inputs)?;
-    validate_generative_input_gates(staged_inputs)?;
+    validate_generative_input_gates(staged_pack, manifest, staged_inputs, &identity.job_id)?;
 
     let invocation_value = json!({
         "contract": "mdp.prompt-invocation.v1",
@@ -1389,7 +1389,7 @@ where
     validate_generative_job_gates(staged_pack, &identity.job_id, step.phase)?;
     validate_selected_prompt(staged_pack, staged_prompt, &step)?;
     validate_step_inputs(&step, staged_inputs)?;
-    validate_generative_input_gates(staged_inputs)?;
+    validate_generative_input_gates(staged_pack, manifest, staged_inputs, &identity.job_id)?;
 
     let invocation_value = json!({
         "contract": "mdp.prompt-invocation.v1",
@@ -1734,23 +1734,41 @@ fn validate_generative_job_gates(
     Ok(())
 }
 
-fn validate_generative_input_gates(staged: &[StagedInput]) -> Result<()> {
+fn validate_generative_input_gates(
+    staged_pack: &Path,
+    manifest: &crate::models::Manifest,
+    staged: &[StagedInput],
+    job: &str,
+) -> Result<()> {
     for input in staged.iter().filter(|input| {
         matches!(
             input.logical_name.as_str(),
             "routed_context" | "routed-context"
         )
     }) {
-        let value: Value = serde_json::from_slice(&fs::read(&input.staged_path)?)
+        validate_input_type(input, ROUTED_CONTEXT_CONTRACT, "application/json")
             .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "routed-context-invalid"))?;
-        if value["status"] != "ready"
-            || value
-                .get("draft_status")
-                .is_some_and(|status| status != "ready")
-        {
+        let bytes = fs::read(&input.staged_path)
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "routed-context-invalid"))?;
+        let validation = crate::routing::validate_routed_context_bytes_for_job(
+            staged_pack,
+            manifest,
+            &bytes,
+            job,
+        )
+        .map_err(|error| {
+            let code = match error.kind() {
+                crate::routing::RoutedContextValidationKind::ReadinessBlocked => {
+                    "draft-readiness-blocked"
+                }
+                _ => "routed-context-invalid",
+            };
+            run_failure(RunFailureKind::PolicyBlocked, code)
+        })?;
+        if validation.sha256 != input.authority.sha256 {
             return Err(run_failure(
                 RunFailureKind::PolicyBlocked,
-                "draft-readiness-blocked",
+                "routed-context-invalid",
             ));
         }
     }

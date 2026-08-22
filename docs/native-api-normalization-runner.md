@@ -94,6 +94,12 @@ no tools, and no conversation or previous-response attachment. Custom OpenAI
 origins are not supported by this canonical path. Raw provider request and
 response envelopes and failed model output are not published as run artifacts.
 
+Generative requests that declare `routed_context` must supply the exact saved
+`mdp.routed-context.v1` bytes emitted by `brief --context` or `emit-brief
+--routed-context-out`. The runtime does not read a top-level `status` or
+`draft_status`; it validates the closed schema, canonical bytes, job/scope
+binding, and current staged-pack compilation before the native driver boundary.
+
 `store: false` is a request setting, not a promise that every provider-side
 retention category is zero. The customer remains responsible for provider
 terms, account policy, and data handling.

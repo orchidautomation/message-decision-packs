@@ -37,6 +37,13 @@ mdp --json brief --dir PACK_DIR --prospect PROSPECT_JSON --job JOB_ID --context 
 
 The brief JSON reports the saved path, byte count, and SHA-256 under `data.routed_context_artifact`. The host includes that exact SHA-256 in `mdp.prompt-invocation.v1`:
 
+`routed_context` is the exact saved `mdp.routed-context.v1` model-context
+object. Its closed v1 envelope has no top-level `status` or `draft_status`
+readiness field. The generative runtime revalidates the schema, canonical
+bytes, selected job, serialized scope/persona, and recompilation from the
+staged pack before model execution; a blocked or changed context remains
+`no-draft:policy-blocked`.
+
 ```bash
 mdp --json validate-prompt-output \
   --dir PACK_ROOT \

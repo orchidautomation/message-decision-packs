@@ -27,7 +27,7 @@ const scratch = mkdtempSync(join(tmpdir(), 'mdp-universal-native-parity-'))
 const profiles = [
   {
     profile: 'gtm',
-    pack: join(repoRoot, 'plugin', 'assets', 'templates', 'basic'),
+    pack: process.env.MDP_PARITY_GTM_PACK || join(repoRoot, 'plugin', 'assets', 'templates', 'basic'),
     jobs: {
       'prospect-fit-or-brief': [['normalization', 'normalize-prospect-row']],
       'outbound-copy-brief': [
@@ -42,7 +42,7 @@ const profiles = [
   },
   {
     profile: 'proposal',
-    pack: join(repoRoot, 'plugin', 'assets', 'templates', 'proposal'),
+    pack: process.env.MDP_PARITY_PROPOSAL_PACK || join(repoRoot, 'plugin', 'assets', 'templates', 'proposal'),
     jobs: {
       'bid-no-bid-review': [
         ['normalization', 'normalize-opportunity'],
@@ -218,6 +218,7 @@ try {
   assert.equal(bindings.length, 13)
   assert.equal(uniquePrompts.size, 8)
 
+  let mcpParity = null
   for (const [index, binding] of bindings.entries()) {
     const { profile, jobId, step, normalizedOutputSchema } = binding
     const outputSchema = providerSchemaForStep(step, normalizedOutputSchema)
@@ -303,15 +304,34 @@ try {
     // has resolved and sealed the selected prompt, ordered inputs, schemas,
     // driver request/result, bundle, audit, and receipt authorities.
     const pack = profiles.find((candidate) => candidate.profile === profile).pack
+    const persona = profile === 'proposal' ? 'Proposal Lead' : 'PM'
     const runInputs = step.declared_inputs
       .filter((input) => input.required && !['prompt_receipt', 'invocation_receipt_sha256'].includes(input.name))
       .map((input, inputIndex) => {
         const inputPath = join(scratch, `run-${index + 1}-input-${inputIndex + 1}.json`)
-        writeFileSync(inputPath, `${JSON.stringify(input.name === 'routed_context' ? { status: 'ready' } : {})}\n`)
+        const routedContext = ['routed_context', 'routed-context'].includes(input.name)
+        if (routedContext) {
+          const emitted = expectJson(
+            invoke(mdp, [
+              '--json', 'emit-brief', '--dir', pack, '--persona', persona,
+              '--job', jobId, '--routed-context-out', inputPath,
+            ]),
+            `${profile}/${jobId}/${step.phase} emitted routed context`,
+          )
+          assert.equal(emitted.data.context.minimality.status, 'ready')
+          const routed = JSON.parse(readFileSync(inputPath, 'utf8'))
+          assert.equal(routed.contract, 'mdp.routed-context.v1')
+          assert.equal(routed.job, jobId)
+          assert.equal(sha256File(inputPath), sha256Bytes(canonicalJsonBytes(routed)))
+        } else {
+          writeFileSync(inputPath, `${JSON.stringify({})}\n`)
+        }
         return {
           logical_name: input.name,
           source_path: inputPath,
-          schema_id: `mdp.synthetic-${input.name.replaceAll('_', '-')}.v1`,
+          schema_id: routedContext
+            ? 'mdp.routed-context.v1'
+            : `mdp.synthetic-${input.name.replaceAll('_', '-')}.v1`,
           media_type: 'application/json',
           provenance_refs: [],
         }
@@ -369,6 +389,9 @@ try {
       invoke(mdp, ['--json', 'run', '--request', runRequestPath, '--out-dir', runDir]),
       `${profile}/${jobId}/${step.phase} canonical v2 offline run`,
     )
+    if (!mcpParity && runInputs.some((input) => input.logical_name === 'routed_context')) {
+      mcpParity = { execution, requestPath: runRequestPath, outputDir: join(scratch, 'mcp-parity-run') }
+    }
     assert.ok(
       existsSync(join(runDir, 'run-bundle.json')),
       `${profile}/${jobId}/${step.phase} did not stage a run bundle: ${JSON.stringify(execution)}`,
@@ -463,6 +486,42 @@ try {
     assert.equal(verification.data.valid, true)
     assert.ok(!JSON.stringify(result).includes('OPENAI_API_KEY'))
   }
+
+  assert.ok(mcpParity, 'a routed-context binding should provide the CLI/MCP parity request')
+  const mcp = invoke(
+    process.execPath,
+    [join(repoRoot, 'scripts', 'mdp-run-mcp-server.mjs')],
+    {
+      env: { ...process.env, MDP_BIN: resolve(mdp) },
+      input: [
+        JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: {
+            name: 'mdp_run',
+            arguments: {
+              request_path: mcpParity.requestPath,
+              output_dir: mcpParity.outputDir,
+              timeout_ms: 300000,
+            },
+          },
+        }),
+      ].join('\n') + '\n',
+    },
+  )
+  assert.equal(mcp.status, 0, `stdio MCP parity failed\nstdout:\n${mcp.stdout}\nstderr:\n${mcp.stderr}`)
+  const mcpReply = JSON.parse(mcp.stdout.trim().split('\n').at(-1))
+  assert.equal(mcpReply.result.isError, false)
+  const mcpExecution = mcpReply.result.structuredContent
+  assert.equal(mcpExecution.terminal_state, mcpParity.execution.data.terminal_state)
+  const comparableAuthority = ({ receipt_sha256, verification, ...authority }) => authority
+  assert.deepEqual(comparableAuthority(mcpExecution.authority), comparableAuthority(mcpParity.execution.data.authority))
+  assert.deepEqual(
+    comparableAuthority(mcpExecution.authority_block),
+    comparableAuthority(mcpParity.execution.data.authority_block),
+  )
 
   for (const binding of [bindings.find(({ profile }) => profile === 'gtm'), bindings.find(({ profile }) => profile === 'proposal')]) {
     const { profile, jobId, step, normalizedOutputSchema } = binding
