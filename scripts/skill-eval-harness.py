@@ -29,6 +29,50 @@ CASE_TYPES = {
 }
 QUERY_SHAPES = {"direct", "typo", "indirect-intent"}
 COMPARISON_MODES = {"with-skill", "baseline", "previous-version"}
+TYPO_QUERY_MARKERS = frozenset(
+    {
+        "skils",
+        "unresovled",
+        "soruce",
+        "requirments",
+        "pak",
+        "proff",
+        "mising",
+        "brif",
+        "certifcations",
+        "reciepts",
+    }
+)
+INDIRECT_QUERY_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bi installed .* want to know",
+        r"\bbefore i edit .* help me establish",
+        r"\bi have .* need .* before",
+        r"\bwe need to turn .* into",
+        r"\bi want confidence .*",
+        r"\bbefore release,? i need assurance",
+        r"\busing only .* help me decide",
+        r"\btell me whether .* before",
+        r"\bi need to know .* before",
+        r"\bsurface .* before final approval",
+    )
+)
+HOST_RESULT_KEYS = frozenset(
+    {
+        "model",
+        "host",
+        "model_id",
+        "recorded_at",
+        "recording",
+        "trigger_observations",
+        "output_observations",
+    }
+)
+TRIGGER_OBSERVATION_KEYS = frozenset(
+    {"case_id", "trial_id", "selected_skill_id"}
+)
+OUTPUT_OBSERVATION_KEYS = frozenset({"case_id", "trial_id", "assertions"})
 PACK_PROFILES = {"none", "gtm", "proposal", "invalid"}
 SHARED_SKILLS = ["mdp", "mdp-pack-builder", "mdp-pack-review"]
 PROFILE_JOBS = {
@@ -147,6 +191,29 @@ def compare_resource_tree(source: Path, installed: Path, label: str, errors: lis
 
 def normalized_query(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
+
+
+def validate_query_shape(
+    case_id: Any, query: str, query_shape: Any, errors: list[str]
+) -> None:
+    has_typo_marker = any(
+        re.search(rf"\b{re.escape(marker)}\b", query, re.IGNORECASE)
+        for marker in TYPO_QUERY_MARKERS
+    )
+    has_indirect_marker = any(pattern.search(query) for pattern in INDIRECT_QUERY_PATTERNS)
+    if query_shape == "typo" and not has_typo_marker:
+        errors.append(f"{case_id}: query_shape typo requires a known typo marker")
+    elif query_shape == "indirect-intent" and not has_indirect_marker:
+        errors.append(
+            f"{case_id}: query_shape indirect-intent requires an indirect-intent marker"
+        )
+    elif query_shape == "direct":
+        if has_typo_marker:
+            errors.append(f"{case_id}: query_shape direct contains a typo marker")
+        if has_indirect_marker:
+            errors.append(
+                f"{case_id}: query_shape direct contains an indirect-intent marker"
+            )
 
 
 def validate_skill_eval_indexes(
@@ -378,6 +445,7 @@ def validate_triggers(
         if not isinstance(query, str) or not query.strip():
             errors.append(f"{case_id}: query must be non-empty")
         else:
+            validate_query_shape(case_id, query, query_shape, errors)
             normalized = normalized_query(query)
             if normalized in query_owners and query_owners[normalized] != owner:
                 errors.append(f"{case_id}: normalized query has conflicting expected owner")
@@ -788,6 +856,11 @@ def validate_observed_results(
     if path is None:
         return None
     payload = load_json(path, errors)
+    unknown_result_fields = sorted(set(payload) - HOST_RESULT_KEYS)
+    if unknown_result_fields:
+        errors.append(
+            f"{path}: host result contains unsupported or raw fields {unknown_result_fields}"
+        )
     if payload.get("model") != "mdp.skill-host-results.v1":
         errors.append(f"{path}: unexpected results model")
     for field in ("host", "model_id", "recorded_at"):
@@ -822,6 +895,14 @@ def validate_observed_results(
         if not isinstance(observation, dict):
             errors.append(f"{path}: every trigger observation must be an object")
             continue
+        unknown_observation_fields = sorted(
+            set(observation) - TRIGGER_OBSERVATION_KEYS
+        )
+        if unknown_observation_fields:
+            errors.append(
+                f"{path}: trigger observation contains unsupported or raw fields "
+                f"{unknown_observation_fields}"
+            )
         case_id = observation.get("case_id")
         trial_id = observation.get("trial_id")
         observed = observation.get("selected_skill_id")
@@ -881,6 +962,14 @@ def validate_observed_results(
         if not isinstance(observation, dict):
             errors.append(f"{path}: every output observation must be an object")
             continue
+        unknown_observation_fields = sorted(
+            set(observation) - OUTPUT_OBSERVATION_KEYS
+        )
+        if unknown_observation_fields:
+            errors.append(
+                f"{path}: output observation contains unsupported or raw fields "
+                f"{unknown_observation_fields}"
+            )
         case_id = observation.get("case_id")
         trial_id = observation.get("trial_id")
         grades = observation.get("assertions")

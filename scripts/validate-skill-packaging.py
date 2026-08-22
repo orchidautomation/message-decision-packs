@@ -111,7 +111,32 @@ def relative_files(root: Path) -> dict[str, Path]:
     }
 
 
+def symlink_paths(root: Path):
+    """Yield symlinks without following symlinked files or directories."""
+    if root.is_symlink():
+        yield root
+        return
+    if not root.is_dir():
+        return
+    for path in sorted(root.iterdir()):
+        if path.is_symlink():
+            yield path
+        elif path.is_dir():
+            yield from symlink_paths(path)
+
+
+def reject_symlinks(root: Path, label: str, errors: list[str]) -> None:
+    for path in symlink_paths(root):
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            relative = path.as_posix()
+        errors.append(f"{label}: symlink is not allowed: {relative}")
+
+
 def compare_bundle(source: Path, bundle: Path, host: str, errors: list[str]) -> None:
+    reject_symlinks(source, f"{host} source", errors)
+    reject_symlinks(bundle, f"{host} bundle", errors)
     source_files = relative_files(source)
     bundle_files = relative_files(bundle)
     source_paths = set(source_files)
@@ -138,9 +163,8 @@ def compare_tree(source: Path, bundle: Path, label: str, errors: list[str]) -> N
     if not bundle.is_dir():
         errors.append(f"{label}: missing generated directory: {bundle}")
         return
-    for path in sorted(bundle.rglob("*")):
-        if path.is_symlink():
-            errors.append(f"{label}: symlink is not allowed: {path.relative_to(bundle)}")
+    reject_symlinks(source, f"{label} source", errors)
+    reject_symlinks(bundle, label, errors)
     source_files = relative_files(source)
     bundle_files = relative_files(bundle)
     for path in sorted(set(source_files) - set(bundle_files)):

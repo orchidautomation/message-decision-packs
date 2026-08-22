@@ -55,6 +55,36 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
 
         self.assertTrue(any("collision coverage missing" in error for error in errors))
 
+    def test_query_shapes_require_semantic_markers(self) -> None:
+        mutations = (
+            ("mdp-operator-typo-train", "direct"),
+            ("mdp-operator-indirect-train", "direct"),
+            ("mdp-operator-train", "typo"),
+        )
+        for case_id, query_shape in mutations:
+            payload = copy.deepcopy(self.triggers)
+            case = next(row for row in payload["cases"] if row["id"] == case_id)
+            case["query_shape"] = query_shape
+            errors: list[str] = []
+
+            HARNESS.validate_triggers(
+                payload, self.coverage, self.skills, self.definitions, errors
+            )
+
+            self.assertTrue(
+                any(case_id in error and "query_shape" in error for error in errors),
+                msg=f"missing semantic query-shape error for {case_id}: {errors}",
+            )
+
+        payload = copy.deepcopy(self.triggers)
+        case = next(row for row in payload["cases"] if row["id"] == "mdp-operator-typo-train")
+        case["query"] = "What does the MDP command tell an agent?"
+        errors = []
+        HARNESS.validate_triggers(
+            payload, self.coverage, self.skills, self.definitions, errors
+        )
+        self.assertTrue(any("query_shape typo requires" in error for error in errors))
+
     def test_installed_content_drift_fails(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-installed-skills-") as temp:
             installed = Path(temp) / "skills"
@@ -136,6 +166,22 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
             )
         self.assertTrue(any("bounded non-negative integer" in error for error in errors))
         self.assertTrue(any("unsupported or raw fields" in error for error in errors))
+
+    def test_host_result_observations_reject_raw_fields(self) -> None:
+        results = self.valid_host_results()
+        results["transcript"] = "synthetic transcript"
+        results["trigger_observations"][0]["contact_email"] = "synthetic@example.test"
+        results["output_observations"][0]["raw_output"] = "synthetic output"
+        with tempfile.TemporaryDirectory(prefix="mdp-host-results-") as temp:
+            path = Path(temp) / "results.json"
+            path.write_text(json.dumps(results), encoding="utf-8")
+            errors: list[str] = []
+            HARNESS.validate_observed_results(
+                path, self.triggers, self.outputs, self.coverage, self.skills, errors
+            )
+        self.assertTrue(any("host result contains unsupported or raw fields" in error for error in errors))
+        self.assertTrue(any("trigger observation contains unsupported or raw fields" in error for error in errors))
+        self.assertTrue(any("output observation contains unsupported or raw fields" in error for error in errors))
 
     def test_comparison_requires_matching_pair_id(self) -> None:
         primary = self.valid_host_results()

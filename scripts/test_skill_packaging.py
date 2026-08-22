@@ -69,6 +69,17 @@ class SkillPackagingMutationTests(unittest.TestCase):
             )
         self.assertTrue(any("non-canonical file: extra-case.json" in error for error in errors))
 
+    def test_symlinked_skill_file_fails_bundle_parity(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-packaging-") as temp:
+            bundle = Path(temp) / "skills"
+            shutil.copytree(ROOT / "plugin/skills", bundle)
+            skill_file = bundle / "mdp" / "SKILL.md"
+            skill_file.unlink()
+            skill_file.symlink_to(ROOT / "plugin/skills/mdp/SKILL.md")
+            errors: list[str] = []
+            PACKAGING.compare_bundle(ROOT / "plugin/skills", bundle, "test", errors)
+        self.assertTrue(any("symlink is not allowed" in error for error in errors))
+
     def test_wrong_destination_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-packaging-") as temp:
             wrong_root = Path(temp) / "assets" / "skill-evals"
