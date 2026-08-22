@@ -1,0 +1,23 @@
+pluxx.config.ts
+  s_2d9d9610ce5aca::t_d20e19ed3f2e08 5
+cli/Cargo.toml
+  s_2d9d9610ce5aca::t_d20e19ed3f2e08 3
+plugin/.codex-plugin/plugin.json
+  s_2d9d9610ce5aca::t_d20e19ed3f2e08 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "51c9e2029c5147666e77449926ebd9cf8e320fd8",
+  "prompts": {},
+  "sessions": {
+    "s_2d9d9610ce5aca": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a026ab-e83a-77e1-a8f3-94fe54ae45af",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
