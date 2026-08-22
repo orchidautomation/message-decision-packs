@@ -233,6 +233,15 @@ and exact Decision Input Contract receipts.
      runs the same preflight; both must be green before a greenfield generation
      claim. Narrow applicability to fit the budget; do not raise limits.
 
+     For bounded investigation after the unfiltered gate, use the exact
+     projections `mdp --json --summary route-budget --dir PACK_ROOT`,
+     `--job JOB_ID`, and `--persona PERSONA`. Summary output is body-free and
+     reports status counts, entry/byte utilization, bounded contributors,
+     aggregate exclusion counts, and a safe next action. The full route matrix
+     remains authoritative; required-first exclusions stay visible, and agents
+     must never truncate, drop guardrails, or open a full card to conceal
+     overflow.
+
      When a supporting kind is intentionally high-volume, a job may add
      `context_budget.optional_kind_quotas` for safe kinds such as `hooks`,
      `pains`, or `ctas`. These are optional-entry maximums, not required

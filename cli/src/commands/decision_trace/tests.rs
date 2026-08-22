@@ -538,6 +538,7 @@ fn generative_trace_exposes_only_bound_driver_hashes() {
         provider_observation: None,
         identity_observations: None,
         deadline: None,
+        diagnostic_code: None,
         terminal_state: TerminalState::Success,
         assurance: vec![crate::run_contracts::AssuranceDimension {
             dimension: "stateless-inference".into(),
@@ -587,6 +588,7 @@ fn trace_runner_audit_requires_exact_contained_authority_bytes() {
         provider_observation: None,
         identity_observations: None,
         deadline: None,
+        diagnostic_code: None,
         terminal_state: TerminalState::Success,
         assurance: vec![],
         limitations: vec![],

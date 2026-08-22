@@ -358,8 +358,9 @@ assert "mdp-redaction-test-value" not in all_output
 PY
 
 timeout_bundle="$tmp_dir/timeout-bundle"
-mkdir -p "$timeout_bundle/scripts"
+mkdir -p "$timeout_bundle/scripts/lib"
 cp "$root/scripts/mdp-proposal-mcp-server.mjs" "$timeout_bundle/scripts/"
+cp "$root/scripts/lib/deadline-policy.mjs" "$timeout_bundle/scripts/lib/"
 cat > "$timeout_bundle/scripts/mdp-proposal-runner.mjs" <<'JS'
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
@@ -388,7 +389,7 @@ message = {
             "source_id": "synthetic-rfp-summary",
             "source_kind": "synthetic-example",
             "dry_run": True,
-            "timeout_ms": 100,
+            "timeout_ms": 500,
         },
     },
 }

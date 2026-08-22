@@ -350,7 +350,7 @@ const callRun = async (args) => {
       : invocation.overflowed
         ? 'cli-output-limit'
         : 'cli-unavailable'
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code, deadline: invocation.deadline }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code, ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
 
   let envelope
@@ -362,7 +362,7 @@ const callRun = async (args) => {
         ok: false,
         contract: 'mdp.run-mcp-error.v1',
         code: invocation.status === 0 ? 'invalid-cli-output' : 'cli-run-failed',
-        deadline: invocation.deadline,
+        ...(invocation.deadline ? { deadline: invocation.deadline } : {}),
       },
       true,
     )
@@ -379,7 +379,7 @@ const callRun = async (args) => {
     Array.isArray(envelope.data.authority_block) ||
     envelope.data.authority_block.terminal_state !== envelope.data.terminal_state
   ) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', deadline: invocation.deadline }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
 
   const success =
@@ -413,7 +413,7 @@ const callRun = async (args) => {
         envelope.data.authority?.terminal === 'authority-unavailable' &&
         envelope.data.authority?.governed_generation === 'absent'))
   if (!success && !completedNoDraft && !failedNoDraft) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', deadline: invocation.deadline }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
 
   // A canonical no-draft result is decision data, not an MCP transport error.
@@ -437,13 +437,13 @@ const callVerifyRun = async (args) => {
   const invocation = await invokeCli(cliArgs, dirname(bundlePath), timeoutMs)
   if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
     const code = invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable'
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code, deadline: invocation.deadline }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code, ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
   let envelope
   try {
     envelope = JSON.parse(invocation.stdout)
   } catch {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output', deadline: invocation.deadline }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output', ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
   if (
     envelope?.ok !== true ||
@@ -455,7 +455,7 @@ const callVerifyRun = async (args) => {
     typeof envelope.data.valid !== 'boolean' ||
     (invocation.status === 0) !== envelope.data.valid
   ) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', deadline: invocation.deadline }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
   // An invalid verification is a canonical integrity result, not an MCP
   // transport failure. Preserve it exactly so the caller can fail closed on

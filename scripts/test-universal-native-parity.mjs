@@ -287,7 +287,8 @@ try {
     const canonical = structuredClone(resolvedOutputSchema(step, normalizedOutputSchema))
     assert.equal(canonical.type, 'object')
     assert.ok(canonical.properties && typeof canonical.properties === 'object')
-    const required = step.output_contract.required_top_level
+    const required = step.output_contract.host_envelope?.semantic_required_top_level
+      ?? step.output_contract.required_top_level
     assert.ok(Array.isArray(required) && required.length > 0)
     canonical.properties = Object.fromEntries(required.map((field) => {
       assert.ok(field in canonical.properties, `${step.prompt_id} requires ${field} outside its canonical schema`)
@@ -361,8 +362,10 @@ try {
   for (const [index, binding] of bindings.entries()) {
     const { profile, jobId, step, normalizedOutputSchema } = binding
     const outputSchema = providerSchemaForStep(step, normalizedOutputSchema)
+    const modelRequired = step.output_contract.host_envelope?.semantic_required_top_level
+      ?? step.output_contract.required_top_level
     const providerExample = Object.fromEntries(
-      step.output_contract.required_top_level.map((field) => [field, step.output_contract.example[field]]),
+      modelRequired.map((field) => [field, step.output_contract.example[field]]),
     )
     if (step.output_contract.schema_ref?.startsWith('mdp.normalized-decision-input.')) {
       providerExample.job_id = jobId

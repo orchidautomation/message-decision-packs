@@ -60,3 +60,10 @@ For a targeted GTM pack, also require an isolation family:
 - generate target-aware sample leads and JSON/readable briefs, save them under scanned pack paths, and confirm they do not produce contamination findings
 - confirm required `mdp.*.vN` contracts, `.mdp/` paths, and `mdp <command>` receipts remain allowed as implementation metadata
 - confirm direct or double-negated attempts to sell MDP/internal control-plane language are rejected
+
+For route-budget triage, first run the unfiltered strict gate, then use the
+bounded summary or exact `--job`/`--persona` projection. Summary output is
+`mdp.route-budget-summary.v1`, keeps utilization, aggregate exclusion, and
+safe-action diagnostics, and never contains route arrays or entry bodies.
+Required-first optional exclusions remain visible in the summary. `job_id` is canonical; the
+legacy `job` alias must remain equal in full v0 output.

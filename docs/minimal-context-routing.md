@@ -56,6 +56,19 @@ handoff. The preflight never raises `max_entries` or `max_bytes`, truncates,
 or ranks away required guardrails; the fix is narrower structured
 applicability.
 
+For bounded triage, `mdp --json --summary route-budget --dir PACK_DIR` emits
+`mdp.route-budget-summary.v1`: validity, ready/blocked/unassessed counts,
+entry and byte utilization percentages, bounded blocker/contributor metadata,
+aggregate exclusion counts (including required-first optional quota
+exclusions), and one safe next action. It contains no route array or entry body. Exact
+projections are available with `--job JOB_ID`, `--persona PERSONA`, or both;
+selectors are manifest-owned exact matches and the intersection is ANDed.
+The full output remains the authority. New route records use canonical
+`job_id`; the deprecated v0 `job` alias is retained and must be equal. When
+overflow is not safely narrowable, the summary says `review_required_authority`;
+operators must never truncate, drop guardrails, inflate budgets, or open a full
+card to hide an overflow.
+
 For a ready governed generation or review job, let MDP write the exact canonical `context.model_context` bytes and supply that file as the required `routed_context` prompt input:
 
 ```bash
@@ -81,6 +94,6 @@ mdp --json validate-prompt-output \
   --routed-context ROUTED_CONTEXT_JSON
 ```
 
-The governed result must echo `context_sha256`. MDP rejects changed context bytes, a mismatched digest, authority excluded from that context, and claim/CTA/angle/evidence identifiers selected from the wrong card kind. A gap or refusal still binds the same context.
+For a migrated governed prompt, MDP injects `context_sha256` from the exact staged routed-context bytes after the model returns its semantic payload. Legacy prompts may still echo it. In both paths MDP rejects changed context bytes, a mismatched digest, authority excluded from that context, and claim/CTA/angle/evidence identifiers selected from the wrong card kind. A gap or refusal still binds the same context.
 
 MDP remains the local compiler and validator. The customer-selected host owns model execution. MDP does not browse, enrich, select a provider, price model calls, send outreach, or mutate external systems.

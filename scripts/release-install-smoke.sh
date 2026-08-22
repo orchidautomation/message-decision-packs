@@ -343,6 +343,17 @@ trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
 "$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
 installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
 "$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-init.json
+source_route_budget_bin="$ROOT/cli/target/debug/mdp"
+if [ ! -x "$source_route_budget_bin" ]; then
+  echo "Route-budget installed parity requires a source CLI binary: $source_route_budget_bin" >&2
+  exit 1
+fi
+"$node_bin" "$ROOT/scripts/test-route-budget-installed-parity.mjs" \
+  --source-bin "$source_route_budget_bin" \
+  --installed-bin "$mdp_bin" \
+  --source-assets "$ROOT/plugin/assets" \
+  --installed-assets "$codex_plugin_root/assets" \
+  --dir "$installed_gtm_fixture"
 installed_runtime_version="$("$mdp_bin" --version | awk '{print $2}')"
 MDP_RUNTIME_VERSION="$installed_runtime_version" \
 MDP_BIN="$mdp_bin" \
@@ -387,6 +398,30 @@ import json, pathlib, sys
 
 payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
 assert payload["data"]["valid"] is True
+PY
+gtm_budget_summary="$("$mdp_bin" --json --summary route-budget --dir "$installed_gtm_fixture")"
+printf '%s\n' "$gtm_budget_summary" >"$proposal_fixture/installed-gtm-route-budget-summary.json"
+python3 - "$proposal_fixture/installed-gtm-route-budget-summary.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+summary = payload["summary"]
+assert summary["contract"] == "mdp.route-budget-summary.v1"
+assert "routes" not in summary
+assert "tightest_headroom" in summary
+assert "next_safe_action" in summary
+PY
+gtm_budget_filter="$("$mdp_bin" --json route-budget --dir "$installed_gtm_fixture" --job outbound-copy-brief --persona PMM)"
+printf '%s\n' "$gtm_budget_filter" >"$proposal_fixture/installed-gtm-route-budget-filter.json"
+python3 - "$proposal_fixture/installed-gtm-route-budget-filter.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+data = payload["data"]
+assert data["query"]["job_id"] == "outbound-copy-brief"
+assert data["query"]["persona"] == "PMM"
+assert data["route_count"] == 1
+assert data["routes"][0]["job_id"] == data["routes"][0]["job"]
 PY
 "$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-gaps.json
 for job_id in prospect-fit-or-brief outbound-copy-brief outbound-copy-review; do

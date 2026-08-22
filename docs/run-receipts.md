@@ -375,7 +375,6 @@ diagnostics. Those controls reduce accidental context and credential exposure,
 but they do not prove that a provider call occurred or replace the runner audit,
 artifact hashes, or receipt decision. A timeout, termination, malformed result,
 or `require_audit_grade` mismatch is a tool error and must remain blocked.
-
 ### One effective deadline
 
 The canonical clean-run recommendation is `60_000` ms. Use
@@ -388,3 +387,14 @@ elapsed/effective limits, warnings, and the canonical no-draft terminal state.
 Older v1 receipts without this optional projection remain readable; evidence is
 unknown rather than inferred. The clock is checked at safe phase boundaries;
 blocking filesystem syscalls are not claimed to be preemptible.
+
+### Governed host envelope
+
+The `mdp.governed-host-envelope.v1` declaration separates model judgment from
+deterministic run identity. The model returns `selected_authority`, `artifact`,
+`gaps`, and `rejected_claims`; MDP constructs `contract`, prompt/job/version and
+prompt hash, routed-context hash, detached invocation-receipt hash, and the
+`source_summary.inputs_used` inventory from the observed run. The wrapper rejects
+any model-supplied owned field and then runs the existing final output and receipt
+validation. Prompts without this declaration keep the legacy echo-and-validate
+behavior, so migration requires a prompt version/hash change.
