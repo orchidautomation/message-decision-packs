@@ -295,10 +295,11 @@ pub(crate) fn declared_persona_labels(manifest: &Manifest) -> Vec<String> {
         .chain(manifest.target_personas.iter())
         .chain(manifest.operator_roles.iter())
     {
-        if label.trim().is_empty()
+        let normalized = label.trim();
+        if normalized.is_empty()
             || labels
                 .iter()
-                .any(|existing: &String| existing.eq_ignore_ascii_case(label))
+                .any(|existing: &String| existing.trim().eq_ignore_ascii_case(normalized))
         {
             continue;
         }

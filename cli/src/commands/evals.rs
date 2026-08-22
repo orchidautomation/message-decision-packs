@@ -542,13 +542,33 @@ fn parse_prospect(path: &Path, fixture: &EvalFixture) -> Result<ParsedProspect> 
         .with_context(|| format!("{} invalid prospect", path.display()))
 }
 
+fn load_order_for_assertions(output: &Value) -> Vec<Value> {
+    if let Some(load_order) = output["load_order"]
+        .as_array()
+        .filter(|load_order| !load_order.is_empty())
+    {
+        return load_order.clone();
+    }
+    if let Some(required_load_order) = output["required_load_order"]
+        .as_array()
+        .filter(|load_order| !load_order.is_empty())
+    {
+        return required_load_order.clone();
+    }
+    if output["portfolio_sensitive"] == true && output["draft_status"] == "ready" {
+        return output["route"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|card| card["path"].as_str().map(Value::from))
+            .collect();
+    }
+    Vec::new()
+}
+
 fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &mut Vec<Value>) {
     if let Some(expected) = &fixture.expect_load_order_contains {
-        let actual = output["load_order"]
-            .as_array()
-            .or_else(|| output["required_load_order"].as_array())
-            .cloned()
-            .unwrap_or_default();
+        let actual = load_order_for_assertions(output);
         for expected_path in expected {
             if !actual.iter().any(|value| value == expected_path) {
                 issues.push(issue(
@@ -561,11 +581,7 @@ fn assert_expected(path: &Path, fixture: &EvalFixture, output: &Value, issues: &
         }
     }
     if let Some(excluded) = &fixture.expect_load_order_excludes {
-        let actual = output["load_order"]
-            .as_array()
-            .or_else(|| output["required_load_order"].as_array())
-            .cloned()
-            .unwrap_or_default();
+        let actual = load_order_for_assertions(output);
         for excluded_path in excluded {
             if actual.iter().any(|value| value == excluded_path) {
                 issues.push(issue(

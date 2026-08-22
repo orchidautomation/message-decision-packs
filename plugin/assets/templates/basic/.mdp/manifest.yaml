@@ -728,8 +728,8 @@ jobs:
     optional:
     - known-gaps
   context_budget:
-    max_entries: 56
-    max_bytes: 65536
+    max_entries: 54
+    max_bytes: 49152
 - id: outbound-copy-brief
   skill_id: mdp-gtm-brief
   label: Outbound copy brief
@@ -766,8 +766,8 @@ jobs:
     kind: generation
     prompt: generate-outbound-copy-v1
   context_budget:
-    max_entries: 64
-    max_bytes: 65536
+    max_entries: 53
+    max_bytes: 58368
 - id: outbound-copy-review
   skill_id: mdp-gtm-brief
   label: Supplied outbound copy review
@@ -929,7 +929,7 @@ cards:
   kind: hooks
   description: Synthetic portfolio scope demonstration.
   personas:
-  - PMM
+  - GTM Engineering
   tags:
   - portfolio
   - scope

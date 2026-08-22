@@ -2333,6 +2333,38 @@ mod tests {
     }
 
     #[test]
+    fn proof_route_persona_union_deduplicates_trimmed_case_insensitive_labels() {
+        let root = temp_proposal_pack("proof-persona-sources");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["target_personas"] =
+            serde_yaml::from_str("- ' Proposal Lead '\n- proposal lead\n")
+                .expect("target personas");
+        manifest["operator_roles"] =
+            serde_yaml::from_str("- ' proposal lead '\n- Operator\n").expect("operator roles");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let manifest = crate::pack_io::read_manifest(&root).expect("manifest should load");
+        assert_eq!(
+            declared_persona_labels(&manifest),
+            vec![
+                "Proposal Lead".to_string(),
+                "Solution Owner".to_string(),
+                "Executive Reviewer".to_string(),
+                "Operator".to_string(),
+            ]
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn verify_output_rejects_fake_source_ids() {
         let root = temp_proposal_pack("proof-fake-source");
         let mut artifact = valid_artifact();

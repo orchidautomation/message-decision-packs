@@ -3260,8 +3260,10 @@ mod tests {
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
         let mut manifest: serde_yaml::Value =
             serde_yaml::from_str(&raw).expect("manifest should parse");
-        manifest["target_personas"] = serde_yaml::from_str("- Buyer\n").expect("target persona");
-        manifest["operator_roles"] = serde_yaml::from_str("- Operator\n").expect("operator role");
+        manifest["target_personas"] =
+            serde_yaml::from_str("- ' Buyer '\n- buyer\n").expect("target personas");
+        manifest["operator_roles"] =
+            serde_yaml::from_str("- Operator\n- ' operator '\n").expect("operator roles");
         std::fs::write(
             &manifest_path,
             serde_yaml::to_string(&manifest).expect("manifest should serialize"),
@@ -3277,8 +3279,10 @@ mod tests {
             .filter_map(|route| route["persona"].as_str())
             .collect();
         assert!(personas.contains("PMM"));
-        assert!(personas.contains("Buyer"));
+        assert!(personas.contains(" Buyer "));
         assert!(personas.contains("Operator"));
+        assert_eq!(personas.len(), 5);
+        assert_eq!(preflight["route_count"], 15);
 
         let _ = std::fs::remove_dir_all(root);
     }
