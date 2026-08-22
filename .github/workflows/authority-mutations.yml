@@ -8,6 +8,8 @@ on:
       - "cli/src/**"
       - "cli/Cargo.toml"
       - "cli/Cargo.lock"
+      - "plugin/assets/authority-conformance/corpus.json"
+      - "assets/authority-conformance/corpus.json"
       - "scripts/test-authority-mutations.sh"
       - ".github/workflows/authority-mutations.yml"
   pull_request:
@@ -17,6 +19,8 @@ on:
       - "cli/src/**"
       - "cli/Cargo.toml"
       - "cli/Cargo.lock"
+      - "plugin/assets/authority-conformance/corpus.json"
+      - "assets/authority-conformance/corpus.json"
       - "scripts/test-authority-mutations.sh"
       - ".github/workflows/authority-mutations.yml"
 
