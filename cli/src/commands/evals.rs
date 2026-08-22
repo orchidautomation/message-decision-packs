@@ -956,6 +956,78 @@ mod tests {
         root
     }
 
+    fn set_route_card_cap(root: &Path, cap: usize) {
+        let manifest_path = root.join(DEFAULT_DIR).join("manifest.yaml");
+        let raw = fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["policy"]["max_cards_per_route"] = serde_yaml::Value::Number(cap.into());
+        fs::write(
+            manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+    }
+
+    fn failed_fixture_ids(result: &Value) -> BTreeSet<String> {
+        result["fixtures"]
+            .as_array()
+            .expect("fixtures array")
+            .iter()
+            .filter(|fixture| fixture["valid"] == false)
+            .filter_map(|fixture| fixture["id"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn actual_gtm_starter_cap_sweep_proves_minimum_strict_eval_boundary() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mdp-gtm-cap-sweep-{nonce}"));
+        init_pack(&root, "Actual GTM Starter", "gtm", true, false)
+            .expect("actual GTM starter should initialize");
+
+        set_route_card_cap(&root, 14);
+        let cap14 = eval_pack(&root).expect("cap 14 eval should complete");
+        assert_eq!(cap14["valid"], false, "cap 14 must fail: {cap14}");
+        let cap14_failed = failed_fixture_ids(&cap14);
+        assert!(
+            cap14_failed.contains("portfolio-local-cli-route"),
+            "cap 14 must block the documented strict route: {cap14}"
+        );
+
+        set_route_card_cap(&root, 15);
+        let cap15 = eval_pack(&root).expect("cap 15 eval should complete");
+        assert_eq!(cap15["valid"], false, "cap 15 must fail: {cap15}");
+        let cap15_failed = failed_fixture_ids(&cap15);
+        for fixture_id in ["portfolio-local-cli-route", "portfolio-codex-plugin-route"] {
+            assert!(
+                cap15_failed.contains(fixture_id),
+                "cap 15 must block {fixture_id}: {cap15}"
+            );
+        }
+
+        set_route_card_cap(&root, 16);
+        let cap16 = eval_pack(&root).expect("cap 16 eval should complete");
+        assert_eq!(cap16["valid"], true, "cap 16 must pass: {cap16}");
+        assert_eq!(
+            cap16["fixtures"].as_array().expect("fixtures array").len(),
+            35
+        );
+        assert!(
+            cap16["fixtures"]
+                .as_array()
+                .expect("fixtures array")
+                .iter()
+                .all(|fixture| fixture["valid"] == true),
+            "every strict fixture must pass at cap 16: {cap16}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn entry_title_assertions_read_bounded_brief_context() {
         let titles = entry_titles(&json!({

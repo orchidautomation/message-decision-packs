@@ -728,8 +728,8 @@ jobs:
     optional:
     - known-gaps
   context_budget:
-    max_entries: 54
-    max_bytes: 49152
+    max_entries: 53
+    max_bytes: 45881
 - id: outbound-copy-brief
   skill_id: mdp-gtm-brief
   label: Outbound copy brief
@@ -766,8 +766,8 @@ jobs:
     kind: generation
     prompt: generate-outbound-copy-v1
   context_budget:
-    max_entries: 53
-    max_bytes: 58368
+    max_entries: 52
+    max_bytes: 55673
 - id: outbound-copy-review
   skill_id: mdp-gtm-brief
   label: Supplied outbound copy review

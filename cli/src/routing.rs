@@ -3200,19 +3200,19 @@ mod tests {
             .find(|route| route["persona"] == "Buyer" && route["job"] == "outbound-copy-brief")
             .expect("buyer outbound-copy-brief route should be present");
         assert_eq!(buyer_brief["status"], "blocked");
-        assert_eq!(buyer_brief["budget"]["max_entries"], 64);
-        assert_eq!(buyer_brief["budget"]["max_bytes"], 65536);
+        assert_eq!(buyer_brief["budget"]["max_entries"], 52);
+        assert_eq!(buyer_brief["budget"]["max_bytes"], 55673);
         assert!(
             buyer_brief["budget"]["actual_entries"]
                 .as_u64()
                 .expect("actual entries")
-                > 64
+                > 52
         );
         assert!(
             buyer_brief["budget"]["actual_bytes"]
                 .as_u64()
                 .expect("actual bytes")
-                > 65536
+                > 55673
         );
         assert!(
             buyer_brief["diagnostics"]

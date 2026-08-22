@@ -11,8 +11,6 @@ expect_load_order_contains:
 id: revops-owner-agent-brief-route
 job: agent brief for RevOps owner source row
 persona: GTM Engineering
-scope:
-- product=local-cli
 profile_eval:
   category: job-routing
   jobs:
@@ -21,3 +19,5 @@ profile_eval:
   - actors
   - source-signals
   - routing-jobs
+scope:
+- product=local-cli

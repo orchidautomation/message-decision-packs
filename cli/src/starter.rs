@@ -417,8 +417,8 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             ])),
             model_task: None,
             context_budget: Some(crate::models::JobContextBudget {
-                max_entries: 54,
-                max_bytes: 49_152,
+                max_entries: 53,
+                max_bytes: 45_881,
                 optional_kind_quotas: BTreeMap::new(),
             }),
         },
@@ -462,8 +462,8 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
                 prompt: "generate-outbound-copy-v1".to_string(),
             }),
             context_budget: Some(crate::models::JobContextBudget {
-                max_entries: 53,
-                max_bytes: 58_368,
+                max_entries: 52,
+                max_bytes: 55_673,
                 optional_kind_quotas: BTreeMap::new(),
             }),
         },
