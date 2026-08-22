@@ -280,19 +280,25 @@ fn summarize(command: &str, data: &Value) -> Value {
             "route_card_cap_exclusion_count": data["route_card_cap_exclusion_count"],
             "near_budget_count": data["near_budget_count"],
             "unassessed_generation_count": data["unassessed_generation_count"],
-            "routes": data["routes"].as_array().map(|routes| routes.iter().map(|route| json!({
-                "persona": route["persona"],
-                "job": route["job"],
-                "status": route["status"],
-                "budget": route["budget"],
-                "selected_count": route["selected_count"],
-                "excluded_count": route["excluded_count"],
-                "diagnostics": route["diagnostics"],
-                "reason_distribution": route["reason_distribution"],
-                "excluded_reason_distribution": route["excluded_reason_distribution"],
-                "largest_contributing_cards": route["largest_contributing_cards"],
-                "route_card_cap": route["route_card_cap"]
-            })).collect::<Vec<_>>()).unwrap_or_default(),
+            "routes": data["routes"].as_array().map(|routes| routes.iter().map(|route| {
+                let mut summary = json!({
+                    "persona": route["persona"],
+                    "job": route["job"],
+                    "status": route["status"],
+                    "budget": route["budget"],
+                    "selected_count": route["selected_count"],
+                    "excluded_count": route["excluded_count"],
+                    "diagnostics": route["diagnostics"],
+                    "reason_distribution": route["reason_distribution"],
+                    "excluded_reason_distribution": route["excluded_reason_distribution"],
+                    "largest_contributing_cards": route["largest_contributing_cards"],
+                    "route_card_cap": route["route_card_cap"]
+                });
+                if !route["allocation"].is_null() {
+                    summary["allocation"] = route["allocation"].clone();
+                }
+                summary
+            }).collect::<Vec<_>>()).unwrap_or_default(),
             "strict_warnings": data["strict_warnings"]
         }),
         "sample-leads" => json!({
@@ -458,7 +464,7 @@ fn context_summary(context: &Value) -> Value {
     if !context.is_object() {
         return Value::Null;
     }
-    json!({
+    let mut summary = json!({
         "contract": context["contract"],
         "status": context["status"],
         "reason": context["reason"],
@@ -472,8 +478,8 @@ fn context_summary(context: &Value) -> Value {
         "guardrail_entry_count": context["summary"]["guardrail_entry_count"],
         "gap_count": array_len(&context["gaps"]),
         "gaps": context["gaps"],
-        "full_card_required": context["full_card_required"]
-        ,"minimality": {
+        "full_card_required": context["full_card_required"],
+        "minimality": {
             "status": context["minimality"]["status"],
             "context_sha256": context["minimality"]["context_sha256"],
             "budget": context["minimality"]["budget"],
@@ -483,7 +489,11 @@ fn context_summary(context: &Value) -> Value {
             "largest_contributing_cards": context["minimality"]["largest_contributing_cards"],
             "diagnostics": context["minimality"]["diagnostics"]
         }
-    })
+    });
+    if !context["minimality"]["allocation"].is_null() {
+        summary["minimality"]["allocation"] = context["minimality"]["allocation"].clone();
+    }
+    summary
 }
 
 fn product_foundation_summary(foundation: &Value) -> Value {
@@ -822,6 +832,7 @@ mod tests {
                         "budget": {"max_entries": 8, "max_bytes": 4096, "actual_entries": 4, "actual_bytes": 1024},
                         "selected_count": 4,
                         "excluded_count": 1,
+                        "allocation": {"strategy": "required-first", "required_count": 2, "optional_selected_count": 2, "optional_excluded_count": 1, "required_by_kind": {}, "quotas": {}},
                         "excluded": [{"card_id": "claims", "card_kind": "claims", "entry_id": "unselected", "reason_code": "not_applicable"}],
                         "diagnostics": []
                     },
@@ -842,11 +853,61 @@ mod tests {
         assert_eq!(summary["context"]["entry_count"], 4);
         assert_eq!(summary["context"]["minimality"]["status"], "ready");
         assert_eq!(summary["context"]["minimality"]["excluded_count"], 1);
+        assert_eq!(
+            summary["context"]["minimality"]["allocation"]["strategy"],
+            "required-first"
+        );
         assert!(summary.to_string().contains("unselected"));
         assert!(!summary.to_string().contains("should not appear in summary"));
         assert_eq!(summary["portfolio_sensitive"], true);
         assert_eq!(summary["scope"]["selected"]["product"][0], "local-cli");
         assert!(summary["context"].get("entries").is_none());
+    }
+
+    #[test]
+    fn route_budget_summary_preserves_allocation_without_entry_bodies() {
+        let allocation = json!({
+            "strategy": "required-first",
+            "required_count": 2,
+            "optional_selected_count": 1,
+            "optional_excluded_count": 1,
+            "required_by_kind": {"channel-policies": 1, "gaps": 1},
+            "quotas": {"hooks": {
+                "max_optional_entries": 1,
+                "reserved_count": 0,
+                "optional_selected_count": 1,
+                "optional_excluded_count": 1
+            }}
+        });
+        let raw = json!({
+            "contract": "mdp.route-budget.v0",
+            "valid": true,
+            "strict": {"enabled": false, "warnings_fail": true, "warning_count": 0},
+            "pack_id": "synthetic-pack",
+            "route_count": 1,
+            "overflow_count": 0,
+            "route_card_cap_exclusion_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 0,
+            "routes": [{
+                "persona": "PMM",
+                "job": "outbound-copy-brief",
+                "status": "ready",
+                "budget": {"max_entries": 8, "max_bytes": 4096, "actual_entries": 3, "actual_bytes": 1024},
+                "selected_count": 3,
+                "excluded_count": 1,
+                "allocation": allocation,
+                "diagnostics": [],
+                "reason_distribution": {},
+                "excluded_reason_distribution": {"optional_kind_quota_exceeded": 1},
+                "largest_contributing_cards": [],
+                "route_card_cap": {"status": "ready"}
+            }]
+        });
+        let summary = summarize("route-budget", &raw);
+
+        assert_eq!(summary["routes"][0]["allocation"], allocation);
+        assert!(!summary.to_string().contains("entry body"));
     }
 
     #[test]

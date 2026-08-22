@@ -30,6 +30,14 @@ excluded bodies or open `full_card_required` paths. The downstream host must
 hash those exact bytes in `mdp.prompt-invocation.v1`, and validation must pass
 both `--invocation-receipt` and `--routed-context`.
 
+When the selected job declares `context_budget.optional_kind_quotas`, also
+inspect `data.context.minimality.allocation`. It must show the
+`required-first` strategy, required reservations, and deterministic optional
+selection/exclusion counts. Channel policies, gaps, guardrails, foundation
+references, and every evidence-backed entry remain reserved; quota exclusions
+must contain no entry bodies. Jobs without quotas retain the legacy selection
+and receipt behavior.
+
 3. Return a writing contract containing the audience/persona, fit rationale, safe personalization, approved claims/proof, message angles, CTA policy, avoid rules, output constraints, and known gaps.
 4. If no prospect object is required for the pack-owned route, use `mdp emit-brief` with the exact persona, job, and required scope.
 
