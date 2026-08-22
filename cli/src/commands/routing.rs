@@ -2501,6 +2501,38 @@ mod tests {
         root
     }
 
+    #[test]
+    fn route_budget_command_accepts_legacy_unassessed_routes() {
+        let root = temp_pack("route-budget-command-legacy");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        for job in manifest["jobs"].as_sequence_mut().expect("jobs") {
+            if job["id"].as_str() == Some("prospect-fit-or-brief") {
+                job["context_budget"] = serde_yaml::Value::Null;
+            }
+        }
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let output = route_budget_preflight_command(&root, false)
+            .expect("legacy route-budget command should remain readable");
+        let legacy = output["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .find(|route| route["job_id"] == "prospect-fit-or-brief")
+            .expect("legacy route should be present");
+        assert_eq!(legacy["status"], "unassessed");
+        assert_eq!(legacy["context_sha256"], Value::Null);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     fn govern_job_through_input_contract(root: &Path, job_id: &str) {
         let manifest_path = root.join(".mdp/manifest.yaml");
         let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");

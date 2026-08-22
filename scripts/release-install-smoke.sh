@@ -351,6 +351,8 @@ fi
 "$node_bin" "$ROOT/scripts/test-route-budget-installed-parity.mjs" \
   --source-bin "$source_route_budget_bin" \
   --installed-bin "$mdp_bin" \
+  --source-assets "$ROOT/plugin/assets" \
+  --installed-assets "$codex_plugin_root/assets" \
   --dir "$installed_gtm_fixture"
 installed_runtime_version="$("$mdp_bin" --version | awk '{print $2}')"
 MDP_RUNTIME_VERSION="$installed_runtime_version" \

@@ -28,7 +28,8 @@ validate-route-budget-installed-parity:
 	node scripts/build-route-budget-fixtures.mjs
 	cd cli && $(CARGO) build
 	@test -n "$(MDP_INSTALLED_BIN)" || (echo 'Set MDP_INSTALLED_BIN to an installed CLI binary.' >&2; exit 1)
-	node scripts/test-route-budget-installed-parity.mjs --source-bin cli/target/debug/mdp --installed-bin "$(MDP_INSTALLED_BIN)" --dir examples/route-budget/overflow
+	@test -n "$(MDP_INSTALLED_ASSETS)" || (echo 'Set MDP_INSTALLED_ASSETS to the installed plugin assets directory.' >&2; exit 1)
+	node scripts/test-route-budget-installed-parity.mjs --source-bin cli/target/debug/mdp --installed-bin "$(MDP_INSTALLED_BIN)" --source-assets plugin/assets --installed-assets "$(MDP_INSTALLED_ASSETS)" --dir examples/route-budget/overflow
 
 
 validate-cli:

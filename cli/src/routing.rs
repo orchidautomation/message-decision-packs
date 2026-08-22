@@ -351,6 +351,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                     "reason_distribution": {},
                     "excluded_reason_distribution": {},
                     "largest_contributing_cards": [],
+                    "context_sha256": Value::Null,
                     "route_card_cap": Value::Null
                 }));
             } else {
@@ -381,6 +382,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                         "reason_distribution": {},
                         "excluded_reason_distribution": {},
                         "largest_contributing_cards": [],
+                        "context_sha256": Value::Null,
                         "route_card_cap": route_card_cap
                     }));
                 }
