@@ -10,6 +10,7 @@ use crate::product_foundation::{
 };
 use crate::runtime_context::current_runtime_context;
 use crate::scope::{ContextScope, ScopeResolution, match_entry_scope, resolve_runtime_scope};
+use crate::utils::declared_persona_labels;
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -309,6 +310,7 @@ pub(crate) fn entry_route(
 /// preflight diagnostic.
 pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result<Value> {
     let scope = ScopeResolution::default();
+    let declared_personas = declared_persona_labels(manifest);
     let mut routes = Vec::new();
     let mut overflow_count = 0usize;
     let mut route_card_cap_exclusion_count = 0usize;
@@ -320,7 +322,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             if job.model_task.is_some() {
                 unassessed_generation_count += 1;
             }
-            if manifest.personas.is_empty() {
+            if declared_personas.is_empty() {
                 routes.push(json!({
                     "persona": Value::Null,
                     "job": job.id,
@@ -336,7 +338,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                     "route_card_cap": Value::Null
                 }));
             } else {
-                for persona in &manifest.personas {
+                for persona in &declared_personas {
                     let route_card_cap =
                         select_cards_with_diagnostics(manifest, Some(persona), Some(&job.id))
                             .route_card_cap;
@@ -367,7 +369,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             }
             continue;
         };
-        for persona in &manifest.personas {
+        for persona in &declared_personas {
             let route = entry_route_scoped(root, manifest, persona, &job.id, &scope)?;
             let route_card_cap = route["route_card_cap"].clone();
             let route_card_cap_blocked = route_card_cap["status"] == "blocked";
@@ -2012,6 +2014,10 @@ mod tests {
             &["".to_string(), "  ".to_string()],
             "Buyer"
         ));
+        let mixed = vec!["".to_string(), "PMM".to_string()];
+        assert!(selector_matches_persona(&mixed, "PMM"));
+        assert!(!selector_matches_persona(&mixed, "Buyer"));
+        assert_eq!(mixed, vec!["".to_string(), "PMM".to_string()]);
     }
 
     #[test]
@@ -3244,6 +3250,36 @@ mod tests {
                     .flatten())
                 .all(|card| card.get("body").is_none())
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn route_budget_preflight_uses_all_declared_persona_sources() {
+        let root = temp_pack("route-budget-persona-sources");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: serde_yaml::Value =
+            serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["target_personas"] = serde_yaml::from_str("- Buyer\n").expect("target persona");
+        manifest["operator_roles"] = serde_yaml::from_str("- Operator\n").expect("operator role");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let preflight = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+        let personas: BTreeSet<&str> = preflight["routes"]
+            .as_array()
+            .expect("routes")
+            .iter()
+            .filter_map(|route| route["persona"].as_str())
+            .collect();
+        assert!(personas.contains("PMM"));
+        assert!(personas.contains("Buyer"));
+        assert!(personas.contains("Operator"));
+
         let _ = std::fs::remove_dir_all(root);
     }
 

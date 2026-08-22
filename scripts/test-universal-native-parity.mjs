@@ -20,8 +20,10 @@ import {
 } from './mdp-native-model-openai.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const runtimeVersion = readFileSync(join(repoRoot, 'cli', 'Cargo.toml'), 'utf8')
-  .match(/^version = "([^"]+)"/m)?.[1]
+const runtimeVersion = process.env.MDP_RUNTIME_VERSION
+  || (existsSync(join(repoRoot, 'cli', 'Cargo.toml'))
+    ? readFileSync(join(repoRoot, 'cli', 'Cargo.toml'), 'utf8').match(/^version = "([^"]+)"/m)?.[1]
+    : undefined)
 if (!runtimeVersion) throw new Error('unable to read CLI runtime version')
 const mdp = process.env.MDP_BIN || join(repoRoot, 'cli', 'target', 'debug', 'mdp')
 const driver = join(repoRoot, 'scripts', 'mdp-native-model-openai.mjs')

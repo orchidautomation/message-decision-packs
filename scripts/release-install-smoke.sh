@@ -343,12 +343,51 @@ trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
 "$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
 installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
 "$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-init.json
+installed_runtime_version="$("$mdp_bin" --version | awk '{print $2}')"
+MDP_RUNTIME_VERSION="$installed_runtime_version" \
 MDP_BIN="$mdp_bin" \
 MDP_PARITY_GTM_PACK="$installed_gtm_fixture" \
 MDP_PARITY_PROPOSAL_PACK="$proposal_fixture" \
   "$node_bin" "$codex_plugin_root/scripts/test-universal-native-parity.mjs"
 "$mdp_bin" --json validate --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-validate.json
 "$mdp_bin" --json eval --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-eval.json
+gtm_route="$("$mdp_bin" --json route --entries \
+  --dir "$installed_gtm_fixture" \
+  --persona PMM \
+  --job outbound-copy-brief \
+  --scope product=local-cli)"
+printf '%s\n' "$gtm_route" >"$proposal_fixture/installed-gtm-route.json"
+python3 - "$proposal_fixture/installed-gtm-route.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+route = payload["data"]
+assert route["draft_status"] == "ready"
+assert route["entry_route"]["route_card_cap"]["status"] == "ready"
+assert route["entry_route"]["matches"]
+PY
+gtm_brief="$("$mdp_bin" --json emit-brief \
+  --dir "$installed_gtm_fixture" \
+  --persona PMM \
+  --job outbound-copy-brief \
+  --scope product=local-cli \
+  --dry-run)"
+printf '%s\n' "$gtm_brief" >"$proposal_fixture/installed-gtm-brief.json"
+python3 - "$proposal_fixture/installed-gtm-brief.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert payload["data"]["draft_status"] == "ready"
+assert payload["data"]["context"]["minimality"]["status"] == "ready"
+PY
+gtm_budget="$("$mdp_bin" --json route-budget --strict --dir "$installed_gtm_fixture")"
+printf '%s\n' "$gtm_budget" >"$proposal_fixture/installed-gtm-route-budget.json"
+python3 - "$proposal_fixture/installed-gtm-route-budget.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert payload["data"]["valid"] is True
+PY
 "$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-gaps.json
 for job_id in prospect-fit-or-brief outbound-copy-brief outbound-copy-review; do
   requirements_json="$proposal_fixture/installed-gtm-$job_id-requirements.json"

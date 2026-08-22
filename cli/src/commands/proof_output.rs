@@ -3,7 +3,7 @@ use crate::commands::routing::check_claims;
 use crate::models::{Card, CardKind, Entry, Manifest, PromptFile, ProofOutputConstraints};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
 use crate::routing::{select_cards, selector_is_universal, selector_matches_persona};
-use crate::utils::{resolve_persona_label, routable_persona};
+use crate::utils::{declared_persona_labels, resolve_persona_label, routable_persona};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -1222,9 +1222,7 @@ fn validate_route(
     }
     let persona_resolution = resolve_persona_label(&inventory.manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution).to_string();
-    if !inventory
-        .manifest
-        .personas
+    if !declared_persona_labels(&inventory.manifest)
         .iter()
         .any(|candidate| candidate == &resolved_persona)
     {
@@ -2181,9 +2179,7 @@ fn route_ref_matches(persona: &str, job: &str, inventory: &PackInventory) -> boo
     }
     let persona_resolution = resolve_persona_label(&inventory.manifest, persona);
     let resolved_persona = routable_persona(persona, &persona_resolution);
-    inventory
-        .manifest
-        .personas
+    declared_persona_labels(&inventory.manifest)
         .iter()
         .any(|candidate| candidate == resolved_persona)
         && job_matches(&inventory.manifest, job)

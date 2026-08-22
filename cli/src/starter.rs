@@ -417,8 +417,8 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             ])),
             model_task: None,
             context_budget: Some(crate::models::JobContextBudget {
-                max_entries: 48,
-                max_bytes: 49_152,
+                max_entries: 56,
+                max_bytes: 65_536,
                 optional_kind_quotas: BTreeMap::new(),
             }),
         },
