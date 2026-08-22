@@ -527,7 +527,11 @@ fn verify_identity_observations(
     }
     let expected_driver_projection: DriverConfigurationProjectionV1 =
         (&observations.driver_facts).into();
-    let expected_model_projection: ModelParametersProjectionV1 = (&observations.model_facts).into();
+    let Some(model_facts) = bundle.model_facts.as_ref() else {
+        issues.push("generative-model-facts-missing".to_string());
+        return;
+    };
+    let expected_model_projection: ModelParametersProjectionV1 = model_facts.into();
     if expected_driver_projection != observations.driver_projection
         || expected_model_projection != observations.model_projection
     {
@@ -544,11 +548,22 @@ fn verify_identity_observations(
     {
         issues.push("generative-driver-runtime-fact-mismatch".to_string());
     }
-    if observations.model_facts.provider != model.provider
-        || observations.model_facts.requested_model != model.requested_model
-        || observations.model_facts.authorized_endpoint != model.authorized_endpoint
+    if model_facts.provider != model.provider
+        || model_facts.requested_model != model.requested_model
+        || model_facts.authorized_endpoint != model.authorized_endpoint
     {
         issues.push("generative-model-bundle-fact-mismatch".to_string());
+    }
+    if audit
+        .provider_observation
+        .as_ref()
+        .and_then(|observation| observation.resolved_model.as_deref())
+        .is_some_and(|resolved_model| {
+            resolved_model != model_facts.requested_model
+                && !resolved_model.starts_with(&format!("{}-", model_facts.requested_model))
+        })
+    {
+        issues.push("generative-model-resolution-mismatch".to_string());
     }
     if driver.executable_sha256.as_deref()
         != Some(
@@ -908,7 +923,16 @@ mod tests {
             reasoning: None,
             metadata: None,
         };
-        let model_facts = (&model_projection).into();
+        let model_facts = ModelParametersFactsV1::from_runtime_inputs(
+            "openai".into(),
+            "gpt-5-mini".into(),
+            "https://api.openai.com/v1/responses".into(),
+            30_000,
+            100_000,
+            "mdp_synthetic".into(),
+            "c".repeat(64),
+            "d".repeat(64),
+        );
         let driver_observed_sha256 = canonical_json_sha256_for_domain(
             DRIVER_CONFIGURATION_PROJECTION_V1,
             &serde_json::to_value(&driver_projection).unwrap(),
@@ -942,6 +966,16 @@ mod tests {
             cache_behavior: AssuranceEvidenceState::Unknown,
             storage_behavior: AssuranceEvidenceState::Declared,
         });
+        bundle.model_facts = Some(model_facts);
+        bundle.prompt = Some(ArtifactAuthority {
+            logical_name: "prompt.yaml".into(),
+            schema_id: "mdp.prompt.v1".into(),
+            media_type: "application/yaml".into(),
+            byte_count: 1,
+            sha256: "e".repeat(64),
+            provenance: EvidenceProvenance::MdpObserved,
+            provenance_refs: vec![],
+        });
         let mut observation = IdentityObservationV1 {
             driver_declaration_sha256: driver_observed_sha256.clone(),
             driver_observed_sha256,
@@ -950,11 +984,10 @@ mod tests {
             model_declaration_sha256: model_observed_sha256.clone(),
             model_observed_sha256,
             model_projection,
-            model_facts,
             provider_request: ProviderRequestObservationV1 {
-                provider_request_body_sha256: None,
-                provider_request_schema_id: None,
-                relation: PROVIDER_REQUEST_NOT_OBSERVED_V1.into(),
+                provider_request_body_sha256: Some("c".repeat(64)),
+                provider_request_schema_id: Some("openai.responses.json-schema-request.v1".into()),
+                relation: PROVIDER_REQUEST_RELATION_V1.into(),
             },
         };
         let mut audit = RunnerAuditV1 {
@@ -966,10 +999,14 @@ mod tests {
             snapshot_sha256: "a".repeat(64),
             driver_request_sha256: Some("a".repeat(64)),
             driver_result_sha256: Some("b".repeat(64)),
-            provider_request_body_sha256: None,
-            provider_request_schema_id: None,
-            provider_response_body_sha256: None,
-            provider_observation: None,
+            provider_request_body_sha256: Some("c".repeat(64)),
+            provider_request_schema_id: Some("openai.responses.json-schema-request.v1".into()),
+            provider_response_body_sha256: Some("d".repeat(64)),
+            provider_observation: Some(DriverProviderObservationV2 {
+                provider: "openai".into(),
+                response_id: Some("resp_synthetic".into()),
+                resolved_model: Some("gpt-5-mini".into()),
+            }),
             identity_observations: Some(observation.clone()),
             terminal_state: TerminalState::Success,
             assurance: vec![],
@@ -983,6 +1020,7 @@ mod tests {
         );
 
         observation.model_projection.requested_model = "attacker-selected-model".into();
+        bundle.model_facts.as_mut().unwrap().requested_model = "attacker-selected-model".into();
         let altered_hash = canonical_json_sha256_for_domain(
             MODEL_PARAMETERS_PROJECTION_V1,
             &serde_json::to_value(&observation.model_projection).unwrap(),
@@ -991,10 +1029,43 @@ mod tests {
         observation.model_observed_sha256 = altered_hash.clone();
         bundle.model.as_mut().unwrap().parameters_sha256 = altered_hash;
         audit.identity_observations = Some(observation);
-        let mut issues = Vec::new();
-        verify_identity_observations(&bundle, &audit, &mut issues);
-        assert!(issues.contains(&"generative-identity-facts-projection-mismatch".into()));
-        assert!(!issues.is_empty());
+        let root = std::env::temp_dir().join(format!(
+            "mdp-verify-model-co-tamper-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        for name in ["output.json", "context.json", "validation.json"] {
+            fs::write(root.join(name), b"{}\n").unwrap();
+        }
+        let altered_bundle_hash = canonical_json_sha256_for_domain(
+            RUN_BUNDLE_V1,
+            &serde_json::to_value(&bundle).unwrap(),
+        )
+        .unwrap();
+        audit.snapshot_sha256 = altered_bundle_hash.clone();
+        let mut receipt = sample_receipt(&bundle, &root);
+        receipt.bundle_sha256 = altered_bundle_hash.clone();
+        receipt.assurance = recompute_assurance(
+            bundle.mode,
+            receipt.terminal_state,
+            &altered_bundle_hash,
+            &[],
+        );
+        audit.assurance = receipt.assurance.clone();
+        fs::write(root.join("audit.json"), serde_json::to_vec(&audit).unwrap()).unwrap();
+        receipt.runner_audit = artifact(&root, "audit.json");
+        seal_receipt(&mut receipt);
+        let verification = verify_run(&bundle, &receipt, Some(&root)).unwrap();
+        assert!(!verification.valid);
+        assert!(
+            verification
+                .issues
+                .contains(&"generative-model-resolution-mismatch".into())
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1186,6 +1257,7 @@ mod tests {
             execution_policy_sha256: "b".repeat(64),
             driver: None,
             model: None,
+            model_facts: None,
         }
     }
 

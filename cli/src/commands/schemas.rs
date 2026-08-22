@@ -1674,7 +1674,6 @@ fn identity_observation_v1_schema() -> Value {
         "required": [
             "driver_declaration_sha256", "driver_observed_sha256", "driver_projection",
             "driver_facts", "model_declaration_sha256", "model_observed_sha256", "model_projection",
-            "model_facts",
             "provider_request"
         ],
         "additionalProperties": false,
@@ -1686,7 +1685,6 @@ fn identity_observation_v1_schema() -> Value {
             "model_declaration_sha256": sha256_schema(),
             "model_observed_sha256": sha256_schema(),
             "model_projection": model_parameters_projection_v1_schema(),
-            "model_facts": model_parameters_facts_v1_schema(),
             "provider_request": {
                 "type": "object",
                 "required": ["provider_request_body_sha256", "provider_request_schema_id", "relation"],
@@ -1838,7 +1836,8 @@ fn run_bundle_v1_schema() -> Value {
             "inputs": {"type": "array", "items": artifact_authority_v1_schema()},
             "execution_policy_sha256": sha256_schema(),
             "driver": nullable_object_schema(driver_identity_v1_schema()),
-            "model": nullable_object_schema(model_identity_v1_schema())
+            "model": nullable_object_schema(model_identity_v1_schema()),
+            "model_facts": nullable_object_schema(model_parameters_facts_v1_schema())
         },
         "oneOf": [
             {
@@ -1856,9 +1855,10 @@ fn run_bundle_v1_schema() -> Value {
                     "job_identity": job_identity_v1_schema(),
                     "prompt": artifact_authority_v1_schema(),
                     "driver": driver_identity_v1_schema(),
-                    "model": model_identity_v1_schema()
+                    "model": model_identity_v1_schema(),
+                    "model_facts": model_parameters_facts_v1_schema()
                 },
-                "required": ["mode", "job_identity", "prompt", "driver", "model"]
+                "required": ["mode", "job_identity", "prompt", "driver", "model", "model_facts"]
             }
         ]
     })
@@ -5634,8 +5634,6 @@ mod tests {
         });
         let mut driver_facts = projection.clone();
         driver_facts.as_object_mut().unwrap().remove("contract");
-        let mut model_facts = model_projection.clone();
-        model_facts.as_object_mut().unwrap().remove("contract");
         let mut observation = json!({
             "driver_declaration_sha256": "e".repeat(64),
             "driver_observed_sha256": "f".repeat(64),
@@ -5644,7 +5642,6 @@ mod tests {
             "model_declaration_sha256": "1".repeat(64),
             "model_observed_sha256": "2".repeat(64),
             "model_projection": model_projection,
-            "model_facts": model_facts,
             "provider_request": {
                 "provider_request_body_sha256": null,
                 "provider_request_schema_id": null,

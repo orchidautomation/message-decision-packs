@@ -324,25 +324,34 @@ pub(crate) struct ModelParametersFactsV1 {
     pub(crate) metadata: Option<String>,
 }
 
-impl From<&ModelParametersProjectionV1> for ModelParametersFactsV1 {
-    fn from(projection: &ModelParametersProjectionV1) -> Self {
+impl ModelParametersFactsV1 {
+    pub(crate) fn from_runtime_inputs(
+        provider: String,
+        requested_model: String,
+        authorized_endpoint: String,
+        declared_timeout_ms: u64,
+        max_output_tokens: u64,
+        schema_name: String,
+        provider_output_schema_sha256: String,
+        visible_input_sha256: String,
+    ) -> Self {
         Self {
-            provider: projection.provider.clone(),
-            requested_model: projection.requested_model.clone(),
-            authorized_endpoint: projection.authorized_endpoint.clone(),
-            declared_timeout_ms: projection.declared_timeout_ms,
-            max_output_tokens: projection.max_output_tokens,
-            structured_output_mode: projection.structured_output_mode.clone(),
-            schema_name: projection.schema_name.clone(),
-            provider_output_schema_sha256: projection.provider_output_schema_sha256.clone(),
-            input_framing: projection.input_framing.clone(),
-            visible_input_sha256: projection.visible_input_sha256.clone(),
-            store: projection.store,
-            tool_choice: projection.tool_choice.clone(),
-            continuation_policy: projection.continuation_policy.clone(),
-            tools_policy: projection.tools_policy.clone(),
-            reasoning: projection.reasoning.clone(),
-            metadata: projection.metadata.clone(),
+            provider,
+            requested_model,
+            authorized_endpoint,
+            declared_timeout_ms,
+            max_output_tokens,
+            structured_output_mode: "json-schema-strict".into(),
+            schema_name,
+            provider_output_schema_sha256,
+            input_framing: "one-fresh-user-message:declared-inputs-only".into(),
+            visible_input_sha256,
+            store: false,
+            tool_choice: "none".into(),
+            continuation_policy: "none".into(),
+            tools_policy: "none".into(),
+            reasoning: None,
+            metadata: None,
         }
     }
 }
@@ -389,7 +398,6 @@ pub(crate) struct IdentityObservationV1 {
     pub(crate) model_declaration_sha256: String,
     pub(crate) model_observed_sha256: String,
     pub(crate) model_projection: ModelParametersProjectionV1,
-    pub(crate) model_facts: ModelParametersFactsV1,
     pub(crate) provider_request: ProviderRequestObservationV1,
 }
 
@@ -438,6 +446,8 @@ pub(crate) struct RunBundleV1 {
     pub(crate) execution_policy_sha256: String,
     pub(crate) driver: Option<DriverIdentity>,
     pub(crate) model: Option<ModelIdentity>,
+    #[serde(default)]
+    pub(crate) model_facts: Option<ModelParametersFactsV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]

@@ -34,11 +34,13 @@ prepared native request, and compares both recomputed hashes with those
 declarations. A mismatch returns a bounded `no-draft:policy-blocked` result
 before driver invocation or final-run publication.
 
-The bundle carries the observed hashes. The optional
-`runner-audit.v1.identity_observations` object keeps declaration, observation,
-projection material, and verifier recomputation structurally separate. Its
-`provider_request` object preserves the exact provider request-body SHA and
-schema ID when the native transport assembled a body, with the relation
+The bundle carries the observed hashes and the independently constructed
+bounded model-parameter facts used to derive the model projection. The
+optional `runner-audit.v1.identity_observations` object keeps declaration,
+observation, projection material, and verifier recomputation structurally
+separate; it does not duplicate the model facts. Its `provider_request`
+object preserves the exact provider request-body SHA and schema ID when the
+native transport assembled a body, with the relation
 `full-body-includes-model-parameters-and-input`. That body hash covers the
 serialized provider body; it is never substituted for either identity. If no
 body was assembled, the relation is explicitly `not-observed`.
@@ -46,8 +48,13 @@ body was assembled, the relation is explicitly `not-observed`.
 Projection material contains bounded IDs, policy values, numbers, and hashes
 only. It excludes API keys, environment values, local paths, raw prompts,
 declared input content, provider bodies, and provider error text. `verify-run`
-recomputes the projection hashes from the sealed observation and rejects
-missing, altered, unknown, or structurally ambiguous identity evidence.
+reconstructs the model projection from the bundle's runtime-built facts,
+compares the returned provider model with the requested model (allowing a
+provider version suffix), and rejects missing, altered, unknown, or
+structurally ambiguous identity evidence. A local receipt hash proves
+integrity of the stored artifacts, not signer identity; provider-affecting
+facts that are not independently available after private staging are not
+claimed as host-authenticated evidence.
 Legacy deterministic/external receipts remain readable without this optional
 carrier; legacy generative receipts cannot be silently upgraded to strongest
 identity assurance.

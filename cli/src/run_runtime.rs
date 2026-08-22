@@ -23,7 +23,7 @@ use crate::run_contracts::{
     DriverArtifactV2, DriverConfigurationProjectionV1, DriverOutputV2, DriverProviderObservationV2,
     DriverProviderPolicyV2, DriverRequestV2, DriverResultV2, EvidenceProvenance,
     IdentityObservationV1, MDP_RUNTIME_VERSION, MODEL_PARAMETERS_PROJECTION_V1,
-    ModelParametersProjectionV1, OPENAI_PROVIDER_REQUEST_SCHEMA_ID,
+    ModelParametersFactsV1, ModelParametersProjectionV1, OPENAI_PROVIDER_REQUEST_SCHEMA_ID,
     PROVIDER_REQUEST_NOT_OBSERVED_V1, PROVIDER_REQUEST_RELATION_V1, PackAuthority,
     ProviderRequestObservationV1, RUN_BUNDLE_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUNNER_AUDIT_V1,
     RunBundleV1, RunMode, RunReceiptV1, RunRequestV1, RunnerAuditV1, TerminalState,
@@ -253,31 +253,22 @@ fn driver_configuration_projection(
     }
 }
 
-fn model_parameters_projection(
+fn model_parameters_facts(
     model: &crate::run_contracts::ModelIdentity,
     prepared: &PreparedNativeRequest,
     declared_timeout_ms: u64,
     max_output_bytes: u64,
-) -> ModelParametersProjectionV1 {
-    ModelParametersProjectionV1 {
-        contract: MODEL_PARAMETERS_PROJECTION_V1.into(),
-        provider: model.provider.clone(),
-        requested_model: model.requested_model.clone(),
-        authorized_endpoint: model.authorized_endpoint.clone(),
+) -> ModelParametersFactsV1 {
+    ModelParametersFactsV1::from_runtime_inputs(
+        model.provider.clone(),
+        model.requested_model.clone(),
+        model.authorized_endpoint.clone(),
         declared_timeout_ms,
-        max_output_tokens: provider_max_output_tokens(max_output_bytes),
-        structured_output_mode: "json-schema-strict".into(),
-        schema_name: prepared.schema_name.clone(),
-        provider_output_schema_sha256: prepared.provider_output_schema_sha256.clone(),
-        input_framing: "one-fresh-user-message:declared-inputs-only".into(),
-        visible_input_sha256: sha256_hex(prepared.visible_input.as_bytes()),
-        store: false,
-        tool_choice: "none".into(),
-        continuation_policy: "none".into(),
-        tools_policy: "none".into(),
-        reasoning: None,
-        metadata: None,
-    }
+        provider_max_output_tokens(max_output_bytes),
+        prepared.schema_name.clone(),
+        prepared.provider_output_schema_sha256.clone(),
+        sha256_hex(prepared.visible_input.as_bytes()),
+    )
 }
 
 fn projection_hash<T: Serialize>(domain: &str, projection: &T) -> Result<String> {
@@ -399,6 +390,7 @@ fn bind_native_identity(
     crate::run_contracts::DriverIdentity,
     crate::run_contracts::ModelIdentity,
     IdentityObservationV1,
+    ModelParametersFactsV1,
 )> {
     let declared_driver = request
         .driver
@@ -434,14 +426,14 @@ fn bind_native_identity(
     let driver_facts = (&driver_projection).into();
     let driver_observed_sha256 =
         projection_hash(DRIVER_CONFIGURATION_PROJECTION_V1, &driver_projection)?;
-    let model_projection = model_parameters_projection(
+    let model_facts = model_parameters_facts(
         declared_model,
         prepared,
         request.execution_policy.timeout_ms,
         request.execution_policy.max_output_bytes,
     );
+    let model_projection: ModelParametersProjectionV1 = (&model_facts).into();
     let model_observed_sha256 = projection_hash(MODEL_PARAMETERS_PROJECTION_V1, &model_projection)?;
-    let model_facts = (&model_projection).into();
     if declared_driver.configuration_sha256 != driver_observed_sha256 {
         return Err(run_failure(
             RunFailureKind::PolicyBlocked,
@@ -467,14 +459,18 @@ fn bind_native_identity(
         model_declaration_sha256: declared_model.parameters_sha256.clone(),
         model_observed_sha256,
         model_projection,
-        model_facts,
         provider_request: ProviderRequestObservationV1 {
             provider_request_body_sha256: None,
             provider_request_schema_id: None,
             relation: PROVIDER_REQUEST_NOT_OBSERVED_V1.into(),
         },
     };
-    Ok((observed_driver, observed_model, identity_observations))
+    Ok((
+        observed_driver,
+        observed_model,
+        identity_observations,
+        model_facts,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -1100,7 +1096,7 @@ where
         "mdp.execution-policy.v1",
         &serde_json::to_value(&request.execution_policy)?,
     )?;
-    let (prepared_native, bound_driver, bound_model, mut identity_observations) =
+    let (prepared_native, bound_driver, bound_model, mut identity_observations, bound_model_facts) =
         if request.mode == RunMode::Generative {
             let prepared = prepare_native_request(
                 request,
@@ -1109,15 +1105,17 @@ where
                 staged_prompt.as_ref().expect("generative prompt validated"),
                 &staged,
             )?;
-            let (driver, model, observations) = bind_native_identity(request, &prepared)?;
+            let (driver, model, observations, model_facts) =
+                bind_native_identity(request, &prepared)?;
             (
                 Some(prepared),
                 Some(driver),
                 Some(model),
                 Some(observations),
+                Some(model_facts),
             )
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None)
         };
     let bundle = RunBundleV1 {
         contract: RUN_BUNDLE_V1.into(),
@@ -1142,6 +1140,7 @@ where
         execution_policy_sha256: policy_hash,
         driver: bound_driver.clone().or_else(|| request.driver.clone()),
         model: bound_model.clone().or_else(|| request.model.clone()),
+        model_facts: bound_model_facts.clone(),
     };
     let bundle_value = serde_json::to_value(&bundle)?;
     let bundle_sha256 = canonical_json_sha256_for_domain(RUN_BUNDLE_V1, &bundle_value)?;
@@ -4056,6 +4055,7 @@ mod tests {
             execution_policy_sha256: "b".repeat(64),
             driver: None,
             model: None,
+            model_facts: None,
         };
         gtm_success_artifacts(
             &request,
@@ -4318,12 +4318,13 @@ mod tests {
         )
         .unwrap();
         let model = request.model.as_ref().unwrap();
-        let model_projection = super::model_parameters_projection(
+        let model_facts = super::model_parameters_facts(
             model,
             &prepared,
             request.execution_policy.timeout_ms,
             request.execution_policy.max_output_bytes,
         );
+        let model_projection: super::ModelParametersProjectionV1 = (&model_facts).into();
         request.model.as_mut().unwrap().parameters_sha256 =
             super::projection_hash(super::MODEL_PARAMETERS_PROJECTION_V1, &model_projection)
                 .unwrap();
