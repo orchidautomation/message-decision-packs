@@ -34,6 +34,7 @@ use crate::run_contracts::{
     RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
 };
 use crate::runtime_context::runtime_context_schema;
+use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
 pub(crate) fn schema(target: SchemaTarget) -> Value {
@@ -159,6 +160,8 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
         SchemaTarget::RoutedContextV1 => routed_context_schema(),
+        SchemaTarget::RouteBudget => route_budget_schema(),
+        SchemaTarget::RouteBudgetSummaryV1 => route_budget_summary_schema(),
         SchemaTarget::DecisionInput => decision_input_envelope_schema(),
         SchemaTarget::SourceBinding => source_binding_schema(),
         SchemaTarget::SyntheticV2Chain => {
@@ -3642,11 +3645,13 @@ fn context_schema() -> Value {
             }},
             "largest_contributing_cards": {"type": "array", "items": {
                 "type": "object",
-                "required": ["card_id", "card_kind", "entry_count", "canonical_bytes"],
+                "required": ["card_id", "card_kind", "entry_count", "required_entry_count", "optional_entry_count", "canonical_bytes"],
                 "additionalProperties": false,
                 "properties": {
                     "card_id": {"type": "string"}, "card_kind": {"type": "string"},
                     "entry_count": {"type": "integer", "minimum": 0},
+                    "required_entry_count": {"type": "integer", "minimum": 0},
+                    "optional_entry_count": {"type": "integer", "minimum": 0},
                     "canonical_bytes": {"type": "integer", "minimum": 0}
                 }
             }},
@@ -3666,6 +3671,276 @@ fn context_schema() -> Value {
         ]
     });
     schema
+}
+
+fn route_budget_query_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["job_id", "persona", "matched_route_count"],
+        "additionalProperties": false,
+        "properties": {
+            "job_id": {"type": ["string", "null"], "minLength": 1},
+            "persona": {"type": ["string", "null"], "minLength": 1},
+            "matched_route_count": {"type": "integer", "minimum": 0}
+        }
+    })
+}
+
+fn route_budget_strict_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["enabled", "warnings_fail", "warning_count"],
+        "additionalProperties": false,
+        "properties": {
+            "enabled": {"type": "boolean"},
+            "warnings_fail": {"type": "boolean"},
+            "warning_count": {"type": "integer", "minimum": 0}
+        }
+    })
+}
+
+fn route_budget_budget_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["max_entries", "max_bytes", "actual_entries", "actual_bytes"],
+        "additionalProperties": false,
+        "properties": {
+            "max_entries": {"type": "integer", "minimum": 1},
+            "max_bytes": {"type": "integer", "minimum": 1},
+            "actual_entries": {"type": "integer", "minimum": 0},
+            "actual_bytes": {"type": "integer", "minimum": 0}
+        }
+    })
+}
+
+fn route_budget_contributor_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["card_id", "card_kind", "entry_count", "required_entry_count", "optional_entry_count", "canonical_bytes"],
+        "additionalProperties": false,
+        "properties": {
+            "card_id": {"type": "string", "minLength": 1},
+            "card_kind": {"type": "string", "minLength": 1},
+            "entry_count": {"type": "integer", "minimum": 0},
+            "required_entry_count": {"type": "integer", "minimum": 0},
+            "optional_entry_count": {"type": "integer", "minimum": 0},
+            "canonical_bytes": {"type": "integer", "minimum": 0}
+        }
+    })
+}
+
+fn route_budget_allocation_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["strategy", "required_count", "optional_selected_count", "optional_excluded_count", "required_by_kind", "quotas"],
+        "additionalProperties": false,
+        "properties": {
+            "strategy": {"const": "required-first"},
+            "required_count": {"type": "integer", "minimum": 0},
+            "optional_selected_count": {"type": "integer", "minimum": 0},
+            "optional_excluded_count": {"type": "integer", "minimum": 0},
+            "required_by_kind": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+            "quotas": {
+                "type": "object",
+                "propertyNames": {"enum": CardKind::optional_quota_names()},
+                "additionalProperties": {
+                    "type": "object",
+                    "required": ["max_optional_entries", "reserved_count", "optional_selected_count", "optional_excluded_count"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "max_optional_entries": {"type": "integer", "minimum": 1},
+                        "reserved_count": {"type": "integer", "minimum": 0},
+                        "optional_selected_count": {"type": "integer", "minimum": 0},
+                        "optional_excluded_count": {"type": "integer", "minimum": 0}
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn route_budget_warning_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["code", "severity", "message"],
+        "additionalProperties": false,
+        "properties": {
+            "code": {"type": "string", "minLength": 1},
+            "severity": {"const": "error"},
+            "message": {"type": "string", "minLength": 1}
+        }
+    })
+}
+
+fn route_budget_headroom_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["job_id", "persona", "dimension", "used", "limit", "remaining", "utilization_percent"],
+        "additionalProperties": false,
+        "properties": {
+            "job_id": {"type": "string", "minLength": 1},
+            "persona": {"type": ["string", "null"], "minLength": 1},
+            "dimension": {"enum": ["entries", "bytes"]},
+            "used": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 0},
+            "remaining": {"type": "integer"},
+            "utilization_percent": {"type": "number", "minimum": 0}
+        }
+    })
+}
+
+fn route_budget_action_schema() -> Value {
+    let common = json!({
+        "preserve_guardrails": {"const": true},
+        "do_not": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+    });
+    json!({
+        "oneOf": [
+            {
+                "type": "object", "required": ["kind", "preserve_guardrails"], "additionalProperties": false,
+                "properties": {"kind": {"const": "none"}, "preserve_guardrails": common["preserve_guardrails"]}
+            },
+            {
+                "type": "object", "required": ["kind", "job_id", "persona", "preserve_guardrails"], "additionalProperties": false,
+                "properties": {
+                    "kind": {"const": "declare_context_budget"},
+                    "job_id": {"type": "string", "minLength": 1},
+                    "persona": {"type": ["string", "null"], "minLength": 1},
+                    "preserve_guardrails": common["preserve_guardrails"]
+                }
+            },
+            {
+                "type": "object", "required": ["kind", "job_id", "persona", "diagnostics", "preserve_guardrails", "do_not"], "additionalProperties": false,
+                "properties": {
+                    "kind": {"const": "review_required_authority"},
+                    "job_id": {"type": "string", "minLength": 1},
+                    "persona": {"type": ["string", "null"], "minLength": 1},
+                    "diagnostics": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+                    "preserve_guardrails": common["preserve_guardrails"],
+                    "do_not": common["do_not"]
+                }
+            },
+            {
+                "type": "object", "required": ["kind", "job_id", "persona", "dimension", "minimum_reduction", "target_card", "preserve_guardrails", "do_not"], "additionalProperties": false,
+                "properties": {
+                    "kind": {"const": "narrow_applicability"},
+                    "job_id": {"type": "string", "minLength": 1},
+                    "persona": {"type": ["string", "null"], "minLength": 1},
+                    "dimension": {"enum": ["entries", "bytes"]},
+                    "minimum_reduction": {
+                        "type": "object", "required": ["entries", "bytes"], "additionalProperties": false,
+                        "properties": {"entries": {"type": "integer", "minimum": 0}, "bytes": {"type": "integer", "minimum": 0}}
+                    },
+                    "target_card": {
+                        "type": "object", "required": ["card_id", "card_kind"], "additionalProperties": false,
+                        "properties": {"card_id": {"type": "string", "minLength": 1}, "card_kind": {"type": "string", "minLength": 1}}
+                    },
+                    "preserve_guardrails": common["preserve_guardrails"],
+                    "do_not": common["do_not"]
+                }
+            }
+        ]
+    })
+}
+
+fn route_budget_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Route Budget v0",
+        "description": "Full route-budget authority. The legacy job field is deprecated and must equal job_id.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "valid", "strict", "pack_id", "scope", "route_count", "overflow_count", "route_card_cap_exclusion_count", "near_budget_count", "unassessed_generation_count", "query", "strict_warnings", "routes"],
+        "properties": {
+            "contract": {"const": "mdp.route-budget.v0"},
+            "valid": {"type": "boolean"},
+            "strict": route_budget_strict_schema(),
+            "pack_id": {"type": "string", "minLength": 1},
+            "scope": {"const": "default"},
+            "route_count": {"type": "integer", "minimum": 0},
+            "overflow_count": {"type": "integer", "minimum": 0},
+            "route_card_cap_exclusion_count": {"type": "integer", "minimum": 0},
+            "near_budget_count": {"type": "integer", "minimum": 0},
+            "unassessed_generation_count": {"type": "integer", "minimum": 0},
+            "query": route_budget_query_schema(),
+            "strict_warnings": {"type": "array", "items": route_budget_warning_schema()},
+            "routes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["persona", "job_id", "job", "status", "generation_unassessed", "budget", "selected_count", "excluded_count", "diagnostics", "reason_distribution", "excluded_reason_distribution", "largest_contributing_cards", "context_sha256", "route_card_cap"],
+                    "properties": {
+                        "persona": {"type": ["string", "null"], "minLength": 1},
+                        "job_id": {"type": "string", "minLength": 1},
+                        "job": {"type": "string", "minLength": 1, "description": "Deprecated v0 alias; must equal job_id."},
+                        "status": {"enum": ["ready", "blocked", "unassessed"]},
+                        "reason": {"type": "string", "minLength": 1},
+                        "generation_unassessed": {"type": "boolean"},
+                        "budget": {"oneOf": [{"type": "null"}, route_budget_budget_schema()]},
+                        "selected_count": {"type": ["integer", "null"], "minimum": 0},
+                        "excluded_count": {"type": ["integer", "null"], "minimum": 0},
+                        "diagnostics": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                        "reason_distribution": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+                        "excluded_reason_distribution": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+                        "largest_contributing_cards": {"type": "array", "items": route_budget_contributor_schema()},
+                        "context_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+                        "route_card_cap": {"oneOf": [{"type": "null"}, route_card_cap_schema()]},
+                        "allocation": {"oneOf": [{"type": "null"}, route_budget_allocation_schema()]}
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn route_budget_summary_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Route Budget Summary v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "source_contract", "valid", "strict", "pack_id", "query", "route_count", "route_status_counts", "overflow_count", "route_card_cap_exclusion_count", "excluded_count", "optional_excluded_count", "near_budget_count", "unassessed_generation_count", "tightest_headroom", "top_blockers", "top_contributors", "next_safe_action"],
+        "properties": {
+            "contract": {"const": "mdp.route-budget-summary.v1"},
+            "source_contract": {"const": "mdp.route-budget.v0"},
+            "valid": {"type": "boolean"},
+            "strict": route_budget_strict_schema(),
+            "pack_id": {"type": "string", "minLength": 1},
+            "query": route_budget_query_schema(),
+            "route_count": {"type": "integer", "minimum": 0},
+            "route_status_counts": {"type": "object", "required": ["ready", "blocked", "unassessed"], "properties": {"ready": {"type": "integer", "minimum": 0}, "blocked": {"type": "integer", "minimum": 0}, "unassessed": {"type": "integer", "minimum": 0}}, "additionalProperties": false},
+            "overflow_count": {"type": "integer", "minimum": 0},
+            "route_card_cap_exclusion_count": {"type": "integer", "minimum": 0},
+            "excluded_count": {"type": "integer", "minimum": 0},
+            "optional_excluded_count": {"type": "integer", "minimum": 0},
+            "near_budget_count": {"type": "integer", "minimum": 0},
+            "unassessed_generation_count": {"type": "integer", "minimum": 0},
+            "tightest_headroom": {"oneOf": [{"type": "null"}, route_budget_headroom_schema()]},
+            "top_blockers": {"type": "array", "maxItems": 5, "items": {"type": "object", "required": ["code", "route_count"], "properties": {"code": {"type": "string", "minLength": 1}, "route_count": {"type": "integer", "minimum": 1}}, "additionalProperties": false}},
+            "top_contributors": {"type": "array", "maxItems": 5, "items": {"type": "object", "required": ["card_id", "card_kind", "route_count", "entry_count", "required_entry_count", "optional_entry_count", "canonical_bytes"], "properties": {"card_id": {"type": "string", "minLength": 1}, "card_kind": {"type": "string", "minLength": 1}, "route_count": {"type": "integer", "minimum": 1}, "entry_count": {"type": "integer", "minimum": 0}, "required_entry_count": {"type": "integer", "minimum": 0}, "optional_entry_count": {"type": "integer", "minimum": 0}, "canonical_bytes": {"type": "integer", "minimum": 0}}, "additionalProperties": false}},
+            "next_safe_action": route_budget_action_schema()
+        }
+    })
+}
+
+pub(crate) fn validate_route_budget_full_output(value: &Value) -> Result<()> {
+    jsonschema::draft202012::validate(&route_budget_schema(), value)
+        .map_err(|error| anyhow!("route-budget full output schema violation: {error}"))?;
+    for (index, route) in value["routes"].as_array().into_iter().flatten().enumerate() {
+        if route["job"] != route["job_id"] {
+            return Err(anyhow!(
+                "route-budget full output route {index} must have job equal to job_id"
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_route_budget_summary_output(value: &Value) -> Result<()> {
+    jsonschema::draft202012::validate(&route_budget_summary_schema(), value)
+        .map_err(|error| anyhow!("route-budget summary output schema violation: {error}"))?;
+    Ok(())
 }
 
 fn route_card_cap_schema() -> Value {
@@ -4644,6 +4919,105 @@ mod tests {
     use jsonschema::draft202012;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn route_budget_schemas_are_versioned_and_summary_excludes_route_arrays() {
+        let full = schema(SchemaTarget::RouteBudget);
+        let summary = schema(SchemaTarget::RouteBudgetSummaryV1);
+        draft202012::new(&full).expect("route-budget schema should compile");
+        draft202012::new(&summary).expect("route-budget summary schema should compile");
+        assert_eq!(
+            full["properties"]["contract"]["const"],
+            "mdp.route-budget.v0"
+        );
+        assert_eq!(
+            summary["properties"]["contract"]["const"],
+            "mdp.route-budget-summary.v1"
+        );
+        assert!(summary["properties"].get("routes").is_none());
+        assert_eq!(summary["properties"]["top_blockers"]["maxItems"], 5);
+        assert_eq!(summary["properties"]["top_contributors"]["maxItems"], 5);
+    }
+
+    #[test]
+    fn route_budget_output_validation_closes_nested_fields_and_alias_authority() {
+        let valid = json!({
+            "contract": "mdp.route-budget.v0",
+            "valid": true,
+            "strict": {"enabled": false, "warnings_fail": false, "warning_count": 0},
+            "pack_id": "synthetic-pack",
+            "scope": "default",
+            "route_count": 1,
+            "overflow_count": 0,
+            "route_card_cap_exclusion_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 0,
+            "query": {"job_id": null, "persona": null, "matched_route_count": 1},
+            "strict_warnings": [],
+            "routes": [{
+                "persona": "Buyer",
+                "job_id": "synthetic-job",
+                "job": "synthetic-job",
+                "status": "ready",
+                "generation_unassessed": false,
+                "budget": {"max_entries": 10, "max_bytes": 100, "actual_entries": 1, "actual_bytes": 20},
+                "selected_count": 1,
+                "excluded_count": 0,
+                "diagnostics": [],
+                "reason_distribution": {"job match": 1},
+                "excluded_reason_distribution": {},
+                "largest_contributing_cards": [],
+                "context_sha256": null,
+                "route_card_cap": null,
+                "allocation": null
+            }]
+        });
+        validate_route_budget_full_output(&valid).expect("synthetic full output should validate");
+
+        let mut mismatched = valid.clone();
+        mismatched["routes"][0]["job"] = json!("other-job");
+        assert!(validate_route_budget_full_output(&mismatched).is_err());
+
+        let mut malformed = valid;
+        malformed["routes"][0]["budget"]["max_entries"] = json!(-1);
+        assert!(validate_route_budget_full_output(&malformed).is_err());
+    }
+
+    #[test]
+    fn route_budget_summary_schema_requires_each_safe_action_variant() {
+        let base = json!({
+            "contract": "mdp.route-budget-summary.v1",
+            "source_contract": "mdp.route-budget.v0",
+            "valid": false,
+            "strict": {"enabled": false, "warnings_fail": false, "warning_count": 0},
+            "pack_id": "synthetic-pack",
+            "query": {"job_id": null, "persona": null, "matched_route_count": 1},
+            "route_count": 1,
+            "route_status_counts": {"ready": 0, "blocked": 1, "unassessed": 0},
+            "overflow_count": 1,
+            "route_card_cap_exclusion_count": 0,
+            "excluded_count": 0,
+            "optional_excluded_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 0,
+            "tightest_headroom": null,
+            "top_blockers": [{"code": "context_entry_budget_exceeded", "route_count": 1}],
+            "top_contributors": [],
+            "next_safe_action": {
+                "kind": "review_required_authority",
+                "job_id": "synthetic-job",
+                "persona": "Buyer",
+                "diagnostics": ["context_entry_budget_exceeded"],
+                "preserve_guardrails": true,
+                "do_not": ["truncate"]
+            }
+        });
+        validate_route_budget_summary_output(&base).expect("review action should validate");
+        let mut malformed = base;
+        malformed["next_safe_action"] =
+            json!({"kind": "narrow_applicability", "preserve_guardrails": true});
+        assert!(validate_route_budget_summary_output(&malformed).is_err());
+    }
 
     #[test]
     fn conformance_schemas_are_closed_versioned_and_compile() {

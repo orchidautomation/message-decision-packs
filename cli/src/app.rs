@@ -14,10 +14,11 @@ use crate::commands::{
     project_conformance_report, project_prompt_output_validation_file, project_run_files,
     project_source_file, prospect_brief_with_context, rebind_synthetic_chain, refresh_readme,
     render_human_brief_file, render_human_brief_markdown, render_mermaid,
-    render_readable_prospect_brief, requirements, route_budget_preflight_command, route_scoped,
-    run_receipt, run_request_file, sample_leads, schema, skills, validate_behavioral_files,
-    validate_pack, validate_prompt_output_file_with_inputs, validate_source_binding_file,
-    verify_output_file, verify_output_readable_file, verify_run_files,
+    render_readable_prospect_brief, requirements, route_budget_preflight_command,
+    route_budget_preflight_query_command, route_scoped, run_receipt, run_request_file,
+    sample_leads, schema, skills, validate_behavioral_files, validate_pack,
+    validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
+    verify_output_readable_file, verify_run_files,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -511,11 +512,23 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             "route",
             route_scoped(&dir, &persona, &job, &scope, entries, eval_fixture)?,
         ),
-        Commands::RouteBudget { dir, strict } => print_checked(
+        Commands::RouteBudget {
+            dir,
+            strict,
+            job,
+            persona,
+        } => print_checked(
             json_mode,
             summary_mode,
             "route-budget",
-            route_budget_preflight_command(&dir, strict)?,
+            route_budget_preflight_query_command(
+                &dir,
+                strict,
+                crate::routing::RouteBudgetQuery {
+                    job_id: job,
+                    persona,
+                },
+            )?,
         ),
         Commands::SampleLeads {
             dir,
@@ -882,7 +895,10 @@ fn merge_route_budget_preflight(mut data: Value, dir: &Path) -> Value {
     let mut issues = data["issues"].as_array().cloned().unwrap_or_default();
     for route in preflight["routes"].as_array().into_iter().flatten() {
         let persona = route["persona"].as_str().unwrap_or("");
-        let job = route["job"].as_str().unwrap_or("");
+        let job = route["job_id"]
+            .as_str()
+            .or_else(|| route["job"].as_str())
+            .unwrap_or("");
         let path = format!(".mdp/manifest.yaml#/jobs/{job}/context_budget");
         for diagnostic in route["diagnostics"].as_array().into_iter().flatten() {
             let code = match diagnostic.as_str() {

@@ -58,6 +58,22 @@ pub(crate) fn capabilities() -> Value {
             {"name": "--json", "description": "Emit stable machine-readable JSON"},
             {"name": "--summary", "description": "Emit a compact status summary"}
         ],
+        "route_budget_contracts": {
+            "full": {
+                "contract": "mdp.route-budget.v0",
+                "schema_target": "route-budget",
+                "authority": "complete evaluated route matrix",
+                "selectors": ["--job", "--persona"]
+            },
+            "summary": {
+                "contract": "mdp.route-budget-summary.v1",
+                "schema_target": "route-budget-summary-v1",
+                "authority": "bounded projection of full route-budget.v0",
+                "selector_behavior": "same exact selectors; route arrays and entry bodies omitted"
+            },
+            "canonical_job_field": "job_id",
+            "compatibility_alias": {"field": "job", "equals": "job_id", "status": "deprecated-v0"}
+        },
         "prompt_contracts": {
             "prompt_format": PROMPT_FORMAT_VERSION,
             "prompt_formats": [PROMPT_FORMAT_VERSION, PROMPT_FORMAT_V1],
@@ -278,7 +294,7 @@ pub(crate) fn capabilities() -> Value {
             command("render-brief", "mdp.human-brief.v0", "writes-files-with-out", false, true, true, &["--dir", "--file", "--template", "--format", "--out", "--strict"]),
             command("explain", "mdp.explain.v0", "read-only", false, false, false, &["--dir", "--persona"]),
             command("route", "mdp.route.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--scope", "--entries", "--eval-fixture"]),
-            command("route-budget", "mdp.route-budget.v0", "read-only", false, false, true, &["--dir", "--strict"]),
+            command("route-budget", "mdp.route-budget.v0", "read-only", false, false, true, &["--dir", "--strict", "--job", "--persona", "--summary"]),
             command("sample-leads", "mdp.sample-leads.v0", "read-only", false, false, false, &["--dir", "--persona", "--job", "--count", "--seed", "--format"]),
             command("fit", "mdp.fit.v0", "read-only", false, false, false, &["--dir", "--prospect", "--normalized-input", "--prompt", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--job"]),
             command("check-claims", "mdp.claim-check.v0", "read-only", false, false, true, &["--dir", "--text", "--file", "--subject", "--persona", "--job", "--scope", "--strict"]),
@@ -303,6 +319,7 @@ pub(crate) fn capabilities() -> Value {
             {"code": "invalid_human_brief", "meaning": "A human-brief source artifact is malformed or missing required gate/proof fields"},
             {"code": "insufficient_context", "meaning": "A fit or drafting path lacks enough context to proceed"},
             {"code": "route_card_cap_excluded_applicable", "meaning": "The configured route-card cap excluded an otherwise applicable card"},
+            {"code": "route_budget_filter_not_found", "meaning": "An exact route-budget job or declared persona selector did not match"},
             {"code": "write_conflict", "meaning": "A write would overwrite an existing file without explicit permission"},
             {"code": "output-directory-inside-pack", "meaning": "A clean-run output directory resolves to the active pack or one of its descendants"},
             {"code": "synthetic_chain_v2_required", "meaning": "The selected job is not an available signal-aware mdp.requirements.v2 contract"},
@@ -412,6 +429,18 @@ mod tests {
     fn capabilities_exposes_agent_driving_contracts() {
         let result = capabilities();
         assert_eq!(result["contract"], "mdp.capabilities.v0");
+        assert_eq!(
+            result["route_budget_contracts"]["full"]["contract"],
+            "mdp.route-budget.v0"
+        );
+        assert_eq!(
+            result["route_budget_contracts"]["summary"]["contract"],
+            "mdp.route-budget-summary.v1"
+        );
+        assert_eq!(
+            result["route_budget_contracts"]["canonical_job_field"],
+            "job_id"
+        );
         assert_eq!(
             result["model_step_contracts"]["resolution"],
             MODEL_STEP_RESOLUTION_V1

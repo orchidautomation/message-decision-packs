@@ -120,6 +120,19 @@ claim:
 mdp --json route-budget --strict --dir PACK_ROOT
 ```
 
+Use the bounded summary for triage and exact manifest-owned projections when a
+single route is under review:
+
+```bash
+mdp --json --summary route-budget --dir PACK_ROOT
+mdp --json route-budget --dir PACK_ROOT --job JOB_ID --persona PERSONA
+```
+
+Summary output is `mdp.route-budget-summary.v1` and has no route arrays or
+entry bodies. Treat `job_id` as canonical (`job` is only an equal deprecated
+v0 alias) and follow only safe narrowing guidance; never truncate or drop
+guardrails to make a route fit.
+
 It evaluates every declared persona/job route against its declared budget and
 fails on overflow or near-budget; `validate --strict` runs the same gate. A
 persona label stamped across case-study or claims authority to widen
