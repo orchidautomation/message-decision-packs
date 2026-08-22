@@ -100,6 +100,37 @@ V1 and v2 are distinct job-execution paths, not fields to combine. Existing
 scalar-only packs and prospect JSON stay valid. Their signal strings remain
 readable as `legacy` or `unassessed` context but cannot satisfy a v2 role.
 
+## Synthetic v2 fixture scaffolding
+
+Use the additive `rebind-synthetic-chain` command when a deterministic,
+validator-ready v2 fixture is needed after pack or requirements drift:
+
+```bash
+mdp --json rebind-synthetic-chain \
+  --dir PACK_ROOT --job JOB_ID --out-dir EXTERNAL_OUTPUT \
+  --as-of 2026-01-01T00:00:00Z --seed 0 --dry-run
+```
+
+The command emits `source-binding.json`, `source-attempt-request.json`,
+`collected-attempt-results.json`, and `normalized-input.json` outside the pack.
+Each artifact is serialized once with the repository's pretty-JSON-plus-newline
+format; downstream lineage uses SHA-256 of those exact bytes. The real
+`validate-source-binding` and bound strict `validate-prompt-output` paths run on
+staged bytes before apply.
+
+With `--input-dir`, rebinding preserves accepted synthetic semantic values and
+statuses while repairing only current pack/requirements pins and dependent
+hashes. It fails closed for every non-`synthetic_fixture` source class, URL or
+private-looking locator, missing synthetic marker, mixed version, or ambiguous
+provenance. Dry-run never creates the output directory. Existing changed files
+require explicit `--apply --force`; force creates a digest-keyed recoverable
+backup before atomic replacement. Synthetic lineage is fixture scaffolding, not
+source truth, and this command never collects evidence or calls providers.
+
+After validation, the documented offline handoff remains fit → brief →
+routed-context → clean-run. The generated chain can be passed to `fit` and
+`brief` as upstream input, but it does not itself grant draft authority.
+
 ## First-Class Signal Projections
 
 A Decision Input Contract may add `signal_projections` beside scalar
