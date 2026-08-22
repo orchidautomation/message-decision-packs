@@ -67,6 +67,7 @@ for plugin_root in \
   mkdir -p "\$plugin_root/assets"
   cp -R "$ROOT/scripts" "\$plugin_root/scripts"
   cp -R "$ROOT/plugin/skills" "\$plugin_root/skills"
+  cp -R "$ROOT/plugin/skill-evals" "\$plugin_root/skill-evals"
   rm -rf "\$plugin_root/assets"
   cp -R "$ROOT/plugin/assets" "\$plugin_root/assets"
 done
@@ -92,6 +93,7 @@ const trees = [
   ['scripts', join(root, 'scripts')],
   ['skills', join(root, 'plugin/skills')],
   ['assets', join(root, 'plugin/assets')],
+  ['skill-evals', join(root, 'plugin/skill-evals')],
 ]
 const walk = (prefix, treeRoot, directory) => {
   for (const name of readdirSync(directory).sort()) {

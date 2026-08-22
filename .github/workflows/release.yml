@@ -90,6 +90,8 @@ jobs:
           echo "version=${cli_version}" >> "$GITHUB_OUTPUT"
       - name: Run CLI checks
         run: make validate
+      - name: Validate public skills with skills-ref
+        run: make validate-skill-ref
       - name: Run Pluxx source diagnostics
         run: pluxx doctor
       - name: Run Pluxx release checks

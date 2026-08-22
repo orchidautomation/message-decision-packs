@@ -1,0 +1,19 @@
+{
+  "model": "mdp.skill-eval-index.v1",
+  "skill_id": "mdp-gtm-brief",
+  "corpus_root": "skill-evals",
+  "trigger_case_ids": [
+    "gtm-fit-train", "gtm-brief-train", "gtm-copy-review-train", "gtm-no-send-train",
+    "gtm-fit-validation", "gtm-brief-validation", "gtm-copy-review-validation", "gtm-enrichment-refusal-validation",
+    "gtm-fit-typo-train", "gtm-brief-indirect-train", "gtm-fit-typo-validation", "gtm-review-indirect-validation"
+  ],
+  "output_case_ids": [
+    "gtm-fit-train", "gtm-brief-train", "gtm-copy-review-train",
+    "gtm-fit-validation", "gtm-brief-validation", "gtm-copy-review-validation"
+  ],
+  "supported_modes": ["prospect-fit-or-brief", "outbound-copy-brief", "outbound-copy-review"],
+  "required_assertion_categories": ["cli-gate", "evidence", "boundary"],
+  "required_trigger_query_shapes": ["direct", "typo", "indirect-intent"],
+  "required_trigger_case_types": ["positive", "near-miss", "unsafe-request"],
+  "comparison_modes": ["with-skill", "baseline", "previous-version"]
+}

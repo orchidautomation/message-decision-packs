@@ -13,6 +13,7 @@ from pathlib import Path
 
 
 HOSTS = ("claude-code", "cursor", "codex", "opencode")
+CORPUS_ROOT = Path("plugin/skill-evals")
 GENERATED_INVENTORIES = {
     "codex": ".codex/skills.generated.json",
     "opencode": "skills.generated.json",
@@ -110,7 +111,32 @@ def relative_files(root: Path) -> dict[str, Path]:
     }
 
 
+def symlink_paths(root: Path):
+    """Yield symlinks without following symlinked files or directories."""
+    if root.is_symlink():
+        yield root
+        return
+    if not root.is_dir():
+        return
+    for path in sorted(root.iterdir()):
+        if path.is_symlink():
+            yield path
+        elif path.is_dir():
+            yield from symlink_paths(path)
+
+
+def reject_symlinks(root: Path, label: str, errors: list[str]) -> None:
+    for path in symlink_paths(root):
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            relative = path.as_posix()
+        errors.append(f"{label}: symlink is not allowed: {relative}")
+
+
 def compare_bundle(source: Path, bundle: Path, host: str, errors: list[str]) -> None:
+    reject_symlinks(source, f"{host} source", errors)
+    reject_symlinks(bundle, f"{host} bundle", errors)
     source_files = relative_files(source)
     bundle_files = relative_files(bundle)
     source_paths = set(source_files)
@@ -128,6 +154,96 @@ def compare_bundle(source: Path, bundle: Path, host: str, errors: list[str]) -> 
             errors.append(f"{host} bundle content drift: {path}")
         if is_executable(source_file) != is_executable(bundle_file):
             errors.append(f"{host} bundle executable-bit drift: {path}")
+
+
+def compare_tree(source: Path, bundle: Path, label: str, errors: list[str]) -> None:
+    if not source.is_dir():
+        errors.append(f"{label}: missing source directory: {source}")
+        return
+    if not bundle.is_dir():
+        errors.append(f"{label}: missing generated directory: {bundle}")
+        return
+    reject_symlinks(source, f"{label} source", errors)
+    reject_symlinks(bundle, label, errors)
+    source_files = relative_files(source)
+    bundle_files = relative_files(bundle)
+    for path in sorted(set(source_files) - set(bundle_files)):
+        errors.append(f"{label}: missing canonical file: {path}")
+    for path in sorted(set(bundle_files) - set(source_files)):
+        errors.append(f"{label}: non-canonical file: {path}")
+    for path in sorted(set(source_files) & set(bundle_files)):
+        if file_digest(source_files[path]) != file_digest(bundle_files[path]):
+            errors.append(f"{label}: content drift: {path}")
+        if is_executable(source_files[path]) != is_executable(bundle_files[path]):
+            errors.append(f"{label}: executable-bit drift: {path}")
+
+
+def load_json(path: Path, errors: list[str]) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"{path}: unable to load JSON: {exc}")
+        return {}
+    if not isinstance(payload, dict):
+        errors.append(f"{path}: expected a JSON object")
+        return {}
+    return payload
+
+
+def validate_source_eval_indexes(
+    source: Path, corpus: Path, expected: list[str], errors: list[str]
+) -> None:
+    trigger_payload = load_json(corpus / "trigger-cases.json", errors)
+    output_payload = load_json(corpus / "output-cases.json", errors)
+    trigger_cases = {
+        case.get("id"): case
+        for case in trigger_payload.get("cases", [])
+        if isinstance(case, dict) and isinstance(case.get("id"), str)
+    }
+    output_cases = {
+        case.get("id"): case
+        for case in output_payload.get("cases", [])
+        if isinstance(case, dict) and isinstance(case.get("id"), str)
+    }
+    seen_triggers: dict[str, int] = {}
+    seen_outputs: dict[str, int] = {}
+    for skill_id in expected:
+        index_path = source / skill_id / "evals" / "index.json"
+        index = load_json(index_path, errors)
+        if index.get("model") != "mdp.skill-eval-index.v1":
+            errors.append(f"{index_path}: unexpected model")
+        if index.get("skill_id") != skill_id:
+            errors.append(f"{index_path}: skill_id drift")
+        if index.get("corpus_root") != "skill-evals":
+            errors.append(f"{index_path}: corpus_root must be skill-evals")
+        trigger_ids = index.get("trigger_case_ids", [])
+        output_ids = index.get("output_case_ids", [])
+        if not isinstance(trigger_ids, list) or len(trigger_ids) != len(set(trigger_ids)):
+            errors.append(f"{index_path}: trigger_case_ids must be unique")
+        if not isinstance(output_ids, list) or len(output_ids) != len(set(output_ids)):
+            errors.append(f"{index_path}: output_case_ids must be unique")
+        expected_triggers = {
+            case_id
+            for case_id, case in trigger_cases.items()
+            if case.get("expected_skill_id") == skill_id
+        }
+        if set(trigger_ids) != expected_triggers:
+            errors.append(f"{index_path}: trigger ownership does not match corpus")
+        expected_outputs = {
+            case_id for case_id, case in output_cases.items() if case.get("skill_id") == skill_id
+        }
+        if set(output_ids) != expected_outputs:
+            errors.append(f"{index_path}: output ownership does not match corpus")
+        for case_id in trigger_ids:
+            seen_triggers[case_id] = seen_triggers.get(case_id, 0) + 1
+        for case_id in output_ids:
+            seen_outputs[case_id] = seen_outputs.get(case_id, 0) + 1
+    for case_id, count in sorted(seen_triggers.items()):
+        if count != 1:
+            errors.append(f"trigger index ownership is duplicated: {case_id}")
+    for case_id, count in sorted(seen_outputs.items()):
+        if count != 1:
+            errors.append(f"output index ownership is duplicated: {case_id}")
 
 
 def validate_generated_inventory(
@@ -178,6 +294,7 @@ def validate_packaged_doc_references(errors: list[str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=Path("plugin/skills"))
+    parser.add_argument("--corpus", type=Path, default=CORPUS_ROOT)
     parser.add_argument("--dist", type=Path, default=Path("dist"))
     parser.add_argument(
         "--require-bundles",
@@ -196,6 +313,7 @@ def main() -> int:
         )
 
     expected = skill_inventory(args.source, errors)
+    validate_source_eval_indexes(args.source, args.corpus, expected, errors)
     validate_current_agent_surfaces(errors)
     validate_packaged_doc_references(errors)
 
@@ -209,6 +327,8 @@ def main() -> int:
                 )
             if bundle_root.is_dir():
                 compare_bundle(args.source, bundle_root, host, errors)
+            corpus_bundle = args.dist / host / "skill-evals"
+            compare_tree(args.corpus, corpus_bundle, f"{host} skill-evals", errors)
         for host in GENERATED_INVENTORIES:
             validate_generated_inventory(args.dist, host, expected, errors)
 

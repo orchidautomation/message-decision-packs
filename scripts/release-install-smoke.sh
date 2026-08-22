@@ -142,15 +142,27 @@ for host_root in \
     echo "Installed plugin is missing the authority conformance corpus: $host_root" >&2
     exit 1
   fi
+  for eval_file in coverage.json trigger-cases.json output-cases.json; do
+    if [ ! -f "$host_root/skill-evals/$eval_file" ]; then
+      echo "Installed plugin is missing skill-evals/$eval_file: $host_root" >&2
+      exit 1
+    fi
+  done
+  for skill in mdp mdp-gtm-brief mdp-pack-builder mdp-pack-review mdp-proposal-review; do
+    if [ ! -f "$host_root/skills/$skill/evals/index.json" ]; then
+      echo "Installed plugin is missing eval index for $skill: $host_root" >&2
+      exit 1
+    fi
+  done
 done
 
 for reference_root in "$claude_plugin_root" "$cursor_plugin_root" "$opencode_plugin_root"; do
-  for common_tree in scripts skills assets; do
+  for common_tree in scripts skills assets skill-evals; do
     diff -qr "$codex_plugin_root/$common_tree" "$reference_root/$common_tree"
   done
   diff \
-    <(cd "$codex_plugin_root" && find scripts skills assets -type f -perm -111 -print | sort) \
-    <(cd "$reference_root" && find scripts skills assets -type f -perm -111 -print | sort)
+    <(cd "$codex_plugin_root" && find scripts skills assets skill-evals -type f -perm -111 -print | sort) \
+    <(cd "$reference_root" && find scripts skills assets skill-evals -type f -perm -111 -print | sort)
 done
 
 if [ "${MDP_RELEASE_REQUIRE_STAGED_PARITY:-0}" = "1" ]; then
@@ -180,7 +192,7 @@ const inventory = (root) => {
       })
     }
   }
-  for (const tree of ['scripts', 'skills', 'assets']) walk(join(root, tree))
+  for (const tree of ['scripts', 'skills', 'assets', 'skill-evals']) walk(join(root, tree))
   return records.sort((left, right) => left.path.localeCompare(right.path))
 }
 for (const binding of bindings) {
@@ -188,7 +200,7 @@ for (const binding of bindings) {
   const platform = binding.slice(0, separator)
   const root = binding.slice(separator + 1)
   const staged = manifest.plugin_trees?.[platform]?.files?.filter((entry) =>
-    ['scripts/', 'skills/', 'assets/'].some((prefix) => entry.path.startsWith(prefix)))
+    ['scripts/', 'skills/', 'assets/', 'skill-evals/'].some((prefix) => entry.path.startsWith(prefix)))
     .sort((left, right) => left.path.localeCompare(right.path))
   const installed = inventory(root)
   if (!staged || JSON.stringify(staged) !== JSON.stringify(installed)) {
@@ -507,8 +519,11 @@ done
 
 if [ -f "$ROOT/scripts/skill-eval-harness.py" ]; then
   python3 "$ROOT/scripts/skill-eval-harness.py" \
+    --plugin-skills "$ROOT/plugin/skills" \
+    --corpus "$ROOT/plugin/skill-evals" \
     --mdp-bin "$mdp_bin" \
-    --installed-skills-root "$codex_plugin_root/skills" >/tmp/mdp-release-install-skill-eval.json
+    --installed-skills-root "$codex_plugin_root/skills" \
+    --installed-corpus "$codex_plugin_root/skill-evals" >/tmp/mdp-release-install-skill-eval.json
 fi
 
 echo "Release install smoke passed for $version at $install_home"
