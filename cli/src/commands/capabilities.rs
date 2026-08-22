@@ -18,7 +18,7 @@ use crate::constants::{
     PROPOSAL_RUNNER_RESULT_CONTRACT, REQUIREMENTS_CONTRACT, REQUIREMENTS_CONTRACT_V2,
     ROUTED_CONTEXT_CONTRACT, RUN_RECEIPT_CONTRACT, RUNNER_AUDIT_CONTRACT, SOURCE_AUDIT_CONTRACT,
     SOURCE_BINDING_CONTRACT, SOURCE_BINDING_CONTRACT_V2, SOURCE_BINDING_VALIDATION_CONTRACT,
-    SOURCE_INTAKE_CONTRACT,
+    SOURCE_INTAKE_CONTRACT, SYNTHETIC_V2_CHAIN_CONTRACT,
 };
 use crate::model_steps::{COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1};
 use crate::models::DecisionInputAttemptStatus;
@@ -264,6 +264,7 @@ pub(crate) fn capabilities() -> Value {
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
+            command("rebind-synthetic-chain", SYNTHETIC_V2_CHAIN_CONTRACT, "writes-external-files", true, false, false, &["--dir", "--job", "--out-dir", "--input-dir", "--as-of", "--seed", "--dry-run", "--apply", "--force"]),
             command("validate-source-binding", SOURCE_BINDING_VALIDATION_CONTRACT, "read-only", false, false, false, &["--dir", "--job", "--file"]),
             command("validate", "mdp.validate.v0", "read-only", false, false, true, &["--dir", "--strict"]),
             command("validate-prompt-output", PROMPT_OUTPUT_VALIDATION_CONTRACT, "read-only", false, false, true, &["--dir", "--file", "--source-audit", "--source-binding", "--source-attempt-request", "--collected-attempt-results", "--invocation-receipt", "--routed-context", "--prompt", "--prompt-id", "--strict"]),
@@ -304,6 +305,11 @@ pub(crate) fn capabilities() -> Value {
             {"code": "route_card_cap_excluded_applicable", "meaning": "The configured route-card cap excluded an otherwise applicable card"},
             {"code": "write_conflict", "meaning": "A write would overwrite an existing file without explicit permission"},
             {"code": "output-directory-inside-pack", "meaning": "A clean-run output directory resolves to the active pack or one of its descendants"},
+            {"code": "synthetic_chain_v2_required", "meaning": "Synthetic chain generation requires an available signal-aware mdp.requirements.v2 job"},
+            {"code": "synthetic_chain_non_synthetic_provenance", "meaning": "Synthetic rebinding refused real, private, provider, URL, ambiguous, or missing-marker provenance"},
+            {"code": "synthetic_chain_write_conflict", "meaning": "Changed synthetic-chain destination files require explicit apply and force"},
+            {"code": "synthetic_chain_validation_failed", "meaning": "The staged synthetic chain failed an existing v2 validator before destination planning"},
+            {"code": "synthetic_chain_output_location_invalid", "meaning": "Synthetic-chain output must remain external to the pack and input chain"},
             {"code": "invalid_argument", "meaning": "CLI arguments are missing, conflicting, or unsupported"},
             {"code": "mdp_error", "meaning": "Fallback for uncategorized MDP errors"}
         ],

@@ -26,6 +26,7 @@ pub(crate) const COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2: &str = "mdp.collected-at
 pub(crate) const NORMALIZED_DECISION_INPUT_CONTRACT: &str = "mdp.normalized-decision-input.v1";
 pub(crate) const NORMALIZED_DECISION_INPUT_CONTRACT_V2: &str = "mdp.normalized-decision-input.v2";
 pub(crate) const SOURCE_ATTEMPT_REQUEST_CONTRACT_V2: &str = "mdp.source-attempt-request.v2";
+pub(crate) const SYNTHETIC_V2_CHAIN_CONTRACT: &str = "mdp.synthetic-v2-chain.v1";
 pub(crate) const PROMPT_CARD_PATCH_SCHEMA_REF: &str = "mdp.prompt-output.card-patches.v0";
 pub(crate) const PROMPT_PROSPECT_NORMALIZATION_SCHEMA_REF: &str =
     "mdp.prompt-output.prospect-normalization.v0";

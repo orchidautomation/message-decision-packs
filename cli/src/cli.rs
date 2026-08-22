@@ -101,6 +101,45 @@ pub(crate) enum Commands {
         )]
         file: PathBuf,
     },
+    #[command(about = "Create or safely rebind a complete synthetic governed v2 input chain")]
+    RebindSyntheticChain {
+        #[arg(long, help = "Exact pack root containing .mdp")]
+        dir: PathBuf,
+        #[arg(long, help = "Canonical signal-aware v2 job id")]
+        job: String,
+        #[arg(
+            long,
+            help = "External directory for the four generated chain artifacts"
+        )]
+        out_dir: PathBuf,
+        #[arg(
+            long,
+            help = "Existing directory containing the four synthetic chain artifacts"
+        )]
+        input_dir: Option<PathBuf>,
+        #[arg(
+            long,
+            default_value = "2026-01-01T00:00:00Z",
+            help = "Deterministic trusted UTC timestamp"
+        )]
+        as_of: String,
+        #[arg(long, default_value_t = 0, help = "Deterministic fixture seed")]
+        seed: u64,
+        #[arg(
+            long,
+            conflicts_with = "apply",
+            help = "Report the plan without writing files"
+        )]
+        dry_run: bool,
+        #[arg(long, help = "Apply the staged chain to the external output directory")]
+        apply: bool,
+        #[arg(
+            long,
+            requires = "apply",
+            help = "Back up changed files before replacement"
+        )]
+        force: bool,
+    },
     #[command(about = "Validate manifest and card references")]
     Validate {
         #[arg(long, default_value = ".")]
@@ -667,6 +706,7 @@ pub(crate) enum SchemaTarget {
     RoutedContextV1,
     DecisionInput,
     SourceBinding,
+    SyntheticV2Chain,
     Prospect,
     Eval,
     Skills,
@@ -1029,6 +1069,66 @@ mod tests {
                     && job == "prospect-fit-or-brief"
                     && file == PathBuf::from("binding.json")
         ));
+    }
+
+    #[test]
+    fn rebind_synthetic_chain_parses_deterministic_write_controls() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "rebind-synthetic-chain",
+            "--dir",
+            "example-pack",
+            "--job",
+            "prospect-fit-or-brief",
+            "--out-dir",
+            "/tmp/generated-chain",
+            "--input-dir",
+            "/tmp/source-chain",
+            "--as-of",
+            "2026-08-22T00:00:00Z",
+            "--seed",
+            "42",
+            "--apply",
+            "--force",
+        ])
+        .expect("synthetic chain form should parse");
+
+        assert!(matches!(
+            parsed.command,
+            Commands::RebindSyntheticChain {
+                dir,
+                job,
+                out_dir,
+                input_dir,
+                as_of,
+                seed,
+                apply,
+                force,
+                ..
+            } if dir == PathBuf::from("example-pack")
+                && job == "prospect-fit-or-brief"
+                && out_dir == PathBuf::from("/tmp/generated-chain")
+                && input_dir == Some(PathBuf::from("/tmp/source-chain"))
+                && as_of == "2026-08-22T00:00:00Z"
+                && seed == 42
+                && apply
+                && force
+        ));
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "rebind-synthetic-chain",
+                "--dir",
+                "example-pack",
+                "--job",
+                "prospect-fit-or-brief",
+                "--out-dir",
+                "/tmp/generated-chain",
+                "--force",
+            ])
+            .is_err()
+        );
     }
 
     #[test]

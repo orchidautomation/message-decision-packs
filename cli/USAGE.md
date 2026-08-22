@@ -51,6 +51,7 @@ mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo
 mdp --json init --template gtm --name "Example Message Pack" --dir /tmp/mdp-demo --dry-run
 mdp --json validate --dir /tmp/mdp-demo
 mdp --json requirements --dir /tmp/mdp-demo --job prospect-fit-or-brief
+mdp --json rebind-synthetic-chain --dir /tmp/mdp-demo --job prospect-fit-or-brief --out-dir /tmp/mdp-demo-chain
 mdp --json validate-prompt-output --dir /tmp/mdp-demo --prompt-id extract-claims-proof --file /tmp/claims-output.json
 mdp --json --summary route --entries --eval-fixture --dir /tmp/mdp-demo --persona "PMM" --job "linkedin outbound copy"
 mdp --json route --entries --dir /tmp/mdp-demo --persona "PMM" --job "portfolio scope example" --scope product=local-cli
@@ -68,6 +69,39 @@ mdp --json gaps --dir /tmp/mdp-demo
 mdp --json eval --dir /tmp/mdp-demo
 mdp --json copy --dir /tmp/mdp-demo --prospect /tmp/mdp-demo/examples/clay-row.json --channel linkedin
 ```
+
+### Deterministic synthetic v2 chain
+
+`rebind-synthetic-chain` is an offline fixture tool for a signal-aware v2
+job. It creates the four lineage artifacts in an external directory. The
+default is a non-mutating dry run; use `--apply` to create missing files and
+`--apply --force` to replace changed files after a digest-keyed backup is
+planned. Repeating the same pack, job, `--as-of`, and `--seed` is an
+`unchanged` no-op.
+
+```bash
+mdp --json schema synthetic-v2-chain
+mdp --json rebind-synthetic-chain \
+  --dir PACK_ROOT \
+  --job CANONICAL_JOB_ID \
+  --out-dir /tmp/mdp-synthetic-chain \
+  --as-of 2026-01-01T00:00:00Z \
+  --seed 0
+mdp --json rebind-synthetic-chain \
+  --dir PACK_ROOT \
+  --job CANONICAL_JOB_ID \
+  --input-dir /tmp/mdp-synthetic-chain \
+  --out-dir /tmp/mdp-rebound-chain \
+  --apply
+```
+
+The input and output directories must remain outside the pack and outside
+each other. Rebinding accepts only a complete chain whose source classes are
+`synthetic_fixture`, locators are opaque non-URLs, and normalized prospect is
+explicitly synthetic. It preserves input values and statuses while repairing
+only current pack/requirements pins and dependent exact-byte hashes. Synthetic
+lineage is fixture scaffolding, not source truth, provider evidence, or a
+permission to contact anyone.
 
 Proposal quick path:
 

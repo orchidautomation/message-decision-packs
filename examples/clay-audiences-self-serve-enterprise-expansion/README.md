@@ -114,6 +114,31 @@ The normalization envelope always sets `draft_allowed` to `false`.
 deterministic MDP validation and fit. Copy remains blocked until that later
 decision returns ready and emits compiled context.
 
+## Generate or safely rebind the synthetic chain
+
+The checked-in fixtures are public-safe reference bytes. To regenerate the
+same kind of chain after a pack or requirements change, use an external
+output directory:
+
+```bash
+mdp --json rebind-synthetic-chain \
+  --dir examples/clay-audiences-self-serve-enterprise-expansion \
+  --job prospect-fit-or-brief \
+  --out-dir /tmp/mdp-clay-synthetic-chain \
+  --as-of 2026-01-01T00:00:00Z \
+  --seed 0 \
+  --apply
+```
+
+This command emits the source binding, source-attempt request,
+collected-results ledger, and normalized input outside `.mdp`, validates the
+exact staged bytes through the existing v2 gates, and reports every output
+digest. `--input-dir` enables rebinding of an existing complete synthetic
+chain; it preserves values and statuses while repairing current pins and
+dependent hashes. Real or ambiguous provenance, URLs, private paths, and
+missing synthetic markers are refused. The output is fixture scaffolding,
+not evidence about Clay, a customer, a person, or any provider.
+
 The proposed hosted equivalents are:
 
 ```text

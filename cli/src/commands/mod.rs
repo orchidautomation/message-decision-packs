@@ -19,6 +19,7 @@ pub(crate) mod sample_leads;
 pub(crate) mod schemas;
 pub(crate) mod skills;
 pub(crate) mod source_binding;
+pub(crate) mod synthetic_chain;
 
 pub(crate) use briefs::{
     demo_copy, emit_brief_scoped, prospect_brief_with_context, render_readable_prospect_brief,
@@ -54,3 +55,4 @@ pub(crate) use sample_leads::sample_leads;
 pub(crate) use schemas::schema;
 pub(crate) use skills::skills;
 pub(crate) use source_binding::validate_source_binding_file;
+pub(crate) use synthetic_chain::rebind_synthetic_chain;

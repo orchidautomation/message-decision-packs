@@ -12,12 +12,12 @@ use crate::commands::{
     check_readme, compile_candidate_file, demo_copy, doctor, emit_brief_scoped, eval_pack, explain,
     gaps, init_pack_targeted, init_pack_targeted_dry_run, pack, project_conformance_file,
     project_conformance_report, project_prompt_output_validation_file, project_run_files,
-    project_source_file, prospect_brief_with_context, refresh_readme, render_human_brief_file,
-    render_human_brief_markdown, render_mermaid, render_readable_prospect_brief, requirements,
-    route_budget_preflight_command, route_scoped, run_receipt, run_request_file, sample_leads,
-    schema, skills, validate_behavioral_files, validate_pack,
-    validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
-    verify_output_readable_file, verify_run_files,
+    project_source_file, prospect_brief_with_context, rebind_synthetic_chain, refresh_readme,
+    render_human_brief_file, render_human_brief_markdown, render_mermaid,
+    render_readable_prospect_brief, requirements, route_budget_preflight_command, route_scoped,
+    run_receipt, run_request_file, sample_leads, schema, skills, validate_behavioral_files,
+    validate_pack, validate_prompt_output_file_with_inputs, validate_source_binding_file,
+    verify_output_file, verify_output_readable_file, verify_run_files,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -186,6 +186,32 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             summary_mode,
             "validate-source-binding",
             validate_source_binding_file(&dir, &job, &file)?,
+        ),
+        Commands::RebindSyntheticChain {
+            dir,
+            job,
+            out_dir,
+            input_dir,
+            as_of,
+            seed,
+            dry_run,
+            apply,
+            force,
+        } => print_checked(
+            json_mode,
+            summary_mode,
+            "rebind-synthetic-chain",
+            rebind_synthetic_chain(
+                &dir,
+                &job,
+                &out_dir,
+                input_dir.as_deref(),
+                &as_of,
+                seed,
+                dry_run,
+                apply,
+                force,
+            )?,
         ),
         Commands::Validate { dir, strict } => {
             let mut data = validate_pack(&dir)?;

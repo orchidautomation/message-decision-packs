@@ -1,5 +1,6 @@
 use crate::cli::SchemaTarget;
 use crate::commands::source_binding::source_binding_schema;
+use crate::commands::synthetic_chain::synthetic_chain_schema;
 use crate::conformance::{
     BEHAVIORAL_EVALUATION_V1, CONFORMANCE_CANDIDATE_V1, CONFORMANCE_REPORT_V1,
     CONFORMANCE_TRIAL_V1, CONFORMANCE_VERIFIER_RECEIPT_V1, DETERMINISTIC_CONFORMANCE_V1,
@@ -161,6 +162,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RoutedContextV1 => routed_context_schema(),
         SchemaTarget::DecisionInput => decision_input_envelope_schema(),
         SchemaTarget::SourceBinding => source_binding_schema(),
+        SchemaTarget::SyntheticV2Chain => synthetic_chain_schema(),
         SchemaTarget::Prospect => {
             let mut value = prospect_schema();
             if let Some(object) = value.as_object_mut() {

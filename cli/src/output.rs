@@ -157,6 +157,17 @@ fn summarize(command: &str, data: &Value) -> Value {
             "decision_input_contract_count": array_len(&data["decision_input_contracts"]),
             "diagnostics": data["diagnostics"]
         }),
+        "rebind-synthetic-chain" => json!({
+            "contract": data["contract"],
+            "valid": data["valid"],
+            "status": data["status"],
+            "mode": data["mode"],
+            "job_id": data["job_id"],
+            "file_count": array_len(&data["files"]),
+            "write_count": array_len(&data["write_plan"]),
+            "validation": data["validation"],
+            "refusal": data["refusal"]
+        }),
         "validate-source-binding" => json!({
             "contract": data["contract"],
             "status": data["status"],

@@ -378,6 +378,42 @@ command demonstrate the complete chain without live Clay access. “Clay” name
 the synthetic adapter example; MDP is not a Clay integration, enrichment
 provider, scraper, sequencer, CRM writer, or outreach tool.
 
+## Deterministic synthetic chain preparation
+
+For a validation-ready public fixture, use the additive offline
+`rebind-synthetic-chain` command. It compiles one exact signal-aware v2 job,
+creates the four lineage artifacts in dependency order, hashes the final
+pretty-JSON-plus-newline bytes at every edge, and runs the existing
+`validate-source-binding` and bound `validate-prompt-output` gates before any
+destination write.
+
+```bash
+mdp --json rebind-synthetic-chain \
+  --dir PACK_ROOT \
+  --job CANONICAL_JOB_ID \
+  --out-dir /tmp/mdp-synthetic-chain \
+  --as-of 2026-01-01T00:00:00Z \
+  --seed 0 \
+  --apply
+```
+
+The safe operator path is:
+
+```text
+requirements -> rebind-synthetic-chain -> validate-source-binding -> validate-prompt-output -> fit -> brief -> routed-context -> clean-run preparation
+```
+
+The command is v2-only and does not collect sources, call providers or
+models, normalize external records, edit pack files, or make synthetic
+lineage authoritative. With `--input-dir`, all four conventional files must
+be present and explicitly synthetic: every `source_class` must be
+`synthetic_fixture`, locators must be opaque non-URLs, and
+`normalized_prospect.synthetic` plus its synthetic `source_kind` are required.
+Ambiguous, real, private, customer, provider, URL, or missing-marker inputs
+are refused before destination planning. Dry-run is the default; changed
+files require `--apply --force`, which creates a recoverable digest-keyed
+backup. Exact replay reports `unchanged` and creates no backup.
+
 ## Authoring And Review
 
 The official `mdp-pack-builder` skill authors the contract before the
