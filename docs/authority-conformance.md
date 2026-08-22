@@ -15,6 +15,14 @@ MDP has one decision-authority owner: the Rust CLI. Renderers, summaries, traces
 
 A blocked or unavailable result cannot be overridden in place. New evidence requires a new CLI evaluation. A well-formed CLI decision envelope is data even when the CLI uses a nonzero decision-oriented exit. MCP `isError` is reserved for MCP-owned spawn, timeout, overflow, malformed-envelope, unsupported-contract, or argument failure.
 
+Policy-blocked run results may carry a closed `authority_block.diagnostics`
+array. It is a bounded explanation owned by the CLI, not a second authority
+source: `reason_codes`, terminal state, null decision, and null artifact hashes
+remain unchanged. Entries use only the stable stage/gate/category vocabulary,
+logical input names, safe contract-field pointers, and bounded allowlisted
+expected/observed values. MCP and other projections must preserve the carrier
+without reclassification or added authority.
+
 A successful renderer remains informational. Renderer failure makes the projection unavailable; it does not create a replacement decision. Proposal `completed` and native-driver completion are lifecycle metadata and never grant governed success.
 
 ## Contributor contract

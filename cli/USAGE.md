@@ -164,6 +164,20 @@ For MCP-capable hosts, `scripts/mdp-run-mcp-server.mjs` exposes path-only
 `mdp_run` and read-only `mdp_verify_run` over the same CLI. MCP is transport
 only and adds no execution or isolation authority.
 
+When a clean run returns `no-draft:policy-blocked`, inspect the bounded
+`authority_block.diagnostics` entries for the stable stage, gate, category,
+logical input, safe field, and expected/observed state:
+
+```bash
+mdp --json schema canonical-authority-block-v1
+```
+
+Diagnostics are explanatory only. They never contain source bodies, private
+paths, credentials, parser messages, or partial output, and they do not replace
+`reason_codes` or upgrade a blocked result. Canonical routed-context readiness
+comes from the `mdp.routed-context.v1` producer/validator seam; do not inspect
+invented top-level `status` or `draft_status` fields.
+
 ## JSON contract
 
 `mdp trace` accepts one saved CLI result with `--file`, or a complete v1
