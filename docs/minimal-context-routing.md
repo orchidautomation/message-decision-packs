@@ -81,6 +81,6 @@ mdp --json validate-prompt-output \
   --routed-context ROUTED_CONTEXT_JSON
 ```
 
-The governed result must echo `context_sha256`. MDP rejects changed context bytes, a mismatched digest, authority excluded from that context, and claim/CTA/angle/evidence identifiers selected from the wrong card kind. A gap or refusal still binds the same context.
+For a migrated governed prompt, MDP injects `context_sha256` from the exact staged routed-context bytes after the model returns its semantic payload. Legacy prompts may still echo it. In both paths MDP rejects changed context bytes, a mismatched digest, authority excluded from that context, and claim/CTA/angle/evidence identifiers selected from the wrong card kind. A gap or refusal still binds the same context.
 
 MDP remains the local compiler and validator. The customer-selected host owns model execution. MDP does not browse, enrich, select a provider, price model calls, send outreach, or mutate external systems.

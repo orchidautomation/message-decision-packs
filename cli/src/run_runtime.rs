@@ -12,8 +12,9 @@ use crate::commands::routing::{
 use crate::commands::schemas::prompt_output_schema_for_ref;
 use crate::constants::{
     COLLECTED_ATTEMPT_RESULTS_CONTRACT_V2, GENERATED_PACK_DIRECTORIES,
-    NORMALIZED_DECISION_INPUT_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT_V2,
-    ROUTED_CONTEXT_CONTRACT, SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
+    GOVERNED_HOST_ENVELOPE_CONTRACT, NORMALIZED_DECISION_INPUT_CONTRACT,
+    NORMALIZED_DECISION_INPUT_CONTRACT_V2, ROUTED_CONTEXT_CONTRACT,
+    SOURCE_ATTEMPT_REQUEST_CONTRACT_V2, SOURCE_BINDING_CONTRACT_V2,
 };
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
@@ -329,18 +330,8 @@ fn prepare_native_request(
     let canonical_output_schema =
         canonical_output_schema_for_step(staged_pack, &identity.job_id, &step)?;
     let canonical_output_schema_sha256 = canonical_json_sha256(&canonical_output_schema)?;
-    let provider_schema_source = if step.output_contract.schema_ref.is_some() {
-        let example = required_output_example(
-            &step.output_contract.example,
-            &step.output_contract.required_top_level,
-        )?;
-        schema_for_example_shape(&canonical_output_schema, &example)
-    } else {
-        provider_schema_source(
-            &canonical_output_schema,
-            &step.output_contract.required_top_level,
-        )?
-    };
+    let provider_schema_source =
+        provider_schema_source_for_contract(&canonical_output_schema, &step.output_contract)?;
     let provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
     let provider_output_schema_sha256 = canonical_json_sha256(&provider_output_schema)?;
     let schema_name = format!("mdp_{}", request.operation.replace([':', '/', '-'], "_"));
@@ -1699,7 +1690,19 @@ where
     }
     let output = result.output.as_ref().expect("validated success output");
     let output_path = private_dir.join("driver-output.json");
-    write_bytes_create_new(&output_path, output.content_utf8.as_bytes())?;
+    let output_bytes = if prepared.step.output_contract.host_envelope.is_some() {
+        host_wrap_governed_output(
+            &prepared.step,
+            staged_inputs,
+            &prepared.invocation_value,
+            &prepared.invocation_bytes,
+            &output.content_utf8,
+            &prepared.canonical_output_schema,
+        )?
+    } else {
+        output.content_utf8.as_bytes().to_vec()
+    };
+    write_bytes_create_new(&output_path, &output_bytes)?;
     let routed_context = optional_input(staged_inputs, "routed_context")
         .or_else(|| optional_input(staged_inputs, "routed-context"));
     let validation = validate_prompt_output_file_with_lineage_inputs(
@@ -2112,6 +2115,124 @@ fn provider_schema_source(schema: &Value, required_top_level: &[String]) -> Resu
     properties.retain(|field, _| required_top_level.contains(field));
     object.insert("required".into(), json!(required_top_level));
     Ok(source)
+}
+
+fn provider_schema_source_for_contract(
+    schema: &Value,
+    contract: &crate::models::PromptOutputContract,
+) -> Result<Value> {
+    if let Some(host_envelope) = contract.host_envelope.as_ref() {
+        if host_envelope.contract != GOVERNED_HOST_ENVELOPE_CONTRACT {
+            return Err(run_failure(
+                RunFailureKind::PolicyBlocked,
+                "host-envelope-contract-unsupported",
+            ));
+        }
+        return provider_schema_source(schema, &host_envelope.semantic_required_top_level);
+    }
+    if contract.schema_ref.is_some() {
+        let example = required_output_example(&contract.example, &contract.required_top_level)?;
+        Ok(schema_for_example_shape(schema, &example))
+    } else {
+        provider_schema_source(schema, &contract.required_top_level)
+    }
+}
+
+fn host_wrap_governed_output(
+    step: &CompiledModelStepV1,
+    staged_inputs: &[StagedInput],
+    invocation_value: &Value,
+    invocation_bytes: &[u8],
+    model_output: &str,
+    canonical_schema: &Value,
+) -> Result<Vec<u8>> {
+    let envelope = step.output_contract.host_envelope.as_ref().ok_or_else(|| {
+        run_failure(
+            RunFailureKind::PolicyBlocked,
+            "host-envelope-metadata-missing",
+        )
+    })?;
+    let has_routed_context = staged_inputs.iter().any(|input| {
+        matches!(
+            input.logical_name.as_str(),
+            "routed_context" | "routed-context"
+        )
+    });
+    envelope
+        .validate(
+            step.output_contract.output_kind.as_deref(),
+            has_routed_context,
+        )
+        .map_err(|_| {
+            run_failure(
+                RunFailureKind::PolicyBlocked,
+                "host-envelope-metadata-invalid",
+            )
+        })?;
+
+    let semantic = serde_json::from_str::<Value>(model_output)
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "semantic-output-malformed"))?;
+    let semantic_object = semantic
+        .as_object()
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "semantic-output-not-object"))?;
+    if envelope
+        .owned_top_level
+        .iter()
+        .any(|field| semantic_object.contains_key(field))
+    {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "host-owned-field-injection",
+        ));
+    }
+    let semantic_schema =
+        provider_schema_source(canonical_schema, &envelope.semantic_required_top_level)?;
+    if jsonschema::draft202012::validate(&semantic_schema, &semantic).is_err() {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "semantic-output-invalid",
+        ));
+    }
+    let context_sha256 = staged_inputs
+        .iter()
+        .find(|input| {
+            matches!(
+                input.logical_name.as_str(),
+                "routed_context" | "routed-context"
+            )
+        })
+        .map(|input| input.authority.sha256.clone())
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "host-context-source-missing"))?;
+    let receipt_sha256 = sha256_hex(invocation_bytes);
+    let mut inputs_used = invocation_value["inputs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|input| input["name"].as_str().map(ToOwned::to_owned))
+        .collect::<Vec<_>>();
+    inputs_used.push("prompt_receipt".into());
+    inputs_used.push("invocation_receipt_sha256".into());
+
+    let mut wrapped = serde_json::Map::new();
+    for field in &step.output_contract.required_top_level {
+        let value = match field.as_str() {
+            "contract" => json!(crate::constants::PROMPT_OUTPUT_CONTRACT),
+            "prompt_id" => json!(step.prompt_id),
+            "job_id" => json!(step.job_id),
+            "prompt_version" => json!(step.prompt_version),
+            "prompt_sha256" => json!(step.prompt_sha256),
+            "context_sha256" => json!(context_sha256),
+            "invocation_receipt_sha256" => json!(receipt_sha256),
+            "source_summary" => json!({"inputs_used": inputs_used}),
+            _ => semantic_object.get(field).cloned().ok_or_else(|| {
+                run_failure(RunFailureKind::PolicyBlocked, "semantic-output-missing")
+            })?,
+        };
+        wrapped.insert(field.clone(), value);
+    }
+    let mut bytes = serde_json::to_vec_pretty(&Value::Object(wrapped))?;
+    bytes.push(b'\n');
+    Ok(bytes)
 }
 
 fn required_output_example(example: &Value, required_top_level: &[String]) -> Result<Value> {
@@ -3119,9 +3240,11 @@ mod tests {
         RunFailure, execute_run_inner, execute_run_inner_with_driver,
         governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
         project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
-        seal_driver_request, seal_driver_result, validate_driver_result, validate_request,
+        provider_schema_source_for_contract, seal_driver_request, seal_driver_result,
+        validate_driver_result, validate_request,
     };
     use crate::commands::init::init_pack;
+    use crate::models::{PromptEntryDefaults, PromptHostEnvelope, PromptOutputContract};
     use crate::run_contracts::{
         ArtifactAuthority, AssuranceEvidenceState, DRIVER_REQUEST_V2, DRIVER_RESULT_V2,
         DriverArtifactV2, DriverIdentity, DriverOutputV2, DriverProviderObservationV2,
@@ -3280,6 +3403,66 @@ mod tests {
             serde_json::json!(["contract", "normalized_prospect"])
         );
         assert!(source["properties"].get("normalized_opportunity").is_none());
+    }
+
+    #[test]
+    fn host_envelope_provider_schema_excludes_host_owned_fields() {
+        let canonical = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "contract": {"type": "string"},
+                "prompt_id": {"type": "string"},
+                "selected_authority": {"type": "object"},
+                "artifact": {"type": "object"},
+                "gaps": {"type": "array"},
+                "rejected_claims": {"type": "array"}
+            },
+            "required": ["contract", "prompt_id", "selected_authority", "artifact", "gaps", "rejected_claims"],
+            "additionalProperties": false
+        });
+        let contract = PromptOutputContract {
+            contract: crate::constants::PROMPT_OUTPUT_CONTRACT.into(),
+            output_kind: Some("governed-artifact".into()),
+            strict_json_only: true,
+            required_top_level: vec![
+                "contract".into(),
+                "prompt_id".into(),
+                "selected_authority".into(),
+                "artifact".into(),
+                "gaps".into(),
+                "rejected_claims".into(),
+            ],
+            entry_defaults: PromptEntryDefaults {
+                body: "".into(),
+                applies_to: vec![],
+                evidence: vec![],
+                avoid: vec![],
+                confidence: "unknown".into(),
+                provenance: vec![],
+            },
+            schema_ref: None,
+            schema: None,
+            host_envelope: Some(PromptHostEnvelope {
+                contract: crate::constants::GOVERNED_HOST_ENVELOPE_CONTRACT.into(),
+                owned_top_level: crate::models::GOVERNED_HOST_ENVELOPE_OWNED_FIELDS
+                    .iter()
+                    .map(|field| (*field).into())
+                    .collect(),
+                semantic_required_top_level: crate::models::GOVERNED_HOST_ENVELOPE_SEMANTIC_FIELDS
+                    .iter()
+                    .map(|field| (*field).into())
+                    .collect(),
+            }),
+            example: serde_json::json!({}),
+        };
+        let source = provider_schema_source_for_contract(&canonical, &contract).unwrap();
+        assert_eq!(
+            source["required"],
+            serde_json::json!(["selected_authority", "artifact", "gaps", "rejected_claims"])
+        );
+        assert!(source["properties"].get("contract").is_none());
+        assert!(source["properties"].get("prompt_id").is_none());
+        assert!(source["properties"].get("artifact").is_some());
     }
 
     #[test]
