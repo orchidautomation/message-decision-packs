@@ -1206,9 +1206,11 @@ mod tests {
             identity: super::file_identity(&owned_dir).unwrap(),
         });
 
-        std::fs::remove_file(&installed).unwrap();
+        let retained_file = root.join("retained-request.json");
+        std::fs::rename(&installed, &retained_file).unwrap();
         std::fs::write(&installed, b"replacement").unwrap();
-        std::fs::remove_dir_all(&owned_dir).unwrap();
+        let retained_dir = root.join("retained-directory");
+        std::fs::rename(&owned_dir, &retained_dir).unwrap();
         std::fs::create_dir(&owned_dir).unwrap();
         std::fs::write(&installed, b"replacement").unwrap();
         std::fs::write(owned_dir.join("operator-owned.txt"), b"keep").unwrap();
