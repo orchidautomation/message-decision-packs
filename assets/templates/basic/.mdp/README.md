@@ -89,14 +89,14 @@ A modular message decision pack for agent-readable ICP, pains, triggers, proof, 
 Machine-generated from loaded structured authority. Do not edit by hand; run `mdp readme refresh` to update. This block is a projection of the manifest, cards, sources, and prompts; it cannot satisfy a product-foundation facet, close a gap, or override structured authority.
 
 - cards: 16
-- card entries: 54
+- card entries: 55
 - prompts: 12
 - sources: 3
 
 ### Card entries
 
 - `avoid-rules` (avoid-rules): 2 entries
-- `channel-policies` (channel-policies): 6 entries
+- `channel-policies` (channel-policies): 7 entries
 - `claims` (claims): 3 entries
 - `copy-patterns` (copy-patterns): 3 entries
 - `ctas` (ctas): 4 entries
