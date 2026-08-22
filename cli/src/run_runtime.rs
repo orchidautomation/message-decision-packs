@@ -61,6 +61,7 @@ const MAX_NATIVE_SERIALIZED_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_POLICY_OUTPUT_BYTES: u64 = 1024 * 1024;
 const MAX_POLICY_DIAGNOSTICS: usize = 4;
 const MAX_POLICY_DIAGNOSTIC_BYTES: usize = 4096;
+const MAX_DIAGNOSTIC_INPUT_BYTES: usize = 64;
 const DRIVER_RESULT_ENVELOPE_BYTES: u64 = 64 * 1024;
 const MAX_FINALIZATION_RESERVE_MS: u64 = 250;
 const OFFICIAL_OPENAI_RESPONSES_ENDPOINT: &str = "https://api.openai.com/v1/responses";
@@ -302,10 +303,32 @@ fn fallback_policy_diagnostic(code: &str) -> RunDiagnostic {
     policy_diagnostic(stage, gate, category, input, field, expected, observed)
 }
 
-fn source_integrity_diagnostic(input: &StagedInput) -> RunDiagnostic {
+fn bounded_diagnostic_input(name: &str) -> String {
+    let mut value = name
+        .bytes()
+        .map(|byte| {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
+                byte as char
+            } else {
+                '_'
+            }
+        })
+        .take(MAX_DIAGNOSTIC_INPUT_BYTES)
+        .collect::<String>();
+    if value.is_empty() {
+        value.push_str("unknown");
+    }
+    value
+}
+
+fn source_integrity_diagnostic(subject: &str) -> RunDiagnostic {
     let mut diagnostic = fallback_policy_diagnostic("source-integrity-failed");
-    diagnostic.input = Some(Cow::Owned(input.logical_name.clone()));
+    diagnostic.input = Some(Cow::Owned(bounded_diagnostic_input(subject)));
     diagnostic
+}
+
+fn source_integrity_input_diagnostic(input: &StagedInput) -> RunDiagnostic {
+    source_integrity_diagnostic(&input.logical_name)
 }
 
 struct RunDeadline {
@@ -1254,7 +1277,7 @@ where
         return Err(run_failure_with_diagnostic(
             RunFailureKind::PolicyBlocked,
             "source-integrity-failed",
-            fallback_policy_diagnostic("source-integrity-failed"),
+            source_integrity_diagnostic("pack"),
         ));
     }
     let manifest = read_manifest(&staged_pack)?;
@@ -1306,7 +1329,7 @@ where
         return Err(run_failure_with_diagnostic(
             RunFailureKind::PolicyBlocked,
             "source-integrity-failed",
-            fallback_policy_diagnostic("source-integrity-failed"),
+            source_integrity_diagnostic("pack"),
         ));
     }
 
@@ -1637,7 +1660,7 @@ where
         staged_pack_after == staged_snapshot && source_pack_after == source_snapshot;
     if !pack_unchanged || !sources_unchanged {
         if diagnostics.is_empty() {
-            diagnostics.push(fallback_policy_diagnostic("source-integrity-failed"));
+            diagnostics.push(source_integrity_diagnostic("pack"));
         }
         terminal_state = TerminalState::NoDraftAuditIncomplete;
         success_values = None;
@@ -3302,26 +3325,26 @@ fn stage_local_artifact(
 fn check_sources_unchanged(inputs: &[StagedInput]) -> std::result::Result<(), RunDiagnostic> {
     for input in inputs {
         let metadata = fs::symlink_metadata(&input.source_path)
-            .map_err(|_| source_integrity_diagnostic(input))?;
+            .map_err(|_| source_integrity_input_diagnostic(input))?;
         let source_bytes = read_bounded(
             &input.source_path,
             input.authority.byte_count,
             "declared input",
         )
-        .map_err(|_| source_integrity_diagnostic(input))?;
+        .map_err(|_| source_integrity_input_diagnostic(input))?;
         let staged_bytes = read_bounded(
             &input.staged_path,
             input.authority.byte_count,
             "staged input",
         )
-        .map_err(|_| source_integrity_diagnostic(input))?;
+        .map_err(|_| source_integrity_input_diagnostic(input))?;
         if metadata.file_type().is_symlink()
             || !metadata.is_file()
             || metadata.len() != input.authority.byte_count
             || sha256_hex(&source_bytes) != input.initial_sha256
             || sha256_hex(&staged_bytes) != input.initial_sha256
         {
-            return Err(source_integrity_diagnostic(input));
+            return Err(source_integrity_input_diagnostic(input));
         }
     }
     Ok(())
@@ -4557,6 +4580,7 @@ mod tests {
             result.authority_block["diagnostics"][0]["code"],
             "stale-binding"
         );
+        assert_eq!(result.authority_block["diagnostics"][0]["input"], "pack");
         let receipt: serde_json::Value =
             serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
         assert!(receipt["output"].is_null());
