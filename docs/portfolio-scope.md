@@ -97,6 +97,20 @@ Add optional `scope` beside `applies_to`:
 `scope` is enforced portfolio applicability.
 `metadata` remains advisory and must not be used as a substitute for either field.
 
+### Applicability selector semantics
+
+Card-level `personas` and entry-level `applies_to` selectors are structured
+persona filters. An empty list, or a list containing only blank values, is a
+universal/no-selector match for the persona dimension. Non-empty values match
+the requested persona exactly, case-insensitively after trimming; authored
+capitalization is preserved in output. Titles, descriptions, bodies, and tags
+are prose or job-routing signals, not persona declarations.
+
+Universal persona applicability does not bypass job/channel policy, lifecycle
+compatibility, portfolio scope, guardrails, route-card caps, or context budgets.
+Use explicit non-empty selectors when an entry or card should remain persona-
+scoped, and expect genuinely global entries to count for every declared route.
+
 Unscoped entries are global.
 Global company boundaries and universal output rules remain eligible across products.
 Scope a guardrail when it truly applies only to one product; otherwise leave it global.

@@ -728,8 +728,8 @@ jobs:
     optional:
     - known-gaps
   context_budget:
-    max_entries: 48
-    max_bytes: 49152
+    max_entries: 56
+    max_bytes: 65536
 - id: outbound-copy-brief
   skill_id: mdp-gtm-brief
   label: Outbound copy brief
@@ -928,7 +928,8 @@ cards:
   path: cards/portfolio-examples.yaml
   kind: hooks
   description: Synthetic portfolio scope demonstration.
-  personas: []
+  personas:
+  - PMM
   tags:
   - portfolio
   - scope
@@ -985,18 +986,22 @@ cards:
   path: cards/objections.yaml
   kind: objections
   description: Expected objections, category confusion, and approved response logic.
-  personas: []
+  personas:
+  - PMM
+  - GTM Engineering
   tags: []
 - id: gaps
   path: cards/gaps.yaml
   kind: gaps
   description: Known gaps and open questions agents must surface instead of filling in.
-  personas: []
+  personas:
+  - GTM Engineering
+  - PMM
   tags: []
 policy:
   progressive_disclosure: true
   load_manifest_first: true
-  max_cards_per_route: 14
+  max_cards_per_route: 16
   json_contract: mdp.cli.v0
   no_auth_required: true
 provenance:

@@ -2,7 +2,7 @@ use crate::commands::health::issue;
 use crate::commands::routing::check_claims;
 use crate::models::{Card, CardKind, Entry, Manifest, PromptFile, ProofOutputConstraints};
 use crate::pack_io::{read_card, read_manifest, read_prompt, resolve_pack_path};
-use crate::routing::select_cards;
+use crate::routing::{select_cards, selector_is_universal, selector_matches_persona};
 use crate::utils::{resolve_persona_label, routable_persona};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -1569,9 +1569,8 @@ fn resolve_card_entry_ref(
         }
         let is_guardrail_role = matches!(role, "constrains" | "supports-gap");
         if !is_guardrail_role
-            && entry.applies_to.is_empty()
-            && !card.personas.is_empty()
-            && !contains_case_insensitive(&card.personas, &route.persona)
+            && selector_is_universal(&entry.applies_to)
+            && !selector_matches_persona(&card.personas, &route.persona)
         {
             issues.push(issue(
                 "proof_output_incompatible_ref",
@@ -1580,10 +1579,7 @@ fn resolve_card_entry_ref(
                 format!("card {card_id} is not scoped to persona {}", route.persona),
             ));
         }
-        if !is_guardrail_role
-            && !entry.applies_to.is_empty()
-            && !contains_case_insensitive(&entry.applies_to, &route.persona)
-        {
+        if !is_guardrail_role && !selector_matches_persona(&entry.applies_to, &route.persona) {
             issues.push(issue(
                 "proof_output_incompatible_ref",
                 "error",
@@ -2156,12 +2152,6 @@ fn primitive_for_card<'a>(manifest: &'a Manifest, card_id: &str) -> Option<&'a s
         .iter()
         .find(|(_, mapping)| mapping.cards.iter().any(|id| id == card_id))
         .map(|(primitive, _)| primitive.as_str())
-}
-
-fn contains_case_insensitive(values: &[String], needle: &str) -> bool {
-    values
-        .iter()
-        .any(|candidate| candidate.eq_ignore_ascii_case(needle))
 }
 
 fn job_matches(manifest: &Manifest, job: &str) -> bool {

@@ -30,6 +30,14 @@ every card kind, channel policies, and gaps must remain reserved; the existing
 entry/byte budgets plus `route_card_cap_excluded_applicable` gate must still
 block when their limits are exceeded.
 
+Include one neutral universal-gap fixture whose card `personas` and entry
+`applies_to` are empty or blank-only and whose prose names no requested
+persona. Compare it with an ordinary entry, a scoped entry, a guardrail, and a
+non-empty selector. Run the same matrix through `route --entries`,
+`brief --context`, and `route-budget`; universal persona applicability must not
+hide `not_applicable`, bypass scope/policy/cap gates, or be recreated from
+prose.
+
 ## Prompt And Output Gates
 
 Use `validate-prompt-output` for valid and adversarial normalization results, including `source_audit` fixtures for proposal PDF/doc extraction refs when applicable. Use `check-claims` for supplied claim-bearing text and `verify-output` for proof-carrying artifacts.

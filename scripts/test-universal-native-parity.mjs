@@ -344,7 +344,10 @@ try {
     // has resolved and sealed the selected prompt, ordered inputs, schemas,
     // driver request/result, bundle, audit, and receipt authorities.
     const pack = profiles.find((candidate) => candidate.profile === profile).pack
-    const persona = profile === 'proposal' ? 'Proposal Lead' : 'PM'
+    // Use a persona with explicit entry selectors; the router must not infer
+    // PM from prose such as the substring inside PMM.
+    const persona = profile === 'proposal' ? 'Proposal Lead' : 'PMM'
+    const routeScopeArgs = profile === 'gtm' ? ['--scope', 'product=local-cli'] : []
     const runInputs = step.declared_inputs
       .filter((input) => input.required && !['prompt_receipt', 'invocation_receipt_sha256'].includes(input.name))
       .map((input, inputIndex) => {
@@ -354,7 +357,7 @@ try {
           const emitted = expectJson(
             invoke(mdp, [
               '--json', 'emit-brief', '--dir', pack, '--persona', persona,
-              '--job', jobId, '--routed-context-out', inputPath,
+              '--job', jobId, ...routeScopeArgs, '--routed-context-out', inputPath,
             ]),
             `${profile}/${jobId}/${step.phase} emitted routed context`,
           )

@@ -304,6 +304,10 @@ authored capitalization is preserved. Default validation reports dangling
 selectors as compatibility warnings, while `validate --strict` blocks them.
 Empty selector lists remain universal, and persona-like words in titles,
 descriptions, or bodies are prose rather than declarations.
+This applies consistently to `route --entries`, `brief --context`, and
+`route-budget`: universal means no persona filter only. Job/channel policy,
+lifecycle, portfolio scope, guardrails, route-card caps, and context budgets
+still decide whether the result is usable.
 
 ## Cold-model Conformance
 

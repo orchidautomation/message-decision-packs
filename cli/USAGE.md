@@ -6,6 +6,13 @@ Canonical `route --entries` and `brief --context` results include the same `mini
 
 `mdp` creates and routes Message Decision Packs.
 
+Card `personas` and entry `applies_to` selectors are structured metadata.
+Empty or blank-only selectors match every persona; non-empty selectors match
+exactly, case-insensitively, with authored values preserved. Prose is not a
+persona selector, and universal applicability still remains subject to job,
+scope, policy, guardrail, card-cap, and context-budget gates. Confirm the same
+result with `route --entries`, `brief --context`, and `route-budget`.
+
 A pack is a local `.mdp/` folder:
 
 ```text
