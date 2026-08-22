@@ -10,7 +10,7 @@ use crate::cli::SchemaTarget;
 use crate::commands::schemas::schema;
 use crate::constants::{DEFAULT_DIR, ROUTED_CONTEXT_CONTRACT};
 use crate::model_steps::{CompiledModelStepV1, resolve_model_steps, resolve_selected_model_step};
-use crate::models::Manifest;
+use crate::models::{Manifest, ProfileJob};
 use crate::pack_io::read_manifest;
 use crate::run_contracts::{
     ArtifactAuthority, DriverIdentity, EvidenceProvenance, ExecutionPolicy, JobIdentity,
@@ -142,7 +142,7 @@ fn compile_native_run_request_inner(options: &PrepareRunOptions) -> Result<Compi
         .map(|p| p.id.as_str())
         .unwrap_or("gtm")
         .to_string();
-    manifest
+    let selected_job = manifest
         .jobs
         .iter()
         .find(|candidate| candidate.id == options.job)
@@ -223,7 +223,7 @@ fn compile_native_run_request_inner(options: &PrepareRunOptions) -> Result<Compi
                 "mdp prepare-run --input <name>=<path>",
             ));
         }
-        let schema = input_authority(input, &manifest, &options.job)?;
+        let schema = input_authority(input, &manifest, selected_job)?;
         let sha = sha256_hex(&bytes);
         let authority = ArtifactAuthority {
             logical_name: input.name.clone(),
@@ -397,32 +397,56 @@ fn validate_governed_lineage(
     prompt: &Path,
     authorities: &BTreeMap<String, (ArtifactAuthority, PathBuf)>,
 ) -> Result<()> {
-    let read_named = |needles: &[&str]| -> Result<Option<(Value, String, String)>> {
-        let Some((_, (_, path))) = authorities
+    let aliases: [(&str, &[&str]); 4] = [
+        ("source-binding", &["source-binding", "source_binding"]),
+        (
+            "source-attempt-request",
+            &["source-attempt-request", "source_attempt_request"],
+        ),
+        (
+            "collected-attempt-results",
+            &["collected-attempt-results", "collected_attempt_results"],
+        ),
+        (
+            "normalized-decision-input",
+            &[
+                "normalized-decision-input",
+                "normalized_decision_input",
+                "normalized-input",
+                "normalized_input",
+            ],
+        ),
+    ];
+    let mut resolved = BTreeMap::new();
+    for (canonical, names) in aliases {
+        let matches = authorities
             .iter()
-            .find(|(name, _)| needles.iter().any(|needle| name.contains(needle)))
-        else {
-            return Ok(None);
-        };
-        let bytes = read_regular(path, MAX_INPUT_BYTES, "governed lineage artifact")?;
-        let sha = sha256_hex(&bytes);
-        let value = serde_json::from_slice(&bytes).map_err(|_| {
-            diagnostic(
-                "governed-lineage-invalid",
+            .filter(|(name, _)| names.iter().any(|alias| name == alias))
+            .collect::<Vec<_>>();
+        if matches.len() > 1 {
+            return Err(diagnostic(
+                "governed-lineage-duplicate-alias",
                 "mdp requirements --dir <pack> --job <job>",
-            )
-        })?;
-        Ok(Some((value, path.to_string_lossy().into_owned(), sha)))
-    };
-    let binding = read_named(&["source_binding", "source-binding"])?;
-    let request = read_named(&["source_attempt_request", "source-attempt-request"])?;
-    let results = read_named(&["collected_attempt_results", "collected-attempt-results"])?;
-    let normalized = read_named(&[
-        "normalized_input",
-        "normalized-input",
-        "normalized_decision_input",
-        "normalized-decision-input",
-    ])?;
+            ));
+        }
+        if let Some((_, (_, path))) = matches.into_iter().next() {
+            let bytes = read_regular(path, MAX_INPUT_BYTES, "governed lineage artifact")?;
+            let sha = sha256_hex(&bytes);
+            let value = serde_json::from_slice(&bytes).map_err(|_| {
+                diagnostic(
+                    "governed-lineage-invalid",
+                    "mdp requirements --dir <pack> --job <job>",
+                )
+            })?;
+            resolved.insert(canonical, (value, path.to_string_lossy().into_owned(), sha));
+        }
+    }
+    let read_named =
+        |name: &str| -> Option<(Value, String, String)> { resolved.get(name).cloned() };
+    let binding = read_named("source-binding");
+    let request = read_named("source-attempt-request");
+    let results = read_named("collected-attempt-results");
+    let normalized = read_named("normalized-decision-input");
     let present = [&binding, &request, &results, &normalized]
         .into_iter()
         .filter(|item| item.is_some())
@@ -556,45 +580,94 @@ fn write_compiled_request_inner(
             "mdp prepare-run --help",
         ));
     }
+    let mut transaction = OutputTransactionGuard::default();
     let mut staged = Vec::new();
     for (index, (path, bytes)) in targets.iter().enumerate() {
-        if path.exists() {
+        if fs::symlink_metadata(path).is_ok() {
             return Err(diagnostic("output-path-exists", "mdp prepare-run --help"));
         }
         let parent = path
             .parent()
             .ok_or_else(|| diagnostic("output-path-invalid", "mdp prepare-run --help"))?;
-        fs::create_dir_all(parent)
-            .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
+        ensure_parent_dirs(parent, &mut transaction)?;
         let tmp = path.with_extension(format!("{}.{}.tmp", std::process::id(), index));
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&tmp)
             .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
+        transaction.staged.push(tmp.clone());
         file.write_all(bytes)
             .and_then(|_| file.sync_all())
             .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
         staged.push((tmp, (*path).to_path_buf()));
     }
-    let mut installed = Vec::new();
     for (tmp, path) in &staged {
-        if fs::hard_link(tmp, path)
-            .and_then(|_| fs::remove_file(tmp))
-            .is_err()
-        {
-            for (left, _) in &staged {
-                let _ = fs::remove_file(left);
-            }
-            for installed_path in installed {
-                let _ = fs::remove_file(installed_path);
-            }
+        if fs::hard_link(tmp, path).is_err() {
             return Err(diagnostic(
                 "output-transaction-failed",
                 "mdp prepare-run --help",
             ));
         }
-        installed.push(path.clone());
+        // Register immediately after the no-replace install succeeds.  If
+        // removing the staged inode fails, Drop still removes this owned
+        // destination and every remaining staged file.
+        transaction.installed.push(path.clone());
+        fs::remove_file(tmp)
+            .map_err(|_| diagnostic("output-transaction-failed", "mdp prepare-run --help"))?;
+    }
+    transaction.committed = true;
+    Ok(())
+}
+
+#[derive(Default)]
+struct OutputTransactionGuard {
+    staged: Vec<PathBuf>,
+    installed: Vec<PathBuf>,
+    created_dirs: Vec<PathBuf>,
+    committed: bool,
+}
+
+impl Drop for OutputTransactionGuard {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        for path in self.staged.iter().rev() {
+            let _ = fs::remove_file(path);
+        }
+        for path in self.installed.iter().rev() {
+            let _ = fs::remove_file(path);
+        }
+        for path in self.created_dirs.iter().rev() {
+            let _ = fs::remove_dir(path);
+        }
+    }
+}
+
+fn ensure_parent_dirs(parent: &Path, transaction: &mut OutputTransactionGuard) -> Result<()> {
+    let mut missing = Vec::new();
+    let mut cursor = parent.to_path_buf();
+    while fs::symlink_metadata(&cursor).is_err() {
+        missing.push(cursor.clone());
+        let Some(next) = cursor.parent() else {
+            return Err(diagnostic("output-path-invalid", "mdp prepare-run --help"));
+        };
+        cursor = next.to_path_buf();
+    }
+    if !fs::symlink_metadata(&cursor)
+        .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return Err(diagnostic(
+            "output-path-unwritable",
+            "mdp prepare-run --help",
+        ));
+    }
+    for directory in missing.into_iter().rev() {
+        fs::create_dir(&directory)
+            .map_err(|_| diagnostic("output-path-unwritable", "mdp prepare-run --help"))?;
+        transaction.created_dirs.push(directory);
     }
     Ok(())
 }
@@ -729,7 +802,7 @@ fn read_regular(path: &Path, max: u64, _label: &str) -> Result<Vec<u8>> {
 fn input_authority(
     input: &crate::models::PromptInput,
     manifest: &Manifest,
-    job: &str,
+    job: &ProfileJob,
 ) -> Result<(String, String, Vec<String>)> {
     if let Some(schema) = &input.schema_ref {
         return Ok((
@@ -741,23 +814,26 @@ fn input_authority(
             input.provenance_refs.clone(),
         ));
     }
-    if input.name == "routed_context" || input.name == "routed-context" {
+    if input.name == "routed_context" {
         return Ok((
             ROUTED_CONTEXT_CONTRACT.into(),
             "application/json".into(),
-            vec![format!("job:{job}")],
+            vec![format!("job:{}", job.id)],
         ));
     }
-    if let Some(contract) = manifest
-        .input_contracts
-        .iter()
-        .find(|c| c.id == input.name || c.prompt.as_deref() == Some(&input.name))
-    {
+    let selected_input_ids = job.input_contracts.iter().cloned().collect::<BTreeSet<_>>();
+    if let Some(contract) = manifest.input_contracts.iter().find(|c| {
+        selected_input_ids.contains(&c.id)
+            && (c.id == input.name || c.prompt.as_deref() == Some(&input.name))
+    }) {
+        let schema_ref = contract.schema_ref.as_ref().ok_or_else(|| {
+            diagnostic(
+                "declared-input-authority-missing",
+                "mdp requirements --dir <pack> --job <job>",
+            )
+        })?;
         return Ok((
-            contract
-                .schema_ref
-                .clone()
-                .unwrap_or_else(|| "mdp.declared-input.v1".into()),
+            schema_ref.clone(),
             input
                 .media_type
                 .clone()
@@ -765,13 +841,23 @@ fn input_authority(
             vec![format!("input-contract:{}", contract.id)],
         ));
     }
+    let mut selected_decision_ids = job
+        .decision_input_contracts
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    for input_id in &selected_input_ids {
+        if let Some(contract) = manifest.input_contracts.iter().find(|c| c.id == *input_id) {
+            selected_decision_ids.extend(contract.decision_input_contracts.iter().cloned());
+        }
+    }
     if let Some(contract) = manifest
         .decision_input_contracts
         .iter()
-        .find(|c| c.id == input.name)
+        .find(|c| selected_decision_ids.contains(&c.id) && c.id == input.name)
     {
         return Ok((
-            "mdp.normalized-decision-input.v2".into(),
+            contract.normalization.normalized_schema_ref.clone(),
             input
                 .media_type
                 .clone()
@@ -782,42 +868,9 @@ fn input_authority(
             )],
         ));
     }
-    let governed_schema = match input.name.as_str() {
-        "normalized-decision-input" | "normalized_input" | "normalized-input" => {
-            Some("mdp.normalized-decision-input.v2")
-        }
-        "source-binding" | "source_binding" => Some("mdp.source-binding.v2"),
-        "source-attempt-request" | "source_attempt_request" => {
-            Some("mdp.source-attempt-request.v2")
-        }
-        "collected-attempt-results" | "collected_attempt_results" => {
-            Some("mdp.collected-attempt-results.v2")
-        }
-        _ => None,
-    };
-    if let Some(schema) = governed_schema {
-        return Ok((
-            schema.into(),
-            input
-                .media_type
-                .clone()
-                .unwrap_or_else(|| "application/json".into()),
-            input.provenance_refs.clone(),
-        ));
-    }
-    if input.producer.as_deref() == Some("host") && input.schema_ref.is_none() {
-        return Err(diagnostic(
-            "declared-input-authority-missing",
-            "mdp requirements --dir <pack> --job <job>",
-        ));
-    }
-    Ok((
-        "mdp.declared-input.v1".into(),
-        input
-            .media_type
-            .clone()
-            .unwrap_or_else(|| "application/json".into()),
-        input.provenance_refs.clone(),
+    Err(diagnostic(
+        "declared-input-authority-missing",
+        "mdp requirements --dir <pack> --job <job>",
     ))
 }
 
@@ -872,9 +925,16 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil_from_days, diagnostic, input_authority, output_alias, parse_input_mappings};
-    use crate::models::{Manifest, PromptInput};
+    use super::{
+        civil_from_days, diagnostic, input_authority, output_alias, parse_input_mappings,
+        validate_governed_lineage,
+    };
+    use crate::models::{Manifest, ProfileJob, PromptInput};
+    use crate::run_contracts::{ArtifactAuthority, EvidenceProvenance};
     use serde_json::json;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
     #[test]
     fn mappings_reject_duplicates() {
         assert!(parse_input_mappings(&["a=x".into(), "a=y".into()]).is_err());
@@ -936,7 +996,15 @@ mod tests {
             provenance_refs: vec!["contract:custom".into()],
         };
         let manifest = serde_json::from_value::<Manifest>(json!({"format":"mdp.pack.v1","id":"x","name":"x","version":"1","description":null,"personas":[],"jobs":[],"cards":[],"policy":{"progressive_disclosure":false,"load_manifest_first":true,"max_cards_per_route":1,"json_contract":"x","no_auth_required":true},"provenance":{"owner":"x","created_by":"x","notes":[]}})).unwrap();
-        let authority = input_authority(&input, &manifest, "job").unwrap();
+        let authority = input_authority(
+            &input,
+            &manifest,
+            &ProfileJob {
+                id: "job".into(),
+                ..ProfileJob::default()
+            },
+        )
+        .unwrap();
         assert_eq!(
             authority,
             (
@@ -952,5 +1020,106 @@ mod tests {
             std::path::Path::new("/tmp/request.json"),
             std::path::Path::new("/tmp/./request.json")
         ));
+    }
+
+    #[test]
+    fn output_transaction_guard_removes_only_owned_staged_and_installed_entries() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-prepare-transaction-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let owned_dir = root.join("new");
+        let sibling = root.join("sibling.txt");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&sibling, b"keep").unwrap();
+        std::fs::create_dir(&owned_dir).unwrap();
+        let staged = owned_dir.join("request.tmp");
+        let installed = owned_dir.join("request.json");
+        std::fs::write(&staged, b"request").unwrap();
+        std::fs::write(&installed, b"request").unwrap();
+        {
+            let mut guard = super::OutputTransactionGuard::default();
+            guard.staged.push(staged.clone());
+            guard.installed.push(installed.clone());
+            guard.created_dirs.push(owned_dir.clone());
+        }
+        assert!(!staged.exists());
+        assert!(!installed.exists());
+        assert!(sibling.exists());
+        assert!(!owned_dir.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn undeclared_input_cannot_use_unrelated_manifest_contract() {
+        let input = PromptInput {
+            name: "unrelated".into(),
+            description: String::new(),
+            required: true,
+            default: String::new(),
+            missing_behavior: String::new(),
+            producer: None,
+            schema_ref: None,
+            media_type: None,
+            provenance_refs: Vec::new(),
+        };
+        let manifest = serde_json::from_value::<Manifest>(json!({
+            "format":"mdp.pack.v1","id":"x","name":"x","version":"1",
+            "description":null,"personas":[],"jobs":[],"cards":[],
+            "input_contracts":[{"id":"other","schema_ref":"other.schema.v1"}],
+            "policy":{"progressive_disclosure":false,"load_manifest_first":true,"max_cards_per_route":1,"json_contract":"x","no_auth_required":true},
+            "provenance":{"owner":"x","created_by":"x","notes":[]}
+        })).unwrap();
+        let job = ProfileJob {
+            id: "job".into(),
+            ..ProfileJob::default()
+        };
+        assert!(input_authority(&input, &manifest, &job).is_err());
+    }
+
+    #[test]
+    fn lineage_rejects_duplicate_explicit_aliases() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-lineage-alias-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let left = root.join("left.json");
+        let right = root.join("right.json");
+        std::fs::write(&left, b"{}\n").unwrap();
+        std::fs::write(&right, b"{}\n").unwrap();
+        let authority = |name: &str| {
+            (
+                name.to_string(),
+                (
+                    ArtifactAuthority {
+                        logical_name: name.to_string(),
+                        schema_id: "mdp.source-binding.v2".into(),
+                        media_type: "application/json".into(),
+                        byte_count: 3,
+                        sha256: "a".repeat(64),
+                        provenance: EvidenceProvenance::MdpObserved,
+                        provenance_refs: Vec::new(),
+                    },
+                    if name == "source-binding" {
+                        left.clone()
+                    } else {
+                        right.clone()
+                    },
+                ),
+            )
+        };
+        let authorities: BTreeMap<String, (ArtifactAuthority, PathBuf)> =
+            [authority("source-binding"), authority("source_binding")]
+                .into_iter()
+                .collect();
+        assert!(validate_governed_lineage(&root, "job", &root, &authorities).is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

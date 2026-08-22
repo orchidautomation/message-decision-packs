@@ -346,7 +346,19 @@ const callRunTools = (args) => {
   })
 }
 
-const callPrepareRun = async (args) => {
+const blockedPrepareRun = (code, message, nextCommand = 'mdp prepare-run --help') => toolResult({
+  contract: 'mdp.run-request-compile.v1',
+  status: 'blocked',
+  diagnostics: [{
+    code,
+    contract: 'mdp.run-request-compile.v1',
+    message: `${code}: ${message}`.slice(0, 512),
+    next_command: nextCommand,
+  }],
+  next_command: nextCommand,
+})
+
+const callPrepareRunValidated = async (args) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['dir', 'job', 'operation', 'inputs', 'model', 'retention_policy', 'created_at', 'out', 'manifest_out', 'full', 'timeout_ms']))
   const dir = canonicalExistingDir(requiredString(parsed, 'dir'), 'dir')
@@ -391,6 +403,14 @@ const callPrepareRun = async (args) => {
     return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.status === 0 ? 'invalid-cli-contract' : 'prepare-run-refused' }, true)
   }
   return toolResult(envelope.data)
+}
+
+const callPrepareRun = async (args) => {
+  try {
+    return await callPrepareRunValidated(args)
+  } catch (error) {
+    return blockedPrepareRun('mcp-arguments-invalid', error?.message || 'preparation refused')
+  }
 }
 
 const callRun = async (args) => {

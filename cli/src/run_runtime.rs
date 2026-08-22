@@ -598,6 +598,21 @@ fn runtime_identity_material() -> Result<(String, String)> {
     Ok((source_sha256, node_sha256))
 }
 
+/// Hash the exact identity declaration carried by the closed request.  This
+/// is deliberately separate from the projection hash: the declaration is
+/// caller/request material, while the projection is the runtime observation.
+pub(crate) fn canonical_driver_declaration_hash(
+    driver: &crate::run_contracts::DriverIdentity,
+) -> Result<String> {
+    canonical_json_sha256_for_domain("mdp.driver-declaration.v1", &serde_json::to_value(driver)?)
+}
+
+pub(crate) fn canonical_model_declaration_hash(
+    model: &crate::run_contracts::ModelIdentity,
+) -> Result<String> {
+    canonical_json_sha256_for_domain("mdp.model-declaration.v1", &serde_json::to_value(model)?)
+}
+
 fn bind_native_identity(
     request: &RunRequestV1,
     prepared: &PreparedNativeRequest,
@@ -665,11 +680,11 @@ fn bind_native_identity(
     let mut observed_model = declared_model.clone();
     observed_model.parameters_sha256 = model_observed_sha256.clone();
     let identity_observations = IdentityObservationV1 {
-        driver_declaration_sha256: declared_driver.configuration_sha256.clone(),
+        driver_declaration_sha256: canonical_driver_declaration_hash(declared_driver)?,
         driver_observed_sha256,
         driver_projection,
         driver_facts,
-        model_declaration_sha256: declared_model.parameters_sha256.clone(),
+        model_declaration_sha256: canonical_model_declaration_hash(declared_model)?,
         model_observed_sha256,
         model_projection,
         provider_request: ProviderRequestObservationV1 {
@@ -753,14 +768,6 @@ pub(crate) fn compiler_observe_native_identity(
     );
     let model_projection: ModelParametersProjectionV1 = (&model_facts).into();
     let model_observed_sha256 = projection_hash(MODEL_PARAMETERS_PROJECTION_V1, &model_projection)?;
-    let driver_declaration_sha256 = canonical_json_sha256_for_domain(
-        "mdp.compiler-driver-declaration.v1",
-        &serde_json::to_value(declared_driver)?,
-    )?;
-    let model_declaration_sha256 = canonical_json_sha256_for_domain(
-        "mdp.compiler-model-declaration.v1",
-        &serde_json::to_value(declared_model)?,
-    )?;
     let mut observed_driver = declared_driver.clone();
     observed_driver.executable_sha256 = Some(driver_projection.bundled_source_sha256.clone());
     observed_driver.dependency_lock_sha256 = Some(driver_projection.node_executable_sha256.clone());
@@ -770,11 +777,11 @@ pub(crate) fn compiler_observe_native_identity(
     let mut observed_model = declared_model.clone();
     observed_model.parameters_sha256 = model_observed_sha256.clone();
     let identity_observations = IdentityObservationV1 {
-        driver_declaration_sha256,
+        driver_declaration_sha256: canonical_driver_declaration_hash(&observed_driver)?,
         driver_observed_sha256: driver_observed_sha256.clone(),
         driver_projection,
         driver_facts,
-        model_declaration_sha256,
+        model_declaration_sha256: canonical_model_declaration_hash(&observed_model)?,
         model_observed_sha256,
         model_projection,
         provider_request: ProviderRequestObservationV1 {

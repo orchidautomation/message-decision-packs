@@ -10,6 +10,7 @@ use crate::run_contracts::{
     RUN_VERIFICATION_V1, RUNNER_AUDIT_V1, RunBundleV1, RunMode, RunReceiptV1, RunVerificationV1,
     RunnerAuditV1,
 };
+use crate::run_runtime::{canonical_driver_declaration_hash, canonical_model_declaration_hash};
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::fs;
@@ -665,8 +666,13 @@ fn verify_identity_observations(
     ) {
         issues.push(issue.to_string());
     }
-    if observations.driver_declaration_sha256 != observations.driver_observed_sha256
-        || observations.model_declaration_sha256 != observations.model_observed_sha256
+    if canonical_driver_declaration_hash(driver).ok().as_deref()
+        != Some(observations.driver_declaration_sha256.as_str())
+    {
+        issues.push("generative-identity-declaration-mismatch".to_string());
+    }
+    if canonical_model_declaration_hash(model).ok().as_deref()
+        != Some(observations.model_declaration_sha256.as_str())
     {
         issues.push("generative-identity-declaration-mismatch".to_string());
     }
@@ -779,6 +785,7 @@ mod tests {
     };
     use crate::artifact_hash::{canonical_json_sha256_for_domain, sha256_hex};
     use crate::run_contracts::*;
+    use crate::run_runtime::{canonical_driver_declaration_hash, canonical_model_declaration_hash};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -977,11 +984,17 @@ mod tests {
             provenance_refs: vec![],
         });
         let mut observation = IdentityObservationV1 {
-            driver_declaration_sha256: driver_observed_sha256.clone(),
+            driver_declaration_sha256: canonical_driver_declaration_hash(
+                bundle.driver.as_ref().unwrap(),
+            )
+            .unwrap(),
             driver_observed_sha256,
             driver_projection,
             driver_facts,
-            model_declaration_sha256: model_observed_sha256.clone(),
+            model_declaration_sha256: canonical_model_declaration_hash(
+                bundle.model.as_ref().unwrap(),
+            )
+            .unwrap(),
             model_observed_sha256,
             model_projection,
             provider_request: ProviderRequestObservationV1 {

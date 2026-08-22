@@ -44,7 +44,28 @@ fn main() {
             );
             let exit_code = if is_display { 0 } else { 2 };
             if json_mode && !is_display {
-                let _ = print_error(json_mode, anyhow::anyhow!(err.to_string()));
+                if std::env::args().any(|arg| arg == "prepare-run") {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "ok": false,
+                            "command": "prepare-run",
+                            "data": {
+                                "contract": "mdp.run-request-compile.v1",
+                                "status": "blocked",
+                                "diagnostics": [{
+                                    "code": "cli-arguments-invalid",
+                                    "contract": "mdp.run-request-compile.v1",
+                                    "message": "cli-arguments-invalid: preparation refused",
+                                    "next_command": "mdp prepare-run --help"
+                                }],
+                                "next_command": "mdp prepare-run --help"
+                            }
+                        })
+                    );
+                } else {
+                    let _ = print_error(json_mode, anyhow::anyhow!(err.to_string()));
+                }
             } else {
                 let _ = err.print();
             }
