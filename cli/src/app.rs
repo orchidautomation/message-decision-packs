@@ -15,10 +15,10 @@ use crate::commands::{
     project_source_file, prospect_brief_with_context, rebind_synthetic_chain, refresh_readme,
     render_human_brief_file, render_human_brief_markdown, render_mermaid,
     render_readable_prospect_brief, requirements, route_budget_preflight_command,
-    route_budget_preflight_query_command, route_scoped, run_receipt, run_request_file,
-    sample_leads, schema, skills, validate_behavioral_files, validate_pack,
-    validate_prompt_output_file_with_inputs, validate_source_binding_file, verify_output_file,
-    verify_output_readable_file, verify_run_files,
+    route_budget_preflight_query_command, route_scoped, run_preflight_file, run_receipt,
+    run_request_file_with_transport, sample_leads, schema, skills, validate_behavioral_files,
+    validate_pack, validate_prompt_output_file_with_inputs, validate_source_binding_file,
+    verify_output_file, verify_output_readable_file, verify_run_files,
 };
 use crate::output::print_output;
 use crate::pack_io::{planned_json_write, write_json_file};
@@ -440,10 +440,23 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 }),
             )
         }
-        Commands::Run { request, out_dir } => print_run_execution(
+        Commands::Run {
+            request,
+            out_dir,
+            transport_timeout_ms,
+        } => print_run_execution(
             json_mode,
             summary_mode,
-            run_request_file(&request, &out_dir)?,
+            run_request_file_with_transport(&request, &out_dir, transport_timeout_ms)?,
+        ),
+        Commands::RunPreflight {
+            request,
+            transport_timeout_ms,
+        } => print_output(
+            json_mode,
+            summary_mode,
+            "run-preflight",
+            run_preflight_file(&request, transport_timeout_ms)?,
         ),
         Commands::VerifyOutput {
             dir,

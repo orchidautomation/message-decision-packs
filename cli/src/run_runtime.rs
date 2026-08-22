@@ -18,9 +18,10 @@ use crate::constants::{
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
 use crate::run_contracts::{
-    ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState,
-    DRIVER_CONFIGURATION_PROJECTION_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V2, DecisionAuthority,
-    DriverArtifactV2, DriverConfigurationProjectionV1, DriverOutputV2, DriverProviderObservationV2,
+    ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState, DEADLINE_OBSERVATION_V1,
+    DRIVER_CONFIGURATION_PROJECTION_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V2, DeadlineObservationV1,
+    DeadlineOutcome, DeadlinePhase, DecisionAuthority, DriverArtifactV2,
+    DriverConfigurationProjectionV1, DriverOutputV2, DriverProviderObservationV2,
     DriverProviderPolicyV2, DriverRequestV2, DriverResultV2, EvidenceProvenance,
     IdentityObservationV1, MDP_RUNTIME_VERSION, MODEL_PARAMETERS_PROJECTION_V1,
     ModelParametersFactsV1, ModelParametersProjectionV1, OPENAI_PROVIDER_REQUEST_SCHEMA_ID,
@@ -32,6 +33,7 @@ use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::borrow::Cow;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -64,6 +66,8 @@ const MAX_POLICY_DIAGNOSTIC_BYTES: usize = 4096;
 const MAX_DIAGNOSTIC_INPUT_BYTES: usize = 64;
 const DRIVER_RESULT_ENVELOPE_BYTES: u64 = 64 * 1024;
 const MAX_FINALIZATION_RESERVE_MS: u64 = 250;
+pub(crate) const RECOMMENDED_TIMEOUT_MS: u64 = 60_000;
+const MAX_TRANSPORT_TIMEOUT_MS: u64 = 300_000;
 const OFFICIAL_OPENAI_RESPONSES_ENDPOINT: &str = "https://api.openai.com/v1/responses";
 const NATIVE_SUBPROCESS_REQUEST_V1: &str = "mdp.native-model-subprocess-request.v1";
 const NATIVE_SUBPROCESS_RESULT_V1: &str = "mdp.native-model-subprocess-result.v1";
@@ -123,6 +127,7 @@ pub(crate) struct RunFailure {
     kind: RunFailureKind,
     code: &'static str,
     diagnostics: Vec<RunDiagnostic>,
+    deadline: Option<DeadlineObservationV1>,
 }
 
 impl RunFailure {
@@ -136,6 +141,7 @@ impl RunFailure {
             kind,
             code,
             diagnostics,
+            deadline: None,
         }
     }
 
@@ -152,6 +158,7 @@ impl RunFailure {
             } else {
                 Vec::new()
             },
+            deadline: None,
         };
         failure.bound_diagnostics();
         failure
@@ -167,6 +174,10 @@ impl RunFailure {
 
     pub(crate) fn diagnostics(&self) -> &[RunDiagnostic] {
         &self.diagnostics
+    }
+
+    pub(crate) fn deadline(&self) -> Option<&DeadlineObservationV1> {
+        self.deadline.as_ref()
     }
 
     fn bound_diagnostics(&mut self) {
@@ -198,6 +209,16 @@ fn run_failure_with_diagnostic(
     diagnostic: RunDiagnostic,
 ) -> anyhow::Error {
     anyhow::Error::new(RunFailure::with_diagnostic(kind, code, diagnostic))
+}
+
+fn run_failure_with_deadline(
+    kind: RunFailureKind,
+    code: &'static str,
+    deadline: DeadlineObservationV1,
+) -> anyhow::Error {
+    let mut failure = RunFailure::new(kind, code);
+    failure.deadline = Some(deadline);
+    anyhow::Error::new(failure)
 }
 
 fn diagnostic_value(kind: &'static str, value: &'static str) -> DiagnosticValue {
@@ -331,48 +352,185 @@ fn source_integrity_input_diagnostic(input: &StagedInput) -> RunDiagnostic {
     source_integrity_diagnostic(&input.logical_name)
 }
 
+#[derive(Debug)]
 struct RunDeadline {
     started_at: Instant,
-    budget: Duration,
+    started_wall_ms: u64,
+    runtime_configured_ms: u64,
+    transport_configured_ms: Option<u64>,
+    provider_configured_ms: u64,
+    finalization_reserve_ms: u64,
+    effective_limit_ms: u64,
+    warnings: Vec<String>,
+    phase: Cell<DeadlinePhase>,
+    terminal: RefCell<Option<DeadlineObservationV1>>,
 }
 
 struct TransactionOutcome {
     bundle_sha256: String,
     receipt: RunReceiptV1,
     diagnostics: Vec<RunDiagnostic>,
+    deadline: Option<DeadlineObservationV1>,
 }
 
 impl RunDeadline {
     fn new(timeout_ms: u64) -> Self {
-        Self {
-            started_at: Instant::now(),
-            budget: Duration::from_millis(timeout_ms),
-        }
+        Self::try_new(timeout_ms, None).expect("validated execution timeout")
     }
 
-    fn check(&self) -> Result<()> {
-        if self.started_at.elapsed() >= self.budget {
+    fn try_new(runtime_configured_ms: u64, transport_configured_ms: Option<u64>) -> Result<Self> {
+        if runtime_configured_ms <= MAX_FINALIZATION_RESERVE_MS {
             return Err(run_failure(
+                RunFailureKind::Preflight,
+                "deadline-reserve-underflow",
+            ));
+        }
+        if let Some(transport) = transport_configured_ms {
+            if !(MAX_FINALIZATION_RESERVE_MS + 1..=MAX_TRANSPORT_TIMEOUT_MS).contains(&transport) {
+                return Err(run_failure(
+                    RunFailureKind::Preflight,
+                    "transport-timeout-invalid",
+                ));
+            }
+        }
+        let transport_effective =
+            transport_configured_ms.map(|value| value.saturating_sub(MAX_FINALIZATION_RESERVE_MS));
+        let effective_limit_ms =
+            runtime_configured_ms.min(transport_effective.unwrap_or(runtime_configured_ms));
+        let mut warnings = Vec::new();
+        if let Some(transport) = transport_configured_ms {
+            if transport_effective.is_some_and(|value| value < runtime_configured_ms) {
+                warnings.push("outer-timeout-truncates-runtime".into());
+            } else if transport > runtime_configured_ms {
+                warnings.push("outer-timeout-cannot-extend-inner".into());
+            }
+        }
+        Ok(Self {
+            started_at: Instant::now(),
+            started_wall_ms: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| run_failure(RunFailureKind::Preflight, "deadline-clock-invalid"))?
+                .as_millis()
+                .min(u128::from(u64::MAX)) as u64,
+            runtime_configured_ms,
+            transport_configured_ms,
+            provider_configured_ms: RECOMMENDED_TIMEOUT_MS,
+            finalization_reserve_ms: MAX_FINALIZATION_RESERVE_MS,
+            effective_limit_ms,
+            warnings,
+            phase: Cell::new(DeadlinePhase::Preflight),
+            terminal: RefCell::new(None),
+        })
+    }
+
+    fn check_phase(&self, phase: DeadlinePhase) -> Result<()> {
+        self.phase.set(phase);
+        if self.started_at.elapsed() >= Duration::from_millis(self.effective_limit_ms) {
+            self.record_terminal(self.observation(
+                DeadlineOutcome::TimedOut,
+                phase,
+                TerminalState::NoDraftRunnerFailed,
+            ));
+            return Err(run_failure_with_deadline(
                 RunFailureKind::RunnerFailed,
                 "execution-timeout",
+                self.terminal
+                    .borrow()
+                    .clone()
+                    .expect("terminal deadline observation was recorded"),
             ));
         }
         Ok(())
     }
 
     fn expired(&self) -> bool {
-        self.started_at.elapsed() >= self.budget
+        self.started_at.elapsed() >= Duration::from_millis(self.effective_limit_ms)
     }
 
     fn driver_timeout_ms(&self) -> Option<u64> {
         let elapsed = self.started_at.elapsed();
-        let remaining = self.budget.checked_sub(elapsed)?;
-        let reserve_ms =
-            MAX_FINALIZATION_RESERVE_MS.min((self.budget.as_millis() as u64 / 10).max(1));
-        let driver_budget = remaining.checked_sub(Duration::from_millis(reserve_ms))?;
+        let remaining = Duration::from_millis(self.effective_limit_ms).checked_sub(elapsed)?;
+        let driver_budget =
+            remaining.checked_sub(Duration::from_millis(MAX_FINALIZATION_RESERVE_MS))?;
         u64::try_from(driver_budget.as_millis())
             .ok()
             .filter(|value| *value > 0)
+    }
+
+    fn provider_deadline(&self) -> Instant {
+        self.started_at
+            + Duration::from_millis(
+                self.effective_limit_ms
+                    .saturating_sub(self.finalization_reserve_ms),
+            )
+    }
+
+    fn provider_deadline_at_ms(&self) -> u64 {
+        self.started_wall_ms.saturating_add(
+            self.effective_limit_ms
+                .saturating_sub(self.finalization_reserve_ms),
+        )
+    }
+
+    fn record_terminal(&self, observation: DeadlineObservationV1) {
+        let mut terminal = self.terminal.borrow_mut();
+        if terminal.is_none() {
+            *terminal = Some(observation);
+        }
+    }
+
+    fn terminal_observation(&self) -> Option<DeadlineObservationV1> {
+        self.terminal.borrow().clone()
+    }
+
+    fn record_cancelled(&self, phase: DeadlinePhase) {
+        self.phase.set(phase);
+        self.record_terminal(self.observation(
+            DeadlineOutcome::Cancelled,
+            phase,
+            TerminalState::NoDraftRunnerFailed,
+        ));
+    }
+
+    fn remaining_ms(&self) -> u64 {
+        Duration::from_millis(self.effective_limit_ms)
+            .checked_sub(self.started_at.elapsed())
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+            .unwrap_or(0)
+    }
+
+    fn mark_phase(&self, phase: DeadlinePhase) {
+        self.phase.set(phase);
+    }
+
+    fn current_phase(&self) -> DeadlinePhase {
+        self.phase.get()
+    }
+
+    fn observation(
+        &self,
+        outcome: DeadlineOutcome,
+        phase: DeadlinePhase,
+        terminal_state: TerminalState,
+    ) -> DeadlineObservationV1 {
+        DeadlineObservationV1 {
+            contract: DEADLINE_OBSERVATION_V1.into(),
+            outcome,
+            phase,
+            elapsed_ms: self
+                .started_at
+                .elapsed()
+                .as_millis()
+                .min(u128::from(self.effective_limit_ms)) as u64,
+            configured_limit_ms: self.runtime_configured_ms,
+            effective_limit_ms: self.effective_limit_ms,
+            transport_configured_ms: self.transport_configured_ms,
+            runtime_configured_ms: self.runtime_configured_ms,
+            provider_configured_ms: self.provider_configured_ms,
+            finalization_reserve_ms: self.finalization_reserve_ms,
+            terminal_state,
+            warnings: self.warnings.clone(),
+        }
     }
 }
 
@@ -418,6 +576,7 @@ struct NativeSubprocessRequestV1<'a> {
     output_schema_sha256: &'a str,
     schema_name: String,
     timeout_ms: u64,
+    deadline_at_ms: u64,
     max_output_tokens: u64,
 }
 
@@ -497,6 +656,7 @@ fn prepare_native_request(
     staged_pack: &Path,
     staged_prompt: &StagedInput,
     staged_inputs: &[StagedInput],
+    deadline: &RunDeadline,
 ) -> Result<PreparedNativeRequest> {
     let identity = request
         .job_identity
@@ -567,6 +727,7 @@ fn prepare_native_request(
         output_schema_sha256: &provider_output_schema_sha256,
         schema_name: schema_name.clone(),
         timeout_ms: request.execution_policy.timeout_ms,
+        deadline_at_ms: deadline.provider_deadline_at_ms(),
         max_output_tokens: provider_max_output_tokens(request.execution_policy.max_output_bytes),
     };
     if serde_json::to_vec(&native)?.len() > MAX_NATIVE_SERIALIZED_REQUEST_BYTES {
@@ -730,7 +891,18 @@ pub(crate) fn compiler_prepare_native_request(
             initial_sha256: String::new(),
         })
         .collect::<Vec<_>>();
-    prepare_native_request(request, manifest, pack_root, &staged_prompt, &staged_inputs)
+    // Compilation only uses the prepared payload for bounded-size and
+    // identity derivation checks; execution creates and owns the real
+    // deadline that is passed to the native driver.
+    let deadline = RunDeadline::try_new(request.execution_policy.timeout_ms, None)?;
+    prepare_native_request(
+        request,
+        manifest,
+        pack_root,
+        &staged_prompt,
+        &staged_inputs,
+        &deadline,
+    )
 }
 
 /// Derive runtime-observed driver/model identities for preparation. Unlike
@@ -834,6 +1006,7 @@ struct NativeSubprocessResultV1 {
 fn invoke_native_driver(
     request: &DriverRequestV2,
     identity: &crate::run_contracts::DriverIdentity,
+    provider_deadline: Instant,
 ) -> Result<DriverResultV2> {
     if identity.driver_id != "mdp-native-openai" {
         return Err(run_failure(
@@ -902,6 +1075,7 @@ fn invoke_native_driver(
         output_schema_sha256: &request.provider_output_schema_sha256,
         schema_name: format!("mdp_{}", request.operation.replace([':', '/', '-'], "_")),
         timeout_ms: request.provider_policy.timeout_ms,
+        deadline_at_ms: request.provider_policy.deadline_at_ms,
         max_output_tokens: provider_max_output_tokens(request.provider_policy.max_output_bytes),
     };
     let request_bytes = serde_json::to_vec(&native)?;
@@ -934,11 +1108,8 @@ fn invoke_native_driver(
         .write_all(&request_bytes)
         .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "driver-stdin-failed"))?;
     let driver_stdout_limit = driver_stdout_limit(request.provider_policy.max_output_bytes)?;
-    let (status, stdout_bytes) = supervise_child(
-        &mut child,
-        request.provider_policy.timeout_ms,
-        driver_stdout_limit,
-    )?;
+    let (status, stdout_bytes) =
+        supervise_child(&mut child, provider_deadline, driver_stdout_limit)?;
     if !status.success() {
         return Err(run_failure(
             RunFailureKind::RunnerFailed,
@@ -1054,7 +1225,7 @@ fn driver_stdout_limit(max_output_bytes: u64) -> Result<u64> {
 
 fn supervise_child(
     child: &mut Child,
-    timeout_ms: u64,
+    deadline: Instant,
     stdout_limit: u64,
 ) -> Result<(ExitStatus, Vec<u8>)> {
     let stdout = child
@@ -1070,9 +1241,6 @@ fn supervise_child(
             .map(|_| bytes);
         let _ = stdout_tx.send(result);
     });
-    let deadline = Instant::now()
-        .checked_add(Duration::from_millis(timeout_ms))
-        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "driver-timeout-invalid"))?;
     let (status, stdout_bytes) = loop {
         if let Ok(result) = stdout_rx.try_recv() {
             let bytes = result
@@ -1135,7 +1303,41 @@ fn resolve_node_executable() -> Result<PathBuf> {
 }
 
 pub(crate) fn execute_run(request: &RunRequestV1, output_root: &Path) -> Result<RunExecution> {
-    execute_run_inner(request, output_root, || Ok(()))
+    execute_run_with_transport(request, output_root, None)
+}
+
+pub(crate) fn execute_run_with_transport(
+    request: &RunRequestV1,
+    output_root: &Path,
+    transport_timeout_ms: Option<u64>,
+) -> Result<RunExecution> {
+    execute_run_inner_with_transport(request, output_root, || Ok(()), transport_timeout_ms)
+}
+
+/// Read-only, path-free deadline preflight. It intentionally does not inspect
+/// the pack or declared inputs; normal run preflight remains authoritative for
+/// those boundaries.
+pub(crate) fn deadline_preflight(
+    request: &RunRequestV1,
+    transport_timeout_ms: Option<u64>,
+) -> Result<Value> {
+    validate_request(request)
+        .map_err(|_| run_failure(RunFailureKind::Preflight, "request-policy-invalid"))?;
+    let deadline = RunDeadline::try_new(request.execution_policy.timeout_ms, transport_timeout_ms)?;
+    Ok(json!({
+        "contract": "mdp.run-preflight.v1",
+        "execution_id": request.execution_id,
+        "mode": request.mode,
+        "recommended_timeout_ms": RECOMMENDED_TIMEOUT_MS,
+        "runtime_configured_ms": request.execution_policy.timeout_ms,
+        "transport_configured_ms": transport_timeout_ms,
+        "provider_configured_ms": RECOMMENDED_TIMEOUT_MS,
+        "finalization_reserve_ms": MAX_FINALIZATION_RESERVE_MS,
+        "effective_limit_ms": deadline.effective_limit_ms,
+        "warnings": deadline.warnings,
+        "staging": "not-started",
+        "provider": "not-started"
+    }))
 }
 
 fn execute_run_inner<F>(
@@ -1146,11 +1348,24 @@ fn execute_run_inner<F>(
 where
     F: FnOnce() -> Result<()>,
 {
-    execute_run_inner_with_driver(
+    execute_run_inner_with_transport(request, output_root, before_post_check, None)
+}
+
+fn execute_run_inner_with_transport<F>(
+    request: &RunRequestV1,
+    output_root: &Path,
+    before_post_check: F,
+    transport_timeout_ms: Option<u64>,
+) -> Result<RunExecution>
+where
+    F: FnOnce() -> Result<()>,
+{
+    execute_run_inner_with_driver_and_transport(
         request,
         output_root,
         before_post_check,
         invoke_native_driver,
+        transport_timeout_ms,
     )
 }
 
@@ -1164,9 +1379,33 @@ where
     F: FnOnce() -> Result<()>,
     D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
 {
+    execute_run_inner_with_driver_and_transport(
+        request,
+        output_root,
+        before_post_check,
+        move |request, identity, _deadline| driver(request, identity),
+        None,
+    )
+}
+
+fn execute_run_inner_with_driver_and_transport<F, D>(
+    request: &RunRequestV1,
+    output_root: &Path,
+    before_post_check: F,
+    driver: D,
+    transport_timeout_ms: Option<u64>,
+) -> Result<RunExecution>
+where
+    F: FnOnce() -> Result<()>,
+    D: FnOnce(
+        &DriverRequestV2,
+        &crate::run_contracts::DriverIdentity,
+        Instant,
+    ) -> Result<DriverResultV2>,
+{
     validate_request(request)
         .map_err(|_| run_failure(RunFailureKind::Preflight, "request-policy-invalid"))?;
-    let deadline = RunDeadline::new(request.execution_policy.timeout_ms);
+    let deadline = RunDeadline::try_new(request.execution_policy.timeout_ms, transport_timeout_ms)?;
     let final_dir = output_root;
     validate_output_outside_pack(request, final_dir)?;
     if final_dir.exists() {
@@ -1232,12 +1471,13 @@ where
         )
     })?;
     set_private_directory(&transaction_dir)?;
-    deadline.check()?;
+    deadline.check_phase(DeadlinePhase::Staging)?;
 
     let TransactionOutcome {
         bundle_sha256,
         receipt,
         diagnostics,
+        deadline: transaction_deadline,
     } = match execute_transaction(
         request,
         &transaction_dir,
@@ -1252,9 +1492,15 @@ where
         }
     };
     if request.mode == RunMode::Deterministic
-        && let Err(error) = deadline.check()
+        && let Err(error) = deadline.check_phase(DeadlinePhase::Finalization)
     {
         cleanup_failed_transaction(&transaction_dir)?;
+        return Err(error);
+    }
+    if request.mode == RunMode::Generative
+        && let Err(error) = deadline.check_phase(DeadlinePhase::Finalization)
+    {
+        let _ = cleanup_failed_transaction(&transaction_dir);
         return Err(error);
     }
     if let Err(error) = validate_output_outside_pack(request, final_dir) {
@@ -1264,6 +1510,12 @@ where
     fs::remove_dir_all(transaction_dir.join("private"))
         .map_err(|_| run_failure(RunFailureKind::RunnerFailed, "private-cleanup-failed"))?;
     if let Err(error) = validate_output_outside_pack(request, final_dir) {
+        let _ = cleanup_failed_transaction(&transaction_dir);
+        return Err(error);
+    }
+    if request.mode == RunMode::Generative
+        && let Err(error) = deadline.check_phase(DeadlinePhase::Finalization)
+    {
         let _ = cleanup_failed_transaction(&transaction_dir);
         return Err(error);
     }
@@ -1290,6 +1542,7 @@ where
         "limitations": receipt.limitations,
         "bundle_sha256": bundle_sha256,
         "receipt_sha256": receipt.receipt_sha256,
+        "deadline": transaction_deadline,
         "verification": {
             "bundle": output_root.join("run-bundle.json"),
             "receipt": output_root.join("run-receipt.json"),
@@ -1355,7 +1608,11 @@ fn execute_transaction<F, D>(
 ) -> Result<TransactionOutcome>
 where
     F: FnOnce() -> Result<()>,
-    D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
+    D: FnOnce(
+        &DriverRequestV2,
+        &crate::run_contracts::DriverIdentity,
+        Instant,
+    ) -> Result<DriverResultV2>,
 {
     let private_dir = transaction_dir.join("private");
     let staged_pack = private_dir.join("pack");
@@ -1376,11 +1633,11 @@ where
     let source_pack = Path::new(&request.pack_dir);
     validate_pack_source_bounds(source_pack)
         .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "pack-boundary-refused"))?;
-    deadline.check()?;
+    deadline.check_phase(DeadlinePhase::Staging)?;
     let source_snapshot = pack_content_snapshot(source_pack)?;
     validate_pack_snapshot_bounds(&source_snapshot)?;
     copy_pack(source_pack, &staged_pack)?;
-    deadline.check()?;
+    deadline.check_phase(DeadlinePhase::Staging)?;
     let staged_snapshot = pack_content_snapshot(&staged_pack)?;
     if source_snapshot != staged_snapshot {
         return Err(run_failure_with_diagnostic(
@@ -1404,7 +1661,7 @@ where
 
     let staged = stage_inputs(request, &staged_inputs)
         .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "declared-input-refused"))?;
-    deadline.check()?;
+    deadline.check_phase(DeadlinePhase::Staging)?;
     let staged_prompt = match request.prompt.as_ref() {
         Some(prompt) => Some(stage_local_artifact(
             prompt,
@@ -1454,6 +1711,7 @@ where
                 &staged_pack,
                 staged_prompt.as_ref().expect("generative prompt validated"),
                 &staged,
+                deadline,
             )?;
             let (driver, model, observations, model_facts) =
                 bind_native_identity(request, &prepared)?;
@@ -1508,7 +1766,7 @@ where
         let prompt = staged_prompt.as_ref().ok_or_else(|| {
             run_failure(RunFailureKind::PolicyBlocked, "generative-prompt-missing")
         })?;
-        let outcome = execute_generative_step(
+        let outcome = execute_generative_step_with_deadline(
             request,
             &staged_pack,
             prompt,
@@ -1729,20 +1987,42 @@ where
         (TerminalState::NoDraftPolicyBlocked, None)
     };
     if request.mode == RunMode::Deterministic {
-        deadline.check()?;
+        if deadline.check_phase(DeadlinePhase::Validation).is_err() {
+            terminal_state = TerminalState::NoDraftRunnerFailed;
+            success_values = None;
+            validation = None;
+        }
     } else if deadline.expired() {
+        deadline.record_terminal(deadline.observation(
+            DeadlineOutcome::TimedOut,
+            deadline.current_phase(),
+            TerminalState::NoDraftRunnerFailed,
+        ));
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
         validation = None;
     }
 
+    deadline.mark_phase(DeadlinePhase::Finalization);
     before_post_check()?;
     if request.mode == RunMode::Deterministic {
-        deadline.check()?;
+        if deadline.check_phase(DeadlinePhase::Finalization).is_err() {
+            terminal_state = TerminalState::NoDraftRunnerFailed;
+            success_values = None;
+            validation = None;
+        }
     } else if deadline.expired() {
+        deadline.record_terminal(deadline.observation(
+            DeadlineOutcome::TimedOut,
+            DeadlinePhase::Finalization,
+            TerminalState::NoDraftRunnerFailed,
+        ));
         terminal_state = TerminalState::NoDraftRunnerFailed;
         success_values = None;
         validation = None;
+    }
+    if !deadline.expired() {
+        deadline.mark_phase(DeadlinePhase::Cleanup);
     }
     let staged_pack_after = pack_content_snapshot(&staged_pack)?;
     let source_pack_after = pack_content_snapshot(source_pack)?;
@@ -1777,6 +2057,9 @@ where
         success_values = None;
     }
 
+    if !deadline.expired() {
+        deadline.mark_phase(DeadlinePhase::Validation);
+    }
     let validation_authority = if let Some(value) = validation {
         let path = artifacts_dir.join("validation.json");
         write_json_create_new(&path, &value)?;
@@ -1792,6 +2075,15 @@ where
         None
     };
 
+    if request.mode == RunMode::Generative
+        && terminal_state.is_success()
+        && deadline.check_phase(DeadlinePhase::Finalization).is_err()
+    {
+        terminal_state = TerminalState::NoDraftRunnerFailed;
+        success_values = None;
+        validation = None;
+    }
+    let deadline_observation = deadline.terminal_observation();
     let assurance = assurance_dimensions(
         request.mode,
         terminal_state,
@@ -1814,6 +2106,7 @@ where
         provider_response_body_sha256,
         provider_observation,
         identity_observations,
+        deadline: deadline_observation.clone(),
         diagnostic_code,
         terminal_state,
         assurance: assurance.clone(),
@@ -1886,6 +2179,7 @@ where
         compiled_context,
         validation: validation_authority,
         runner_audit: audit_authority,
+        deadline: deadline_observation.clone(),
         assurance,
         limitations: audit.limitations,
         receipt_sha256: String::new(),
@@ -1907,6 +2201,7 @@ where
         bundle_sha256,
         receipt,
         diagnostics,
+        deadline: deadline_observation,
     })
 }
 
@@ -1957,6 +2252,42 @@ fn execute_generative_step<D>(
 ) -> Result<GenerativeOutcome>
 where
     D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
+{
+    execute_generative_step_with_deadline(
+        request,
+        staged_pack,
+        staged_prompt,
+        staged_inputs,
+        private_dir,
+        bundle,
+        bundle_sha256,
+        prepared,
+        driver_identity,
+        deadline,
+        move |request, identity, _deadline| driver(request, identity),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_generative_step_with_deadline<D>(
+    request: &RunRequestV1,
+    staged_pack: &Path,
+    staged_prompt: &StagedInput,
+    staged_inputs: &[StagedInput],
+    private_dir: &Path,
+    bundle: &RunBundleV1,
+    bundle_sha256: &str,
+    prepared: &PreparedNativeRequest,
+    driver_identity: &crate::run_contracts::DriverIdentity,
+    deadline: &RunDeadline,
+    driver: D,
+) -> Result<GenerativeOutcome>
+where
+    D: FnOnce(
+        &DriverRequestV2,
+        &crate::run_contracts::DriverIdentity,
+        Instant,
+    ) -> Result<DriverResultV2>,
 {
     let identity = request
         .job_identity
@@ -2020,6 +2351,7 @@ where
             requested_model: model.requested_model.clone(),
             authorized_endpoint: model.authorized_endpoint.clone(),
             timeout_ms: driver_timeout_ms.unwrap_or(1),
+            deadline_at_ms: deadline.provider_deadline_at_ms(),
             max_output_bytes: request.execution_policy.max_output_bytes,
         },
         execution_policy_sha256: policy_hash,
@@ -2030,15 +2362,48 @@ where
     if driver_timeout_ms.is_none() {
         return failed_generative_outcome(driver_request, "driver_budget_exhausted");
     }
-    let result = match driver(&driver_request, driver_identity) {
+    deadline.mark_phase(DeadlinePhase::Driver);
+    let result = match driver(
+        &driver_request,
+        driver_identity,
+        deadline.provider_deadline(),
+    ) {
         Ok(result) => result,
-        Err(_) => {
-            return failed_generative_outcome(driver_request, "driver_invocation_failed");
+        Err(error) => {
+            let code = error
+                .downcast_ref::<RunFailure>()
+                .map(RunFailure::code)
+                .unwrap_or("driver_invocation_failed");
+            if matches!(
+                code,
+                "cancelled" | "driver-cancelled" | "provider-cancelled"
+            ) {
+                deadline.record_cancelled(DeadlinePhase::Cancellation);
+                return failed_generative_outcome(driver_request, "cancelled");
+            }
+            if matches!(
+                code,
+                "driver-timeout" | "provider-timeout" | "execution-timeout"
+            ) {
+                deadline.record_terminal(deadline.observation(
+                    DeadlineOutcome::TimedOut,
+                    DeadlinePhase::Provider,
+                    TerminalState::NoDraftRunnerFailed,
+                ));
+                return failed_generative_outcome(driver_request, "driver-timeout");
+            }
+            return failed_generative_outcome(driver_request, code);
         }
     };
     if deadline.expired() {
-        return failed_generative_outcome(driver_request, "driver_deadline_exhausted");
+        deadline.record_terminal(deadline.observation(
+            DeadlineOutcome::TimedOut,
+            DeadlinePhase::Provider,
+            TerminalState::NoDraftRunnerFailed,
+        ));
+        return failed_generative_outcome(driver_request, "driver-timeout");
     }
+    deadline.mark_phase(DeadlinePhase::Validation);
     if validate_driver_result(&driver_request, &result).is_err() {
         return Ok(GenerativeOutcome {
             terminal_state: TerminalState::NoDraftRunnerFailed,
@@ -2119,6 +2484,14 @@ where
         Some(&invocation_path),
         routed_context.map(|item| item.staged_path.as_path()),
     )?;
+    if deadline.expired() {
+        deadline.record_terminal(deadline.observation(
+            DeadlineOutcome::TimedOut,
+            deadline.current_phase(),
+            TerminalState::NoDraftRunnerFailed,
+        ));
+        return failed_generative_outcome(driver_request, "validation-timeout");
+    }
     let valid = validation["valid"].as_bool() == Some(true);
     Ok(GenerativeOutcome {
         terminal_state: if valid {
@@ -3347,7 +3720,7 @@ fn validate_request(request: &RunRequestV1) -> Result<()> {
         || request.execution_policy.max_input_bytes > MAX_POLICY_INPUT_BYTES
         || request.execution_policy.max_output_bytes == 0
         || request.execution_policy.max_output_bytes > MAX_POLICY_OUTPUT_BYTES
-        || request.execution_policy.timeout_ms == 0
+        || request.execution_policy.timeout_ms <= MAX_FINALIZATION_RESERVE_MS
         || request.execution_policy.timeout_ms > 60_000
     {
         return Err(anyhow!("execution policy limits must be positive"));
@@ -3929,7 +4302,7 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        RunFailure, RunFailureKind, execute_generative_step, execute_run_inner,
+        RunDeadline, RunFailure, RunFailureKind, execute_generative_step, execute_run_inner,
         execute_run_inner_with_driver, governed_normalization_outcome, gtm_lineage_schema_ids,
         gtm_success_artifacts, host_wrap_governed_output, project_output_schema_for_openai,
         provider_max_output_tokens, provider_schema_source, provider_schema_source_for_contract,
@@ -3940,14 +4313,52 @@ mod tests {
     use crate::models::{PromptEntryDefaults, PromptHostEnvelope, PromptOutputContract};
     use crate::run_contracts::{
         ArtifactAuthority, AssuranceEvidenceState, DRIVER_REQUEST_V2, DRIVER_RESULT_V2,
-        DriverArtifactV2, DriverIdentity, DriverOutputV2, DriverProviderObservationV2,
-        DriverProviderPolicyV2, DriverRequestV2, DriverResultV2, EvidenceProvenance,
-        ExecutionPolicy, JobIdentity, LocalArtifactInput, ModelIdentity, PackAuthority,
-        RunBundleV1, RunMode, RunRequestV1, TerminalState,
+        DeadlinePhase, DriverArtifactV2, DriverIdentity, DriverOutputV2,
+        DriverProviderObservationV2, DriverProviderPolicyV2, DriverRequestV2, DriverResultV2,
+        EvidenceProvenance, ExecutionPolicy, JobIdentity, LocalArtifactInput, ModelIdentity,
+        PackAuthority, RunBundleV1, RunMode, RunRequestV1, TerminalState,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn deadline_plan_exposes_one_effective_bound_and_outer_warning() {
+        let plan = RunDeadline::try_new(60_000, Some(120_000)).unwrap();
+        assert_eq!(plan.effective_limit_ms, 60_000);
+        assert!(plan.driver_timeout_ms().unwrap() <= 59_750);
+        assert!(plan.driver_timeout_ms().unwrap() >= 59_700);
+        assert_eq!(plan.warnings, vec!["outer-timeout-cannot-extend-inner"]);
+        let shorter = RunDeadline::try_new(60_000, Some(30_000)).unwrap();
+        assert_eq!(shorter.effective_limit_ms, 29_750);
+        assert_eq!(shorter.warnings, vec!["outer-timeout-truncates-runtime"]);
+    }
+
+    #[test]
+    fn deadline_plan_rejects_reserve_underflow() {
+        for timeout in [250, 249] {
+            let error = RunDeadline::try_new(timeout, None).unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<RunFailure>().unwrap().code(),
+                "deadline-reserve-underflow"
+            );
+        }
+        assert!(RunDeadline::try_new(251, None).is_ok());
+    }
+
+    #[test]
+    fn deadline_plan_rejects_limits_that_cannot_preserve_fixed_reserve() {
+        for transport in [Some(250), Some(0)] {
+            let error = RunDeadline::try_new(60_000, transport).unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<RunFailure>().unwrap().code(),
+                "transport-timeout-invalid"
+            );
+        }
+        let plan = RunDeadline::try_new(1_000, None).unwrap();
+        assert!(plan.driver_timeout_ms().unwrap() <= 750);
+        assert!(plan.driver_timeout_ms().unwrap() >= 700);
+    }
 
     #[test]
     fn policy_diagnostics_use_bounded_allowlisted_values() {
@@ -4039,6 +4450,27 @@ mod tests {
         let mut request = request_fixture("not-used", "not-used");
         request.execution_policy.network_mode = "allow".into();
         assert!(validate_request(&request).is_err());
+    }
+
+    #[test]
+    fn run_request_timeout_reserves_the_fixed_finalization_window() {
+        let mut request = request_fixture("not-used", "not-used");
+        request.execution_policy.timeout_ms = 250;
+        assert!(validate_request(&request).is_err());
+        request.execution_policy.timeout_ms = 251;
+        assert!(validate_request(&request).is_ok());
+    }
+
+    #[test]
+    fn delayed_output_validation_preserves_the_validation_phase() {
+        let deadline = RunDeadline::try_new(251, None).unwrap();
+        deadline.mark_phase(DeadlinePhase::Validation);
+        std::thread::sleep(std::time::Duration::from_millis(260));
+        assert!(deadline.check_phase(DeadlinePhase::Validation).is_err());
+        assert_eq!(
+            deadline.terminal_observation().unwrap().phase,
+            DeadlinePhase::Validation
+        );
     }
 
     #[test]
@@ -5187,7 +5619,7 @@ mod tests {
     }
 
     #[test]
-    fn post_bundle_deadline_exhaustion_still_publishes_a_safe_no_draft_receipt() {
+    fn late_post_bundle_deadline_discards_transaction_without_success_publication() {
         let root = temp_path("generative-deadline-receipt");
         let pack = root.join("pack");
         let raw = root.join("raw-row.json");
@@ -5228,15 +5660,52 @@ mod tests {
                 seal_driver_result(&mut result)?;
                 Ok(result)
             },
+        );
+        assert!(result.is_err());
+        assert!(!run.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn post_bundle_cancellation_publishes_sanitized_no_draft_receipt() {
+        let root = temp_path("generative-cancellation-receipt");
+        let pack = root.join("pack");
+        let raw = root.join("raw-row.json");
+        fs::create_dir_all(&root).unwrap();
+        crate::commands::init::init_pack(&pack, "Cancellation Pack", "gtm", true, false).unwrap();
+        fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
+        let request = generative_request_fixture(&pack, &raw);
+        let run = root.join("published-run");
+        let result = execute_run_inner_with_driver(
+            &request,
+            &run,
+            || Ok(()),
+            |_, _| {
+                Err(super::run_failure(
+                    RunFailureKind::RunnerFailed,
+                    "cancelled",
+                ))
+            },
         )
         .unwrap();
-
         assert_eq!(result.terminal_state, TerminalState::NoDraftRunnerFailed);
         let receipt: serde_json::Value =
             serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
+        assert_eq!(receipt["terminal_state"], "no-draft:runner-failed");
+        assert_eq!(receipt["deadline"]["outcome"], "cancelled");
+        assert_eq!(receipt["deadline"]["phase"], "cancellation");
         assert!(receipt["output"].is_null());
         assert!(receipt["decision"].is_null());
         assert!(!run.join("private").exists());
+        assert_eq!(
+            crate::commands::run_verification::verify_run_files(
+                Some(&run.join("run-bundle.json")),
+                &run.join("run-receipt.json"),
+                Some(&run),
+            )
+            .unwrap()["valid"],
+            true
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -5257,7 +5726,12 @@ mod tests {
             dependency_lock_sha256: Some("c".repeat(64)),
             identity_provenance: EvidenceProvenance::MdpObserved,
         };
-        let error = super::invoke_native_driver(&request, &identity).unwrap_err();
+        let error = super::invoke_native_driver(
+            &request,
+            &identity,
+            std::time::Instant::now() + std::time::Duration::from_millis(30_000),
+        )
+        .unwrap_err();
         assert_eq!(
             error.downcast_ref::<super::RunFailure>().unwrap().code(),
             "driver-implementation-not-bundled"
@@ -5274,7 +5748,12 @@ mod tests {
             .spawn()
             .unwrap();
         let started = std::time::Instant::now();
-        let error = super::supervise_child(&mut child, 25, 1024).unwrap_err();
+        let error = super::supervise_child(
+            &mut child,
+            std::time::Instant::now() + std::time::Duration::from_millis(25),
+            1024,
+        )
+        .unwrap_err();
         assert_eq!(
             error.downcast_ref::<super::RunFailure>().unwrap().code(),
             "driver-timeout"
@@ -5294,7 +5773,12 @@ mod tests {
         // Cold Node startup can exceed two seconds on a contended CI runner.
         // Keep the deadline bounded while giving the child enough time to
         // exercise the stdout limit instead of racing the timeout branch.
-        let error = super::supervise_child(&mut child, 10_000, 128).unwrap_err();
+        let error = super::supervise_child(
+            &mut child,
+            std::time::Instant::now() + std::time::Duration::from_secs(10),
+            128,
+        )
+        .unwrap_err();
         assert_eq!(
             error.downcast_ref::<super::RunFailure>().unwrap().code(),
             "driver-result-too-large"
@@ -5991,6 +6475,7 @@ mod tests {
                 requested_model: "gpt-5-mini".into(),
                 authorized_endpoint: super::OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into(),
                 timeout_ms: 30_000,
+                deadline_at_ms: 59_750,
                 max_output_bytes: 1_048_576,
             },
             execution_policy_sha256: "f".repeat(64),
@@ -6093,6 +6578,7 @@ mod tests {
             &staged_pack,
             &staged_prompt,
             &staged,
+            &super::RunDeadline::new(30_000),
         ) else {
             let _ = fs::remove_dir_all(root);
             return;

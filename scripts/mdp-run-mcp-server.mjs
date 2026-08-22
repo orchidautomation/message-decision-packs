@@ -21,14 +21,19 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { superviseProcess } from './lib/process-supervisor.mjs'
+import {
+  MAX_TIMEOUT_MS,
+  MIN_TIMEOUT_MS,
+  RECOMMENDED_TIMEOUT_MS,
+  validateTransportTimeout,
+} from './lib/deadline-policy.mjs'
 
 const MCP_PROTOCOL_VERSION = '2025-06-18'
 const SERVER_NAME = 'message-decision-packs-runner'
 const MAX_JSON_RPC_LINE_BYTES = 1_000_000
 const MAX_REQUEST_FILE_BYTES = 1_048_576
 const MAX_CHILD_BUFFER_BYTES = 1_000_000
-const DEFAULT_TIMEOUT_MS = 120_000
-const MAX_TIMEOUT_MS = 300_000
+const DEFAULT_TIMEOUT_MS = RECOMMENDED_TIMEOUT_MS
 const JSON_RPC_PARSE_ERROR = -32700
 const JSON_RPC_INVALID_REQUEST = -32600
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -80,6 +85,33 @@ const toolResult = (structuredContent, isError = false) => ({
   structuredContent,
   isError,
 })
+
+const validateDeadlinePlan = (plan, timeoutMs, executionId = null) => {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return false
+  const required = [
+    'contract', 'execution_id', 'mode', 'recommended_timeout_ms',
+    'runtime_configured_ms', 'transport_configured_ms', 'provider_configured_ms',
+    'finalization_reserve_ms', 'effective_limit_ms', 'warnings', 'staging', 'provider',
+  ]
+  const allowed = new Set(required)
+  if (Object.keys(plan).some((key) => !allowed.has(key)) || required.some((key) => !(key in plan))) return false
+  if (plan.contract !== 'mdp.run-preflight.v1' || typeof plan.execution_id !== 'string' || plan.execution_id.trim() === '' ||
+      (executionId !== null && plan.execution_id !== executionId) ||
+      !['deterministic', 'generative'].includes(plan.mode) || plan.recommended_timeout_ms !== RECOMMENDED_TIMEOUT_MS ||
+      plan.transport_configured_ms !== timeoutMs || plan.provider_configured_ms !== RECOMMENDED_TIMEOUT_MS ||
+      plan.finalization_reserve_ms !== 250 || plan.staging !== 'not-started' || plan.provider !== 'not-started' ||
+      !Number.isSafeInteger(plan.runtime_configured_ms) || plan.runtime_configured_ms < 251 || plan.runtime_configured_ms > 60_000 ||
+      !Number.isSafeInteger(plan.effective_limit_ms) || plan.effective_limit_ms < 1 || plan.effective_limit_ms > 60_000 ||
+      !Array.isArray(plan.warnings) || plan.warnings.some((warning) => !['outer-timeout-cannot-extend-inner', 'outer-timeout-truncates-runtime'].includes(warning))) return false
+  const expected = Math.min(plan.runtime_configured_ms, timeoutMs - 250)
+  if (plan.effective_limit_ms !== expected) return false
+  const expectedWarnings = timeoutMs > plan.runtime_configured_ms
+    ? ['outer-timeout-cannot-extend-inner']
+    : timeoutMs - 250 < plan.runtime_configured_ms
+      ? ['outer-timeout-truncates-runtime']
+      : []
+  return JSON.stringify(plan.warnings) === JSON.stringify(expectedWarnings)
+}
 
 const asObject = (value, label) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -237,7 +269,7 @@ const childEnvironment = (includeNativeModel = false) =>
       .map((key) => [key, process.env[key]]),
   )
 
-const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false) =>
+const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null) =>
   superviseProcess({
     command: [process.env.MDP_BIN || 'mdp'],
     args,
@@ -246,6 +278,8 @@ const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = f
     timeoutMs,
     maxOutputBytes: MAX_CHILD_BUFFER_BYTES,
     recovery,
+    deadlineMetadata,
+    signal,
   })
 
 const tools = [
@@ -300,9 +334,9 @@ const tools = [
         },
         timeout_ms: {
           type: 'integer',
-          minimum: 100,
+          minimum: MIN_TIMEOUT_MS,
           maximum: MAX_TIMEOUT_MS,
-          description: `CLI deadline. Defaults to ${DEFAULT_TIMEOUT_MS}ms.`,
+          description: `Transport guard in milliseconds. The canonical Rust recommendation is ${DEFAULT_TIMEOUT_MS}ms.`,
         },
       },
     },
@@ -320,7 +354,7 @@ const tools = [
         bundle_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-bundle.v1 file.' },
         receipt_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-receipt.v1 file.' },
         artifact_root: { type: 'string', description: 'Optional existing, non-symlink artifact directory.' },
-        timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
+        timeout_ms: { type: 'integer', minimum: MIN_TIMEOUT_MS, maximum: MAX_TIMEOUT_MS },
       },
     },
   },
@@ -413,41 +447,77 @@ const callPrepareRun = async (args) => {
   }
 }
 
-const callRun = async (args) => {
+const callRun = async (args, signal = null) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['request_path', 'output_dir', 'timeout_ms']))
   const requestPath = requiredString(parsed, 'request_path')
   const outputDir = canonicalNewOutputDir(requiredString(parsed, 'output_dir'))
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
-    throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
-  }
+  validateTransportTimeout(timeoutMs)
   const frozenRequest = freezeRequestFile(requestPath)
 
   let invocation
+  let plan = null
   try {
     assertOutputOutsidePack(frozenRequest.packDir, outputDir)
-    invocation = await invokeCli(
-      ['--json', 'run', '--request', frozenRequest.path, '--out-dir', outputDir],
+    const parentDeadline = performance.now() + timeoutMs
+    const preflightBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
+    const preflight = await invokeCli(
+      ['--json', 'run-preflight', '--request', frozenRequest.path, '--transport-timeout-ms', String(timeoutMs)],
       dirname(outputDir),
-      timeoutMs,
+      preflightBudget,
+      null,
+      frozenRequest.usesNativeModel,
+      null,
+      signal,
+    )
+    if (preflight.timedOut || preflight.cancelled || preflight.overflowed || preflight.spawnFailed) {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: preflight.cancelled ? 'cli-cancelled' : preflight.timedOut ? 'cli-timeout' : 'cli-unavailable' }, true)
+    }
+    let preflightEnvelope
+    try {
+      preflightEnvelope = JSON.parse(preflight.stdout)
+    } catch {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true)
+    }
+    plan = preflightEnvelope?.data
+    if (
+      preflightEnvelope?.ok !== true ||
+      preflightEnvelope?.command !== 'run-preflight' ||
+      !plan ||
+      plan.contract !== 'mdp.run-preflight.v1'
+    ) {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'run-preflight-refused' }, true)
+    }
+    if (!validateDeadlinePlan(plan, timeoutMs, frozenRequest.executionId)) {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'run-preflight-malformed' }, true)
+    }
+    const runBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
+    invocation = await invokeCli(
+      ['--json', 'run', '--request', frozenRequest.path, '--out-dir', outputDir, '--transport-timeout-ms', String(timeoutMs)],
+      dirname(outputDir),
+      runBudget,
       {
         outputDir,
         executionId: frozenRequest.executionId,
         requestSha256: frozenRequest.sha256,
       },
       frozenRequest.usesNativeModel,
+      plan,
+      signal,
     )
   } finally {
     rmSync(frozenRequest.privateDir, { recursive: true, force: true })
   }
-  if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
-    const code = invocation.timedOut
+  if (invocation.timedOut || invocation.cancelled || invocation.overflowed || invocation.spawnFailed) {
+    const code = invocation.cancelled
+      ? 'cli-cancelled'
+      : invocation.timedOut
       ? 'cli-timeout'
       : invocation.overflowed
         ? 'cli-output-limit'
         : 'cli-unavailable'
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code, ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
 
   let envelope
@@ -459,6 +529,7 @@ const callRun = async (args) => {
         ok: false,
         contract: 'mdp.run-mcp-error.v1',
         code: invocation.status === 0 ? 'invalid-cli-output' : 'cli-run-failed',
+        ...(invocation.deadline ? { deadline: invocation.deadline } : {}),
       },
       true,
     )
@@ -475,7 +546,7 @@ const callRun = async (args) => {
     Array.isArray(envelope.data.authority_block) ||
     envelope.data.authority_block.terminal_state !== envelope.data.terminal_state
   ) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
 
   const success =
@@ -509,13 +580,13 @@ const callRun = async (args) => {
         envelope.data.authority?.terminal === 'authority-unavailable' &&
         envelope.data.authority?.governed_generation === 'absent'))
   if (!success && !completedNoDraft && !failedNoDraft) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
 
   // A canonical no-draft result is decision data, not an MCP transport error.
   // Do not wrap, reinterpret, or promote assurance: the exact CLI data object
   // is the MCP tool result.
-  return toolResult(envelope.data)
+  return toolResult({ ...envelope.data, deadline_plan: plan })
 }
 
 const callVerifyRun = async (args) => {
@@ -527,21 +598,19 @@ const callVerifyRun = async (args) => {
     ? null
     : canonicalExistingDir(requiredString(parsed, 'artifact_root'), 'artifact_root')
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) {
-    throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
-  }
+  validateTransportTimeout(timeoutMs)
   const cliArgs = ['--json', 'verify-run', '--bundle', bundlePath, '--receipt', receiptPath]
   if (artifactRoot) cliArgs.push('--artifact-root', artifactRoot)
   const invocation = await invokeCli(cliArgs, dirname(bundlePath), timeoutMs)
   if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
     const code = invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable'
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code, ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
   let envelope
   try {
     envelope = JSON.parse(invocation.stdout)
   } catch {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output', ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
   if (
     envelope?.ok !== true ||
@@ -553,7 +622,7 @@ const callVerifyRun = async (args) => {
     typeof envelope.data.valid !== 'boolean' ||
     (invocation.status === 0) !== envelope.data.valid
   ) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract' }, true)
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-contract', ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
   // An invalid verification is a canonical integrity result, not an MCP
   // transport failure. Preserve it exactly so the caller can fail closed on
@@ -561,7 +630,7 @@ const callVerifyRun = async (args) => {
   return toolResult(envelope.data)
 }
 
-const handleToolCall = async (params) => {
+const handleToolCall = async (params, signal = null) => {
   const call = asObject(params || {}, 'params')
   if (typeof call.name !== 'string' || call.name.trim() === '') {
     throw new Error('params.name must be a non-empty string')
@@ -572,12 +641,19 @@ const handleToolCall = async (params) => {
     case 'mdp_prepare_run':
       return await callPrepareRun(call.arguments || {})
     case 'mdp_run':
-      return await callRun(call.arguments || {})
+      return await callRun(call.arguments || {}, signal)
     case 'mdp_verify_run':
       return await callVerifyRun(call.arguments || {})
     default:
       throw Object.assign(new Error(`unknown tool: ${call.name}`), { code: JSON_RPC_METHOD_NOT_FOUND })
   }
+}
+
+const activeRequests = new Map()
+
+const cancelActiveRequest = (requestId) => {
+  const controller = activeRequests.get(String(requestId))
+  if (controller) controller.abort()
 }
 
 const handleRequest = async (message) => {
@@ -606,12 +682,28 @@ const handleRequest = async (message) => {
             })
       case 'notifications/initialized':
         return null
+      case '$/cancelRequest': {
+        cancelActiveRequest(message.params?.requestId)
+        return null
+      }
+      case 'notifications/cancelled': {
+        cancelActiveRequest(message.params?.requestId)
+        return null
+      }
       case 'ping':
         return notification ? null : response(message.id, {})
       case 'tools/list':
         return notification ? null : response(message.id, { tools })
-      case 'tools/call':
-        return notification ? null : response(message.id, await handleToolCall(message.params))
+      case 'tools/call': {
+        if (notification) return null
+        const controller = new AbortController()
+        activeRequests.set(String(message.id), controller)
+        try {
+          return response(message.id, await handleToolCall(message.params, controller.signal))
+        } finally {
+          activeRequests.delete(String(message.id))
+        }
+      }
       default:
         return notification
           ? null
@@ -658,6 +750,14 @@ let buffer = ''
 let discardingOversizedLine = false
 let queue = Promise.resolve()
 const enqueue = (line) => {
+  let parsed
+  try { parsed = JSON.parse(line) } catch { parsed = null }
+  const cancellation = parsed && !Array.isArray(parsed) &&
+    (parsed.method === '$/cancelRequest' || parsed.method === 'notifications/cancelled')
+  if (cancellation) {
+    void handleRequest(parsed)
+    return
+  }
   queue = queue.then(() => handleLine(line))
 }
 process.stdin.setEncoding('utf8')

@@ -26,6 +26,29 @@ if (args.includes('verify-run')) {
   if (!data.valid) process.exit(1)
   process.exit(0)
 }
+if (args.includes('run-preflight')) {
+  const transportTimeout = Number(args[args.indexOf('--transport-timeout-ms') + 1] || 60000)
+  const runtimeTimeout = 60000
+  process.stdout.write(JSON.stringify({ ok: true, command: 'run-preflight', data: {
+    contract: 'mdp.run-preflight.v1',
+    execution_id: 'exec-fixture',
+    mode: 'deterministic',
+    recommended_timeout_ms: 60000,
+    runtime_configured_ms: 60000,
+    transport_configured_ms: transportTimeout,
+    provider_configured_ms: 60000,
+    finalization_reserve_ms: 250,
+    effective_limit_ms: Math.min(runtimeTimeout, transportTimeout - 250),
+    warnings: transportTimeout > runtimeTimeout
+      ? ['outer-timeout-cannot-extend-inner']
+      : transportTimeout - 250 < runtimeTimeout
+        ? ['outer-timeout-truncates-runtime']
+        : [],
+    staging: 'not-started',
+    provider: 'not-started',
+  }}))
+  process.exit(0)
+}
 const requestPath = args[args.indexOf('--request') + 1]
 const outputDir = args[args.indexOf('--out-dir') + 1]
 if (existsSync(outputDir + '.pause-before-read')) {
@@ -199,6 +222,57 @@ test('returns canonical valid and invalid read-only verification data', async (t
   assert.equal(replies[1].result.structuredContent.valid, false)
 })
 
+test('notifications/cancelled aborts a hanging clean run with sanitized cancellation data', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-cancel-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const request = join(root, 'run-request.json')
+  const output = join(root, 'cancelled-run')
+  writeFileSync(request, JSON.stringify({ test_mode: 'hang' }))
+  const child = spawn(process.execPath, [server], {
+    env: { ...process.env, MDP_BIN: fixtureCli(root) },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  const replies = []
+  let outputText = ''
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    outputText += chunk
+    let newline
+    while ((newline = outputText.indexOf('\n')) >= 0) {
+      const line = outputText.slice(0, newline)
+      outputText = outputText.slice(newline + 1)
+      if (line.trim()) replies.push(JSON.parse(line))
+    }
+  })
+  child.stdin.write(`${JSON.stringify(toolCall(1, 'mdp_run', { request_path: request, output_dir: output }))}\n`)
+  const cancelTimer = setTimeout(() => {
+    child.stdin.write(`${JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'notifications/cancelled',
+      params: { requestId: 1 },
+    })}\n`)
+  }, 500)
+  await new Promise((resolvePromise, rejectPromise) => {
+    const deadline = setTimeout(() => rejectPromise(new Error('cancellation response timed out')), 5000)
+    const poll = setInterval(() => {
+      if (replies.some((reply) => reply.id === 1)) {
+        clearTimeout(deadline)
+        clearInterval(poll)
+        resolvePromise()
+      }
+    }, 10)
+    child.once('error', rejectPromise)
+  })
+  clearTimeout(cancelTimer)
+  const reply = replies.find((item) => item.id === 1)
+  assert.equal(reply.result.isError, true)
+  assert.equal(reply.result.structuredContent.code, 'cli-cancelled')
+  assert.equal(reply.result.structuredContent.deadline.outcome, 'cancelled')
+  assert.equal(reply.result.structuredContent.deadline.phase, 'cancellation')
+  assert.equal(JSON.stringify(reply).includes(root), false)
+  child.kill('SIGKILL')
+})
+
 test('passes only file paths to a bounded CLI child and returns its authority unchanged', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -220,7 +294,12 @@ test('passes only file paths to a bounded CLI child and returns its authority un
   assert.deepEqual(invocation.args.slice(0, 3), ['--json', 'run', '--request'])
   assert.notEqual(invocation.args[3], request)
   assert.equal(existsSync(invocation.args[3]), false)
-  assert.deepEqual(invocation.args.slice(4), ['--out-dir', join(realpathSync(root), 'new-run')])
+  assert.deepEqual(invocation.args.slice(4), [
+    '--out-dir',
+    join(realpathSync(root), 'new-run'),
+    '--transport-timeout-ms',
+    '60000',
+  ])
   assert.equal(invocation.secret_seen, false)
   assert.equal(invocation.env_keys.includes('MDP_MCP_SECRET_MARKER'), false)
 })
@@ -472,7 +551,7 @@ test('bounds hung and overflowing children', async (t) => {
   writeFileSync(hang, JSON.stringify({ test_mode: 'hang' }))
   writeFileSync(overflow, JSON.stringify({ test_mode: 'overflow' }))
   const replies = await rpc(cli, [
-    toolCall(1, 'mdp_run', { request_path: hang, output_dir: join(root, 'hang-run'), timeout_ms: 100 }),
+    toolCall(1, 'mdp_run', { request_path: hang, output_dir: join(root, 'hang-run'), timeout_ms: 500 }),
     toolCall(2, 'mdp_run', { request_path: overflow, output_dir: join(root, 'overflow-run') }),
   ])
   assert.equal(replies[0].result.structuredContent.code, 'cli-timeout')
@@ -487,7 +566,7 @@ test('keeps SIGKILL escalation alive after the child leader exits', async (t) =>
   const marker = join(root, 'descendant-survived')
   writeFileSync(request, JSON.stringify({ test_mode: 'descendant', marker_path: marker }))
   const [reply] = await rpc(fixtureCli(root), [
-    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run'), timeout_ms: 150 }),
+    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run'), timeout_ms: 500 }),
   ])
   assert.equal(reply.result.structuredContent.code, 'cli-timeout')
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 800))
@@ -537,7 +616,7 @@ test('interrupting the real CLI during staging removes its exact claim and priva
     model: null,
   })}\n`)
   const [reply] = await rpc(realCli, [
-    toolCall(1, 'mdp_run', { request_path: requestPath, output_dir: outputDir, timeout_ms: 100 }),
+    toolCall(1, 'mdp_run', { request_path: requestPath, output_dir: outputDir, timeout_ms: 500 }),
   ])
   assert.equal(reply.result.structuredContent.code, 'cli-timeout')
   assert.equal(existsSync(outputDir), false)

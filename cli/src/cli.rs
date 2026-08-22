@@ -331,6 +331,21 @@ pub(crate) enum Commands {
         request: PathBuf,
         #[arg(long, help = "New directory for immutable published run artifacts")]
         out_dir: PathBuf,
+        #[arg(
+            long,
+            help = "Host transport guard in milliseconds (canonical recommendation: 60000); does not replace the request policy"
+        )]
+        transport_timeout_ms: Option<u64>,
+    },
+    #[command(about = "Read-only preflight for one clean-run request and optional transport guard")]
+    RunPreflight {
+        #[arg(long, help = "mdp.run-request.v1 JSON file")]
+        request: PathBuf,
+        #[arg(
+            long,
+            help = "Host transport guard in milliseconds (canonical recommendation: 60000)"
+        )]
+        transport_timeout_ms: Option<u64>,
     },
     #[command(about = "Verify proof-carrying generated output against loaded pack IDs")]
     VerifyOutput {
@@ -705,6 +720,7 @@ pub(crate) enum SchemaTarget {
     DriverRequestV2,
     DriverResultV2,
     RunnerAuditV1,
+    RunPreflightV1,
     RunReceiptV1,
     RunVerificationV1,
     RunExecutionV1,
@@ -1287,6 +1303,7 @@ mod tests {
             ("driver-request-v2", SchemaTarget::DriverRequestV2),
             ("driver-result-v2", SchemaTarget::DriverResultV2),
             ("runner-audit-v1", SchemaTarget::RunnerAuditV1),
+            ("run-preflight-v1", SchemaTarget::RunPreflightV1),
             ("run-receipt-v1", SchemaTarget::RunReceiptV1),
             ("run-verification-v1", SchemaTarget::RunVerificationV1),
             ("run-execution-v1", SchemaTarget::RunExecutionV1),

@@ -121,6 +121,15 @@ On retry, consume the verified receipt in the host's durable transaction:
 
 Do not retry a generative call blindly after an ambiguous timeout. First determine whether a receipt was durably consumed. If that cannot be determined, stop for reconciliation.
 
+For canonical v1 clean runs, use one recommended `60_000` ms deadline. The
+Rust run kernel computes the effective bound from the request policy and an
+optional `--transport-timeout-ms` outer guard; the outer guard cannot extend a
+tighter inner limit. Run `mdp run-preflight` before staging when a host needs
+to display the plan. New timeout/cancellation receipts expose only the closed
+`mdp.deadline-observation.v1` phase/limit projection, and remain
+`no-draft:runner-failed` with null output authority. Checks occur at bounded
+phase boundaries, so hosts must not claim blocking syscall preemption.
+
 ### Customer-controlled or BYOK worker
 
 Run the CLI and driver in the customer's trust domain. Inject provider credentials only into the transport process that needs them, never the model-visible prompt, pack, bundle, stdout result, receipt, or ordinary logs. Pin the driver artifact/configuration and provider endpoint. Clear proxy variables unless a registered enforcing proxy is part of the declared boundary.

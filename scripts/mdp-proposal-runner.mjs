@@ -48,7 +48,7 @@ import {
   readJson,
   readTextExcerpt,
   resolveMdpCommand,
-  runProcess,
+  runProcess as runProcessWithDeadline,
   sha256Buffer,
   sha256File,
   writeJson,
@@ -56,9 +56,15 @@ import {
   writeText,
 } from './lib/proposal-runner-runtime.mjs'
 import { buildProposalReadinessReport } from './lib/proposal-readiness-report.mjs'
+import { RECOMMENDED_TIMEOUT_MS, validateTransportTimeout } from './lib/deadline-policy.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
+let activeParentDeadline = null
+const runProcess = (options) => runProcessWithDeadline({
+  ...options,
+  deadlineAt: activeParentDeadline,
+})
 
 const usage = () => `
 Usage:
@@ -96,6 +102,7 @@ Options:
   --skip-review            Skip fit/route review-support probes after receipt.
   --require-audit-grade    Exit nonzero unless run-receipt returns decision audit-grade.
   --max-source-bytes N     Per-source bounded text bytes to include in prompt payload.
+  --timeout-ms N            One parent deadline for all runner phases (default ${RECOMMENDED_TIMEOUT_MS}).
 `.trim()
 
 const parseArgs = (argv) => {
@@ -122,6 +129,7 @@ const parseArgs = (argv) => {
     skipReview: false,
     requireAuditGrade: false,
     maxSourceBytes: DEFAULT_MAX_SOURCE_BYTES,
+    timeoutMs: RECOMMENDED_TIMEOUT_MS,
   }
 
   if (command === 'help' || command === '--help' || command === '-h') return args
@@ -199,6 +207,11 @@ const parseArgs = (argv) => {
         if (!Number.isFinite(args.maxSourceBytes) || args.maxSourceBytes < 1000) {
           fail('--max-source-bytes must be an integer >= 1000')
         }
+        index += 1
+        break
+      case '--timeout-ms':
+        args.timeoutMs = Number.parseInt(next(index, flag), 10)
+        validateTransportTimeout(args.timeoutMs)
         index += 1
         break
       case '--dry-run':
@@ -824,7 +837,9 @@ const buildCleanRunV1Request = ({ args, packRoot, runState, paths }) => ({
     authorized_endpoints: [],
     max_input_bytes: 20_000_000,
     max_output_bytes: 1_048_576,
-    timeout_ms: 30_000,
+    // The selected host timeout is an outer guard. Canonical v1 keeps its
+    // fixed 60s inner policy so the receipt can show which bound won.
+    timeout_ms: RECOMMENDED_TIMEOUT_MS,
     retention_policy: 'customer-controlled-workdir',
   },
   driver: null,
@@ -879,6 +894,7 @@ const run = async (args) => {
   if (!args.dryRun && !args.mockResponse && !args.sourceIntake) {
     fail('Real native runs require --source-intake with operator-approved entries bound to the staged source bytes.')
   }
+  activeParentDeadline = performance.now() + args.timeoutMs
 
   const nativeRunner = resolve(args.nativeRunner || join(scriptDir, 'mdp-native-normalize-openai.mjs'))
   assertFile(nativeRunner, 'native runner')
@@ -1092,11 +1108,20 @@ const run = async (args) => {
     )
     const cleanRun = await runProcess({
       command: mdpCommand,
-      args: ['--json', 'run', '--request', paths.cleanRunRequest, '--out-dir', paths.cleanRunDir],
+      args: [
+        '--json',
+        'run',
+        '--request',
+        paths.cleanRunRequest,
+        '--out-dir',
+        paths.cleanRunDir,
+        '--transport-timeout-ms',
+        String(args.timeoutMs),
+      ],
       stdoutPath: paths.cleanRunStdout,
       stderrPath: paths.cleanRunStderr,
       allowNonZero: true,
-      timeoutMs: 120_000,
+      timeoutMs: args.timeoutMs,
       recovery: { outputDir: paths.cleanRunDir, executionId: runState.manifest.run_id },
     })
     canonicalRun = parseCliData(paths.cleanRunStdout)

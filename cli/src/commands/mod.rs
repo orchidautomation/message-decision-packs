@@ -51,7 +51,7 @@ pub(crate) use routing::{
     check_claims_scoped, route_budget_preflight_command, route_budget_preflight_query_command,
     route_scoped,
 };
-pub(crate) use run::run_request_file;
+pub(crate) use run::{run_preflight_file, run_request_file_with_transport};
 pub(crate) use run_receipt::{RunReceiptOptions, run_receipt};
 pub(crate) use run_verification::verify_run_files;
 pub(crate) use sample_leads::sample_leads;

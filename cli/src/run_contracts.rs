@@ -21,6 +21,48 @@ pub(crate) const MDP_RUNTIME_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub(crate) const PROVIDER_REQUEST_RELATION_V1: &str =
     "full-body-includes-model-parameters-and-input";
 pub(crate) const PROVIDER_REQUEST_NOT_OBSERVED_V1: &str = "not-observed";
+pub(crate) const DEADLINE_OBSERVATION_V1: &str = "mdp.deadline-observation.v1";
+
+/// The deadline projection is deliberately closed: it contains only bounded
+/// phase/outcome labels and numeric limits.  It is explanation evidence, not a
+/// second decision or authority source.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DeadlinePhase {
+    Preflight,
+    Staging,
+    Driver,
+    Provider,
+    Validation,
+    Finalization,
+    Cancellation,
+    Transport,
+    Cleanup,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DeadlineOutcome {
+    TimedOut,
+    Cancelled,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DeadlineObservationV1 {
+    pub(crate) contract: String,
+    pub(crate) outcome: DeadlineOutcome,
+    pub(crate) phase: DeadlinePhase,
+    pub(crate) elapsed_ms: u64,
+    pub(crate) configured_limit_ms: u64,
+    pub(crate) effective_limit_ms: u64,
+    pub(crate) transport_configured_ms: Option<u64>,
+    pub(crate) runtime_configured_ms: u64,
+    pub(crate) provider_configured_ms: u64,
+    pub(crate) finalization_reserve_ms: u64,
+    pub(crate) terminal_state: TerminalState,
+    pub(crate) warnings: Vec<String>,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -493,6 +535,7 @@ pub(crate) struct DriverProviderPolicyV2 {
     pub(crate) requested_model: String,
     pub(crate) authorized_endpoint: String,
     pub(crate) timeout_ms: u64,
+    pub(crate) deadline_at_ms: u64,
     pub(crate) max_output_bytes: u64,
 }
 
@@ -577,6 +620,8 @@ pub(crate) struct RunnerAuditV1 {
     pub(crate) provider_observation: Option<DriverProviderObservationV2>,
     #[serde(default)]
     pub(crate) identity_observations: Option<IdentityObservationV1>,
+    #[serde(default)]
+    pub(crate) deadline: Option<DeadlineObservationV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) diagnostic_code: Option<String>,
     pub(crate) terminal_state: TerminalState,
@@ -609,6 +654,8 @@ pub(crate) struct RunReceiptV1 {
     pub(crate) compiled_context: Option<ArtifactAuthority>,
     pub(crate) validation: Option<ArtifactAuthority>,
     pub(crate) runner_audit: ArtifactAuthority,
+    #[serde(default)]
+    pub(crate) deadline: Option<DeadlineObservationV1>,
     pub(crate) assurance: Vec<AssuranceDimension>,
     pub(crate) limitations: Vec<String>,
     pub(crate) receipt_sha256: String,
