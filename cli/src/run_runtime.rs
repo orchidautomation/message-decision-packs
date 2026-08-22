@@ -589,6 +589,15 @@ fn prepare_native_request(
     })
 }
 
+/// The single runtime identity material authority shared by preparation and
+/// execution. Callers may derive declarations, but never substitute values.
+fn runtime_identity_material() -> Result<(String, String)> {
+    let source_sha256 = sha256_hex(BUNDLED_NATIVE_DRIVER_SOURCE.as_bytes());
+    let node = resolve_node_executable()?;
+    let node_sha256 = sha256_hex(&read_bounded(&node, 200 * 1024 * 1024, "node executable")?);
+    Ok((source_sha256, node_sha256))
+}
+
 fn bind_native_identity(
     request: &RunRequestV1,
     prepared: &PreparedNativeRequest,
@@ -606,9 +615,7 @@ fn bind_native_identity(
         .model
         .as_ref()
         .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "model-identity-required"))?;
-    let source_sha256 = sha256_hex(BUNDLED_NATIVE_DRIVER_SOURCE.as_bytes());
-    let node = resolve_node_executable()?;
-    let node_sha256 = sha256_hex(&read_bounded(&node, 200 * 1024 * 1024, "node executable")?);
+    let (source_sha256, node_sha256) = runtime_identity_material()?;
     if declared_driver.executable_sha256.as_deref() != Some(source_sha256.as_str()) {
         return Err(run_failure(
             RunFailureKind::PolicyBlocked,
@@ -732,9 +739,7 @@ pub(crate) fn compiler_observe_native_identity(
         .model
         .as_ref()
         .ok_or_else(|| anyhow!("model identity is required"))?;
-    let source_sha256 = sha256_hex(BUNDLED_NATIVE_DRIVER_SOURCE.as_bytes());
-    let node = resolve_node_executable()?;
-    let node_sha256 = sha256_hex(&read_bounded(&node, 200 * 1024 * 1024, "node executable")?);
+    let (source_sha256, node_sha256) = runtime_identity_material()?;
     let driver_projection =
         driver_configuration_projection(declared_driver, source_sha256, node_sha256);
     let driver_facts = (&driver_projection).into();
@@ -748,6 +753,14 @@ pub(crate) fn compiler_observe_native_identity(
     );
     let model_projection: ModelParametersProjectionV1 = (&model_facts).into();
     let model_observed_sha256 = projection_hash(MODEL_PARAMETERS_PROJECTION_V1, &model_projection)?;
+    let driver_declaration_sha256 = canonical_json_sha256_for_domain(
+        "mdp.compiler-driver-declaration.v1",
+        &serde_json::to_value(declared_driver)?,
+    )?;
+    let model_declaration_sha256 = canonical_json_sha256_for_domain(
+        "mdp.compiler-model-declaration.v1",
+        &serde_json::to_value(declared_model)?,
+    )?;
     let mut observed_driver = declared_driver.clone();
     observed_driver.executable_sha256 = Some(driver_projection.bundled_source_sha256.clone());
     observed_driver.dependency_lock_sha256 = Some(driver_projection.node_executable_sha256.clone());
@@ -757,11 +770,11 @@ pub(crate) fn compiler_observe_native_identity(
     let mut observed_model = declared_model.clone();
     observed_model.parameters_sha256 = model_observed_sha256.clone();
     let identity_observations = IdentityObservationV1 {
-        driver_declaration_sha256: driver_observed_sha256.clone(),
+        driver_declaration_sha256,
         driver_observed_sha256: driver_observed_sha256.clone(),
         driver_projection,
         driver_facts,
-        model_declaration_sha256: model_observed_sha256.clone(),
+        model_declaration_sha256,
         model_observed_sha256,
         model_projection,
         provider_request: ProviderRequestObservationV1 {

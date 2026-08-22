@@ -231,10 +231,10 @@ fn run_request_compile_v1_schema() -> Value {
         "title": "MDP Offline Run Request Compile v1",
         "type": "object",
         "additionalProperties": false,
-        "required": ["contract", "status", "execution_id", "job", "operation", "pack_sha256", "prompt_sha256", "input_sha256s", "driver_configuration_sha256", "model_parameters_sha256", "endpoint", "max_input_bytes", "max_output_bytes", "timeout_ms", "data_boundary", "provider_authorization", "anticipated_assurance", "request_sha256", "next_command"],
+        "required": ["contract", "status"],
         "properties": {
             "contract": {"const": RUN_REQUEST_COMPILE_V1},
-            "status": {"const": "ready"},
+            "status": {"enum": ["ready", "blocked"]},
             "execution_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
             "job": {"type": "string", "minLength": 1},
             "operation": {"type": "string", "minLength": 1},
@@ -255,7 +255,11 @@ fn run_request_compile_v1_schema() -> Value {
             "manifest": {"type": "object"},
             "request": run_request_v1_schema(),
             "diagnostics": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required":["code","contract","message","next_command"], "properties":{"code":{"type":"string","minLength":1,"maxLength":128},"contract":{"const":RUN_REQUEST_COMPILE_V1},"message":{"type":"string","minLength":1,"maxLength":512},"next_command":{"type":"string","minLength":1,"maxLength":512}}}}
-        }
+        },
+        "oneOf": [
+            {"required": ["execution_id", "job", "operation", "pack_sha256", "prompt_sha256", "input_sha256s", "driver_configuration_sha256", "model_parameters_sha256", "endpoint", "max_input_bytes", "max_output_bytes", "timeout_ms", "data_boundary", "provider_authorization", "anticipated_assurance", "request_sha256", "next_command"], "properties": {"status": {"const": "ready"}}},
+            {"required": ["diagnostics", "next_command"], "properties": {"status": {"const": "blocked"}}}
+        ]
     })
 }
 

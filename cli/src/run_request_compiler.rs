@@ -20,7 +20,7 @@ use crate::run_runtime::{
     compiler_observe_native_identity, compiler_prepare_native_request, compiler_validate_request,
 };
 use crate::value_contracts::valid_date_time;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -104,6 +104,16 @@ impl CompiledRunRequest {
 pub(crate) fn compile_native_run_request(
     options: &PrepareRunOptions,
 ) -> Result<CompiledRunRequest> {
+    compile_native_run_request_inner(options).map_err(|error| {
+        if error.downcast_ref::<CompilerError>().is_some() {
+            error
+        } else {
+            diagnostic("prepare-run-failed", "mdp prepare-run --help")
+        }
+    })
+}
+
+fn compile_native_run_request_inner(options: &PrepareRunOptions) -> Result<CompiledRunRequest> {
     let root = fs::canonicalize(&options.dir)
         .map_err(|_| diagnostic("pack-invalid", "mdp validate --dir <pack>"))?;
     if options.job.trim().is_empty() || options.model.trim().is_empty() {
@@ -213,7 +223,7 @@ pub(crate) fn compile_native_run_request(
                 "mdp prepare-run --input <name>=<path>",
             ));
         }
-        let schema = input_authority(input, &manifest, &options.job);
+        let schema = input_authority(input, &manifest, &options.job)?;
         let sha = sha256_hex(&bytes);
         let authority = ArtifactAuthority {
             logical_name: input.name.clone(),
@@ -411,10 +421,27 @@ fn validate_governed_lineage(
         "normalized_input",
         "normalized-input",
         "normalized_decision_input",
+        "normalized-decision-input",
     ])?;
-    let Some((binding_value, binding_path, binding_sha)) = binding else {
+    let present = [&binding, &request, &results, &normalized]
+        .into_iter()
+        .filter(|item| item.is_some())
+        .count();
+    if present == 0 {
         return Ok(());
+    }
+    let Some((binding_value, binding_path, binding_sha)) = binding else {
+        return Err(diagnostic(
+            "governed-lineage-incomplete",
+            "mdp requirements --dir <pack> --job <job>",
+        ));
     };
+    if request.is_none() || results.is_none() || normalized.is_none() {
+        return Err(diagnostic(
+            "governed-lineage-incomplete",
+            "mdp requirements --dir <pack> --job <job>",
+        ));
+    }
     let compiled = crate::commands::requirements::requirements(root, job).map_err(|_| {
         diagnostic(
             "governed-lineage-invalid",
@@ -437,6 +464,26 @@ fn validate_governed_lineage(
             "governed-lineage-invalid",
             "mdp requirements --dir <pack> --job <job>",
         ));
+    }
+    for (artifact, schema_key) in [
+        (request.as_ref().unwrap(), "source_attempt_request_schema"),
+        (
+            results.as_ref().unwrap(),
+            "collected_attempt_results_schema",
+        ),
+    ] {
+        if jsonschema::draft202012::validate(&compiled[schema_key], &artifact.0).is_err() {
+            return Err(diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            ));
+        }
+        if artifact.0["source_binding_sha256"].as_str() != Some(binding_sha.as_str()) {
+            return Err(diagnostic(
+                "governed-lineage-invalid",
+                "mdp requirements --dir <pack> --job <job>",
+            ));
+        }
     }
     if let Some((normalized_value, normalized_path, _)) = normalized {
         let request_ref = request
@@ -473,6 +520,19 @@ fn validate_governed_lineage(
 }
 
 pub(crate) fn write_compiled_request(
+    compiled: &CompiledRunRequest,
+    options: &PrepareRunOptions,
+) -> Result<()> {
+    write_compiled_request_inner(compiled, options).map_err(|error| {
+        if error.downcast_ref::<CompilerError>().is_some() {
+            error
+        } else {
+            diagnostic("output-transaction-failed", "mdp prepare-run --help")
+        }
+    })
+}
+
+fn write_compiled_request_inner(
     compiled: &CompiledRunRequest,
     options: &PrepareRunOptions,
 ) -> Result<()> {
@@ -519,7 +579,10 @@ pub(crate) fn write_compiled_request(
     }
     let mut installed = Vec::new();
     for (tmp, path) in &staged {
-        if fs::rename(tmp, path).is_err() {
+        if fs::hard_link(tmp, path)
+            .and_then(|_| fs::remove_file(tmp))
+            .is_err()
+        {
             for (left, _) in &staged {
                 let _ = fs::remove_file(left);
             }
@@ -537,8 +600,14 @@ pub(crate) fn write_compiled_request(
 }
 
 fn output_alias(a: &Path, b: &Path) -> bool {
-    let aa = fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
-    let bb = fs::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
+    let canonical_target = |path: &Path| {
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        fs::canonicalize(parent)
+            .unwrap_or_else(|_| parent.to_path_buf())
+            .join(path.file_name().unwrap_or_default())
+    };
+    let aa = canonical_target(a);
+    let bb = canonical_target(b);
     aa == bb
 }
 
@@ -604,7 +673,7 @@ fn parse_input_mappings(values: &[String]) -> Result<BTreeMap<String, PathBuf>> 
     Ok(result)
 }
 
-fn read_regular(path: &Path, max: u64, label: &str) -> Result<Vec<u8>> {
+fn read_regular(path: &Path, max: u64, _label: &str) -> Result<Vec<u8>> {
     let metadata = fs::symlink_metadata(path).map_err(|_| {
         diagnostic(
             "declared-input-unreadable",
@@ -624,7 +693,12 @@ fn read_regular(path: &Path, max: u64, label: &str) -> Result<Vec<u8>> {
             "mdp prepare-run --input <name>=<path>",
         ));
     }
-    let bytes = fs::read(path).map_err(|_| anyhow!("{label} unreadable"))?;
+    let bytes = fs::read(path).map_err(|_| {
+        diagnostic(
+            "declared-input-unreadable",
+            "mdp prepare-run --input <name>=<path>",
+        )
+    })?;
     if bytes.len() as u64 > max {
         return Err(diagnostic(
             "declared-input-too-large",
@@ -656,30 +730,30 @@ fn input_authority(
     input: &crate::models::PromptInput,
     manifest: &Manifest,
     job: &str,
-) -> (String, String, Vec<String>) {
+) -> Result<(String, String, Vec<String>)> {
     if let Some(schema) = &input.schema_ref {
-        return (
+        return Ok((
             schema.clone(),
             input
                 .media_type
                 .clone()
                 .unwrap_or_else(|| "application/json".into()),
             input.provenance_refs.clone(),
-        );
+        ));
     }
     if input.name == "routed_context" || input.name == "routed-context" {
-        return (
+        return Ok((
             ROUTED_CONTEXT_CONTRACT.into(),
             "application/json".into(),
             vec![format!("job:{job}")],
-        );
+        ));
     }
     if let Some(contract) = manifest
         .input_contracts
         .iter()
         .find(|c| c.id == input.name || c.prompt.as_deref() == Some(&input.name))
     {
-        return (
+        return Ok((
             contract
                 .schema_ref
                 .clone()
@@ -689,14 +763,14 @@ fn input_authority(
                 .clone()
                 .unwrap_or_else(|| "application/json".into()),
             vec![format!("input-contract:{}", contract.id)],
-        );
+        ));
     }
     if let Some(contract) = manifest
         .decision_input_contracts
         .iter()
         .find(|c| c.id == input.name)
     {
-        return (
+        return Ok((
             "mdp.normalized-decision-input.v2".into(),
             input
                 .media_type
@@ -706,16 +780,45 @@ fn input_authority(
                 "decision-input-contract:{}:{}",
                 contract.id, contract.version
             )],
-        );
+        ));
     }
-    (
+    let governed_schema = match input.name.as_str() {
+        "normalized-decision-input" | "normalized_input" | "normalized-input" => {
+            Some("mdp.normalized-decision-input.v2")
+        }
+        "source-binding" | "source_binding" => Some("mdp.source-binding.v2"),
+        "source-attempt-request" | "source_attempt_request" => {
+            Some("mdp.source-attempt-request.v2")
+        }
+        "collected-attempt-results" | "collected_attempt_results" => {
+            Some("mdp.collected-attempt-results.v2")
+        }
+        _ => None,
+    };
+    if let Some(schema) = governed_schema {
+        return Ok((
+            schema.into(),
+            input
+                .media_type
+                .clone()
+                .unwrap_or_else(|| "application/json".into()),
+            input.provenance_refs.clone(),
+        ));
+    }
+    if input.producer.as_deref() == Some("host") && input.schema_ref.is_none() {
+        return Err(diagnostic(
+            "declared-input-authority-missing",
+            "mdp requirements --dir <pack> --job <job>",
+        ));
+    }
+    Ok((
         "mdp.declared-input.v1".into(),
         input
             .media_type
             .clone()
             .unwrap_or_else(|| "application/json".into()),
         input.provenance_refs.clone(),
-    )
+    ))
 }
 
 fn host_metadata(name: &str) -> bool {
@@ -804,6 +907,22 @@ mod tests {
         );
     }
     #[test]
+    fn blocked_compile_shape_is_accepted_by_closed_schema() {
+        let value = json!({
+            "contract": super::RUN_REQUEST_COMPILE_V1,
+            "status": "blocked",
+            "diagnostics": [{"code":"governed-lineage-incomplete","contract":super::RUN_REQUEST_COMPILE_V1,"message":"blocked","next_command":"mdp requirements --dir <pack> --job <job>"}],
+            "next_command": "mdp requirements --dir <pack> --job <job>"
+        });
+        assert!(
+            jsonschema::draft202012::validate(
+                &crate::commands::schemas::schema(crate::cli::SchemaTarget::RunRequestCompileV1),
+                &value
+            )
+            .is_ok()
+        );
+    }
+    #[test]
     fn custom_declared_input_authority_wins_over_name_heuristics() {
         let input = PromptInput {
             name: "raw_row".into(),
@@ -817,7 +936,7 @@ mod tests {
             provenance_refs: vec!["contract:custom".into()],
         };
         let manifest = serde_json::from_value::<Manifest>(json!({"format":"mdp.pack.v1","id":"x","name":"x","version":"1","description":null,"personas":[],"jobs":[],"cards":[],"policy":{"progressive_disclosure":false,"load_manifest_first":true,"max_cards_per_route":1,"json_contract":"x","no_auth_required":true},"provenance":{"owner":"x","created_by":"x","notes":[]}})).unwrap();
-        let authority = input_authority(&input, &manifest, "job");
+        let authority = input_authority(&input, &manifest, "job").unwrap();
         assert_eq!(
             authority,
             (
