@@ -308,6 +308,20 @@ pub(crate) fn entry_route(
 /// budget. Legacy packs without a declared context budget remain
 /// budget-unassessed, but cap-caused authority loss is still a blocking
 /// preflight diagnostic.
+pub(crate) struct RouteBudgetQuery {
+    pub(crate) job_id: Option<String>,
+    pub(crate) persona: Option<String>,
+}
+
+impl RouteBudgetQuery {
+    pub(crate) fn unfiltered() -> Self {
+        Self {
+            job_id: None,
+            persona: None,
+        }
+    }
+}
+
 pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result<Value> {
     let scope = ScopeResolution::default();
     let declared_personas = declared_persona_labels(manifest);
@@ -325,9 +339,11 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             if declared_personas.is_empty() {
                 routes.push(json!({
                     "persona": Value::Null,
+                    "job_id": job.id,
                     "job": job.id,
                     "status": "unassessed",
                     "reason": "context_budget_not_declared",
+                    "generation_unassessed": job.model_task.is_some(),
                     "budget": Value::Null,
                     "selected_count": Value::Null,
                     "excluded_count": Value::Null,
@@ -335,6 +351,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                     "reason_distribution": {},
                     "excluded_reason_distribution": {},
                     "largest_contributing_cards": [],
+                    "context_sha256": Value::Null,
                     "route_card_cap": Value::Null
                 }));
             } else {
@@ -353,9 +370,11 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                     };
                     routes.push(json!({
                         "persona": persona,
+                        "job_id": job.id,
                         "job": job.id,
                         "status": if route_card_cap_blocked { "blocked" } else { "unassessed" },
                         "reason": "context_budget_not_declared",
+                        "generation_unassessed": job.model_task.is_some(),
                         "budget": Value::Null,
                         "selected_count": Value::Null,
                         "excluded_count": Value::Null,
@@ -363,6 +382,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                         "reason_distribution": {},
                         "excluded_reason_distribution": {},
                         "largest_contributing_cards": [],
+                        "context_sha256": Value::Null,
                         "route_card_cap": route_card_cap
                     }));
                 }
@@ -426,8 +446,10 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
             let largest_contributing_cards = minimality["largest_contributing_cards"].clone();
             let mut route_receipt = json!({
                 "persona": persona,
+                "job_id": job.id,
                 "job": job.id,
                 "status": status,
+                "generation_unassessed": false,
                 "budget": {
                     "max_entries": max_entries,
                     "max_bytes": max_bytes,
@@ -461,8 +483,343 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
         "route_card_cap_exclusion_count": route_card_cap_exclusion_count,
         "near_budget_count": near_budget_count,
         "unassessed_generation_count": unassessed_generation_count,
+        "query": {
+            "job_id": Value::Null,
+            "persona": Value::Null,
+            "matched_route_count": routes.len()
+        },
         "routes": routes
     }))
+}
+
+pub(crate) fn project_route_budget(mut data: Value, query: &RouteBudgetQuery) -> Value {
+    let routes = data["routes"].as_array().cloned().unwrap_or_default();
+    let selected = routes
+        .into_iter()
+        .filter(|route| {
+            let job_matches = query.job_id.as_deref().is_none_or(|job_id| {
+                route["job_id"]
+                    .as_str()
+                    .or_else(|| route["job"].as_str())
+                    .is_some_and(|value| value == job_id)
+            });
+            let persona_matches = query.persona.as_deref().is_none_or(|persona| {
+                route["persona"]
+                    .as_str()
+                    .is_some_and(|value| value.trim().eq_ignore_ascii_case(persona.trim()))
+            });
+            job_matches && persona_matches
+        })
+        .collect::<Vec<_>>();
+    let strict_enabled = data["strict"]["enabled"].as_bool().unwrap_or(false);
+    if let Some(object) = data.as_object_mut() {
+        let overflow_count = selected
+            .iter()
+            .filter(|route| {
+                route["diagnostics"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|diagnostic| {
+                        matches!(
+                            diagnostic.as_str(),
+                            Some("context_entry_budget_exceeded" | "context_byte_budget_exceeded")
+                        )
+                    })
+            })
+            .count();
+        let cap_count = selected
+            .iter()
+            .filter(|route| {
+                route["diagnostics"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|diagnostic| diagnostic.as_str() == Some(ROUTE_CARD_CAP_DIAGNOSTIC))
+            })
+            .count();
+        let near_count = selected
+            .iter()
+            .filter(|route| {
+                route["diagnostics"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|diagnostic| diagnostic.as_str() == Some("near_context_budget"))
+            })
+            .count();
+        let unassessed_jobs = selected
+            .iter()
+            .filter(|route| route["generation_unassessed"] == true)
+            .filter_map(|route| {
+                route["job_id"]
+                    .as_str()
+                    .or_else(|| route["job"].as_str())
+                    .map(str::to_string)
+            })
+            .collect::<BTreeSet<_>>();
+        let unassessed_count = unassessed_jobs.len();
+        let mut strict_warnings = Vec::new();
+        if strict_enabled && near_count > 0 {
+            strict_warnings.push(json!({
+                "code": "route_budget_near_budget",
+                "severity": "error",
+                "message": format!("{near_count} route(s) use 90% or more of a declared context budget; narrow applicability before generation handoff")
+            }));
+        }
+        if strict_enabled && unassessed_count > 0 {
+            strict_warnings.push(json!({
+                "code": "route_budget_unassessed_generation_job",
+                "severity": "error",
+                "message": format!("{unassessed_count} generation/review job(s) declare a model_task without a context_budget; declare positive entry and byte budgets before claiming governed generation")
+            }));
+        }
+        object.insert("routes".to_string(), Value::Array(selected.clone()));
+        object.insert("route_count".to_string(), json!(selected.len()));
+        object.insert("overflow_count".to_string(), json!(overflow_count));
+        object.insert(
+            "route_card_cap_exclusion_count".to_string(),
+            json!(cap_count),
+        );
+        object.insert("near_budget_count".to_string(), json!(near_count));
+        object.insert(
+            "unassessed_generation_count".to_string(),
+            json!(unassessed_count),
+        );
+        object.insert(
+            "valid".to_string(),
+            json!(overflow_count == 0 && cap_count == 0 && strict_warnings.is_empty()),
+        );
+        object.insert("strict_warnings".to_string(), Value::Array(strict_warnings));
+        let warning_count = object["strict_warnings"].as_array().map_or(0, Vec::len);
+        if let Some(strict) = object.get_mut("strict").and_then(Value::as_object_mut) {
+            strict.insert("warning_count".to_string(), json!(warning_count));
+        }
+        object.insert(
+            "query".to_string(),
+            json!({
+                "job_id": query.job_id,
+                "persona": query.persona.as_deref().and_then(|requested| {
+                    selected.first().and_then(|route| route["persona"].as_str()).or(Some(requested))
+                }),
+                "matched_route_count": selected.len()
+            }),
+        );
+    }
+    data
+}
+
+const ROUTE_BUDGET_SUMMARY_LIMIT: usize = 5;
+
+pub(crate) fn route_budget_summary_projection(data: &Value) -> Value {
+    let routes = data["routes"].as_array().cloned().unwrap_or_default();
+    let mut route_status_counts = BTreeMap::from([
+        ("blocked", 0usize),
+        ("ready", 0usize),
+        ("unassessed", 0usize),
+    ]);
+    let mut blocker_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut contributor_counts: BTreeMap<(String, String), (usize, usize, usize, usize, usize)> =
+        BTreeMap::new();
+    let mut headroom = Vec::new();
+    let mut excluded_count = 0usize;
+    let mut optional_excluded_count = 0usize;
+
+    for route in &routes {
+        let status = route["status"].as_str().unwrap_or("unassessed");
+        *route_status_counts.entry(status).or_default() += 1;
+        excluded_count += route["excluded_count"].as_u64().unwrap_or(0) as usize;
+        optional_excluded_count += route["allocation"]["optional_excluded_count"]
+            .as_u64()
+            .unwrap_or(0) as usize;
+        for diagnostic in route["diagnostics"].as_array().into_iter().flatten() {
+            if let Some(code) = diagnostic.as_str() {
+                *blocker_counts.entry(code.to_string()).or_default() += 1;
+            }
+        }
+        for card in route["largest_contributing_cards"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let key = (
+                card["card_id"].as_str().unwrap_or("unknown").to_string(),
+                card["card_kind"].as_str().unwrap_or("unknown").to_string(),
+            );
+            let totals = contributor_counts.entry(key).or_default();
+            totals.0 += 1;
+            totals.1 += card["entry_count"].as_u64().unwrap_or(0) as usize;
+            totals.2 += card["canonical_bytes"].as_u64().unwrap_or(0) as usize;
+            totals.3 += card["required_entry_count"].as_u64().unwrap_or(0) as usize;
+            totals.4 += card["optional_entry_count"].as_u64().unwrap_or(0) as usize;
+        }
+        if let Some(budget) = route["budget"].as_object() {
+            for (dimension, used_key, limit_key) in [
+                ("entries", "actual_entries", "max_entries"),
+                ("bytes", "actual_bytes", "max_bytes"),
+            ] {
+                let used = budget[used_key].as_u64().unwrap_or(0);
+                let limit = budget[limit_key].as_u64().unwrap_or(0);
+                let utilization_hundredths = if limit == 0 {
+                    if used == 0 { 0 } else { 10_000 }
+                } else {
+                    (used.saturating_mul(10_000) + limit / 2) / limit
+                };
+                headroom.push((
+                    utilization_hundredths,
+                    route["job_id"]
+                        .as_str()
+                        .or_else(|| route["job"].as_str())
+                        .unwrap_or(""),
+                    route["persona"].as_str().unwrap_or(""),
+                    dimension,
+                    json!({
+                        "job_id": route["job_id"].as_str().or_else(|| route["job"].as_str()),
+                        "persona": route["persona"],
+                        "dimension": dimension,
+                        "used": used,
+                        "limit": limit,
+                        "remaining": (limit as i128 - used as i128),
+                        "utilization_percent": utilization_hundredths as f64 / 100.0
+                    }),
+                ));
+            }
+        }
+    }
+    headroom.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| left.1.cmp(right.1))
+            .then_with(|| left.2.cmp(right.2))
+            .then_with(|| {
+                let rank = |dimension: &str| if dimension == "bytes" { 0 } else { 1 };
+                rank(left.3).cmp(&rank(right.3))
+            })
+    });
+    let tightest_headroom = headroom
+        .first()
+        .map(|item| item.4.clone())
+        .unwrap_or(Value::Null);
+
+    let mut top_blockers = blocker_counts.into_iter().collect::<Vec<_>>();
+    top_blockers.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    let top_blockers = top_blockers
+        .into_iter()
+        .take(ROUTE_BUDGET_SUMMARY_LIMIT)
+        .map(|(code, route_count)| json!({"code": code, "route_count": route_count}))
+        .collect::<Vec<_>>();
+
+    let mut top_contributors = contributor_counts.into_iter().collect::<Vec<_>>();
+    top_contributors.sort_by(|left, right| {
+        right
+            .1
+            .2
+            .cmp(&left.1.2)
+            .then_with(|| left.0.0.cmp(&right.0.0))
+            .then_with(|| left.0.1.cmp(&right.0.1))
+    });
+    let top_contributors = top_contributors
+        .into_iter()
+        .take(ROUTE_BUDGET_SUMMARY_LIMIT)
+        .map(|((card_id, card_kind), (route_count, entry_count, canonical_bytes, required_entry_count, optional_entry_count))| {
+            json!({"card_id": card_id, "card_kind": card_kind, "route_count": route_count, "entry_count": entry_count, "required_entry_count": required_entry_count, "optional_entry_count": optional_entry_count, "canonical_bytes": canonical_bytes})
+        })
+        .collect::<Vec<_>>();
+
+    let next_safe_action = next_safe_route_budget_action(&routes);
+    json!({
+        "contract": "mdp.route-budget-summary.v1",
+        "source_contract": data["contract"],
+        "valid": data["valid"],
+        "strict": data["strict"],
+        "pack_id": data["pack_id"],
+        "query": data["query"],
+        "route_count": routes.len(),
+        "route_status_counts": route_status_counts,
+        "overflow_count": data["overflow_count"],
+        "route_card_cap_exclusion_count": data["route_card_cap_exclusion_count"],
+        "excluded_count": excluded_count,
+        "optional_excluded_count": optional_excluded_count,
+        "near_budget_count": data["near_budget_count"],
+        "unassessed_generation_count": data["unassessed_generation_count"],
+        "tightest_headroom": tightest_headroom,
+        "top_blockers": top_blockers,
+        "top_contributors": top_contributors,
+        "next_safe_action": next_safe_action
+    })
+}
+
+fn next_safe_route_budget_action(routes: &[Value]) -> Value {
+    for route in routes {
+        let diagnostics = route["diagnostics"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>();
+        if diagnostics
+            .iter()
+            .any(|code| *code == ROUTE_CARD_CAP_DIAGNOSTIC)
+            || (diagnostics.iter().any(|code| {
+                *code == "context_entry_budget_exceeded" || *code == "context_byte_budget_exceeded"
+            }) && route["largest_contributing_cards"]
+                .as_array()
+                .is_none_or(Vec::is_empty))
+        {
+            return json!({
+                "kind": "review_required_authority",
+                "job_id": route["job_id"].as_str().or_else(|| route["job"].as_str()),
+                "persona": route["persona"],
+                "diagnostics": route["diagnostics"],
+                "preserve_guardrails": true,
+                "do_not": ["truncate", "drop_guardrails", "open_full_card"]
+            });
+        }
+        let entry_overflow = diagnostics.contains(&"context_entry_budget_exceeded");
+        let byte_overflow = diagnostics.contains(&"context_byte_budget_exceeded");
+        if entry_overflow || byte_overflow {
+            let target = route["largest_contributing_cards"]
+                .as_array()
+                .and_then(|cards| {
+                    cards
+                        .iter()
+                        .find(|card| card["optional_entry_count"].as_u64().unwrap_or(0) > 0)
+                });
+            if let Some(target) = target {
+                let budget = &route["budget"];
+                let actual_entries = budget["actual_entries"].as_i64().unwrap_or(0);
+                let max_entries = budget["max_entries"].as_i64().unwrap_or(0);
+                let actual_bytes = budget["actual_bytes"].as_i64().unwrap_or(0);
+                let max_bytes = budget["max_bytes"].as_i64().unwrap_or(0);
+                return json!({
+                    "kind": "narrow_applicability",
+                    "job_id": route["job_id"].as_str().or_else(|| route["job"].as_str()),
+                    "persona": route["persona"],
+                    "dimension": if byte_overflow { "bytes" } else { "entries" },
+                    "minimum_reduction": {
+                        "entries": (actual_entries - max_entries).max(0),
+                        "bytes": (actual_bytes - max_bytes).max(0)
+                    },
+                    "target_card": {"card_id": target["card_id"], "card_kind": target["card_kind"]},
+                    "preserve_guardrails": true,
+                    "do_not": ["truncate", "drop_guardrails", "open_full_card"]
+                });
+            }
+            return json!({
+                "kind": "review_required_authority",
+                "job_id": route["job_id"].as_str().or_else(|| route["job"].as_str()),
+                "persona": route["persona"],
+                "diagnostics": route["diagnostics"],
+                "preserve_guardrails": true,
+                "do_not": ["truncate", "drop_guardrails", "open_full_card"]
+            });
+        }
+        if route["status"] == "unassessed" {
+            return json!({"kind": "declare_context_budget", "job_id": route["job_id"].as_str().or_else(|| route["job"].as_str()), "persona": route["persona"], "preserve_guardrails": true});
+        }
+    }
+    json!({"kind": "none", "preserve_guardrails": true})
 }
 
 fn route_reason_distribution(route: &Value) -> Value {
@@ -1047,6 +1404,18 @@ fn largest_contributing_cards(model_visible_projection: &Value) -> Vec<Value> {
             "card_id": card_id,
             "card_kind": card_kind,
             "entry_count": slice.as_array().map(Vec::len).unwrap_or(0),
+            "required_entry_count": slice
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["status"] == "required")
+                .count(),
+            "optional_entry_count": slice
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["status"] != "required")
+                .count(),
             "canonical_bytes": bytes
         }));
     }
@@ -3385,6 +3754,100 @@ mod tests {
             .expect("legacy route should be present");
         assert_eq!(legacy["status"], "unassessed");
         assert_eq!(legacy["budget"], Value::Null);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn route_budget_projection_is_exact_and_summary_is_bounded() {
+        let root = temp_pack("route-budget-projection");
+        add_buyer_persona_and_case_studies(&root, 99);
+        let manifest = read_manifest(&root).expect("manifest should load");
+        let full = route_budget_preflight(&root, &manifest).expect("preflight should compile");
+        let filtered = project_route_budget(
+            full.clone(),
+            &RouteBudgetQuery {
+                job_id: Some("outbound-copy-brief".to_string()),
+                persona: Some("buyer".to_string()),
+            },
+        );
+        assert_eq!(filtered["route_count"], 1);
+        let route = &filtered["routes"][0];
+        assert_eq!(route["job_id"], "outbound-copy-brief");
+        assert_eq!(route["job"], route["job_id"]);
+        assert_eq!(filtered["query"]["persona"], "Buyer");
+
+        let summary = route_budget_summary_projection(&full);
+        assert_eq!(summary["contract"], "mdp.route-budget-summary.v1");
+        assert!(summary.get("routes").is_none());
+        assert_eq!(summary["route_count"], 15);
+        assert_eq!(summary["route_status_counts"]["blocked"], 3);
+        assert_eq!(summary["tightest_headroom"]["dimension"], "entries");
+        assert_eq!(summary["next_safe_action"]["kind"], "narrow_applicability");
+        assert!(summary["excluded_count"].as_u64().is_some());
+        assert!(summary["optional_excluded_count"].as_u64().is_some());
+        assert!(summary.to_string().len() < 6_000);
+
+        let unassessed = json!({
+            "contract": "mdp.route-budget.v0",
+            "valid": false,
+            "strict": {"enabled": true, "warnings_fail": true, "warning_count": 2},
+            "pack_id": "unassessed",
+            "overflow_count": 0,
+            "route_card_cap_exclusion_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 2,
+            "query": {"job_id": null, "persona": null, "matched_route_count": 2},
+            "strict_warnings": [],
+            "routes": [
+                {"job_id": "legacy-job", "job": "legacy-job", "persona": "Buyer", "status": "unassessed", "generation_unassessed": true, "diagnostics": ["context_budget_not_declared"]},
+                {"job_id": "legacy-job", "job": "legacy-job", "persona": "PMM", "status": "unassessed", "generation_unassessed": true, "diagnostics": ["context_budget_not_declared"]}
+            ]
+        });
+        let unassessed_projection = project_route_budget(
+            unassessed,
+            &RouteBudgetQuery {
+                job_id: None,
+                persona: None,
+            },
+        );
+        assert_eq!(unassessed_projection["unassessed_generation_count"], 1);
+        assert_eq!(unassessed_projection["strict"]["warning_count"], 1);
+
+        let required_only = json!({
+            "contract": "mdp.route-budget.v0",
+            "valid": false,
+            "strict": {"enabled": false, "warnings_fail": false, "warning_count": 0},
+            "pack_id": "required-only",
+            "overflow_count": 1,
+            "route_card_cap_exclusion_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 0,
+            "query": {"job_id": null, "persona": null, "matched_route_count": 1},
+            "routes": [{
+                "job_id": "outbound-copy-brief",
+                "job": "outbound-copy-brief",
+                "persona": "Buyer",
+                "status": "blocked",
+                "diagnostics": ["context_entry_budget_exceeded"],
+                "budget": {"actual_entries": 4, "max_entries": 1, "actual_bytes": 400, "max_bytes": 100},
+                "excluded_count": 0,
+                "allocation": {"optional_excluded_count": 0},
+                "largest_contributing_cards": [{
+                    "card_id": "claims",
+                    "card_kind": "avoid-rules",
+                    "entry_count": 4,
+                    "required_entry_count": 4,
+                    "optional_entry_count": 0,
+                    "canonical_bytes": 400
+                }]
+            }]
+        });
+        let required_summary = route_budget_summary_projection(&required_only);
+        assert_eq!(
+            required_summary["next_safe_action"]["kind"],
+            "review_required_authority"
+        );
+
         let _ = std::fs::remove_dir_all(root);
     }
 

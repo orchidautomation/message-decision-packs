@@ -399,6 +399,13 @@ pub(crate) enum Commands {
         dir: PathBuf,
         #[arg(long, help = "Fail on near-budget and unassessed generation warnings")]
         strict: bool,
+        #[arg(
+            long,
+            help = "Exact jobs[].id projection; does not match titles or prose"
+        )]
+        job: Option<String>,
+        #[arg(long, help = "Exact declared persona projection (case-insensitive)")]
+        persona: Option<String>,
     },
     #[command(about = "Generate clearly fake prospect fixtures for outbound-copy testing")]
     SampleLeads {
@@ -726,6 +733,8 @@ pub(crate) enum SchemaTarget {
     Prospect,
     Eval,
     Skills,
+    RouteBudget,
+    RouteBudgetSummaryV1,
 }
 
 #[derive(Clone, ValueEnum, PartialEq, Eq)]
@@ -1196,6 +1205,31 @@ mod tests {
                 target: SchemaTarget::SourceBinding
             }
         ));
+    }
+
+    #[test]
+    fn route_budget_supports_exact_projection_selectors() {
+        let parsed = Cli::try_parse_from([
+            "mdp",
+            "--summary",
+            "route-budget",
+            "--dir",
+            "pack",
+            "--job",
+            "outbound-copy-brief",
+            "--persona",
+            "PMM",
+        ])
+        .expect("route-budget selectors should parse");
+        assert!(matches!(
+            parsed.command,
+            Commands::RouteBudget { dir, strict, job, persona }
+                if dir == PathBuf::from("pack")
+                    && !strict
+                    && job.as_deref() == Some("outbound-copy-brief")
+                    && persona.as_deref() == Some("PMM")
+        ));
+        assert!(Cli::try_parse_from(["mdp", "schema", "route-budget-summary-v1"]).is_ok());
     }
 
     #[test]

@@ -13,6 +13,13 @@ Read this when explaining what belongs in MDP or deciding which layer owns a beh
   executing policy or replacing the source artifact.
 - Pack: approved decision context, one `skill_id` per agent-routable job, evidence, boundaries, output contracts, gaps, and fixtures.
 - Prompt: a versioned pack-owned normalization, generation, or review contract over declared inputs. `mdp.prompt.v1` names each input producer, the procedure and evidence rules, and an exact structured output schema. The host executes it; MDP compiles and validates it. `source_summary.inputs_used` names declared inputs only; source paths, snippets, page locators, URLs, and proof notes belong in evidence/provenance, `signals[].source`, or normalization trace.
+
+For migrated governed prompts, `output_contract.host_envelope` makes the boundary
+explicit: the model returns only `selected_authority`, `artifact`, `gaps`, and
+`rejected_claims`. MDP injects prompt/job/context/receipt identities and the
+`source_summary.inputs_used` inventory from the observed run, rejects model-owned
+provenance fields, and then runs the existing final validator. Prompts without the
+declaration retain the legacy echo path until versioned migration.
 - Manifest: allowed values, required fields/signals/attributes, profile job
   bindings, pack-owned signal projections and explicit roles, conservative
   conflict policy, and readiness policy.
