@@ -605,12 +605,19 @@ pub(crate) fn route_budget_summary_projection(data: &Value) -> Value {
         ("unassessed", 0usize),
     ]);
     let mut blocker_counts: BTreeMap<String, usize> = BTreeMap::new();
-    let mut contributor_counts: BTreeMap<(String, String), (usize, usize, usize)> = BTreeMap::new();
+    let mut contributor_counts: BTreeMap<(String, String), (usize, usize, usize, usize, usize)> =
+        BTreeMap::new();
     let mut headroom = Vec::new();
+    let mut excluded_count = 0usize;
+    let mut optional_excluded_count = 0usize;
 
     for route in &routes {
         let status = route["status"].as_str().unwrap_or("unassessed");
         *route_status_counts.entry(status).or_default() += 1;
+        excluded_count += route["excluded_count"].as_u64().unwrap_or(0) as usize;
+        optional_excluded_count += route["allocation"]["optional_excluded_count"]
+            .as_u64()
+            .unwrap_or(0) as usize;
         for diagnostic in route["diagnostics"].as_array().into_iter().flatten() {
             if let Some(code) = diagnostic.as_str() {
                 *blocker_counts.entry(code.to_string()).or_default() += 1;
@@ -629,6 +636,8 @@ pub(crate) fn route_budget_summary_projection(data: &Value) -> Value {
             totals.0 += 1;
             totals.1 += card["entry_count"].as_u64().unwrap_or(0) as usize;
             totals.2 += card["canonical_bytes"].as_u64().unwrap_or(0) as usize;
+            totals.3 += card["required_entry_count"].as_u64().unwrap_or(0) as usize;
+            totals.4 += card["optional_entry_count"].as_u64().unwrap_or(0) as usize;
         }
         if let Some(budget) = route["budget"].as_object() {
             for (dimension, used_key, limit_key) in [
@@ -699,8 +708,8 @@ pub(crate) fn route_budget_summary_projection(data: &Value) -> Value {
     let top_contributors = top_contributors
         .into_iter()
         .take(ROUTE_BUDGET_SUMMARY_LIMIT)
-        .map(|((card_id, card_kind), (route_count, entry_count, canonical_bytes))| {
-            json!({"card_id": card_id, "card_kind": card_kind, "route_count": route_count, "entry_count": entry_count, "canonical_bytes": canonical_bytes})
+        .map(|((card_id, card_kind), (route_count, entry_count, canonical_bytes, required_entry_count, optional_entry_count))| {
+            json!({"card_id": card_id, "card_kind": card_kind, "route_count": route_count, "entry_count": entry_count, "required_entry_count": required_entry_count, "optional_entry_count": optional_entry_count, "canonical_bytes": canonical_bytes})
         })
         .collect::<Vec<_>>();
 
@@ -716,6 +725,8 @@ pub(crate) fn route_budget_summary_projection(data: &Value) -> Value {
         "route_status_counts": route_status_counts,
         "overflow_count": data["overflow_count"],
         "route_card_cap_exclusion_count": data["route_card_cap_exclusion_count"],
+        "excluded_count": excluded_count,
+        "optional_excluded_count": optional_excluded_count,
         "near_budget_count": data["near_budget_count"],
         "unassessed_generation_count": data["unassessed_generation_count"],
         "tightest_headroom": tightest_headroom,
@@ -757,12 +768,9 @@ fn next_safe_route_budget_action(routes: &[Value]) -> Value {
             let target = route["largest_contributing_cards"]
                 .as_array()
                 .and_then(|cards| {
-                    cards.iter().find(|card| {
-                        !matches!(
-                            card["card_kind"].as_str(),
-                            Some("avoid-rules" | "output-rules" | "channel-policies" | "fit-rules")
-                        )
-                    })
+                    cards
+                        .iter()
+                        .find(|card| card["optional_entry_count"].as_u64().unwrap_or(0) > 0)
                 });
             if let Some(target) = target {
                 let budget = &route["budget"];
@@ -784,6 +792,14 @@ fn next_safe_route_budget_action(routes: &[Value]) -> Value {
                     "do_not": ["truncate", "drop_guardrails", "open_full_card"]
                 });
             }
+            return json!({
+                "kind": "review_required_authority",
+                "job_id": route["job_id"].as_str().or_else(|| route["job"].as_str()),
+                "persona": route["persona"],
+                "diagnostics": route["diagnostics"],
+                "preserve_guardrails": true,
+                "do_not": ["truncate", "drop_guardrails", "open_full_card"]
+            });
         }
         if route["status"] == "unassessed" {
             return json!({"kind": "declare_context_budget", "job_id": route["job_id"].as_str().or_else(|| route["job"].as_str()), "persona": route["persona"], "preserve_guardrails": true});
@@ -1374,6 +1390,18 @@ fn largest_contributing_cards(model_visible_projection: &Value) -> Vec<Value> {
             "card_id": card_id,
             "card_kind": card_kind,
             "entry_count": slice.as_array().map(Vec::len).unwrap_or(0),
+            "required_entry_count": slice
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["status"] == "required")
+                .count(),
+            "optional_entry_count": slice
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["status"] != "required")
+                .count(),
             "canonical_bytes": bytes
         }));
     }
@@ -3741,7 +3769,44 @@ mod tests {
         assert_eq!(summary["route_status_counts"]["blocked"], 3);
         assert_eq!(summary["tightest_headroom"]["dimension"], "entries");
         assert_eq!(summary["next_safe_action"]["kind"], "narrow_applicability");
+        assert!(summary["excluded_count"].as_u64().is_some());
+        assert!(summary["optional_excluded_count"].as_u64().is_some());
         assert!(summary.to_string().len() < 6_000);
+
+        let required_only = json!({
+            "contract": "mdp.route-budget.v0",
+            "valid": false,
+            "strict": {"enabled": false, "warnings_fail": false, "warning_count": 0},
+            "pack_id": "required-only",
+            "overflow_count": 1,
+            "route_card_cap_exclusion_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 0,
+            "query": {"job_id": null, "persona": null, "matched_route_count": 1},
+            "routes": [{
+                "job_id": "outbound-copy-brief",
+                "job": "outbound-copy-brief",
+                "persona": "Buyer",
+                "status": "blocked",
+                "diagnostics": ["context_entry_budget_exceeded"],
+                "budget": {"actual_entries": 4, "max_entries": 1, "actual_bytes": 400, "max_bytes": 100},
+                "excluded_count": 0,
+                "allocation": {"optional_excluded_count": 0},
+                "largest_contributing_cards": [{
+                    "card_id": "claims",
+                    "card_kind": "claims",
+                    "entry_count": 4,
+                    "required_entry_count": 4,
+                    "optional_entry_count": 0,
+                    "canonical_bytes": 400
+                }]
+            }]
+        });
+        let required_summary = route_budget_summary_projection(&required_only);
+        assert_eq!(
+            required_summary["next_safe_action"]["kind"],
+            "review_required_authority"
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

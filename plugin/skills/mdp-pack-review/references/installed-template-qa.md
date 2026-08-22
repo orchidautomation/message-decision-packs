@@ -32,6 +32,6 @@ mdp --json --summary route-budget --dir PACK_ROOT
 mdp --json route-budget --dir PACK_ROOT --job JOB_ID --persona PERSONA
 ```
 
-Assert that summary output has no `routes` array, includes utilization and a
-safe action, and that selected full routes expose equal `job_id` and deprecated
-`job` values.
+Assert that summary output has no `routes` array, includes utilization,
+aggregate exclusion counts, and a safe action, and that selected full routes
+expose equal `job_id` and deprecated `job` values.

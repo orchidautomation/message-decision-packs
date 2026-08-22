@@ -63,6 +63,7 @@ For a targeted GTM pack, also require an isolation family:
 
 For route-budget triage, first run the unfiltered strict gate, then use the
 bounded summary or exact `--job`/`--persona` projection. Summary output is
-`mdp.route-budget-summary.v1`, keeps utilization and safe-action diagnostics,
-and never contains route arrays or entry bodies. `job_id` is canonical; the
+`mdp.route-budget-summary.v1`, keeps utilization, aggregate exclusion, and
+safe-action diagnostics, and never contains route arrays or entry bodies.
+Required-first optional exclusions remain visible in the summary. `job_id` is canonical; the
 legacy `job` alias must remain equal in full v0 output.

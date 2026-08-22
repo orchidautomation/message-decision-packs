@@ -59,7 +59,8 @@ applicability.
 For bounded triage, `mdp --json --summary route-budget --dir PACK_DIR` emits
 `mdp.route-budget-summary.v1`: validity, ready/blocked/unassessed counts,
 entry and byte utilization percentages, bounded blocker/contributor metadata,
-and one safe next action. It contains no route array or entry body. Exact
+aggregate exclusion counts (including required-first optional quota
+exclusions), and one safe next action. It contains no route array or entry body. Exact
 projections are available with `--job JOB_ID`, `--persona PERSONA`, or both;
 selectors are manifest-owned exact matches and the intersection is ANDed.
 The full output remains the authority. New route records use canonical

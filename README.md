@@ -89,9 +89,10 @@ Use `mdp --json --summary route-budget --dir PACK_DIR` for the bounded
 `mdp.route-budget-summary.v1` rollup, or add exact `--job JOB_ID` and
 `--persona PERSONA` selectors for one route projection. Summary output keeps
 status counts, utilization, blockers, contributors, and safe-action guidance
-but never includes route arrays or entry bodies. Full route-budget output is
-the machine-readable authority; `job_id` is canonical and the deprecated v0
-`job` alias remains equal for compatibility.
+but never includes route arrays or entry bodies. It also preserves aggregate
+exclusion counts from required-first allocation and route-card caps. Full
+route-budget output is the machine-readable authority; `job_id` is canonical
+and the deprecated v0 `job` alias remains equal for compatibility.
 
 Proposal review uses the same local primitives with a different profile vocabulary:
 

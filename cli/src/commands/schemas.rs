@@ -3595,11 +3595,13 @@ fn context_schema() -> Value {
             }},
             "largest_contributing_cards": {"type": "array", "items": {
                 "type": "object",
-                "required": ["card_id", "card_kind", "entry_count", "canonical_bytes"],
+                "required": ["card_id", "card_kind", "entry_count", "required_entry_count", "optional_entry_count", "canonical_bytes"],
                 "additionalProperties": false,
                 "properties": {
                     "card_id": {"type": "string"}, "card_kind": {"type": "string"},
                     "entry_count": {"type": "integer", "minimum": 0},
+                    "required_entry_count": {"type": "integer", "minimum": 0},
+                    "optional_entry_count": {"type": "integer", "minimum": 0},
                     "canonical_bytes": {"type": "integer", "minimum": 0}
                 }
             }},
@@ -3674,7 +3676,7 @@ fn route_budget_summary_schema() -> Value {
         "title": "MDP Route Budget Summary v1",
         "type": "object",
         "additionalProperties": false,
-        "required": ["contract", "source_contract", "valid", "strict", "pack_id", "query", "route_count", "route_status_counts", "tightest_headroom", "top_blockers", "top_contributors", "next_safe_action"],
+        "required": ["contract", "source_contract", "valid", "strict", "pack_id", "query", "route_count", "route_status_counts", "overflow_count", "route_card_cap_exclusion_count", "excluded_count", "optional_excluded_count", "near_budget_count", "unassessed_generation_count", "tightest_headroom", "top_blockers", "top_contributors", "next_safe_action"],
         "properties": {
             "contract": {"const": "mdp.route-budget-summary.v1"},
             "source_contract": {"const": "mdp.route-budget.v0"},
@@ -3686,11 +3688,13 @@ fn route_budget_summary_schema() -> Value {
             "route_status_counts": {"type": "object", "required": ["ready", "blocked", "unassessed"], "properties": {"ready": {"type": "integer"}, "blocked": {"type": "integer"}, "unassessed": {"type": "integer"}}, "additionalProperties": false},
             "overflow_count": {"type": "integer", "minimum": 0},
             "route_card_cap_exclusion_count": {"type": "integer", "minimum": 0},
+            "excluded_count": {"type": "integer", "minimum": 0},
+            "optional_excluded_count": {"type": "integer", "minimum": 0},
             "near_budget_count": {"type": "integer", "minimum": 0},
             "unassessed_generation_count": {"type": "integer", "minimum": 0},
             "tightest_headroom": {"type": ["object", "null"]},
             "top_blockers": {"type": "array", "maxItems": 5, "items": {"type": "object", "required": ["code", "route_count"], "properties": {"code": {"type": "string"}, "route_count": {"type": "integer"}}, "additionalProperties": false}},
-            "top_contributors": {"type": "array", "maxItems": 5, "items": {"type": "object", "required": ["card_id", "card_kind", "route_count", "entry_count", "canonical_bytes"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "route_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "canonical_bytes": {"type": "integer"}}, "additionalProperties": false}},
+            "top_contributors": {"type": "array", "maxItems": 5, "items": {"type": "object", "required": ["card_id", "card_kind", "route_count", "entry_count", "required_entry_count", "optional_entry_count", "canonical_bytes"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "route_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "required_entry_count": {"type": "integer"}, "optional_entry_count": {"type": "integer"}, "canonical_bytes": {"type": "integer"}}, "additionalProperties": false}},
             "next_safe_action": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["none", "narrow_applicability", "review_required_authority", "declare_context_budget"]}, "do_not": {"type": "array", "items": {"type": "string"}}, "preserve_guardrails": {"const": true}}, "additionalProperties": false}
         }
     })
