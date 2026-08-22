@@ -36,6 +36,37 @@ struct ChainFile {
     sha256: String,
 }
 
+struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    fn new(prefix: &str) -> Result<Self> {
+        for _ in 0..100 {
+            let path =
+                std::env::temp_dir().join(format!("{prefix}-{}-{}", std::process::id(), nonce()));
+            match fs::create_dir(&path) {
+                Ok(()) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Err(anyhow!(
+            "could not allocate a unique temporary directory for {prefix}"
+        ))
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
 pub(crate) fn synthetic_v2_chain_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -381,7 +412,7 @@ fn build_fresh_chain(
         attempts.push(json!({"attempt_id": attempt_id, "attribute_id": attribute_id, "source_class": "synthetic_fixture", "source_locator": format!("opaque:synthetic:{job_id}:{attribute_id}:{seed}"), "requested_at": as_of, "decision_input_contract_id": contract_id}));
         let _ = (status, value);
     }
-    let mut projection_attempts = BTreeMap::<String, Vec<String>>::new();
+    let mut projection_attempts = BTreeMap::<String, Vec<(String, String)>>::new();
     for contract in &contracts {
         let contract_id = contract["id"].as_str().unwrap_or_default();
         for projection in contract["signal_projections"]
@@ -410,7 +441,7 @@ fn build_fresh_chain(
                     let locator =
                         format!("opaque:synthetic:{job_id}:{contributor}:{seed}:{attempt_id}");
                     attempts.push(json!({"attempt_id": attempt_id, "attribute_id": contributor, "source_class": "synthetic_fixture", "source_locator": locator, "requested_at": as_of, "decision_input_contract_id": contract_id}));
-                    ids.push(attempt_id);
+                    ids.push((contributor.to_string(), attempt_id));
                 }
             }
             projection_attempts.insert(qualified, ids);
@@ -448,18 +479,15 @@ fn build_fresh_chain(
                 "{contract_id}#{}",
                 projection["id"].as_str().unwrap_or_default()
             );
-            let contributor = projection["contributor_attribute_ids"]
-                .as_array()
-                .and_then(|items| items.first())
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let attr = contract["attributes"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .find(|item| item["id"] == contributor)
-                .ok_or_else(|| anyhow!("missing contributor {contributor}"))?;
-            for attempt_id in projection_attempts.get(&qualified).into_iter().flatten() {
+            for (contributor, attempt_id) in
+                projection_attempts.get(&qualified).into_iter().flatten()
+            {
+                let attr = contract["attributes"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|item| item["id"] == *contributor)
+                    .ok_or_else(|| anyhow!("missing contributor {contributor}"))?;
                 let locator =
                     format!("opaque:synthetic:{job_id}:{contributor}:{seed}:{attempt_id}");
                 let result = attribute_result(
@@ -511,13 +539,8 @@ fn build_fresh_chain(
         {
             let projection_id = projection["id"].as_str().unwrap_or_default();
             let qualified = format!("{contract_id}#{projection_id}");
-            let contributor = projection["contributor_attribute_ids"]
-                .as_array()
-                .and_then(|items| items.first())
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let value = values[&format!("{contract_id}#{contributor}")].clone();
-            for attempt_id in &projection_attempts[&qualified] {
+            for (contributor, attempt_id) in &projection_attempts[&qualified] {
+                let value = values[&format!("{contract_id}#{contributor}")].clone();
                 let locator =
                     format!("opaque:synthetic:{job_id}:{contributor}:{seed}:{attempt_id}");
                 observations.push(json!({"contract": "mdp.signal-observation.v2", "id": format!("obs-{seed}-{observation_number}"), "contract_id": contract_id, "projection_id": projection_id, "qualified_projection_id": qualified, "kind": projection["kind"], "roles": projection["roles"], "value": value, "contributor_attribute_ids": projection["contributor_attribute_ids"], "attempt_ids": [attempt_id], "source_class": "synthetic_fixture", "source_locator": locator, "observed_at": as_of, "confidence": 100, "receipt": {"source_binding_sha256": binding_sha256, "source_attempt_request_sha256": request_sha256, "collected_results_sha256": results_sha256}}));
@@ -771,13 +794,8 @@ fn stage_and_validate(
     compiled: &Value,
     chain: &[ChainFile],
 ) -> Result<Value> {
-    let stage = std::env::temp_dir().join(format!(
-        "mdp-synthetic-chain-{}-{}",
-        std::process::id(),
-        nonce()
-    ));
-    fs::create_dir_all(&stage)?;
-    let paths = CHAIN_FILES.map(|(_, filename)| stage.join(filename));
+    let stage = TempDir::new("mdp-synthetic-chain")?;
+    let paths = CHAIN_FILES.map(|(_, filename)| stage.path().join(filename));
     for (file, path) in chain.iter().zip(paths.iter()) {
         fs::write(path, &file.bytes)?;
     }
@@ -805,7 +823,6 @@ fn stage_and_validate(
         "results": jsonschema::draft202012::validate(&compiled["collected_attempt_results_schema"], &chain[2].value).err().map(|error| error.to_string()),
         "normalized": jsonschema::draft202012::validate(&compiled["normalized_output_schema"], &chain[3].value).err().map(|error| error.to_string())
     });
-    let _ = fs::remove_dir_all(&stage);
     Ok(
         json!({"source_binding": binding_validation, "prompt_output": prompt_validation, "compiled_contract": compiled["contract"], "schema_diagnostics": schema_diagnostics}),
     )
@@ -841,62 +858,188 @@ fn apply_destination_files(
     plans: &[Value],
     force: bool,
 ) -> Result<()> {
-    fs::create_dir_all(out_dir)?;
-    let mut changed = Vec::<(PathBuf, Option<PathBuf>)>::new();
-    for plan in plans {
-        if plan["action"] == "unchanged" {
-            continue;
-        }
-        let filename = plan["filename"].as_str().unwrap_or_default();
-        let target = out_dir.join(filename);
-        let candidate = chain
-            .iter()
-            .find(|file| file.filename == filename)
-            .ok_or_else(|| anyhow!("missing staged file {filename}"))?;
-        let backup = if target.exists() {
-            if !force {
-                return Err(anyhow!(
-                    "synthetic_chain_write_conflict: {} requires --force",
-                    target.display()
-                ));
-            }
-            let path = plan["backup"]
-                .as_str()
-                .map(PathBuf::from)
-                .ok_or_else(|| anyhow!("missing backup plan"))?;
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::copy(&target, &path)?;
-            Some(path)
-        } else {
-            None
-        };
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let temp = target.with_extension(format!("json.tmp-{}", nonce()));
-        let mut file = fs::File::create(&temp)?;
-        file.write_all(&candidate.bytes)?;
-        file.sync_all().ok();
-        if let Err(error) = fs::rename(&temp, &target) {
-            let _ = fs::remove_file(&temp);
-            rollback_files(&changed);
-            return Err(error.into());
-        }
-        changed.push((target, backup));
-    }
-    Ok(())
+    let mut fault = ApplyFault::disabled();
+    apply_destination_files_with_fault(out_dir, chain, plans, force, &mut fault)
 }
 
-fn rollback_files(changed: &[(PathBuf, Option<PathBuf>)]) {
-    for (target, backup) in changed.iter().rev() {
-        if let Some(backup) = backup {
-            let _ = fs::rename(backup, target);
-        } else {
-            let _ = fs::remove_file(target);
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum ApplyOperation {
+    CreateDir,
+    BackupCopy,
+    TempCreate,
+    Write,
+    Sync,
+    Rename,
+}
+
+#[derive(Default)]
+struct ApplyFault {
+    fail_on: Option<(ApplyOperation, usize)>,
+    seen: BTreeMap<ApplyOperation, usize>,
+}
+
+impl ApplyFault {
+    fn disabled() -> Self {
+        Self::default()
+    }
+
+    #[cfg(test)]
+    fn fail_on(operation: ApplyOperation, occurrence: usize) -> Self {
+        Self {
+            fail_on: Some((operation, occurrence)),
+            seen: BTreeMap::new(),
         }
     }
+
+    fn checkpoint(&mut self, operation: ApplyOperation) -> Result<()> {
+        let count = self.seen.entry(operation).or_default();
+        *count += 1;
+        if self.fail_on == Some((operation, *count)) {
+            return Err(anyhow!("injected synthetic-chain {:?} failure", operation));
+        }
+        Ok(())
+    }
+}
+
+struct AppliedFile {
+    target: PathBuf,
+    backup: Option<PathBuf>,
+}
+
+#[derive(Default)]
+struct ApplyTransaction {
+    created_dirs: Vec<PathBuf>,
+    backups: Vec<PathBuf>,
+    temporary_files: Vec<PathBuf>,
+    replacements: Vec<AppliedFile>,
+}
+
+impl ApplyTransaction {
+    fn rollback(&mut self) {
+        for temporary in self.temporary_files.drain(..) {
+            let _ = fs::remove_file(temporary);
+        }
+        for replacement in self.replacements.drain(..).rev() {
+            let _ = fs::remove_file(&replacement.target);
+            if let Some(backup) = replacement.backup {
+                let _ = fs::rename(backup, &replacement.target);
+            }
+        }
+        for backup in self.backups.drain(..) {
+            let _ = fs::remove_file(backup);
+        }
+        for directory in self.created_dirs.drain(..).rev() {
+            let _ = fs::remove_dir(directory);
+        }
+    }
+}
+
+fn apply_destination_files_with_fault(
+    out_dir: &Path,
+    chain: &[ChainFile],
+    plans: &[Value],
+    force: bool,
+    fault: &mut ApplyFault,
+) -> Result<()> {
+    let mut transaction = ApplyTransaction::default();
+    let result = (|| {
+        ensure_directory(out_dir, &mut transaction, fault)?;
+        for plan in plans {
+            if plan["action"] == "unchanged" {
+                continue;
+            }
+            let filename = plan["filename"].as_str().unwrap_or_default();
+            let target = out_dir.join(filename);
+            let candidate = chain
+                .iter()
+                .find(|file| file.filename == filename)
+                .ok_or_else(|| anyhow!("missing staged file {filename}"))?;
+            let backup = if target.exists() {
+                if !force {
+                    return Err(anyhow!(
+                        "synthetic_chain_write_conflict: {} requires --force",
+                        target.display()
+                    ));
+                }
+                let path = plan["backup"]
+                    .as_str()
+                    .map(PathBuf::from)
+                    .ok_or_else(|| anyhow!("missing backup plan"))?;
+                if let Some(parent) = path.parent() {
+                    ensure_directory(parent, &mut transaction, fault)?;
+                }
+                transaction.backups.push(path.clone());
+                fault.checkpoint(ApplyOperation::BackupCopy)?;
+                fs::copy(&target, &path)?;
+                Some(path)
+            } else {
+                None
+            };
+            if let Some(parent) = target.parent() {
+                ensure_directory(parent, &mut transaction, fault)?;
+            }
+            let temporary = target.with_extension(format!("json.tmp-{}", nonce()));
+            transaction.temporary_files.push(temporary.clone());
+            fault.checkpoint(ApplyOperation::TempCreate)?;
+            let mut file = fs::File::create(&temporary)?;
+            fault.checkpoint(ApplyOperation::Write)?;
+            file.write_all(&candidate.bytes)?;
+            fault.checkpoint(ApplyOperation::Sync)?;
+            file.sync_all()?;
+            fault.checkpoint(ApplyOperation::Rename)?;
+            fs::rename(&temporary, &target)?;
+            transaction
+                .temporary_files
+                .retain(|path| path != &temporary);
+            transaction
+                .replacements
+                .push(AppliedFile { target, backup });
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        transaction.rollback();
+    }
+    result
+}
+
+fn ensure_directory(
+    path: &Path,
+    transaction: &mut ApplyTransaction,
+    fault: &mut ApplyFault,
+) -> Result<()> {
+    if path.exists() {
+        if path.is_dir() {
+            return Ok(());
+        }
+        return Err(anyhow!(
+            "destination parent is not a directory: {}",
+            path.display()
+        ));
+    }
+    let mut missing = Vec::new();
+    let mut cursor = path.to_path_buf();
+    while !cursor.exists() {
+        missing.push(cursor.clone());
+        if !cursor.pop() {
+            return Err(anyhow!(
+                "destination has no existing directory ancestor: {}",
+                path.display()
+            ));
+        }
+    }
+    if !cursor.is_dir() {
+        return Err(anyhow!(
+            "destination parent is not a directory: {}",
+            cursor.display()
+        ));
+    }
+    for directory in missing.iter().rev() {
+        fault.checkpoint(ApplyOperation::CreateDir)?;
+        fs::create_dir(directory)?;
+        transaction.created_dirs.push(directory.clone());
+    }
+    Ok(())
 }
 
 fn backup_path(target: &Path, digest: &str) -> Result<PathBuf> {
@@ -1064,21 +1207,62 @@ fn scan_provenance(value: &Value, saw_source_class: &mut bool) -> std::result::R
 }
 
 fn check_output_directory(root: &Path, out_dir: &Path, input_dir: Option<&Path>) -> Result<()> {
-    let root = root.canonicalize()?;
-    let candidate = if out_dir.exists() {
-        out_dir.canonicalize()?
-    } else {
-        out_dir.to_path_buf()
-    };
+    let cwd = std::env::current_dir()?;
+    check_output_directory_from(root, out_dir, input_dir, &cwd)
+}
+
+fn check_output_directory_from(
+    root: &Path,
+    out_dir: &Path,
+    input_dir: Option<&Path>,
+    cwd: &Path,
+) -> Result<()> {
+    let root = resolve_path_for_containment(root, cwd)?;
+    let candidate = resolve_path_for_containment(out_dir, cwd)?;
+    let input = input_dir
+        .map(|path| resolve_path_for_containment(path, cwd))
+        .transpose()?;
+    if input
+        .as_deref()
+        .is_some_and(|input| input == root || input.starts_with(&root))
+    {
+        return Err(anyhow!(
+            "input directory must be external to the active pack"
+        ));
+    }
     if candidate == root
         || candidate.starts_with(&root)
-        || input_dir.is_some_and(|input| candidate == input || candidate.starts_with(input))
+        || input
+            .as_deref()
+            .is_some_and(|input| candidate == input || candidate.starts_with(input))
     {
         return Err(anyhow!(
             "output directory must be external to the active pack and input chain"
         ));
     }
     Ok(())
+}
+
+fn resolve_path_for_containment(path: &Path, cwd: &Path) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    };
+    let mut nearest = absolute.clone();
+    let mut suffix = Vec::new();
+    while !nearest.exists() {
+        let component = nearest
+            .file_name()
+            .ok_or_else(|| anyhow!("path has no existing ancestor: {}", path.display()))?;
+        suffix.push(component.to_os_string());
+        nearest.pop();
+    }
+    let mut resolved = nearest.canonicalize()?;
+    for component in suffix.iter().rev() {
+        resolved.push(component);
+    }
+    Ok(resolved)
 }
 
 fn serialize(value: &Value) -> Result<Vec<u8>> {
@@ -1109,6 +1293,7 @@ fn nonce() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     fn clay_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1197,5 +1382,234 @@ mod tests {
         let error = validate_synthetic_input(&inputs, "prospect-fit-or-brief", &compiled)
             .expect_err("real provenance must refuse");
         assert_eq!(error.code, "synthetic_chain_real_provenance");
+    }
+
+    #[test]
+    fn containment_resolves_nonexistent_relative_output_against_cwd() {
+        let workspace = TempDir::new("mdp-synthetic-containment").expect("workspace creates");
+        let pack = workspace.path().join("pack");
+        fs::create_dir_all(&pack).expect("pack creates");
+        let relative_output = Path::new("pack/generated/deep");
+        let error = check_output_directory_from(&pack, relative_output, None, workspace.path())
+            .expect_err("relative output inside a pack must be refused");
+        assert!(error.to_string().contains("external"));
+    }
+
+    #[test]
+    fn containment_rejects_existing_input_directory_inside_pack() {
+        let workspace = TempDir::new("mdp-synthetic-input-containment").expect("workspace creates");
+        let pack = workspace.path().join("pack");
+        let input = pack.join("input-chain");
+        fs::create_dir_all(&input).expect("input creates");
+        let error = check_output_directory_from(
+            &pack,
+            Path::new("external-output"),
+            Some(&input),
+            workspace.path(),
+        )
+        .expect_err("input inside a pack must be refused");
+        assert!(error.to_string().contains("input directory"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn containment_resolves_nonexistent_output_through_symlinked_parent() {
+        use std::os::unix::fs::symlink;
+
+        let workspace =
+            TempDir::new("mdp-synthetic-symlink-containment").expect("workspace creates");
+        let pack = workspace.path().join("pack");
+        fs::create_dir_all(&pack).expect("pack creates");
+        let symlinked_parent = workspace.path().join("pack-alias");
+        symlink(&pack, &symlinked_parent).expect("pack symlink creates");
+        let error = check_output_directory_from(
+            &pack,
+            Path::new("pack-alias/generated"),
+            None,
+            workspace.path(),
+        )
+        .expect_err("symlinked parent resolving inside a pack must be refused");
+        assert!(error.to_string().contains("external"));
+    }
+
+    fn transaction_fixture() -> Vec<ChainFile> {
+        CHAIN_FILES
+            .iter()
+            .enumerate()
+            .map(|(index, (name, filename))| {
+                let bytes = format!("synthetic replacement {index}\n").into_bytes();
+                ChainFile {
+                    name,
+                    filename,
+                    value: json!({"index": index}),
+                    sha256: sha256_hex(&bytes),
+                    bytes,
+                }
+            })
+            .collect()
+    }
+
+    fn existing_transaction_fixture() -> (TempDir, Vec<ChainFile>, Vec<Vec<u8>>, Vec<Value>) {
+        let temp = TempDir::new("mdp-synthetic-transaction").expect("transaction temp creates");
+        let out_dir = temp.path().join("out");
+        fs::create_dir_all(&out_dir).expect("output creates");
+        let chain = transaction_fixture();
+        let old = chain
+            .iter()
+            .enumerate()
+            .map(|(index, file)| {
+                let bytes = format!("old bytes {index}\n").into_bytes();
+                fs::write(out_dir.join(file.filename), &bytes).expect("old file writes");
+                bytes
+            })
+            .collect::<Vec<_>>();
+        let plans = plan_destination_files(&out_dir, &chain, true, true).expect("plans create");
+        (temp, chain, old, plans)
+    }
+
+    fn assert_old_transaction_bytes(temp: &TempDir, old: &[Vec<u8>]) {
+        let out_dir = temp.path().join("out");
+        for ((_, filename), expected) in CHAIN_FILES.iter().zip(old) {
+            assert_eq!(
+                fs::read(out_dir.join(filename)).expect("target remains"),
+                *expected
+            );
+        }
+        assert!(!out_dir.join(".mdp-synthetic-backups").exists());
+    }
+
+    #[test]
+    fn apply_rolls_back_earlier_replacements_when_backup_fails() {
+        let (temp, chain, old, plans) = existing_transaction_fixture();
+        let mut fault = ApplyFault::fail_on(ApplyOperation::BackupCopy, 2);
+        assert!(
+            apply_destination_files_with_fault(
+                &temp.path().join("out"),
+                &chain,
+                &plans,
+                true,
+                &mut fault,
+            )
+            .is_err()
+        );
+        assert_old_transaction_bytes(&temp, &old);
+    }
+
+    #[test]
+    fn apply_rolls_back_earlier_replacements_when_write_fails() {
+        let (temp, chain, old, plans) = existing_transaction_fixture();
+        let mut fault = ApplyFault::fail_on(ApplyOperation::Write, 2);
+        assert!(
+            apply_destination_files_with_fault(
+                &temp.path().join("out"),
+                &chain,
+                &plans,
+                true,
+                &mut fault,
+            )
+            .is_err()
+        );
+        assert_old_transaction_bytes(&temp, &old);
+    }
+
+    #[test]
+    fn apply_rolls_back_earlier_replacements_when_rename_is_interrupted() {
+        let (temp, chain, old, plans) = existing_transaction_fixture();
+        let mut fault = ApplyFault::fail_on(ApplyOperation::Rename, 2);
+        assert!(
+            apply_destination_files_with_fault(
+                &temp.path().join("out"),
+                &chain,
+                &plans,
+                true,
+                &mut fault,
+            )
+            .is_err()
+        );
+        assert_old_transaction_bytes(&temp, &old);
+    }
+
+    #[test]
+    fn apply_removes_created_output_directory_when_write_fails() {
+        let temp =
+            TempDir::new("mdp-synthetic-created-directory").expect("transaction temp creates");
+        let out_dir = temp.path().join("new-output");
+        let chain = transaction_fixture();
+        let plans = plan_destination_files(&out_dir, &chain, true, true).expect("plans create");
+        let mut fault = ApplyFault::fail_on(ApplyOperation::Write, 2);
+        assert!(
+            apply_destination_files_with_fault(&out_dir, &chain, &plans, true, &mut fault,)
+                .is_err()
+        );
+        assert!(!out_dir.exists());
+    }
+
+    #[test]
+    fn multi_contributor_projection_preserves_attempt_result_and_observation_identity() {
+        let root = clay_root();
+        let mut compiled =
+            requirements(&root, "prospect-fit-or-brief").expect("requirements compile");
+        compiled["decision_input_contracts"][0]["signal_projections"][0]["contributor_attribute_ids"] =
+            json!(["enterprise_eligibility", "person_title"]);
+        let manifest = read_manifest(&root).expect("manifest reads");
+        let pack = json!({"id": manifest.id, "version": manifest.version, "sha256": pack_content_sha256(&root).expect("pack hashes")});
+        let chain = build_fresh_chain(
+            &compiled,
+            &pack,
+            compiled["requirements_sha256"].as_str().unwrap(),
+            "prospect-fit-or-brief",
+            "2026-01-01T00:00:00Z",
+            0,
+        )
+        .expect("multi-contributor chain builds");
+        assert!(
+            crate::commands::source_binding::validate_source_binding_v2(
+                &compiled,
+                &chain[0].value,
+                "source-binding.json",
+            )
+            .expect("binding validates")["valid"]
+                == true
+        );
+
+        let request_by_id = chain[1].value["attempts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|attempt| (attempt["attempt_id"].as_str().unwrap(), attempt))
+            .collect::<BTreeMap<_, _>>();
+        let result_by_id = chain[2].value["attempt_results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|result| (result["attempt_id"].as_str().unwrap(), result))
+            .collect::<BTreeMap<_, _>>();
+        let projection_observations = chain[3].value["signal_observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|observation| {
+                observation["qualified_projection_id"]
+                    == "clay.audiences.self_serve_enterprise_expansion#account-fit"
+            })
+            .collect::<Vec<_>>();
+        let mut contributors = BTreeSet::new();
+        for observation in &projection_observations {
+            let attempt_id = &observation["attempt_ids"][0];
+            let id = attempt_id.as_str().unwrap();
+            let request = request_by_id[id];
+            let result = result_by_id[id];
+            assert_eq!(request["attribute_id"], result["attribute_id"]);
+            assert_eq!(
+                request["decision_input_contract_id"],
+                result["decision_input_contract_id"]
+            );
+            contributors.insert(result["attribute_id"].as_str().unwrap());
+        }
+        assert_eq!(
+            contributors,
+            BTreeSet::from(["enterprise_eligibility", "person_title"])
+        );
+        assert_eq!(projection_observations.len(), 2);
     }
 }
