@@ -103,8 +103,12 @@ Require every self-standing generation/review job to declare positive entry and
 byte context budgets. `requirements` must report the declared `context_budget`
 and `routed_context_required`; it does not compute a minimality receipt. `route`,
 `brief --context`, and their summaries must agree on minimality
-status/digest/counts. Budget overflow and whole-card fallback must block without
-removing guardrails. Governed-output fixtures must bind the exact canonical
+status/digest/counts. When `optional_kind_quotas` is present, verify that
+`minimality.allocation` reports required reservations and quota utilization
+consistently across route/context/brief/route-budget. Quotas may exclude only
+supporting entries and must never remove guardrails, foundation entries/gaps,
+evidence-backed claims, or explicitly required output entries. Budget overflow
+and whole-card fallback must block without removing guardrails. Governed-output fixtures must bind the exact canonical
 `routed_context` bytes and reject pack-global but unselected or wrong-kind
 identifiers. Exclusion diagnostics must never include bodies.
 

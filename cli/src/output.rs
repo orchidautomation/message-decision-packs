@@ -479,6 +479,7 @@ fn context_summary(context: &Value) -> Value {
             "budget": context["minimality"]["budget"],
             "selected_count": context["minimality"]["selected_count"],
             "excluded_count": context["minimality"]["excluded_count"],
+            "allocation": context["minimality"]["allocation"],
             "excluded": context["minimality"]["excluded"],
             "largest_contributing_cards": context["minimality"]["largest_contributing_cards"],
             "diagnostics": context["minimality"]["diagnostics"]

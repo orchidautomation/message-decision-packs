@@ -382,6 +382,11 @@ pub(crate) fn render_readable_prospect_brief(brief: &Value) -> String {
             "excluded_count",
             display_value(&minimality["excluded_count"]),
         );
+        bullet(
+            &mut out,
+            "allocation",
+            display_value(&minimality["allocation"]),
+        );
         for diagnostic in minimality["diagnostics"].as_array().into_iter().flatten() {
             bullet(&mut out, "diagnostic", display_value(diagnostic));
         }

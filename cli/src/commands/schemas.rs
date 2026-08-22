@@ -21,7 +21,7 @@ use crate::model_steps::{
     COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1, compiled_model_step_schema,
 };
 use crate::models::{
-    DecisionInputAttemptStatus, MAX_SIGNAL_ATTEMPTS, MAX_SIGNAL_CONTRIBUTORS,
+    CardKind, DecisionInputAttemptStatus, MAX_SIGNAL_ATTEMPTS, MAX_SIGNAL_CONTRIBUTORS,
     MAX_SIGNAL_IDENTIFIER_LEN, MAX_SIGNAL_KIND_LEN, MAX_SIGNAL_LOCATOR_LEN,
     MAX_SIGNAL_OBSERVATIONS_PER_ENVELOPE, MAX_SIGNAL_PROJECTIONS_PER_CONTRACT,
     MAX_SIGNAL_QUALIFIED_ID_LEN, SIGNAL_OBSERVATION_CONTRACT_V2,
@@ -3115,7 +3115,12 @@ fn profile_jobs_schema() -> Value {
                     "additionalProperties": false,
                     "properties": {
                         "max_entries": {"type": "integer", "minimum": 1},
-                        "max_bytes": {"type": "integer", "minimum": 1}
+                        "max_bytes": {"type": "integer", "minimum": 1},
+                        "optional_kind_quotas": {
+                            "type": "object",
+                            "propertyNames": {"enum": CardKind::optional_quota_names()},
+                            "additionalProperties": {"type": "integer", "minimum": 1}
+                        }
                     }
                 },
                 "model_task": {
@@ -3554,13 +3559,36 @@ fn context_schema() -> Value {
             ]},
             "selected_count": {"type": "integer", "minimum": 0},
             "excluded_count": {"type": "integer", "minimum": 0},
+            "allocation": {
+                "type": "object",
+                "required": ["strategy", "required_count", "optional_selected_count", "optional_excluded_count", "required_by_kind", "quotas"],
+                "additionalProperties": false,
+                "properties": {
+                    "strategy": {"const": "required-first"},
+                    "required_count": {"type": "integer", "minimum": 0},
+                    "optional_selected_count": {"type": "integer", "minimum": 0},
+                    "optional_excluded_count": {"type": "integer", "minimum": 0},
+                    "required_by_kind": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+                    "quotas": {"type": "object", "propertyNames": {"enum": CardKind::optional_quota_names()}, "additionalProperties": {
+                        "type": "object",
+                        "required": ["max_optional_entries", "reserved_count", "optional_selected_count", "optional_excluded_count"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "max_optional_entries": {"type": "integer", "minimum": 1},
+                            "reserved_count": {"type": "integer", "minimum": 0},
+                            "optional_selected_count": {"type": "integer", "minimum": 0},
+                            "optional_excluded_count": {"type": "integer", "minimum": 0}
+                        }
+                    }}
+                }
+            },
             "excluded": {"type": "array", "items": {
                 "type": "object", "required": ["card_id", "card_kind", "entry_id", "reason_code"],
                 "additionalProperties": false,
                 "properties": {
                     "card_id": {"type": "string"}, "card_kind": {"type": "string"},
                     "entry_id": {"type": "string"},
-                    "reason_code": {"enum": ["policy_incompatible", "not_applicable", "scope_incompatible"]}
+                    "reason_code": {"enum": ["policy_incompatible", "not_applicable", "scope_incompatible", "optional_kind_quota_exceeded"]}
                 }
             }},
             "largest_contributing_cards": {"type": "array", "items": {

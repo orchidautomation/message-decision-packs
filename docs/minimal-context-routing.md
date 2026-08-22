@@ -6,6 +6,30 @@ MDP compiles a job-specific context instead of handing a model the whole pack. A
 
 Required safety and output guardrails are selected before measurement. MDP blocks when they do not fit; it does not drop or truncate guardrails to satisfy a budget.
 
+Jobs may additionally declare an opt-in `context_budget.optional_kind_quotas`
+map, for example:
+
+```yaml
+context_budget:
+  max_entries: 64
+  max_bytes: 65536
+  optional_kind_quotas:
+    hooks: 6
+    pains: 8
+    ctas: 4
+```
+
+These are maximums for supporting entries only. The allocator reserves
+guardrails, selected product-foundation entries and gaps, evidence-backed
+claims, and explicitly required output entries first. A quota never removes
+those reservations, and a quota omission is not a failure. The shared
+`minimality.allocation` receipt reports the required count, required counts by
+kind, selected/excluded optional counts, and each quota's reservation and
+utilization. Quota exclusions use the body-free
+`optional_kind_quota_exceeded` reason. Unknown or protected kinds, zero values,
+and non-integer declarations fail validation; omitting the map preserves the
+legacy selection path.
+
 The manifest's `policy.max_cards_per_route` is also fail-closed. If the cap
 would exclude an otherwise applicable card, the route is blocked with a
 `route_card_cap_excluded_applicable` diagnostic. The `route_card_cap` receipt

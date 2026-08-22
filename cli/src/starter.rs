@@ -419,6 +419,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             context_budget: Some(crate::models::JobContextBudget {
                 max_entries: 48,
                 max_bytes: 49_152,
+                optional_kind_quotas: BTreeMap::new(),
             }),
         },
         ProfileJob {
@@ -463,6 +464,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             context_budget: Some(crate::models::JobContextBudget {
                 max_entries: 64,
                 max_bytes: 65_536,
+                optional_kind_quotas: BTreeMap::new(),
             }),
         },
         ProfileJob {
@@ -502,6 +504,7 @@ fn gtm_profile_jobs() -> Vec<ProfileJob> {
             context_budget: Some(crate::models::JobContextBudget {
                 max_entries: 64,
                 max_bytes: 65_536,
+                optional_kind_quotas: BTreeMap::new(),
             }),
         },
     ]

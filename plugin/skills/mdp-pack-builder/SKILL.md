@@ -228,6 +228,16 @@ and exact Decision Input Contract receipts.
      runs the same preflight; both must be green before a greenfield generation
      claim. Narrow applicability to fit the budget; do not raise limits.
 
+     When a supporting kind is intentionally high-volume, a job may add
+     `context_budget.optional_kind_quotas` for safe kinds such as `hooks`,
+     `pains`, or `ctas`. These are optional-entry maximums, not required
+     reservations: guardrails, selected foundation entries/gaps,
+     evidence-backed claims, and explicitly required output entries are
+     retained first. Inspect `minimality.allocation` and the body-free
+     `optional_kind_quota_exceeded` exclusions, and do not use quotas to hide
+     required authority or to bypass `max_entries`, `max_bytes`, or
+     `max_cards_per_route`.
+
    - Only when the selected prompt is the job-bound
      `decision-input-normalization` prompt producing
      `mdp.normalized-decision-input.v1` or

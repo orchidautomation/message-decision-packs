@@ -1421,7 +1421,7 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
             let budget = yaml_get(job, "context_budget").unwrap_or(&YamlValue::Null);
             validate_object_keys(
                 budget,
-                &["max_entries", "max_bytes"],
+                &["max_entries", "max_bytes", "optional_kind_quotas"],
                 &format!(".mdp/manifest.yaml#/jobs/{index}/context_budget"),
                 "manifest_profile_job_context_budget_unknown_field",
                 issues,
@@ -1438,6 +1438,59 @@ fn validate_manifest_shape(root: &Path, issues: &mut Vec<Value>) {
                             format!(".mdp/manifest.yaml#/jobs/{index}/context_budget/{field}"),
                             format!("context_budget.{field} must be a positive integer"),
                         ));
+                    }
+                }
+                if let Some(quotas) = yaml_get(budget, "optional_kind_quotas") {
+                    let Some(quotas) = quotas.as_mapping() else {
+                        issues.push(issue(
+                            "profile_job_optional_kind_quotas_invalid",
+                            "error",
+                            format!(".mdp/manifest.yaml#/jobs/{index}/context_budget/optional_kind_quotas"),
+                            "optional_kind_quotas must be an object/map",
+                        ));
+                        continue;
+                    };
+                    for (kind, value) in quotas {
+                        let Some(kind) = kind.as_str() else {
+                            issues.push(issue(
+                                "profile_job_optional_kind_quota_kind_invalid",
+                                "error",
+                                format!(".mdp/manifest.yaml#/jobs/{index}/context_budget/optional_kind_quotas"),
+                                "optional quota keys must be kebab-case CardKind names",
+                            ));
+                            continue;
+                        };
+                        let path = format!(
+                            ".mdp/manifest.yaml#/jobs/{index}/context_budget/optional_kind_quotas/{kind}"
+                        );
+                        let parsed =
+                            serde_yaml::from_value::<CardKind>(YamlValue::String(kind.to_string()))
+                                .ok();
+                        let Some(card_kind) = parsed else {
+                            issues.push(issue(
+                                "profile_job_optional_kind_quota_kind_invalid",
+                                "error",
+                                &path,
+                                format!("unknown optional quota CardKind {kind}"),
+                            ));
+                            continue;
+                        };
+                        if !card_kind.optional_quota_allowed() {
+                            issues.push(issue(
+                                "profile_job_optional_kind_quota_protected_kind",
+                                "error",
+                                &path,
+                                format!("optional quotas cannot target protected CardKind {kind}"),
+                            ));
+                        }
+                        if value.as_u64().is_none_or(|value| value == 0) {
+                            issues.push(issue(
+                                "profile_job_optional_kind_quota_limit_invalid",
+                                "error",
+                                path,
+                                "optional quota must be a positive integer",
+                            ));
+                        }
                     }
                 }
             }
@@ -6966,6 +7019,50 @@ excluded: []
         assert!(issues.iter().any(|issue| {
             issue["code"] == "manifest_profile_job_context_budget_unknown_field"
                 && issue["path"] == ".mdp/manifest.yaml#/jobs/0/context_budget/legacy_limit"
+        }));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn validates_optional_kind_quota_contract_and_protected_kinds() {
+        let root = temp_pack("optional-kind-quotas");
+        let manifest_path = root.join(".mdp/manifest.yaml");
+        let raw = std::fs::read_to_string(&manifest_path).expect("manifest should be readable");
+        let mut manifest: YamlValue = serde_yaml::from_str(&raw).expect("manifest should parse");
+        manifest["jobs"][0]["context_budget"]["optional_kind_quotas"] =
+            serde_yaml::from_str("hooks: 2\n").expect("quota should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+        let valid = validate_pack(&root).expect("valid quota pack should return diagnostics");
+        assert_eq!(valid["valid"], true, "issues: {}", valid["issues"]);
+
+        manifest["jobs"][0]["context_budget"]["optional_kind_quotas"] =
+            serde_yaml::from_str("fit-rules: 2\nhooks: 0\nunknown-kind: 1\n")
+                .expect("quota should parse");
+        std::fs::write(
+            &manifest_path,
+            serde_yaml::to_string(&manifest).expect("manifest should serialize"),
+        )
+        .expect("manifest should be writable");
+        let invalid = validate_pack(&root).expect("invalid quota pack should return diagnostics");
+        let issues = invalid["issues"].as_array().expect("issues");
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_job_optional_kind_quota_protected_kind"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/jobs/0/context_budget/optional_kind_quotas/fit-rules"
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_job_optional_kind_quota_kind_invalid"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/jobs/0/context_budget/optional_kind_quotas/unknown-kind"
+        }));
+        assert!(issues.iter().any(|issue| {
+            issue["code"] == "profile_job_optional_kind_quota_limit_invalid"
+                && issue["path"]
+                    == ".mdp/manifest.yaml#/jobs/0/context_budget/optional_kind_quotas/hooks"
         }));
         let _ = std::fs::remove_dir_all(root);
     }

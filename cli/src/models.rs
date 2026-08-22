@@ -198,6 +198,8 @@ pub(crate) struct JobContextBudget {
     pub(crate) max_entries: usize,
     #[serde(default)]
     pub(crate) max_bytes: usize,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) optional_kind_quotas: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
@@ -657,6 +659,51 @@ pub(crate) enum CardKind {
     ChannelPolicies,
     Objections,
     Gaps,
+}
+
+impl CardKind {
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Self::Personas => "personas",
+            Self::Pains => "pains",
+            Self::Motions => "motions",
+            Self::Hooks => "hooks",
+            Self::AvoidRules => "avoid-rules",
+            Self::OutputRules => "output-rules",
+            Self::CopyPatterns => "copy-patterns",
+            Self::Ctas => "ctas",
+            Self::FitRules => "fit-rules",
+            Self::Claims => "claims",
+            Self::Signals => "signals",
+            Self::Positioning => "positioning",
+            Self::ChannelPolicies => "channel-policies",
+            Self::Objections => "objections",
+            Self::Gaps => "gaps",
+        }
+    }
+
+    pub(crate) fn optional_quota_allowed(&self) -> bool {
+        !matches!(
+            self,
+            Self::Personas | Self::AvoidRules | Self::OutputRules | Self::FitRules
+        )
+    }
+
+    pub(crate) fn optional_quota_names() -> [&'static str; 11] {
+        [
+            "pains",
+            "motions",
+            "hooks",
+            "copy-patterns",
+            "ctas",
+            "claims",
+            "signals",
+            "positioning",
+            "channel-policies",
+            "objections",
+            "gaps",
+        ]
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
