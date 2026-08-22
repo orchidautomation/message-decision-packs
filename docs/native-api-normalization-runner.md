@@ -62,6 +62,15 @@ subprocess with a cleared and allowlisted environment, validates the returned
 artifact against the pack-owned output contract, applies the relevant
 deterministic gates, and publishes no usable output on failure.
 
+Native identity fields in the public run request are declarations only. MDP
+recomputes the driver configuration identity from the observed bundled script,
+Node executable, and fixed launch policy, and recomputes the model-parameter
+identity from the exact prepared request and closed provider policy. Stale or
+arbitrary SHA-shaped declarations are rejected before the driver starts. The
+sealed bundle and runner audit carry the observed hashes plus a bounded,
+secret-free projection; `verify-run` recomputes those projection hashes and
+keeps the exact provider request-body SHA as separate full-body evidence.
+
 Inspect `mdp --json schema driver-request-v2` and `driver-result-v2` when
 implementing or auditing that boundary. They are runtime driver contracts, not
 operator request formats.

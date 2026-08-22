@@ -3,7 +3,10 @@ use crate::artifact_hash::{
 };
 use crate::constants::RUN_RECEIPT_CONTRACT;
 use crate::run_contracts::{
-    ArtifactAuthority, AssuranceEvidenceState, EvidenceProvenance, RUN_BUNDLE_V1, RUN_RECEIPT_V1,
+    ArtifactAuthority, AssuranceEvidenceState, DRIVER_CONFIGURATION_PROJECTION_V1,
+    DriverConfigurationProjectionV1, EvidenceProvenance, MDP_RUNTIME_VERSION,
+    MODEL_PARAMETERS_PROJECTION_V1, ModelParametersProjectionV1, OPENAI_PROVIDER_REQUEST_SCHEMA_ID,
+    PROVIDER_REQUEST_NOT_OBSERVED_V1, PROVIDER_REQUEST_RELATION_V1, RUN_BUNDLE_V1, RUN_RECEIPT_V1,
     RUN_VERIFICATION_V1, RUNNER_AUDIT_V1, RunBundleV1, RunMode, RunReceiptV1, RunVerificationV1,
     RunnerAuditV1,
 };
@@ -138,6 +141,9 @@ pub(crate) fn verify_run(
                 issues.push("generative-inference-authority-incomplete".to_string());
             }
         }
+    }
+    if bundle.mode == RunMode::Generative && artifact_root.is_none() {
+        issues.push("generative-artifact-root-required".to_string());
     }
 
     let bundle_value = serde_json::to_value(bundle)?;
@@ -426,6 +432,7 @@ fn verify_runner_audit(
             }
         }
         RunMode::Generative => {
+            verify_identity_observations(bundle, &audit, issues);
             if !audit
                 .driver_request_sha256
                 .as_deref()
@@ -442,6 +449,11 @@ fn verify_runner_audit(
                 audit.provider_request_body_sha256.as_deref(),
                 audit.provider_request_schema_id.as_deref(),
             ) {
+                issues.push(issue.to_string());
+            }
+            if let Some(issue) =
+                provider_request_schema_issue(audit.provider_request_schema_id.as_deref())
+            {
                 issues.push(issue.to_string());
             }
             if audit
@@ -484,6 +496,199 @@ fn verify_runner_audit(
     }
 }
 
+fn verify_identity_observations(
+    bundle: &RunBundleV1,
+    audit: &RunnerAuditV1,
+    issues: &mut Vec<String>,
+) {
+    let Some(observations) = audit.identity_observations.as_ref() else {
+        issues.push("generative-identity-evidence-missing".to_string());
+        return;
+    };
+    let Some(driver) = bundle.driver.as_ref() else {
+        issues.push("generative-driver-identity-missing".to_string());
+        return;
+    };
+    let Some(model) = bundle.model.as_ref() else {
+        issues.push("generative-model-identity-missing".to_string());
+        return;
+    };
+    if !is_canonical_sha256(&observations.driver_declaration_sha256)
+        || !is_canonical_sha256(&observations.driver_observed_sha256)
+        || !is_canonical_sha256(&observations.model_declaration_sha256)
+        || !is_canonical_sha256(&observations.model_observed_sha256)
+    {
+        issues.push("generative-identity-hash-invalid".to_string());
+    }
+    if driver.configuration_sha256 != observations.driver_observed_sha256
+        || model.parameters_sha256 != observations.model_observed_sha256
+    {
+        issues.push("generative-identity-bundle-mismatch".to_string());
+    }
+    let expected_driver_projection: DriverConfigurationProjectionV1 =
+        (&observations.driver_facts).into();
+    let Some(model_facts) = bundle.model_facts.as_ref() else {
+        issues.push("generative-model-facts-missing".to_string());
+        return;
+    };
+    let expected_model_projection: ModelParametersProjectionV1 = model_facts.into();
+    if expected_driver_projection != observations.driver_projection
+        || expected_model_projection != observations.model_projection
+    {
+        issues.push("generative-identity-facts-projection-mismatch".to_string());
+    }
+    if observations.driver_facts.driver_id != driver.driver_id
+        || observations.driver_facts.implementation != driver.implementation
+        || observations.driver_facts.runtime_version != driver.version
+        || observations.driver_facts.runtime_version != MDP_RUNTIME_VERSION
+        || observations.driver_facts.bundled_source_sha256
+            != driver.executable_sha256.clone().unwrap_or_default()
+        || observations.driver_facts.node_executable_sha256
+            != driver.dependency_lock_sha256.clone().unwrap_or_default()
+    {
+        issues.push("generative-driver-runtime-fact-mismatch".to_string());
+    }
+    if model_facts.provider != model.provider
+        || model_facts.requested_model != model.requested_model
+        || model_facts.authorized_endpoint != model.authorized_endpoint
+    {
+        issues.push("generative-model-bundle-fact-mismatch".to_string());
+    }
+    if audit
+        .provider_observation
+        .as_ref()
+        .and_then(|observation| observation.resolved_model.as_deref())
+        .is_some_and(|resolved_model| {
+            resolved_model != model_facts.requested_model
+                && !resolved_model.starts_with(&format!("{}-", model_facts.requested_model))
+        })
+    {
+        issues.push("generative-model-resolution-mismatch".to_string());
+    }
+    if driver.executable_sha256.as_deref()
+        != Some(
+            observations
+                .driver_projection
+                .bundled_source_sha256
+                .as_str(),
+        )
+        || driver.dependency_lock_sha256.as_deref()
+            != Some(
+                observations
+                    .driver_projection
+                    .node_executable_sha256
+                    .as_str(),
+            )
+    {
+        issues.push("generative-driver-fact-mismatch".to_string());
+    }
+    let bundled_source_sha256 = crate::artifact_hash::sha256_hex(include_bytes!(
+        "../../../scripts/mdp-native-model-openai.mjs"
+    ));
+    if observations.driver_projection.bundled_source_sha256 != bundled_source_sha256 {
+        issues.push("generative-driver-source-observation-mismatch".to_string());
+    }
+    match current_node_sha256() {
+        Some(node_sha256)
+            if node_sha256 != observations.driver_projection.node_executable_sha256 =>
+        {
+            issues.push("generative-node-observation-mismatch".to_string())
+        }
+        Some(_) => {}
+        None => issues.push("generative-driver-observation-unavailable".to_string()),
+    }
+    if observations.driver_projection.contract != DRIVER_CONFIGURATION_PROJECTION_V1
+        || observations.model_projection.contract != MODEL_PARAMETERS_PROJECTION_V1
+    {
+        issues.push("generative-identity-projection-contract-mismatch".to_string());
+    }
+    if let Ok(hash) = canonical_json_sha256_for_domain(
+        DRIVER_CONFIGURATION_PROJECTION_V1,
+        &serde_json::to_value(&expected_driver_projection).unwrap_or(Value::Null),
+    ) {
+        if hash != observations.driver_observed_sha256 {
+            issues.push("generative-driver-identity-recompute-mismatch".to_string());
+        }
+    } else {
+        issues.push("generative-driver-identity-recompute-failed".to_string());
+    }
+    if let Ok(hash) = canonical_json_sha256_for_domain(
+        MODEL_PARAMETERS_PROJECTION_V1,
+        &serde_json::to_value(&expected_model_projection).unwrap_or(Value::Null),
+    ) {
+        if hash != observations.model_observed_sha256 {
+            issues.push("generative-model-identity-recompute-mismatch".to_string());
+        }
+    } else {
+        issues.push("generative-model-identity-recompute-failed".to_string());
+    }
+    if observations.provider_request.relation != PROVIDER_REQUEST_RELATION_V1
+        && observations.provider_request.relation != PROVIDER_REQUEST_NOT_OBSERVED_V1
+    {
+        issues.push("generative-provider-request-relation-invalid".to_string());
+    }
+    let body_present = observations
+        .provider_request
+        .provider_request_body_sha256
+        .is_some();
+    let schema_present = observations
+        .provider_request
+        .provider_request_schema_id
+        .is_some();
+    if body_present != schema_present {
+        issues.push("generative-provider-request-evidence-missing".to_string());
+    }
+    if observations.provider_request.relation == PROVIDER_REQUEST_RELATION_V1
+        && !(body_present && schema_present)
+    {
+        issues.push("generative-provider-request-relation-mismatch".to_string());
+    }
+    if observations.provider_request.relation == PROVIDER_REQUEST_NOT_OBSERVED_V1
+        && (body_present || schema_present)
+    {
+        issues.push("generative-provider-request-relation-mismatch".to_string());
+    }
+    if body_present
+        && !observations
+            .provider_request
+            .provider_request_body_sha256
+            .as_deref()
+            .is_some_and(is_canonical_sha256)
+    {
+        issues.push("generative-provider-request-hash-invalid".to_string());
+    }
+    if let Some(issue) = provider_request_schema_issue(
+        observations
+            .provider_request
+            .provider_request_schema_id
+            .as_deref(),
+    ) {
+        issues.push(issue.to_string());
+    }
+    if observations.driver_declaration_sha256 != observations.driver_observed_sha256
+        || observations.model_declaration_sha256 != observations.model_observed_sha256
+    {
+        issues.push("generative-identity-declaration-mismatch".to_string());
+    }
+}
+
+fn current_node_sha256() -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    for directory in std::env::split_paths(&path) {
+        let candidate = directory.join("node");
+        let Ok(resolved) = fs::canonicalize(candidate) else {
+            continue;
+        };
+        let Ok(metadata) = fs::symlink_metadata(&resolved) else {
+            continue;
+        };
+        if metadata.is_file() && !metadata.file_type().is_symlink() {
+            return fs::read(resolved).ok().map(|bytes| sha256_hex(&bytes));
+        }
+    }
+    None
+}
+
 fn provider_request_evidence_issue(
     success: bool,
     request_sha256: Option<&str>,
@@ -493,6 +698,12 @@ fn provider_request_evidence_issue(
     let absent = request_sha256.is_none() && schema_id.is_none();
     (!(complete || absent) || (success && !complete))
         .then_some("generative-provider-request-evidence-missing")
+}
+
+fn provider_request_schema_issue(schema_id: Option<&str>) -> Option<&'static str> {
+    schema_id
+        .filter(|schema_id| *schema_id != OPENAI_PROVIDER_REQUEST_SCHEMA_ID)
+        .map(|_| "generative-provider-request-schema-invalid")
 }
 
 fn provider_response_evidence_issue(
@@ -562,8 +773,9 @@ fn verify_artifact(root: &Path, authority: &ArtifactAuthority, issues: &mut Vec<
 #[cfg(test)]
 mod tests {
     use super::{
-        is_canonical_sha256, provider_request_evidence_issue, provider_response_evidence_issue,
-        recompute_assurance, verify_legacy_v0_receipt, verify_run,
+        is_canonical_sha256, provider_request_evidence_issue, provider_request_schema_issue,
+        provider_response_evidence_issue, recompute_assurance, verify_identity_observations,
+        verify_legacy_v0_receipt, verify_run,
     };
     use crate::artifact_hash::{canonical_json_sha256_for_domain, sha256_hex};
     use crate::run_contracts::*;
@@ -631,6 +843,19 @@ mod tests {
     }
 
     #[test]
+    fn native_provider_request_schema_must_be_canonical() {
+        assert_eq!(provider_request_schema_issue(None), None);
+        assert_eq!(
+            provider_request_schema_issue(Some(OPENAI_PROVIDER_REQUEST_SCHEMA_ID)),
+            None
+        );
+        assert_eq!(
+            provider_request_schema_issue(Some("caller-selected-schema")),
+            Some("generative-provider-request-schema-invalid")
+        );
+    }
+
+    #[test]
     fn provider_response_hash_maps_to_exactly_one_stable_diagnostic() {
         assert_eq!(
             provider_response_evidence_issue(true, None),
@@ -644,6 +869,203 @@ mod tests {
             provider_response_evidence_issue(true, Some(&"a".repeat(64))),
             None
         );
+    }
+
+    #[test]
+    fn self_consistent_projection_and_bundle_tampering_is_rejected() {
+        let source_sha256 = sha256_hex(include_bytes!(
+            "../../../scripts/mdp-native-model-openai.mjs"
+        ));
+        let node_sha256 = super::current_node_sha256().unwrap();
+        let driver_projection = DriverConfigurationProjectionV1 {
+            contract: DRIVER_CONFIGURATION_PROJECTION_V1.into(),
+            driver_id: "bundled:mdp-native-openai".into(),
+            implementation: "bundled:mdp-native-model-openai".into(),
+            runtime_version: MDP_RUNTIME_VERSION.into(),
+            bundled_source_sha256: source_sha256.clone(),
+            node_executable_sha256: node_sha256.clone(),
+            native_request_contract: "mdp.native-model-subprocess-request.v1".into(),
+            native_result_contract: "mdp.native-model-subprocess-result.v1".into(),
+            clear_env: true,
+            allowlisted_environment_names: vec![
+                "MDP_ALLOW_NATIVE_MODEL_CALLS".into(),
+                "OPENAI_API_KEY".into(),
+            ],
+            filesystem_mode: "private-staging".into(),
+            stdin_mode: "bounded-json".into(),
+            stdout_mode: "bounded-json-result".into(),
+            max_request_bytes: 2 * 1024 * 1024,
+            max_response_bytes: 6 * 1024 * 1024 + 64 * 1024,
+            timeout_enforced: true,
+            authorized_endpoint: "https://api.openai.com/v1/responses".into(),
+            redirect_policy: "reject".into(),
+            proxy_policy: "excluded".into(),
+            storage_policy: "store-false".into(),
+            tool_policy: "none".into(),
+        };
+        let driver_facts = (&driver_projection).into();
+        let model_projection = ModelParametersProjectionV1 {
+            contract: MODEL_PARAMETERS_PROJECTION_V1.into(),
+            provider: "openai".into(),
+            requested_model: "gpt-5-mini".into(),
+            authorized_endpoint: "https://api.openai.com/v1/responses".into(),
+            declared_timeout_ms: 30_000,
+            max_output_tokens: 100_000,
+            structured_output_mode: "json-schema-strict".into(),
+            schema_name: "mdp_synthetic".into(),
+            provider_output_schema_sha256: "c".repeat(64),
+            input_framing: "one-fresh-user-message:declared-inputs-only".into(),
+            visible_input_sha256: "d".repeat(64),
+            store: false,
+            tool_choice: "none".into(),
+            continuation_policy: "none".into(),
+            tools_policy: "none".into(),
+            reasoning: None,
+            metadata: None,
+        };
+        let model_facts = ModelParametersFactsV1::from_runtime_inputs(
+            "openai".into(),
+            "gpt-5-mini".into(),
+            "https://api.openai.com/v1/responses".into(),
+            30_000,
+            100_000,
+            "mdp_synthetic".into(),
+            "c".repeat(64),
+            "d".repeat(64),
+        );
+        let driver_observed_sha256 = canonical_json_sha256_for_domain(
+            DRIVER_CONFIGURATION_PROJECTION_V1,
+            &serde_json::to_value(&driver_projection).unwrap(),
+        )
+        .unwrap();
+        let model_observed_sha256 = canonical_json_sha256_for_domain(
+            MODEL_PARAMETERS_PROJECTION_V1,
+            &serde_json::to_value(&model_projection).unwrap(),
+        )
+        .unwrap();
+        let mut bundle = sample_bundle();
+        bundle.mode = RunMode::Generative;
+        bundle.driver = Some(DriverIdentity {
+            driver_id: driver_projection.driver_id.clone(),
+            implementation: driver_projection.implementation.clone(),
+            version: MDP_RUNTIME_VERSION.into(),
+            build_sha256: None,
+            executable_sha256: Some(source_sha256),
+            image_digest: None,
+            configuration_sha256: driver_observed_sha256.clone(),
+            dependency_lock_sha256: Some(node_sha256),
+            identity_provenance: EvidenceProvenance::MdpObserved,
+        });
+        bundle.model = Some(ModelIdentity {
+            provider: "openai".into(),
+            requested_model: "gpt-5-mini".into(),
+            resolved_model: None,
+            authorized_endpoint: "https://api.openai.com/v1/responses".into(),
+            parameters_sha256: model_observed_sha256.clone(),
+            session_behavior: AssuranceEvidenceState::NotApplicable,
+            cache_behavior: AssuranceEvidenceState::Unknown,
+            storage_behavior: AssuranceEvidenceState::Declared,
+        });
+        bundle.model_facts = Some(model_facts);
+        bundle.prompt = Some(ArtifactAuthority {
+            logical_name: "prompt.yaml".into(),
+            schema_id: "mdp.prompt.v1".into(),
+            media_type: "application/yaml".into(),
+            byte_count: 1,
+            sha256: "e".repeat(64),
+            provenance: EvidenceProvenance::MdpObserved,
+            provenance_refs: vec![],
+        });
+        let mut observation = IdentityObservationV1 {
+            driver_declaration_sha256: driver_observed_sha256.clone(),
+            driver_observed_sha256,
+            driver_projection,
+            driver_facts,
+            model_declaration_sha256: model_observed_sha256.clone(),
+            model_observed_sha256,
+            model_projection,
+            provider_request: ProviderRequestObservationV1 {
+                provider_request_body_sha256: Some("c".repeat(64)),
+                provider_request_schema_id: Some("openai.responses.json-schema-request.v1".into()),
+                relation: PROVIDER_REQUEST_RELATION_V1.into(),
+            },
+        };
+        let mut audit = RunnerAuditV1 {
+            contract: RUNNER_AUDIT_V1.into(),
+            execution_id: bundle.execution_id.clone(),
+            runner_version: MDP_RUNTIME_VERSION.into(),
+            runner_build_sha256: None,
+            platform: "test".into(),
+            snapshot_sha256: "a".repeat(64),
+            driver_request_sha256: Some("a".repeat(64)),
+            driver_result_sha256: Some("b".repeat(64)),
+            provider_request_body_sha256: Some("c".repeat(64)),
+            provider_request_schema_id: Some("openai.responses.json-schema-request.v1".into()),
+            provider_response_body_sha256: Some("d".repeat(64)),
+            provider_observation: Some(DriverProviderObservationV2 {
+                provider: "openai".into(),
+                response_id: Some("resp_synthetic".into()),
+                resolved_model: Some("gpt-5-mini".into()),
+            }),
+            identity_observations: Some(observation.clone()),
+            terminal_state: TerminalState::Success,
+            assurance: vec![],
+            limitations: vec![],
+        };
+        let mut issues = Vec::new();
+        verify_identity_observations(&bundle, &audit, &mut issues);
+        assert!(
+            issues.is_empty(),
+            "baseline identity should verify: {issues:?}"
+        );
+
+        observation.model_projection.requested_model = "attacker-selected-model".into();
+        bundle.model_facts.as_mut().unwrap().requested_model = "attacker-selected-model".into();
+        let altered_hash = canonical_json_sha256_for_domain(
+            MODEL_PARAMETERS_PROJECTION_V1,
+            &serde_json::to_value(&observation.model_projection).unwrap(),
+        )
+        .unwrap();
+        observation.model_observed_sha256 = altered_hash.clone();
+        bundle.model.as_mut().unwrap().parameters_sha256 = altered_hash;
+        audit.identity_observations = Some(observation);
+        let root = std::env::temp_dir().join(format!(
+            "mdp-verify-model-co-tamper-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        for name in ["output.json", "context.json", "validation.json"] {
+            fs::write(root.join(name), b"{}\n").unwrap();
+        }
+        let altered_bundle_hash = canonical_json_sha256_for_domain(
+            RUN_BUNDLE_V1,
+            &serde_json::to_value(&bundle).unwrap(),
+        )
+        .unwrap();
+        audit.snapshot_sha256 = altered_bundle_hash.clone();
+        let mut receipt = sample_receipt(&bundle, &root);
+        receipt.bundle_sha256 = altered_bundle_hash.clone();
+        receipt.assurance = recompute_assurance(
+            bundle.mode,
+            receipt.terminal_state,
+            &altered_bundle_hash,
+            &[],
+        );
+        audit.assurance = receipt.assurance.clone();
+        fs::write(root.join("audit.json"), serde_json::to_vec(&audit).unwrap()).unwrap();
+        receipt.runner_audit = artifact(&root, "audit.json");
+        seal_receipt(&mut receipt);
+        let verification = verify_run(&bundle, &receipt, Some(&root)).unwrap();
+        assert!(!verification.valid);
+        assert!(
+            verification
+                .issues
+                .contains(&"generative-model-resolution-mismatch".into())
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -770,6 +1192,27 @@ mod tests {
     }
 
     #[test]
+    fn generative_verification_requires_artifact_root_for_audit_evidence() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-verify-generative-artifact-root-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut bundle = sample_bundle();
+        bundle.mode = RunMode::Generative;
+        let receipt = sample_receipt(&bundle, &root);
+        let result = verify_run(&bundle, &receipt, None).unwrap();
+        assert!(!result.valid);
+        assert!(
+            result
+                .issues
+                .contains(&"generative-artifact-root-required".to_string())
+        );
+    }
+
+    #[test]
     fn legacy_audit_grade_label_never_upgrades_to_v1_assurance() {
         let legacy = serde_json::json!({
             "contract": "mdp.run-receipt.v0",
@@ -814,6 +1257,7 @@ mod tests {
             execution_policy_sha256: "b".repeat(64),
             driver: None,
             model: None,
+            model_facts: None,
         }
     }
 
@@ -921,6 +1365,7 @@ mod tests {
             provider_request_schema_id: None,
             provider_response_body_sha256: None,
             provider_observation: None,
+            identity_observations: None,
             terminal_state: receipt.terminal_state,
             assurance: receipt.assurance.clone(),
             limitations: vec![],

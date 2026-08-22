@@ -18,12 +18,15 @@ use crate::constants::{
 use crate::model_steps::{CompiledModelStepV1, ModelStepPhase, resolve_selected_model_step};
 use crate::pack_io::{read_manifest, resolve_pack_path};
 use crate::run_contracts::{
-    ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState, DRIVER_REQUEST_V2,
-    DRIVER_RESULT_V2, DecisionAuthority, DriverArtifactV2, DriverOutputV2,
-    DriverProviderObservationV2, DriverProviderPolicyV2, DriverRequestV2, DriverResultV2,
-    EvidenceProvenance, PackAuthority, RUN_BUNDLE_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1,
-    RUNNER_AUDIT_V1, RunBundleV1, RunMode, RunReceiptV1, RunRequestV1, RunnerAuditV1,
-    TerminalState,
+    ArtifactAuthority, AssuranceDimension, AssuranceEvidenceState,
+    DRIVER_CONFIGURATION_PROJECTION_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V2, DecisionAuthority,
+    DriverArtifactV2, DriverConfigurationProjectionV1, DriverOutputV2, DriverProviderObservationV2,
+    DriverProviderPolicyV2, DriverRequestV2, DriverResultV2, EvidenceProvenance,
+    IdentityObservationV1, MDP_RUNTIME_VERSION, MODEL_PARAMETERS_PROJECTION_V1,
+    ModelParametersFactsV1, ModelParametersProjectionV1, OPENAI_PROVIDER_REQUEST_SCHEMA_ID,
+    PROVIDER_REQUEST_NOT_OBSERVED_V1, PROVIDER_REQUEST_RELATION_V1, PackAuthority,
+    ProviderRequestObservationV1, RUN_BUNDLE_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUNNER_AUDIT_V1,
+    RunBundleV1, RunMode, RunReceiptV1, RunRequestV1, RunnerAuditV1, TerminalState,
 };
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -199,6 +202,274 @@ struct NativeSubprocessRequestV1<'a> {
     schema_name: String,
     timeout_ms: u64,
     max_output_tokens: u64,
+}
+
+struct PreparedNativeRequest {
+    step: CompiledModelStepV1,
+    invocation_value: Value,
+    invocation_bytes: Vec<u8>,
+    invocation_sha256: String,
+    visible_input: String,
+    canonical_output_schema: Value,
+    canonical_output_schema_sha256: String,
+    provider_output_schema: Value,
+    provider_output_schema_sha256: String,
+    schema_name: String,
+}
+
+fn driver_configuration_projection(
+    identity: &crate::run_contracts::DriverIdentity,
+    source_sha256: String,
+    node_sha256: String,
+) -> DriverConfigurationProjectionV1 {
+    DriverConfigurationProjectionV1 {
+        contract: DRIVER_CONFIGURATION_PROJECTION_V1.into(),
+        driver_id: identity.driver_id.clone(),
+        implementation: identity.implementation.clone(),
+        runtime_version: MDP_RUNTIME_VERSION.into(),
+        bundled_source_sha256: source_sha256,
+        node_executable_sha256: node_sha256,
+        native_request_contract: NATIVE_SUBPROCESS_REQUEST_V1.into(),
+        native_result_contract: NATIVE_SUBPROCESS_RESULT_V1.into(),
+        clear_env: true,
+        allowlisted_environment_names: vec![
+            "MDP_ALLOW_NATIVE_MODEL_CALLS".into(),
+            "OPENAI_API_KEY".into(),
+        ],
+        filesystem_mode: "private-staging".into(),
+        stdin_mode: "bounded-json".into(),
+        stdout_mode: "bounded-json-result".into(),
+        max_request_bytes: MAX_NATIVE_SERIALIZED_REQUEST_BYTES as u64,
+        max_response_bytes: MAX_POLICY_OUTPUT_BYTES
+            .saturating_mul(6)
+            .saturating_add(DRIVER_RESULT_ENVELOPE_BYTES),
+        timeout_enforced: true,
+        authorized_endpoint: OFFICIAL_OPENAI_RESPONSES_ENDPOINT.into(),
+        redirect_policy: "reject".into(),
+        proxy_policy: "excluded".into(),
+        storage_policy: "store-false".into(),
+        tool_policy: "none".into(),
+    }
+}
+
+fn model_parameters_facts(
+    model: &crate::run_contracts::ModelIdentity,
+    prepared: &PreparedNativeRequest,
+    declared_timeout_ms: u64,
+    max_output_bytes: u64,
+) -> ModelParametersFactsV1 {
+    ModelParametersFactsV1::from_runtime_inputs(
+        model.provider.clone(),
+        model.requested_model.clone(),
+        model.authorized_endpoint.clone(),
+        declared_timeout_ms,
+        provider_max_output_tokens(max_output_bytes),
+        prepared.schema_name.clone(),
+        prepared.provider_output_schema_sha256.clone(),
+        sha256_hex(prepared.visible_input.as_bytes()),
+    )
+}
+
+fn projection_hash<T: Serialize>(domain: &str, projection: &T) -> Result<String> {
+    canonical_json_sha256_for_domain(domain, &serde_json::to_value(projection)?)
+}
+
+fn prepare_native_request(
+    request: &RunRequestV1,
+    manifest: &crate::models::Manifest,
+    staged_pack: &Path,
+    staged_prompt: &StagedInput,
+    staged_inputs: &[StagedInput],
+) -> Result<PreparedNativeRequest> {
+    let identity = request
+        .job_identity
+        .as_ref()
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "job-identity-required"))?;
+    let step =
+        resolve_selected_model_step(staged_pack, manifest, &identity.job_id, &request.operation)
+            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "model-step-not-declared"))?;
+    validate_generative_job_gates(staged_pack, &identity.job_id, step.phase)?;
+    validate_selected_prompt(staged_pack, staged_prompt, &step)?;
+    validate_step_inputs(&step, staged_inputs)?;
+    validate_generative_input_gates(staged_pack, manifest, staged_inputs, &identity.job_id)?;
+
+    let invocation_value = json!({
+        "contract": "mdp.prompt-invocation.v1",
+        "job_id": identity.job_id,
+        "prompt": {"id": step.prompt_id, "version": step.prompt_version, "sha256": step.prompt_sha256},
+        "inputs": staged_inputs.iter().map(|input| json!({
+            "name": input.logical_name,
+            "sha256": input.authority.sha256,
+        })).collect::<Vec<_>>(),
+    });
+    let mut invocation_bytes = serde_json::to_vec_pretty(&invocation_value)?;
+    invocation_bytes.push(b'\n');
+    let invocation_content = std::str::from_utf8(&invocation_bytes)
+        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "invocation-not-utf8"))?;
+    let invocation_sha256 = sha256_hex(&invocation_bytes);
+    let visible_inputs = staged_inputs
+        .iter()
+        .map(|input| {
+            Ok((
+                input.authority.logical_name.clone(),
+                input.authority.sha256.clone(),
+                utf8_staged_content(input, "declared-input")?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let visible_input = native_visible_input(
+        &step.prompt_id,
+        &step.prompt_version,
+        &step.prompt_sha256,
+        &utf8_staged_content(staged_prompt, "prompt")?,
+        &invocation_sha256,
+        invocation_content,
+        &visible_inputs,
+    );
+    let canonical_output_schema =
+        canonical_output_schema_for_step(staged_pack, &identity.job_id, &step)?;
+    let canonical_output_schema_sha256 = canonical_json_sha256(&canonical_output_schema)?;
+    let provider_schema_source = if step.output_contract.schema_ref.is_some() {
+        let example = required_output_example(
+            &step.output_contract.example,
+            &step.output_contract.required_top_level,
+        )?;
+        schema_for_example_shape(&canonical_output_schema, &example)
+    } else {
+        provider_schema_source(
+            &canonical_output_schema,
+            &step.output_contract.required_top_level,
+        )?
+    };
+    let provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
+    let provider_output_schema_sha256 = canonical_json_sha256(&provider_output_schema)?;
+    let schema_name = format!("mdp_{}", request.operation.replace([':', '/', '-'], "_"));
+    let model = request
+        .model
+        .as_ref()
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "model-identity-required"))?;
+    let native = NativeSubprocessRequestV1 {
+        contract: NATIVE_SUBPROCESS_REQUEST_V1,
+        execution_id: &request.execution_id,
+        provider: &model.provider,
+        model: &model.requested_model,
+        prompt_id: &step.prompt_id,
+        declared_inputs_only: true,
+        input: visible_input.clone(),
+        output_schema: &provider_output_schema,
+        output_schema_sha256: &provider_output_schema_sha256,
+        schema_name: schema_name.clone(),
+        timeout_ms: request.execution_policy.timeout_ms,
+        max_output_tokens: provider_max_output_tokens(request.execution_policy.max_output_bytes),
+    };
+    if serde_json::to_vec(&native)?.len() > MAX_NATIVE_SERIALIZED_REQUEST_BYTES {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "native-request-too-large",
+        ));
+    }
+    Ok(PreparedNativeRequest {
+        step,
+        invocation_value,
+        invocation_bytes,
+        invocation_sha256,
+        visible_input,
+        canonical_output_schema,
+        canonical_output_schema_sha256,
+        provider_output_schema,
+        provider_output_schema_sha256,
+        schema_name,
+    })
+}
+
+fn bind_native_identity(
+    request: &RunRequestV1,
+    prepared: &PreparedNativeRequest,
+) -> Result<(
+    crate::run_contracts::DriverIdentity,
+    crate::run_contracts::ModelIdentity,
+    IdentityObservationV1,
+    ModelParametersFactsV1,
+)> {
+    let declared_driver = request
+        .driver
+        .as_ref()
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "driver-identity-required"))?;
+    let declared_model = request
+        .model
+        .as_ref()
+        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "model-identity-required"))?;
+    let source_sha256 = sha256_hex(BUNDLED_NATIVE_DRIVER_SOURCE.as_bytes());
+    let node = resolve_node_executable()?;
+    let node_sha256 = sha256_hex(&read_bounded(&node, 200 * 1024 * 1024, "node executable")?);
+    if declared_driver.executable_sha256.as_deref() != Some(source_sha256.as_str()) {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "driver-hash-mismatch",
+        ));
+    }
+    if declared_driver.dependency_lock_sha256.as_deref() != Some(node_sha256.as_str()) {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "node-hash-mismatch",
+        ));
+    }
+    if declared_driver.version != MDP_RUNTIME_VERSION {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "driver-version-mismatch",
+        ));
+    }
+    let driver_projection =
+        driver_configuration_projection(declared_driver, source_sha256, node_sha256);
+    let driver_facts = (&driver_projection).into();
+    let driver_observed_sha256 =
+        projection_hash(DRIVER_CONFIGURATION_PROJECTION_V1, &driver_projection)?;
+    let model_facts = model_parameters_facts(
+        declared_model,
+        prepared,
+        request.execution_policy.timeout_ms,
+        request.execution_policy.max_output_bytes,
+    );
+    let model_projection: ModelParametersProjectionV1 = (&model_facts).into();
+    let model_observed_sha256 = projection_hash(MODEL_PARAMETERS_PROJECTION_V1, &model_projection)?;
+    if declared_driver.configuration_sha256 != driver_observed_sha256 {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "driver-configuration-identity-mismatch",
+        ));
+    }
+    if declared_model.parameters_sha256 != model_observed_sha256 {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "model-parameters-identity-mismatch",
+        ));
+    }
+    let mut observed_driver = declared_driver.clone();
+    observed_driver.configuration_sha256 = driver_observed_sha256.clone();
+    observed_driver.identity_provenance = EvidenceProvenance::MdpObserved;
+    let mut observed_model = declared_model.clone();
+    observed_model.parameters_sha256 = model_observed_sha256.clone();
+    let identity_observations = IdentityObservationV1 {
+        driver_declaration_sha256: declared_driver.configuration_sha256.clone(),
+        driver_observed_sha256,
+        driver_projection,
+        driver_facts,
+        model_declaration_sha256: declared_model.parameters_sha256.clone(),
+        model_observed_sha256,
+        model_projection,
+        provider_request: ProviderRequestObservationV1 {
+            provider_request_body_sha256: None,
+            provider_request_schema_id: None,
+            relation: PROVIDER_REQUEST_NOT_OBSERVED_V1.into(),
+        },
+    };
+    Ok((
+        observed_driver,
+        observed_model,
+        identity_observations,
+        model_facts,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -834,6 +1105,27 @@ where
         "mdp.execution-policy.v1",
         &serde_json::to_value(&request.execution_policy)?,
     )?;
+    let (prepared_native, bound_driver, bound_model, mut identity_observations, bound_model_facts) =
+        if request.mode == RunMode::Generative {
+            let prepared = prepare_native_request(
+                request,
+                &manifest,
+                &staged_pack,
+                staged_prompt.as_ref().expect("generative prompt validated"),
+                &staged,
+            )?;
+            let (driver, model, observations, model_facts) =
+                bind_native_identity(request, &prepared)?;
+            (
+                Some(prepared),
+                Some(driver),
+                Some(model),
+                Some(observations),
+                Some(model_facts),
+            )
+        } else {
+            (None, None, None, None, None)
+        };
     let bundle = RunBundleV1 {
         contract: RUN_BUNDLE_V1.into(),
         execution_id: request.execution_id.clone(),
@@ -855,20 +1147,12 @@ where
             .map(|prompt| prompt.authority.clone()),
         inputs: staged.iter().map(|input| input.authority.clone()).collect(),
         execution_policy_sha256: policy_hash,
-        driver: request.driver.clone(),
-        model: request.model.clone(),
+        driver: bound_driver.clone().or_else(|| request.driver.clone()),
+        model: bound_model.clone().or_else(|| request.model.clone()),
+        model_facts: bound_model_facts.clone(),
     };
     let bundle_value = serde_json::to_value(&bundle)?;
     let bundle_sha256 = canonical_json_sha256_for_domain(RUN_BUNDLE_V1, &bundle_value)?;
-    if request.mode == RunMode::Generative {
-        validate_native_request_size_before_bundle(
-            request,
-            &manifest,
-            &staged_pack,
-            staged_prompt.as_ref().expect("generative prompt validated"),
-            &staged,
-        )?;
-    }
     write_json_create_new(&transaction_dir.join("run-bundle.json"), &bundle)?;
 
     let mut validation = None;
@@ -884,23 +1168,39 @@ where
         })?;
         let outcome = execute_generative_step(
             request,
-            &manifest,
             &staged_pack,
             prompt,
             &staged,
             &private_dir,
             &bundle,
             &bundle_sha256,
+            prepared_native
+                .as_ref()
+                .expect("generative preparation exists"),
+            bound_driver.as_ref().expect("bound driver identity exists"),
             deadline,
             driver,
         )?;
-        provider_request_body_sha256 = outcome.provider_request_body_sha256;
-        provider_request_schema_id = outcome.provider_request_schema_id;
-        provider_response_body_sha256 = outcome.provider_response_body_sha256;
-        provider_observation = outcome.provider_observation;
+        provider_request_body_sha256 = outcome.provider_request_body_sha256.clone();
+        provider_request_schema_id = outcome.provider_request_schema_id.clone();
+        provider_response_body_sha256 = outcome.provider_response_body_sha256.clone();
+        provider_observation = outcome.provider_observation.clone();
         driver_request_sha256 = Some(outcome.driver_request_sha256);
         driver_result_sha256 = Some(outcome.driver_result_sha256);
         validation = outcome.validation;
+        if let Some(observations) = identity_observations.as_mut() {
+            observations.provider_request = ProviderRequestObservationV1 {
+                provider_request_body_sha256: outcome.provider_request_body_sha256.clone(),
+                provider_request_schema_id: outcome.provider_request_schema_id.clone(),
+                relation: if outcome.provider_request_body_sha256.is_some()
+                    && outcome.provider_request_schema_id.is_some()
+                {
+                    PROVIDER_REQUEST_RELATION_V1.into()
+                } else {
+                    PROVIDER_REQUEST_NOT_OBSERVED_V1.into()
+                },
+            };
+        }
         (outcome.terminal_state, outcome.success)
     } else if request.profile == PROPOSAL_PROFILE && request.operation == VALIDATE_EXISTING_OUTPUT {
         let prompt_output = required_typed_input(
@@ -1151,6 +1451,7 @@ where
         provider_request_schema_id,
         provider_response_body_sha256,
         provider_observation,
+        identity_observations,
         terminal_state,
         assurance: assurance.clone(),
         limitations: vec![
@@ -1272,116 +1573,17 @@ struct GenerativeOutcome {
     driver_result_sha256: String,
 }
 
-fn validate_native_request_size_before_bundle(
-    request: &RunRequestV1,
-    manifest: &crate::models::Manifest,
-    staged_pack: &Path,
-    staged_prompt: &StagedInput,
-    staged_inputs: &[StagedInput],
-) -> Result<()> {
-    let identity = request
-        .job_identity
-        .as_ref()
-        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "job-identity-required"))?;
-    let step =
-        resolve_selected_model_step(staged_pack, manifest, &identity.job_id, &request.operation)
-            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "model-step-not-declared"))?;
-    validate_generative_job_gates(staged_pack, &identity.job_id, step.phase)?;
-    validate_selected_prompt(staged_pack, staged_prompt, &step)?;
-    validate_step_inputs(&step, staged_inputs)?;
-    validate_generative_input_gates(staged_pack, manifest, staged_inputs, &identity.job_id)?;
-
-    let invocation_value = json!({
-        "contract": "mdp.prompt-invocation.v1",
-        "job_id": identity.job_id,
-        "prompt": {
-            "id": step.prompt_id,
-            "version": step.prompt_version,
-            "sha256": step.prompt_sha256,
-        },
-        "inputs": staged_inputs.iter().map(|input| json!({
-            "name": input.logical_name,
-            "sha256": input.authority.sha256,
-        })).collect::<Vec<_>>(),
-    });
-    let mut invocation_bytes = serde_json::to_vec_pretty(&invocation_value)?;
-    invocation_bytes.push(b'\n');
-    let invocation_content = std::str::from_utf8(&invocation_bytes)
-        .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "invocation-not-utf8"))?;
-    let invocation_sha256 = sha256_hex(&invocation_bytes);
-    let visible_inputs = staged_inputs
-        .iter()
-        .map(|input| {
-            Ok((
-                input.authority.logical_name.clone(),
-                input.authority.sha256.clone(),
-                utf8_staged_content(input, "declared-input")?,
-            ))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let visible_input = native_visible_input(
-        &step.prompt_id,
-        &step.prompt_version,
-        &step.prompt_sha256,
-        &utf8_staged_content(staged_prompt, "prompt")?,
-        &invocation_sha256,
-        invocation_content,
-        &visible_inputs,
-    );
-
-    let canonical_output_schema =
-        canonical_output_schema_for_step(staged_pack, &identity.job_id, &step)?;
-    let provider_schema_source = if step.output_contract.schema_ref.is_some() {
-        let example = required_output_example(
-            &step.output_contract.example,
-            &step.output_contract.required_top_level,
-        )?;
-        schema_for_example_shape(&canonical_output_schema, &example)
-    } else {
-        provider_schema_source(
-            &canonical_output_schema,
-            &step.output_contract.required_top_level,
-        )?
-    };
-    let provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
-    let provider_output_schema_sha256 = canonical_json_sha256(&provider_output_schema)?;
-    let model = request
-        .model
-        .as_ref()
-        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "model-identity-required"))?;
-    let native = NativeSubprocessRequestV1 {
-        contract: NATIVE_SUBPROCESS_REQUEST_V1,
-        execution_id: &request.execution_id,
-        provider: &model.provider,
-        model: &model.requested_model,
-        prompt_id: &step.prompt_id,
-        declared_inputs_only: true,
-        input: visible_input,
-        output_schema: &provider_output_schema,
-        output_schema_sha256: &provider_output_schema_sha256,
-        schema_name: format!("mdp_{}", request.operation.replace([':', '/', '-'], "_")),
-        timeout_ms: request.execution_policy.timeout_ms,
-        max_output_tokens: provider_max_output_tokens(request.execution_policy.max_output_bytes),
-    };
-    if serde_json::to_vec(&native)?.len() > MAX_NATIVE_SERIALIZED_REQUEST_BYTES {
-        return Err(run_failure(
-            RunFailureKind::PolicyBlocked,
-            "native-request-too-large",
-        ));
-    }
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 fn execute_generative_step<D>(
     request: &RunRequestV1,
-    manifest: &crate::models::Manifest,
     staged_pack: &Path,
     staged_prompt: &StagedInput,
     staged_inputs: &[StagedInput],
     private_dir: &Path,
     bundle: &RunBundleV1,
     bundle_sha256: &str,
+    prepared: &PreparedNativeRequest,
+    driver_identity: &crate::run_contracts::DriverIdentity,
     deadline: &RunDeadline,
     driver: D,
 ) -> Result<GenerativeOutcome>
@@ -1392,57 +1594,19 @@ where
         .job_identity
         .as_ref()
         .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "job-identity-required"))?;
-    let step =
-        resolve_selected_model_step(staged_pack, manifest, &identity.job_id, &request.operation)
-            .map_err(|_| run_failure(RunFailureKind::PolicyBlocked, "model-step-not-declared"))?;
-    validate_generative_job_gates(staged_pack, &identity.job_id, step.phase)?;
-    validate_selected_prompt(staged_pack, staged_prompt, &step)?;
-    validate_step_inputs(&step, staged_inputs)?;
-    validate_generative_input_gates(staged_pack, manifest, staged_inputs, &identity.job_id)?;
-
-    let invocation_value = json!({
-        "contract": "mdp.prompt-invocation.v1",
-        "job_id": identity.job_id,
-        "prompt": {
-            "id": step.prompt_id,
-            "version": step.prompt_version,
-            "sha256": step.prompt_sha256,
-        },
-        "inputs": staged_inputs.iter().map(|input| json!({
-            "name": input.logical_name,
-            "sha256": input.authority.sha256,
-        })).collect::<Vec<_>>(),
-    });
     let invocation_path = private_dir.join("prompt-invocation.json");
-    write_json_create_new(&invocation_path, &invocation_value)?;
-    let invocation_bytes = fs::read(&invocation_path)?;
+    write_json_create_new(&invocation_path, &prepared.invocation_value)?;
+    let invocation_bytes = prepared.invocation_bytes.clone();
     let invocation_authority = ArtifactAuthority {
         logical_name: "private/prompt-invocation.json".into(),
         schema_id: "mdp.prompt-invocation.v1".into(),
         media_type: "application/json".into(),
         byte_count: invocation_bytes.len() as u64,
-        sha256: sha256_hex(&invocation_bytes),
+        sha256: prepared.invocation_sha256.clone(),
         provenance: EvidenceProvenance::MdpObserved,
         provenance_refs: vec![bundle_sha256.into()],
     };
 
-    let canonical_output_schema =
-        canonical_output_schema_for_step(staged_pack, &identity.job_id, &step)?;
-    let canonical_output_schema_sha256 = canonical_json_sha256(&canonical_output_schema)?;
-    let provider_schema_source = if step.output_contract.schema_ref.is_some() {
-        let example = required_output_example(
-            &step.output_contract.example,
-            &step.output_contract.required_top_level,
-        )?;
-        schema_for_example_shape(&canonical_output_schema, &example)
-    } else {
-        provider_schema_source(
-            &canonical_output_schema,
-            &step.output_contract.required_top_level,
-        )?
-    };
-    let provider_output_schema = project_output_schema_for_openai(&provider_schema_source)?;
-    let provider_output_schema_sha256 = canonical_json_sha256(&provider_output_schema)?;
     let model = request
         .model
         .as_ref()
@@ -1456,10 +1620,10 @@ where
         profile: request.profile.clone(),
         operation: request.operation.clone(),
         job_identity: identity.clone(),
-        phase: step.phase.as_str().into(),
-        prompt_id: step.prompt_id.clone(),
-        prompt_version: step.prompt_version.clone(),
-        prompt_canonical_sha256: step.prompt_sha256.clone(),
+        phase: prepared.step.phase.as_str().into(),
+        prompt_id: prepared.step.prompt_id.clone(),
+        prompt_version: prepared.step.prompt_version.clone(),
+        prompt_canonical_sha256: prepared.step.prompt_sha256.clone(),
         prompt: DriverArtifactV2 {
             authority: staged_prompt.authority.clone(),
             content_utf8: prompt_content,
@@ -1479,10 +1643,10 @@ where
                 })
             })
             .collect::<Result<Vec<_>>>()?,
-        canonical_output_schema,
-        canonical_output_schema_sha256,
-        provider_output_schema,
-        provider_output_schema_sha256,
+        canonical_output_schema: prepared.canonical_output_schema.clone(),
+        canonical_output_schema_sha256: prepared.canonical_output_schema_sha256.clone(),
+        provider_output_schema: prepared.provider_output_schema.clone(),
+        provider_output_schema_sha256: prepared.provider_output_schema_sha256.clone(),
         provider_policy: DriverProviderPolicyV2 {
             provider: model.provider.clone(),
             requested_model: model.requested_model.clone(),
@@ -1495,10 +1659,6 @@ where
     };
     seal_driver_request(&mut driver_request)?;
 
-    let driver_identity = request
-        .driver
-        .as_ref()
-        .ok_or_else(|| run_failure(RunFailureKind::PolicyBlocked, "driver-identity-required"))?;
     if driver_timeout_ms.is_none() {
         return failed_generative_outcome(driver_request, "driver_budget_exhausted");
     }
@@ -1882,10 +2042,8 @@ fn validate_driver_result(request: &DriverRequestV2, result: &DriverResultV2) ->
                 .provider_request_body_sha256
                 .as_deref()
                 .is_some_and(is_canonical_sha256)
-                || result
-                    .provider_request_schema_id
-                    .as_deref()
-                    .is_none_or(|schema_id| schema_id.trim().is_empty())
+                || result.provider_request_schema_id.as_deref()
+                    != Some(OPENAI_PROVIDER_REQUEST_SCHEMA_ID)
                 || !result
                     .provider_response_body_sha256
                     .as_deref()
@@ -2958,10 +3116,10 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        execute_run_inner, execute_run_inner_with_driver, governed_normalization_outcome,
-        gtm_lineage_schema_ids, gtm_success_artifacts, project_output_schema_for_openai,
-        provider_max_output_tokens, provider_schema_source, seal_driver_request,
-        seal_driver_result, validate_driver_result, validate_request,
+        RunFailure, execute_run_inner, execute_run_inner_with_driver,
+        governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
+        project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
+        seal_driver_request, seal_driver_result, validate_driver_result, validate_request,
     };
     use crate::commands::init::init_pack;
     use crate::run_contracts::{
@@ -3026,6 +3184,46 @@ mod tests {
 
         request.execution_policy.authorized_endpoints = vec!["https://example.test".into()];
         assert!(validate_request(&request).is_err());
+    }
+
+    #[test]
+    fn native_identity_declarations_fail_before_driver_and_run_publication() {
+        let root = temp_path("native-identity-mismatch");
+        let pack = root.join("pack");
+        let raw = root.join("raw-row.json");
+        fs::create_dir_all(&root).unwrap();
+        crate::commands::init::init_pack(&pack, "Identity Pack", "gtm", true, false).unwrap();
+        fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
+        let request = generative_request_fixture(&pack, &raw);
+        for label in ["driver", "model", "version"] {
+            let mut altered = request.clone();
+            if label == "driver" {
+                altered.driver.as_mut().unwrap().configuration_sha256 = "b".repeat(64);
+            } else if label == "model" {
+                altered.model.as_mut().unwrap().parameters_sha256 = "c".repeat(64);
+            } else {
+                altered.driver.as_mut().unwrap().version = "caller-forged-version".into();
+            }
+            let run = root.join(format!("run-{label}"));
+            let error = execute_run_inner_with_driver(
+                &altered,
+                &run,
+                || Ok(()),
+                |_, _| panic!("identity mismatch must not invoke the driver"),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(
+                    error.downcast_ref::<RunFailure>().map(RunFailure::code),
+                    Some("driver-configuration-identity-mismatch")
+                        | Some("model-parameters-identity-mismatch")
+                        | Some("driver-version-mismatch")
+                ),
+                "unexpected mismatch code for {label}: {error}"
+            );
+            assert!(!run.exists());
+        }
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -3123,6 +3321,11 @@ mod tests {
 
         result = valid.clone();
         result.provider_request_schema_id = None;
+        seal_driver_result(&mut result).unwrap();
+        assert!(validate_driver_result(&request, &result).is_err());
+
+        result = valid.clone();
+        result.provider_request_schema_id = Some("caller-selected-schema".into());
         seal_driver_result(&mut result).unwrap();
         assert!(validate_driver_result(&request, &result).is_err());
 
@@ -3360,6 +3563,7 @@ mod tests {
         fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
         let mut request = generative_request_fixture(&pack, &raw);
         request.execution_policy.timeout_ms = 5_000;
+        refresh_test_native_declarations(&mut request);
         let run = root.join("published-run");
         let result = execute_run_inner_with_driver(
             &request,
@@ -3987,7 +4191,7 @@ mod tests {
             pack: PackAuthority {
                 release_id: "release-1".into(),
                 pack_id: "pack-1".into(),
-                version: "1".into(),
+                version: super::MDP_RUNTIME_VERSION.into(),
                 profile_id: "gtm".into(),
                 portable_digest: "a".repeat(64),
                 files: vec![],
@@ -3997,6 +4201,7 @@ mod tests {
             execution_policy_sha256: "b".repeat(64),
             driver: None,
             model: None,
+            model_facts: None,
         };
         gtm_success_artifacts(
             &request,
@@ -4146,7 +4351,7 @@ mod tests {
     fn generative_request_fixture(pack: &Path, raw: &Path) -> RunRequestV1 {
         let driver_sha =
             crate::artifact_hash::sha256_hex(super::BUNDLED_NATIVE_DRIVER_SOURCE.as_bytes());
-        RunRequestV1 {
+        let mut request = RunRequestV1 {
             contract: "mdp.run-request.v1".into(),
             execution_id: "run-generative-1".into(),
             created_at: "2026-08-14T00:00:00Z".into(),
@@ -4190,7 +4395,7 @@ mod tests {
             driver: Some(DriverIdentity {
                 driver_id: "mdp-native-openai".into(),
                 implementation: super::BUNDLED_NATIVE_DRIVER_ID.into(),
-                version: "1".into(),
+                version: super::MDP_RUNTIME_VERSION.into(),
                 build_sha256: None,
                 executable_sha256: Some(driver_sha),
                 image_digest: None,
@@ -4208,7 +4413,69 @@ mod tests {
                 cache_behavior: AssuranceEvidenceState::Unknown,
                 storage_behavior: AssuranceEvidenceState::Declared,
             }),
-        }
+        };
+        refresh_test_native_declarations(&mut request);
+        request
+    }
+
+    fn refresh_test_native_declarations(request: &mut RunRequestV1) {
+        let root = temp_path("native-declarations");
+        let staged_pack = root.join("pack");
+        let staged_inputs_dir = root.join("inputs");
+        let staged_prompt_dir = root.join("prompt");
+        fs::create_dir_all(&staged_inputs_dir).unwrap();
+        fs::create_dir_all(&staged_prompt_dir).unwrap();
+        fs::create_dir_all(&staged_pack).unwrap();
+        super::copy_pack(Path::new(&request.pack_dir), &staged_pack).unwrap();
+        let staged = super::stage_inputs(request, &staged_inputs_dir).unwrap();
+        let staged_prompt = super::stage_local_artifact(
+            request.prompt.as_ref().unwrap(),
+            &staged_prompt_dir,
+            0,
+            request.execution_policy.max_input_bytes,
+            "prompt",
+        )
+        .unwrap();
+        let manifest = crate::pack_io::read_manifest(&staged_pack).unwrap();
+        let Ok(prepared) = super::prepare_native_request(
+            request,
+            &manifest,
+            &staged_pack,
+            &staged_prompt,
+            &staged,
+        ) else {
+            let _ = fs::remove_dir_all(root);
+            return;
+        };
+        let node = super::resolve_node_executable().unwrap();
+        let node_sha = crate::artifact_hash::sha256_hex(
+            &super::read_bounded(&node, 200 * 1024 * 1024, "node executable").unwrap(),
+        );
+        let driver = request.driver.as_mut().unwrap();
+        driver.dependency_lock_sha256 = Some(node_sha.clone());
+        let driver_projection = super::driver_configuration_projection(
+            driver,
+            driver.executable_sha256.clone().unwrap(),
+            node_sha,
+        );
+        driver.configuration_sha256 = super::projection_hash(
+            super::DRIVER_CONFIGURATION_PROJECTION_V1,
+            &driver_projection,
+        )
+        .unwrap();
+        let model = request.model.as_ref().unwrap();
+        let model_facts = super::model_parameters_facts(
+            model,
+            &prepared,
+            request.execution_policy.timeout_ms,
+            request.execution_policy.max_output_bytes,
+        );
+        let model_projection: super::ModelParametersProjectionV1 = (&model_facts).into();
+        request.model.as_mut().unwrap().parameters_sha256 =
+            super::projection_hash(super::MODEL_PARAMETERS_PROJECTION_V1, &model_projection)
+                .unwrap();
+        super::bind_native_identity(request, &prepared).unwrap();
+        let _ = fs::remove_dir_all(root);
     }
 
     fn temp_path(label: &str) -> std::path::PathBuf {

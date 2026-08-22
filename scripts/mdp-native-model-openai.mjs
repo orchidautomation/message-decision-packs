@@ -7,6 +7,7 @@ export const DRIVER_REQUEST_CONTRACT = 'mdp.native-model-subprocess-request.v1'
 export const DRIVER_RESULT_CONTRACT = 'mdp.native-model-subprocess-result.v1'
 export const SCHEMA_PROJECTION_CONTRACT = 'mdp.native-model-schema-projection.v1'
 export const PROVIDER_REQUEST_SCHEMA_ID = 'openai.responses.json-schema-request.v1'
+export const MODEL_PARAMETERS_PROJECTION_CONTRACT = 'mdp.model-parameters.v1'
 
 const OFFICIAL_RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses'
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024
@@ -53,6 +54,7 @@ const stableJsonValue = (value) => {
 export const canonicalJsonBytes = (value) => JSON.stringify(stableJsonValue(value))
 export const sha256Bytes = (value) => createHash('sha256').update(value).digest('hex')
 export const sha256CanonicalJson = (value) => sha256Bytes(canonicalJsonBytes(value))
+export const sha256CanonicalJsonForDomain = (domain, value) => sha256Bytes(`${domain}\u0000${canonicalJsonBytes(value)}`)
 
 const OPENAI_SCHEMA_KEYS = new Set([
   '$defs', '$ref', 'type', 'properties', 'required', 'additionalProperties', 'items',
@@ -252,6 +254,38 @@ export const buildProviderRequestBody = (request) => {
   if (request.metadata) body.metadata = request.metadata
   return body
 }
+
+// This is parity material only. Rust owns the runtime identity and assurance
+// decision; this helper exposes the same bounded, secret-free projection for
+// cross-language mutation tests.
+export const buildModelParametersProjection = (request) => {
+  validateNativeModelRequest(request)
+  const providerSchema = projectOutputSchemaForOpenAI(request.output_schema)
+  return {
+    contract: MODEL_PARAMETERS_PROJECTION_CONTRACT,
+    provider: request.provider,
+    requested_model: request.model,
+    authorized_endpoint: OFFICIAL_RESPONSES_ENDPOINT,
+    declared_timeout_ms: request.timeout_ms || DEFAULT_REQUEST_TIMEOUT_MS,
+    max_output_tokens: request.max_output_tokens || 1,
+    structured_output_mode: 'json-schema-strict',
+    schema_name: schemaName(request),
+    provider_output_schema_sha256: sha256CanonicalJson(providerSchema),
+    input_framing: 'one-fresh-user-message:declared-inputs-only',
+    visible_input_sha256: sha256Bytes(
+      typeof request.input === 'string' ? request.input : canonicalJsonBytes(request.input),
+    ),
+    store: false,
+    tool_choice: 'none',
+    continuation_policy: 'none',
+    tools_policy: 'none',
+    reasoning: request.reasoning ? sha256CanonicalJson(request.reasoning) : null,
+    metadata: request.metadata ? sha256CanonicalJson(request.metadata) : null,
+  }
+}
+
+export const modelParametersProjectionSha256 = (request) =>
+  sha256CanonicalJsonForDomain(MODEL_PARAMETERS_PROJECTION_CONTRACT, buildModelParametersProjection(request))
 
 const emptyResult = (
   request,

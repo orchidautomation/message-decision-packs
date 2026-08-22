@@ -23,6 +23,42 @@ The v1 family separates what an operator asked to run, the immutable bytes the r
 | `mdp.run-receipt.v1` | `run-receipt-v1` | MDP's terminal result, bound artifacts, decision authority, validation, assurance vector, limitations, and receipt hash. |
 | `mdp.run-verification.v1` | `run-verification-v1` | A verifier's recomputed integrity and assurance result. `integrity_only: true` means external provider or host state was unavailable and was not silently assumed. |
 
+### Native identity binding
+
+For a new MDP-owned generative run, `driver.configuration_sha256` and
+`model.parameters_sha256` in the request are declarations, not proof. Before
+the immutable bundle is written, Rust observes the bundled driver source and
+resolved Node executable, builds the closed `mdp.driver-configuration.v1`
+projection, builds the closed `mdp.model-parameters.v1` projection from the
+prepared native request, and compares both recomputed hashes with those
+declarations. A mismatch returns a bounded `no-draft:policy-blocked` result
+before driver invocation or final-run publication.
+
+The bundle carries the observed hashes and the independently constructed
+bounded model-parameter facts used to derive the model projection. The
+optional `runner-audit.v1.identity_observations` object keeps declaration,
+observation, projection material, and verifier recomputation structurally
+separate; it does not duplicate the model facts. Its `provider_request`
+object preserves the exact provider request-body SHA and schema ID when the
+native transport assembled a body, with the relation
+`full-body-includes-model-parameters-and-input`. That body hash covers the
+serialized provider body; it is never substituted for either identity. If no
+body was assembled, the relation is explicitly `not-observed`.
+
+Projection material contains bounded IDs, policy values, numbers, and hashes
+only. It excludes API keys, environment values, local paths, raw prompts,
+declared input content, provider bodies, and provider error text. `verify-run`
+reconstructs the model projection from the bundle's runtime-built facts,
+compares the returned provider model with the requested model (allowing a
+provider version suffix), and rejects missing, altered, unknown, or
+structurally ambiguous identity evidence. A local receipt hash proves
+integrity of the stored artifacts, not signer identity; provider-affecting
+facts that are not independently available after private staging are not
+claimed as host-authenticated evidence.
+Legacy deterministic/external receipts remain readable without this optional
+carrier; legacy generative receipts cannot be silently upgraded to strongest
+identity assurance.
+
 The bundled native path also uses closed `mdp.driver-request.v2` and
 `mdp.driver-result.v2` envelopes. V2 binds the exact model-visible prompt,
 prompt invocation, declared input bytes, canonical and provider-adherence

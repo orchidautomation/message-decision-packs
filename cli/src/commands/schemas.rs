@@ -27,9 +27,11 @@ use crate::models::{
     MAX_SIGNAL_QUALIFIED_ID_LEN, SIGNAL_OBSERVATION_CONTRACT_V2,
 };
 use crate::run_contracts::{
-    CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V1,
-    DRIVER_RESULT_V2, PROPOSAL_RUNNER_RESULT_V1, RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1,
-    RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
+    CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_CONFIGURATION_PROJECTION_V1, DRIVER_REQUEST_V1,
+    DRIVER_REQUEST_V2, DRIVER_RESULT_V1, DRIVER_RESULT_V2, MDP_RUNTIME_VERSION,
+    MODEL_PARAMETERS_PROJECTION_V1, OPENAI_PROVIDER_REQUEST_SCHEMA_ID, PROPOSAL_RUNNER_RESULT_V1,
+    PROVIDER_REQUEST_NOT_OBSERVED_V1, PROVIDER_REQUEST_RELATION_V1, RUN_BUNDLE_V1,
+    RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
 };
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
@@ -1562,6 +1564,141 @@ fn model_identity_v1_schema() -> Value {
     })
 }
 
+fn driver_configuration_projection_v1_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": [
+            "contract", "driver_id", "implementation", "runtime_version",
+            "bundled_source_sha256", "node_executable_sha256", "native_request_contract",
+            "native_result_contract", "clear_env", "allowlisted_environment_names",
+            "filesystem_mode", "stdin_mode", "stdout_mode", "max_request_bytes",
+            "max_response_bytes", "timeout_enforced", "authorized_endpoint",
+            "redirect_policy", "proxy_policy", "storage_policy", "tool_policy"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": DRIVER_CONFIGURATION_PROJECTION_V1},
+            "driver_id": non_blank_string_schema(),
+            "implementation": {"const": "bundled:mdp-native-model-openai"},
+            "runtime_version": {"const": MDP_RUNTIME_VERSION},
+            "bundled_source_sha256": sha256_schema(),
+            "node_executable_sha256": sha256_schema(),
+            "native_request_contract": {"const": "mdp.native-model-subprocess-request.v1"},
+            "native_result_contract": {"const": "mdp.native-model-subprocess-result.v1"},
+            "clear_env": {"const": true},
+            "allowlisted_environment_names": {"const": ["MDP_ALLOW_NATIVE_MODEL_CALLS", "OPENAI_API_KEY"]},
+            "filesystem_mode": {"const": "private-staging"},
+            "stdin_mode": {"const": "bounded-json"},
+            "stdout_mode": {"const": "bounded-json-result"},
+            "max_request_bytes": {"type": "integer", "minimum": 1},
+            "max_response_bytes": {"type": "integer", "minimum": 1},
+            "timeout_enforced": {"const": true},
+            "authorized_endpoint": {"const": "https://api.openai.com/v1/responses"},
+            "redirect_policy": {"const": "reject"},
+            "proxy_policy": {"const": "excluded"},
+            "storage_policy": {"const": "store-false"},
+            "tool_policy": {"const": "none"}
+        }
+    })
+}
+
+fn driver_configuration_facts_v1_schema() -> Value {
+    let mut schema = driver_configuration_projection_v1_schema();
+    schema["required"]
+        .as_array_mut()
+        .expect("projection schema required")
+        .retain(|field| field.as_str() != Some("contract"));
+    schema["properties"]
+        .as_object_mut()
+        .expect("projection schema properties")
+        .remove("contract");
+    schema
+}
+
+fn model_parameters_projection_v1_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": [
+            "contract", "provider", "requested_model", "authorized_endpoint",
+            "declared_timeout_ms", "max_output_tokens", "structured_output_mode",
+            "schema_name", "provider_output_schema_sha256", "input_framing",
+            "visible_input_sha256", "store", "tool_choice", "continuation_policy",
+            "tools_policy", "reasoning", "metadata"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "contract": {"const": MODEL_PARAMETERS_PROJECTION_V1},
+            "provider": {"const": "openai"},
+            "requested_model": non_blank_string_schema(),
+            "authorized_endpoint": {"const": "https://api.openai.com/v1/responses"},
+            "declared_timeout_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+            "max_output_tokens": {"type": "integer", "minimum": 1, "maximum": 100000},
+            "structured_output_mode": {"const": "json-schema-strict"},
+            "schema_name": non_blank_string_schema(),
+            "provider_output_schema_sha256": sha256_schema(),
+            "input_framing": {"const": "one-fresh-user-message:declared-inputs-only"},
+            "visible_input_sha256": sha256_schema(),
+            "store": {"const": false},
+            "tool_choice": {"const": "none"},
+            "continuation_policy": {"const": "none"},
+            "tools_policy": {"const": "none"},
+            "reasoning": {"type": ["string", "null"]},
+            "metadata": {"type": ["string", "null"]}
+        }
+    })
+}
+
+fn model_parameters_facts_v1_schema() -> Value {
+    let mut schema = model_parameters_projection_v1_schema();
+    schema["required"]
+        .as_array_mut()
+        .expect("projection schema required")
+        .retain(|field| field.as_str() != Some("contract"));
+    schema["properties"]
+        .as_object_mut()
+        .expect("projection schema properties")
+        .remove("contract");
+    schema
+}
+
+fn provider_request_schema_id_schema() -> Value {
+    // Generic audit records remain readable for deterministic/external
+    // producers; the native OpenAI success branch below is exact, and the
+    // verifier downgrades any non-canonical generative evidence.
+    json!({"type": ["string", "null"], "minLength": 1})
+}
+
+fn identity_observation_v1_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": [
+            "driver_declaration_sha256", "driver_observed_sha256", "driver_projection",
+            "driver_facts", "model_declaration_sha256", "model_observed_sha256", "model_projection",
+            "provider_request"
+        ],
+        "additionalProperties": false,
+        "properties": {
+            "driver_declaration_sha256": sha256_schema(),
+            "driver_observed_sha256": sha256_schema(),
+            "driver_projection": driver_configuration_projection_v1_schema(),
+            "driver_facts": driver_configuration_facts_v1_schema(),
+            "model_declaration_sha256": sha256_schema(),
+            "model_observed_sha256": sha256_schema(),
+            "model_projection": model_parameters_projection_v1_schema(),
+            "provider_request": {
+                "type": "object",
+                "required": ["provider_request_body_sha256", "provider_request_schema_id", "relation"],
+                "additionalProperties": false,
+                "properties": {
+                    "provider_request_body_sha256": optional_sha256_schema(),
+                    "provider_request_schema_id": provider_request_schema_id_schema(),
+                    "relation": {"enum": [PROVIDER_REQUEST_RELATION_V1, PROVIDER_REQUEST_NOT_OBSERVED_V1]}
+                }
+            }
+        }
+    })
+}
+
 fn native_openai_model_identity_v1_schema() -> Value {
     let mut schema = model_identity_v1_schema();
     schema["properties"]["provider"] = json!({"const": "openai"});
@@ -1699,7 +1836,8 @@ fn run_bundle_v1_schema() -> Value {
             "inputs": {"type": "array", "items": artifact_authority_v1_schema()},
             "execution_policy_sha256": sha256_schema(),
             "driver": nullable_object_schema(driver_identity_v1_schema()),
-            "model": nullable_object_schema(model_identity_v1_schema())
+            "model": nullable_object_schema(model_identity_v1_schema()),
+            "model_facts": nullable_object_schema(model_parameters_facts_v1_schema())
         },
         "oneOf": [
             {
@@ -1717,9 +1855,10 @@ fn run_bundle_v1_schema() -> Value {
                     "job_identity": job_identity_v1_schema(),
                     "prompt": artifact_authority_v1_schema(),
                     "driver": driver_identity_v1_schema(),
-                    "model": model_identity_v1_schema()
+                    "model": model_identity_v1_schema(),
+                    "model_facts": model_parameters_facts_v1_schema()
                 },
-                "required": ["mode", "job_identity", "prompt", "driver", "model"]
+                "required": ["mode", "job_identity", "prompt", "driver", "model", "model_facts"]
             }
         ]
     })
@@ -1875,7 +2014,7 @@ fn driver_result_v2_schema() -> Value {
             "terminal_state": terminal_state_schema(),
             "output": nullable_object_schema(driver_output_v2_schema()),
             "provider_request_body_sha256": optional_sha256_schema(),
-            "provider_request_schema_id": {"type": ["string", "null"]},
+            "provider_request_schema_id": provider_request_schema_id_schema(),
             "provider_response_body_sha256": optional_sha256_schema(),
             "provider_output_schema_sha256": optional_sha256_schema(),
             "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
@@ -1891,7 +2030,7 @@ fn driver_result_v2_schema() -> Value {
                 "properties": {
                     "output": driver_output_v2_schema(),
                     "provider_request_body_sha256": sha256_schema(),
-                    "provider_request_schema_id": non_blank_string_schema(),
+                    "provider_request_schema_id": {"const": OPENAI_PROVIDER_REQUEST_SCHEMA_ID},
                     "provider_response_body_sha256": sha256_schema(),
                     "provider_output_schema_sha256": sha256_schema(),
                     "provider_observation": {
@@ -1929,9 +2068,10 @@ fn runner_audit_v1_schema() -> Value {
             "driver_request_sha256": optional_sha256_schema(),
             "driver_result_sha256": optional_sha256_schema(),
             "provider_request_body_sha256": optional_sha256_schema(),
-            "provider_request_schema_id": {"type": ["string", "null"]},
+            "provider_request_schema_id": provider_request_schema_id_schema(),
             "provider_response_body_sha256": optional_sha256_schema(),
             "provider_observation": nullable_object_schema(driver_provider_observation_v2_schema()),
+            "identity_observations": nullable_object_schema(identity_observation_v1_schema()),
             "terminal_state": terminal_state_schema(),
             "assurance": {"type": "array", "items": assurance_dimension_v1_schema()},
             "limitations": string_array()
@@ -5400,6 +5540,32 @@ mod tests {
         let mut missing_model = success;
         missing_model["provider_observation"]["resolved_model"] = Value::Null;
         assert!(draft202012::validate(&driver_schema, &missing_model).is_err());
+
+        let non_canonical_schema = json!({
+            "contract": DRIVER_RESULT_V2,
+            "execution_id": "exec-1",
+            "operation": "model:outbound-copy-brief/generation",
+            "terminal_state": "success",
+            "output": {
+                "schema_id": "mdp.prompt-output.v0",
+                "media_type": "application/json",
+                "content_utf8": "{}",
+                "byte_count": 2,
+                "sha256": "a".repeat(64)
+            },
+            "provider_request_body_sha256": "b".repeat(64),
+            "provider_request_schema_id": "caller-selected-schema",
+            "provider_response_body_sha256": "e".repeat(64),
+            "provider_output_schema_sha256": "c".repeat(64),
+            "provider_observation": {
+                "provider": "openai",
+                "response_id": "resp_synthetic",
+                "resolved_model": "gpt-5-mini-2026-08-01"
+            },
+            "diagnostic_code": null,
+            "result_sha256": "d".repeat(64)
+        });
+        assert!(draft202012::validate(&driver_schema, &non_canonical_schema).is_err());
     }
 
     #[test]
@@ -5420,6 +5586,90 @@ mod tests {
             "limitations": []
         });
         draft202012::validate(&runner_audit_v1_schema(), &legacy).unwrap();
+    }
+
+    #[test]
+    fn runner_audit_v1_identity_observation_is_closed_and_distinct() {
+        let projection = json!({
+            "contract": DRIVER_CONFIGURATION_PROJECTION_V1,
+            "driver_id": "mdp-native-openai",
+            "implementation": "bundled:mdp-native-model-openai",
+            "runtime_version": MDP_RUNTIME_VERSION,
+            "bundled_source_sha256": "a".repeat(64),
+            "node_executable_sha256": "b".repeat(64),
+            "native_request_contract": "mdp.native-model-subprocess-request.v1",
+            "native_result_contract": "mdp.native-model-subprocess-result.v1",
+            "clear_env": true,
+            "allowlisted_environment_names": ["MDP_ALLOW_NATIVE_MODEL_CALLS", "OPENAI_API_KEY"],
+            "filesystem_mode": "private-staging",
+            "stdin_mode": "bounded-json",
+            "stdout_mode": "bounded-json-result",
+            "max_request_bytes": 2097152,
+            "max_response_bytes": 6356992,
+            "timeout_enforced": true,
+            "authorized_endpoint": "https://api.openai.com/v1/responses",
+            "redirect_policy": "reject",
+            "proxy_policy": "excluded",
+            "storage_policy": "store-false",
+            "tool_policy": "none"
+        });
+        let model_projection = json!({
+            "contract": MODEL_PARAMETERS_PROJECTION_V1,
+            "provider": "openai",
+            "requested_model": "gpt-5-mini",
+            "authorized_endpoint": "https://api.openai.com/v1/responses",
+            "declared_timeout_ms": 60000,
+            "max_output_tokens": 100000,
+            "structured_output_mode": "json-schema-strict",
+            "schema_name": "mdp_synthetic",
+            "provider_output_schema_sha256": "c".repeat(64),
+            "input_framing": "one-fresh-user-message:declared-inputs-only",
+            "visible_input_sha256": "d".repeat(64),
+            "store": false,
+            "tool_choice": "none",
+            "continuation_policy": "none",
+            "tools_policy": "none",
+            "reasoning": null,
+            "metadata": null
+        });
+        let mut driver_facts = projection.clone();
+        driver_facts.as_object_mut().unwrap().remove("contract");
+        let mut observation = json!({
+            "driver_declaration_sha256": "e".repeat(64),
+            "driver_observed_sha256": "f".repeat(64),
+            "driver_projection": projection,
+            "driver_facts": driver_facts,
+            "model_declaration_sha256": "1".repeat(64),
+            "model_observed_sha256": "2".repeat(64),
+            "model_projection": model_projection,
+            "provider_request": {
+                "provider_request_body_sha256": null,
+                "provider_request_schema_id": null,
+                "relation": PROVIDER_REQUEST_NOT_OBSERVED_V1
+            }
+        });
+        let mut audit = json!({
+            "contract": RUNNER_AUDIT_V1,
+            "execution_id": "identity-observation",
+            "runner_version": "0.1.73",
+            "runner_build_sha256": null,
+            "platform": "test",
+            "snapshot_sha256": "a".repeat(64),
+            "driver_request_sha256": null,
+            "driver_result_sha256": null,
+            "provider_request_body_sha256": null,
+            "provider_request_schema_id": null,
+            "provider_response_body_sha256": null,
+            "provider_observation": null,
+            "identity_observations": observation,
+            "terminal_state": "no-draft:policy-blocked",
+            "assurance": [],
+            "limitations": []
+        });
+        draft202012::validate(&runner_audit_v1_schema(), &audit).unwrap();
+        observation["unexpected"] = json!(true);
+        audit["identity_observations"] = observation;
+        assert!(draft202012::validate(&runner_audit_v1_schema(), &audit).is_err());
     }
 
     #[test]

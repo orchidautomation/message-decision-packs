@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   buildProviderRequestBody,
+  buildModelParametersProjection,
   canonicalJsonBytes,
   DRIVER_REQUEST_CONTRACT,
   DRIVER_RESULT_CONTRACT,
@@ -19,6 +20,9 @@ import {
 } from './mdp-native-model-openai.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const runtimeVersion = readFileSync(join(repoRoot, 'cli', 'Cargo.toml'), 'utf8')
+  .match(/^version = "([^"]+)"/m)?.[1]
+if (!runtimeVersion) throw new Error('unable to read CLI runtime version')
 const mdp = process.env.MDP_BIN || join(repoRoot, 'cli', 'target', 'debug', 'mdp')
 const driver = join(repoRoot, 'scripts', 'mdp-native-model-openai.mjs')
 const legacyDriver = join(repoRoot, 'scripts', 'mdp-native-normalize-openai.mjs')
@@ -86,6 +90,42 @@ const parseJsonResult = (result, label) => {
 
 const sha256File = (path) => sha256Bytes(readFileSync(path))
 const authorityHash = (domain, value) => sha256Bytes(`${domain}\0${canonicalJsonBytes(value)}`)
+const providerMaxOutputTokens = (maxOutputBytes) => Math.min(100000, Math.max(1, Math.floor(maxOutputBytes / 4)))
+const nativeVisibleInput = (step, promptContent, invocationContent, inputs) => {
+  let value = `<mdp-prompt id="${step.prompt_id}" version="${step.prompt_version}" canonical_sha256="${step.prompt_sha256}">\n`
+  value += `${promptContent}\n</mdp-prompt>\n<mdp-invocation sha256="${sha256Bytes(invocationContent)}">\n`
+  value += `${invocationContent}\n</mdp-invocation>\n<mdp-host-input name="prompt_receipt">\n`
+  value += `${invocationContent}\n</mdp-host-input>\n<mdp-host-input name="invocation_receipt_sha256">\n`
+  value += `${sha256Bytes(invocationContent)}\n</mdp-host-input>\n`
+  for (const input of inputs) {
+    value += `<mdp-declared-input name="${input.logical_name}" sha256="${sha256File(input.source_path)}">\n`
+    value += `${readFileSync(input.source_path, 'utf8')}\n</mdp-declared-input>\n`
+  }
+  return value
+}
+const driverConfigurationProjection = (driverSourceSha256, nodeSha256) => ({
+  contract: 'mdp.driver-configuration.v1',
+  driver_id: 'mdp-native-openai',
+  implementation: 'bundled:mdp-native-model-openai',
+  runtime_version: runtimeVersion,
+  bundled_source_sha256: driverSourceSha256,
+  node_executable_sha256: nodeSha256,
+  native_request_contract: 'mdp.native-model-subprocess-request.v1',
+  native_result_contract: 'mdp.native-model-subprocess-result.v1',
+  clear_env: true,
+  allowlisted_environment_names: ['MDP_ALLOW_NATIVE_MODEL_CALLS', 'OPENAI_API_KEY'],
+  filesystem_mode: 'private-staging',
+  stdin_mode: 'bounded-json',
+  stdout_mode: 'bounded-json-result',
+  max_request_bytes: 2 * 1024 * 1024,
+  max_response_bytes: 6 * 1024 * 1024 + 64 * 1024,
+  timeout_enforced: true,
+  authorized_endpoint: 'https://api.openai.com/v1/responses',
+  redirect_policy: 'reject',
+  proxy_policy: 'excluded',
+  storage_policy: 'store-false',
+  tool_policy: 'none',
+})
 
 try {
   const bindings = []
@@ -336,6 +376,40 @@ try {
           provenance_refs: [],
         }
       })
+    const invocation = {
+      contract: 'mdp.prompt-invocation.v1',
+      inputs: runInputs.map((input) => ({ name: input.logical_name, sha256: sha256File(input.source_path) })),
+      job_id: jobId,
+      prompt: { id: step.prompt_id, sha256: step.prompt_sha256, version: step.prompt_version },
+    }
+    const invocationContent = `${JSON.stringify(invocation, null, 2)}\n`
+    const visibleInput = nativeVisibleInput(
+      step,
+      readFileSync(join(pack, '.mdp', step.prompt_path), 'utf8'),
+      invocationContent,
+      runInputs,
+    )
+    const schemaName = `mdp_${step.step_id.replaceAll(':', '_').replaceAll('/', '_').replaceAll('-', '_')}`
+    const identityRequest = {
+      contract: DRIVER_REQUEST_CONTRACT,
+      execution_id: `parity-${profile}-${index + 1}`,
+      provider: 'openai',
+      model: 'gpt-test',
+      prompt_id: step.prompt_id,
+      declared_inputs_only: true,
+      input: visibleInput,
+      output_schema: outputSchema,
+      output_schema_sha256: sha256CanonicalJson(outputSchema),
+      schema_name: schemaName,
+      max_output_tokens: providerMaxOutputTokens(1048576),
+      timeout_ms: 30000,
+    }
+    const driverSourceSha256 = sha256File(driver)
+    const nodeSha256 = sha256File(process.execPath)
+    const driverProjection = driverConfigurationProjection(driverSourceSha256, nodeSha256)
+    const modelProjection = buildModelParametersProjection(identityRequest)
+    const driverConfigurationSha256 = authorityHash('mdp.driver-configuration.v1', driverProjection)
+    const modelParametersSha256 = authorityHash('mdp.model-parameters.v1', modelProjection)
     const runRequest = {
       contract: 'mdp.run-request.v1',
       execution_id: `parity-v2-${profile}-${index + 1}`,
@@ -368,17 +442,17 @@ try {
       driver: {
         driver_id: 'mdp-native-openai',
         implementation: 'bundled:mdp-native-model-openai',
-        version: '1',
+        version: runtimeVersion,
         build_sha256: null,
         executable_sha256: sha256File(driver),
         image_digest: null,
-        configuration_sha256: 'b'.repeat(64),
+        configuration_sha256: driverConfigurationSha256,
         dependency_lock_sha256: sha256File(process.execPath),
         identity_provenance: 'mdp-observed',
       },
       model: {
         provider: 'openai', requested_model: 'gpt-test', resolved_model: null,
-        authorized_endpoint: 'https://api.openai.com/v1/responses', parameters_sha256: 'c'.repeat(64),
+        authorized_endpoint: 'https://api.openai.com/v1/responses', parameters_sha256: modelParametersSha256,
         session_behavior: 'not-applicable', cache_behavior: 'unknown', storage_behavior: 'declared',
       },
     }
@@ -411,13 +485,6 @@ try {
     assert.match(audit.provider_request_body_sha256, /^[0-9a-f]{64}$/)
     assert.equal(audit.provider_request_schema_id, PROVIDER_REQUEST_SCHEMA_ID)
     assert.equal(audit.provider_response_body_sha256, null)
-    const invocation = {
-      contract: 'mdp.prompt-invocation.v1',
-      inputs: bundle.inputs.map((input, i) => ({ name: runInputs[i].logical_name, sha256: input.sha256 })),
-      job_id: jobId,
-      prompt: { id: step.prompt_id, sha256: step.prompt_sha256, version: step.prompt_version },
-    }
-    const invocationContent = `${JSON.stringify(invocation, null, 2)}\n`
     const expectedDriverRequest = {
       contract: 'mdp.driver-request.v2', execution_id: runRequest.execution_id, profile, operation: step.step_id,
       job_identity: runRequest.job_identity, phase: step.phase, prompt_id: step.prompt_id,
