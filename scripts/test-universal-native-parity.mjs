@@ -20,6 +20,9 @@ import {
 } from './mdp-native-model-openai.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const runtimeVersion = readFileSync(join(repoRoot, 'cli', 'Cargo.toml'), 'utf8')
+  .match(/^version = "([^"]+)"/m)?.[1]
+if (!runtimeVersion) throw new Error('unable to read CLI runtime version')
 const mdp = process.env.MDP_BIN || join(repoRoot, 'cli', 'target', 'debug', 'mdp')
 const driver = join(repoRoot, 'scripts', 'mdp-native-model-openai.mjs')
 const legacyDriver = join(repoRoot, 'scripts', 'mdp-native-normalize-openai.mjs')
@@ -104,7 +107,7 @@ const driverConfigurationProjection = (driverSourceSha256, nodeSha256) => ({
   contract: 'mdp.driver-configuration.v1',
   driver_id: 'mdp-native-openai',
   implementation: 'bundled:mdp-native-model-openai',
-  runtime_version: '1',
+  runtime_version: runtimeVersion,
   bundled_source_sha256: driverSourceSha256,
   node_executable_sha256: nodeSha256,
   native_request_contract: 'mdp.native-model-subprocess-request.v1',
@@ -439,7 +442,7 @@ try {
       driver: {
         driver_id: 'mdp-native-openai',
         implementation: 'bundled:mdp-native-model-openai',
-        version: '1',
+        version: runtimeVersion,
         build_sha256: null,
         executable_sha256: sha256File(driver),
         image_digest: null,

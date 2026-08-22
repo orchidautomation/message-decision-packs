@@ -15,6 +15,9 @@ pub(crate) const CANONICAL_AUTHORITY_BLOCK_V1: &str = "mdp.canonical-authority-b
 pub(crate) const PROPOSAL_RUNNER_RESULT_V1: &str = "mdp.proposal-runner-result.v1";
 pub(crate) const DRIVER_CONFIGURATION_PROJECTION_V1: &str = "mdp.driver-configuration.v1";
 pub(crate) const MODEL_PARAMETERS_PROJECTION_V1: &str = "mdp.model-parameters.v1";
+pub(crate) const OPENAI_PROVIDER_REQUEST_SCHEMA_ID: &str =
+    "openai.responses.json-schema-request.v1";
+pub(crate) const MDP_RUNTIME_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub(crate) const PROVIDER_REQUEST_RELATION_V1: &str =
     "full-body-includes-model-parameters-and-input";
 pub(crate) const PROVIDER_REQUEST_NOT_OBSERVED_V1: &str = "not-observed";
@@ -222,6 +225,154 @@ pub(crate) struct ModelParametersProjectionV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct DriverConfigurationFactsV1 {
+    pub(crate) driver_id: String,
+    pub(crate) implementation: String,
+    pub(crate) runtime_version: String,
+    pub(crate) bundled_source_sha256: String,
+    pub(crate) node_executable_sha256: String,
+    pub(crate) native_request_contract: String,
+    pub(crate) native_result_contract: String,
+    pub(crate) clear_env: bool,
+    pub(crate) allowlisted_environment_names: Vec<String>,
+    pub(crate) filesystem_mode: String,
+    pub(crate) stdin_mode: String,
+    pub(crate) stdout_mode: String,
+    pub(crate) max_request_bytes: u64,
+    pub(crate) max_response_bytes: u64,
+    pub(crate) timeout_enforced: bool,
+    pub(crate) authorized_endpoint: String,
+    pub(crate) redirect_policy: String,
+    pub(crate) proxy_policy: String,
+    pub(crate) storage_policy: String,
+    pub(crate) tool_policy: String,
+}
+
+impl From<&DriverConfigurationProjectionV1> for DriverConfigurationFactsV1 {
+    fn from(projection: &DriverConfigurationProjectionV1) -> Self {
+        Self {
+            driver_id: projection.driver_id.clone(),
+            implementation: projection.implementation.clone(),
+            runtime_version: projection.runtime_version.clone(),
+            bundled_source_sha256: projection.bundled_source_sha256.clone(),
+            node_executable_sha256: projection.node_executable_sha256.clone(),
+            native_request_contract: projection.native_request_contract.clone(),
+            native_result_contract: projection.native_result_contract.clone(),
+            clear_env: projection.clear_env,
+            allowlisted_environment_names: projection.allowlisted_environment_names.clone(),
+            filesystem_mode: projection.filesystem_mode.clone(),
+            stdin_mode: projection.stdin_mode.clone(),
+            stdout_mode: projection.stdout_mode.clone(),
+            max_request_bytes: projection.max_request_bytes,
+            max_response_bytes: projection.max_response_bytes,
+            timeout_enforced: projection.timeout_enforced,
+            authorized_endpoint: projection.authorized_endpoint.clone(),
+            redirect_policy: projection.redirect_policy.clone(),
+            proxy_policy: projection.proxy_policy.clone(),
+            storage_policy: projection.storage_policy.clone(),
+            tool_policy: projection.tool_policy.clone(),
+        }
+    }
+}
+
+impl From<&DriverConfigurationFactsV1> for DriverConfigurationProjectionV1 {
+    fn from(facts: &DriverConfigurationFactsV1) -> Self {
+        Self {
+            contract: DRIVER_CONFIGURATION_PROJECTION_V1.into(),
+            driver_id: facts.driver_id.clone(),
+            implementation: facts.implementation.clone(),
+            runtime_version: facts.runtime_version.clone(),
+            bundled_source_sha256: facts.bundled_source_sha256.clone(),
+            node_executable_sha256: facts.node_executable_sha256.clone(),
+            native_request_contract: facts.native_request_contract.clone(),
+            native_result_contract: facts.native_result_contract.clone(),
+            clear_env: facts.clear_env,
+            allowlisted_environment_names: facts.allowlisted_environment_names.clone(),
+            filesystem_mode: facts.filesystem_mode.clone(),
+            stdin_mode: facts.stdin_mode.clone(),
+            stdout_mode: facts.stdout_mode.clone(),
+            max_request_bytes: facts.max_request_bytes,
+            max_response_bytes: facts.max_response_bytes,
+            timeout_enforced: facts.timeout_enforced,
+            authorized_endpoint: facts.authorized_endpoint.clone(),
+            redirect_policy: facts.redirect_policy.clone(),
+            proxy_policy: facts.proxy_policy.clone(),
+            storage_policy: facts.storage_policy.clone(),
+            tool_policy: facts.tool_policy.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ModelParametersFactsV1 {
+    pub(crate) provider: String,
+    pub(crate) requested_model: String,
+    pub(crate) authorized_endpoint: String,
+    pub(crate) declared_timeout_ms: u64,
+    pub(crate) max_output_tokens: u64,
+    pub(crate) structured_output_mode: String,
+    pub(crate) schema_name: String,
+    pub(crate) provider_output_schema_sha256: String,
+    pub(crate) input_framing: String,
+    pub(crate) visible_input_sha256: String,
+    pub(crate) store: bool,
+    pub(crate) tool_choice: String,
+    pub(crate) continuation_policy: String,
+    pub(crate) tools_policy: String,
+    pub(crate) reasoning: Option<String>,
+    pub(crate) metadata: Option<String>,
+}
+
+impl From<&ModelParametersProjectionV1> for ModelParametersFactsV1 {
+    fn from(projection: &ModelParametersProjectionV1) -> Self {
+        Self {
+            provider: projection.provider.clone(),
+            requested_model: projection.requested_model.clone(),
+            authorized_endpoint: projection.authorized_endpoint.clone(),
+            declared_timeout_ms: projection.declared_timeout_ms,
+            max_output_tokens: projection.max_output_tokens,
+            structured_output_mode: projection.structured_output_mode.clone(),
+            schema_name: projection.schema_name.clone(),
+            provider_output_schema_sha256: projection.provider_output_schema_sha256.clone(),
+            input_framing: projection.input_framing.clone(),
+            visible_input_sha256: projection.visible_input_sha256.clone(),
+            store: projection.store,
+            tool_choice: projection.tool_choice.clone(),
+            continuation_policy: projection.continuation_policy.clone(),
+            tools_policy: projection.tools_policy.clone(),
+            reasoning: projection.reasoning.clone(),
+            metadata: projection.metadata.clone(),
+        }
+    }
+}
+
+impl From<&ModelParametersFactsV1> for ModelParametersProjectionV1 {
+    fn from(facts: &ModelParametersFactsV1) -> Self {
+        Self {
+            contract: MODEL_PARAMETERS_PROJECTION_V1.into(),
+            provider: facts.provider.clone(),
+            requested_model: facts.requested_model.clone(),
+            authorized_endpoint: facts.authorized_endpoint.clone(),
+            declared_timeout_ms: facts.declared_timeout_ms,
+            max_output_tokens: facts.max_output_tokens,
+            structured_output_mode: facts.structured_output_mode.clone(),
+            schema_name: facts.schema_name.clone(),
+            provider_output_schema_sha256: facts.provider_output_schema_sha256.clone(),
+            input_framing: facts.input_framing.clone(),
+            visible_input_sha256: facts.visible_input_sha256.clone(),
+            store: facts.store,
+            tool_choice: facts.tool_choice.clone(),
+            continuation_policy: facts.continuation_policy.clone(),
+            tools_policy: facts.tools_policy.clone(),
+            reasoning: facts.reasoning.clone(),
+            metadata: facts.metadata.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ProviderRequestObservationV1 {
     pub(crate) provider_request_body_sha256: Option<String>,
     pub(crate) provider_request_schema_id: Option<String>,
@@ -234,9 +385,11 @@ pub(crate) struct IdentityObservationV1 {
     pub(crate) driver_declaration_sha256: String,
     pub(crate) driver_observed_sha256: String,
     pub(crate) driver_projection: DriverConfigurationProjectionV1,
+    pub(crate) driver_facts: DriverConfigurationFactsV1,
     pub(crate) model_declaration_sha256: String,
     pub(crate) model_observed_sha256: String,
     pub(crate) model_projection: ModelParametersProjectionV1,
+    pub(crate) model_facts: ModelParametersFactsV1,
     pub(crate) provider_request: ProviderRequestObservationV1,
 }
 

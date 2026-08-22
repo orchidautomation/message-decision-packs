@@ -22,7 +22,8 @@ use crate::run_contracts::{
     DRIVER_CONFIGURATION_PROJECTION_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V2, DecisionAuthority,
     DriverArtifactV2, DriverConfigurationProjectionV1, DriverOutputV2, DriverProviderObservationV2,
     DriverProviderPolicyV2, DriverRequestV2, DriverResultV2, EvidenceProvenance,
-    IdentityObservationV1, MODEL_PARAMETERS_PROJECTION_V1, ModelParametersProjectionV1,
+    IdentityObservationV1, MDP_RUNTIME_VERSION, MODEL_PARAMETERS_PROJECTION_V1,
+    ModelParametersProjectionV1, OPENAI_PROVIDER_REQUEST_SCHEMA_ID,
     PROVIDER_REQUEST_NOT_OBSERVED_V1, PROVIDER_REQUEST_RELATION_V1, PackAuthority,
     ProviderRequestObservationV1, RUN_BUNDLE_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUNNER_AUDIT_V1,
     RunBundleV1, RunMode, RunReceiptV1, RunRequestV1, RunnerAuditV1, TerminalState,
@@ -226,7 +227,7 @@ fn driver_configuration_projection(
         contract: DRIVER_CONFIGURATION_PROJECTION_V1.into(),
         driver_id: identity.driver_id.clone(),
         implementation: identity.implementation.clone(),
-        runtime_version: identity.version.clone(),
+        runtime_version: MDP_RUNTIME_VERSION.into(),
         bundled_source_sha256: source_sha256,
         node_executable_sha256: node_sha256,
         native_request_contract: NATIVE_SUBPROCESS_REQUEST_V1.into(),
@@ -422,8 +423,15 @@ fn bind_native_identity(
             "node-hash-mismatch",
         ));
     }
+    if declared_driver.version != MDP_RUNTIME_VERSION {
+        return Err(run_failure(
+            RunFailureKind::PolicyBlocked,
+            "driver-version-mismatch",
+        ));
+    }
     let driver_projection =
         driver_configuration_projection(declared_driver, source_sha256, node_sha256);
+    let driver_facts = (&driver_projection).into();
     let driver_observed_sha256 =
         projection_hash(DRIVER_CONFIGURATION_PROJECTION_V1, &driver_projection)?;
     let model_projection = model_parameters_projection(
@@ -433,6 +441,7 @@ fn bind_native_identity(
         request.execution_policy.max_output_bytes,
     );
     let model_observed_sha256 = projection_hash(MODEL_PARAMETERS_PROJECTION_V1, &model_projection)?;
+    let model_facts = (&model_projection).into();
     if declared_driver.configuration_sha256 != driver_observed_sha256 {
         return Err(run_failure(
             RunFailureKind::PolicyBlocked,
@@ -454,9 +463,11 @@ fn bind_native_identity(
         driver_declaration_sha256: declared_driver.configuration_sha256.clone(),
         driver_observed_sha256,
         driver_projection,
+        driver_facts,
         model_declaration_sha256: declared_model.parameters_sha256.clone(),
         model_observed_sha256,
         model_projection,
+        model_facts,
         provider_request: ProviderRequestObservationV1 {
             provider_request_body_sha256: None,
             provider_request_schema_id: None,
@@ -2023,10 +2034,8 @@ fn validate_driver_result(request: &DriverRequestV2, result: &DriverResultV2) ->
                 .provider_request_body_sha256
                 .as_deref()
                 .is_some_and(is_canonical_sha256)
-                || result
-                    .provider_request_schema_id
-                    .as_deref()
-                    .is_none_or(|schema_id| schema_id.trim().is_empty())
+                || result.provider_request_schema_id.as_deref()
+                    != Some(OPENAI_PROVIDER_REQUEST_SCHEMA_ID)
                 || !result
                     .provider_response_body_sha256
                     .as_deref()
@@ -3096,12 +3105,14 @@ mod tests {
         crate::commands::init::init_pack(&pack, "Identity Pack", "gtm", true, false).unwrap();
         fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
         let request = generative_request_fixture(&pack, &raw);
-        for label in ["driver", "model"] {
+        for label in ["driver", "model", "version"] {
             let mut altered = request.clone();
             if label == "driver" {
                 altered.driver.as_mut().unwrap().configuration_sha256 = "b".repeat(64);
-            } else {
+            } else if label == "model" {
                 altered.model.as_mut().unwrap().parameters_sha256 = "c".repeat(64);
+            } else {
+                altered.driver.as_mut().unwrap().version = "caller-forged-version".into();
             }
             let run = root.join(format!("run-{label}"));
             let error = execute_run_inner_with_driver(
@@ -3116,6 +3127,7 @@ mod tests {
                     error.downcast_ref::<RunFailure>().map(RunFailure::code),
                     Some("driver-configuration-identity-mismatch")
                         | Some("model-parameters-identity-mismatch")
+                        | Some("driver-version-mismatch")
                 ),
                 "unexpected mismatch code for {label}: {error}"
             );
@@ -3219,6 +3231,11 @@ mod tests {
 
         result = valid.clone();
         result.provider_request_schema_id = None;
+        seal_driver_result(&mut result).unwrap();
+        assert!(validate_driver_result(&request, &result).is_err());
+
+        result = valid.clone();
+        result.provider_request_schema_id = Some("caller-selected-schema".into());
         seal_driver_result(&mut result).unwrap();
         assert!(validate_driver_result(&request, &result).is_err());
 
@@ -4029,7 +4046,7 @@ mod tests {
             pack: PackAuthority {
                 release_id: "release-1".into(),
                 pack_id: "pack-1".into(),
-                version: "1".into(),
+                version: super::MDP_RUNTIME_VERSION.into(),
                 profile_id: "gtm".into(),
                 portable_digest: "a".repeat(64),
                 files: vec![],
@@ -4232,7 +4249,7 @@ mod tests {
             driver: Some(DriverIdentity {
                 driver_id: "mdp-native-openai".into(),
                 implementation: super::BUNDLED_NATIVE_DRIVER_ID.into(),
-                version: "1".into(),
+                version: super::MDP_RUNTIME_VERSION.into(),
                 build_sha256: None,
                 executable_sha256: Some(driver_sha),
                 image_digest: None,
