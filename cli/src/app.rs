@@ -26,6 +26,9 @@ use crate::routing::ROUTE_CARD_CAP_DIAGNOSTIC;
 use crate::run_replay::{
     LOCAL_LEDGER_DURABILITY_LIMITATION, ReplayConsumeRequest, compare_and_consume,
 };
+use crate::run_request_compiler::{
+    PrepareRunOptions, compile_native_run_request, write_compiled_request,
+};
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::fs;
@@ -182,6 +185,39 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             "requirements",
             requirements(&dir, &job)?,
         ),
+        Commands::PrepareRun {
+            dir,
+            job,
+            operation,
+            inputs,
+            model,
+            retention_policy,
+            created_at,
+            out,
+            manifest_out,
+            full,
+        } => {
+            let options = PrepareRunOptions {
+                dir,
+                job,
+                operation,
+                inputs,
+                model,
+                retention_policy,
+                created_at,
+                out,
+                manifest_out,
+                full,
+            };
+            let compiled = compile_native_run_request(&options)?;
+            write_compiled_request(&compiled, &options)?;
+            print_output(
+                json_mode,
+                summary_mode,
+                "prepare-run",
+                compiled.output(options.full),
+            )
+        }
         Commands::RebindSyntheticChain {
             dir,
             job,

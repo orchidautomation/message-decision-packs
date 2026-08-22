@@ -196,6 +196,15 @@ const canonicalExistingDir = (value, label) => {
   return canonical
 }
 
+const canonicalOutputFile = (value, label) => {
+  const requested = resolve(value)
+  if (existsSync(requested) && lstatSync(requested).isSymbolicLink()) throw new Error(`${label} must not be a symlink`)
+  const parent = dirname(requested)
+  if (!existsSync(parent) || lstatSync(parent).isSymbolicLink()) throw new Error(`${label} parent must be an existing non-symlink directory`)
+  if (!statSync(realpathSync(parent)).isDirectory()) throw new Error(`${label} parent must be a directory`)
+  return requested
+}
+
 const canonicalNewOutputDir = (value) => {
   const requested = resolve(value)
   if (existsSync(requested)) throw new Error('output_dir must not already exist')
@@ -246,6 +255,30 @@ const tools = [
     description:
       'Describe the local file-oriented clean-run adapter. MCP is transport only; the mdp CLI remains the sole authority for execution, hashes, assurance, validation, and terminal state.',
     inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+  },
+  {
+    name: 'mdp_prepare_run',
+    title: 'Prepare an MDP run request offline',
+    description:
+      'Compile one sealed mdp.run-request.v1 from a pack, selected job/step, and declared local input paths. Preparation is read-only unless explicit output paths are provided and never invokes a provider.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['dir', 'job', 'model'],
+      properties: {
+        dir: { type: 'string', description: 'Existing pack directory.' },
+        job: { type: 'string', description: 'Exact profile job id.' },
+        operation: { type: 'string', description: 'Exact model:<job>/<phase> step id when selection is ambiguous.' },
+        inputs: { type: 'array', items: { type: 'string' }, description: 'Declared logical_name=path mappings.' },
+        model: { type: 'string', description: 'Requested model name.' },
+        retention_policy: { type: 'string', enum: ['receipt-only', 'customer-controlled-workdir'] },
+        created_at: { type: 'string', description: 'Optional RFC3339 UTC test clock.' },
+        out: { type: 'string', description: 'Optional exact request output path.' },
+        manifest_out: { type: 'string', description: 'Optional full compiler manifest output path.' },
+        full: { type: 'boolean' },
+        timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
+      },
+    },
   },
   {
     name: 'mdp_run',
@@ -299,7 +332,7 @@ const callRunTools = (args) => {
   return toolResult({
     contract: 'mdp.run-mcp-tools.v1',
     transport: 'local-stdio',
-    tools: ['mdp_run_tools', 'mdp_run', 'mdp_verify_run'],
+    tools: ['mdp_run_tools', 'mdp_prepare_run', 'mdp_run', 'mdp_verify_run'],
     cli_authority: ['run request parsing', 'pack and input staging', 'execution', 'terminal state', 'assurance', 'artifact hashes', 'validation', 'receipt'],
     mcp_authority: [],
     guardrails: [
@@ -311,6 +344,73 @@ const callRunTools = (args) => {
       'The returned run result and authority block are copied from mdp --json run without modification.',
     ],
   })
+}
+
+const blockedPrepareRun = (code, message, nextCommand = 'mdp prepare-run --help') => toolResult({
+  contract: 'mdp.run-request-compile.v1',
+  status: 'blocked',
+  diagnostics: [{
+    code,
+    contract: 'mdp.run-request-compile.v1',
+    message: `${code}: ${message}`.slice(0, 512),
+    next_command: nextCommand,
+  }],
+  next_command: nextCommand,
+})
+
+const callPrepareRunValidated = async (args) => {
+  const parsed = asObject(args || {}, 'arguments')
+  assertOnly(parsed, new Set(['dir', 'job', 'operation', 'inputs', 'model', 'retention_policy', 'created_at', 'out', 'manifest_out', 'full', 'timeout_ms']))
+  const dir = canonicalExistingDir(requiredString(parsed, 'dir'), 'dir')
+  const job = requiredString(parsed, 'job')
+  const model = requiredString(parsed, 'model')
+  if (parsed.operation !== undefined) requiredString(parsed, 'operation')
+  if (parsed.created_at !== undefined) requiredString(parsed, 'created_at')
+  if (parsed.retention_policy !== undefined && !['receipt-only', 'customer-controlled-workdir'].includes(parsed.retention_policy)) {
+    throw new Error('retention_policy must be receipt-only or customer-controlled-workdir')
+  }
+  const inputs = parsed.inputs ?? []
+  if (!Array.isArray(inputs) || inputs.length > 128 || inputs.some((value) => typeof value !== 'string')) throw new Error('inputs must be an array of logical_name=path strings')
+  const frozenInputs = inputs.map((mapping) => {
+    const separator = mapping.indexOf('=')
+    if (separator <= 0) throw new Error('inputs must use logical_name=path')
+    const name = mapping.slice(0, separator)
+    const path = canonicalExistingFile(mapping.slice(separator + 1), `input ${name}`)
+    return `${name}=${path}`
+  })
+  const out = parsed.out === undefined ? null : canonicalOutputFile(requiredString(parsed, 'out'), 'out')
+  const manifestOut = parsed.manifest_out === undefined ? null : canonicalOutputFile(requiredString(parsed, 'manifest_out'), 'manifest_out')
+  const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
+  const cliArgs = ['--json', 'prepare-run', '--dir', dir, '--job', job, '--model', model]
+  if (parsed.operation !== undefined) cliArgs.push('--operation', parsed.operation)
+  for (const mapping of frozenInputs) cliArgs.push('--input', mapping)
+  if (parsed.retention_policy !== undefined) cliArgs.push('--retention-policy', parsed.retention_policy)
+  if (parsed.created_at !== undefined) cliArgs.push('--created-at', parsed.created_at)
+  if (out) cliArgs.push('--out', out)
+  if (manifestOut) cliArgs.push('--manifest-out', manifestOut)
+  if (parsed.full === true) cliArgs.push('--full')
+  const invocation = await invokeCli(cliArgs, dir, timeoutMs)
+  if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable' }, true)
+  }
+  let envelope
+  try { envelope = JSON.parse(invocation.stdout) } catch { return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true) }
+  if (envelope?.ok === false && envelope?.command === 'prepare-run' && envelope.data?.contract === 'mdp.run-request-compile.v1') {
+    return toolResult(envelope.data)
+  }
+  if (envelope?.ok !== true || envelope?.command !== 'prepare-run' || !envelope.data || envelope.data.contract !== 'mdp.run-request-compile.v1' || envelope.data.status !== 'ready') {
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.status === 0 ? 'invalid-cli-contract' : 'prepare-run-refused' }, true)
+  }
+  return toolResult(envelope.data)
+}
+
+const callPrepareRun = async (args) => {
+  try {
+    return await callPrepareRunValidated(args)
+  } catch (error) {
+    return blockedPrepareRun('mcp-arguments-invalid', error?.message || 'preparation refused')
+  }
 }
 
 const callRun = async (args) => {
@@ -469,6 +569,8 @@ const handleToolCall = async (params) => {
   switch (call.name) {
     case 'mdp_run_tools':
       return callRunTools(call.arguments || {})
+    case 'mdp_prepare_run':
+      return await callPrepareRun(call.arguments || {})
     case 'mdp_run':
       return await callRun(call.arguments || {})
     case 'mdp_verify_run':
