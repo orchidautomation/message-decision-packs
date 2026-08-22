@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -90,6 +90,102 @@ const parseJsonResult = (result, label) => {
   return JSON.parse(result.stdout)
 }
 
+const publicRoutedContextAcceptance = ({ baseRequest, routedInput, pack, jobId }) => {
+  const server = join(repoRoot, 'scripts', 'mdp-run-mcp-server.mjs')
+  const originalContext = JSON.parse(readFileSync(routedInput.source_path, 'utf8'))
+  const blockedPack = join(scratch, 'blocked-readiness-pack')
+  cpSync(pack, blockedPack, { recursive: true })
+  const manifestPath = join(blockedPack, '.mdp', 'manifest.yaml')
+  const manifest = readFileSync(manifestPath, 'utf8')
+  const jobStart = manifest.indexOf(`- id: ${jobId}`)
+  assert.notEqual(jobStart, -1, `${jobId} must be declared in the acceptance pack`)
+  const budgetStart = manifest.indexOf('context_budget:', jobStart)
+  const nextJob = manifest.indexOf('\n- id: ', budgetStart)
+  assert.ok(budgetStart > jobStart && (nextJob === -1 || budgetStart < nextJob), `${jobId} must declare a context budget`)
+  const jobManifest = manifest.slice(jobStart, nextJob === -1 ? manifest.length : nextJob)
+  const blockedJobManifest = jobManifest.replace(/(max_entries:\s*)\d+/, '$10')
+  assert.notEqual(blockedJobManifest, jobManifest, `${jobId} budget should be mutable for blocked-readiness proof`)
+  writeFileSync(manifestPath, `${manifest.slice(0, jobStart)}${blockedJobManifest}${manifest.slice(nextJob === -1 ? manifest.length : nextJob)}`)
+
+  const cases = [
+    {
+      name: 'valid-canonical',
+      bytes: readFileSync(routedInput.source_path),
+      code: 'internal-contract-mismatch',
+    },
+    {
+      name: 'malformed-json',
+      bytes: '{"contract":"mdp.routed-context.v1"',
+      code: 'malformed-json',
+    },
+    {
+      name: 'wrong-contract',
+      bytes: `${JSON.stringify({ ...originalContext, contract: 'mdp.routed-context.v0' })}\n`,
+      code: 'wrong-contract',
+    },
+    {
+      name: 'stale-binding',
+      bytes: `${canonicalJsonBytes({ ...originalContext, job: 'prospect-fit-or-brief' })}\n`,
+      code: 'stale-binding',
+    },
+    {
+      name: 'blocked-readiness',
+      bytes: readFileSync(routedInput.source_path),
+      code: 'readiness-failure',
+      packDir: blockedPack,
+    },
+  ]
+
+  const invokeMcp = (requestPath, outputDir) => invoke(
+    process.execPath,
+    [server],
+    {
+      env: { ...process.env, PATH: process.env.PATH || '', MDP_BIN: resolve(mdp) },
+      input: `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'mdp_run', arguments: { request_path: requestPath, output_dir: outputDir } },
+      })}\n`,
+    },
+  )
+
+  for (const testCase of cases) {
+    const inputPath = join(scratch, `acceptance-${testCase.name}.json`)
+    writeFileSync(inputPath, testCase.bytes)
+    const request = structuredClone(baseRequest)
+    request.execution_id = `acceptance-${testCase.name}`
+    request.pack_dir = testCase.packDir || pack
+    request.prompt = {
+      ...request.prompt,
+      source_path: request.prompt.source_path.replace(pack, request.pack_dir),
+    }
+    const requestInput = request.inputs.find((input) => input.logical_name === routedInput.logical_name)
+    assert.ok(requestInput, `${testCase.name} request must carry routed context`)
+    requestInput.source_path = inputPath
+    const requestPath = join(scratch, `acceptance-${testCase.name}.request.json`)
+    const outputDir = join(scratch, `acceptance-${testCase.name}.run`)
+    writeFileSync(requestPath, `${JSON.stringify(request)}\n`)
+
+    const cli = parseJsonResult(
+      invoke(mdp, ['--json', 'run', '--request', requestPath, '--out-dir', outputDir]),
+      `public CLI ${testCase.name} routed-context acceptance`,
+    )
+    assert.equal(cli.data.terminal_state, 'no-draft:policy-blocked')
+    assert.equal(cli.data.authority_block.diagnostics?.[0]?.code, testCase.code)
+    assert.equal(cli.data.run_dir, null)
+    assert.equal(cli.data.receipt_sha256, null)
+    assert.ok(!existsSync(outputDir), `${testCase.name} published a blocked run directory`)
+
+    const mcp = invokeMcp(requestPath, join(scratch, `acceptance-${testCase.name}.mcp.run`))
+    assert.equal(mcp.status, 0, `public MCP ${testCase.name} acceptance failed\n${mcp.stderr}`)
+    const reply = JSON.parse(mcp.stdout.trim().split('\n').at(-1))
+    assert.equal(reply.result.isError, false)
+    assert.equal(reply.result.structuredContent.terminal_state, cli.data.terminal_state)
+    assert.deepEqual(reply.result.structuredContent.authority_block.diagnostics, cli.data.authority_block.diagnostics)
+  }
+}
+
 const sha256File = (path) => sha256Bytes(readFileSync(path))
 const authorityHash = (domain, value) => sha256Bytes(`${domain}\0${canonicalJsonBytes(value)}`)
 const providerMaxOutputTokens = (maxOutputBytes) => Math.min(100000, Math.max(1, Math.floor(maxOutputBytes / 4)))
@@ -132,6 +228,7 @@ const driverConfigurationProjection = (driverSourceSha256, nodeSha256) => ({
 try {
   const bindings = []
   const uniquePrompts = new Map()
+  let routedContextAcceptanceDone = false
   const publicPromptOutputSchema = expectJson(
     invoke(mdp, ['--json', 'schema', 'prompt-output']),
     'public prompt-output schema',
@@ -473,6 +570,29 @@ try {
     )
     if (!mcpParity && runInputs.some((input) => input.logical_name === 'routed_context')) {
       mcpParity = { execution, requestPath: runRequestPath, outputDir: join(scratch, 'mcp-parity-run') }
+    }
+    const routedInput = runInputs.find((input) => input.logical_name === 'routed_context')
+    if (!routedContextAcceptanceDone && profile === 'gtm' && jobId === 'outbound-copy-brief' && routedInput) {
+      publicRoutedContextAcceptance({ baseRequest: runRequest, routedInput, pack, jobId })
+      routedContextAcceptanceDone = true
+    }
+    if (execution.data.terminal_state === 'no-draft:policy-blocked') {
+      assert.equal(execution.data.run_dir, null)
+      assert.equal(execution.data.bundle_sha256, null)
+      assert.equal(execution.data.receipt_sha256, null)
+      assert.equal(execution.data.authority_block.decision, null)
+      assert.deepEqual(execution.data.authority_block.diagnostics, [{
+        stage: 'run-preflight',
+        gate: 'policy',
+        code: 'internal-contract-mismatch',
+        input: null,
+        field: null,
+        expected: { kind: 'binding', value: 'available' },
+        observed: { kind: 'binding', value: 'unavailable' },
+      }])
+      assert.ok(!existsSync(runDir), `${profile}/${jobId}/${step.phase} published a blocked run directory`)
+      assert.ok(!JSON.stringify(execution).includes('OPENAI_API_KEY'))
+      continue
     }
     assert.ok(
       existsSync(join(runDir, 'run-bundle.json')),

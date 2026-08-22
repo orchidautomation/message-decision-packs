@@ -88,7 +88,23 @@ mdp --json schema driver-result-v2
 mdp --json schema runner-audit-v1
 mdp --json schema run-receipt-v1
 mdp --json schema run-verification-v1
+mdp --json schema canonical-authority-block-v1
 ```
+
+### Policy-block diagnostics
+
+`no-draft:policy-blocked` results include at least one bounded
+`authority_block.diagnostics` entry. Each entry names an allowlisted stage, gate,
+category, logical input, optional contract field, and closed expected/observed
+value. The categories distinguish malformed JSON, wrong contract, missing or
+disallowed fields, readiness failure, stale binding, and internal contract
+mismatch. These entries explain the CLI-owned block; they do not replace
+`reason_codes`, change authority disposition, or create a receipt.
+
+Diagnostics never contain staged bodies, parser text, filesystem paths,
+credentials, source hashes, or private card content. The MCP adapter copies the
+CLI authority block unchanged. Inspect the closed carrier with
+`mdp --json schema canonical-authority-block-v1`.
 
 Verify v1 artifacts without invoking a runner:
 

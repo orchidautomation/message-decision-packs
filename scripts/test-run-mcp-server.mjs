@@ -93,6 +93,17 @@ const data = {
       : unavailable ? null : { decision: 'ready', reason_codes: [] },
     assurance: { 'declared-input-isolation': { level: 'unknown' } },
     limitations: ['fixture limitation'],
+    diagnostics: blocked
+      ? [{
+        stage: 'generative-preflight',
+        gate: 'routed-context-schema',
+        code: 'wrong-contract',
+        input: 'routed_context',
+        field: '/contract',
+        expected: { kind: 'contract', value: 'mdp.routed-context.v1' },
+        observed: { kind: 'contract', value: 'missing' },
+      }]
+      : [],
   },
 }
 process.stdout.write(JSON.stringify({ ok: true, command: 'run', data }))
@@ -394,6 +405,15 @@ test('returns a canonical no-draft result even when the CLI exits nonzero', asyn
   assert.equal(reply.result.structuredContent.terminal_state, 'no-draft:decision-invalid')
   assert.equal(reply.result.structuredContent.authority_block.decision.decision, 'no-draft')
   assert.equal(reply.result.structuredContent.authority.disposition, 'block')
+  assert.deepEqual(reply.result.structuredContent.authority_block.diagnostics, [{
+    stage: 'generative-preflight',
+    gate: 'routed-context-schema',
+    code: 'wrong-contract',
+    input: 'routed_context',
+    field: '/contract',
+    expected: { kind: 'contract', value: 'mdp.routed-context.v1' },
+    observed: { kind: 'contract', value: 'missing' },
+  }])
 })
 
 test('returns a canonical unavailable result as data when the CLI cannot establish authority', async (t) => {

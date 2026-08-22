@@ -182,6 +182,18 @@ the sole authority for request parsing, staging, execution, terminal state,
 assurance, validation, artifact hashes, and receipts. Never promote an
 assurance dimension because the invocation used MCP.
 
+For `no-draft:policy-blocked`, read the CLI-owned
+`authority_block.diagnostics` array for bounded troubleshooting context. It
+uses stable stage/gate/category values, logical input names, safe contract-field
+pointers, and allowlisted expected/observed values. It distinguishes malformed
+JSON, wrong contract, missing or disallowed fields, readiness failure, stale
+binding, and internal contract mismatch. It never includes source bodies,
+private paths, credentials, parser text, or partial output. Keep
+`reason_codes`, terminal state, and null decision/hash fields authoritative;
+MCP must copy diagnostics without summarizing or reclassifying them. Routed
+context is the canonical `mdp.routed-context.v1` artifact and does not require
+top-level `status` or `draft_status` fields.
+
 `verify-run` is integrity-only; it does not establish freshness from external
 host state. A table/job host that needs replay protection must atomically
 consume the verified receipt in host-owned durable storage. `consume-run` is a
