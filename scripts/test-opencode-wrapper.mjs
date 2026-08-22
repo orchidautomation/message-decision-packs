@@ -241,6 +241,12 @@ try {
     'Finalized release manifest must bind complete generated plugin trees.',
   )
   assert(
+    Object.values(finalizedManifest.plugin_trees).every((tree) =>
+      tree.files.some((entry) => entry.path.startsWith('skill-evals/')),
+    ),
+    'Finalized release manifest must bind the shared skill-evals tree.',
+  )
+  assert(
     finalizedManifest.cli_artifacts?.length === 3 &&
       finalizedManifest.cli_artifacts.every((asset) => /^[a-f0-9]{64}$/.test(asset.sha256)),
     'Finalized release manifest must bind exact staged CLI artifacts.',

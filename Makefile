@@ -5,7 +5,7 @@ PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validat
 PYTHONDONTWRITEBYTECODE ?= 1
 export PYTHONDONTWRITEBYTECODE
 
-.PHONY: validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget install-cli demo
+.PHONY: validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget install-cli demo
 
 validate: validate-cli validate-authority-conformance validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget
 
@@ -77,7 +77,13 @@ validate-skill-evals:
 	$(PYTHON) scripts/skill-eval-harness.py --plugin-skills plugin/skills --output /tmp/mdp-skill-evals
 
 validate-skill-packaging:
+	$(PYTHON) -m unittest scripts/test_skill_packaging.py
 	$(PYTHON) scripts/validate-skill-packaging.py
+
+validate-skill-ref:
+	@for skill in plugin/skills/*; do \
+		npx --yes skills-ref validate "$$skill" || exit 1; \
+	done
 
 validate-asset-sync:
 	diff -qr plugin/assets assets

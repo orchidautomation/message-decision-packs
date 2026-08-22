@@ -1,0 +1,20 @@
+{
+  "model": "mdp.skill-eval-index.v1",
+  "skill_id": "mdp-proposal-review",
+  "corpus_root": "skill-evals",
+  "trigger_case_ids": [
+    "proposal-bid-train", "proposal-compliance-train", "proposal-proof-train", "proposal-red-team-train",
+    "proposal-bid-validation", "proposal-compliance-validation", "proposal-proof-validation", "proposal-red-team-validation",
+    "proposal-bid-typo-train", "proposal-proof-indirect-train", "proposal-compliance-typo-validation", "proposal-red-team-indirect-validation"
+  ],
+  "output_case_ids": [
+    "proposal-bid-train", "proposal-compliance-train", "proposal-proof-train", "proposal-red-team-train",
+    "proposal-bid-validation", "proposal-compliance-validation", "proposal-proof-validation", "proposal-red-team-validation",
+    "proposal-audit-path-missing-train", "proposal-ambient-advisory-validation", "proposal-chat-fact-gap-train", "proposal-ocr-mismatch-validation"
+  ],
+  "supported_modes": ["bid-no-bid", "compliance", "proof", "red-team"],
+  "required_assertion_categories": ["evidence", "safety", "human-review"],
+  "required_trigger_query_shapes": ["direct", "typo", "indirect-intent"],
+  "required_trigger_case_types": ["positive", "near-miss", "unsafe-request"],
+  "comparison_modes": ["with-skill", "baseline", "previous-version"]
+}

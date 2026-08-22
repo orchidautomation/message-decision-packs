@@ -1,0 +1,19 @@
+{
+  "model": "mdp.skill-eval-index.v1",
+  "skill_id": "mdp-pack-review",
+  "corpus_root": "skill-evals",
+  "trigger_case_ids": [
+    "review-structural-train", "review-routing-train", "review-installed-train", "review-structural-secondary-train",
+    "review-structural-validation", "review-routing-validation", "review-installed-validation", "review-routing-secondary-validation",
+    "review-structural-typo-train", "review-routing-indirect-train", "review-structural-typo-validation", "review-installed-indirect-validation"
+  ],
+  "output_case_ids": [
+    "review-structural-train", "review-routing-train", "review-installed-train",
+    "review-structural-validation", "review-routing-validation", "review-installed-validation", "review-cold-conformance-train"
+  ],
+  "supported_modes": ["structural", "routing-eval", "installed-qa"],
+  "required_assertion_categories": ["cli-gate", "content", "handoff"],
+  "required_trigger_query_shapes": ["direct", "typo", "indirect-intent"],
+  "required_trigger_case_types": ["positive", "near-miss"],
+  "comparison_modes": ["with-skill", "baseline", "previous-version"]
+}

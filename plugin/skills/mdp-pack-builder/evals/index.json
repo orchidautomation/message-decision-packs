@@ -1,0 +1,20 @@
+{
+  "model": "mdp.skill-eval-index.v1",
+  "skill_id": "mdp-pack-builder",
+  "corpus_root": "skill-evals",
+  "trigger_case_ids": [
+    "builder-source-plan-train", "builder-source-extract-train", "builder-gtm-train", "builder-proposal-train",
+    "builder-source-plan-validation", "builder-source-extract-validation", "builder-gtm-validation", "builder-proposal-validation",
+    "builder-source-typo-train", "builder-gtm-indirect-train", "builder-source-typo-validation", "builder-proposal-indirect-validation"
+  ],
+  "output_case_ids": [
+    "builder-source-plan-train", "builder-source-extract-train", "builder-gtm-train", "builder-proposal-train",
+    "builder-source-plan-validation", "builder-source-extract-validation", "builder-gtm-validation", "builder-proposal-validation",
+    "builder-gtm-approved-boundary-train", "builder-gtm-partial-authority-train", "builder-gtm-blocking-gap-validation"
+  ],
+  "supported_modes": ["source-plan", "source-extract", "gtm-authoring", "proposal-authoring"],
+  "required_assertion_categories": ["content", "evidence", "boundary"],
+  "required_trigger_query_shapes": ["direct", "typo", "indirect-intent"],
+  "required_trigger_case_types": ["positive", "near-miss"],
+  "comparison_modes": ["with-skill", "baseline", "previous-version"]
+}

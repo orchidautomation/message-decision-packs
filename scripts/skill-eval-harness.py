@@ -27,6 +27,8 @@ CASE_TYPES = {
     "profile-crossing",
     "unsafe-request",
 }
+QUERY_SHAPES = {"direct", "typo", "indirect-intent"}
+COMPARISON_MODES = {"with-skill", "baseline", "previous-version"}
 PACK_PROFILES = {"none", "gtm", "proposal", "invalid"}
 SHARED_SKILLS = ["mdp", "mdp-pack-builder", "mdp-pack-review"]
 PROFILE_JOBS = {
@@ -118,8 +120,138 @@ def compare_skill_trees(source: Path, installed: Path, errors: list[str]) -> Non
             errors.append(f"installed skill executable-bit drift: {path}")
 
 
+def compare_resource_tree(source: Path, installed: Path, label: str, errors: list[str]) -> None:
+    if not source.is_dir():
+        errors.append(f"{label}: missing source directory: {source}")
+        return
+    if not installed.is_dir():
+        errors.append(f"{label}: missing installed directory: {installed}")
+        return
+    for path in sorted(installed.rglob("*")):
+        if path.is_symlink():
+            errors.append(f"{label}: symlink is not allowed: {path.relative_to(installed)}")
+    source_files = relative_files(source)
+    installed_files = relative_files(installed)
+    source_paths = set(source_files)
+    installed_paths = set(installed_files)
+    for path in sorted(source_paths - installed_paths):
+        errors.append(f"{label}: missing canonical file: {path}")
+    for path in sorted(installed_paths - source_paths):
+        errors.append(f"{label}: non-canonical file: {path}")
+    for path in sorted(source_paths & installed_paths):
+        if file_digest(source_files[path]) != file_digest(installed_files[path]):
+            errors.append(f"{label}: content drift: {path}")
+        if is_executable(source_files[path]) != is_executable(installed_files[path]):
+            errors.append(f"{label}: executable-bit drift: {path}")
+
+
 def normalized_query(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
+
+
+def validate_skill_eval_indexes(
+    skill_root: Path,
+    corpus_root: Path,
+    triggers: dict[str, Any],
+    outputs: dict[str, Any],
+    skills: list[str],
+    definitions: dict[str, dict[str, Any]],
+    errors: list[str],
+    installed_skill_root: Path | None = None,
+    installed_corpus: Path | None = None,
+) -> dict[str, Any]:
+    trigger_cases = {
+        case.get("id"): case
+        for case in triggers.get("cases", [])
+        if isinstance(case, dict) and isinstance(case.get("id"), str)
+    }
+    output_cases = {
+        case.get("id"): case
+        for case in outputs.get("cases", [])
+        if isinstance(case, dict) and isinstance(case.get("id"), str)
+    }
+    trigger_owners: Counter[str] = Counter()
+    output_owners: Counter[str] = Counter()
+    indexes: dict[str, dict[str, Any]] = {}
+    for skill_id in skills:
+        index_path = skill_root / skill_id / "evals" / "index.json"
+        index = load_json(index_path, errors)
+        indexes[skill_id] = index
+        if index.get("model") != "mdp.skill-eval-index.v1":
+            errors.append(f"{index_path}: unexpected model")
+        if index.get("skill_id") != skill_id:
+            errors.append(f"{index_path}: skill_id must be {skill_id}")
+        if index.get("corpus_root") != "skill-evals":
+            errors.append(f"{index_path}: corpus_root must be skill-evals")
+        definition = definitions.get(skill_id, {})
+        if index.get("supported_modes") != definition.get("modes"):
+            errors.append(f"{index_path}: supported_modes drift from coverage")
+        if index.get("required_assertion_categories") != definition.get(
+            "required_assertion_categories"
+        ):
+            errors.append(f"{index_path}: required assertion categories drift from coverage")
+        expected_shapes = definition.get(
+            "allowed_query_shapes", sorted(QUERY_SHAPES)
+        )
+        if index.get("required_trigger_query_shapes") != expected_shapes:
+            errors.append(f"{index_path}: required trigger query shapes drift from coverage")
+        comparison_modes = index.get("comparison_modes")
+        if (
+            not isinstance(comparison_modes, list)
+            or len(comparison_modes) != len(set(comparison_modes))
+            or set(comparison_modes) != COMPARISON_MODES
+        ):
+            errors.append(f"{index_path}: comparison_modes must enumerate all host modes")
+        for field in ("trigger_case_ids", "output_case_ids"):
+            values = index.get(field)
+            if not isinstance(values, list) or not values or len(values) != len(set(values)):
+                errors.append(f"{index_path}: {field} must be a unique non-empty list")
+        for case_id in index.get("trigger_case_ids", []):
+            case = trigger_cases.get(case_id)
+            trigger_owners[case_id] += 1
+            if case is None:
+                errors.append(f"{index_path}: unknown trigger case {case_id}")
+            elif case.get("expected_skill_id") != skill_id:
+                errors.append(f"{index_path}: trigger {case_id} is not owned by {skill_id}")
+        for case_id in index.get("output_case_ids", []):
+            case = output_cases.get(case_id)
+            output_owners[case_id] += 1
+            if case is None:
+                errors.append(f"{index_path}: unknown output case {case_id}")
+            elif case.get("skill_id") != skill_id:
+                errors.append(f"{index_path}: output {case_id} is not owned by {skill_id}")
+        owned_types = {
+            case.get("case_type")
+            for case in trigger_cases.values()
+            if case.get("expected_skill_id") == skill_id
+        }
+        for required_type in index.get("required_trigger_case_types", []):
+            if required_type not in owned_types:
+                errors.append(f"{index_path}: missing trigger case type {required_type}")
+
+    expected_trigger_ids = {
+        case_id
+        for case_id, case in trigger_cases.items()
+        if case.get("expected_skill_id") in skills
+    }
+    for case_id in sorted(expected_trigger_ids):
+        if trigger_owners[case_id] != 1:
+            errors.append(f"trigger case ownership must be exactly once: {case_id}")
+    for case_id, count in sorted(trigger_owners.items()):
+        if case_id not in expected_trigger_ids or count != 1:
+            errors.append(f"trigger index ownership is invalid: {case_id}")
+    expected_output_ids = set(output_cases)
+    for case_id in sorted(expected_output_ids):
+        if output_owners[case_id] != 1:
+            errors.append(f"output case ownership must be exactly once: {case_id}")
+    for case_id, count in sorted(output_owners.items()):
+        if case_id not in expected_output_ids or count != 1:
+            errors.append(f"output index ownership is invalid: {case_id}")
+
+    if installed_skill_root is not None and installed_corpus is not None:
+        compare_skill_trees(skill_root, installed_skill_root, errors)
+        compare_resource_tree(corpus_root, installed_corpus, "installed skill-evals", errors)
+    return {"indexes": len(indexes), "owned_triggers": len(expected_trigger_ids), "owned_outputs": len(expected_output_ids)}
 
 
 def validate_coverage(
@@ -148,6 +280,14 @@ def validate_coverage(
         if not isinstance(categories, list) or not categories:
             errors.append(f"coverage.json: {skill_id} needs assertion categories")
         definitions[skill_id] = row
+
+        if not isinstance(row.get("eval_index"), str) or not row["eval_index"].endswith(
+            f"{skill_id}/evals/index.json"
+        ):
+            errors.append(f"coverage.json: {skill_id} needs its owned eval_index")
+        shapes = row.get("allowed_query_shapes")
+        if not isinstance(shapes, list) or set(shapes) != QUERY_SHAPES:
+            errors.append(f"coverage.json: {skill_id} needs all query shapes")
 
     expected = [row["id"] for row in rows if isinstance(row, dict) and row.get("id") in definitions]
     source = skill_inventory(skill_root)
@@ -215,6 +355,7 @@ def validate_triggers(
         query = case.get("query")
         owner = case.get("expected_skill_id")
         mode = case.get("mode")
+        query_shape = case.get("query_shape")
         context = case.get("context")
 
         if not isinstance(case_id, str) or not case_id:
@@ -232,6 +373,8 @@ def validate_triggers(
             scenario_splits[family].add(split)
         if case_type not in CASE_TYPES:
             errors.append(f"{case_id}: invalid case_type {case_type}")
+        if query_shape not in QUERY_SHAPES:
+            errors.append(f"{case_id}: invalid query_shape {query_shape}")
         if not isinstance(query, str) or not query.strip():
             errors.append(f"{case_id}: query must be non-empty")
         else:
@@ -312,6 +455,21 @@ def validate_triggers(
             for mode in definitions[skill_id].get("modes", []):
                 if (skill_id, mode, split) not in modes:
                     errors.append(f"trigger coverage missing {skill_id}/{mode}/{split}")
+            required_shapes = coverage.get("trigger_requirements", {}).get(
+                "required_query_shapes_per_skill_split", sorted(QUERY_SHAPES)
+            )
+            present_shapes = {
+                case.get("query_shape")
+                for case in cases
+                if isinstance(case, dict)
+                and case.get("expected_skill_id") == skill_id
+                and case.get("split") == split
+            }
+            for query_shape in required_shapes:
+                if query_shape not in present_shapes:
+                    errors.append(
+                        f"trigger coverage missing {skill_id}/{split}/{query_shape}"
+                    )
             for other in skills:
                 if other != skill_id and (other, skill_id, split) not in collision_pairs:
                     errors.append(f"collision coverage missing {other} -> {skill_id} in {split}")
@@ -580,6 +738,44 @@ def validate_cli_contract(
     return {"binary": str(binary), "cases": checked}
 
 
+def validate_recording(
+    payload: dict[str, Any],
+    path: Path,
+    errors: list[str],
+    expected_mode: str | None = None,
+) -> dict[str, Any] | None:
+    recording = payload.get("recording")
+    if not isinstance(recording, dict):
+        errors.append(f"{path}: recording metadata is required for host results")
+        return None
+    allowed = {
+        "comparison_mode",
+        "comparison_id",
+        "source_revision",
+        "elapsed_ms",
+        "input_tokens",
+        "output_tokens",
+    }
+    unknown = sorted(set(recording) - allowed)
+    if unknown:
+        errors.append(f"{path}: recording contains unsupported or raw fields {unknown}")
+    comparison_mode = recording.get("comparison_mode")
+    if comparison_mode not in COMPARISON_MODES:
+        errors.append(f"{path}: recording.comparison_mode is invalid")
+    if expected_mode is not None and comparison_mode != expected_mode:
+        errors.append(
+            f"{path}: recording.comparison_mode must be {expected_mode}, found {comparison_mode}"
+        )
+    for field in ("comparison_id", "source_revision"):
+        if not isinstance(recording.get(field), str) or not recording[field].strip():
+            errors.append(f"{path}: recording.{field} must be non-empty")
+    for field in ("elapsed_ms", "input_tokens", "output_tokens"):
+        value = recording.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0 or value > 1_000_000_000:
+            errors.append(f"{path}: recording.{field} must be a bounded non-negative integer")
+    return recording
+
+
 def validate_observed_results(
     path: Path | None,
     trigger_payload: dict[str, Any],
@@ -587,6 +783,7 @@ def validate_observed_results(
     coverage: dict[str, Any],
     skills: list[str],
     errors: list[str],
+    expected_comparison_mode: str | None = None,
 ) -> dict[str, Any] | None:
     if path is None:
         return None
@@ -596,6 +793,7 @@ def validate_observed_results(
     for field in ("host", "model_id", "recorded_at"):
         if not isinstance(payload.get(field), str) or not payload[field].strip():
             errors.append(f"{path}: {field} must be non-empty")
+    recording = validate_recording(payload, path, errors, expected_comparison_mode)
     trigger_observations = payload.get("trigger_observations")
     output_observations = payload.get("output_observations")
     if not isinstance(trigger_observations, list) or not trigger_observations:
@@ -740,6 +938,7 @@ def validate_observed_results(
     return {
         "host": payload.get("host"),
         "model_id": payload.get("model_id"),
+        "recording": recording,
         "trigger": {
             "trials": total,
             "cases_observed": len(trigger_counts),
@@ -759,13 +958,61 @@ def validate_observed_results(
     }
 
 
+def validate_comparison_results(
+    primary: dict[str, Any] | None,
+    baseline_path: Path | None,
+    previous_path: Path | None,
+    trigger_payload: dict[str, Any],
+    output_payload: dict[str, Any],
+    coverage: dict[str, Any],
+    skills: list[str],
+    errors: list[str],
+) -> dict[str, Any] | None:
+    if primary is None or (baseline_path is None and previous_path is None):
+        return None
+    primary_recording = primary.get("recording") or {}
+    comparison_id = primary_recording.get("comparison_id")
+    comparisons: dict[str, dict[str, Any]] = {"with-skill": primary}
+    for mode, path in (("baseline", baseline_path), ("previous-version", previous_path)):
+        if path is None:
+            continue
+        summary = validate_observed_results(
+            path,
+            trigger_payload,
+            output_payload,
+            coverage,
+            skills,
+            errors,
+            expected_comparison_mode=mode,
+        )
+        if summary is None:
+            continue
+        comparisons[mode] = summary
+        recording = summary.get("recording") or {}
+        if recording.get("comparison_id") != comparison_id:
+            errors.append(f"comparison: {mode} comparison_id does not match with-skill")
+    delta: dict[str, Any] = {}
+    for mode, summary in comparisons.items():
+        if mode == "with-skill":
+            continue
+        delta[mode] = {
+            "trigger_accuracy": summary["trigger"]["accuracy"] - primary["trigger"]["accuracy"],
+            "output_assertion_accuracy": summary["output"]["assertion_accuracy"]
+            - primary["output"]["assertion_accuracy"],
+        }
+    return {"comparison_id": comparison_id, "modes": sorted(comparisons), "delta": delta}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plugin-skills", type=Path, default=Path("plugin/skills"))
     parser.add_argument("--corpus", type=Path, default=Path("plugin/skill-evals"))
     parser.add_argument("--mdp-bin", type=Path)
     parser.add_argument("--installed-skills-root", type=Path)
+    parser.add_argument("--installed-corpus", type=Path)
     parser.add_argument("--results", type=Path)
+    parser.add_argument("--baseline-results", type=Path)
+    parser.add_argument("--previous-results", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -777,11 +1024,40 @@ def main() -> int:
     skills, definitions = validate_coverage(
         coverage, args.plugin_skills, args.installed_skills_root, errors
     )
+    index_summary = validate_skill_eval_indexes(
+        args.plugin_skills,
+        args.corpus,
+        triggers,
+        outputs,
+        skills,
+        definitions,
+        errors,
+        args.installed_skills_root,
+        args.installed_corpus,
+    )
     trigger_summary = validate_triggers(triggers, coverage, skills, definitions, errors)
     output_summary = validate_outputs(outputs, coverage, skills, definitions, errors)
     cli_summary = validate_cli_contract(resolve_mdp_binary(args.mdp_bin), coverage, skills, errors)
     observed_summary = validate_observed_results(
-        args.results, triggers, outputs, coverage, skills, errors
+        args.results,
+        triggers,
+        outputs,
+        coverage,
+        skills,
+        errors,
+        expected_comparison_mode="with-skill",
+    )
+    if observed_summary is None and (args.baseline_results or args.previous_results):
+        errors.append("comparison results require a primary --results file")
+    comparison_summary = validate_comparison_results(
+        observed_summary,
+        args.baseline_results,
+        args.previous_results,
+        triggers,
+        outputs,
+        coverage,
+        skills,
+        errors,
     )
 
     result = {
@@ -790,8 +1066,10 @@ def main() -> int:
         "skills": skills,
         "trigger": trigger_summary,
         "output": output_summary,
+        "indexes": index_summary,
         "cli": cli_summary,
         "observed": observed_summary,
+        "comparison": comparison_summary,
         "errors": errors,
     }
     if args.output:

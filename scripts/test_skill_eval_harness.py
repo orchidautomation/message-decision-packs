@@ -86,6 +86,90 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
 
             self.assertTrue(any("symlink found" in error for error in errors))
 
+    def test_skill_indexes_are_complete_and_disjoint(self) -> None:
+        errors: list[str] = []
+        summary = HARNESS.validate_skill_eval_indexes(
+            ROOT / "plugin" / "skills",
+            ROOT / "plugin" / "skill-evals",
+            self.triggers,
+            self.outputs,
+            self.skills,
+            self.definitions,
+            errors,
+        )
+        self.assertEqual(summary["indexes"], 5)
+        self.assertEqual(errors, [])
+
+    def test_missing_index_and_installed_corpus_drift_fail(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-installed-evals-") as temp:
+            installed_skills = Path(temp) / "skills"
+            installed_corpus = Path(temp) / "skill-evals"
+            shutil.copytree(ROOT / "plugin" / "skills", installed_skills)
+            shutil.copytree(ROOT / "plugin" / "skill-evals", installed_corpus)
+            (installed_skills / "mdp" / "evals" / "index.json").unlink()
+            (installed_corpus / "coverage.json").write_text("{}\n", encoding="utf-8")
+            errors: list[str] = []
+            HARNESS.validate_skill_eval_indexes(
+                ROOT / "plugin" / "skills",
+                ROOT / "plugin" / "skill-evals",
+                self.triggers,
+                self.outputs,
+                self.skills,
+                self.definitions,
+                errors,
+                installed_skills,
+                installed_corpus,
+            )
+        self.assertTrue(any("installed skill-evals: content drift" in error for error in errors))
+        self.assertTrue(any("installed skills missing canonical file" in error for error in errors))
+
+    def test_recording_metadata_rejects_raw_fields_and_negative_metrics(self) -> None:
+        results = self.valid_host_results()
+        results["recording"]["elapsed_ms"] = -1
+        results["recording"]["transcript"] = "synthetic raw transcript must not be accepted"
+        with tempfile.TemporaryDirectory(prefix="mdp-host-results-") as temp:
+            path = Path(temp) / "results.json"
+            path.write_text(json.dumps(results), encoding="utf-8")
+            errors: list[str] = []
+            HARNESS.validate_observed_results(
+                path, self.triggers, self.outputs, self.coverage, self.skills, errors
+            )
+        self.assertTrue(any("bounded non-negative integer" in error for error in errors))
+        self.assertTrue(any("unsupported or raw fields" in error for error in errors))
+
+    def test_comparison_requires_matching_pair_id(self) -> None:
+        primary = self.valid_host_results()
+        baseline = copy.deepcopy(primary)
+        primary["recording"]["comparison_mode"] = "with-skill"
+        baseline["recording"]["comparison_mode"] = "baseline"
+        baseline["recording"]["comparison_id"] = "different-pair"
+        with tempfile.TemporaryDirectory(prefix="mdp-host-comparison-") as temp:
+            primary_path = Path(temp) / "primary.json"
+            baseline_path = Path(temp) / "baseline.json"
+            primary_path.write_text(json.dumps(primary), encoding="utf-8")
+            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+            errors: list[str] = []
+            primary_summary = HARNESS.validate_observed_results(
+                primary_path,
+                self.triggers,
+                self.outputs,
+                self.coverage,
+                self.skills,
+                errors,
+                expected_comparison_mode="with-skill",
+            )
+            HARNESS.validate_comparison_results(
+                primary_summary,
+                baseline_path,
+                None,
+                self.triggers,
+                self.outputs,
+                self.coverage,
+                self.skills,
+                errors,
+            )
+        self.assertTrue(any("comparison_id does not match" in error for error in errors))
+
     def test_host_misroute_and_failed_assertion_fail(self) -> None:
         self.coverage["host_observation_requirements"]["minimum_trigger_accuracy"] = 0.0
         self.coverage["host_observation_requirements"][
@@ -140,6 +224,14 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
             "host": "test-host",
             "model_id": "test-model",
             "recorded_at": "2026-07-13T00:00:00Z",
+            "recording": {
+                "comparison_mode": "with-skill",
+                "comparison_id": "synthetic-pair-1",
+                "source_revision": "synthetic-public-ref",
+                "elapsed_ms": 123,
+                "input_tokens": 100,
+                "output_tokens": 200,
+            },
             "trigger_observations": [
                 {
                     "case_id": case["id"],
