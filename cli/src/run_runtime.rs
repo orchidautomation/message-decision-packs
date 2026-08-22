@@ -306,6 +306,12 @@ struct RunDeadline {
     budget: Duration,
 }
 
+struct TransactionOutcome {
+    bundle_sha256: String,
+    receipt: RunReceiptV1,
+    diagnostics: Vec<RunDiagnostic>,
+}
+
 impl RunDeadline {
     fn new(timeout_ms: u64) -> Self {
         Self {
@@ -1089,7 +1095,11 @@ where
     set_private_directory(&transaction_dir)?;
     deadline.check()?;
 
-    let (bundle_sha256, receipt) = match execute_transaction(
+    let TransactionOutcome {
+        bundle_sha256,
+        receipt,
+        diagnostics,
+    } = match execute_transaction(
         request,
         &transaction_dir,
         &deadline,
@@ -1132,7 +1142,7 @@ where
     })?;
     drop(transaction_guard);
 
-    let authority_block = json!({
+    let mut authority_block = json!({
         "contract": "mdp.canonical-authority-block.v1",
         "execution_id": request.execution_id,
         "terminal_state": receipt.terminal_state,
@@ -1148,6 +1158,9 @@ where
         },
         "authority_notice": "Only this block and its hash-bound artifacts are authoritative; surrounding conversation commentary is outside the receipt."
     });
+    if !diagnostics.is_empty() {
+        authority_block["diagnostics"] = serde_json::to_value(&diagnostics)?;
+    }
     let authority = SourceAuthority::from_run(
         receipt.terminal_state,
         receipt
@@ -1200,7 +1213,7 @@ fn execute_transaction<F, D>(
     deadline: &RunDeadline,
     before_post_check: F,
     driver: D,
-) -> Result<(String, RunReceiptV1)>
+) -> Result<TransactionOutcome>
 where
     F: FnOnce() -> Result<()>,
     D: FnOnce(&DriverRequestV2, &crate::run_contracts::DriverIdentity) -> Result<DriverResultV2>,
@@ -1231,7 +1244,11 @@ where
     deadline.check()?;
     let staged_snapshot = pack_content_snapshot(&staged_pack)?;
     if source_snapshot != staged_snapshot {
-        return Err(anyhow!("pack changed while it was being staged"));
+        return Err(run_failure_with_diagnostic(
+            RunFailureKind::PolicyBlocked,
+            "source-integrity-failed",
+            fallback_policy_diagnostic("source-integrity-failed"),
+        ));
     }
     let manifest = read_manifest(&staged_pack)?;
     let profile_id = manifest
@@ -1279,7 +1296,11 @@ where
         verify_sources_unchanged(std::slice::from_ref(prompt))?;
     }
     if pack_content_snapshot(source_pack)? != source_snapshot {
-        return Err(anyhow!("pack changed while declared inputs were staged"));
+        return Err(run_failure_with_diagnostic(
+            RunFailureKind::PolicyBlocked,
+            "source-integrity-failed",
+            fallback_policy_diagnostic("source-integrity-failed"),
+        ));
     }
 
     let policy_hash = canonical_json_sha256_for_domain(
@@ -1584,14 +1605,33 @@ where
     }
     let staged_pack_after = pack_content_snapshot(&staged_pack)?;
     let source_pack_after = pack_content_snapshot(source_pack)?;
-    let sources_unchanged = verify_sources_unchanged(&staged).is_ok()
-        && staged_prompt
-            .as_ref()
-            .is_none_or(|prompt| verify_sources_unchanged(std::slice::from_ref(prompt)).is_ok());
-    if staged_pack_after != staged_snapshot
-        || source_pack_after != source_snapshot
-        || !sources_unchanged
-    {
+    let mut diagnostics = Vec::new();
+    let staged_sources_unchanged = match check_sources_unchanged(&staged) {
+        Ok(()) => true,
+        Err(diagnostic) => {
+            diagnostics.push(diagnostic);
+            false
+        }
+    };
+    let prompt_unchanged =
+        staged_prompt.as_ref().is_none_or(|prompt| {
+            match check_sources_unchanged(std::slice::from_ref(prompt)) {
+                Ok(()) => true,
+                Err(diagnostic) => {
+                    if diagnostics.is_empty() {
+                        diagnostics.push(diagnostic);
+                    }
+                    false
+                }
+            }
+        });
+    let sources_unchanged = staged_sources_unchanged && prompt_unchanged;
+    let pack_unchanged =
+        staged_pack_after == staged_snapshot && source_pack_after == source_snapshot;
+    if !pack_unchanged || !sources_unchanged {
+        if diagnostics.is_empty() {
+            diagnostics.push(fallback_policy_diagnostic("source-integrity-failed"));
+        }
         terminal_state = TerminalState::NoDraftAuditIncomplete;
         success_values = None;
     }
@@ -1721,7 +1761,11 @@ where
             "internal run verification failed before artifact publication"
         ));
     }
-    Ok((bundle_sha256, receipt))
+    Ok(TransactionOutcome {
+        bundle_sha256,
+        receipt,
+        diagnostics,
+    })
 }
 
 fn gtm_lineage_schema_ids(signal_aware: bool) -> (&'static str, &'static str) {
@@ -3248,29 +3292,42 @@ fn stage_local_artifact(
     })
 }
 
-fn verify_sources_unchanged(inputs: &[StagedInput]) -> Result<()> {
+fn check_sources_unchanged(inputs: &[StagedInput]) -> std::result::Result<(), RunDiagnostic> {
     for input in inputs {
-        let metadata = fs::symlink_metadata(&input.source_path)?;
+        let metadata = fs::symlink_metadata(&input.source_path)
+            .map_err(|_| fallback_policy_diagnostic("source-integrity-failed"))?;
         let source_bytes = read_bounded(
             &input.source_path,
             input.authority.byte_count,
             "declared input",
-        )?;
+        )
+        .map_err(|_| fallback_policy_diagnostic("source-integrity-failed"))?;
         let staged_bytes = read_bounded(
             &input.staged_path,
             input.authority.byte_count,
             "staged input",
-        )?;
+        )
+        .map_err(|_| fallback_policy_diagnostic("source-integrity-failed"))?;
         if metadata.file_type().is_symlink()
             || !metadata.is_file()
             || metadata.len() != input.authority.byte_count
             || sha256_hex(&source_bytes) != input.initial_sha256
             || sha256_hex(&staged_bytes) != input.initial_sha256
         {
-            return Err(anyhow!("declared input mutated during execution"));
+            return Err(fallback_policy_diagnostic("source-integrity-failed"));
         }
     }
     Ok(())
+}
+
+fn verify_sources_unchanged(inputs: &[StagedInput]) -> Result<()> {
+    check_sources_unchanged(inputs).map_err(|diagnostic| {
+        run_failure_with_diagnostic(
+            RunFailureKind::PolicyBlocked,
+            "source-integrity-failed",
+            diagnostic,
+        )
+    })
 }
 
 fn required_input<'a>(inputs: &'a [StagedInput], name: &str) -> Result<&'a StagedInput> {
@@ -4445,6 +4502,14 @@ mod tests {
         })
         .unwrap();
         assert_eq!(result.terminal_state, TerminalState::NoDraftAuditIncomplete);
+        assert_eq!(
+            result.authority_block["diagnostics"][0]["code"],
+            "stale-binding"
+        );
+        assert_eq!(
+            result.authority_block["diagnostics"][0]["stage"],
+            "source-integrity"
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -4477,6 +4542,10 @@ mod tests {
         })
         .unwrap();
         assert_eq!(result.terminal_state, TerminalState::NoDraftAuditIncomplete);
+        assert_eq!(
+            result.authority_block["diagnostics"][0]["code"],
+            "stale-binding"
+        );
         let receipt: serde_json::Value =
             serde_json::from_slice(&fs::read(run.join("run-receipt.json")).unwrap()).unwrap();
         assert!(receipt["output"].is_null());
