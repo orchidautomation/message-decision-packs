@@ -33,6 +33,7 @@ use crate::run_contracts::{
     PROVIDER_REQUEST_NOT_OBSERVED_V1, PROVIDER_REQUEST_RELATION_V1, RUN_BUNDLE_V1,
     RUN_EXECUTION_V1, RUN_RECEIPT_V1, RUN_REQUEST_V1, RUN_VERIFICATION_V1, RUNNER_AUDIT_V1,
 };
+use crate::run_request_compiler::RUN_REQUEST_COMPILE_V1;
 use crate::runtime_context::runtime_context_schema;
 use serde_json::{Value, json};
 
@@ -117,6 +118,7 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::RunReceipt => run_receipt_schema(),
         SchemaTarget::RunnerAudit => runner_audit_schema(),
         SchemaTarget::RunRequestV1 => run_request_v1_schema(),
+        SchemaTarget::RunRequestCompileV1 => run_request_compile_v1_schema(),
         SchemaTarget::RunBundleV1 => run_bundle_v1_schema(),
         SchemaTarget::DriverRequestV1 => driver_request_v1_schema(),
         SchemaTarget::DriverResultV1 => driver_result_v1_schema(),
@@ -217,6 +219,28 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         }
         SchemaTarget::Skills => skills_schema(),
     }
+}
+
+fn run_request_compile_v1_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Offline Run Request Compile v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "status", "execution_id", "job", "operation", "request_sha256", "next_command"],
+        "properties": {
+            "contract": {"const": RUN_REQUEST_COMPILE_V1},
+            "status": {"const": "ready"},
+            "execution_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
+            "job": {"type": "string", "minLength": 1},
+            "operation": {"type": "string", "minLength": 1},
+            "request_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "next_command": {"type": "string", "minLength": 1},
+            "manifest": {"type": "object"},
+            "request": run_request_v1_schema(),
+            "diagnostics": {"type": "array", "items": {"type": "object", "additionalProperties": false}}
+        }
+    })
 }
 
 pub(crate) fn prompt_output_schema_for_ref(schema_ref: &str) -> Option<Value> {

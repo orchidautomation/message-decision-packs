@@ -52,11 +52,14 @@ host is useful. Running the decision in that same conversation cannot prove
 that prior messages, host instructions, discovered files, tools, or retrieval
 were excluded. Telling the model to ignore earlier context is not isolation.
 
-For an authoritative local run, create an exact `mdp.run-request.v1` file and
-launch the shared runtime:
+For an authoritative local run, first compile the exact request offline from a
+selected job/step and declared input paths, then launch the shared runtime:
 
 ```bash
-mdp --json schema run-request-v1
+mdp --json prepare-run --dir <pack-root> --job <job-id> \
+  --operation model:<job-id>/<phase> --model <model> \
+  --input <logical-name>=<path> --out <run-request.json> \
+  --manifest-out <compile-manifest.json>
 mdp --json run --request <run-request.json> --out-dir <new-run-directory>
 mdp --json verify-run \
   --bundle <new-run-directory>/run-bundle.json \

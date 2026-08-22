@@ -17,6 +17,7 @@ mod prospect_validation;
 mod routing;
 mod run_contracts;
 mod run_replay;
+mod run_request_compiler;
 mod run_runtime;
 mod runtime_context;
 mod scope;

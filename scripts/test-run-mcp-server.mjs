@@ -164,7 +164,7 @@ const waitForFile = async (path) => {
   throw new Error(`fixture did not create ${path}`)
 }
 
-test('lists the profile-neutral run and verification tools and identifies MCP as transport only', async (t) => {
+test('lists preparation, run, and verification tools and identifies MCP as transport only', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const replies = await rpc(fixtureCli(root), [
@@ -173,7 +173,7 @@ test('lists the profile-neutral run and verification tools and identifies MCP as
     toolCall(3, 'mdp_run_tools'),
   ])
   assert.equal(replies[0].result.serverInfo.name, 'message-decision-packs-runner')
-  assert.deepEqual(replies[1].result.tools.map((tool) => tool.name), ['mdp_run_tools', 'mdp_run', 'mdp_verify_run'])
+  assert.deepEqual(replies[1].result.tools.map((tool) => tool.name), ['mdp_run_tools', 'mdp_prepare_run', 'mdp_run', 'mdp_verify_run'])
   assert.deepEqual(replies[2].result.structuredContent.mcp_authority, [])
   assert.match(replies[2].result.structuredContent.guardrails.join(' '), /does not prove fresh context/)
 })

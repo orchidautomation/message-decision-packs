@@ -112,7 +112,24 @@ Use [canonical runner support matrix](https://github.com/orchidautomation/messag
 
 Do not reproduce these decisions manually in a skill.
 
-## Clean Runs And Decision Authority
+## Offline Preparation, Clean Runs, And Decision Authority
+
+Use `prepare-run` for the normal generative path. It resolves the canonical
+model step, reads exact declared local files, derives all request identities,
+and emits the unchanged `mdp.run-request.v1` without a provider call:
+
+```bash
+mdp --json prepare-run --dir PACK_ROOT --job JOB \
+  --operation model:JOB/PHASE --model MODEL \
+  --input LOGICAL_NAME=PATH --out RUN_REQUEST_JSON \
+  --manifest-out COMPILE_MANIFEST_JSON
+```
+
+The default output is concise; `--full` includes the compiler manifest and
+request projection. Provider authorization is explicitly
+`required-at-execution`. Do not hand-author execution IDs, prompt paths,
+pack-release IDs, policy hashes, driver hashes, or model-parameter hashes.
+Hand-authored requests are compatibility/negative-test fixtures only.
 
 Use one file-oriented v1 request for both proposal and GTM:
 

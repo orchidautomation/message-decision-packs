@@ -162,11 +162,15 @@ Inspect `data.model_steps`. Job-bound normalization appears before the
 job-owned generation or review step. Unbound extraction and authoring prompts
 are not executable model steps.
 
-Create one closed `mdp.run-request.v1` whose `operation` equals the selected
-step ID, then run and verify it:
+Compile one closed `mdp.run-request.v1` offline from exact declared paths.
+Preparation derives IDs, prompt/input authority, policy, and runtime identity;
+it never reads provider credentials or executes a model call:
 
 ```bash
-mdp --json schema run-request-v1
+mdp --json prepare-run --dir PACK_ROOT --job JOB_ID \
+  --operation model:JOB_ID/PHASE --model MODEL \
+  --input LOGICAL_NAME=PATH --out RUN_REQUEST.json \
+  --manifest-out COMPILE_MANIFEST.json
 mdp --json run --request RUN_REQUEST.json --out-dir NEW_RUN_DIRECTORY
 mdp --json verify-run \
   --bundle NEW_RUN_DIRECTORY/run-bundle.json \
@@ -194,8 +198,8 @@ argument. Pack validation, step discovery, deterministic runs, and synthetic
 mock/dry-run tests are key-free; they do not prove a real provider call.
 
 For MCP-capable hosts, `scripts/mdp-run-mcp-server.mjs` exposes path-only
-`mdp_run` and read-only `mdp_verify_run` over the same CLI. MCP is transport
-only and adds no execution or isolation authority.
+`mdp_prepare_run`, `mdp_run`, and read-only `mdp_verify_run` over the same CLI.
+MCP is transport only and adds no compile, execution, or isolation authority.
 
 When a clean run returns `no-draft:policy-blocked`, inspect the bounded
 `authority_block.diagnostics` entries for the stable stage, gate, category,

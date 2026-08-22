@@ -46,9 +46,19 @@ infer missing steps, recover redacted prose, or upgrade a blocked/unavailable
 trace. Use `--format mermaid` only as a display adapter over that same trace.
 Do not claim that hash or receipt agreement proves source truth.
 
-For a new authoritative execution, freeze the pack and declared inputs into an
-`mdp.run-request.v1` file, then launch the shared runtime outside the authoring
-conversation:
+For a new authoritative execution, compile the closed request offline from the
+pack's selected job/step and exact declared input files. Preparation never
+reads provider credentials or calls a provider:
+
+```bash
+mdp --json prepare-run --dir <pack-root> --job <job-id> \
+  --operation model:<job-id>/<phase> --model <model> \
+  --input <logical-name>=<path> --out <run-request.json> \
+  --manifest-out <compile-manifest.json>
+```
+
+Review the concise/full compile result, then launch the shared runtime as a
+separate explicit action outside the authoring conversation:
 
 ```bash
 mdp --json run --request <run-request.json> --out-dir <new-run-directory>
