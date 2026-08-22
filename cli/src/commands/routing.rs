@@ -85,7 +85,9 @@ pub(crate) fn route_budget_preflight_query_command(
             object.insert("strict_warnings".to_string(), Value::Array(strict_warnings));
         }
     }
-    Ok(project_route_budget(data, &query))
+    let projected = project_route_budget(data, &query);
+    crate::commands::schemas::validate_route_budget_full_output(&projected)?;
+    Ok(projected)
 }
 
 #[cfg(test)]

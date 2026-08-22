@@ -343,6 +343,15 @@ trap 'rm -rf "$proposal_fixture"; cleanup' EXIT
 "$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
 installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
 "$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-init.json
+source_route_budget_bin="$ROOT/cli/target/debug/mdp"
+if [ ! -x "$source_route_budget_bin" ]; then
+  echo "Route-budget installed parity requires a source CLI binary: $source_route_budget_bin" >&2
+  exit 1
+fi
+"$node_bin" "$ROOT/scripts/test-route-budget-installed-parity.mjs" \
+  --source-bin "$source_route_budget_bin" \
+  --installed-bin "$mdp_bin" \
+  --dir "$installed_gtm_fixture"
 installed_runtime_version="$("$mdp_bin" --version | awk '{print $2}')"
 MDP_RUNTIME_VERSION="$installed_runtime_version" \
 MDP_BIN="$mdp_bin" \

@@ -10,6 +10,9 @@ pub(crate) fn print_output(
 ) -> Result<()> {
     if summary_mode {
         let summary = summarize(command, &data);
+        if command == "route-budget" {
+            crate::commands::schemas::validate_route_budget_summary_output(&summary)?;
+        }
         if json_mode {
             println!(
                 "{}",

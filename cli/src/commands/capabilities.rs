@@ -58,6 +58,22 @@ pub(crate) fn capabilities() -> Value {
             {"name": "--json", "description": "Emit stable machine-readable JSON"},
             {"name": "--summary", "description": "Emit a compact status summary"}
         ],
+        "route_budget_contracts": {
+            "full": {
+                "contract": "mdp.route-budget.v0",
+                "schema_target": "route-budget",
+                "authority": "complete evaluated route matrix",
+                "selectors": ["--job", "--persona"]
+            },
+            "summary": {
+                "contract": "mdp.route-budget-summary.v1",
+                "schema_target": "route-budget-summary-v1",
+                "authority": "bounded projection of full route-budget.v0",
+                "selector_behavior": "same exact selectors; route arrays and entry bodies omitted"
+            },
+            "canonical_job_field": "job_id",
+            "compatibility_alias": {"field": "job", "equals": "job_id", "status": "deprecated-v0"}
+        },
         "prompt_contracts": {
             "prompt_format": PROMPT_FORMAT_VERSION,
             "prompt_formats": [PROMPT_FORMAT_VERSION, PROMPT_FORMAT_V1],
@@ -398,6 +414,18 @@ mod tests {
     fn capabilities_exposes_agent_driving_contracts() {
         let result = capabilities();
         assert_eq!(result["contract"], "mdp.capabilities.v0");
+        assert_eq!(
+            result["route_budget_contracts"]["full"]["contract"],
+            "mdp.route-budget.v0"
+        );
+        assert_eq!(
+            result["route_budget_contracts"]["summary"]["contract"],
+            "mdp.route-budget-summary.v1"
+        );
+        assert_eq!(
+            result["route_budget_contracts"]["canonical_job_field"],
+            "job_id"
+        );
         assert_eq!(
             result["model_step_contracts"]["resolution"],
             MODEL_STEP_RESOLUTION_V1

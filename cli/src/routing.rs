@@ -447,6 +447,7 @@ pub(crate) fn route_budget_preflight(root: &Path, manifest: &Manifest) -> Result
                 "job_id": job.id,
                 "job": job.id,
                 "status": status,
+                "generation_unassessed": false,
                 "budget": {
                     "max_entries": max_entries,
                     "max_bytes": max_bytes,
@@ -545,10 +546,17 @@ pub(crate) fn project_route_budget(mut data: Value, query: &RouteBudgetQuery) ->
                     .any(|diagnostic| diagnostic.as_str() == Some("near_context_budget"))
             })
             .count();
-        let unassessed_count = selected
+        let unassessed_jobs = selected
             .iter()
             .filter(|route| route["generation_unassessed"] == true)
-            .count();
+            .filter_map(|route| {
+                route["job_id"]
+                    .as_str()
+                    .or_else(|| route["job"].as_str())
+                    .map(str::to_string)
+            })
+            .collect::<BTreeSet<_>>();
+        let unassessed_count = unassessed_jobs.len();
         let mut strict_warnings = Vec::new();
         if strict_enabled && near_count > 0 {
             strict_warnings.push(json!({
@@ -581,6 +589,10 @@ pub(crate) fn project_route_budget(mut data: Value, query: &RouteBudgetQuery) ->
             json!(overflow_count == 0 && cap_count == 0 && strict_warnings.is_empty()),
         );
         object.insert("strict_warnings".to_string(), Value::Array(strict_warnings));
+        let warning_count = object["strict_warnings"].as_array().map_or(0, Vec::len);
+        if let Some(strict) = object.get_mut("strict").and_then(Value::as_object_mut) {
+            strict.insert("warning_count".to_string(), json!(warning_count));
+        }
         object.insert(
             "query".to_string(),
             json!({
@@ -3773,6 +3785,32 @@ mod tests {
         assert!(summary["optional_excluded_count"].as_u64().is_some());
         assert!(summary.to_string().len() < 6_000);
 
+        let unassessed = json!({
+            "contract": "mdp.route-budget.v0",
+            "valid": false,
+            "strict": {"enabled": true, "warnings_fail": true, "warning_count": 2},
+            "pack_id": "unassessed",
+            "overflow_count": 0,
+            "route_card_cap_exclusion_count": 0,
+            "near_budget_count": 0,
+            "unassessed_generation_count": 2,
+            "query": {"job_id": null, "persona": null, "matched_route_count": 2},
+            "strict_warnings": [],
+            "routes": [
+                {"job_id": "legacy-job", "job": "legacy-job", "persona": "Buyer", "status": "unassessed", "generation_unassessed": true, "diagnostics": ["context_budget_not_declared"]},
+                {"job_id": "legacy-job", "job": "legacy-job", "persona": "PMM", "status": "unassessed", "generation_unassessed": true, "diagnostics": ["context_budget_not_declared"]}
+            ]
+        });
+        let unassessed_projection = project_route_budget(
+            unassessed,
+            &RouteBudgetQuery {
+                job_id: None,
+                persona: None,
+            },
+        );
+        assert_eq!(unassessed_projection["unassessed_generation_count"], 1);
+        assert_eq!(unassessed_projection["strict"]["warning_count"], 1);
+
         let required_only = json!({
             "contract": "mdp.route-budget.v0",
             "valid": false,
@@ -3794,7 +3832,7 @@ mod tests {
                 "allocation": {"optional_excluded_count": 0},
                 "largest_contributing_cards": [{
                     "card_id": "claims",
-                    "card_kind": "claims",
+                    "card_kind": "avoid-rules",
                     "entry_count": 4,
                     "required_entry_count": 4,
                     "optional_entry_count": 0,

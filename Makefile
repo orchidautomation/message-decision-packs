@@ -5,7 +5,7 @@ PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validat
 PYTHONDONTWRITEBYTECODE ?= 1
 export PYTHONDONTWRITEBYTECODE
 
-.PHONY: validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget install-cli demo
+.PHONY: validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity install-cli demo
 
 validate: validate-cli validate-authority-conformance validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget
 
@@ -23,6 +23,12 @@ validate-route-budget:
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-ready.json'))['data']; assert d['valid'] is True and d['overflow_count']==0, 'ready fixture should pass strict preflight'"
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow-route.json'))['data']; assert d['draft_status']=='blocked'; m=d['entry_route']['minimality']; assert 'context_entry_budget_exceeded' in m['diagnostics']"
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-ready-brief.json'))['data']; assert d['context']['minimality']['status']=='ready', 'ready fixture minimality should be ready; draft_status may be no-draft under the MDP-215 DIC boundary for a detached prospect'"
+
+validate-route-budget-installed-parity:
+	node scripts/build-route-budget-fixtures.mjs
+	cd cli && $(CARGO) build
+	@test -n "$(MDP_INSTALLED_BIN)" || (echo 'Set MDP_INSTALLED_BIN to an installed CLI binary.' >&2; exit 1)
+	node scripts/test-route-budget-installed-parity.mjs --source-bin cli/target/debug/mdp --installed-bin "$(MDP_INSTALLED_BIN)" --dir examples/route-budget/overflow
 
 
 validate-cli:
@@ -154,6 +160,7 @@ validate-installers:
 	node --check scripts/mdp-native-normalize-openai.mjs
 	node --check scripts/mdp-proposal-runner.mjs
 	node --check scripts/mdp-proposal-evidence-harness.mjs
+	node --check scripts/test-route-budget-installed-parity.mjs
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	node --check scripts/lib/process-supervisor.mjs
 	node --check scripts/mdp-run-mcp-server.mjs
