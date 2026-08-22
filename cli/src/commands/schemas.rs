@@ -159,6 +159,8 @@ pub(crate) fn schema(target: SchemaTarget) -> Value {
         SchemaTarget::HumanBrief => human_brief_schema(),
         SchemaTarget::RuntimeContext => runtime_context_schema(),
         SchemaTarget::RoutedContextV1 => routed_context_schema(),
+        SchemaTarget::RouteBudget => route_budget_schema(),
+        SchemaTarget::RouteBudgetSummaryV1 => route_budget_summary_schema(),
         SchemaTarget::DecisionInput => decision_input_envelope_schema(),
         SchemaTarget::SourceBinding => source_binding_schema(),
         SchemaTarget::Prospect => {
@@ -3619,6 +3621,81 @@ fn context_schema() -> Value {
     schema
 }
 
+fn route_budget_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Route Budget v0",
+        "description": "Full route-budget authority. The legacy job field is deprecated and must equal job_id.",
+        "type": "object",
+        "required": ["contract", "valid", "pack_id", "route_count", "routes"],
+        "properties": {
+            "contract": {"const": "mdp.route-budget.v0"},
+            "valid": {"type": "boolean"},
+            "strict": {"type": "object"},
+            "pack_id": {"type": "string"},
+            "scope": {"const": "default"},
+            "route_count": {"type": "integer", "minimum": 0},
+            "overflow_count": {"type": "integer", "minimum": 0},
+            "route_card_cap_exclusion_count": {"type": "integer", "minimum": 0},
+            "near_budget_count": {"type": "integer", "minimum": 0},
+            "unassessed_generation_count": {"type": "integer", "minimum": 0},
+            "query": {"type": "object"},
+            "strict_warnings": {"type": "array"},
+            "routes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["persona", "job_id", "job", "status", "diagnostics"],
+                    "properties": {
+                        "persona": {"type": ["string", "null"]},
+                        "job_id": {"type": "string", "minLength": 1},
+                        "job": {"type": "string", "minLength": 1, "description": "Deprecated v0 alias; must equal job_id."},
+                        "status": {"enum": ["ready", "blocked", "unassessed"]},
+                        "budget": {"type": ["object", "null"]},
+                        "selected_count": {"type": ["integer", "null"]},
+                        "excluded_count": {"type": ["integer", "null"]},
+                        "diagnostics": {"type": "array", "items": {"type": "string"}},
+                        "reason_distribution": {"type": "object"},
+                        "excluded_reason_distribution": {"type": "object"},
+                        "largest_contributing_cards": {"type": "array"},
+                        "context_sha256": {"type": ["string", "null"]},
+                        "route_card_cap": {"type": ["object", "null"]},
+                        "allocation": {"type": ["object", "null"]}
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn route_budget_summary_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MDP Route Budget Summary v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "source_contract", "valid", "strict", "pack_id", "query", "route_count", "route_status_counts", "tightest_headroom", "top_blockers", "top_contributors", "next_safe_action"],
+        "properties": {
+            "contract": {"const": "mdp.route-budget-summary.v1"},
+            "source_contract": {"const": "mdp.route-budget.v0"},
+            "valid": {"type": "boolean"},
+            "strict": {"type": "object"},
+            "pack_id": {"type": "string"},
+            "query": {"type": "object"},
+            "route_count": {"type": "integer", "minimum": 0},
+            "route_status_counts": {"type": "object", "required": ["ready", "blocked", "unassessed"], "properties": {"ready": {"type": "integer"}, "blocked": {"type": "integer"}, "unassessed": {"type": "integer"}}, "additionalProperties": false},
+            "overflow_count": {"type": "integer", "minimum": 0},
+            "route_card_cap_exclusion_count": {"type": "integer", "minimum": 0},
+            "near_budget_count": {"type": "integer", "minimum": 0},
+            "unassessed_generation_count": {"type": "integer", "minimum": 0},
+            "tightest_headroom": {"type": ["object", "null"]},
+            "top_blockers": {"type": "array", "maxItems": 5, "items": {"type": "object", "required": ["code", "route_count"], "properties": {"code": {"type": "string"}, "route_count": {"type": "integer"}}, "additionalProperties": false}},
+            "top_contributors": {"type": "array", "maxItems": 5, "items": {"type": "object", "required": ["card_id", "card_kind", "route_count", "entry_count", "canonical_bytes"], "properties": {"card_id": {"type": "string"}, "card_kind": {"type": "string"}, "route_count": {"type": "integer"}, "entry_count": {"type": "integer"}, "canonical_bytes": {"type": "integer"}}, "additionalProperties": false}},
+            "next_safe_action": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["none", "narrow_applicability", "review_required_authority", "declare_context_budget"]}, "do_not": {"type": "array", "items": {"type": "string"}}, "preserve_guardrails": {"const": true}}, "additionalProperties": false}
+        }
+    })
+}
+
 fn route_card_cap_schema() -> Value {
     json!({
         "type": "object",
@@ -4595,6 +4672,25 @@ mod tests {
     use jsonschema::draft202012;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn route_budget_schemas_are_versioned_and_summary_excludes_route_arrays() {
+        let full = schema(SchemaTarget::RouteBudget);
+        let summary = schema(SchemaTarget::RouteBudgetSummaryV1);
+        draft202012::new(&full).expect("route-budget schema should compile");
+        draft202012::new(&summary).expect("route-budget summary schema should compile");
+        assert_eq!(
+            full["properties"]["contract"]["const"],
+            "mdp.route-budget.v0"
+        );
+        assert_eq!(
+            summary["properties"]["contract"]["const"],
+            "mdp.route-budget-summary.v1"
+        );
+        assert!(summary["properties"].get("routes").is_none());
+        assert_eq!(summary["properties"]["top_blockers"]["maxItems"], 5);
+        assert_eq!(summary["properties"]["top_contributors"]["maxItems"], 5);
+    }
 
     #[test]
     fn conformance_schemas_are_closed_versioned_and_compile() {

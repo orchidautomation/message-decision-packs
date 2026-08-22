@@ -12,10 +12,14 @@ validate: validate-cli validate-authority-conformance validate-run-v1-golden val
 validate-route-budget:
 	node scripts/build-route-budget-fixtures.mjs
 	cd cli && $(CARGO) run -- --json route-budget --dir ../examples/route-budget/overflow >/tmp/mdp-route-budget-overflow.json || true
+	cd cli && $(CARGO) run -- --json --summary route-budget --dir ../examples/route-budget/overflow >/tmp/mdp-route-budget-overflow-summary.json || true
+	cd cli && $(CARGO) run -- --json route-budget --dir ../examples/route-budget/overflow --job outbound-copy-brief --persona Buyer >/tmp/mdp-route-budget-overflow-filter.json || true
 	cd cli && $(CARGO) run -- --json route-budget --strict --dir ../examples/route-budget/ready >/tmp/mdp-route-budget-ready.json
 	cd cli && $(CARGO) run -- --json route --entries --dir ../examples/route-budget/overflow --persona Buyer --job outbound-copy-brief >/tmp/mdp-route-budget-overflow-route.json
 	cd cli && $(CARGO) run -- --json brief --context --dry-run --dir ../examples/route-budget/ready --prospect ../examples/route-budget/ready/synthetic-prospect.json --job outbound-copy-brief >/tmp/mdp-route-budget-ready-brief.json || true
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow.json'))['data']; assert d['valid'] is False and d['overflow_count']>0, 'overflow fixture should fail preflight'"
+	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow-summary.json'))['summary']; assert d['contract']=='mdp.route-budget-summary.v1' and 'routes' not in d and d['route_count']==12 and d['tightest_headroom']['utilization_percent']>100 and d['next_safe_action']['kind'] in ('narrow_applicability','review_required_authority'), 'summary should be bounded and actionable'"
+	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow-filter.json'))['data']; assert d['route_count']==1 and d['query']['job_id']=='outbound-copy-brief' and d['query']['persona']=='Buyer' and d['routes'][0]['job_id']==d['routes'][0]['job'], 'exact filter projection should preserve job_id alias'"
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-ready.json'))['data']; assert d['valid'] is True and d['overflow_count']==0, 'ready fixture should pass strict preflight'"
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-overflow-route.json'))['data']; assert d['draft_status']=='blocked'; m=d['entry_route']['minimality']; assert 'context_entry_budget_exceeded' in m['diagnostics']"
 	$(PYTHON) -c "import json; d=json.load(open('/tmp/mdp-route-budget-ready-brief.json'))['data']; assert d['context']['minimality']['status']=='ready', 'ready fixture minimality should be ready; draft_status may be no-draft under the MDP-215 DIC boundary for a detached prospect'"

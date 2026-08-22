@@ -388,6 +388,30 @@ import json, pathlib, sys
 payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
 assert payload["data"]["valid"] is True
 PY
+gtm_budget_summary="$("$mdp_bin" --json --summary route-budget --dir "$installed_gtm_fixture")"
+printf '%s\n' "$gtm_budget_summary" >"$proposal_fixture/installed-gtm-route-budget-summary.json"
+python3 - "$proposal_fixture/installed-gtm-route-budget-summary.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+summary = payload["summary"]
+assert summary["contract"] == "mdp.route-budget-summary.v1"
+assert "routes" not in summary
+assert "tightest_headroom" in summary
+assert "next_safe_action" in summary
+PY
+gtm_budget_filter="$("$mdp_bin" --json route-budget --dir "$installed_gtm_fixture" --job outbound-copy-brief --persona PMM)"
+printf '%s\n' "$gtm_budget_filter" >"$proposal_fixture/installed-gtm-route-budget-filter.json"
+python3 - "$proposal_fixture/installed-gtm-route-budget-filter.json" <<'PY'
+import json, pathlib, sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+data = payload["data"]
+assert data["query"]["job_id"] == "outbound-copy-brief"
+assert data["query"]["persona"] == "PMM"
+assert data["route_count"] == 1
+assert data["routes"][0]["job_id"] == data["routes"][0]["job"]
+PY
 "$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-gaps.json
 for job_id in prospect-fit-or-brief outbound-copy-brief outbound-copy-review; do
   requirements_json="$proposal_fixture/installed-gtm-$job_id-requirements.json"

@@ -56,6 +56,18 @@ handoff. The preflight never raises `max_entries` or `max_bytes`, truncates,
 or ranks away required guardrails; the fix is narrower structured
 applicability.
 
+For bounded triage, `mdp --json --summary route-budget --dir PACK_DIR` emits
+`mdp.route-budget-summary.v1`: validity, ready/blocked/unassessed counts,
+entry and byte utilization percentages, bounded blocker/contributor metadata,
+and one safe next action. It contains no route array or entry body. Exact
+projections are available with `--job JOB_ID`, `--persona PERSONA`, or both;
+selectors are manifest-owned exact matches and the intersection is ANDed.
+The full output remains the authority. New route records use canonical
+`job_id`; the deprecated v0 `job` alias is retained and must be equal. When
+overflow is not safely narrowable, the summary says `review_required_authority`;
+operators must never truncate, drop guardrails, inflate budgets, or open a full
+card to hide an overflow.
+
 For a ready governed generation or review job, let MDP write the exact canonical `context.model_context` bytes and supply that file as the required `routed_context` prompt input:
 
 ```bash

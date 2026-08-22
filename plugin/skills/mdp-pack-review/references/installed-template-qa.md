@@ -24,3 +24,14 @@ For each template:
 For the GTM template, initialize a second clean root with explicit `--target-name`, `--target-kind`, at least one alias, and an excluded prior-target term. Verify the target manifest, target-aware generated fixtures, readable brief output, strict validation, and the cross-target force-overwrite refusal.
 
 Confirm installed skill IDs equal the five CLI `packaged_skill_ids`. Packaging byte fidelity is validated separately by the repository packaging gate.
+Route-budget installed proof should compare the source and installed CLI for
+the bounded summary and exact selectors as well as the full authority:
+
+```bash
+mdp --json --summary route-budget --dir PACK_ROOT
+mdp --json route-budget --dir PACK_ROOT --job JOB_ID --persona PERSONA
+```
+
+Assert that summary output has no `routes` array, includes utilization and a
+safe action, and that selected full routes expose equal `job_id` and deprecated
+`job` values.

@@ -1,3 +1,4 @@
+use crate::routing::route_budget_summary_projection;
 use anyhow::Result;
 use serde_json::{Value, json};
 
@@ -270,37 +271,7 @@ fn summarize(command: &str, data: &Value) -> Value {
             "minimality": data["entry_route"]["minimality"],
             "eval_fixture": data["eval_fixture"]
         }),
-        "route-budget" => json!({
-            "contract": data["contract"],
-            "valid": data["valid"],
-            "strict": data["strict"],
-            "pack_id": data["pack_id"],
-            "route_count": data["route_count"],
-            "overflow_count": data["overflow_count"],
-            "route_card_cap_exclusion_count": data["route_card_cap_exclusion_count"],
-            "near_budget_count": data["near_budget_count"],
-            "unassessed_generation_count": data["unassessed_generation_count"],
-            "routes": data["routes"].as_array().map(|routes| routes.iter().map(|route| {
-                let mut summary = json!({
-                    "persona": route["persona"],
-                    "job": route["job"],
-                    "status": route["status"],
-                    "budget": route["budget"],
-                    "selected_count": route["selected_count"],
-                    "excluded_count": route["excluded_count"],
-                    "diagnostics": route["diagnostics"],
-                    "reason_distribution": route["reason_distribution"],
-                    "excluded_reason_distribution": route["excluded_reason_distribution"],
-                    "largest_contributing_cards": route["largest_contributing_cards"],
-                    "route_card_cap": route["route_card_cap"]
-                });
-                if !route["allocation"].is_null() {
-                    summary["allocation"] = route["allocation"].clone();
-                }
-                summary
-            }).collect::<Vec<_>>()).unwrap_or_default(),
-            "strict_warnings": data["strict_warnings"]
-        }),
+        "route-budget" => route_budget_summary_projection(data),
         "sample-leads" => json!({
             "contract": data["contract"],
             "persona": data["inputs"]["persona"],
@@ -536,7 +507,9 @@ pub(crate) fn print_error(json_mode: bool, err: anyhow::Error) -> Result<()> {
 
 fn classify_error(message: &str, details: &[String]) -> &'static str {
     let lower = format!("{} {}", message, details.join(" ")).to_lowercase();
-    if lower.contains("unrecognized subcommand")
+    if lower.contains("route_budget_filter_not_found") {
+        "route_budget_filter_not_found"
+    } else if lower.contains("unrecognized subcommand")
         || lower.contains("unexpected argument")
         || lower.contains("required arguments")
         || lower.contains("pass either --text or --file")
@@ -906,7 +879,9 @@ mod tests {
         });
         let summary = summarize("route-budget", &raw);
 
-        assert_eq!(summary["routes"][0]["allocation"], allocation);
+        assert_eq!(summary["contract"], "mdp.route-budget-summary.v1");
+        assert_eq!(summary["route_status_counts"]["ready"], 1);
+        assert!(summary.get("routes").is_none());
         assert!(!summary.to_string().contains("entry body"));
     }
 
