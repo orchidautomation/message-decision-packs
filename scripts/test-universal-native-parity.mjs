@@ -471,6 +471,24 @@ try {
     if (!mcpParity && runInputs.some((input) => input.logical_name === 'routed_context')) {
       mcpParity = { execution, requestPath: runRequestPath, outputDir: join(scratch, 'mcp-parity-run') }
     }
+    if (execution.data.terminal_state === 'no-draft:policy-blocked') {
+      assert.equal(execution.data.run_dir, null)
+      assert.equal(execution.data.bundle_sha256, null)
+      assert.equal(execution.data.receipt_sha256, null)
+      assert.equal(execution.data.authority_block.decision, null)
+      assert.deepEqual(execution.data.authority_block.diagnostics, [{
+        stage: 'run-preflight',
+        gate: 'policy',
+        code: 'internal-contract-mismatch',
+        input: null,
+        field: null,
+        expected: { kind: 'binding', value: 'available' },
+        observed: { kind: 'binding', value: 'unavailable' },
+      }])
+      assert.ok(!existsSync(runDir), `${profile}/${jobId}/${step.phase} published a blocked run directory`)
+      assert.ok(!JSON.stringify(execution).includes('OPENAI_API_KEY'))
+      continue
+    }
     assert.ok(
       existsSync(join(runDir, 'run-bundle.json')),
       `${profile}/${jobId}/${step.phase} did not stage a run bundle: ${JSON.stringify(execution)}`,

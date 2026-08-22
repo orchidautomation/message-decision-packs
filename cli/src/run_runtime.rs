@@ -1866,6 +1866,16 @@ where
         });
     }
     if !result.terminal_state.is_success() {
+        if result.terminal_state == TerminalState::NoDraftPolicyBlocked {
+            // A driver policy refusal is still a CLI policy block. Route it
+            // through the typed failure carrier so execute_transaction cleans
+            // up the private transaction and the public CLI result remains a
+            // receipt-free, diagnostic-bearing no-draft response.
+            return Err(run_failure(
+                RunFailureKind::PolicyBlocked,
+                "driver-policy-blocked",
+            ));
+        }
         return Ok(GenerativeOutcome {
             terminal_state: result.terminal_state,
             success: None,
@@ -3528,7 +3538,7 @@ fn unique_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        RunFailure, execute_run_inner, execute_run_inner_with_driver,
+        RunFailure, RunFailureKind, execute_run_inner, execute_run_inner_with_driver,
         governed_normalization_outcome, gtm_lineage_schema_ids, gtm_success_artifacts,
         project_output_schema_for_openai, provider_max_output_tokens, provider_schema_source,
         routed_context_shape_diagnostic, routed_context_validation_diagnostic, seal_driver_request,
@@ -3613,6 +3623,22 @@ mod tests {
         );
         assert_eq!(stale.code, "stale-binding");
         assert_eq!(stale.gate, "routed-context-readiness");
+    }
+
+    #[test]
+    fn driver_policy_block_uses_receipt_free_sanitized_failure() {
+        let failure = RunFailure::new(RunFailureKind::PolicyBlocked, "driver-policy-blocked");
+        assert_eq!(failure.code(), "driver-policy-blocked");
+        assert_eq!(failure.diagnostics().len(), 1);
+        let diagnostic = &failure.diagnostics()[0];
+        assert_eq!(diagnostic.stage, "run-preflight");
+        assert_eq!(diagnostic.gate, "policy");
+        assert_eq!(diagnostic.code, "internal-contract-mismatch");
+        assert!(diagnostic.input.is_none());
+        let encoded = serde_json::to_string(&failure.diagnostics()).unwrap();
+        assert!(encoded.len() <= super::MAX_POLICY_DIAGNOSTIC_BYTES);
+        assert!(!encoded.contains("OPENAI_API_KEY"));
+        assert!(!encoded.contains("native_model_calls_not_allowed"));
     }
 
     #[test]
@@ -3909,6 +3935,52 @@ mod tests {
             .unwrap()["valid"],
             true
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn post_bundle_driver_policy_block_returns_sanitized_failure_without_receipt() {
+        let root = temp_path("generative-driver-policy-block");
+        let pack = root.join("pack");
+        let raw = root.join("raw-row.json");
+        fs::create_dir_all(&root).unwrap();
+        crate::commands::init::init_pack(&pack, "Driver Policy Pack", "gtm", true, false).unwrap();
+        fs::write(&raw, "{\"company\":\"Synthetic Co\"}\n").unwrap();
+        let request = generative_request_fixture(&pack, &raw);
+        let run = root.join("published-run");
+        let error = execute_run_inner_with_driver(
+            &request,
+            &run,
+            || Ok(()),
+            |driver_request, _| {
+                let mut result = DriverResultV2 {
+                    contract: DRIVER_RESULT_V2.into(),
+                    execution_id: driver_request.execution_id.clone(),
+                    operation: driver_request.operation.clone(),
+                    terminal_state: TerminalState::NoDraftPolicyBlocked,
+                    output: None,
+                    provider_request_body_sha256: None,
+                    provider_request_schema_id: None,
+                    provider_response_body_sha256: None,
+                    provider_output_schema_sha256: Some(
+                        driver_request.provider_output_schema_sha256.clone(),
+                    ),
+                    provider_observation: None,
+                    diagnostic_code: Some("native_model_calls_not_allowed".into()),
+                    result_sha256: String::new(),
+                };
+                seal_driver_result(&mut result)?;
+                Ok(result)
+            },
+        )
+        .unwrap_err();
+        let failure = error.downcast_ref::<RunFailure>().unwrap();
+        assert!(matches!(failure.kind(), RunFailureKind::PolicyBlocked));
+        assert_eq!(failure.code(), "driver-policy-blocked");
+        assert_eq!(failure.diagnostics()[0].stage, "run-preflight");
+        assert_eq!(failure.diagnostics()[0].gate, "policy");
+        assert_eq!(failure.diagnostics()[0].code, "internal-contract-mismatch");
+        assert!(!run.exists());
         let _ = fs::remove_dir_all(root);
     }
 
