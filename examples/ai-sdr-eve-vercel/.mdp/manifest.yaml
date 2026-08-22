@@ -263,7 +263,7 @@ cards:
 policy:
   progressive_disclosure: true
   load_manifest_first: true
-  max_cards_per_route: 13
+  max_cards_per_route: 15
   json_contract: mdp.cli.v0
   no_auth_required: true
 provenance:
@@ -458,6 +458,13 @@ jobs:
   - gaps
   input_contracts:
   - prospect
+  context_budget:
+    max_entries: 81
+    max_bytes: 65536
+    optional_kind_quotas:
+      hooks: 6
+      pains: 8
+      ctas: 4
 - id: outbound-copy-review
   skill_id: mdp-gtm-brief
   label: Supplied outbound copy review
