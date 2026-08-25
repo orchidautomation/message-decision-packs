@@ -30,6 +30,17 @@ Repository layout:
   commit as authoritative; do not repeat the same full validation without a
   changed tree, missing coverage, or a concrete failure to diagnose.
 
+## Linear And GitHub Boundary
+
+- Treat private Linear as the authoritative control plane. Create or recover
+  the Linear work item before delivering a public PR.
+- Project public GitHub delivery evidence one-way into Linear: record the PR,
+  check, and merge evidence there. Never create a public GitHub Issue merely
+  to unblock PR creation or linking.
+- Keep private Linear descriptions, comments, roadmap, customer, and business
+  context out of public GitHub surfaces. Expose only the minimum public-safe
+  Linear reference required for traceability.
+
 ## Shipping
 
 - One requested change should produce at most one PR.
