@@ -13,7 +13,61 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      cli: ${{ steps.filter.outputs.cli }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            cli:
+              - ".github/workflows/ci.yml"
+              - "cli/**"
+              - "rust-toolchain.toml"
+              - "Makefile"
+              - "plugin/.codex-plugin/plugin.json"
+              - "plugin/assets/templates/**"
+              - "plugin/assets/authority-conformance/**"
+              - "plugin/assets/**/*.md"
+              - "assets/authority-conformance/**"
+              - "assets/**/*.md"
+              - "plugin/skills/**"
+              - "plugin/skill-evals/**"
+              - "examples/clay-audiences-self-serve-enterprise-expansion/**"
+              - "examples/proposal-flow-video/fixtures/**"
+              - "examples/run-conformance/**"
+              - "examples/clay-row.json"
+              - "examples/decision-input-scenarios.json"
+              - "examples/prospect-row.json"
+              - "examples/ai-sdr-eve-vercel/agent/instructions.md"
+              - "llms.txt"
+              - "llms-full.txt"
+              - "scripts/skill-eval-harness.py"
+              - "scripts/test_skill_eval_harness.py"
+              - "scripts/validate-skill-packaging.py"
+              - "scripts/test_skill_packaging.py"
+              - "scripts/test-authority-conformance.mjs"
+              - "scripts/test-run-mcp-server.mjs"
+              - "scripts/mdp-run-mcp-server.mjs"
+              - "scripts/test-proposal-mcp-server.sh"
+              - "scripts/mdp-proposal-mcp-server.mjs"
+              - "scripts/mdp-proposal-runner.mjs"
+              - "scripts/test-native-model-driver.mjs"
+              - "scripts/mdp-native-model-openai.mjs"
+              - "scripts/mdp-native-normalize-openai.mjs"
+              - "scripts/lib/deadline-policy.mjs"
+              - "scripts/lib/process-supervisor.mjs"
+              - "scripts/lib/proposal-*.mjs"
+
   cli:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
