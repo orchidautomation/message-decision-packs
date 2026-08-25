@@ -1,0 +1,19 @@
+docs/orchid/plans/2026-08-25-mdp-263-linear-github-boundary.md
+  s_11689dcb9dd123::t_587bd461f1ec80 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "13f0417be7f90da06552398654411ffec9c1e167",
+  "prompts": {},
+  "sessions": {
+    "s_11689dcb9dd123": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a038aa-6b97-7253-9696-7be87d05eeee",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
