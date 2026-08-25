@@ -10,7 +10,7 @@ PR #208 and must not alter its branch, worktree, or history.
 
 - Repository: `orchidautomation/message-decision-packs`
 - Source ref: `origin/main`
-- Source commit: `07773a5a2180c2ebcbebb59f30381a313e8d120a`
+- Source commit: `58aa463cddca806af44ee8631616dc4bd523659f`
 - Delivery branch: `codex/ci-1-cli-path-filter`
 
 ## Implementation
