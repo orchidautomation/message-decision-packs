@@ -1,0 +1,18 @@
+{
+  "enabled": true,
+  "redaction": {
+    "pii": {
+      "address": false,
+      "email": true,
+      "enabled": true,
+      "phone": true
+    }
+  },
+  "strategy_options": {
+    "checkpoint_remote": {
+      "provider": "github",
+      "repo": "orchidautomation/message-decision-packs-entire-checkpoints"
+    }
+  },
+  "telemetry": false
+}
