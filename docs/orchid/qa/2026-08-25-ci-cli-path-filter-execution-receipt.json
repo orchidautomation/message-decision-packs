@@ -2,12 +2,12 @@
   "schema": "orchid.work.execution-shape/v1",
   "repository": "orchidautomation/message-decision-packs",
   "sourceRef": "codex/ci-1-cli-path-filter",
-  "sourceCommit": "1e785461fad82548dece240e0f5785a85cc00b6d",
+  "sourceCommit": "ed20e3be636eb87ff08e9a1445278b2cb971c48d",
   "plan": {
     "path": "docs/orchid/plans/2026-08-25-ci-cli-path-filter.md",
-    "sha256": "fc56e45388ec69efdbdd2bb9ea63d217be70062c944b6af5dd27fecf31907b85",
+    "sha256": "18f4869553da277831b3f68d7477c2a1d3826287612cfb76b00b6abcde2aba9b",
     "sourceRef": "codex/ci-1-cli-path-filter",
-    "sourceCommit": "1e785461fad82548dece240e0f5785a85cc00b6d"
+    "sourceCommit": "ed20e3be636eb87ff08e9a1445278b2cb971c48d"
   },
   "risk": "Elevated",
   "orchestrationRequired": true,
