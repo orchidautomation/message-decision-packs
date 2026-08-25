@@ -1,0 +1,39 @@
+{
+  "schema": "orchid.work.execution-shape/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "sourceRef": "codex/ci-1-cli-path-filter",
+  "sourceCommit": "1e785461fad82548dece240e0f5785a85cc00b6d",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-25-ci-cli-path-filter.md",
+    "sha256": "fc56e45388ec69efdbdd2bb9ea63d217be70062c944b6af5dd27fecf31907b85",
+    "sourceRef": "codex/ci-1-cli-path-filter",
+    "sourceCommit": "1e785461fad82548dece240e0f5785a85cc00b6d"
+  },
+  "risk": "Elevated",
+  "orchestrationRequired": true,
+  "selectedShape": "sol-implementation-exception",
+  "delivery": {
+    "shape": "cumulative-pr",
+    "sourceRef": "codex/ci-1-cli-path-filter",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "solIntegrationOwnership": [
+    "docs/orchid/plans/2026-08-25-ci-cli-path-filter.md"
+  ],
+  "lunaLanes": [],
+  "exceptionReason": "unsafe-delegation",
+  "exceptionPaths": [
+    ".github/workflows/ci.yml"
+  ],
+  "exceptionJustification": "Repository AGENTS.md permits subagents only when explicitly requested or for auth, payments, data migration, production mutation, or major architecture. This bounded CI workflow edit matches none of those cases, so delegating would violate the repository-local execution policy.",
+  "validation": [
+    "actionlint 1.7.12 passed .github/workflows/ci.yml",
+    "independent YAML parse passed",
+    "15 representative positive and 7 negative path cases passed",
+    "pluxx and eve-example have no needs dependency on changes or cli",
+    "git diff --check passed"
+  ],
+  "verdict": "valid",
+  "observedAt": "2026-08-25T11:09:52Z"
+}
