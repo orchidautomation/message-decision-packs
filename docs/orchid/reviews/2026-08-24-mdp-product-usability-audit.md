@@ -61,6 +61,38 @@ Every issue created from this audit should preserve these constraints:
 - Public fixtures must remain synthetic or sourced from approved public material.
 - Beginner paths should disclose advanced proof machinery only when the selected job requires it.
 
+## Missing product abstraction: a managed artifact workspace
+
+Temporary-file safety is necessary but not sufficient. MDP also needs to manage its artifact graph for the user.
+
+The useful precedent from workflow plugins such as Compound Engineering is not a runtime dependency. It is the convention that a workflow resolves one artifact root, distinguishes scratch material from durable handoffs, gives every artifact a predictable contract and location, passes pointers instead of repeatedly copying bodies through the conversation, validates a durable artifact before handing it to the next stage, and tells the user what was retained.
+
+MDP should provide the same experience for packs, normalized inputs, source audits, decision inputs, routed context, drafts, decisions, receipts, and verification results. Users should not have to understand or manually shuttle five related file paths merely because MDP preserves strong lineage.
+
+The desired abstraction is:
+
+1. Resolve one workflow/pack artifact root.
+2. Create private, unique scratch space beneath an MDP-owned runtime boundary.
+3. Freeze and hash approved source bytes once.
+4. Produce typed intermediate artifacts with stable logical identifiers.
+5. Record relationships in a bounded artifact index or manifest.
+6. Let skills and commands pass artifact identifiers/pointers to the next stage.
+7. Validate before promoting an artifact from scratch to durable state.
+8. Publish durable results transactionally.
+9. Clean scratch state and retain only policy-approved diagnostics.
+10. Close with a concise inventory: what was created, what is authoritative, what was deleted, what is retained, and what the next stage may consume.
+
+This should reduce visible file choreography without hiding provenance. Explicit paths remain available for advanced and automation use, but the ordinary skill workflow should own path composition, compatibility checks, and handoffs.
+
+Important constraints:
+
+- Never resolve an ambiguous ambient “latest” artifact when authority matters; use an explicit workflow/run identity or require selection.
+- Never move customer-controlled source files into MDP ownership without explicit intent.
+- Never treat scratch state as durable authority.
+- Never commit private, credentialed, or customer artifacts automatically.
+- Never make the conversation transcript the artifact registry; the on-disk index must be independently inspectable.
+- Keep the artifact manager local and portable. Compound Engineering is a UX precedent, not a required dependency.
+
 ## What is already production-grade
 
 - The exact audited commit had green GitHub checks for CLI, Pluxx, and the shipped example.
@@ -768,6 +800,29 @@ These are differentiating capabilities. They should be progressive disclosure, n
 **Validation:** help/capabilities snapshots, alias parity tests, docs command smoke.
 **Dependencies:** Issues 3, 5, and 16 should establish canonical metadata and golden-path names.
 
+### Issue 22 — Add a managed artifact workspace and pointer-based handoffs
+
+**Priority / size:** P0 / L
+**Problem:** MDP produces a rigorous graph of packs, source audits, normalized inputs, decision inputs, routed context, outputs, decisions, receipts, and verification evidence, but users and agents must manually compose and pass too many paths between stages. Temporary safety exists in parts of the runtime; a coherent user-facing artifact lifecycle does not.
+**Scope:** Define one local artifact-root convention and typed artifact index; distinguish scratch, staged, durable, published, diagnostic, and customer-controlled artifacts; let CLI commands and skills exchange explicit artifact handles or manifest pointers; provide bounded discovery, inspection, status, and cleanup operations; report retention and handoff information at closeout.
+**Non-goals:** Building a generic document manager, CRM, cloud store, or conversation memory system; hiding lineage; choosing an ambiguous latest artifact; automatically committing private content; or depending on Compound Engineering.
+**Acceptance criteria:**
+
+- A normal pack workflow requires the user to identify the pack, selected job, and approved sources/input—not manually assemble every intermediate file path.
+- Every managed artifact has a stable type, logical identifier, lifecycle state, producer/version, content hash where applicable, parent/input references, ownership boundary, and retention classification.
+- Scratch and staged artifacts cannot be consumed as durable authority without successful validation and promotion.
+- Downstream commands accept an explicit artifact handle or manifest pointer and resolve the exact hash-bound files without using ambient “latest” behavior.
+- Advanced callers can still supply explicit paths, and those paths receive the same validation and authority treatment.
+- A read-only inventory/status surface explains what exists, what is authoritative, what is incomplete, and what may be safely consumed next.
+- Cleanup removes only positively identified MDP-owned scratch/diagnostic artifacts allowed by policy and never removes customer-controlled inputs or published outputs.
+- Restart/resume can reconstruct workflow state from the on-disk index without relying on prior conversation history.
+- Human closeout names durable outputs, discarded scratch state, retention limits, and the next permitted handoff.
+- The implementation remains transport-neutral and works without MCP or a particular agent host.
+
+**Suggested interface exploration:** Evaluate a small surface such as `mdp artifacts list|show|status|clean`, plus artifact-handle inputs on high-level workflows. Treat command names as design candidates; preserve the contract even if the final interface differs.
+**Validation:** end-to-end multi-stage workflow with no manual intermediate paths; restart/resume test; concurrent workflow isolation; index corruption/fail-closed tests; explicit-path parity; private-data and cleanup safety tests.
+**Dependencies:** Issue 1 supplies transactional publication; Issue 5 supplies user-level readiness; Issue 6 supplies handoff diagnostics; Issues 14 and 15 supply recovery and scratch lifecycle. This issue should shape Issues 4, 7, 12, 18, and 21 rather than being added after them.
+
 ### Deferred candidate — Optional local Streamable HTTP adapter
 
 **Decision:** Do not create this issue unless a named consumer satisfies a reversal trigger.
@@ -778,8 +833,8 @@ These are differentiating capabilities. They should be progressive disclosure, n
 
 | Wave | Issues | Rationale |
 | --- | --- | --- |
-| 1 — Trust fixes | 1, 2, 3, 4, 11 | Correctness and security defects should precede polish claims. |
-| 2 — Golden path | 5, 6, 7, 17, 18 | Create one understandable readiness result, coherent demonstration, and communicative workflow. |
+| 1 — Trust and artifact foundation | 1, 2, 3, 11, 22 | Correctness, security, and the managed artifact contract should precede polish claims. |
+| 2 — Golden path | 4, 5, 6, 7, 17, 18 | Create one understandable readiness result, coherent demonstration, and communicative workflow over managed artifacts. |
 | 3 — Simplify and harden | 8, 9, 12, 13, 14, 15, 19 | Reduce cognitive load and make adapters, installs, temporary state, and recovery predictable. |
 | 4 — Prove and polish | 10, 16, 20, 21 | Measure actual behavior, then tune discoverability, documentation ownership, and information architecture. |
 
@@ -790,6 +845,7 @@ Parallelism guidance:
 - Issues 7 and 8 should not edit the same skill entrypoints concurrently without explicit ownership.
 - Issues 12 and 13 both touch MCP documentation and servers and should be sequenced or divided by file ownership.
 - Issue 10 should evaluate the settled communication/trigger changes rather than benchmark a moving target.
+- Issue 22 should define artifact identities and lifecycle before multiple golden-path issues independently invent incompatible path conventions.
 
 ## Finding-to-issue coverage
 
@@ -816,6 +872,8 @@ Parallelism guidance:
 | Installed CLI/plugin/skill version skew | Issue 19 |
 | README human-section semantic drift | Issue 20 |
 | Flat top-level command namespace | Issue 21 |
+| Users manually shuttle intermediate artifact paths | Issue 22 |
+| No unified scratch-to-durable artifact lifecycle or pointer-based handoff | Issue 22, implemented with Issues 1, 14, and 15 |
 | Replace local stdio MCP with HTTP | Rejected for now; deferred candidate only after a named reversal trigger |
 
 ## Validation performed for this audit
