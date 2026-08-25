@@ -1,0 +1,21 @@
+AGENTS.md
+  s_11689dcb9dd123::t_a8a2cea799da53 33-43
+docs/orchid/qa/2026-08-25-mdp-263-execution-shape.json
+  s_11689dcb9dd123::t_1e63910d5aac8b 1-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e6e5ee84abd5752661f2971b5f6a1a9ff8acb508",
+  "prompts": {},
+  "sessions": {
+    "s_11689dcb9dd123": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a038aa-6b97-7253-9696-7be87d05eeee",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
