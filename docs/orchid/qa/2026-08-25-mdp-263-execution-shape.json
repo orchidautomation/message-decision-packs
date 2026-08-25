@@ -1,0 +1,56 @@
+{
+  "schema": "orchid.work.execution-shape/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "sourceRef": "codex/mdp-263-linear-github-boundary",
+  "sourceCommit": "13f0417be7f90da06552398654411ffec9c1e167",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-25-mdp-263-linear-github-boundary.md",
+    "sha256": "870b15ad3bbbd13d94867b29d5d2026a44a983dd77928e2e78c3e73c82487b78",
+    "sourceRef": "codex/mdp-263-linear-github-boundary",
+    "sourceCommit": "13f0417be7f90da06552398654411ffec9c1e167"
+  },
+  "risk": "Elevated",
+  "orchestrationRequired": true,
+  "selectedShape": "inline-luna",
+  "delivery": {
+    "shape": "single-pr",
+    "sourceRef": "codex/mdp-263-linear-github-boundary",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "solIntegrationOwnership": [
+    ".agent-artifacts"
+  ],
+  "lunaLanes": [
+    {
+      "issueId": "MDP-263",
+      "taskId": "/root/mdp_263_edit",
+      "ownership": [
+        "AGENTS.md"
+      ],
+      "assignedBranch": "codex/mdp-263-linear-github-boundary",
+      "observedBranch": "codex/mdp-263-linear-github-boundary",
+      "worktreeBindingState": "confirmed",
+      "plan": {
+        "path": "docs/orchid/plans/2026-08-25-mdp-263-linear-github-boundary.md",
+        "sha256": "870b15ad3bbbd13d94867b29d5d2026a44a983dd77928e2e78c3e73c82487b78",
+        "sourceRef": "codex/mdp-263-linear-github-boundary",
+        "sourceCommit": "13f0417be7f90da06552398654411ffec9c1e167"
+      },
+      "execution": {
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "medium",
+        "role": "execute-pinned-plan-only",
+        "requestedServiceTier": "fast",
+        "fastModeState": "fallback",
+        "fallbackReason": "Native collaboration dispatch exposes model and reasoning effort but no explicit service-tier control or observation."
+      }
+    }
+  ],
+  "exceptionReason": null,
+  "exceptionPaths": [],
+  "exceptionJustification": null,
+  "validation": [],
+  "verdict": "valid",
+  "observedAt": "2026-08-25T11:31:48.743Z"
+}
