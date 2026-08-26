@@ -1,0 +1,48 @@
+scripts/mdp-proposal-mcp-server.mjs
+  s_b6619da6fb8d61::t_8528f3e4cc811c 57
+scripts/test-proposal-mcp-server.sh
+  s_b6619da6fb8d61::t_c4daac2685a462 369-370
+  s_b6619da6fb8d61::t_09af0af1d94e1d 405-410
+  s_b6619da6fb8d61::t_f4589ac3f278df 215-220
+scripts/test-universal-native-parity.mjs
+  s_b6619da6fb8d61::t_897089464f7a55 143,690
+scripts/lib/mcp-provider-consent.mjs
+  s_b6619da6fb8d61::t_8528f3e4cc811c 6,15,21-22
+  s_b6619da6fb8d61::t_ab9defb40b7e3f 13
+scripts/lib/mcp-path-policy.mjs
+  s_b6619da6fb8d61::t_2a13fcc9872332 74
+  s_b6619da6fb8d61::t_ab9defb40b7e3f 107-108
+  s_b6619da6fb8d61::t_a1d178b0788801 67-68,92,104
+  s_b6619da6fb8d61::t_7726b394f18470 40,42-43
+  s_b6619da6fb8d61::t_877c09a0563543 39,41,44,46,58-66,78-83,102-103,105
+scripts/test-run-mcp-server.mjs
+  s_b6619da6fb8d61::t_2a13fcc9872332 3,405-406,415
+  s_b6619da6fb8d61::t_6df475fc171022 4-5,207-237
+  s_b6619da6fb8d61::t_7698ba7704bb48 390,407-409
+  s_b6619da6fb8d61::t_0495bf1aba4918 7,145-165,168,170
+  s_b6619da6fb8d61::t_189e702c312fe4 290
+scripts/mdp-run-mcp-server.mjs
+  s_b6619da6fb8d61::t_067915469db6ba 264-268
+  s_b6619da6fb8d61::t_8528f3e4cc811c 60
+  s_b6619da6fb8d61::t_bf2921993eafa6 479,488,523-524
+  s_b6619da6fb8d61::t_48fd84cbdc8160 495
+  s_b6619da6fb8d61::t_2a13fcc9872332 470,478
+scripts/test-run-conformance.mjs
+  s_b6619da6fb8d61::t_897089464f7a55 297,350
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "498f026c4db7a2473bf4062d14d487ebde64a633",
+  "prompts": {},
+  "sessions": {
+    "s_b6619da6fb8d61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f1d-a559-7ac0-ba0f-d61ae47e169c",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
