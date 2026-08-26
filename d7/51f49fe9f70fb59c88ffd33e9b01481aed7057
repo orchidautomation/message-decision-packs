@@ -1,0 +1,19 @@
+scripts/test-universal-native-parity.mjs
+  s_b6619da6fb8d61::t_5e7a0cda8a11db 143,573,691
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d751f49fe9f70fb59c88ffd33e9b01481aed7057",
+  "prompts": {},
+  "sessions": {
+    "s_b6619da6fb8d61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f1d-a559-7ac0-ba0f-d61ae47e169c",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
