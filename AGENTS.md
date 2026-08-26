@@ -14,6 +14,10 @@ Repository layout:
 - `plugin/assets/templates/`: starter packs.
 - `docs/`: design and distribution documentation.
 
+## Orchid Routing
+
+- Linear team: MDP
+
 ## Working Rules
 
 - Preserve existing work. Do not revert unrelated changes.
