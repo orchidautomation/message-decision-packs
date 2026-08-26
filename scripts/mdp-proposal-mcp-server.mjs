@@ -54,7 +54,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
 const runnerPath = join(scriptDir, 'mdp-proposal-runner.mjs')
 let pathPolicy = null
-try { pathPolicy = createPathPolicy() } catch (error) { pathPolicy = { startupError: error } }
+try { pathPolicy = createPathPolicy(process.env, ['pack', 'input', 'approval', 'work', 'consent']) } catch (error) { pathPolicy = { startupError: error } }
 const requirePolicy = () => {
   if (pathPolicy?.startupError) throw pathPolicy.startupError
   return pathPolicy

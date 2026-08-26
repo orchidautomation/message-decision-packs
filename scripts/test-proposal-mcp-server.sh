@@ -212,7 +212,12 @@ PY
 
 node --check "$root/scripts/mdp-proposal-mcp-server.mjs"
 provider_key="OPENAI_API_KEY"
-env MDP_MCP_TEST_MARKER=must-not-leak "$provider_key=mdp-redaction-test-value" \
+env MDP_MCP_PACK_ROOTS="$(dirname "$pack")" \
+  MDP_MCP_INPUT_ROOTS="$root/examples/proposal-flow-video/messy-sources:$tmp_dir" \
+  MDP_MCP_APPROVAL_ROOTS="$tmp_dir" \
+  MDP_MCP_WORK_ROOTS="$tmp_dir" \
+  MDP_MCP_CONSENT_ROOTS="$tmp_dir" \
+  MDP_MCP_TEST_MARKER=must-not-leak "$provider_key=mdp-redaction-test-value" \
   node "$root/scripts/mdp-proposal-mcp-server.mjs" < "$transcript" > "$stdout_jsonl" 2> "$stderr_log"
 
 if [ -s "$stderr_log" ]; then
@@ -361,6 +366,8 @@ timeout_bundle="$tmp_dir/timeout-bundle"
 mkdir -p "$timeout_bundle/scripts/lib"
 cp "$root/scripts/mdp-proposal-mcp-server.mjs" "$timeout_bundle/scripts/"
 cp "$root/scripts/lib/deadline-policy.mjs" "$timeout_bundle/scripts/lib/"
+cp "$root/scripts/lib/mcp-path-policy.mjs" "$timeout_bundle/scripts/lib/"
+cp "$root/scripts/lib/mcp-provider-consent.mjs" "$timeout_bundle/scripts/lib/"
 cat > "$timeout_bundle/scripts/mdp-proposal-runner.mjs" <<'JS'
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
@@ -395,7 +402,12 @@ message = {
 }
 open(transcript, "w", encoding="utf-8").write(json.dumps(message) + "\n")
 PY
-node "$timeout_bundle/scripts/mdp-proposal-mcp-server.mjs" < "$timeout_transcript" > "$tmp_dir/timeout-output.jsonl"
+env MDP_MCP_PACK_ROOTS="$(dirname "$pack")" \
+  MDP_MCP_INPUT_ROOTS="$root/examples/proposal-flow-video/messy-sources:$tmp_dir" \
+  MDP_MCP_APPROVAL_ROOTS="$tmp_dir" \
+  MDP_MCP_WORK_ROOTS="$tmp_dir" \
+  MDP_MCP_CONSENT_ROOTS="$tmp_dir" \
+  node "$timeout_bundle/scripts/mdp-proposal-mcp-server.mjs" < "$timeout_transcript" > "$tmp_dir/timeout-output.jsonl"
 sleep 1
 test ! -e "$tmp_dir/delayed-marker"
 python3 - "$tmp_dir/timeout-output.jsonl" <<'PY'

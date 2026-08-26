@@ -294,7 +294,7 @@ try {
     ].join("\n");
     const invoked = spawnSync(process.execPath, [join(repoRoot, "scripts", "mdp-run-mcp-server.mjs")], {
       cwd: root, input: `${input}\n`, encoding: "utf8",
-      env: { PATH: process.env.PATH || "", MDP_BIN: mdp }, maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, PATH: process.env.PATH || "", MDP_BIN: mdp, MDP_MCP_PACK_ROOTS: repoRoot, MDP_MCP_INPUT_ROOTS: `${root}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: root, MDP_MCP_WORK_ROOTS: root, MDP_MCP_OUTPUT_ROOTS: root, MDP_MCP_CONSENT_ROOTS: root }, maxBuffer: 16 * 1024 * 1024,
     });
     assert.equal(invoked.status, 0, invoked.stderr);
     const replies = invoked.stdout.trim().split("\n").map((line) => JSON.parse(line));
@@ -347,7 +347,7 @@ try {
       cwd: root,
       input: `${runMessage}\n${verifyMessage}\n`,
       encoding: "utf8",
-      env: { PATH: process.env.PATH || "", MDP_BIN: mdp },
+      env: { ...process.env, PATH: process.env.PATH || "", MDP_BIN: mdp, MDP_MCP_PACK_ROOTS: repoRoot, MDP_MCP_INPUT_ROOTS: `${root}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: root, MDP_MCP_WORK_ROOTS: root, MDP_MCP_OUTPUT_ROOTS: root, MDP_MCP_CONSENT_ROOTS: root },
       maxBuffer: 16 * 1024 * 1024,
     });
     assert.equal(invoked.status, 0, invoked.stderr);

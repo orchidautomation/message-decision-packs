@@ -57,7 +57,7 @@ const NATIVE_MODEL_ENV_KEYS = ['OPENAI_API_KEY', 'MDP_ALLOW_NATIVE_MODEL_CALLS']
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
 let pathPolicy = null
-try { pathPolicy = createPathPolicy() } catch (error) { pathPolicy = { startupError: error } }
+try { pathPolicy = createPathPolicy(process.env, ['pack', 'input', 'output', 'consent']) } catch (error) { pathPolicy = { startupError: error } }
 const requirePolicy = () => {
   if (pathPolicy?.startupError) throw pathPolicy.startupError
   return pathPolicy
@@ -261,6 +261,11 @@ const assertOutputOutsidePack = (packDir, outputDir) => {
   if (typeof packDir !== 'string' || packDir.trim() === '') return
   const requestedPack = resolve(packDir)
   if (!existsSync(requestedPack)) return
+  const requestedOutput = resolve(outputDir)
+  const lexical = relative(requestedPack, requestedOutput)
+  if (lexical === '' || (!lexical.startsWith(`..${sep}`) && lexical !== '..' && !lexical.startsWith(sep))) {
+    throw new Error('output_dir must be outside the active pack')
+  }
   const pack = realpathSync(requestedPack)
   if (!statSync(pack).isDirectory()) return
   const output = resolve(outputDir)
@@ -462,7 +467,7 @@ const callRun = async (args, signal = null) => {
   assertOnly(parsed, new Set(['request_path', 'output_dir', 'timeout_ms', 'consent_id']))
   const requestPath = requiredString(parsed, 'request_path')
   const policy = requirePolicy()
-  const outputDir = policy.newOutput('output', requiredString(parsed, 'output_dir')).path
+  const outputRequest = requiredString(parsed, 'output_dir')
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
   const frozenRequest = freezeRequestFile(policy.existing('input', requestPath, 'file').path)
@@ -470,7 +475,8 @@ const callRun = async (args, signal = null) => {
   let invocation
   let plan = null
   try {
-    assertOutputOutsidePack(frozenRequest.packDir, outputDir)
+    assertOutputOutsidePack(frozenRequest.packDir, outputRequest)
+    const outputParent = policy.existing('output', dirname(resolve(outputRequest)), 'directory')
     if (frozenRequest.usesNativeModel) {
       const consentId = requiredString(parsed, 'consent_id')
       consumeProviderConsent({
@@ -479,14 +485,14 @@ const callRun = async (args, signal = null) => {
         provider: 'openai',
         purpose: 'mdp.run',
         requestSha256: frozenRequest.sha256,
-        outputRoot: policy.newOutput('output', outputDir).root,
+        outputRoot: outputParent.root,
       })
     }
     const parentDeadline = performance.now() + timeoutMs
     const preflightBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
     const preflight = await invokeCli(
       ['--json', 'run-preflight', '--request', frozenRequest.path, '--transport-timeout-ms', String(timeoutMs)],
-      dirname(outputDir),
+      outputParent.path,
       preflightBudget,
       null,
       frozenRequest.usesNativeModel,
@@ -514,6 +520,8 @@ const callRun = async (args, signal = null) => {
     if (!validateDeadlinePlan(plan, timeoutMs, frozenRequest.executionId)) {
       return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'run-preflight-malformed' }, true)
     }
+    const outputReservation = policy.newOutput('output', outputRequest)
+    const outputDir = outputReservation.path
     const runBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
     invocation = await invokeCli(
       ['--json', 'run', '--request', frozenRequest.path, '--out-dir', outputDir, '--transport-timeout-ms', String(timeoutMs)],

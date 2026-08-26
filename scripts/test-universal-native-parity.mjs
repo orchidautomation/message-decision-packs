@@ -140,7 +140,7 @@ const publicRoutedContextAcceptance = ({ baseRequest, routedInput, pack, jobId }
     process.execPath,
     [server],
     {
-      env: { ...process.env, PATH: process.env.PATH || '', MDP_BIN: resolve(mdp) },
+      env: { ...process.env, PATH: process.env.PATH || '', MDP_BIN: resolve(mdp), MDP_MCP_PACK_ROOTS: repoRoot, MDP_MCP_INPUT_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: scratch, MDP_MCP_WORK_ROOTS: scratch, MDP_MCP_OUTPUT_ROOTS: scratch, MDP_MCP_CONSENT_ROOTS: scratch },
       input: `${JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
@@ -687,7 +687,7 @@ try {
     process.execPath,
     [join(repoRoot, 'scripts', 'mdp-run-mcp-server.mjs')],
     {
-      env: { ...process.env, MDP_BIN: resolve(mdp) },
+      env: { ...process.env, MDP_BIN: resolve(mdp), MDP_MCP_PACK_ROOTS: repoRoot, MDP_MCP_INPUT_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: scratch, MDP_MCP_WORK_ROOTS: scratch, MDP_MCP_OUTPUT_ROOTS: scratch, MDP_MCP_CONSENT_ROOTS: scratch },
       input: [
         JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
         JSON.stringify({
