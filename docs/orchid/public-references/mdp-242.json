@@ -1,0 +1,7 @@
+{
+  "schema": "orchid.public-issue-reference/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "https://linear.app/orchid-automation/issue/MDP-242/make-skills-hand-off-one-self-contained-workflow-bundle",
+  "executionShape": "sol-implementation-exception",
+  "evidence": "validated and retained outside the public repository"
+}

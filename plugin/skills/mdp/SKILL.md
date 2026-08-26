@@ -15,6 +15,18 @@ layer, or orchestration framework.
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. A well-formed CLI decision remains data across wrappers even when its decision-oriented process exit is nonzero. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
 
+## Managed Workflow Bundle Handoff
+
+For normal workflows, read [Managed Workflow Bundle Handoff](references/workflow-bundle-handoff.md).
+The caller supplies the exact pack, job/step, model, and approved inputs; keep
+requirements, source collection, normalization, routing, receipts, and request
+compilation in one current-user-only scratch root. Return one verified durable
+run directory and the canonical decision, gaps, retention result, and next
+permitted action. Do not ask the user to shuttle intermediate paths or bodies.
+Resume/review requires an explicit run directory and a fresh `verify-run`; never
+select an ambient latest run. Explicit artifact choreography remains an
+advanced parity path and never bypasses CLI authority.
+
 ## Start Here
 
 1. Find the intended pack root. Pass `--dir` explicitly; do not assume the current directory.

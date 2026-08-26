@@ -9,7 +9,7 @@
   ],
   "output_case_ids": [
     "mdp-operator-help-train", "mdp-validate-train", "mdp-mixed-train",
-    "mdp-operator-help-validation", "mdp-validate-validation", "mdp-mixed-validation", "mdp-cold-conformance-validation"
+    "mdp-operator-help-validation", "mdp-validate-validation", "mdp-mixed-validation", "mdp-managed-handoff-validation", "mdp-cold-conformance-validation"
   ],
   "supported_modes": ["operator-help", "validate", "mixed-route"],
   "required_assertion_categories": ["routing", "boundary"],

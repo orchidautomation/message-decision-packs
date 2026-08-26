@@ -4,6 +4,13 @@ Read this only for `outbound-copy-review` and only when the user supplies copy.
 
 ## Workflow
 
+Use the shared [managed workflow bundle handoff](../../mdp/references/workflow-bundle-handoff.md)
+for normal reviews. Keep source, routing, prompt, and invocation intermediates
+private; do not exchange their bodies or paths through chat. Return one
+verified durable run directory, canonical decision/gaps, retention result, and
+next action. Resume/review accepts only an explicit directory verified with
+`verify-run`; never scan for the newest run.
+
 1. Establish the prospect fit and bounded context used by the draft.
    Run `mdp requirements --dir PACK_ROOT --job outbound-copy-review` first. If
    the job resolves any Decision Input Contract, require its exact validated

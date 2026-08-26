@@ -30,6 +30,33 @@ class SkillPackagingMutationTests(unittest.TestCase):
         )
         self.assertEqual(errors, [])
 
+    def test_managed_workflow_handoff_is_private_explicit_and_bounded(self) -> None:
+        reference = (ROOT / "plugin/skills/mdp/references/workflow-bundle-handoff.md").read_text()
+        for marker in (
+            "current-user-only",
+            "prepare-run",
+            "verify-run",
+            "explicit run directory",
+            "ambient/latest",
+            "timeout",
+            "cancellation",
+            "Advanced explicit-artifact parity",
+            "source bodies",
+            "run_directory:",
+            "retention:",
+        ):
+            self.assertIn(marker, reference)
+        for relative_path in (
+            "plugin/skills/mdp/SKILL.md",
+            "plugin/skills/mdp-gtm-brief/SKILL.md",
+            "plugin/skills/mdp-proposal-review/SKILL.md",
+            "plugin/skills/mdp-pack-review/SKILL.md",
+        ):
+            text = (ROOT / relative_path).read_text()
+            self.assertIn("managed", text.lower())
+            self.assertIn("explicit run directory", text.lower())
+            self.assertIn("ambient", text.lower())
+
     def test_missing_corpus_file_fails_bundle_parity(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-packaging-") as temp:
             bundle = Path(temp) / "skill-evals"

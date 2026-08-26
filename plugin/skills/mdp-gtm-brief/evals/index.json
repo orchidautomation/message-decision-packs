@@ -9,7 +9,7 @@
   ],
   "output_case_ids": [
     "gtm-fit-train", "gtm-brief-train", "gtm-copy-review-train",
-    "gtm-fit-validation", "gtm-brief-validation", "gtm-copy-review-validation"
+    "gtm-fit-validation", "gtm-brief-validation", "gtm-managed-cleanup-validation", "gtm-copy-review-validation"
   ],
   "supported_modes": ["prospect-fit-or-brief", "outbound-copy-brief", "outbound-copy-review"],
   "required_assertion_categories": ["cli-gate", "evidence", "boundary"],

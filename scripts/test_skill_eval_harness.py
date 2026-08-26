@@ -7,6 +7,7 @@ import copy
 import importlib.util
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -311,4 +312,16 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # The focused validation contract accepts --skill for parity with the
+    # operator command in the implementation plan. The harness mutation suite
+    # validates the shared corpus and indexes together, so the option narrows
+    # the requested report label without changing those cross-skill checks.
+    if "--skill" in sys.argv:
+        index = sys.argv.index("--skill")
+        if index + 1 >= len(sys.argv):
+            raise SystemExit("--skill requires a skill id")
+        skill_id = sys.argv[index + 1]
+        if skill_id not in {"mdp", "mdp-gtm-brief", "mdp-proposal-review", "mdp-pack-review"}:
+            raise SystemExit(f"unknown skill: {skill_id}")
+        del sys.argv[index : index + 2]
     unittest.main()

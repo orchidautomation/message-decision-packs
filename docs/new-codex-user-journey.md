@@ -35,6 +35,36 @@ Check claims before approving.
 Keep gaps explicit.
 ```
 
+### The first managed workflow
+
+After installation, the user gives Codex the exact pack root, selected job,
+and approved prospect or source files. Codex privately compiles requirements,
+normalizes and routes only the declared inputs, and runs the existing
+`prepare-run` → `run` → `verify-run` authority path. Intermediate request,
+source, prompt, and receipt paths stay in a current-user-only scratch root and
+are never copied into the conversation.
+
+The visible result is one durable pointer:
+
+```text
+MDP workflow handoff
+run_directory: ./runs/2026-08-26-fit
+verification: verified
+decision: ready | no-draft | blocked
+terminal: <canonical CLI terminal>
+gaps: <canonical gap refs or none>
+retention: scratch discarded; durable run retained
+bundle: ./runs/2026-08-26-fit/run-bundle.json
+receipt: ./runs/2026-08-26-fit/run-receipt.json
+next_action: <one permitted next action or stop>
+```
+
+To resume or review, the user supplies that explicit directory. Codex verifies
+its named bundle and receipt again; it never picks an ambient “latest” run.
+Success, no-draft, handled failure, timeout, cancellation, and concurrent
+invocations all remove only the exact invocation-owned scratch root. A blocked
+or no-draft result remains blocked or no-draft.
+
 ## Installation Model
 
 MDP is distributed as a GitHub Release backed by Pluxx-generated agent bundles and native `mdp` CLI binaries. The public install path for the CLI plus supported agent bundles is one command:

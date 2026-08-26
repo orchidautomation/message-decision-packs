@@ -11,6 +11,17 @@ Review an existing pack and produce evidence-backed findings. Do not silently re
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
 
+## Explicit evidence handoff
+
+When reviewing execution evidence, require one caller-supplied explicit run directory.
+Read only its named bundle and receipt, run `verify-run` against that
+directory, and stop on missing, ambiguous, tampered, or wrong-root artifacts.
+Never scan for or select ambient latest state. Normal workflows use the shared
+[managed workflow bundle handoff](../mdp/references/workflow-bundle-handoff.md);
+intermediates stay in invocation-owned restricted scratch and are not copied
+through chat. Report one verified pointer and bounded findings, not private
+artifact bodies.
+
 ## Gate
 
 Identify the exact pack root and inspect its policy state:
