@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -53,6 +54,18 @@ const JSON_RPC_INVALID_PARAMS = -32602
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
 const runnerPath = join(scriptDir, 'mdp-proposal-runner.mjs')
+const providerCapabilityAvailable = () => process.env.MDP_ALLOW_NATIVE_MODEL_CALLS === '1' && typeof process.env.OPENAI_API_KEY === 'string' && process.env.OPENAI_API_KEY !== ''
+const proposalConsentRequestSha256 = (value) => createHash('sha256').update(JSON.stringify({
+  contract: 'mdp.proposal-frozen-invocation.v1',
+  pack_sha256: value.packSha256,
+  source_sha256s: value.sourceSha256s,
+  source_intake_sha256: value.sourceIntakeSha256,
+  source_audit_sha256: value.sourceAuditSha256,
+  mock_response_sha256: value.mockResponseSha256,
+  prompt_id: value.promptId,
+  model: value.model,
+  workdir: value.workdir,
+})).digest('hex')
 let pathPolicy = null
 try { pathPolicy = createPathPolicy(process.env, ['pack', 'input', 'approval', 'work', 'consent']) } catch (error) { pathPolicy = { startupError: error } }
 const requirePolicy = () => {
@@ -600,6 +613,7 @@ const callProposalRun = async (args) => {
   if (totalSourceBytes > MAX_TOTAL_SOURCE_BYTES) {
     throw new Error(`source_paths exceed the ${MAX_TOTAL_SOURCE_BYTES} byte total limit`)
   }
+  const frozenSources = sourcePaths.map((path) => policy.freeze('input', path, MAX_SOURCE_FILE_BYTES))
   const sourceIntakeArg = optionalString(parsedArgs, 'source_intake_path')
   const sourceAuditArg = optionalString(parsedArgs, 'source_audit_path')
   const sourceIntakePath = sourceIntakeArg
@@ -640,9 +654,26 @@ const callProposalRun = async (args) => {
   if (sourcePaths.length === 0) {
     throw new Error('Pass at least one source_paths file. Ambient chat/source text and audit-only runs are intentionally not accepted.')
   }
-  if (!dryRun && !mockResponsePath) {
+  const providerCapable = !dryRun && !mockResponsePath && providerCapabilityAvailable()
+  if (providerCapable) {
     if (!consentId) throw new Error('consent_id is required for real native runs')
-    consumeProviderConsent({ policy, consentId, provider: 'openai', purpose: 'mdp.proposal-run', requestSha256: 'pending-runner-request', outputRoot: policy.roots.work[0] })
+    const frozenIntake = sourceIntakePath ? policy.freeze('approval', sourceIntakePath, MAX_SOURCE_FILE_BYTES) : null
+    const frozenAudit = sourceAuditPath ? policy.freeze('approval', sourceAuditPath, MAX_SOURCE_FILE_BYTES) : null
+    const frozenMock = mockResponsePath ? policy.freeze('input', mockResponsePath, MAX_SOURCE_FILE_BYTES) : null
+    const requestSha256 = proposalConsentRequestSha256({
+      packSha256: createHash('sha256').update(JSON.stringify({ path: pack, identity: policy.existing('pack', pack, 'directory').identity })).digest('hex'),
+      sourceSha256s: frozenSources.map((source) => source.sha256),
+      sourceIntakeSha256: frozenIntake?.sha256 ?? null,
+      sourceAuditSha256: frozenAudit?.sha256 ?? null,
+      mockResponseSha256: frozenMock?.sha256 ?? null,
+      promptId,
+      model,
+      workdir,
+    })
+    for (const source of frozenSources) policy.finalCheck('input', source.path, source)
+    if (frozenIntake) policy.finalCheck('approval', frozenIntake.path, frozenIntake)
+    if (frozenAudit) policy.finalCheck('approval', frozenAudit.path, frozenAudit)
+    consumeProviderConsent({ policy, consentId, provider: 'openai', purpose: 'mdp.proposal-run', requestSha256, sourceSha256s: frozenSources.map((source) => source.sha256), outputRoot: policy.existing('work', workdir, 'directory').root })
   }
 
   const runnerArgs = ['run', '--pack', pack, '--workdir', workdir]
@@ -665,7 +696,7 @@ const callProposalRun = async (args) => {
   if (maxSourceBytes !== null) runnerArgs.push('--max-source-bytes', String(maxSourceBytes))
   runnerArgs.push('--timeout-ms', String(timeoutMs))
 
-  const result = await runNode(runnerPath, runnerArgs, timeoutMs, !dryRun && !mockResponsePath)
+  const result = await runNode(runnerPath, runnerArgs, timeoutMs, providerCapable)
   let parsed = null
   try {
     parsed = parseRunnerJson(result.stdout)

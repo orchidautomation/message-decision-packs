@@ -53,6 +53,7 @@ const CHILD_ENV_KEYS = [
   'NODE_EXTRA_CA_CERTS',
 ]
 const NATIVE_MODEL_ENV_KEYS = ['OPENAI_API_KEY', 'MDP_ALLOW_NATIVE_MODEL_CALLS']
+const providerCapabilityAvailable = () => process.env.MDP_ALLOW_NATIVE_MODEL_CALLS === '1' && typeof process.env.OPENAI_API_KEY === 'string' && process.env.OPENAI_API_KEY !== ''
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
@@ -215,6 +216,7 @@ const freezeRequestFile = (value) => {
       sha256: createHash('sha256').update(bytes).digest('hex'),
       executionId: typeof parsed?.execution_id === 'string' ? parsed.execution_id : null,
       packDir: typeof parsed?.pack_dir === 'string' ? parsed.pack_dir : null,
+      parsed,
       usesNativeModel: parsed?.contract === 'mdp.run-request.v1' && parsed?.mode === 'generative',
     }
   } catch (error) {
@@ -471,13 +473,23 @@ const callRun = async (args, signal = null) => {
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
   const frozenRequest = freezeRequestFile(policy.existing('input', requestPath, 'file').path)
+  const providerCapable = frozenRequest.usesNativeModel && providerCapabilityAvailable()
+  const frozenInputs = Array.isArray(frozenRequest.parsed?.inputs)
+    ? frozenRequest.parsed.inputs.map((mapping) => {
+        const sourcePath = typeof mapping === 'string'
+          ? mapping.slice(mapping.indexOf('=') + 1)
+          : mapping && typeof mapping.source_path === 'string' ? mapping.source_path : null
+        if (!sourcePath || (typeof mapping === 'string' && mapping.indexOf('=') <= 0)) throw new Error('request inputs must declare source paths')
+        return policy.freeze('input', sourcePath)
+      })
+    : []
 
   let invocation
   let plan = null
   try {
     assertOutputOutsidePack(frozenRequest.packDir, outputRequest)
     const outputParent = policy.existing('output', dirname(resolve(outputRequest)), 'directory')
-    if (frozenRequest.usesNativeModel) {
+    if (providerCapable) {
       const consentId = requiredString(parsed, 'consent_id')
       consumeProviderConsent({
         policy,
@@ -485,9 +497,11 @@ const callRun = async (args, signal = null) => {
         provider: 'openai',
         purpose: 'mdp.run',
         requestSha256: frozenRequest.sha256,
+        sourceSha256s: frozenInputs.map((input) => input.sha256),
         outputRoot: outputParent.root,
       })
     }
+    for (const input of frozenInputs) policy.finalCheck('input', input.path, input)
     const parentDeadline = performance.now() + timeoutMs
     const preflightBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
     const preflight = await invokeCli(
@@ -495,7 +509,7 @@ const callRun = async (args, signal = null) => {
       outputParent.path,
       preflightBudget,
       null,
-      frozenRequest.usesNativeModel,
+      providerCapable,
       null,
       signal,
     )
@@ -532,7 +546,7 @@ const callRun = async (args, signal = null) => {
         executionId: frozenRequest.executionId,
         requestSha256: frozenRequest.sha256,
       },
-      frozenRequest.usesNativeModel,
+      providerCapable,
       plan,
       signal,
     )

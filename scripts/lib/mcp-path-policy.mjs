@@ -1,4 +1,4 @@
-import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, statSync } from 'node:fs'
+import { constants, closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { basename, delimiter, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
@@ -75,13 +75,7 @@ export const createPathPolicy = (env = process.env, roles = Object.keys(ROOT_ENV
     const parent = existing(role, dirname(requested), 'directory')
     const output = resolve(parent.path, leaf)
     if (!within(parent.path, output)) fail('mcp-output-denied', 'output escaped approved parent')
-    try { mkdirSync(output, { mode: 0o700 }) } catch (error) {
-      if (error?.code === 'EEXIST') fail('mcp-output-denied', 'output already exists')
-      throw error
-    }
-    const created = lstatSync(output, { bigint: true })
-    if (!created.isDirectory() || created.nlink < 2n) fail('mcp-output-denied', 'output reservation failed')
-    return { path: output, root: parent.root, alias: role, parent: parent.path }
+    return { path: output, root: parent.root, alias: role, parent: parent.path, parentIdentity: parent.identity }
   }
   const freeze = (role, candidate, maxBytes = 1_048_576) => {
     const selected = existing(role, candidate, 'file')

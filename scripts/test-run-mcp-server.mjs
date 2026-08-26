@@ -223,6 +223,8 @@ test('freezes consent records, rejects mismatch/expiry, and consumes each nonce 
     assert.throws(() => consumeProviderConsent({ policy, consentId: 'expired', provider: 'openai', purpose: 'mdp.run', requestSha256: expired.request_sha256, outputRoot: expired.output_root }), /expired/)
     const mismatch = consentFixture(root, 'mismatch')
     assert.throws(() => consumeProviderConsent({ policy, consentId: 'mismatch', provider: 'openai', purpose: 'mdp.run', requestSha256: 'b'.repeat(64), outputRoot: mismatch.output_root }), /does not match/)
+    const ordered = consentFixture(root, 'ordered', { source_sha256s: ['a'.repeat(64), 'b'.repeat(64)] })
+    assert.throws(() => consumeProviderConsent({ policy, consentId: 'ordered', provider: 'openai', purpose: 'mdp.run', requestSha256: ordered.request_sha256, sourceSha256s: ['b'.repeat(64), 'a'.repeat(64)], outputRoot: ordered.output_root }), /does not match/)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -231,7 +233,7 @@ test('denies a generative request without consent before any provider spawn', as
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const request = join(root, 'request.json')
   writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'generative' }))
-  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run') })])
+  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run') })], { OPENAI_API_KEY: 'consent-test-key', MDP_ALLOW_NATIVE_MODEL_CALLS: '1' })
   assert.equal(reply.error.code, -32602)
   assert.match(reply.error.message, /consent/)
   assert.equal(existsSync(join(root, 'run.invocation.json')), false)
