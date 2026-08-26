@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { consentBinding, consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { delimiter, dirname, join, parse, relative, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -226,6 +226,35 @@ test('freezes consent records, rejects mismatch/expiry, and consumes each nonce 
     const ordered = consentFixture(root, 'ordered', { source_sha256s: ['a'.repeat(64), 'b'.repeat(64)] })
     assert.throws(() => consumeProviderConsent({ policy, consentId: 'ordered', provider: 'openai', purpose: 'mdp.run', requestSha256: ordered.request_sha256, sourceSha256s: ['b'.repeat(64), 'a'.repeat(64)], outputRoot: ordered.output_root }), /does not match/)
   } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('eagerly rejects missing, invalid, and overly broad startup roots', () => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-mcp-root-validation-'))
+  const file = join(root, 'not-a-directory')
+  writeFileSync(file, 'fixture')
+  try {
+    assert.throws(() => createPathPolicy({}, ['pack']), { code: 'mcp-roots-not-configured' })
+    assert.throws(() => createPathPolicy({ MDP_MCP_PACK_ROOTS: file }, ['pack']), { code: 'mcp-root-invalid' })
+    assert.throws(() => createPathPolicy({ MDP_MCP_PACK_ROOTS: parse(root).root }, ['pack']), { code: 'mcp-root-invalid' })
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('resolves consent across configured roots and rejects missing or ambiguous IDs', () => {
+  const first = mkdtempSync(join(tmpdir(), 'mdp-mcp-consent-first-'))
+  const second = mkdtempSync(join(tmpdir(), 'mdp-mcp-consent-second-'))
+  try {
+    const policy = createPathPolicy({ MDP_MCP_CONSENT_ROOTS: [first, second].join(delimiter) }, ['consent'])
+    const later = consentFixture(second, 'later-root')
+    const accepted = consumeProviderConsent({ policy, consentId: 'later-root', provider: 'openai', purpose: 'mdp.run', requestSha256: later.request_sha256, outputRoot: later.output_root })
+    assert.equal(accepted.nonce, later.nonce)
+    assert.throws(() => consumeProviderConsent({ policy, consentId: 'missing', provider: 'openai', purpose: 'mdp.run', requestSha256: 'a'.repeat(64), outputRoot: realpathSync(first) }), /unavailable/)
+    const duplicate = consentFixture(first, 'duplicate')
+    consentFixture(second, 'duplicate', { nonce: `${duplicate.nonce}-second` })
+    assert.throws(() => consumeProviderConsent({ policy, consentId: 'duplicate', provider: 'openai', purpose: 'mdp.run', requestSha256: duplicate.request_sha256, outputRoot: duplicate.output_root }), /ambiguous/)
+  } finally {
+    rmSync(first, { recursive: true, force: true })
+    rmSync(second, { recursive: true, force: true })
+  }
 })
 
 test('denies a generative request without consent before any provider spawn', async (t) => {

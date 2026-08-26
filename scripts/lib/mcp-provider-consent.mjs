@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { lstatSync } from 'node:fs'
 import { join } from 'node:path'
 import { boundedDenial } from './mcp-path-policy.mjs'
 
@@ -10,7 +11,19 @@ export const consentBinding = ({ provider, purpose, requestSha256, sourceSha256s
 
 export const consumeProviderConsent = ({ policy, consentId, provider, purpose, requestSha256, sourceSha256s = [], outputRoot, now = Date.now() }) => {
   if (typeof consentId !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(consentId)) throw Object.assign(new Error('consent identifier is invalid'), { code: 'mcp-consent-denied' })
-  const selected = policy.freeze('consent', join(policy.root('consent')[0], `${consentId}.json`), 64 * 1024)
+  const candidates = policy.root('consent').map((root) => join(root, `${consentId}.json`))
+  const present = []
+  for (const candidate of candidates) {
+    try {
+      lstatSync(candidate)
+      present.push(candidate)
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw Object.assign(new Error('consent record is unavailable'), { code: 'mcp-consent-denied' })
+    }
+  }
+  if (!present.length) throw Object.assign(new Error('consent record is unavailable'), { code: 'mcp-consent-denied' })
+  if (present.length > 1) throw Object.assign(new Error('consent identifier is ambiguous'), { code: 'mcp-consent-denied' })
+  const selected = policy.freeze('consent', present[0], 64 * 1024)
   let record
   try { record = JSON.parse(selected.bytes.toString('utf8')) } catch { throw Object.assign(new Error('consent record is invalid'), { code: 'mcp-consent-denied' }) }
   const required = ['contract', 'provider', 'purpose', 'request_sha256', 'source_sha256s', 'output_root', 'expires_at', 'nonce', 'binding_sha256']

@@ -1,6 +1,6 @@
 import { constants, closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { basename, delimiter, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, parse, relative, resolve, sep } from 'node:path'
 
 export const ROOT_ENV = Object.freeze({
   pack: 'MDP_MCP_PACK_ROOTS',
@@ -26,6 +26,7 @@ const entries = (value, envName) => {
     try { canonical = realpathSync(item) } catch { fail('mcp-root-invalid', `${envName} contains an unavailable root`) }
     const stats = lstatSync(item)
     if (stats.isSymbolicLink() || !stats.isDirectory()) fail('mcp-root-invalid', `${envName} contains a non-directory root`)
+    if (canonical === parse(canonical).root) fail('mcp-root-invalid', `${envName} contains an overly broad root`)
     return canonical
   })
   if (new Set(roots).size !== roots.length) fail('mcp-root-invalid', `${envName} contains duplicate roots`)
@@ -37,13 +38,12 @@ export const parseApprovedRoots = (env = process.env) => Object.freeze(Object.fr
 ))
 
 export const createPathPolicy = (env = process.env, roles = Object.keys(ROOT_ENV)) => {
-  const roots = Object.fromEntries(roles.map((role) => [role, null]))
-  const requireRole = (role) => {
-    if (!(role in roots)) fail('mcp-roots-not-configured', `${ROOT_ENV[role] || role} is required for this tool`)
-    if (roots[role] === null) roots[role] = entries(env[ROOT_ENV[role]], ROOT_ENV[role])
-  }
+  const roots = Object.fromEntries(roles.map((role) => {
+    if (!(role in ROOT_ENV)) fail('mcp-roots-not-configured', `${role} is required for this tool`)
+    return [role, entries(env[ROOT_ENV[role]], ROOT_ENV[role])]
+  }))
   const select = (role, candidate) => {
-    requireRole(role)
+    if (!(role in roots)) fail('mcp-roots-not-configured', `${ROOT_ENV[role] || role} is required for this tool`)
     const requested = resolve(candidate)
     let canonical
     try { canonical = realpathSync(requested) } catch { fail('mcp-path-denied', `${role} path is unavailable`) }
@@ -98,7 +98,10 @@ export const createPathPolicy = (env = process.env, roles = Object.keys(ROOT_ENV
     if (identity && (current.path !== identity.path || current.root !== identity.root || current.identity.dev !== identity.identity.dev || current.identity.ino !== identity.identity.ino)) fail('mcp-path-denied', `${role} path changed before use`)
     return current
   }
-  const root = (role) => { requireRole(role); return roots[role] }
+  const root = (role) => {
+    if (!(role in roots)) fail('mcp-roots-not-configured', `${ROOT_ENV[role] || role} is required for this tool`)
+    return roots[role]
+  }
   return Object.freeze({ roots, root, existing, freeze, newOutput, select, finalCheck })
 }
 
