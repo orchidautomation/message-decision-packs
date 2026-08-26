@@ -4,6 +4,14 @@ Read this only for `outbound-copy-brief`.
 
 ## Workflow
 
+Use the shared [managed workflow bundle handoff](../../mdp/references/workflow-bundle-handoff.md)
+as the default. Requirements, routed context, receipts, and request files are
+private workflow state in one restricted scratch root. Accept only the exact
+pack, job, and approved prospect/copy inputs; return one verified durable run
+directory and bounded canonical results. An explicit run directory plus fresh
+`verify-run` is required for resume/review, and ambient latest state is
+forbidden. The explicit artifact route below is advanced compatibility.
+
 1. Run `mdp requirements --dir PACK_ROOT --job outbound-copy-brief` and inspect
    the resolved Decision Input Contracts. If any are present, require the exact
    validated normalized input and lineage artifacts compiled for that job;

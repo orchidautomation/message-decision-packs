@@ -19,6 +19,15 @@ belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
 
 ## Workflow
 
+For the normal path, follow [Managed Workflow Bundle Handoff](../../mdp/references/workflow-bundle-handoff.md).
+Keep requirements, source-attempt requests, collected results, normalization,
+routing, and prompt receipts inside the invocation-owned restricted scratch
+root. The user supplies only the exact pack, job, and approved prospect/source
+inputs and receives one verified durable run directory or the canonical
+no-draft/blocked result. The lineage choreography below is an advanced
+implementation detail; do not ask the user to carry its intermediate paths or
+bodies through chat.
+
 1. Run `mdp --json requirements --dir PACK_ROOT --job prospect-fit-or-brief`.
 2. Branch on `data.available` from requirements:
    - When `true`, this skill must not collect missing prospect data or run the

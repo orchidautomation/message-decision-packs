@@ -1,5 +1,12 @@
 # Proposal Evidence Path
 
+For the normal v1 path, first follow [Managed Workflow Bundle Handoff](../../mdp/references/workflow-bundle-handoff.md).
+Keep source intake, requirements, normalization, routed context, and receipts
+inside one restricted invocation scratch root. Return one verified durable run
+directory or canonical blocked/advisory gaps. The v0 runner/MCP choreography
+below is an advanced compatibility path; it must not make the user shuttle
+intermediate bodies through chat.
+
 Read this before normalizing proposal material or answering whether a review is
 audit-grade. The evidence path is a decision gate, not an optional confidence
 upgrade.

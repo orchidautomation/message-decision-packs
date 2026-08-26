@@ -11,6 +11,18 @@ Use a GTM pack for bounded decision support. Never enrich, draft outreach, send,
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
 
+## Managed bundle default
+
+For normal use, apply the shared [managed workflow bundle handoff](../mdp/references/workflow-bundle-handoff.md).
+Accept only the exact pack, selected job, and approved prospect/source inputs.
+Keep requirements, source-attempt, normalization, routed-context, prompt, and
+invocation receipts inside one restricted scratch root; do not request or echo
+intermediate paths or bodies through chat. Return one verified durable run
+directory plus the canonical decision, gaps, retention result, and next action.
+An explicit run directory is required for resume/review and must pass a fresh
+`verify-run`; never choose ambient latest state. The detailed lineage route
+below remains an advanced compatibility path.
+
 ## Select One Mode
 
 Map the explicit user intent to one job ID:

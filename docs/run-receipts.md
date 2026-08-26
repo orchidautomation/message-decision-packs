@@ -128,6 +128,25 @@ The resulting `mdp.decision-trace.v1` object is explanatory only. It reuses
 the same verification rules, preserves integrity limitations, and never
 replaces the bundle, receipt, decision hash, or verification result.
 
+### Managed workflow handoff
+
+Normal skill workflows keep requirements, normalization, routing, prompt,
+invocation, and request artifacts inside one invocation-owned scratch root
+with current-user-only permissions. The user supplies the exact pack, job or
+step, model when required, and approved inputs; the skill runs the existing
+`prepare-run` → `run` → `verify-run` authority path and returns one explicit
+verified run directory. It does not pass intermediate bodies or scratch paths
+through chat.
+
+The handoff reports the run directory, verification status, canonical decision
+and terminal, unresolved gaps, retention result, bundle and receipt names, and
+one permitted next action. Resume or review requires that exact directory and
+a fresh `verify-run`; skills never discover an ambient latest run. Success,
+canonical no-draft or blocked results, handled failure, timeout, and
+cancellation remove only the exact invocation-owned scratch root. Advanced
+explicit-artifact workflows remain available and use the same CLI authority
+and verification gates.
+
 Omitting `--artifact-root` checks the bundle, decision, receipt, terminal-state,
 and assurance relationships but cannot re-read published artifact bytes. The
 result therefore remains `integrity_only: true`. Supplying a v0 receipt without

@@ -1,6 +1,327 @@
+use crate::cli::{Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
 use crate::routing::route_budget_summary_projection;
 use anyhow::Result;
 use serde_json::{Value, json};
+
+/// Stable error code for human-only presentation flags combined with `--json`.
+pub(crate) const OUTPUT_MODE_CONFLICT_CODE: &str = "output_mode_conflict";
+
+/// Resolves the effective JSON presentation from parsed CLI state.
+///
+/// The runtime gate and the capabilities metadata both consume one shared
+/// table so they cannot drift. The matrix is intentionally exhaustive: every
+/// public presentation selector/value combination must resolve to exactly one
+/// of the outcomes below. Adding a new presentation flag is a typed change in
+/// this module, not free-form metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PresentationOutcome {
+    /// No presentation conflict; success envelope may proceed.
+    Ok,
+    /// `--json` combined with a human-only presentation flag.
+    Conflict {
+        selector: &'static str,
+        value: &'static str,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DisplayKind {
+    Help,
+    Version,
+}
+
+impl DisplayKind {
+    pub(crate) fn command(&self) -> &'static str {
+        match self {
+            Self::Help => "help",
+            Self::Version => "version",
+        }
+    }
+}
+
+/// One accepted value for a presentation selector. The runtime gate, the
+/// capabilities metadata, and the in-source contract tests all consume this
+/// single entry, so the matrix and the runtime cannot drift.
+#[derive(Debug, Clone, Copy)]
+struct SelectorValue {
+    /// CLI value as the user types it (e.g. `"mermaid"`, `"true"`).
+    name: &'static str,
+    /// True when the value can coexist with global `--json`.
+    json_compatible: bool,
+}
+
+impl SelectorValue {
+    const fn new(name: &'static str, json_compatible: bool) -> Self {
+        Self {
+            name,
+            json_compatible,
+        }
+    }
+}
+
+/// One public presentation selector. The `matcher` resolves which value is
+/// active for a parsed `Commands`; returning `None` means the selector does
+/// not apply to that command.
+#[derive(Debug, Clone, Copy)]
+struct PresentationSelector {
+    /// Fully qualified selector name used in the capabilities matrix
+    /// (e.g. `"trace --format"`).
+    name: &'static str,
+    /// Short flag surfaced in the conflict envelope
+    /// (e.g. `"--format"`).
+    selector: &'static str,
+    /// Every public value the selector accepts, in declared order.
+    values: &'static [SelectorValue],
+    /// Resolves which value (by `name`) is active for a parsed `Commands`,
+    /// or `None` if this selector does not apply.
+    matcher: fn(&Commands) -> Option<&'static str>,
+}
+
+const fn selector(
+    name: &'static str,
+    selector: &'static str,
+    values: &'static [SelectorValue],
+    matcher: fn(&Commands) -> Option<&'static str>,
+) -> PresentationSelector {
+    PresentationSelector {
+        name,
+        selector,
+        values,
+        matcher,
+    }
+}
+
+fn match_trace(command: &Commands) -> Option<&'static str> {
+    match command {
+        Commands::Trace { format, .. } => {
+            if *format == TraceFormat::Mermaid {
+                Some("mermaid")
+            } else {
+                Some("json")
+            }
+        }
+        _ => None,
+    }
+}
+
+fn match_verify_output_readable(command: &Commands) -> Option<&'static str> {
+    match command {
+        Commands::VerifyOutput { readable, .. } => {
+            if *readable {
+                Some("true")
+            } else {
+                Some("false")
+            }
+        }
+        _ => None,
+    }
+}
+
+fn match_render_brief_format(command: &Commands) -> Option<&'static str> {
+    match command {
+        Commands::RenderBrief { format, .. } => {
+            if *format == HumanBriefFormat::Markdown {
+                Some("markdown")
+            } else {
+                Some("json")
+            }
+        }
+        _ => None,
+    }
+}
+
+fn match_sample_leads_format(command: &Commands) -> Option<&'static str> {
+    match command {
+        Commands::SampleLeads { format, .. } => {
+            if *format == SampleLeadsFormat::Yaml {
+                Some("yaml")
+            } else {
+                Some("json")
+            }
+        }
+        _ => None,
+    }
+}
+
+fn match_brief_readable(command: &Commands) -> Option<&'static str> {
+    match command {
+        Commands::Brief { readable, .. } => {
+            if *readable {
+                Some("true")
+            } else {
+                Some("false")
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The single source of truth for the presentation contract. The runtime
+/// gate, the capabilities metadata, and the contract tests all read from this
+/// array, so adding a new public presentation flag is a typed change here.
+static PRESENTATION_SELECTORS: &[PresentationSelector] = &[
+    selector(
+        "trace --format",
+        "--format",
+        &[
+            SelectorValue::new("json", true),
+            SelectorValue::new("mermaid", false),
+        ],
+        match_trace,
+    ),
+    selector(
+        "verify-output --readable",
+        "--readable",
+        &[
+            SelectorValue::new("false", true),
+            SelectorValue::new("true", false),
+        ],
+        match_verify_output_readable,
+    ),
+    selector(
+        "render-brief --format",
+        "--format",
+        &[
+            SelectorValue::new("json", true),
+            SelectorValue::new("markdown", false),
+        ],
+        match_render_brief_format,
+    ),
+    selector(
+        "sample-leads --format",
+        "--format",
+        &[
+            SelectorValue::new("json", true),
+            SelectorValue::new("yaml", false),
+        ],
+        match_sample_leads_format,
+    ),
+    selector(
+        "brief --readable",
+        "--readable",
+        &[
+            SelectorValue::new("false", true),
+            SelectorValue::new("true", false),
+        ],
+        match_brief_readable,
+    ),
+];
+
+fn find_selector_value(
+    entry: &PresentationSelector,
+    value_name: &str,
+) -> Option<&'static SelectorValue> {
+    entry.values.iter().find(|value| value.name == value_name)
+}
+
+/// Resolves whether a parsed CLI invocation is compatible with JSON output.
+pub(crate) fn resolve_presentation(command: &Commands) -> PresentationOutcome {
+    for entry in PRESENTATION_SELECTORS {
+        let Some(active_name) = (entry.matcher)(command) else {
+            continue;
+        };
+        let Some(active) = find_selector_value(entry, active_name) else {
+            // The matcher returned a value name that is not in the declared
+            // `values` list. Treat it as a conflict so the gate never silently
+            // allows a value the contract does not advertise.
+            return PresentationOutcome::Conflict {
+                selector: entry.selector,
+                value: active_name,
+            };
+        };
+        if !active.json_compatible {
+            return PresentationOutcome::Conflict {
+                selector: entry.selector,
+                value: active.name,
+            };
+        }
+    }
+    PresentationOutcome::Ok
+}
+
+/// Public selectors covered by the presentation contract. Consumed by both
+/// `resolve_presentation` and the capabilities metadata projection. The data
+/// is derived from the shared `PRESENTATION_SELECTORS` table.
+pub(crate) fn presentation_selectors() -> Vec<(&'static str, Vec<&'static str>)> {
+    PRESENTATION_SELECTORS
+        .iter()
+        .map(|entry| {
+            (
+                entry.name,
+                entry.values.iter().map(|value| value.name).collect(),
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn presentation_compatibility_matrix() -> Value {
+    let total_rows: usize = PRESENTATION_SELECTORS
+        .iter()
+        .map(|entry| entry.values.len())
+        .sum();
+    let mut rows: Vec<Value> = Vec::with_capacity(total_rows);
+    for entry in PRESENTATION_SELECTORS {
+        for value in entry.values {
+            rows.push(json!({
+                "selector": entry.name,
+                "value": value.name,
+                "json_compatible": value.json_compatible,
+                "conflict_code": if value.json_compatible { Value::Null } else { json!(OUTPUT_MODE_CONFLICT_CODE) },
+            }));
+        }
+    }
+    json!({
+        "selectors": rows,
+        "summary_compatible": true,
+        "help_envelope": "ok_with_text",
+        "version_envelope": "ok_with_text",
+        "display_actions": ["help", "version"]
+    })
+}
+
+/// One shared, exhaustive matrix used by the runtime gate and capabilities
+/// metadata. The entries enumerate every (selector, value) pair that may appear
+/// in a parsed `Cli` so the contract is auditable in one place.
+pub(crate) fn presentation_contract() -> Value {
+    json!({
+        "selectors": presentation_selectors(),
+        "summary": {
+            "selector": "--summary",
+            "json_compatible": true,
+            "envelope": "summary"
+        },
+        "conflict": {
+            "code": OUTPUT_MODE_CONFLICT_CODE,
+            "exit_code": 1,
+            "stdout": "single_json_envelope",
+            "stderr": "empty"
+        },
+        "display": {
+            "help": {
+                "command": "help",
+                "envelope": {"ok": true, "command": "help", "data": {"text": "..."}},
+                "exit_code": 0,
+                "stdout": "single_json_envelope",
+                "stderr": "empty"
+            },
+            "version": {
+                "command": "version",
+                "envelope": {"ok": true, "command": "version", "data": {"text": "..."}},
+                "exit_code": 0,
+                "stdout": "single_json_envelope",
+                "stderr": "empty"
+            }
+        },
+        "stdout_invariant": {
+            "mode": "json",
+            "selector": "--json",
+            "value_count": 1,
+            "prelude_allowed": false,
+            "trailing_text_allowed": false,
+            "stderr_empty": true
+        }
+    })
+}
 
 pub(crate) fn print_output(
     json_mode: bool,
@@ -504,6 +825,48 @@ fn failing_fixtures(data: &Value) -> Vec<String> {
         .collect()
 }
 
+/// Emits the canonical `output_mode_conflict` JSON envelope to stdout and
+/// leaves stderr empty. The conflict must be raised before any command work
+/// or any stdout write, so this helper performs the only stdout emission for
+/// the conflict path.
+pub(crate) fn print_output_mode_conflict(
+    json_mode: bool,
+    selector: &str,
+    value: &str,
+) -> Result<()> {
+    let envelope = json!({
+        "ok": false,
+        "error": {
+            "code": OUTPUT_MODE_CONFLICT_CODE,
+            "message": format!(
+                "--json cannot be combined with human-only presentation {selector}={value}"
+            ),
+            "details": [selector, value]
+        }
+    });
+    if json_mode {
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
+    }
+    Ok(())
+}
+
+/// Wraps a Clap help or version display string in the canonical JSON
+/// success envelope. The `ok` field is `true` so the result is parseable as
+/// a single JSON value and matches the existing success contract.
+pub(crate) fn print_display_envelope(json_mode: bool, kind: DisplayKind, text: &str) -> Result<()> {
+    if !json_mode {
+        print!("{text}");
+        return Ok(());
+    }
+    let envelope = json!({
+        "ok": true,
+        "command": kind.command(),
+        "data": {"text": text.trim_end()}
+    });
+    println!("{}", serde_json::to_string_pretty(&envelope)?);
+    Ok(())
+}
+
 pub(crate) fn print_error(json_mode: bool, err: anyhow::Error) -> Result<()> {
     let message = err.to_string();
     let details = err
@@ -524,7 +887,9 @@ pub(crate) fn print_error(json_mode: bool, err: anyhow::Error) -> Result<()> {
 
 fn classify_error(message: &str, details: &[String]) -> &'static str {
     let lower = format!("{} {}", message, details.join(" ")).to_lowercase();
-    if lower.contains("route_budget_filter_not_found") {
+    if lower.contains("output_mode_conflict") {
+        OUTPUT_MODE_CONFLICT_CODE
+    } else if lower.contains("route_budget_filter_not_found") {
         "route_budget_filter_not_found"
     } else if lower.contains("unrecognized subcommand")
         || lower.contains("unexpected argument")
@@ -1083,5 +1448,315 @@ mod tests {
             classify_error("--artifact must use KIND=PATH", &[]),
             "invalid_argument"
         );
+    }
+
+    #[test]
+    fn classify_error_recognizes_output_mode_conflict() {
+        // The runtime gate emits the conflict envelope directly, but
+        // `classify_error` must still recognise the stable code so legacy
+        // error paths and operator diagnostics stay aligned with the
+        // capability contract.
+        assert_eq!(
+            classify_error("output_mode_conflict: --readable=true", &[]),
+            OUTPUT_MODE_CONFLICT_CODE
+        );
+    }
+
+    #[test]
+    fn presentation_compatibility_matrix_matches_shared_selectors() {
+        let matrix = presentation_compatibility_matrix();
+        let rows = matrix["selectors"].as_array().expect("rows");
+        let mut json_compatible = 0;
+        let mut human_only = 0;
+        for row in rows {
+            let selector = row["selector"].as_str().expect("selector");
+            let value = row["value"].as_str().expect("value");
+            if row["json_compatible"].as_bool().unwrap_or(false) {
+                json_compatible += 1;
+                assert!(row["conflict_code"].is_null());
+            } else {
+                human_only += 1;
+                assert_eq!(row["conflict_code"], OUTPUT_MODE_CONFLICT_CODE);
+            }
+            let _ = (selector, value);
+        }
+        // Every selector exposes at least one human-only value so the contract
+        // is meaningful, and at least one JSON-compatible value so summaries
+        // and JSON envelopes can share the same selector.
+        assert!(json_compatible > 0);
+        assert!(human_only > 0);
+        // The matrix is exhaustive: every (selector, value) pair the runtime
+        // gate evaluates must appear here.
+        let runtime_pairs: Vec<(String, String)> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row["selector"].as_str().unwrap().to_string(),
+                    row["value"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        let selectors = presentation_selectors();
+        for (selector, values) in &selectors {
+            for value in values {
+                assert!(
+                    runtime_pairs.contains(&((*selector).to_string(), (*value).to_string())),
+                    "matrix missing ({selector}, {value})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn presentation_contract_describes_stable_invariant() {
+        let contract = presentation_contract();
+        assert_eq!(contract["conflict"]["code"], OUTPUT_MODE_CONFLICT_CODE);
+        assert_eq!(contract["conflict"]["exit_code"], 1);
+        assert_eq!(contract["conflict"]["stdout"], "single_json_envelope");
+        assert_eq!(contract["conflict"]["stderr"], "empty");
+        assert_eq!(contract["display"]["help"]["command"], "help");
+        assert_eq!(contract["display"]["help"]["exit_code"], 0);
+        assert_eq!(contract["display"]["version"]["command"], "version");
+        assert_eq!(contract["display"]["version"]["exit_code"], 0);
+        assert_eq!(contract["stdout_invariant"]["mode"], "json");
+        assert_eq!(contract["stdout_invariant"]["value_count"], 1);
+        assert_eq!(contract["stdout_invariant"]["prelude_allowed"], false);
+        assert_eq!(contract["stdout_invariant"]["trailing_text_allowed"], false);
+        assert_eq!(contract["stdout_invariant"]["stderr_empty"], true);
+    }
+
+    #[test]
+    fn presentation_selectors_runtime_and_metadata_share_one_typed_table() {
+        // The runtime gate, the matrix projection, and the contract metadata
+        // all read from the single `PRESENTATION_SELECTORS` table. If this
+        // test compiles and passes, the three surfaces are guaranteed to use
+        // the same entries. Any drift is a programming error in the table.
+        let selectors = presentation_selectors();
+        let matrix = presentation_compatibility_matrix();
+        let contract = presentation_contract();
+        let matrix_rows = matrix["selectors"].as_array().expect("matrix rows");
+
+        // Every declared selector appears in `presentation_selectors()`,
+        // every (selector, value) appears in the matrix, and the contract
+        // exposes the same selector names.
+        for entry in PRESENTATION_SELECTORS {
+            let selector_match = selectors
+                .iter()
+                .find(|(name, _)| *name == entry.name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "selector {} missing from presentation_selectors",
+                        entry.name
+                    )
+                });
+            let declared_values: Vec<&'static str> = entry.values.iter().map(|v| v.name).collect();
+            assert_eq!(selector_match.1, declared_values);
+
+            for value in entry.values {
+                let row = matrix_rows
+                    .iter()
+                    .find(|row| row["selector"] == entry.name && row["value"] == value.name)
+                    .unwrap_or_else(|| panic!("matrix missing ({}={})", entry.name, value.name));
+                assert_eq!(
+                    row["json_compatible"],
+                    serde_json::json!(value.json_compatible)
+                );
+                if value.json_compatible {
+                    assert!(row["conflict_code"].is_null());
+                } else {
+                    assert_eq!(row["conflict_code"], OUTPUT_MODE_CONFLICT_CODE);
+                }
+            }
+        }
+
+        // The matrix and `presentation_selectors()` agree on value count and
+        // selector count exactly.
+        let matrix_pair_count: usize = matrix_rows.len();
+        let declared_pair_count: usize = PRESENTATION_SELECTORS
+            .iter()
+            .map(|entry| entry.values.len())
+            .sum();
+        assert_eq!(matrix_pair_count, declared_pair_count);
+        assert_eq!(selectors.len(), PRESENTATION_SELECTORS.len());
+
+        // The contract metadata surfaces the same selector list.
+        let contract_selectors = contract["selectors"]
+            .as_array()
+            .expect("contract selectors array");
+        let contract_names: Vec<String> = contract_selectors
+            .iter()
+            .map(|row| row[0].as_str().unwrap().to_string())
+            .collect();
+        let table_names: Vec<String> = PRESENTATION_SELECTORS
+            .iter()
+            .map(|entry| entry.name.to_string())
+            .collect();
+        assert_eq!(contract_names, table_names);
+    }
+
+    #[test]
+    fn resolve_presentation_flags_human_only_combinations() {
+        use crate::cli::{Cli, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
+        use clap::Parser;
+
+        let cli = Cli::try_parse_from([
+            "mdp", "--json", "trace", "--format", "mermaid", "--file", "x.json",
+        ])
+        .expect("trace should parse");
+        assert_eq!(
+            resolve_presentation(&cli.command),
+            PresentationOutcome::Conflict {
+                selector: "--format",
+                value: "mermaid"
+            }
+        );
+
+        let cli = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "verify-output",
+            "--readable",
+            "--file",
+            "x.json",
+        ])
+        .expect("verify-output should parse");
+        assert_eq!(
+            resolve_presentation(&cli.command),
+            PresentationOutcome::Conflict {
+                selector: "--readable",
+                value: "true"
+            }
+        );
+
+        let cli = Cli::try_parse_from(["mdp", "--json", "verify-output", "--file", "x.json"])
+            .expect("verify-output without --readable should parse");
+        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+
+        let cli = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "render-brief",
+            "--file",
+            "x.json",
+            "--template",
+            "default",
+            "--format",
+            "markdown",
+        ])
+        .expect("render-brief markdown should parse");
+        assert_eq!(
+            resolve_presentation(&cli.command),
+            PresentationOutcome::Conflict {
+                selector: "--format",
+                value: "markdown"
+            }
+        );
+
+        let cli = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "sample-leads",
+            "--dir",
+            ".",
+            "--persona",
+            "PMM",
+            "--format",
+            "yaml",
+        ])
+        .expect("sample-leads yaml should parse");
+        assert_eq!(
+            resolve_presentation(&cli.command),
+            PresentationOutcome::Conflict {
+                selector: "--format",
+                value: "yaml"
+            }
+        );
+
+        let cli = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "brief",
+            "--dir",
+            ".",
+            "--prospect",
+            "p.json",
+            "--readable",
+        ])
+        .expect("brief --readable should parse");
+        assert_eq!(
+            resolve_presentation(&cli.command),
+            PresentationOutcome::Conflict {
+                selector: "--readable",
+                value: "true"
+            }
+        );
+
+        // The selectors cover every conflict surface; sampling JSON-compatible
+        // equivalents confirms the gate does not over-fire.
+        let cli = Cli::try_parse_from([
+            "mdp", "--json", "trace", "--file", "x.json", "--format", "json",
+        ])
+        .expect("trace json should parse");
+        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+
+        let cli = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "render-brief",
+            "--file",
+            "x.json",
+            "--template",
+            "default",
+            "--format",
+            "json",
+        ])
+        .expect("render-brief json should parse");
+        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+
+        let cli = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "sample-leads",
+            "--dir",
+            ".",
+            "--persona",
+            "PMM",
+            "--format",
+            "json",
+        ])
+        .expect("sample-leads json should parse");
+        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+
+        let cli = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "brief",
+            "--dir",
+            ".",
+            "--prospect",
+            "p.json",
+        ])
+        .expect("brief without --readable should parse");
+        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+
+        let cli = Cli::try_parse_from(["mdp", "--json", "capabilities"])
+            .expect("capabilities should parse");
+        assert_eq!(resolve_presentation(&cli.command), PresentationOutcome::Ok);
+
+        // Human-only path is left untouched by the gate; the runtime never
+        // calls the gate when `--json` is absent.
+        let cli = Cli::try_parse_from(["mdp", "trace", "--file", "x.json", "--format", "mermaid"])
+            .expect("human-only trace should parse");
+        let _ = TraceFormat::Mermaid;
+        let _ = HumanBriefFormat::Markdown;
+        let _ = SampleLeadsFormat::Yaml;
+        assert_eq!(
+            resolve_presentation(&cli.command),
+            PresentationOutcome::Conflict {
+                selector: "--format",
+                value: "mermaid"
+            }
+        );
+        let _ = cli;
     }
 }

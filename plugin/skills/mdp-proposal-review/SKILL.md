@@ -11,6 +11,17 @@ Use an approved proposal pack to produce bounded review support for supplied pur
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
 
+## Managed bundle default
+
+For a normal review, use the shared [managed workflow bundle handoff](../mdp/references/workflow-bundle-handoff.md).
+The operator supplies the exact pack, review job/step, and approved source
+files. Keep source intake, requirements, normalization, routing, prompt and
+receipt intermediates in one restricted scratch root, then return one verified
+durable run directory and bounded canonical results. Do not pass intermediate
+bodies or scratch paths through chat. Resume/review requires an explicit run directory
+and fresh `verify-run`; never discover the newest run. The v0
+proposal runner/MCP instructions below are compatibility-only advanced paths.
+
 ## Select One Mode
 
 Map explicit user intent to one job ID:
