@@ -1,0 +1,19 @@
+docs/orchid/qa/2026-08-26-mdp-243-transactional-init-execution-receipt.json
+  s_70feaaa654d919::t_8c9369d7f2be9b 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2817a82f978baaace513fa3ce65e84dc5e1c34d5",
+  "prompts": {},
+  "sessions": {
+    "s_70feaaa654d919": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f07-45a4-7da1-b397-b9b257e3fa0e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
