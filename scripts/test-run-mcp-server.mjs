@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { chmodSync, cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { consentBinding, consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
+import { createPathPolicy } from './lib/mcp-path-policy.mjs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, parse, relative, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -139,10 +142,32 @@ if (request.test_mode === 'wrong-contract') process.exit(0)
   return path
 }
 
+const pathValues = (value, result = []) => {
+  if (typeof value === 'string' && value.startsWith('/')) result.push(value)
+  else if (value && typeof value === 'object') Object.values(value).forEach((item) => pathValues(item, result))
+  return result
+}
+
+const testRoot = (messages) => {
+  const candidates = pathValues(messages).map((value) => {
+    try { return existsSync(value) && !lstatSync(value).isDirectory() ? dirname(value) : value } catch { return dirname(value) }
+  }).filter((value) => value.startsWith('/'))
+  let common = candidates[0] || repoRoot
+  for (const candidate of candidates.slice(1)) {
+    while (relative(common, candidate).startsWith('..')) {
+      const parent = dirname(common)
+      if (parent === common) return repoRoot
+      common = parent
+    }
+  }
+  return common
+}
+
 const rpc = (cli, messages, extraEnv = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
+    const roots = testRoot(messages)
     const child = spawn(process.execPath, [server], {
-      env: { ...process.env, MDP_BIN: cli, MDP_MCP_SECRET_MARKER: 'must-not-cross-boundary', ...extraEnv },
+      env: { ...process.env, MDP_BIN: cli, MDP_MCP_SECRET_MARKER: 'must-not-cross-boundary', ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, roots])), ...extraEnv },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -177,6 +202,70 @@ const toolCall = (id, name, args = {}) => ({
   id,
   method: 'tools/call',
   params: { name, arguments: args },
+})
+
+const consentFixture = (root, id, overrides = {}) => {
+  const value = { contract: 'mdp.mcp-provider-consent.v1', provider: 'openai', purpose: 'mdp.run', request_sha256: 'a'.repeat(64), source_sha256s: [], output_root: realpathSync(root), expires_at: new Date(Date.now() + 60_000).toISOString(), nonce: `${id}-nonce`, ...overrides }
+  value.binding_sha256 = consentBinding({ provider: value.provider, purpose: value.purpose, requestSha256: value.request_sha256, sourceSha256s: value.source_sha256s, outputRoot: value.output_root, expiresAt: value.expires_at, nonce: value.nonce })
+  writeFileSync(join(root, `${id}.json`), JSON.stringify(value))
+  return value
+}
+
+test('freezes consent records, rejects mismatch/expiry, and consumes each nonce once', () => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-mcp-consent-'))
+  try {
+    const policy = createPathPolicy({ MDP_MCP_CONSENT_ROOTS: root }, ['consent'])
+    const record = consentFixture(root, 'valid')
+    const accepted = consumeProviderConsent({ policy, consentId: 'valid', provider: 'openai', purpose: 'mdp.run', requestSha256: record.request_sha256, outputRoot: record.output_root })
+    assert.equal(accepted.nonce, record.nonce)
+    assert.throws(() => consumeProviderConsent({ policy, consentId: 'valid', provider: 'openai', purpose: 'mdp.run', requestSha256: record.request_sha256, outputRoot: record.output_root }), /already been consumed/)
+    const expired = consentFixture(root, 'expired', { expires_at: new Date(Date.now() - 1_000).toISOString() })
+    assert.throws(() => consumeProviderConsent({ policy, consentId: 'expired', provider: 'openai', purpose: 'mdp.run', requestSha256: expired.request_sha256, outputRoot: expired.output_root }), /expired/)
+    const mismatch = consentFixture(root, 'mismatch')
+    assert.throws(() => consumeProviderConsent({ policy, consentId: 'mismatch', provider: 'openai', purpose: 'mdp.run', requestSha256: 'b'.repeat(64), outputRoot: mismatch.output_root }), /does not match/)
+    const ordered = consentFixture(root, 'ordered', { source_sha256s: ['a'.repeat(64), 'b'.repeat(64)] })
+    assert.throws(() => consumeProviderConsent({ policy, consentId: 'ordered', provider: 'openai', purpose: 'mdp.run', requestSha256: ordered.request_sha256, sourceSha256s: ['b'.repeat(64), 'a'.repeat(64)], outputRoot: ordered.output_root }), /does not match/)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('eagerly rejects missing, invalid, and overly broad startup roots', () => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-mcp-root-validation-'))
+  const file = join(root, 'not-a-directory')
+  writeFileSync(file, 'fixture')
+  try {
+    assert.throws(() => createPathPolicy({}, ['pack']), { code: 'mcp-roots-not-configured' })
+    assert.throws(() => createPathPolicy({ MDP_MCP_PACK_ROOTS: file }, ['pack']), { code: 'mcp-root-invalid' })
+    assert.throws(() => createPathPolicy({ MDP_MCP_PACK_ROOTS: parse(root).root }, ['pack']), { code: 'mcp-root-invalid' })
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('resolves consent across configured roots and rejects missing or ambiguous IDs', () => {
+  const first = mkdtempSync(join(tmpdir(), 'mdp-mcp-consent-first-'))
+  const second = mkdtempSync(join(tmpdir(), 'mdp-mcp-consent-second-'))
+  try {
+    const policy = createPathPolicy({ MDP_MCP_CONSENT_ROOTS: [first, second].join(delimiter) }, ['consent'])
+    const later = consentFixture(second, 'later-root')
+    const accepted = consumeProviderConsent({ policy, consentId: 'later-root', provider: 'openai', purpose: 'mdp.run', requestSha256: later.request_sha256, outputRoot: later.output_root })
+    assert.equal(accepted.nonce, later.nonce)
+    assert.throws(() => consumeProviderConsent({ policy, consentId: 'missing', provider: 'openai', purpose: 'mdp.run', requestSha256: 'a'.repeat(64), outputRoot: realpathSync(first) }), /unavailable/)
+    const duplicate = consentFixture(first, 'duplicate')
+    consentFixture(second, 'duplicate', { nonce: `${duplicate.nonce}-second` })
+    assert.throws(() => consumeProviderConsent({ policy, consentId: 'duplicate', provider: 'openai', purpose: 'mdp.run', requestSha256: duplicate.request_sha256, outputRoot: duplicate.output_root }), /ambiguous/)
+  } finally {
+    rmSync(first, { recursive: true, force: true })
+    rmSync(second, { recursive: true, force: true })
+  }
+})
+
+test('denies a generative request without consent before any provider spawn', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-mcp-no-consent-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const request = join(root, 'request.json')
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'generative' }))
+  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run') })], { OPENAI_API_KEY: 'consent-test-key', MDP_ALLOW_NATIVE_MODEL_CALLS: '1' })
+  assert.equal(reply.error.code, -32602)
+  assert.match(reply.error.message, /consent/)
+  assert.equal(existsSync(join(root, 'run.invocation.json')), false)
 })
 
 const waitForFile = async (path) => {
@@ -229,7 +318,7 @@ test('notifications/cancelled aborts a hanging clean run with sanitized cancella
   const output = join(root, 'cancelled-run')
   writeFileSync(request, JSON.stringify({ test_mode: 'hang' }))
   const child = spawn(process.execPath, [server], {
-    env: { ...process.env, MDP_BIN: fixtureCli(root) },
+    env: { ...process.env, MDP_BIN: fixtureCli(root), ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])) },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const replies = []
@@ -329,11 +418,55 @@ test('rejects output roots inside the request pack before spawning the CLI', asy
   ])
   for (const [index, output] of unsafe.entries()) {
     assert.equal(replies[index].error.code, -32602)
-    assert.match(replies[index].error.message, /outside the active pack/)
+    assert.match(replies[index].error.message, /outside the active pack|must not be a symlink/)
     assert.equal(existsSync(`${output}.invocation.json`), false)
   }
   assert.equal(replies[unsafe.length].result.isError, false)
   assert.equal(existsSync(`${safe}.invocation.json`), true)
+})
+
+test('rejects a request whose pack_dir is outside the approved pack root before spawning', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-pack-root-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const approvedPack = join(root, 'approved-pack')
+  const outsidePack = join(root, 'outside-pack')
+  mkdirSync(approvedPack)
+  mkdirSync(outsidePack)
+  const request = join(root, 'request.json')
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', pack_dir: outsidePack }))
+  const output = join(root, 'run')
+  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', { request_path: request, output_dir: output })], {
+    MDP_MCP_PACK_ROOTS: approvedPack,
+    MDP_MCP_INPUT_ROOTS: root,
+    MDP_MCP_OUTPUT_ROOTS: root,
+    MDP_MCP_WORK_ROOTS: root,
+    MDP_MCP_CONSENT_ROOTS: root,
+  })
+  assert.equal(reply.error.code, -32602)
+  assert.match(reply.error.message, /outside approved roots/)
+  assert.equal(existsSync(`${output}.invocation.json`), false)
+})
+
+test('rejects a declared deterministic input outside the approved input root before spawning', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-input-root-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const approvedInput = join(root, 'approved-input')
+  const outsideInput = join(root, 'outside-input.json')
+  mkdirSync(approvedInput)
+  writeFileSync(outsideInput, 'outside')
+  const request = join(approvedInput, 'request.json')
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', inputs: [{ logical_name: 'source', source_path: outsideInput }] }))
+  const output = join(root, 'run')
+  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', { request_path: request, output_dir: output })], {
+    MDP_MCP_PACK_ROOTS: root,
+    MDP_MCP_INPUT_ROOTS: approvedInput,
+    MDP_MCP_OUTPUT_ROOTS: root,
+    MDP_MCP_WORK_ROOTS: root,
+    MDP_MCP_CONSENT_ROOTS: root,
+  })
+  assert.equal(reply.error.code, -32602)
+  assert.match(reply.error.message, /outside approved roots/)
+  assert.equal(existsSync(`${output}.invocation.json`), false)
 })
 
 test('forwards native model permission and credential only for generative requests', async (t) => {
@@ -344,12 +477,17 @@ test('forwards native model permission and credential only for generative reques
   const generative = join(root, 'generative.json')
   writeFileSync(deterministic, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'deterministic' }))
   writeFileSync(generative, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'generative' }))
+  const requestSha256 = createHash('sha256').update(readFileSync(generative)).digest('hex')
+  const expiresAt = new Date(Date.now() + 60_000).toISOString()
+  const outputRoot = realpathSync(root)
+  const bindingSha256 = consentBinding({ provider: 'openai', purpose: 'mdp.run', requestSha256, outputRoot, expiresAt, nonce: 'generative-nonce' })
+  writeFileSync(join(root, 'gen-consent.json'), JSON.stringify({ contract: 'mdp.mcp-provider-consent.v1', provider: 'openai', purpose: 'mdp.run', request_sha256: requestSha256, source_sha256s: [], output_root: outputRoot, expires_at: expiresAt, nonce: 'generative-nonce', binding_sha256: bindingSha256 }))
 
   const replies = await rpc(
     cli,
     [
       toolCall(1, 'mdp_run', { request_path: deterministic, output_dir: join(root, 'deterministic-run') }),
-      toolCall(2, 'mdp_run', { request_path: generative, output_dir: join(root, 'generative-run') }),
+      toolCall(2, 'mdp_run', { request_path: generative, output_dir: join(root, 'generative-run'), consent_id: 'gen-consent' }),
     ],
     { OPENAI_API_KEY: 'test-key-must-not-be-printed', MDP_ALLOW_NATIVE_MODEL_CALLS: '1' },
   )

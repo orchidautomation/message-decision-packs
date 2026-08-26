@@ -140,7 +140,7 @@ const publicRoutedContextAcceptance = ({ baseRequest, routedInput, pack, jobId }
     process.execPath,
     [server],
     {
-      env: { ...process.env, PATH: process.env.PATH || '', MDP_BIN: resolve(mdp) },
+      env: { ...process.env, PATH: process.env.PATH || '', MDP_BIN: resolve(mdp), MDP_MCP_PACK_ROOTS: `${scratch}:${repoRoot}:${pack}`, MDP_MCP_INPUT_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: scratch, MDP_MCP_WORK_ROOTS: scratch, MDP_MCP_OUTPUT_ROOTS: scratch, MDP_MCP_CONSENT_ROOTS: scratch },
       input: `${JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
@@ -178,8 +178,9 @@ const publicRoutedContextAcceptance = ({ baseRequest, routedInput, pack, jobId }
     assert.ok(!existsSync(outputDir), `${testCase.name} published a blocked run directory`)
 
     const mcp = invokeMcp(requestPath, join(scratch, `acceptance-${testCase.name}.mcp.run`))
-    assert.equal(mcp.status, 0, `public MCP ${testCase.name} acceptance failed\n${mcp.stderr}`)
+    assert.equal(mcp.status, 0, `public MCP ${testCase.name} acceptance failed\nstdout:\n${mcp.stdout}\nstderr:\n${mcp.stderr}`)
     const reply = JSON.parse(mcp.stdout.trim().split('\n').at(-1))
+    assert.ok(reply.result, `public MCP ${testCase.name} returned JSON-RPC error ${JSON.stringify(reply.error)}\nstdout:\n${mcp.stdout}\nstderr:\n${mcp.stderr}`)
     assert.equal(reply.result.isError, false)
     assert.equal(reply.result.structuredContent.terminal_state, cli.data.terminal_state)
     assert.deepEqual(reply.result.structuredContent.authority_block.diagnostics, cli.data.authority_block.diagnostics)
@@ -569,7 +570,7 @@ try {
       `${profile}/${jobId}/${step.phase} canonical v2 offline run`,
     )
     if (!mcpParity && runInputs.some((input) => input.logical_name === 'routed_context')) {
-      mcpParity = { execution, requestPath: runRequestPath, outputDir: join(scratch, 'mcp-parity-run') }
+      mcpParity = { execution, requestPath: runRequestPath, outputDir: join(scratch, 'mcp-parity-run'), packDir: pack }
     }
     const routedInput = runInputs.find((input) => input.logical_name === 'routed_context')
     if (!routedContextAcceptanceDone && profile === 'gtm' && jobId === 'outbound-copy-brief' && routedInput) {
@@ -687,7 +688,7 @@ try {
     process.execPath,
     [join(repoRoot, 'scripts', 'mdp-run-mcp-server.mjs')],
     {
-      env: { ...process.env, MDP_BIN: resolve(mdp) },
+      env: { ...process.env, MDP_BIN: resolve(mdp), MDP_MCP_PACK_ROOTS: `${scratch}:${repoRoot}:${mcpParity.packDir}`, MDP_MCP_INPUT_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: scratch, MDP_MCP_WORK_ROOTS: scratch, MDP_MCP_OUTPUT_ROOTS: scratch, MDP_MCP_CONSENT_ROOTS: scratch },
       input: [
         JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
         JSON.stringify({

@@ -212,7 +212,12 @@ PY
 
 node --check "$root/scripts/mdp-proposal-mcp-server.mjs"
 provider_key="OPENAI_API_KEY"
-env MDP_MCP_TEST_MARKER=must-not-leak "$provider_key=mdp-redaction-test-value" \
+env MDP_MCP_PACK_ROOTS="$(dirname "$pack")" \
+  MDP_MCP_INPUT_ROOTS="$root/examples/proposal-flow-video/messy-sources:$tmp_dir" \
+  MDP_MCP_APPROVAL_ROOTS="$tmp_dir" \
+  MDP_MCP_WORK_ROOTS="$tmp_dir" \
+  MDP_MCP_CONSENT_ROOTS="$tmp_dir" \
+  MDP_MCP_TEST_MARKER=must-not-leak "$provider_key=mdp-redaction-test-value" \
   node "$root/scripts/mdp-proposal-mcp-server.mjs" < "$transcript" > "$stdout_jsonl" 2> "$stderr_log"
 
 if [ -s "$stderr_log" ]; then
@@ -361,12 +366,16 @@ timeout_bundle="$tmp_dir/timeout-bundle"
 mkdir -p "$timeout_bundle/scripts/lib"
 cp "$root/scripts/mdp-proposal-mcp-server.mjs" "$timeout_bundle/scripts/"
 cp "$root/scripts/lib/deadline-policy.mjs" "$timeout_bundle/scripts/lib/"
+cp "$root/scripts/lib/mcp-path-policy.mjs" "$timeout_bundle/scripts/lib/"
+cp "$root/scripts/lib/mcp-provider-consent.mjs" "$timeout_bundle/scripts/lib/"
 cat > "$timeout_bundle/scripts/mdp-proposal-runner.mjs" <<'JS'
 import { spawn } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 const args = process.argv.slice(2)
 const workdir = args[args.indexOf('--workdir') + 1]
 const marker = join(dirname(workdir), 'delayed-marker')
+writeFileSync(join(dirname(workdir), 'spawned-marker'), 'spawned')
 spawn(process.execPath, ['-e', `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 500)`], {
   stdio: 'ignore',
 })
@@ -395,7 +404,12 @@ message = {
 }
 open(transcript, "w", encoding="utf-8").write(json.dumps(message) + "\n")
 PY
-node "$timeout_bundle/scripts/mdp-proposal-mcp-server.mjs" < "$timeout_transcript" > "$tmp_dir/timeout-output.jsonl"
+env MDP_MCP_PACK_ROOTS="$(dirname "$pack")" \
+  MDP_MCP_INPUT_ROOTS="$root/examples/proposal-flow-video/messy-sources:$tmp_dir" \
+  MDP_MCP_APPROVAL_ROOTS="$tmp_dir" \
+  MDP_MCP_WORK_ROOTS="$tmp_dir" \
+  MDP_MCP_CONSENT_ROOTS="$tmp_dir" \
+  node "$timeout_bundle/scripts/mdp-proposal-mcp-server.mjs" < "$timeout_transcript" > "$tmp_dir/timeout-output.jsonl"
 sleep 1
 test ! -e "$tmp_dir/delayed-marker"
 python3 - "$tmp_dir/timeout-output.jsonl" <<'PY'
@@ -406,6 +420,62 @@ assert response["result"]["isError"] is True
 assert content["timed_out"] is True
 assert content["runner_exit_status"] == 124
 assert content["termination_signal"] == "SIGTERM"
+PY
+
+native_workdir="$tmp_dir/native-workdir"
+native_denied_workdir="$tmp_dir/native-denied-workdir"
+node --input-type=module - "$pack" "$source_file" "$tmp_dir/native-consent.json" "$tmp_dir" "$native_workdir" <<'JS'
+import { createHash } from 'node:crypto'
+import { readFileSync, statSync, writeFileSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
+const [pack, source, consentPath, workRoot, workdir] = process.argv.slice(2)
+const hash = (value) => createHash('sha256').update(value).digest('hex')
+const sourceSha256 = hash(readFileSync(source))
+const packStats = statSync(pack, { bigint: true })
+const packSha256 = hash(JSON.stringify({ path: realpathSync(pack), identity: { dev: String(packStats.dev), ino: String(packStats.ino) } }))
+const requestSha256 = hash(JSON.stringify({
+  contract: 'mdp.proposal-frozen-invocation.v1',
+  pack_sha256: packSha256,
+  source_sha256s: [sourceSha256],
+  source_intake_sha256: null,
+  source_audit_sha256: null,
+  mock_response_sha256: null,
+  prompt_id: null,
+  model: null,
+  workdir: `${realpathSync(workRoot)}/native-workdir`,
+}))
+const expiresAt = new Date(Date.now() + 60_000).toISOString()
+const record = { contract: 'mdp.mcp-provider-consent.v1', provider: 'openai', purpose: 'mdp.proposal-run', request_sha256: requestSha256, source_sha256s: [sourceSha256], output_root: realpathSync(workRoot), expires_at: expiresAt, nonce: 'proposal-native-nonce' }
+record.binding_sha256 = hash(JSON.stringify({ contract: record.contract, provider: record.provider, purpose: record.purpose, request_sha256: record.request_sha256, source_sha256s: record.source_sha256s, output_root: record.output_root, expires_at: record.expires_at, nonce: record.nonce }))
+writeFileSync(consentPath, JSON.stringify(record))
+JS
+python3 - "$tmp_dir/native-transcript.ndjson" "$pack" "$source_file" "$native_denied_workdir" "$native_workdir" <<'PY'
+import json, sys
+transcript, pack, source, denied_workdir, workdir = sys.argv[1:]
+messages = []
+for ident, target, extra in [(1, denied_workdir, {}), (2, workdir, {"consent_id": "native-consent"})]:
+    messages.append({"jsonrpc":"2.0", "id":ident, "method":"tools/call", "params":{"name":"mdp_proposal_run", "arguments":{"pack":pack, "workdir":target, "source_paths":[source], "source_id":"synthetic-rfp-summary", "source_kind":"synthetic-example", **extra, "timeout_ms":500}}})
+with open(transcript, "w", encoding="utf-8") as handle:
+    for message in messages:
+        handle.write(json.dumps(message) + "\n")
+PY
+env MDP_MCP_PACK_ROOTS="$(dirname "$pack")" \
+  MDP_MCP_INPUT_ROOTS="$root/examples/proposal-flow-video/messy-sources:$tmp_dir" \
+  MDP_MCP_APPROVAL_ROOTS="$tmp_dir" \
+  MDP_MCP_WORK_ROOTS="$tmp_dir" \
+  MDP_MCP_CONSENT_ROOTS="$tmp_dir" \
+  OPENAI_API_KEY=proposal-consent-test-key \
+  MDP_ALLOW_NATIVE_MODEL_CALLS=1 \
+  node "$timeout_bundle/scripts/mdp-proposal-mcp-server.mjs" < "$tmp_dir/native-transcript.ndjson" > "$tmp_dir/native-output.jsonl"
+test ! -e "$native_denied_workdir/spawned-marker"
+test -e "$tmp_dir/spawned-marker"
+python3 - "$tmp_dir/native-output.jsonl" <<'PY'
+import json, sys
+responses = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
+assert responses[0]["error"]["code"] == -32602
+assert "consent_id is required" in responses[0]["error"]["message"]
+assert responses[1]["result"]["isError"] is True
+assert responses[1]["result"]["structuredContent"]["timed_out"] is True
 PY
 
 line_limit_input="$tmp_dir/line-limit.ndjson"

@@ -1,8 +1,11 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createPathPolicy } from './lib/mcp-path-policy.mjs'
+import { consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
 import {
   MAX_TIMEOUT_MS as DEADLINE_MAX_TIMEOUT_MS,
   MIN_TIMEOUT_MS,
@@ -51,6 +54,24 @@ const JSON_RPC_INVALID_PARAMS = -32602
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
 const runnerPath = join(scriptDir, 'mdp-proposal-runner.mjs')
+const providerCapabilityAvailable = () => process.env.MDP_ALLOW_NATIVE_MODEL_CALLS === '1' && typeof process.env.OPENAI_API_KEY === 'string' && process.env.OPENAI_API_KEY !== ''
+const proposalConsentRequestSha256 = (value) => createHash('sha256').update(JSON.stringify({
+  contract: 'mdp.proposal-frozen-invocation.v1',
+  pack_sha256: value.packSha256,
+  source_sha256s: value.sourceSha256s,
+  source_intake_sha256: value.sourceIntakeSha256,
+  source_audit_sha256: value.sourceAuditSha256,
+  mock_response_sha256: value.mockResponseSha256,
+  prompt_id: value.promptId,
+  model: value.model,
+  workdir: value.workdir,
+})).digest('hex')
+let pathPolicy = null
+try { pathPolicy = createPathPolicy(process.env, ['pack', 'input', 'approval', 'work', 'consent']) } catch (error) { pathPolicy = { startupError: error } }
+const requirePolicy = () => {
+  if (pathPolicy?.startupError) throw pathPolicy.startupError
+  return pathPolicy
+}
 
 const readVersion = () => {
   const candidates = [
@@ -422,6 +443,10 @@ const proposalRunSchema = {
       maximum: MAX_TIMEOUT_MS,
       description: `Child-process deadline in milliseconds. Defaults to ${DEFAULT_TIMEOUT_MS}.`,
     },
+    consent_id: {
+      type: 'string',
+      description: 'Out-of-band one-shot consent record id required for real native runs.',
+    },
   },
 }
 
@@ -557,6 +582,7 @@ const callProposalRun = async (args) => {
     'require_audit_grade',
     'max_source_bytes',
     'timeout_ms',
+    'consent_id',
   ])
   assertNoUnsupportedArgs(parsedArgs, allowed)
 
@@ -564,11 +590,19 @@ const callProposalRun = async (args) => {
   const workdirArg = optionalString(parsedArgs, 'workdir')
   if (!packArg) throw new Error('pack is required')
   if (!workdirArg) throw new Error('workdir is required')
-  const pack = canonicalPack(packArg)
-  const workdir = canonicalWorkdir(workdirArg)
+  const policy = requirePolicy()
+  const packReservation = policy.existing('pack', packArg, 'directory')
+  const pack = canonicalPack(packReservation.path)
+  const workReservation = existsSync(workdirArg)
+    ? { ...policy.existing('work', workdirArg, 'directory'), newLeaf: false }
+    : { ...policy.newOutput('work', workdirArg), newLeaf: true }
+  const workdir = workReservation.path
+  const workParent = workReservation.parent
+    ? { path: workReservation.parent, root: workReservation.root, alias: 'work', identity: workReservation.parentIdentity }
+    : policy.existing('work', dirname(workdir), 'directory')
 
   const sourcePaths = optionalStringArray(parsedArgs, 'source_paths').map((path, index) =>
-    canonicalExistingPath(path, `source_paths[${index}]`, 'file'),
+    policy.existing('input', path, 'file').path,
   )
   if (sourcePaths.length > MAX_SOURCE_COUNT) {
     throw new Error(`source_paths must contain at most ${MAX_SOURCE_COUNT} files`)
@@ -584,22 +618,39 @@ const callProposalRun = async (args) => {
   if (totalSourceBytes > MAX_TOTAL_SOURCE_BYTES) {
     throw new Error(`source_paths exceed the ${MAX_TOTAL_SOURCE_BYTES} byte total limit`)
   }
+  const frozenSources = sourcePaths.map((path) => policy.freeze('input', path, MAX_SOURCE_FILE_BYTES))
   const sourceIntakeArg = optionalString(parsedArgs, 'source_intake_path')
   const sourceAuditArg = optionalString(parsedArgs, 'source_audit_path')
   const sourceIntakePath = sourceIntakeArg
-    ? canonicalExistingPath(sourceIntakeArg, 'source_intake_path', 'file')
+    ? policy.existing('approval', sourceIntakeArg, 'file').path
     : null
   const sourceAuditPath = sourceAuditArg
-    ? canonicalExistingPath(sourceAuditArg, 'source_audit_path', 'file')
+    ? policy.existing('approval', sourceAuditArg, 'file').path
     : null
+  const frozenIntake = sourceIntakePath ? policy.freeze('approval', sourceIntakePath, MAX_SOURCE_FILE_BYTES) : null
+  const frozenAudit = sourceAuditPath ? policy.freeze('approval', sourceAuditPath, MAX_SOURCE_FILE_BYTES) : null
   const sourceId = optionalString(parsedArgs, 'source_id')
   const sourceKind = optionalString(parsedArgs, 'source_kind')
   const privacyClass = optionalString(parsedArgs, 'privacy_class')
   const model = optionalString(parsedArgs, 'model')
   const mockResponseArg = optionalString(parsedArgs, 'mock_response_path')
   const mockResponsePath = mockResponseArg
-    ? canonicalExistingPath(mockResponseArg, 'mock_response_path', 'file')
+    ? policy.existing('input', mockResponseArg, 'file').path
     : null
+  const frozenMock = mockResponsePath ? policy.freeze('input', mockResponsePath, MAX_SOURCE_FILE_BYTES) : null
+  const finalCheckInputs = () => {
+    policy.finalCheck('pack', packReservation.path, packReservation, 'directory')
+    for (const source of frozenSources) policy.finalCheck('input', source.path, source)
+    if (frozenIntake) policy.finalCheck('approval', frozenIntake.path, frozenIntake)
+    if (frozenAudit) policy.finalCheck('approval', frozenAudit.path, frozenAudit)
+    if (frozenMock) policy.finalCheck('input', frozenMock.path, frozenMock)
+    if (workReservation.newLeaf) {
+      const current = policy.newOutput('work', workdir)
+      if (current.root !== workReservation.root || current.parent !== workReservation.parent || current.parentIdentity.dev !== workReservation.parentIdentity.dev || current.parentIdentity.ino !== workReservation.parentIdentity.ino) throw new Error('work path changed before use')
+    } else {
+      policy.finalCheck('work', workdir, workReservation, 'directory')
+    }
+  }
   const promptId = optionalString(parsedArgs, 'prompt_id')
   const maxSourceBytes = optionalInteger(parsedArgs, 'max_source_bytes')
   if (maxSourceBytes !== null && (maxSourceBytes < 1000 || maxSourceBytes > MAX_SOURCE_BYTES)) {
@@ -611,6 +662,7 @@ const callProposalRun = async (args) => {
   const reuseWorkdirId = optionalString(parsedArgs, 'reuse_workdir_id')
   const skipReview = optionalBoolean(parsedArgs, 'skip_review')
   const requireAuditGrade = optionalBoolean(parsedArgs, 'require_audit_grade')
+  const consentId = optionalString(parsedArgs, 'consent_id')
   const timeoutMs = optionalInteger(parsedArgs, 'timeout_ms') ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
   if (cleanRunV1 && !packReleaseId) {
@@ -622,6 +674,22 @@ const callProposalRun = async (args) => {
 
   if (sourcePaths.length === 0) {
     throw new Error('Pass at least one source_paths file. Ambient chat/source text and audit-only runs are intentionally not accepted.')
+  }
+  const providerCapable = !dryRun && !mockResponsePath && providerCapabilityAvailable()
+  if (providerCapable) {
+    if (!consentId) throw new Error('consent_id is required for real native runs')
+    const requestSha256 = proposalConsentRequestSha256({
+      packSha256: createHash('sha256').update(JSON.stringify({ path: pack, identity: { dev: String(packReservation.identity.dev), ino: String(packReservation.identity.ino) } })).digest('hex'),
+      sourceSha256s: frozenSources.map((source) => source.sha256),
+      sourceIntakeSha256: frozenIntake?.sha256 ?? null,
+      sourceAuditSha256: frozenAudit?.sha256 ?? null,
+      mockResponseSha256: frozenMock?.sha256 ?? null,
+      promptId,
+      model,
+      workdir,
+    })
+    finalCheckInputs()
+    consumeProviderConsent({ policy, consentId, provider: 'openai', purpose: 'mdp.proposal-run', requestSha256, sourceSha256s: frozenSources.map((source) => source.sha256), outputRoot: workReservation.root })
   }
 
   const runnerArgs = ['run', '--pack', pack, '--workdir', workdir]
@@ -640,10 +708,12 @@ const callProposalRun = async (args) => {
   if (reuseWorkdirId) runnerArgs.push('--reuse-workdir-id', reuseWorkdirId)
   if (skipReview) runnerArgs.push('--skip-review')
   if (requireAuditGrade) runnerArgs.push('--require-audit-grade')
+  if (consentId) runnerArgs.push('--consent-id', consentId)
   if (maxSourceBytes !== null) runnerArgs.push('--max-source-bytes', String(maxSourceBytes))
   runnerArgs.push('--timeout-ms', String(timeoutMs))
 
-  const result = await runNode(runnerPath, runnerArgs, timeoutMs, !dryRun && !mockResponsePath)
+  finalCheckInputs()
+  const result = await runNode(runnerPath, runnerArgs, timeoutMs, providerCapable)
   let parsed = null
   try {
     parsed = parseRunnerJson(result.stdout)

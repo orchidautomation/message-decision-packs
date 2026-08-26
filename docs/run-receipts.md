@@ -417,3 +417,12 @@ prompt hash, routed-context hash, detached invocation-receipt hash, and the
 any model-supplied owned field and then runs the existing final output and receipt
 validation. Prompts without this declaration keep the legacy echo-and-validate
 behavior, so migration requires a prompt version/hash change.
+## MCP root and consent boundary
+
+MCP startup must configure approved pack, input/approval, work, output, and
+consent roots through the `MDP_MCP_*_ROOTS` variables. Every path is checked
+against canonical component boundaries, and bounded input reads are frozen by
+descriptor identity. Generative calls require an out-of-band one-shot consent
+record matching the exact request/source digests and output root. The record is
+consumed before provider preflight or runner spawn. A native credential or
+enable flag without that record is insufficient.

@@ -325,3 +325,17 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --agents -y
 
 A merged runner change is shipped to installed users only after a release containing that commit is published and the installer smoke test passes.
 - Host adapters should use the canonical 60,000ms recommendation. A transport timeout is a compatibility boundary: it may truncate the request’s runtime policy after the fixed finalization reserve, but it cannot extend that inner policy.
+## MCP startup roots and native consent
+
+The proposal MCP adapter is local-only and fail-closed. Configure
+`MDP_MCP_PACK_ROOTS`, `MDP_MCP_INPUT_ROOTS`, `MDP_MCP_APPROVAL_ROOTS`,
+`MDP_MCP_WORK_ROOTS`, `MDP_MCP_OUTPUT_ROOTS`, and `MDP_MCP_CONSENT_ROOTS` with
+existing real directories before use. Pack, source, approval ledger, mock, and
+work paths must remain within their corresponding roots.
+
+Real native runs also require a one-shot consent record selected by its opaque
+identifier. Consent binds provider, purpose, frozen request/source digests,
+output root, expiry, and nonce; it is consumed before the native child is
+created. Dry-run and mock runs still require approved roots but do not receive
+provider credentials. Diagnostics remain bounded and omit secrets, source
+bodies, and absolute paths.
