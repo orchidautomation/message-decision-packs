@@ -1,0 +1,19 @@
+AGENTS.md
+  s_345c01b0db150b::t_2a9effefca3f64 17-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1af062f203f189eb551349b081a42aa1b2c249dc",
+  "prompts": {},
+  "sessions": {
+    "s_345c01b0db150b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0388c-aca9-7333-945c-f4af539a7850",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
