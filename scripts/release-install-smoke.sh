@@ -644,7 +644,15 @@ import json, sys
 print(json.dumps({"jsonrpc":"2.0", "id":2, "method":"tools/call", "params": {
     "name":"mdp_run", "arguments":{"request_path":sys.argv[1], "output_dir":sys.argv[2]}}}))
 PY
-} | (cd "$install_home" && MDP_BIN="$mdp_bin" "$node_bin" "$codex_plugin_root/scripts/mdp-run-mcp-server.mjs"))"
+} | (cd "$install_home" && \
+  MDP_BIN="$mdp_bin" \
+  MDP_MCP_PACK_ROOTS="$proposal_fixture" \
+  MDP_MCP_INPUT_ROOTS="$proposal_fixture" \
+  MDP_MCP_APPROVAL_ROOTS="$proposal_fixture" \
+  MDP_MCP_WORK_ROOTS="$run_fixture" \
+  MDP_MCP_CONSENT_ROOTS="$run_fixture" \
+  MDP_MCP_OUTPUT_ROOTS="$run_fixture" \
+  "$node_bin" "$codex_plugin_root/scripts/mdp-run-mcp-server.mjs"))"
 if ! printf '%s\n' "$mcp_run_stdout" | grep -F '"terminal_state"' >/dev/null; then
   echo "Installed MCP mdp_run did not return canonical CLI data." >&2
   printf '%s\n' "$mcp_run_stdout" >&2
