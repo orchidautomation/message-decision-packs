@@ -1,9 +1,10 @@
+use crate::commands::health::validate_pack;
+use crate::commands::init_transaction::{
+    self, GeneratedArtifact, dry_run as tx_dry_run, fresh_nonce, preflight, stage_artifacts,
+};
 use crate::constants::{DEFAULT_DIR, FORMAT_VERSION};
 use crate::models::{Card, Manifest, TargetIdentity};
-use crate::pack_io::{
-    planned_directory, planned_file_write_after_dirs, planned_json_write_after_dirs,
-    planned_yaml_write_after_dirs, read_manifest, write_json_file, write_yaml,
-};
+use crate::pack_io::{planned_directory, read_manifest};
 use crate::pack_readme::render_pack_readme;
 use crate::starter::{
     decision_input_scenarios, generated_starter_evals, generated_starter_manifest,
@@ -19,7 +20,6 @@ use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use serde_yaml::Value as YamlValue;
 use std::borrow::Cow;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 const AVAILABLE_TEMPLATES: &str = "gtm, proposal";
@@ -466,110 +466,50 @@ fn init_gtm_pack(
     governed: bool,
 ) -> Result<Value> {
     validate_target_destination(root, target)?;
-    let pack_dir = root.join(DEFAULT_DIR);
-    let readme_path = pack_dir.join("README.md");
-    refuse_existing_file(&readme_path, force)?;
-    let cards_dir = pack_dir.join("cards");
-    let briefs_dir = pack_dir.join("briefs");
-    let evals_dir = pack_dir.join("evals");
-    let prompts_dir = pack_dir.join("prompts");
-    let examples_dir = root.join("examples");
-    let decision_input_scenarios_path = examples_dir.join("decision-input-scenarios.json");
-    if decision_input_scenarios_path.exists() && !force {
-        return Err(anyhow!(
-            "{} already exists; pass --force to overwrite",
-            decision_input_scenarios_path.display()
-        ));
-    }
-    fs::create_dir_all(&cards_dir).with_context(|| format!("creating {}", cards_dir.display()))?;
-    fs::create_dir_all(&briefs_dir)
-        .with_context(|| format!("creating {}", briefs_dir.display()))?;
-    fs::create_dir_all(&evals_dir).with_context(|| format!("creating {}", evals_dir.display()))?;
-    fs::create_dir_all(&prompts_dir)
-        .with_context(|| format!("creating {}", prompts_dir.display()))?;
-    fs::create_dir_all(&examples_dir)
-        .with_context(|| format!("creating {}", examples_dir.display()))?;
-    let slug = slugify(name);
-    let manifest_path = pack_dir.join("manifest.yaml");
-    let manifest = if let Some(target) = target {
-        target_manifest(name, &slug, template, target)
-    } else if governed {
-        generated_starter_manifest(name, &slug, template)
-    } else {
-        starter_manifest(name, &slug, template)
-    };
-    write_yaml(&manifest_path, &manifest, force)?;
-    let source_ledger_path = pack_dir.join("sources.yaml");
-    let source_ledger = target
-        .map(target_source_ledger)
-        .unwrap_or_else(|| starter_source_ledger(template));
-    write_yaml(&source_ledger_path, &source_ledger, force)?;
-    let cards = target
-        .map(target_cards)
-        .unwrap_or_else(|| starter_cards(template));
-    for (filename, card) in &cards {
-        write_yaml(&cards_dir.join(filename), &card, force)?;
-    }
-    let evals = target.map(target_evals).unwrap_or_else(|| {
-        if governed {
-            generated_starter_evals()
-        } else {
-            starter_evals()
-        }
-    });
-    for (filename, eval) in evals {
-        write_yaml(&evals_dir.join(filename), &eval, force)?;
-    }
-    let prompts = target
-        .map(|target| target_prompts(target, include_output_schemas))
-        .unwrap_or_else(|| {
-            if governed {
-                generated_starter_prompts(include_output_schemas)
-            } else {
-                starter_prompts(include_output_schemas)
-            }
-        });
-    for (filename, prompt) in &prompts {
-        write_yaml(&prompts_dir.join(filename), &prompt, force)?;
-    }
-    let prompt_ids = prompts
-        .iter()
-        .filter_map(|(_, prompt)| prompt["id"].as_str().map(str::to_string))
-        .collect::<Vec<_>>();
-    let card_models = cards.iter().map(|(_, card)| card).collect::<Vec<_>>();
-    write_text_file(
-        &readme_path,
-        &render_pack_readme(&manifest, &card_models, &source_ledger, &prompt_ids),
-        force,
-    )?;
-    let prospect_path = examples_dir.join(if target.is_some() {
-        "prospect-row.json"
-    } else {
-        "clay-row.json"
-    });
-    if prospect_path.exists() && !force {
-        return Err(anyhow!(
-            "{} already exists; pass --force to overwrite",
-            prospect_path.display()
-        ));
-    }
-    let prospect = target
-        .map(target_prospect)
-        .unwrap_or_else(|| starter_prospect(template));
-    write_json_file(&prospect_path, &prospect)?;
-    write_json_file(&decision_input_scenarios_path, &decision_input_scenarios())?;
-    Ok(init_payload(
+    let inventory = build_gtm_inventory(
         root,
-        &pack_dir,
-        &manifest_path,
-        &source_ledger_path,
-        &cards_dir,
-        &evals_dir,
-        &prompts_dir,
-        &readme_path,
-        &prospect_path,
+        name,
+        template,
         target,
-    ))
+        force,
+        include_output_schemas,
+        governed,
+    )?;
+    let outcome = run_publish(root, &inventory, force, |staging_root| {
+        let diagnostics = validate_pack(staging_root)?;
+        let valid = diagnostics
+            .get("valid")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !valid {
+            let detail = diagnostics
+                .get("issues")
+                .cloned()
+                .unwrap_or(Value::Array(Vec::new()));
+            return Err(anyhow!(
+                "staged init pack at {} failed validation: {}",
+                staging_root.display(),
+                detail
+            ));
+        }
+        Ok(())
+    })?;
+    // Ensure canonical pack directories (e.g. .mdp/briefs) exist even
+    // when no template file populates them. The original implementation
+    // created these directories explicitly before any file write.
+    let briefs_dir = root.join(DEFAULT_DIR).join("briefs");
+    if !briefs_dir.exists() {
+        std::fs::create_dir_all(&briefs_dir)
+            .with_context(|| format!("creating {}", briefs_dir.display()))?;
+    }
+    let mut payload = gtm_init_payload(root, name, template, target);
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "publication".to_string(),
+            init_transaction::publication_envelope(&outcome),
+        );
+    }
+    Ok(payload)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -629,81 +569,29 @@ fn init_gtm_pack_dry_run(
     include_output_schemas: bool,
 ) -> Result<Value> {
     validate_target_destination(root, target)?;
-    let pack_dir = root.join(DEFAULT_DIR);
-    let cards_dir = pack_dir.join("cards");
-    let briefs_dir = pack_dir.join("briefs");
-    let evals_dir = pack_dir.join("evals");
-    let prompts_dir = pack_dir.join("prompts");
-    let examples_dir = root.join("examples");
-    let manifest_path = pack_dir.join("manifest.yaml");
-    let source_ledger_path = pack_dir.join("sources.yaml");
-    let readme_path = pack_dir.join("README.md");
-    let prospect_path = examples_dir.join(if target.is_some() {
-        "prospect-row.json"
-    } else {
-        "clay-row.json"
-    });
-    let decision_input_scenarios_path = examples_dir.join("decision-input-scenarios.json");
-    let mut payload = init_payload(
+    let inventory = build_gtm_inventory(
         root,
-        &pack_dir,
-        &manifest_path,
-        &source_ledger_path,
-        &cards_dir,
-        &evals_dir,
-        &prompts_dir,
-        &readme_path,
-        &prospect_path,
+        name,
+        template,
         target,
-    );
-    let slug = slugify(name);
-    let mut write_plan = vec![
-        planned_directory(&pack_dir),
-        planned_directory(&cards_dir),
-        planned_directory(&briefs_dir),
-        planned_directory(&evals_dir),
-        planned_directory(&prompts_dir),
-        planned_directory(&examples_dir),
-        planned_yaml_write_after_dirs(&manifest_path, force),
-        planned_yaml_write_after_dirs(&source_ledger_path, force),
-        planned_file_write_after_dirs(&readme_path, "markdown-file", force),
-    ];
-    let cards = target
-        .map(target_cards)
-        .unwrap_or_else(|| starter_cards(template));
-    for (filename, _) in cards {
-        write_plan.push(planned_yaml_write_after_dirs(
-            &cards_dir.join(filename),
-            force,
-        ));
-    }
-    let evals = target.map(target_evals).unwrap_or_else(starter_evals);
-    for (filename, _) in evals {
-        write_plan.push(planned_yaml_write_after_dirs(
-            &evals_dir.join(filename),
-            force,
-        ));
-    }
-    let prompts = target
-        .map(|target| target_prompts(target, include_output_schemas))
-        .unwrap_or_else(|| starter_prompts(include_output_schemas));
-    for (filename, _) in prompts {
-        write_plan.push(planned_yaml_write_after_dirs(
-            &prompts_dir.join(filename),
-            force,
-        ));
-    }
-    write_plan.push(planned_json_write_after_dirs(&prospect_path, force));
-    write_plan.push(planned_json_write_after_dirs(
-        &decision_input_scenarios_path,
         force,
-    ));
+        include_output_schemas,
+        true,
+    )?;
+    let mut payload = gtm_init_payload(root, name, template, target);
+    let plan = tx_dry_run(root, &inventory, force)?;
+    let write_plan = dry_run_plan_to_legacy(&plan, &inventory, root);
+    let slug = slugify(name);
     if let Some(object) = payload.as_object_mut() {
         object.insert("dry_run".to_string(), json!(true));
         object.insert("template".to_string(), json!(template));
         object.insert("slug".to_string(), json!(slug));
         object.insert("force".to_string(), json!(force));
         object.insert("write_plan".to_string(), Value::Array(write_plan));
+        object.insert(
+            "publication".to_string(),
+            init_transaction::dry_run_envelope(&plan),
+        );
     }
     Ok(payload)
 }
@@ -815,46 +703,60 @@ fn extend_unique(target: &mut Vec<String>, values: &[String]) {
 }
 
 fn init_proposal_pack(root: &Path, name: &str, force: bool) -> Result<Value> {
-    let readme_path = root.join(DEFAULT_DIR).join("README.md");
-    refuse_existing_file(&readme_path, force)?;
+    let inventory = build_proposal_inventory(root, name, force)?;
+    let outcome = run_publish(root, &inventory, force, |staging_root| {
+        let diagnostics = validate_pack(staging_root)?;
+        let valid = diagnostics
+            .get("valid")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !valid {
+            let detail = diagnostics
+                .get("issues")
+                .cloned()
+                .unwrap_or(Value::Array(Vec::new()));
+            return Err(anyhow!(
+                "staged proposal pack at {} failed validation: {}",
+                staging_root.display(),
+                detail
+            ));
+        }
+        Ok(())
+    })?;
+    // Ensure canonical proposal directories (e.g. .mdp/briefs) exist
+    // even when no template file populates them. The proposal validator
+    // and golden test rely on these directories.
     for directory in proposal_template_dirs(root) {
-        fs::create_dir_all(&directory)
-            .with_context(|| format!("creating {}", directory.display()))?;
+        if !directory.exists() {
+            std::fs::create_dir_all(&directory)
+                .with_context(|| format!("creating {}", directory.display()))?;
+        }
     }
-    for (relative_path, contents) in PROPOSAL_TEMPLATE_FILES {
-        let contents = proposal_template_contents(relative_path, contents, name)?;
-        write_embedded_text(root, relative_path, contents.as_ref(), force)?;
+    let mut payload = proposal_init_payload(root, name);
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "publication".to_string(),
+            init_transaction::publication_envelope(&outcome),
+        );
     }
-    write_text_file(&readme_path, &proposal_readme(name)?, force)?;
-    Ok(proposal_init_payload(root, name))
+    Ok(payload)
 }
 
 fn init_proposal_pack_dry_run(root: &Path, name: &str, force: bool) -> Result<Value> {
     let mut payload = proposal_init_payload(root, name);
-    let mut write_plan = proposal_template_dirs(root)
-        .into_iter()
-        .map(|path| planned_directory(&path))
-        .collect::<Vec<_>>();
-    for (relative_path, _) in PROPOSAL_TEMPLATE_FILES {
-        let target = root.join(relative_path);
-        let planned_write = if relative_path.ends_with(".json") {
-            planned_json_write_after_dirs(&target, force)
-        } else {
-            planned_yaml_write_after_dirs(&target, force)
-        };
-        write_plan.push(planned_write);
-    }
-    write_plan.push(planned_file_write_after_dirs(
-        &root.join(DEFAULT_DIR).join("README.md"),
-        "markdown-file",
-        force,
-    ));
+    let inventory = build_proposal_inventory(root, name, force)?;
+    let plan = tx_dry_run(root, &inventory, force)?;
+    let write_plan = dry_run_plan_to_legacy(&plan, &inventory, root);
     if let Some(object) = payload.as_object_mut() {
         object.insert("dry_run".to_string(), json!(true));
         object.insert("template".to_string(), json!("proposal"));
         object.insert("slug".to_string(), json!(slugify(name)));
         object.insert("force".to_string(), json!(force));
         object.insert("write_plan".to_string(), Value::Array(write_plan));
+        object.insert(
+            "publication".to_string(),
+            init_transaction::dry_run_envelope(&plan),
+        );
     }
     Ok(payload)
 }
@@ -870,40 +772,6 @@ fn proposal_template_dirs(root: &Path) -> Vec<PathBuf> {
         root.join("examples").join("proof-output"),
         root.join("examples").join("proof-output-drafts"),
     ]
-}
-
-fn write_embedded_text(
-    root: &Path,
-    relative_path: &str,
-    contents: &str,
-    force: bool,
-) -> Result<()> {
-    let path = root.join(relative_path);
-    if path.exists() && !force {
-        return Err(anyhow!(
-            "{} already exists; pass --force to overwrite",
-            path.display()
-        ));
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    }
-    fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))
-}
-
-fn refuse_existing_file(path: &Path, force: bool) -> Result<()> {
-    if path.exists() && !force {
-        return Err(anyhow!(
-            "{} already exists; pass --force to overwrite",
-            path.display()
-        ));
-    }
-    Ok(())
-}
-
-fn write_text_file(path: &Path, contents: &str, force: bool) -> Result<()> {
-    refuse_existing_file(path, force)?;
-    fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
 }
 
 fn proposal_readme(name: &str) -> Result<String> {
@@ -973,18 +841,281 @@ fn unsupported_template(template: &str) -> anyhow::Error {
     anyhow!("unsupported template '{template}'; available: {AVAILABLE_TEMPLATES}")
 }
 
-fn init_payload(
+/// Render a complete GTM starter tree as a list of generated artifacts.
+/// The function never touches the destination; callers stage and
+/// publish the inventory through `init_transaction`.
+fn build_gtm_inventory(
     root: &Path,
-    pack_dir: &Path,
-    manifest_path: &Path,
-    source_ledger_path: &Path,
-    cards_dir: &Path,
-    evals_dir: &Path,
-    prompts_dir: &Path,
-    readme_path: &Path,
-    prospect_path: &Path,
+    name: &str,
+    template: &str,
+    target: Option<&TargetIdentity>,
+    force: bool,
+    include_output_schemas: bool,
+    governed: bool,
+) -> Result<Vec<GeneratedArtifact>> {
+    let _ = (root, force);
+    let slug = slugify(name);
+    let pack_dir = root.join(DEFAULT_DIR);
+
+    let manifest = if let Some(target) = target {
+        target_manifest(name, &slug, template, target)
+    } else if governed {
+        generated_starter_manifest(name, &slug, template)
+    } else {
+        starter_manifest(name, &slug, template)
+    };
+    let source_ledger = target
+        .map(target_source_ledger)
+        .unwrap_or_else(|| starter_source_ledger(template));
+    let cards: Vec<(&'static str, Card)> = target
+        .map(target_cards)
+        .unwrap_or_else(|| starter_cards(template));
+    let evals: Vec<(&'static str, Value)> = target.map(target_evals).unwrap_or_else(|| {
+        if governed {
+            generated_starter_evals()
+        } else {
+            starter_evals()
+        }
+    });
+    let prompts: Vec<(&'static str, Value)> = target
+        .map(|target| target_prompts(target, include_output_schemas))
+        .unwrap_or_else(|| {
+            if governed {
+                generated_starter_prompts(include_output_schemas)
+            } else {
+                starter_prompts(include_output_schemas)
+            }
+        });
+    let prompt_ids = prompts
+        .iter()
+        .filter_map(|(_, prompt)| prompt["id"].as_str().map(str::to_string))
+        .collect::<Vec<_>>();
+    let card_models = cards.iter().map(|(_, card)| card).collect::<Vec<_>>();
+    let readme = render_pack_readme(&manifest, &card_models, &source_ledger, &prompt_ids);
+    let prospect = target
+        .map(target_prospect)
+        .unwrap_or_else(|| starter_prospect(template));
+    let prospect_relative = if target.is_some() {
+        "examples/prospect-row.json".to_string()
+    } else {
+        "examples/clay-row.json".to_string()
+    };
+    let mut prospect_bytes =
+        serde_json::to_vec_pretty(&prospect).context("serializing example prospect")?;
+    prospect_bytes.push(b'\n');
+    let mut scenarios_bytes = serde_json::to_vec_pretty(&decision_input_scenarios())
+        .context("serializing decision-input scenarios")?;
+    scenarios_bytes.push(b'\n');
+
+    let mut inventory = Vec::new();
+    inventory.push(GeneratedArtifact {
+        relative: ".mdp/manifest.yaml".to_string(),
+        bytes: serde_yaml::to_string(&manifest)
+            .context("serializing GTM manifest")?
+            .into_bytes(),
+        kind: "yaml-file",
+        eligible_for_force: true,
+    });
+    inventory.push(GeneratedArtifact {
+        relative: ".mdp/sources.yaml".to_string(),
+        bytes: serde_yaml::to_string(&source_ledger)
+            .context("serializing GTM source ledger")?
+            .into_bytes(),
+        kind: "yaml-file",
+        eligible_for_force: true,
+    });
+    for (filename, card) in &cards {
+        inventory.push(GeneratedArtifact {
+            relative: format!(".mdp/cards/{filename}"),
+            bytes: serde_yaml::to_string(card)
+                .context("serializing GTM card")?
+                .into_bytes(),
+            kind: "yaml-file",
+            eligible_for_force: true,
+        });
+    }
+    for (filename, eval) in &evals {
+        inventory.push(GeneratedArtifact {
+            relative: format!(".mdp/evals/{filename}"),
+            bytes: serde_yaml::to_string(eval)
+                .context("serializing GTM eval")?
+                .into_bytes(),
+            kind: "yaml-file",
+            eligible_for_force: true,
+        });
+    }
+    for (filename, prompt) in &prompts {
+        inventory.push(GeneratedArtifact {
+            relative: format!(".mdp/prompts/{filename}"),
+            bytes: serde_yaml::to_string(prompt)
+                .context("serializing GTM prompt")?
+                .into_bytes(),
+            kind: "yaml-file",
+            eligible_for_force: true,
+        });
+    }
+    inventory.push(GeneratedArtifact {
+        relative: ".mdp/README.md".to_string(),
+        bytes: readme.into_bytes(),
+        kind: "markdown-file",
+        eligible_for_force: true,
+    });
+    inventory.push(GeneratedArtifact {
+        relative: prospect_relative,
+        bytes: prospect_bytes,
+        kind: "json-file",
+        eligible_for_force: true,
+    });
+    inventory.push(GeneratedArtifact {
+        relative: "examples/decision-input-scenarios.json".to_string(),
+        bytes: scenarios_bytes,
+        kind: "json-file",
+        eligible_for_force: true,
+    });
+    Ok(inventory)
+}
+
+/// Render a complete proposal starter tree as a list of generated
+/// artifacts. The function never touches the destination.
+fn build_proposal_inventory(
+    _root: &Path,
+    name: &str,
+    _force: bool,
+) -> Result<Vec<GeneratedArtifact>> {
+    let mut inventory = Vec::new();
+    for (relative_path, contents) in PROPOSAL_TEMPLATE_FILES {
+        let contents = proposal_template_contents(relative_path, contents, name)?;
+        let kind = if relative_path.ends_with(".json") {
+            "json-file"
+        } else {
+            "yaml-file"
+        };
+        inventory.push(GeneratedArtifact {
+            relative: (*relative_path).to_string(),
+            bytes: contents.as_ref().as_bytes().to_vec(),
+            kind,
+            eligible_for_force: true,
+        });
+    }
+    let readme = proposal_readme(name)?;
+    inventory.push(GeneratedArtifact {
+        relative: ".mdp/README.md".to_string(),
+        bytes: readme.into_bytes(),
+        kind: "markdown-file",
+        eligible_for_force: true,
+    });
+    Ok(inventory)
+}
+
+/// Render a transaction-owned staging tree, run the staged validation
+/// hook, then publish through the transaction module. The hook receives
+/// the staging root and is expected to fail fast when the staged tree
+/// is invalid.
+fn run_publish<F>(
+    root: &Path,
+    inventory: &[GeneratedArtifact],
+    force: bool,
+    validate: F,
+) -> Result<init_transaction::PublicationOutcome>
+where
+    F: FnOnce(&Path) -> Result<()>,
+{
+    let parent = root.parent().unwrap_or(root);
+    if !parent.exists() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating destination parent {}", parent.display()))?;
+    }
+    let nonce = fresh_nonce();
+    let preflight_entries = match preflight(root, inventory, force) {
+        Ok(entries) => entries,
+        Err(error) => {
+            return Err(error);
+        }
+    };
+    if let Some(first_blocked) = preflight_entries
+        .iter()
+        .find(|entry| entry.action == "blocked")
+    {
+        return Err(anyhow!(
+            "init not published: {} already exists; pass --force to overwrite",
+            first_blocked.path
+        ));
+    }
+    let staging_root = stage_artifacts(parent, inventory, &nonce)?;
+    let validation = validate(&staging_root);
+    if let Err(error) = validation {
+        let _ = init_transaction::cleanup(&[&staging_root]);
+        return Err(error.context("init not published: staged validation failed"));
+    }
+    let backup_root = parent.join(format!(".mdp.init.backup.{nonce}"));
+    match init_transaction::publish(root, &staging_root, inventory, &backup_root, force) {
+        Ok(outcome) => Ok(outcome),
+        Err(error) => {
+            let _ = init_transaction::cleanup(&[&staging_root, &backup_root]);
+            Err(error.context("init not published: publication failed"))
+        }
+    }
+}
+
+/// Convert a transaction dry-run plan into the legacy `write_plan`
+/// array expected by existing GTM and proposal dry-run output.
+fn dry_run_plan_to_legacy(
+    plan: &init_transaction::DryRunPlan,
+    inventory: &[GeneratedArtifact],
+    root: &Path,
+) -> Vec<Value> {
+    let mut entries = Vec::new();
+    // Directories in canonical order: pack_dir, then each generated
+    // subdirectory in inventory order, deduped.
+    let mut seen_dirs: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
+    for artifact in inventory {
+        let abs = artifact.absolute(root);
+        if let Some(parent) = abs.parent() {
+            for ancestor in parent.ancestors() {
+                if !ancestor.starts_with(root) {
+                    break;
+                }
+                if seen_dirs.insert(ancestor.to_path_buf()) {
+                    entries.push(planned_directory(ancestor));
+                }
+            }
+        }
+    }
+    for (artifact, entry) in inventory.iter().zip(plan.entries.iter()) {
+        let abs = artifact.absolute(root);
+        let kind = artifact.kind;
+        let action = &entry.action;
+        let would_write = matches!(action.as_str(), "create" | "overwrite");
+        entries.push(json!({
+            "kind": kind,
+            "path": abs.display().to_string(),
+            "action": action,
+            "exists": entry.existed,
+            "parent_exists": true,
+            "would_write": would_write
+        }));
+    }
+    entries
+}
+
+fn gtm_init_payload(
+    root: &Path,
+    name: &str,
+    template: &str,
     target: Option<&TargetIdentity>,
 ) -> Value {
+    let pack_dir = root.join(DEFAULT_DIR);
+    let manifest_path = pack_dir.join("manifest.yaml");
+    let source_ledger_path = pack_dir.join("sources.yaml");
+    let cards_dir = pack_dir.join("cards");
+    let evals_dir = pack_dir.join("evals");
+    let prompts_dir = pack_dir.join("prompts");
+    let readme_path = pack_dir.join("README.md");
+    let prospect_path = root.join("examples").join(if target.is_some() {
+        "prospect-row.json"
+    } else {
+        "clay-row.json"
+    });
     let example_persona = if target.is_some() {
         "Operator"
     } else {
@@ -993,8 +1124,12 @@ fn init_payload(
     let example_job = target
         .map(|target| format!("review evidence gaps for {}", target.name))
         .unwrap_or_else(|| "linkedin outbound copy".to_string());
+    let slug = slugify(name);
     json!({
         "format": FORMAT_VERSION,
+        "template": template,
+        "name": name,
+        "slug": slug,
         "root": root.display().to_string(),
         "pack_dir": pack_dir.display().to_string(),
         "manifest": manifest_path.display().to_string(),
@@ -1007,7 +1142,7 @@ fn init_payload(
         "example_prospect_kind": "synthetic-example",
         "next_commands": [
             format!("mdp --json validate --dir {}", root.display()),
-            format!("mdp --json route --entries --dir {} --persona \\\"{}\\\" --job \\\"{}\\\"", root.display(), example_persona, example_job),
+            format!("mdp --json route --entries --dir {} --persona \"{}\" --job \"{}\"", root.display(), example_persona, example_job),
             format!("mdp --json fit --dir {} --prospect {}", root.display(), prospect_path.display()),
             format!("mdp --json --summary brief --dir {} --prospect {} --channel linkedin", root.display(), prospect_path.display()),
             format!("mdp --json eval --dir {}", root.display())
@@ -1054,6 +1189,7 @@ mod tests {
     use crate::artifact_hash::pack_content_sha256;
     use crate::product_foundation::{ProductFoundationStatus, resolve_product_foundation_for_pack};
     use crate::routing::narrow_starter_route_candidates_for_tests;
+    use std::borrow::Cow;
     use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
