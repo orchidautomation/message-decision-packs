@@ -7,6 +7,16 @@ description: Use when applying an existing proposal MDP to supplied RFP, capture
 
 Use an approved proposal pack to produce bounded review support for supplied pursuit material.
 
+## Communicate The Work
+
+Follow the shared [Orient, Plan, Progress, Translate, Close contract](../mdp/references/communication-contract.md).
+Open by naming the bid/no-bid, compliance, proof, or red-team job; the exact
+pack and supplied pursuit-material evidence boundary; the review packet and
+assurance decision the user will receive; and that this skill will not invent
+proof, certify compliance, approve or submit work, rewrite proposal material,
+or mutate downstream systems. Keep later updates to meaningful evidence gates,
+blockers, and decisions.
+
 ## Authority Monotonicity
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.

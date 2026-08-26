@@ -76,6 +76,14 @@ COLD_MODEL_GUARDRAILS = {
         "no_draft": "`not-sufficient-for-job` and `not-qualified-for-job-under-envelope` remain no-draft",
     },
 }
+COMMUNICATION_STAGES = ("Orient", "Plan", "Progress", "Translate", "Close")
+READINESS_TERMS = (
+    "structurally valid",
+    "job-ready",
+    "input-ready",
+    "safe-to-draft",
+    "no-draft",
+)
 
 
 def error(errors: list[dict[str, str]], code: str, path: Path | str, message: str) -> None:
@@ -141,6 +149,37 @@ def validate(root: Path, source: Path) -> dict:
         if inside(candidate, source) or rel.startswith(IGNORED_SKILL_ROOTS):
             continue
         error(errors, "authored_skill_outside_canonical_root", candidate, "active authored skills must live under plugin/skills")
+
+    communication = source / "mdp" / "references" / "communication-contract.md"
+    communication_text = (
+        communication.read_text(encoding="utf-8") if communication.is_file() else ""
+    )
+    for term in (*COMMUNICATION_STAGES, *READINESS_TERMS):
+        if term not in communication_text:
+            error(
+                errors,
+                f"communication_contract_missing:{term}",
+                communication,
+                f"shared communication contract is missing: {term}",
+            )
+    for skill_id in skills:
+        skill_path = source / skill_id / "SKILL.md"
+        skill_text = skill_path.read_text(encoding="utf-8") if skill_path.is_file() else ""
+        for phrase in (
+            "Orient, Plan, Progress, Translate, Close contract",
+            "Open by naming",
+            "evidence boundary",
+            "user will receive",
+            "will not",
+            "meaningful",
+        ):
+            if phrase not in skill_text:
+                error(
+                    errors,
+                    f"communication_opening_missing:{skill_id}",
+                    skill_path,
+                    f"skill communication opening is missing: {phrase}",
+                )
 
     proposal_review = source / "mdp-proposal-review" / "SKILL.md"
     proposal_text = proposal_review.read_text(encoding="utf-8") if proposal_review.is_file() else ""

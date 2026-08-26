@@ -7,6 +7,16 @@ description: Use when applying a GTM Message Decision Pack to a supplied prospec
 
 Use a GTM pack for bounded decision support. Never enrich, draft outreach, send, schedule, or update a CRM.
 
+## Communicate The Work
+
+Follow the shared [Orient, Plan, Progress, Translate, Close contract](../mdp/references/communication-contract.md).
+Open by naming `prospect-fit-or-brief`, `outbound-copy-brief`, or
+`outbound-copy-review`; the exact pack and supplied-input evidence boundary;
+the fit decision, bounded brief, or review artifact the user will receive; and
+that this skill will not enrich, draft outreach, send, schedule, or mutate a
+CRM. Keep later updates to meaningful readiness gates, blockers, and
+decisions.
+
 ## Authority Monotonicity
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
