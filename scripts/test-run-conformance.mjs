@@ -294,10 +294,14 @@ try {
     ].join("\n");
     const invoked = spawnSync(process.execPath, [join(repoRoot, "scripts", "mdp-run-mcp-server.mjs")], {
       cwd: root, input: `${input}\n`, encoding: "utf8",
-      env: { ...process.env, PATH: process.env.PATH || "", MDP_BIN: mdp, MDP_MCP_PACK_ROOTS: repoRoot, MDP_MCP_INPUT_ROOTS: `${root}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: root, MDP_MCP_WORK_ROOTS: root, MDP_MCP_OUTPUT_ROOTS: root, MDP_MCP_CONSENT_ROOTS: root }, maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, PATH: process.env.PATH || "", MDP_BIN: mdp, MDP_MCP_PACK_ROOTS: root, MDP_MCP_INPUT_ROOTS: `${root}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: root, MDP_MCP_WORK_ROOTS: root, MDP_MCP_OUTPUT_ROOTS: root, MDP_MCP_CONSENT_ROOTS: root }, maxBuffer: 16 * 1024 * 1024,
     });
     assert.equal(invoked.status, 0, invoked.stderr);
     const replies = invoked.stdout.trim().split("\n").map((line) => JSON.parse(line));
+    assert.ok(replies[0]?.result, JSON.stringify(replies[0]));
+    assert.equal(replies[0].result.isError, false, JSON.stringify(replies[0]));
+    assert.ok(replies[2]?.result, JSON.stringify(replies[2]));
+    assert.equal(replies[2].result.isError, false, JSON.stringify(replies[2]));
     assert.equal(replies[0].result.structuredContent.terminal_state, "success");
     assert.equal(replies[1].result.structuredContent.valid, true);
     assert.equal(replies[2].result.structuredContent.terminal_state, "success");
@@ -347,11 +351,15 @@ try {
       cwd: root,
       input: `${runMessage}\n${verifyMessage}\n`,
       encoding: "utf8",
-      env: { ...process.env, PATH: process.env.PATH || "", MDP_BIN: mdp, MDP_MCP_PACK_ROOTS: repoRoot, MDP_MCP_INPUT_ROOTS: `${root}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: root, MDP_MCP_WORK_ROOTS: root, MDP_MCP_OUTPUT_ROOTS: root, MDP_MCP_CONSENT_ROOTS: root },
+      env: { ...process.env, PATH: process.env.PATH || "", MDP_BIN: mdp, MDP_MCP_PACK_ROOTS: root, MDP_MCP_INPUT_ROOTS: `${root}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: root, MDP_MCP_WORK_ROOTS: root, MDP_MCP_OUTPUT_ROOTS: root, MDP_MCP_CONSENT_ROOTS: root },
       maxBuffer: 16 * 1024 * 1024,
     });
     assert.equal(invoked.status, 0, invoked.stderr);
     const [reply, verificationReply] = invoked.stdout.trim().split("\n").map((line) => JSON.parse(line));
+    assert.ok(reply?.result, JSON.stringify(reply));
+    assert.ok(verificationReply?.result, JSON.stringify(verificationReply));
+    assert.equal(reply.result.isError, false, JSON.stringify(reply));
+    assert.equal(verificationReply.result.isError, false, JSON.stringify(verificationReply));
     assert.equal(reply.result.isError, false);
     assert.equal(reply.result.structuredContent.terminal_state, "success");
     assert.equal(verificationReply.result.isError, false);
