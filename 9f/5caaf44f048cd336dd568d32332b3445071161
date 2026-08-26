@@ -1,0 +1,36 @@
+cli/tests/init_transactional.rs
+  s_8ba92f3ca2537c::t_2081b6f959bdb5 87,92,216-235
+  s_8ba92f3ca2537c::t_4084b298baded9 88-91
+cli/src/commands/init.rs
+  s_8ba92f3ca2537c::t_4084b298baded9 776-779
+  s_8ba92f3ca2537c::t_d7419bb317a3e5 924,933,943,954,965,973,980,987,1013,1022
+  s_8ba92f3ca2537c::t_e001619bb16b8a 1024-1026
+  s_8ba92f3ca2537c::t_80950e25f806fb 1074-1076
+  s_8ba92f3ca2537c::t_febd5d340ec8cb 755,757-763,769-775,780-782
+  s_8ba92f3ca2537c::t_445bf5406ba93f 768
+  ai_agent 1725-1729
+  s_8ba92f3ca2537c::t_a8afdaff64f8a7 989
+  s_8ba92f3ca2537c::t_4cd78011ccec53 1724
+  s_8ba92f3ca2537c::t_9ad974e829add8 767
+cli/src/commands/init_transaction.rs
+  s_8ba92f3ca2537c::t_4084b298baded9 445-446,452-453
+  s_8ba92f3ca2537c::t_16051381f34450 287-294
+  s_8ba92f3ca2537c::t_d14d28b5156263 37,44-53,132-137,166-172,178-187,296-306,350-356,387,395-398,404-405,426-436
+  s_8ba92f3ca2537c::t_3f8f4467f3396a 156,286,437-444,447-451,454-464
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9f5caaf44f048cd336dd568d32332b3445071161",
+  "prompts": {},
+  "sessions": {
+    "s_8ba92f3ca2537c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f0a-bf55-7872-aada-e67363a1b163",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
