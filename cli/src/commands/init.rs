@@ -723,15 +723,6 @@ fn init_proposal_pack(root: &Path, name: &str, force: bool) -> Result<Value> {
         }
         Ok(())
     })?;
-    // Ensure canonical proposal directories (e.g. .mdp/briefs) exist
-    // even when no template file populates them. The proposal validator
-    // and golden test rely on these directories.
-    for directory in proposal_template_dirs(root) {
-        if !directory.exists() {
-            std::fs::create_dir_all(&directory)
-                .with_context(|| format!("creating {}", directory.display()))?;
-        }
-    }
     let mut payload = proposal_init_payload(root, name);
     if let Some(object) = payload.as_object_mut() {
         object.insert(
@@ -761,17 +752,35 @@ fn init_proposal_pack_dry_run(root: &Path, name: &str, force: bool) -> Result<Va
     Ok(payload)
 }
 
-fn proposal_template_dirs(root: &Path) -> Vec<PathBuf> {
-    let pack_dir = root.join(DEFAULT_DIR);
+fn proposal_template_directories() -> Vec<String> {
     vec![
-        pack_dir.clone(),
-        pack_dir.join("briefs"),
-        pack_dir.join("cards"),
-        pack_dir.join("evals"),
-        pack_dir.join("prompts"),
-        root.join("examples").join("proof-output"),
-        root.join("examples").join("proof-output-drafts"),
+        ".mdp".to_string(),
+        ".mdp/briefs".to_string(),
+        ".mdp/cards".to_string(),
+        ".mdp/evals".to_string(),
+        ".mdp/prompts".to_string(),
+        "examples/proof-output".to_string(),
+        "examples/proof-output-drafts".to_string(),
     ]
+}
+
+fn append_required_directories(inventory: &mut Vec<GeneratedArtifact>) {
+    let directories = vec![
+        ".mdp".to_string(),
+        ".mdp/briefs".to_string(),
+        ".mdp/cards".to_string(),
+        ".mdp/evals".to_string(),
+        ".mdp/prompts".to_string(),
+        "examples".to_string(),
+    ];
+    for relative in directories {
+        if !inventory
+            .iter()
+            .any(|artifact| artifact.relative == relative)
+        {
+            inventory.push(GeneratedArtifact::directory(relative));
+        }
+    }
 }
 
 fn proposal_readme(name: &str) -> Result<String> {
@@ -855,8 +864,6 @@ fn build_gtm_inventory(
 ) -> Result<Vec<GeneratedArtifact>> {
     let _ = (root, force);
     let slug = slugify(name);
-    let pack_dir = root.join(DEFAULT_DIR);
-
     let manifest = if let Some(target) = target {
         target_manifest(name, &slug, template, target)
     } else if governed {
@@ -915,6 +922,7 @@ fn build_gtm_inventory(
             .into_bytes(),
         kind: "yaml-file",
         eligible_for_force: true,
+        is_directory: false,
     });
     inventory.push(GeneratedArtifact {
         relative: ".mdp/sources.yaml".to_string(),
@@ -923,6 +931,7 @@ fn build_gtm_inventory(
             .into_bytes(),
         kind: "yaml-file",
         eligible_for_force: true,
+        is_directory: false,
     });
     for (filename, card) in &cards {
         inventory.push(GeneratedArtifact {
@@ -932,6 +941,7 @@ fn build_gtm_inventory(
                 .into_bytes(),
             kind: "yaml-file",
             eligible_for_force: true,
+            is_directory: false,
         });
     }
     for (filename, eval) in &evals {
@@ -942,6 +952,7 @@ fn build_gtm_inventory(
                 .into_bytes(),
             kind: "yaml-file",
             eligible_for_force: true,
+            is_directory: false,
         });
     }
     for (filename, prompt) in &prompts {
@@ -952,6 +963,7 @@ fn build_gtm_inventory(
                 .into_bytes(),
             kind: "yaml-file",
             eligible_for_force: true,
+            is_directory: false,
         });
     }
     inventory.push(GeneratedArtifact {
@@ -959,19 +971,23 @@ fn build_gtm_inventory(
         bytes: readme.into_bytes(),
         kind: "markdown-file",
         eligible_for_force: true,
+        is_directory: false,
     });
     inventory.push(GeneratedArtifact {
         relative: prospect_relative,
         bytes: prospect_bytes,
         kind: "json-file",
         eligible_for_force: true,
+        is_directory: false,
     });
     inventory.push(GeneratedArtifact {
         relative: "examples/decision-input-scenarios.json".to_string(),
         bytes: scenarios_bytes,
         kind: "json-file",
         eligible_for_force: true,
+        is_directory: false,
     });
+    append_required_directories(&mut inventory);
     Ok(inventory)
 }
 
@@ -995,6 +1011,7 @@ fn build_proposal_inventory(
             bytes: contents.as_ref().as_bytes().to_vec(),
             kind,
             eligible_for_force: true,
+            is_directory: false,
         });
     }
     let readme = proposal_readme(name)?;
@@ -1003,7 +1020,11 @@ fn build_proposal_inventory(
         bytes: readme.into_bytes(),
         kind: "markdown-file",
         eligible_for_force: true,
+        is_directory: false,
     });
+    for relative in proposal_template_directories() {
+        inventory.push(GeneratedArtifact::directory(relative));
+    }
     Ok(inventory)
 }
 
@@ -1051,7 +1072,9 @@ where
     match init_transaction::publish(root, &staging_root, inventory, &backup_root, force) {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
-            let _ = init_transaction::cleanup(&[&staging_root, &backup_root]);
+            if !error.to_string().contains("publication indeterminate") {
+                let _ = init_transaction::cleanup(&[&staging_root, &backup_root]);
+            }
             Err(error.context("init not published: publication failed"))
         }
     }

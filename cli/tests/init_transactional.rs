@@ -51,6 +51,36 @@ fn run_init(dir: &Path, template: &str, force: bool, extra: &[&str]) -> (bool, S
     )
 }
 
+fn run_init_with_fault(
+    dir: &Path,
+    template: &str,
+    force: bool,
+    fault: &str,
+) -> (bool, String, String) {
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .arg("init")
+        .arg("--template")
+        .arg(template)
+        .arg("--dir")
+        .arg(dir);
+    if force {
+        command.arg("--force");
+    }
+    command.env("MDP_TEST_INIT_FAULT", fault);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = command.output().expect("init should run");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
 /// Extract the inner `data` value from the CLI's top-level JSON
 /// envelope. The CLI wraps every command response in
 /// `{"command": ..., "data": ..., "ok": ...}`.
@@ -84,6 +114,18 @@ fn assert_published_tree(root: &Path) {
         root.join(example_prospect).exists(),
         "example prospect should exist"
     );
+    for relative in [
+        ".mdp/briefs",
+        ".mdp/cards",
+        ".mdp/evals",
+        ".mdp/prompts",
+        "examples",
+    ] {
+        assert!(
+            root.join(relative).is_dir(),
+            "{relative} should be a directory"
+        );
+    }
 }
 
 fn assert_publication_paths_clean(publication: &Value) {
@@ -204,6 +246,100 @@ fn force_collision_preserves_destination_byte_for_byte_without_force() {
         sentinel
     );
     assert!(!root.join(".mdp/manifest.yaml").exists());
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_generated_ancestor_is_rejected_before_publication() {
+    use std::os::unix::fs::symlink;
+
+    let root = temp_root("symlinked-ancestor");
+    fs::create_dir_all(&root).expect("root should be creatable");
+    let outside = temp_root("symlink-target");
+    fs::create_dir_all(&outside).expect("symlink target should be creatable");
+    symlink(&outside, root.join(".mdp")).expect("ancestor symlink should be creatable");
+
+    let (ok, stdout, stderr) = run_init(&root, "gtm", true, &[]);
+    assert!(!ok, "init must reject a generated ancestor symlink");
+    assert!(
+        stdout.contains("symlink") || stderr.contains("symlink"),
+        "output should identify the symlink: stdout={stdout} stderr={stderr}"
+    );
+    assert!(!outside.join("manifest.yaml").exists());
+    let _ = fs::remove_dir_all(&root);
+    let _ = fs::remove_dir_all(&outside);
+}
+
+#[test]
+fn required_empty_directory_occupied_by_file_is_rejected() {
+    let root = temp_root("required-directory-file");
+    fs::create_dir_all(root.join(".mdp")).expect("pack directory should be creatable");
+    let occupied = root.join(".mdp/briefs");
+    fs::write(&occupied, "not a directory\n").expect("occupied path should be writable");
+
+    let (ok, stdout, stderr) = run_init(&root, "gtm", true, &[]);
+    assert!(!ok, "init must reject a file at a required directory path");
+    assert!(
+        stdout.contains("non-directory") || stderr.contains("non-directory"),
+        "output should identify the required directory collision: stdout={stdout} stderr={stderr}"
+    );
+    assert!(occupied.is_file());
+    assert!(!root.join(".mdp/manifest.yaml").exists());
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn rollback_failure_retains_recovery_backup_and_reports_its_path() {
+    let root = temp_root("rollback-indeterminate");
+    let (ok, _stdout, stderr) = run_init(&root, "gtm", false, &[]);
+    assert!(ok, "first init should succeed: {stderr}");
+    fs::write(root.join(".mdp/manifest.yaml"), "# original\n")
+        .expect("manifest should be writable");
+
+    let (ok, stdout, stderr) = run_init_with_fault(&root, "gtm", true, "rollback-restoration");
+    assert!(!ok, "faulted init must fail");
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(combined.contains("publication indeterminate"), "{combined}");
+    let marker = "recovery backup retained at ";
+    let start = combined
+        .find(marker)
+        .expect("backup path should be reported")
+        + marker.len();
+    let backup = combined[start..]
+        .split(|character: char| character == ' ' || character == ')' || character == '\n')
+        .next()
+        .expect("backup path should be present");
+    assert!(
+        Path::new(backup).is_dir(),
+        "recovery backup should remain: {backup}"
+    );
+    assert!(
+        combined.contains(backup),
+        "top-level error should contain the exact backup path: {combined}"
+    );
+    let _ = fs::remove_dir_all(&root);
+    let _ = fs::remove_dir_all(backup);
+}
+
+#[test]
+fn rollback_removes_transaction_created_directories_after_late_failure() {
+    let root = temp_root("rollback-created-directories");
+    fs::create_dir_all(&root).expect("root should be creatable");
+    let (ok, stdout, stderr) =
+        run_init_with_fault(&root, "gtm", false, "publication-after-directories");
+    assert!(
+        !ok,
+        "faulted init must fail: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        !root.join(".mdp").exists(),
+        "created directories should roll back"
+    );
+    assert!(
+        !root.join("examples").exists(),
+        "created directories should roll back"
+    );
     let _ = fs::remove_dir_all(&root);
 }
 

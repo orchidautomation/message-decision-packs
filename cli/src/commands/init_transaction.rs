@@ -34,11 +34,22 @@ pub(crate) struct GeneratedArtifact {
     /// `true` when the artifact is part of the public generated tree and
     /// may be replaced or removed as part of a publication transaction.
     pub eligible_for_force: bool,
+    pub is_directory: bool,
 }
 
 impl GeneratedArtifact {
     pub(crate) fn absolute(&self, root: &Path) -> PathBuf {
         root.join(&self.relative)
+    }
+
+    pub(crate) fn directory(relative: impl Into<String>) -> Self {
+        Self {
+            relative: relative.into(),
+            bytes: Vec::new(),
+            kind: "directory",
+            eligible_for_force: true,
+            is_directory: true,
+        }
     }
 }
 
@@ -118,8 +129,13 @@ pub(crate) fn stage_artifacts(
             fs::create_dir_all(parent_dir)
                 .with_context(|| format!("creating staging directory {}", parent_dir.display()))?;
         }
-        fs::write(&target, &artifact.bytes)
-            .with_context(|| format!("writing staged artifact {}", target.display()))?;
+        if artifact.is_directory {
+            fs::create_dir_all(&target)
+                .with_context(|| format!("creating staged directory {}", target.display()))?;
+        } else {
+            fs::write(&target, &artifact.bytes)
+                .with_context(|| format!("writing staged artifact {}", target.display()))?;
+        }
     }
     Ok(staging_root)
 }
@@ -137,6 +153,7 @@ pub(crate) fn preflight(
     let mut entries = Vec::with_capacity(artifacts.len());
     for artifact in artifacts {
         let absolute = artifact.absolute(destination);
+        validate_generated_ancestors(destination, &absolute, "preflight")?;
         let entry = match fs::symlink_metadata(&absolute) {
             Ok(metadata) => {
                 let file_type = metadata.file_type();
@@ -146,13 +163,28 @@ pub(crate) fn preflight(
                         absolute.display()
                     ));
                 }
-                if !file_type.is_file() {
+                if artifact.is_directory && !file_type.is_dir() {
+                    return Err(anyhow!(
+                        "refusing to overwrite non-directory node at {} during init preflight",
+                        absolute.display()
+                    ));
+                }
+                if !artifact.is_directory && !file_type.is_file() {
                     return Err(anyhow!(
                         "refusing to overwrite non-regular node at {} during init preflight",
                         absolute.display()
                     ));
                 }
-                if force && artifact.eligible_for_force {
+                if artifact.is_directory {
+                    DryRunEntry {
+                        path: absolute.display().to_string(),
+                        kind: artifact.kind,
+                        relative: artifact.relative.clone(),
+                        action: "preserve".to_string(),
+                        existed: true,
+                        eligible: artifact.eligible_for_force,
+                    }
+                } else if force && artifact.eligible_for_force {
                     DryRunEntry {
                         path: absolute.display().to_string(),
                         kind: artifact.kind,
@@ -247,11 +279,32 @@ fn merge_into_existing_root(
         .with_context(|| format!("creating backup root {}", backup_root.display()))?;
     let mut backups: Vec<ExistingBackup> = Vec::new();
     let mut staged_replacements: Vec<PathBuf> = Vec::new();
+    let mut created_directories: Vec<PathBuf> = Vec::new();
 
     let merge = (|| -> Result<()> {
         for artifact in artifacts {
             let absolute = artifact.absolute(destination);
+            validate_generated_ancestors(destination, &absolute, "publication")?;
+            if let Ok(metadata) = fs::symlink_metadata(&absolute) {
+                if metadata.file_type().is_symlink() {
+                    return Err(anyhow!(
+                        "refusing to traverse symlink at {} during publication",
+                        absolute.display()
+                    ));
+                }
+            }
             if absolute.exists() {
+                if artifact.is_directory {
+                    let metadata = fs::symlink_metadata(&absolute)
+                        .with_context(|| format!("recheck metadata for {}", absolute.display()))?;
+                    if metadata.file_type().is_symlink() || !metadata.file_type().is_dir() {
+                        return Err(anyhow!(
+                            "refusing to publish non-directory node at {}",
+                            absolute.display()
+                        ));
+                    }
+                    continue;
+                }
                 if !artifact.eligible_for_force || !force {
                     return Err(anyhow!(
                         "{} already exists; pass --force to overwrite",
@@ -292,9 +345,21 @@ fn merge_into_existing_root(
                 });
             }
         }
+        if test_fault("rollback-restoration") && !backups.is_empty() {
+            return Err(anyhow!(
+                "test fault: publication failed after an original file moved"
+            ));
+        }
         // Replace from staging. Each staged file is moved into the
         // destination; partial replacement is rolled back on failure.
         for artifact in artifacts {
+            if artifact.is_directory {
+                let target = artifact.absolute(destination);
+                ensure_directory(&target, &mut created_directories).with_context(|| {
+                    format!("publishing generated directory {}", target.display())
+                })?;
+                continue;
+            }
             let staged = staging_root.join(&artifact.relative);
             if !staged.exists() {
                 return Err(anyhow!(
@@ -304,7 +369,7 @@ fn merge_into_existing_root(
             }
             let target = artifact.absolute(destination);
             if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent)
+                ensure_directory(parent, &mut created_directories)
                     .with_context(|| format!("creating destination parent {}", parent.display()))?;
             }
             fs::rename(&staged, &target).with_context(|| {
@@ -316,6 +381,11 @@ fn merge_into_existing_root(
             })?;
             staged_replacements.push(target);
         }
+        if test_fault("publication-after-directories") {
+            return Err(anyhow!(
+                "test fault: publication failed after directory creation"
+            ));
+        }
         Ok(())
     })();
 
@@ -325,7 +395,14 @@ fn merge_into_existing_root(
         for replacement in staged_replacements.iter().rev() {
             let _ = fs::remove_file(replacement);
         }
-        for backup in backups.iter() {
+        if test_fault("rollback-restoration") && !backups.is_empty() {
+            // Black-box tests need a deterministic way to make restoration
+            // fail after the first original file has moved.
+            let first = &backups[0].absolute;
+            let _ = fs::create_dir_all(first);
+        }
+        let mut rollback_failure = None;
+        for backup in backups.iter().rev() {
             let backup_path = backup_root.join(backup_name_for(&backup.relative));
             if backup_path.exists() {
                 if let Err(rename_error) = fs::rename(&backup_path, &backup.absolute) {
@@ -333,16 +410,24 @@ fn merge_into_existing_root(
                     // rewrite the original bytes so the destination
                     // path holds its prior content.
                     if let Err(write_error) = fs::write(&backup.absolute, &backup.bytes) {
-                        return Err(error.context(anyhow!(
+                        rollback_failure = Some(format!(
                             "rollback failed for {}: rename={} write={}",
                             backup.absolute.display(),
                             rename_error,
                             write_error
-                        )));
+                        ));
+                        break;
                     }
                     let _ = fs::remove_file(&backup_path);
                 }
             }
+        }
+        remove_created_directories(&created_directories);
+        if let Some(rollback_failure) = rollback_failure {
+            return Err(anyhow!(
+                "publication indeterminate: recovery backup retained at {} ({rollback_failure}; publication error: {error})",
+                backup_root.display()
+            ));
         }
         let _ = remove_quietly(backup_root);
         let _ = remove_quietly(staging_root);
@@ -364,6 +449,71 @@ fn merge_into_existing_root(
         backup_root: backup_root.to_path_buf(),
         published: true,
     })
+}
+
+fn ensure_directory(path: &Path, created: &mut Vec<PathBuf>) -> Result<()> {
+    let mut missing = Vec::new();
+    let mut current = path;
+    while !current.exists() {
+        missing.push(current.to_path_buf());
+        current = current
+            .parent()
+            .ok_or_else(|| anyhow!("cannot determine parent directory for {}", path.display()))?;
+    }
+    fs::create_dir_all(path).with_context(|| format!("creating directory {}", path.display()))?;
+    created.extend(missing.into_iter().rev());
+    Ok(())
+}
+
+fn remove_created_directories(created: &[PathBuf]) {
+    for path in created.iter().rev() {
+        let _ = fs::remove_dir(path);
+    }
+}
+
+fn test_fault(name: &str) -> bool {
+    cfg!(debug_assertions) && std::env::var("MDP_TEST_INIT_FAULT").is_ok_and(|value| value == name)
+}
+
+fn generated_ancestors(destination: &Path, path: &Path) -> Vec<PathBuf> {
+    let mut ancestors = path
+        .parent()
+        .into_iter()
+        .flat_map(|parent| parent.ancestors())
+        .take_while(|ancestor| *ancestor != destination)
+        .filter(|ancestor| ancestor.starts_with(destination))
+        .map(Path::to_path_buf)
+        .collect::<Vec<_>>();
+    ancestors.reverse();
+    ancestors
+}
+
+fn validate_generated_ancestors(destination: &Path, path: &Path, phase: &str) -> Result<()> {
+    for ancestor in generated_ancestors(destination, path) {
+        match fs::symlink_metadata(&ancestor) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(anyhow!(
+                    "refusing to traverse symlink at {} during init {}",
+                    ancestor.display(),
+                    phase
+                ));
+            }
+            Ok(metadata) if !metadata.file_type().is_dir() => {
+                return Err(anyhow!(
+                    "refusing to traverse non-directory node at {} during init {}",
+                    ancestor.display(),
+                    phase
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => break,
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("{} metadata for {}", phase, ancestor.display()));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Run a dry-run analysis that returns a write plan without touching
