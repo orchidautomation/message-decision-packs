@@ -1,0 +1,67 @@
+plugin/skill-evals/output-cases.json
+  s_a1d5c9fb9d428d::t_246b6b60758f84 403-411
+  s_a1d5c9fb9d428d::t_1a8234f9e9bcd4 451-459
+  s_a1d5c9fb9d428d::t_071e16d4d2b3ae 433-440
+  s_a1d5c9fb9d428d::t_c9d0a341fbe00b 282-290
+plugin/skills/mdp-gtm-brief/evals/index.json
+  s_a1d5c9fb9d428d::t_4c739f280698c1 12
+plugin/skills/mdp-proposal-review/references/evidence-path.md
+  s_a1d5c9fb9d428d::t_1bd15f4cefb9f7 3-9
+plugin/skills/mdp-proposal-review/SKILL.md
+  s_a1d5c9fb9d428d::t_7589373e4842b3 14-20,23-24
+  s_a1d5c9fb9d428d::t_918d172b0a924e 21-22
+plugin/skills/mdp-gtm-brief/references/outbound-copy-review.md
+  s_a1d5c9fb9d428d::t_1bd15f4cefb9f7 7-13
+plugin/skills/mdp/SKILL.md
+  s_a1d5c9fb9d428d::t_7589373e4842b3 18-29
+docs/new-codex-user-journey.md
+  s_a1d5c9fb9d428d::t_1bd15f4cefb9f7 38-67
+scripts/test_skill_eval_harness.py
+  s_a1d5c9fb9d428d::t_23436eddd33823 315-326
+  s_a1d5c9fb9d428d::t_9998895a5d29dc 10
+plugin/skills/mdp/references/workflow-bundle-handoff.md
+  s_a1d5c9fb9d428d::t_7589373e4842b3 1-93
+plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md
+  s_a1d5c9fb9d428d::t_1bd15f4cefb9f7 22-30
+plugin/skills/mdp-gtm-brief/references/outbound-copy-brief.md
+  s_a1d5c9fb9d428d::t_1bd15f4cefb9f7 7-14
+plugin/skills/mdp/evals/index.json
+  s_a1d5c9fb9d428d::t_4c739f280698c1 12
+plugin/skills/mdp-pack-review/SKILL.md
+  s_a1d5c9fb9d428d::t_7589373e4842b3 14-15,18-24
+  s_a1d5c9fb9d428d::t_8b5ead139e1459 16-17
+plugin/skills/mdp-gtm-brief/SKILL.md
+  s_a1d5c9fb9d428d::t_7589373e4842b3 14-25
+plugin/skills/mdp-proposal-review/evals/index.json
+  s_a1d5c9fb9d428d::t_4c739f280698c1 13
+docs/run-receipts.md
+  s_68f8ea218383c7::t_973f04f7ae53c6 131-149
+scripts/test_skill_packaging.py
+  s_68f8ea218383c7::t_49e06567074552 33-59
+plugin/skills/mdp-pack-review/evals/index.json
+  s_a1d5c9fb9d428d::t_4c739f280698c1 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a179cd2313cbf7f733a7a49e07543b5ce56ff90f",
+  "prompts": {},
+  "sessions": {
+    "s_68f8ea218383c7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f1a-a3e4-7c12-89f1-4bc7579c33c3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    },
+    "s_a1d5c9fb9d428d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f20-6313-7e33-a5a7-def2b450d404",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
