@@ -130,6 +130,7 @@ const parseArgs = (argv) => {
     requireAuditGrade: false,
     maxSourceBytes: DEFAULT_MAX_SOURCE_BYTES,
     timeoutMs: RECOMMENDED_TIMEOUT_MS,
+    consentId: null,
   }
 
   if (command === 'help' || command === '--help' || command === '-h') return args
@@ -212,6 +213,10 @@ const parseArgs = (argv) => {
       case '--timeout-ms':
         args.timeoutMs = Number.parseInt(next(index, flag), 10)
         validateTransportTimeout(args.timeoutMs)
+        index += 1
+        break
+      case '--consent-id':
+        args.consentId = next(index, flag)
         index += 1
         break
       case '--dry-run':
@@ -980,6 +985,7 @@ const run = async (args) => {
     sourceIntakeSha256,
     stagedSources,
   })
+  if (args.consentId) request.provider_consent_id = args.consentId
   writeJson(paths.request, request)
 
   const steps = [

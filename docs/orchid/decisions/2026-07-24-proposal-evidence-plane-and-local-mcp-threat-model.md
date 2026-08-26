@@ -269,3 +269,22 @@ Human acceptance should confirm:
 5. Structural validation and receipts do not replace human review of material proposal claims.
 
 Until accepted, this is a proposed security boundary, not a compliance statement or production authorization.
+## MDP-246 approved roots and provider consent
+
+The local MCP adapters require startup configuration for `MDP_MCP_PACK_ROOTS`,
+`MDP_MCP_INPUT_ROOTS`, `MDP_MCP_APPROVAL_ROOTS`, `MDP_MCP_WORK_ROOTS`,
+`MDP_MCP_OUTPUT_ROOTS`, and `MDP_MCP_CONSENT_ROOTS`. Values are platform path
+lists of existing, real directories. Missing or invalid roots fail closed.
+
+Provider-capable calls additionally require a one-shot JSON consent record in
+the consent root. It binds the provider, purpose, request digest, ordered
+source digests, output root, expiry, and nonce. The adapter consumes the nonce
+before spawning any provider-capable child. Credentials and the native enable
+flag remain necessary process capabilities, never authorization by themselves.
+
+Root containment is component-aware and input reads are descriptor-frozen.
+Outputs must be new leaves under an approved existing parent; existing customer
+files are never replacement targets. Denials expose bounded codes only. This
+local nonce set prevents replay in one server process; cross-process replay
+prevention depends on the configured consent-store ownership and is not a
+cryptographic operator identity proof.

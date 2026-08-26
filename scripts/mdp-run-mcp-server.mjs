@@ -19,6 +19,8 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createPathPolicy } from './lib/mcp-path-policy.mjs'
+import { consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
 
 import { superviseProcess } from './lib/process-supervisor.mjs'
 import {
@@ -54,6 +56,12 @@ const NATIVE_MODEL_ENV_KEYS = ['OPENAI_API_KEY', 'MDP_ALLOW_NATIVE_MODEL_CALLS']
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
+let pathPolicy = null
+try { pathPolicy = createPathPolicy() } catch (error) { pathPolicy = { startupError: error } }
+const requirePolicy = () => {
+  if (pathPolicy?.startupError) throw pathPolicy.startupError
+  return pathPolicy
+}
 
 const readVersion = () => {
   for (const path of [
@@ -338,6 +346,7 @@ const tools = [
           maximum: MAX_TIMEOUT_MS,
           description: `Transport guard in milliseconds. The canonical Rust recommendation is ${DEFAULT_TIMEOUT_MS}ms.`,
         },
+        consent_id: { type: 'string', description: 'Out-of-band one-shot consent record id for generative runs.' },
       },
     },
   },
@@ -395,7 +404,8 @@ const blockedPrepareRun = (code, message, nextCommand = 'mdp prepare-run --help'
 const callPrepareRunValidated = async (args) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['dir', 'job', 'operation', 'inputs', 'model', 'retention_policy', 'created_at', 'out', 'manifest_out', 'full', 'timeout_ms']))
-  const dir = canonicalExistingDir(requiredString(parsed, 'dir'), 'dir')
+  const policy = requirePolicy()
+  const dir = policy.existing('pack', requiredString(parsed, 'dir'), 'directory').path
   const job = requiredString(parsed, 'job')
   const model = requiredString(parsed, 'model')
   if (parsed.operation !== undefined) requiredString(parsed, 'operation')
@@ -409,11 +419,11 @@ const callPrepareRunValidated = async (args) => {
     const separator = mapping.indexOf('=')
     if (separator <= 0) throw new Error('inputs must use logical_name=path')
     const name = mapping.slice(0, separator)
-    const path = canonicalExistingFile(mapping.slice(separator + 1), `input ${name}`)
+    const path = policy.freeze('input', mapping.slice(separator + 1)).path
     return `${name}=${path}`
   })
-  const out = parsed.out === undefined ? null : canonicalOutputFile(requiredString(parsed, 'out'), 'out')
-  const manifestOut = parsed.manifest_out === undefined ? null : canonicalOutputFile(requiredString(parsed, 'manifest_out'), 'manifest_out')
+  const out = parsed.out === undefined ? null : policy.select('output', dirname(resolve(requiredString(parsed, 'out')))).path + sep + basename(resolve(parsed.out))
+  const manifestOut = parsed.manifest_out === undefined ? null : policy.select('output', dirname(resolve(requiredString(parsed, 'manifest_out')))).path + sep + basename(resolve(parsed.manifest_out))
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
   const cliArgs = ['--json', 'prepare-run', '--dir', dir, '--job', job, '--model', model]
@@ -449,17 +459,29 @@ const callPrepareRun = async (args) => {
 
 const callRun = async (args, signal = null) => {
   const parsed = asObject(args || {}, 'arguments')
-  assertOnly(parsed, new Set(['request_path', 'output_dir', 'timeout_ms']))
+  assertOnly(parsed, new Set(['request_path', 'output_dir', 'timeout_ms', 'consent_id']))
   const requestPath = requiredString(parsed, 'request_path')
-  const outputDir = canonicalNewOutputDir(requiredString(parsed, 'output_dir'))
+  const policy = requirePolicy()
+  const outputDir = policy.newOutput('output', requiredString(parsed, 'output_dir')).path
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
-  const frozenRequest = freezeRequestFile(requestPath)
+  const frozenRequest = freezeRequestFile(policy.existing('input', requestPath, 'file').path)
 
   let invocation
   let plan = null
   try {
     assertOutputOutsidePack(frozenRequest.packDir, outputDir)
+    if (frozenRequest.usesNativeModel) {
+      const consentId = requiredString(parsed, 'consent_id')
+      consumeProviderConsent({
+        policy,
+        consentId,
+        provider: 'openai',
+        purpose: 'mdp.run',
+        requestSha256: frozenRequest.sha256,
+        outputRoot: policy.newOutput('output', outputDir).root,
+      })
+    }
     const parentDeadline = performance.now() + timeoutMs
     const preflightBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
     const preflight = await invokeCli(
@@ -592,11 +614,12 @@ const callRun = async (args, signal = null) => {
 const callVerifyRun = async (args) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['bundle_path', 'receipt_path', 'artifact_root', 'timeout_ms']))
-  const bundlePath = canonicalExistingFile(requiredString(parsed, 'bundle_path'), 'bundle_path')
-  const receiptPath = canonicalExistingFile(requiredString(parsed, 'receipt_path'), 'receipt_path')
+  const policy = requirePolicy()
+  const bundlePath = policy.existing('input', requiredString(parsed, 'bundle_path'), 'file').path
+  const receiptPath = policy.existing('input', requiredString(parsed, 'receipt_path'), 'file').path
   const artifactRoot = parsed.artifact_root === undefined
     ? null
-    : canonicalExistingDir(requiredString(parsed, 'artifact_root'), 'artifact_root')
+    : policy.existing('output', requiredString(parsed, 'artifact_root'), 'directory').path
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
   const cliArgs = ['--json', 'verify-run', '--bundle', bundlePath, '--receipt', receiptPath]

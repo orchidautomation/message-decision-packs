@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createPathPolicy } from './lib/mcp-path-policy.mjs'
+import { consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
 import {
   MAX_TIMEOUT_MS as DEADLINE_MAX_TIMEOUT_MS,
   MIN_TIMEOUT_MS,
@@ -51,6 +53,12 @@ const JSON_RPC_INVALID_PARAMS = -32602
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
 const runnerPath = join(scriptDir, 'mdp-proposal-runner.mjs')
+let pathPolicy = null
+try { pathPolicy = createPathPolicy() } catch (error) { pathPolicy = { startupError: error } }
+const requirePolicy = () => {
+  if (pathPolicy?.startupError) throw pathPolicy.startupError
+  return pathPolicy
+}
 
 const readVersion = () => {
   const candidates = [
@@ -422,6 +430,10 @@ const proposalRunSchema = {
       maximum: MAX_TIMEOUT_MS,
       description: `Child-process deadline in milliseconds. Defaults to ${DEFAULT_TIMEOUT_MS}.`,
     },
+    consent_id: {
+      type: 'string',
+      description: 'Out-of-band one-shot consent record id required for real native runs.',
+    },
   },
 }
 
@@ -557,6 +569,7 @@ const callProposalRun = async (args) => {
     'require_audit_grade',
     'max_source_bytes',
     'timeout_ms',
+    'consent_id',
   ])
   assertNoUnsupportedArgs(parsedArgs, allowed)
 
@@ -564,11 +577,14 @@ const callProposalRun = async (args) => {
   const workdirArg = optionalString(parsedArgs, 'workdir')
   if (!packArg) throw new Error('pack is required')
   if (!workdirArg) throw new Error('workdir is required')
-  const pack = canonicalPack(packArg)
-  const workdir = canonicalWorkdir(workdirArg)
+  const policy = requirePolicy()
+  const pack = canonicalPack(policy.existing('pack', packArg, 'directory').path)
+  const workdir = existsSync(workdirArg)
+    ? canonicalWorkdir(policy.existing('work', workdirArg, 'directory').path)
+    : policy.newOutput('work', workdirArg).path
 
   const sourcePaths = optionalStringArray(parsedArgs, 'source_paths').map((path, index) =>
-    canonicalExistingPath(path, `source_paths[${index}]`, 'file'),
+    policy.existing('input', path, 'file').path,
   )
   if (sourcePaths.length > MAX_SOURCE_COUNT) {
     throw new Error(`source_paths must contain at most ${MAX_SOURCE_COUNT} files`)
@@ -587,10 +603,10 @@ const callProposalRun = async (args) => {
   const sourceIntakeArg = optionalString(parsedArgs, 'source_intake_path')
   const sourceAuditArg = optionalString(parsedArgs, 'source_audit_path')
   const sourceIntakePath = sourceIntakeArg
-    ? canonicalExistingPath(sourceIntakeArg, 'source_intake_path', 'file')
+    ? policy.existing('approval', sourceIntakeArg, 'file').path
     : null
   const sourceAuditPath = sourceAuditArg
-    ? canonicalExistingPath(sourceAuditArg, 'source_audit_path', 'file')
+    ? policy.existing('approval', sourceAuditArg, 'file').path
     : null
   const sourceId = optionalString(parsedArgs, 'source_id')
   const sourceKind = optionalString(parsedArgs, 'source_kind')
@@ -598,7 +614,7 @@ const callProposalRun = async (args) => {
   const model = optionalString(parsedArgs, 'model')
   const mockResponseArg = optionalString(parsedArgs, 'mock_response_path')
   const mockResponsePath = mockResponseArg
-    ? canonicalExistingPath(mockResponseArg, 'mock_response_path', 'file')
+    ? policy.existing('input', mockResponseArg, 'file').path
     : null
   const promptId = optionalString(parsedArgs, 'prompt_id')
   const maxSourceBytes = optionalInteger(parsedArgs, 'max_source_bytes')
@@ -611,6 +627,7 @@ const callProposalRun = async (args) => {
   const reuseWorkdirId = optionalString(parsedArgs, 'reuse_workdir_id')
   const skipReview = optionalBoolean(parsedArgs, 'skip_review')
   const requireAuditGrade = optionalBoolean(parsedArgs, 'require_audit_grade')
+  const consentId = optionalString(parsedArgs, 'consent_id')
   const timeoutMs = optionalInteger(parsedArgs, 'timeout_ms') ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
   if (cleanRunV1 && !packReleaseId) {
@@ -622,6 +639,10 @@ const callProposalRun = async (args) => {
 
   if (sourcePaths.length === 0) {
     throw new Error('Pass at least one source_paths file. Ambient chat/source text and audit-only runs are intentionally not accepted.')
+  }
+  if (!dryRun && !mockResponsePath) {
+    if (!consentId) throw new Error('consent_id is required for real native runs')
+    consumeProviderConsent({ policy, consentId, provider: 'openai', purpose: 'mdp.proposal-run', requestSha256: 'pending-runner-request', outputRoot: policy.roots.work[0] })
   }
 
   const runnerArgs = ['run', '--pack', pack, '--workdir', workdir]
@@ -640,6 +661,7 @@ const callProposalRun = async (args) => {
   if (reuseWorkdirId) runnerArgs.push('--reuse-workdir-id', reuseWorkdirId)
   if (skipReview) runnerArgs.push('--skip-review')
   if (requireAuditGrade) runnerArgs.push('--require-audit-grade')
+  if (consentId) runnerArgs.push('--consent-id', consentId)
   if (maxSourceBytes !== null) runnerArgs.push('--max-source-bytes', String(maxSourceBytes))
   runnerArgs.push('--timeout-ms', String(timeoutMs))
 
