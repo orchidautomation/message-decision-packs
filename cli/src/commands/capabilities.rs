@@ -22,6 +22,10 @@ use crate::constants::{
 };
 use crate::model_steps::{COMPILED_MODEL_STEP_V1, MODEL_STEP_RESOLUTION_V1};
 use crate::models::DecisionInputAttemptStatus;
+use crate::output::{
+    OUTPUT_MODE_CONFLICT_CODE, presentation_compatibility_matrix, presentation_contract,
+    presentation_selectors,
+};
 use crate::run_contracts::{
     CANONICAL_AUTHORITY_BLOCK_V1, DRIVER_REQUEST_V1, DRIVER_REQUEST_V2, DRIVER_RESULT_V1,
     DRIVER_RESULT_V2, PROPOSAL_RUNNER_RESULT_V1, RUN_BUNDLE_V1, RUN_EXECUTION_V1, RUN_RECEIPT_V1,
@@ -278,6 +282,47 @@ pub(crate) fn capabilities() -> Value {
             "external_vs_internal": "External target terms may drive positioning. MDP, CLI, schema, prompt, card, and eval vocabulary remains internal implementation context.",
             "contamination_issue_codes": ["target_contamination_excluded_term", "target_contamination_internal_vocabulary"]
         },
+        "presentation_contract": {
+            "contract": "mdp.presentation.v0",
+            "selectors": presentation_selectors(),
+            "matrix": presentation_compatibility_matrix(),
+            "policy": presentation_contract(),
+            "summary_selector": {
+                "selector": "--summary",
+                "json_compatible": true,
+                "envelope": "summary"
+            },
+            "conflict": {
+                "code": OUTPUT_MODE_CONFLICT_CODE,
+                "exit_code": 1,
+                "stdout": "single_json_envelope",
+                "stderr": "empty"
+            },
+            "display": {
+                "help": {
+                    "command": "help",
+                    "envelope_shape": {"ok": true, "command": "help", "data": {"text": "..."}},
+                    "exit_code": 0,
+                    "stdout": "single_json_envelope",
+                    "stderr": "empty"
+                },
+                "version": {
+                    "command": "version",
+                    "envelope_shape": {"ok": true, "command": "version", "data": {"text": "..."}},
+                    "exit_code": 0,
+                    "stdout": "single_json_envelope",
+                    "stderr": "empty"
+                }
+            },
+            "stdout_invariant": {
+                "mode": "json",
+                "selector": "--json",
+                "value_count": 1,
+                "prelude_allowed": false,
+                "trailing_text_allowed": false,
+                "stderr_empty": true
+            }
+        },
         "commands": [
             command("capabilities", "mdp.capabilities.v0", "read-only", false, false, false, &[]),
             nested_command("compile", DETERMINISTIC_CONFORMANCE_V1, &["--candidate", "--artifact-root"], &[], &["--out", "--dry-run"]),
@@ -352,6 +397,7 @@ pub(crate) fn capabilities() -> Value {
             {"code": "synthetic_chain_write_conflict", "meaning": "A changed destination chain requires explicit apply and force"},
             {"code": "synthetic_chain_backup_collision", "meaning": "A recoverable digest-keyed backup path could not be allocated"},
             {"code": "invalid_argument", "meaning": "CLI arguments are missing, conflicting, or unsupported"},
+            {"code": OUTPUT_MODE_CONFLICT_CODE, "meaning": "Global --json was combined with a human-only presentation selector; one JSON output_mode_conflict envelope is written to stdout and stderr is empty"},
             {"code": "mdp_error", "meaning": "Fallback for uncategorized MDP errors"}
         ],
         "boundaries": [
@@ -439,6 +485,61 @@ fn nested_command_with_outputs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capabilities_exposes_presentation_contract() {
+        let result = capabilities();
+        let contract = &result["presentation_contract"];
+        assert_eq!(contract["contract"], "mdp.presentation.v0");
+        let selectors = contract["selectors"]
+            .as_array()
+            .expect("presentation selectors array");
+        let names: Vec<String> = selectors
+            .iter()
+            .map(|selector| selector[0].as_str().unwrap().to_string())
+            .collect();
+        assert!(names.contains(&"trace --format".to_string()));
+        assert!(names.contains(&"verify-output --readable".to_string()));
+        assert!(names.contains(&"render-brief --format".to_string()));
+        assert!(names.contains(&"sample-leads --format".to_string()));
+        assert!(names.contains(&"brief --readable".to_string()));
+        assert_eq!(contract["conflict"]["code"], "output_mode_conflict");
+        assert_eq!(contract["conflict"]["exit_code"], 1);
+        assert_eq!(contract["conflict"]["stdout"], "single_json_envelope");
+        assert_eq!(contract["conflict"]["stderr"], "empty");
+        assert_eq!(contract["display"]["help"]["command"], "help");
+        assert_eq!(contract["display"]["help"]["exit_code"], 0);
+        assert_eq!(contract["display"]["version"]["command"], "version");
+        assert_eq!(contract["display"]["version"]["exit_code"], 0);
+        assert_eq!(contract["stdout_invariant"]["value_count"], 1);
+        assert_eq!(contract["stdout_invariant"]["stderr_empty"], true);
+
+        let error_codes = result["stable_error_codes"]
+            .as_array()
+            .expect("error codes array");
+        assert!(
+            error_codes
+                .iter()
+                .any(|code| code["code"] == "output_mode_conflict"),
+            "stable_error_codes must list output_mode_conflict"
+        );
+
+        let matrix = contract["matrix"]
+            .get("selectors")
+            .and_then(|value| value.as_array())
+            .expect("matrix selectors");
+        let mut has_human_only = false;
+        let mut has_json_compatible = false;
+        for row in matrix {
+            if row["json_compatible"].as_bool().unwrap_or(false) {
+                has_json_compatible = true;
+            } else {
+                has_human_only = true;
+            }
+        }
+        assert!(has_json_compatible);
+        assert!(has_human_only);
+    }
 
     #[test]
     fn capabilities_exposes_agent_driving_contracts() {

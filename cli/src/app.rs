@@ -20,7 +20,9 @@ use crate::commands::{
     validate_pack, validate_prompt_output_file_with_inputs, validate_source_binding_file,
     verify_output_file, verify_output_readable_file, verify_run_files,
 };
-use crate::output::print_output;
+use crate::output::{
+    PresentationOutcome, print_output, print_output_mode_conflict, resolve_presentation,
+};
 use crate::pack_io::{planned_json_write, write_json_file};
 use crate::routing::ROUTE_CARD_CAP_DIAGNOSTIC;
 use crate::run_replay::{
@@ -37,6 +39,16 @@ use std::path::{Path, PathBuf};
 pub(crate) fn run(cli: Cli) -> Result<()> {
     let json_mode = cli.json;
     let summary_mode = cli.summary;
+    // Enforce the global JSON output invariant. The gate runs before any
+    // command work or any stdout write, and it routes JSON presentation
+    // conflicts through exactly-once serialization with empty stderr.
+    if json_mode
+        && let PresentationOutcome::Conflict { selector, value } =
+            resolve_presentation(&cli.command)
+    {
+        print_output_mode_conflict(true, selector, value)?;
+        std::process::exit(1);
+    }
     match cli.command {
         Commands::Capabilities => {
             print_output(json_mode, summary_mode, "capabilities", capabilities())

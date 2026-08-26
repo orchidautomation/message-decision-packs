@@ -28,7 +28,7 @@ mod utils;
 mod value_contracts;
 
 use crate::cli::Cli;
-use crate::output::print_error;
+use crate::output::{DisplayKind, print_error};
 use crate::run_request_compiler::CompilerError;
 use clap::Parser;
 use clap::error::ErrorKind;
@@ -43,8 +43,31 @@ fn main() {
                 err.kind(),
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
             );
-            let exit_code = if is_display { 0 } else { 2 };
-            if json_mode && !is_display {
+            if is_display {
+                if json_mode {
+                    // Wrap the rendered help or version text in a successful
+                    // JSON envelope without writing a prelude. Render directly
+                    // from `Cli::command()` to avoid clap's color/stderr path.
+                    let text = if matches!(err.kind(), ErrorKind::DisplayHelp) {
+                        <Cli as clap::CommandFactory>::command()
+                            .render_help()
+                            .to_string()
+                    } else {
+                        <Cli as clap::CommandFactory>::command().render_version()
+                    };
+                    let kind = if matches!(err.kind(), ErrorKind::DisplayHelp) {
+                        DisplayKind::Help
+                    } else {
+                        DisplayKind::Version
+                    };
+                    let _ = crate::output::print_display_envelope(true, kind, &text);
+                } else {
+                    let _ = err.print();
+                }
+                std::process::exit(0);
+            }
+            let exit_code = 2;
+            if json_mode {
                 if is_prepare_run_invocation(&raw_args) {
                     println!(
                         "{}",
