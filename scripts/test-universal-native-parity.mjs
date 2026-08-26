@@ -140,7 +140,7 @@ const publicRoutedContextAcceptance = ({ baseRequest, routedInput, pack, jobId }
     process.execPath,
     [server],
     {
-      env: { ...process.env, PATH: process.env.PATH || '', MDP_BIN: resolve(mdp), MDP_MCP_PACK_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_INPUT_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: scratch, MDP_MCP_WORK_ROOTS: scratch, MDP_MCP_OUTPUT_ROOTS: scratch, MDP_MCP_CONSENT_ROOTS: scratch },
+      env: { ...process.env, PATH: process.env.PATH || '', MDP_BIN: resolve(mdp), MDP_MCP_PACK_ROOTS: `${scratch}:${repoRoot}:${pack}`, MDP_MCP_INPUT_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: scratch, MDP_MCP_WORK_ROOTS: scratch, MDP_MCP_OUTPUT_ROOTS: scratch, MDP_MCP_CONSENT_ROOTS: scratch },
       input: `${JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
@@ -570,7 +570,7 @@ try {
       `${profile}/${jobId}/${step.phase} canonical v2 offline run`,
     )
     if (!mcpParity && runInputs.some((input) => input.logical_name === 'routed_context')) {
-      mcpParity = { execution, requestPath: runRequestPath, outputDir: join(scratch, 'mcp-parity-run') }
+      mcpParity = { execution, requestPath: runRequestPath, outputDir: join(scratch, 'mcp-parity-run'), packDir: pack }
     }
     const routedInput = runInputs.find((input) => input.logical_name === 'routed_context')
     if (!routedContextAcceptanceDone && profile === 'gtm' && jobId === 'outbound-copy-brief' && routedInput) {
@@ -688,7 +688,7 @@ try {
     process.execPath,
     [join(repoRoot, 'scripts', 'mdp-run-mcp-server.mjs')],
     {
-      env: { ...process.env, MDP_BIN: resolve(mdp), MDP_MCP_PACK_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_INPUT_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: scratch, MDP_MCP_WORK_ROOTS: scratch, MDP_MCP_OUTPUT_ROOTS: scratch, MDP_MCP_CONSENT_ROOTS: scratch },
+      env: { ...process.env, MDP_BIN: resolve(mdp), MDP_MCP_PACK_ROOTS: `${scratch}:${repoRoot}:${mcpParity.packDir}`, MDP_MCP_INPUT_ROOTS: `${scratch}:${repoRoot}`, MDP_MCP_APPROVAL_ROOTS: scratch, MDP_MCP_WORK_ROOTS: scratch, MDP_MCP_OUTPUT_ROOTS: scratch, MDP_MCP_CONSENT_ROOTS: scratch },
       input: [
         JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
         JSON.stringify({
