@@ -106,7 +106,8 @@ fn capabilities_envelope_is_one_parseable_json_value() {
     let value = value.expect("parseable");
     assert_eq!(value["ok"], serde_json::json!(true));
     assert_eq!(value["command"], "capabilities");
-    assert_eq!(value["data"]["contract"], "mdp.capabilities.v0");
+    assert_eq!(value["data"]["contract"], "mdp.capabilities.v1");
+    assert_eq!(value["data"]["cli"]["contract"], "mdp.cli-graph.v1");
     assert!(
         value["data"]["presentation_contract"].is_object(),
         "capabilities should expose the presentation contract"
