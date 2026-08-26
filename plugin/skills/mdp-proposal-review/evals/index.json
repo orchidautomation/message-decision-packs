@@ -10,7 +10,7 @@
   "output_case_ids": [
     "proposal-bid-train", "proposal-compliance-train", "proposal-proof-train", "proposal-red-team-train",
     "proposal-bid-validation", "proposal-compliance-validation", "proposal-proof-validation", "proposal-red-team-validation",
-    "proposal-audit-path-missing-train", "proposal-ambient-advisory-validation", "proposal-chat-fact-gap-train", "proposal-ocr-mismatch-validation"
+    "proposal-audit-path-missing-train", "proposal-ambient-advisory-validation", "proposal-chat-fact-gap-train", "proposal-ocr-mismatch-validation", "proposal-tampered-resume-validation"
   ],
   "supported_modes": ["bid-no-bid", "compliance", "proof", "red-team"],
   "required_assertion_categories": ["evidence", "safety", "human-review"],
