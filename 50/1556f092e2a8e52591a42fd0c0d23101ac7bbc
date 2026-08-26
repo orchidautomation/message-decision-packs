@@ -1,0 +1,28 @@
+cli/src/commands/init_transaction.rs
+  s_8443c009801e04::t_e2db069b95f4e7 415-417
+  s_8443c009801e04::t_3c4aa2fb241c82 348-352
+  s_8443c009801e04::t_0fb8e1ed92940e 282,358,372,384-388,398-404,413-414,418-419,425-433,454-474
+  s_8443c009801e04::t_acb4b222f1320e 475
+cli/tests/init_transactional.rs
+  s_8443c009801e04::t_e2db069b95f4e7 305-308,314-317,331-342
+  s_8443c009801e04::t_15ee061cc4b904 54-83,274-304,309-313,318-330,343
+  s_8443c009801e04::t_2a4eb7a78642e0 117-123
+cli/src/commands/init.rs
+  s_8443c009801e04::t_0fb8e1ed92940e 770,1725
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "501556f092e2a8e52591a42fd0c0d23101ac7bbc",
+  "prompts": {},
+  "sessions": {
+    "s_8443c009801e04": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f11-1a5e-75d1-87a1-27b60f2414dd",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": null
+    }
+  }
+}
