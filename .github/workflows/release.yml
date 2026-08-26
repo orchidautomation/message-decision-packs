@@ -97,6 +97,8 @@ jobs:
             exit 1
           fi
           echo "version=${cli_version}" >> "$GITHUB_OUTPUT"
+      - name: Build and test Pluxx bundles
+        run: pluxx test
       - name: Publish release assets
         shell: bash
         run: |
