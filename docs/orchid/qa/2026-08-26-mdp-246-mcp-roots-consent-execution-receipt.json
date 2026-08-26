@@ -1,0 +1,36 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-246",
+  "risk": "Routine",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-26-002-mdp-246-mcp-approved-roots-provider-consent-plan.md",
+    "sha256": "f5a5778fa79c4d4190c708dba67bf64fd9e2ae6071ad59aa28a22550360176fe",
+    "sourceRef": "codex/mdp-241-wave-2-plan",
+    "sourceCommit": "1af062f203f189eb551349b081a42aa1b2c249dc"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "subagentCount": 0,
+    "taskId": "01a03f1d-a559-7ac0-ba0f-d61ae47e169c",
+    "initialDispatchHash": "b381a3ed1fee74c984bac4722fd0fba8e2c85c5eeb4daee94f3d769a3e45dc6e",
+    "repairDispatchHashes": [
+      "531cbc27d05f59e8ed7c844b3738c97b5cc87883dfaf345b21853a6356ec5f55",
+      "4d86e7cdebd0f7fa33d5b9474810f3b3871cb2608a8bfafb0285516cfb82bd34",
+      "1e6274669f2e2d41e9dc77496674c3f979a005de35277aa0feb52cb60684d172",
+      "f5c4e08a8d3c2122d67aebe45ccdd3cd77b9ca6bfeb019ef49bf14bdb7ab36e6",
+      "312a4f5de5e67125a348a304213b35e3254550583547c4904e0a57e8d8269089"
+    ]
+  },
+  "delivery": {
+    "branch": "codex/mdp-246-mcp-roots-consent",
+    "targetRef": "main",
+    "pullRequestCount": 1
+  },
+  "observedAt": "2026-08-26T18:52:00Z"
+}
