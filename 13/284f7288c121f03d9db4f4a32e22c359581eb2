@@ -1,0 +1,19 @@
+scripts/lib/mcp-path-policy.mjs
+  s_b6619da6fb8d61::t_c1e3a32337b22d 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "13284f7288c121f03d9db4f4a32e22c359581eb2",
+  "prompts": {},
+  "sessions": {
+    "s_b6619da6fb8d61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f1d-a559-7ac0-ba0f-d61ae47e169c",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
