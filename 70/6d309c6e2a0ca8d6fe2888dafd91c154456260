@@ -1,0 +1,23 @@
+cli/src/commands/init_transaction.rs
+  s_70feaaa654d919::t_83b8db883977a3 37,44-53,132-138,156,166-172,178-187,282,287-295,297-307,348-352,356-362,372,384-388,398-405,413,418-419,425-431,454-516
+cli/tests/init_transactional.rs
+  s_70feaaa654d919::t_83b8db883977a3 54-83,117-128,252-342
+cli/src/commands/init.rs
+  s_70feaaa654d919::t_83b8db883977a3 755,757-763,767-785,925,934,944,955,966,974,981,988,990,1014,1023,1025-1027,1075-1077
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "706d309c6e2a0ca8d6fe2888dafd91c154456260",
+  "prompts": {},
+  "sessions": {
+    "s_70feaaa654d919": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f07-45a4-7da1-b397-b9b257e3fa0e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
