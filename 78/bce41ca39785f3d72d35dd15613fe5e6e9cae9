@@ -1,0 +1,19 @@
+docs/orchid/qa/2026-08-26-mdp-246-mcp-roots-consent-execution-receipt.json
+  s_4e0cc91c9cabbf::t_3d00a88dad91cc 29-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "78bce41ca39785f3d72d35dd15613fe5e6e9cae9",
+  "prompts": {},
+  "sessions": {
+    "s_4e0cc91c9cabbf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f1a-efe8-7233-9268-d9fe54bed1c3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
