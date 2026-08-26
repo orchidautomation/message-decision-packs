@@ -591,10 +591,15 @@ const callProposalRun = async (args) => {
   if (!packArg) throw new Error('pack is required')
   if (!workdirArg) throw new Error('workdir is required')
   const policy = requirePolicy()
-  const pack = canonicalPack(policy.existing('pack', packArg, 'directory').path)
-  const workdir = existsSync(workdirArg)
-    ? canonicalWorkdir(policy.existing('work', workdirArg, 'directory').path)
-    : policy.newOutput('work', workdirArg).path
+  const packReservation = policy.existing('pack', packArg, 'directory')
+  const pack = canonicalPack(packReservation.path)
+  const workReservation = existsSync(workdirArg)
+    ? { ...policy.existing('work', workdirArg, 'directory'), newLeaf: false }
+    : { ...policy.newOutput('work', workdirArg), newLeaf: true }
+  const workdir = workReservation.path
+  const workParent = workReservation.parent
+    ? { path: workReservation.parent, root: workReservation.root, alias: 'work', identity: workReservation.parentIdentity }
+    : policy.existing('work', dirname(workdir), 'directory')
 
   const sourcePaths = optionalStringArray(parsedArgs, 'source_paths').map((path, index) =>
     policy.existing('input', path, 'file').path,
@@ -622,6 +627,8 @@ const callProposalRun = async (args) => {
   const sourceAuditPath = sourceAuditArg
     ? policy.existing('approval', sourceAuditArg, 'file').path
     : null
+  const frozenIntake = sourceIntakePath ? policy.freeze('approval', sourceIntakePath, MAX_SOURCE_FILE_BYTES) : null
+  const frozenAudit = sourceAuditPath ? policy.freeze('approval', sourceAuditPath, MAX_SOURCE_FILE_BYTES) : null
   const sourceId = optionalString(parsedArgs, 'source_id')
   const sourceKind = optionalString(parsedArgs, 'source_kind')
   const privacyClass = optionalString(parsedArgs, 'privacy_class')
@@ -630,6 +637,7 @@ const callProposalRun = async (args) => {
   const mockResponsePath = mockResponseArg
     ? policy.existing('input', mockResponseArg, 'file').path
     : null
+  const frozenMock = mockResponsePath ? policy.freeze('input', mockResponsePath, MAX_SOURCE_FILE_BYTES) : null
   const promptId = optionalString(parsedArgs, 'prompt_id')
   const maxSourceBytes = optionalInteger(parsedArgs, 'max_source_bytes')
   if (maxSourceBytes !== null && (maxSourceBytes < 1000 || maxSourceBytes > MAX_SOURCE_BYTES)) {
@@ -657,11 +665,8 @@ const callProposalRun = async (args) => {
   const providerCapable = !dryRun && !mockResponsePath && providerCapabilityAvailable()
   if (providerCapable) {
     if (!consentId) throw new Error('consent_id is required for real native runs')
-    const frozenIntake = sourceIntakePath ? policy.freeze('approval', sourceIntakePath, MAX_SOURCE_FILE_BYTES) : null
-    const frozenAudit = sourceAuditPath ? policy.freeze('approval', sourceAuditPath, MAX_SOURCE_FILE_BYTES) : null
-    const frozenMock = mockResponsePath ? policy.freeze('input', mockResponsePath, MAX_SOURCE_FILE_BYTES) : null
     const requestSha256 = proposalConsentRequestSha256({
-      packSha256: createHash('sha256').update(JSON.stringify({ path: pack, identity: policy.existing('pack', pack, 'directory').identity })).digest('hex'),
+      packSha256: createHash('sha256').update(JSON.stringify({ path: pack, identity: { dev: String(packReservation.identity.dev), ino: String(packReservation.identity.ino) } })).digest('hex'),
       sourceSha256s: frozenSources.map((source) => source.sha256),
       sourceIntakeSha256: frozenIntake?.sha256 ?? null,
       sourceAuditSha256: frozenAudit?.sha256 ?? null,
@@ -670,10 +675,12 @@ const callProposalRun = async (args) => {
       model,
       workdir,
     })
+    policy.finalCheck('pack', packReservation.path, packReservation, 'directory')
     for (const source of frozenSources) policy.finalCheck('input', source.path, source)
     if (frozenIntake) policy.finalCheck('approval', frozenIntake.path, frozenIntake)
     if (frozenAudit) policy.finalCheck('approval', frozenAudit.path, frozenAudit)
-    consumeProviderConsent({ policy, consentId, provider: 'openai', purpose: 'mdp.proposal-run', requestSha256, sourceSha256s: frozenSources.map((source) => source.sha256), outputRoot: policy.existing('work', workdir, 'directory').root })
+    policy.finalCheck('work', workParent.path, workParent, 'directory')
+    consumeProviderConsent({ policy, consentId, provider: 'openai', purpose: 'mdp.proposal-run', requestSha256, sourceSha256s: frozenSources.map((source) => source.sha256), outputRoot: workReservation.root })
   }
 
   const runnerArgs = ['run', '--pack', pack, '--workdir', workdir]
@@ -696,6 +703,14 @@ const callProposalRun = async (args) => {
   if (maxSourceBytes !== null) runnerArgs.push('--max-source-bytes', String(maxSourceBytes))
   runnerArgs.push('--timeout-ms', String(timeoutMs))
 
+  if (providerCapable) {
+    policy.finalCheck('pack', packReservation.path, packReservation, 'directory')
+    for (const source of frozenSources) policy.finalCheck('input', source.path, source)
+    if (frozenIntake) policy.finalCheck('approval', frozenIntake.path, frozenIntake)
+    if (frozenAudit) policy.finalCheck('approval', frozenAudit.path, frozenAudit)
+    if (frozenMock) policy.finalCheck('input', frozenMock.path, frozenMock)
+    policy.finalCheck('work', workParent.path, workParent, 'directory')
+  }
   const result = await runNode(runnerPath, runnerArgs, timeoutMs, providerCapable)
   let parsed = null
   try {
