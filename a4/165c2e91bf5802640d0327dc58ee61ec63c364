@@ -1,0 +1,30 @@
+scripts/test-proposal-mcp-server.sh
+  s_b6619da6fb8d61::t_b148f9de987834 452
+  s_b6619da6fb8d61::t_dc17a359b37c15 445
+  s_b6619da6fb8d61::t_f730f29a9cd481 373,378
+  s_b6619da6fb8d61::t_0da2d320af6700 425-444,446-451,453-478
+scripts/mdp-proposal-mcp-server.mjs
+  s_b6619da6fb8d61::t_ba6dd520c5b9f1 594-602,678,682-683,706-708,712-713
+  s_b6619da6fb8d61::t_dd65989db14234 630-631,640,709-711
+  s_b6619da6fb8d61::t_dcfcbe97a212a8 669
+scripts/mdp-run-mcp-server.mjs
+  s_b6619da6fb8d61::t_ba6dd520c5b9f1 476-478,492-496,512,545
+scripts/test-run-mcp-server.mjs
+  s_b6619da6fb8d61::t_dcfcbe97a212a8 399-420
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a4165c2e91bf5802640d0327dc58ee61ec63c364",
+  "prompts": {},
+  "sessions": {
+    "s_b6619da6fb8d61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f1d-a559-7ac0-ba0f-d61ae47e169c",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Brandon Guerrero <brandon@orchidautomation.com>"
+    }
+  }
+}
