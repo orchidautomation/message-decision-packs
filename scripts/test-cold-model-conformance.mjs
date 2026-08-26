@@ -1075,9 +1075,13 @@ try {
       compositeStage = stageComposite("composite-source", deterministicFixture);
       const traceArgs = ["--json", "trace", "--file", "job-conformance.json", "--artifact-root", compositeStage.stage];
       assert.deepEqual(output(invoke(traceArgs), "trace replay 1"), output(invoke(traceArgs), "trace replay 2"));
-      const mermaid1 = output(invoke([...traceArgs, "--format", "mermaid"]), "mermaid replay 1");
-      const mermaid2 = output(invoke([...traceArgs, "--format", "mermaid"]), "mermaid replay 2");
-      assert.deepEqual(mermaid2, mermaid1);
+      const mermaidArgs = ["trace", "--file", "job-conformance.json", "--artifact-root", compositeStage.stage, "--format", "mermaid"];
+      const mermaid1 = invoke(mermaidArgs);
+      const mermaid2 = invoke(mermaidArgs);
+      assert.equal(mermaid1.status, 0, `mermaid replay 1 failed\nstdout:\n${mermaid1.stdout}\nstderr:\n${mermaid1.stderr}`);
+      assert.equal(mermaid2.status, 0, `mermaid replay 2 failed\nstdout:\n${mermaid2.stdout}\nstderr:\n${mermaid2.stderr}`);
+      assert.ok(mermaid1.stdout.trim(), "mermaid replay 1 returned no output");
+      assert.equal(mermaid2.stdout, mermaid1.stdout);
       const publicReport = output(invoke(["--json", "conformance", "report", "--conformance", "job-conformance.json", "--artifact-root", compositeStage.stage, "--visibility", "public", "--generated-at", "2026-08-13T14:00:00Z"]), "public report");
       assert.equal(publicReport.contract, "mdp.public-conformance-report.v1");
       const privateReport = output(invoke(["--json", "conformance", "report", "--conformance", "job-conformance.json", "--artifact-root", compositeStage.stage, "--visibility", "private", "--generated-at", "2026-08-13T14:00:00Z"]), "private report");
