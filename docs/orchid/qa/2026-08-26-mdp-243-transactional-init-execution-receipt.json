@@ -1,0 +1,32 @@
+{
+  "schema": "orchid.work.execution-summary/v1",
+  "repository": "orchidautomation/message-decision-packs",
+  "issue": "MDP-243",
+  "risk": "Routine",
+  "selectedShape": "inline-luna",
+  "shapeVerdict": "valid-with-recovery",
+  "plan": {
+    "path": "docs/orchid/plans/2026-08-26-001-mdp-243-transactional-init-plan.md",
+    "sha256": "194e41b108ff0cf56c8ef8996a7a12505f38e37a0ab6674dabaee5056d639cdb",
+    "sourceRef": "codex/mdp-241-wave-1-plan",
+    "sourceCommit": "fe413fde0c44ff5336c3314ddd1cbf2f2bb5c3f8"
+  },
+  "execution": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium",
+    "requestedServiceTier": "fast",
+    "observedServiceTier": "priority",
+    "subagentCount": 0,
+    "initialTaskId": "01a03f0a-bf55-7872-aada-e67363a1b163",
+    "recoveryTaskId": "01a03f11-1a5e-75d1-87a1-27b60f2414dd",
+    "initialDispatchHash": "ee523548cc797f6ca9b950eb59cad8bcf76e81d58524e0bbf28fa409677fb684",
+    "recoveryDispatchHash": "3fd7ec824579b3d055c8d059a899629f2cfa6b0a99e4064627e52a1fd0e32ac0"
+  },
+  "delivery": {
+    "branch": "orchid/mdp-243-transactional-init",
+    "targetRef": "main",
+    "pullRequest": "https://github.com/orchidautomation/message-decision-packs/pull/212"
+  },
+  "recovery": "The initial bounded implementation needed Sol integration corrections. Same-thread resume failed closed on a stale thread-store writer, so a replacement canonical Luna task completed the corrections on the same issue-bound repair branch before Sol integrated them into the existing PR branch.",
+  "observedAt": "2026-08-26T17:20:00Z"
+}
