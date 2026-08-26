@@ -28,7 +28,7 @@ mod utils;
 mod value_contracts;
 
 use crate::cli::Cli;
-use crate::output::print_error;
+use crate::output::{DisplayKind, print_error};
 use crate::run_request_compiler::CompilerError;
 use clap::Parser;
 use clap::error::ErrorKind;
@@ -43,8 +43,27 @@ fn main() {
                 err.kind(),
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
             );
-            let exit_code = if is_display { 0 } else { 2 };
-            if json_mode && !is_display {
+            if is_display {
+                if json_mode {
+                    // Render the help or version text via the clap error
+                    // itself. `err.render()` carries the parsed command
+                    // context (top-level or subcommand) so `mdp --json trace
+                    // --help` returns the `trace` help, not the root help,
+                    // and bypasses clap's color/stderr path.
+                    let kind = if matches!(err.kind(), ErrorKind::DisplayHelp) {
+                        DisplayKind::Help
+                    } else {
+                        DisplayKind::Version
+                    };
+                    let text = err.render().to_string();
+                    let _ = crate::output::print_display_envelope(true, kind, &text);
+                } else {
+                    let _ = err.print();
+                }
+                std::process::exit(0);
+            }
+            let exit_code = 2;
+            if json_mode {
                 if is_prepare_run_invocation(&raw_args) {
                     println!(
                         "{}",
