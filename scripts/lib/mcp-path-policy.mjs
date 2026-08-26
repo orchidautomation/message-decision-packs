@@ -84,7 +84,7 @@ export const createPathPolicy = (env = process.env, roles = Object.keys(ROOT_ENV
       fd = openSync(candidate, constants.O_RDONLY | (constants.O_NOFOLLOW || 0))
       const before = fstatSync(fd, { bigint: true })
       if (before.dev !== BigInt(selected.identity.dev) || before.ino !== BigInt(selected.identity.ino)) fail('mcp-file-denied', `${role} file changed while being opened`)
-      if (before.size > BigInt(maxBytes) || before.nlink !== 1n) fail('mcp-file-denied', `${role} file is not immutable`) 
+      if (before.size > BigInt(maxBytes) || before.nlink !== 1n) fail('mcp-file-denied', `${role} file is not immutable`)
       const bytes = Buffer.alloc(Number(before.size)); let offset = 0
       while (offset < bytes.length) { const count = readSync(fd, bytes, offset, bytes.length - offset, offset); if (!count) break; offset += count }
       const after = fstatSync(fd, { bigint: true })
