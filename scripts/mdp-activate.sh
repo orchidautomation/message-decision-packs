@@ -117,11 +117,11 @@ proposal_runner_available() {
   return 1
 }
 
-proposal_mcp_available() {
+run_mcp_available() {
   local candidate
   for candidate in \
-    "${PLUGIN_ROOT:-}/scripts/mdp-proposal-mcp-server.mjs" \
-    "$SCRIPT_DIR/mdp-proposal-mcp-server.mjs"; do
+    "${PLUGIN_ROOT:-}/scripts/mdp-run-mcp-server.mjs" \
+    "$SCRIPT_DIR/mdp-run-mcp-server.mjs"; do
     if [ -n "$candidate" ] && [ -f "$candidate" ]; then
       return 0
     fi
@@ -135,18 +135,19 @@ print_proposal_audit_readiness() {
   fi
 
   echo
-  echo "MDP proposal audit readiness:"
+  echo "MDP clean-run readiness:"
   if proposal_runner_available; then
     echo "  Local proposal runner: available in the plugin/source bundle."
     echo "  Inspect local runner steps with: node \"\${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs\" tools"
   else
     echo "  Local proposal runner: not found in the plugin/source bundle."
   fi
-  if proposal_mcp_available; then
-    echo "  Local stdio MCP wrapper: available as node \"${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs\"."
-    echo "  MCP tools: mdp_proposal_tools and mdp_proposal_run; both require explicit local file paths, not ambient chat text."
+  if run_mcp_available; then
+    echo "  Canonical local stdio MCP: available as node \"${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs\"."
+    echo "  MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run."
+    echo "  Artifacts: boundary inventory -> mdp.run-request.v1 -> run bundle/receipt -> mdp.run-verification.v1."
   else
-    echo "  Local stdio MCP wrapper: not found in the plugin/source bundle."
+    echo "  Canonical local stdio MCP: not found in the plugin/source bundle."
   fi
   if native_runner_available; then
     echo "  Native OpenAI runner: available as the lower-level BYOK stateless API boundary."
@@ -161,8 +162,9 @@ print_proposal_audit_readiness() {
   fi
 
   echo "  No OpenAI key is required for MDP install, validation, receipts, fit/review, dry-runs, mocks, or hardened headless runner audits."
-  echo "  The bundled MCP is local stdio only, not a hosted or remote MCP service."
-  echo "  MCP transport alone is not audit-grade; audit-grade proposal reviews still need: mdp run-receipt --runner-audit ... --require-runner-audit."
+  echo "  The canonical MCP is local stdio transport only, not a hosted or remote MCP service."
+  echo "  MCP adds no authority or isolation assurance; the CLI result, receipt, and verification remain authoritative."
+  echo "  The proposal MCP is compatibility-only and intentionally absent from default discovery."
   echo "  Hooks report readiness only; the CLI receipt is the blocking gate."
 }
 

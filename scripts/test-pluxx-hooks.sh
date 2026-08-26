@@ -57,8 +57,8 @@ proposal_output="$(
   cd "$plugin_fixture"
   PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$proposal_fixture" OPENAI_API_KEY= bash "$ROOT/scripts/mdp-activate.sh"
 )"
-if ! printf '%s\n' "$proposal_output" | grep -F "MDP proposal audit readiness:" >/dev/null; then
-  echo "MDP activation must print proposal audit readiness for proposal packs." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "MDP clean-run readiness:" >/dev/null; then
+  echo "MDP activation must print clean-run readiness for proposal packs." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
@@ -67,18 +67,18 @@ if ! printf '%s\n' "$proposal_output" | grep -F "Local proposal runner: availabl
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "Local stdio MCP wrapper: available" >/dev/null; then
-  echo "MDP activation must report local stdio MCP wrapper availability for proposal packs." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "Canonical local stdio MCP: available" >/dev/null; then
+  echo "MDP activation must report canonical local stdio MCP availability for proposal packs." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "The bundled MCP is local stdio only, not a hosted or remote MCP service." >/dev/null; then
+if ! printf '%s\n' "$proposal_output" | grep -F "The canonical MCP is local stdio transport only, not a hosted or remote MCP service." >/dev/null; then
   echo "MDP activation must avoid implying a hosted/remote MCP service exists." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "MCP transport alone is not audit-grade" >/dev/null; then
-  echo "MDP activation must explain MCP transport alone is not audit-grade." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run." >/dev/null; then
+  echo "MDP activation must report the canonical four-tool path." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi

@@ -310,6 +310,7 @@ for expected in \
   "message-decision-packs-proposal" \
   "mdp_proposal_tools" \
   "mdp_proposal_run" \
+  "Compatibility-only v0 surface" \
   "Raw chat text is intentionally not accepted"; do
   if ! printf '%s\n' "$mcp_list_stdout" | grep -F "$expected" >/dev/null; then
     echo "Installed proposal MCP server list output missing expected text: $expected" >&2
@@ -327,6 +328,7 @@ run_mcp_list_stdout="$(
 for expected in \
   "message-decision-packs-runner" \
   "mdp_run_tools" \
+  "mdp_prepare_run" \
   "mdp_run" \
   "mdp_verify_run" \
   "Raw chat, source bodies, inline requests, and assurance overrides are not accepted"; do
@@ -673,10 +675,10 @@ for expected in \
   "Local proposal runner: available in the plugin/source bundle." \
   "Native OpenAI runner: available as the lower-level BYOK stateless API boundary." \
   "OPENAI_API_KEY: not detected; only required for an optional real native OpenAI runner call." \
-  "Local stdio MCP wrapper: available" \
-  "MCP tools: mdp_proposal_tools and mdp_proposal_run" \
-  "The bundled MCP is local stdio only, not a hosted or remote MCP service." \
-  "MCP transport alone is not audit-grade; audit-grade proposal reviews still need: mdp run-receipt --runner-audit ... --require-runner-audit." \
+  "Canonical local stdio MCP: available" \
+  "MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run." \
+  "The canonical MCP is local stdio transport only, not a hosted or remote MCP service." \
+  "The proposal MCP is compatibility-only and intentionally absent from default discovery." \
   "Hooks report readiness only; the CLI receipt is the blocking gate."; do
   if ! printf '%s\n' "$activation_output" | grep -F "$expected" >/dev/null; then
     echo "Installed activation output missing expected guardrail: $expected" >&2

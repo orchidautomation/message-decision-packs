@@ -286,6 +286,18 @@ test('lists preparation, run, and verification tools and identifies MCP as trans
   ])
   assert.equal(replies[0].result.serverInfo.name, 'message-decision-packs-runner')
   assert.deepEqual(replies[1].result.tools.map((tool) => tool.name), ['mdp_run_tools', 'mdp_prepare_run', 'mdp_run', 'mdp_verify_run'])
+  assert.deepEqual(
+    replies[2].result.structuredContent.canonical_path.map(({ stage, tool, next }) => ({ stage, tool, next })),
+    [
+      { stage: 'inspect', tool: 'mdp_run_tools', next: 'mdp_prepare_run' },
+      { stage: 'prepare', tool: 'mdp_prepare_run', next: 'mdp_run' },
+      { stage: 'run', tool: 'mdp_run', next: 'mdp_verify_run' },
+      { stage: 'verify', tool: 'mdp_verify_run', next: null },
+    ],
+  )
+  assert.match(replies[2].result.structuredContent.canonical_path[1].artifact, /mdp\.run-request\.v1/)
+  assert.match(replies[2].result.structuredContent.canonical_path[2].artifact, /run-bundle\.json/)
+  assert.match(replies[2].result.structuredContent.canonical_path[3].artifact, /mdp\.run-verification\.v1/)
   assert.deepEqual(replies[2].result.structuredContent.mcp_authority, [])
   assert.match(replies[2].result.structuredContent.guardrails.join(' '), /does not prove fresh context/)
 })

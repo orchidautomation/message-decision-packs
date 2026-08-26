@@ -98,26 +98,20 @@ host's actual `PLUGIN_ROOT`.
 
 ## MCP Path
 
-Launch the local stdio adapter from source or the installed bundle:
+Launch the canonical profile-neutral local stdio adapter from source or the
+installed bundle:
 
 ```bash
-node scripts/mdp-proposal-mcp-server.mjs
-node "${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs"
+node scripts/mdp-run-mcp-server.mjs
+node "${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs"
 ```
 
-Call `mdp_proposal_run` with path-only arguments:
-
-```json
-{
-  "pack": "PACK_ROOT",
-  "workdir": "NEW_WORKDIR",
-  "source_paths": ["SOURCE_FILE"],
-  "source_intake_path": "APPROVED_SOURCE_INTAKE_JSON",
-  "source_audit_path": "SOURCE_AUDIT_JSON",
-  "model": "MODEL_ID",
-  "require_audit_grade": true
-}
-```
+Use `mdp_run_tools` → `mdp_prepare_run` → `mdp_run` → `mdp_verify_run`. The
+stages produce the boundary inventory, `mdp.run-request.v1`, run
+bundle/receipt, and `mdp.run-verification.v1`. Pass paths only; MCP adds no
+authority or isolation assurance. `mdp-proposal-mcp-server.mjs` and its two
+tools remain compatibility-only for existing v0 consumers and must not be
+presented as a second default path.
 
 Raw proposal text and ambient chat are not MCP arguments. At least one
 `source_paths` file is required; `source_audit_path` alone is not a runnable

@@ -302,14 +302,14 @@ const tools = [
     name: 'mdp_run_tools',
     title: 'Inspect the MDP clean-run boundary',
     description:
-      'Describe the local file-oriented clean-run adapter. MCP is transport only; the mdp CLI remains the sole authority for execution, hashes, assurance, validation, and terminal state.',
+      'Discover the canonical four-stage local MCP path and its artifacts: inspect, prepare, run, then verify. MCP is transport only; the mdp CLI remains the sole authority.',
     inputSchema: { type: 'object', additionalProperties: false, properties: {} },
   },
   {
     name: 'mdp_prepare_run',
     title: 'Prepare an MDP run request offline',
     description:
-      'Compile one sealed mdp.run-request.v1 from a pack, selected job/step, and declared local input paths. Preparation is read-only unless explicit output paths are provided and never invokes a provider.',
+      'Compile one sealed mdp.run-request.v1 (and optional compile manifest) from a pack, selected job/step, and declared local input paths. No provider is invoked. Next, pass the request file to mdp_run.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -333,7 +333,7 @@ const tools = [
     name: 'mdp_run',
     title: 'Run an explicit MDP request',
     description:
-      'Spawn mdp run with one explicit run-request file and a new output directory. Raw chat, source bodies, inline requests, and assurance overrides are not accepted.',
+      'Pass one mdp.run-request.v1 file to mdp run and produce a run directory containing run-bundle.json, run-receipt.json, and declared artifacts. Next, pass the bundle and receipt to mdp_verify_run. Raw chat, source bodies, inline requests, and assurance overrides are not accepted.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -361,7 +361,7 @@ const tools = [
     name: 'mdp_verify_run',
     title: 'Verify an MDP run receipt',
     description:
-      'Run the read-only mdp verify-run command for explicit bundle and receipt files. Returns the canonical CLI verification result without adding MCP assurance.',
+      'Read an explicit run-bundle.json and run-receipt.json with mdp verify-run and return mdp.run-verification.v1. This is the terminal read-only stage and adds no MCP assurance.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -383,10 +383,40 @@ const callRunTools = (args) => {
     contract: 'mdp.run-mcp-tools.v1',
     transport: 'local-stdio',
     tools: ['mdp_run_tools', 'mdp_prepare_run', 'mdp_run', 'mdp_verify_run'],
+    canonical_path: [
+      {
+        stage: 'inspect',
+        tool: 'mdp_run_tools',
+        input: 'no arguments',
+        artifact: 'mdp.run-mcp-tools.v1 boundary inventory',
+        next: 'mdp_prepare_run',
+      },
+      {
+        stage: 'prepare',
+        tool: 'mdp_prepare_run',
+        input: 'pack directory, exact job/model step, and declared input paths',
+        artifact: 'mdp.run-request.v1 plus optional compile manifest',
+        next: 'mdp_run',
+      },
+      {
+        stage: 'run',
+        tool: 'mdp_run',
+        input: 'mdp.run-request.v1 path and a new output directory',
+        artifact: 'run-bundle.json, run-receipt.json, and declared run artifacts',
+        next: 'mdp_verify_run',
+      },
+      {
+        stage: 'verify',
+        tool: 'mdp_verify_run',
+        input: 'run-bundle.json and run-receipt.json paths',
+        artifact: 'mdp.run-verification.v1',
+        next: null,
+      },
+    ],
     cli_authority: ['run request parsing', 'pack and input staging', 'execution', 'terminal state', 'assurance', 'artifact hashes', 'validation', 'receipt'],
     mcp_authority: [],
     guardrails: [
-      'Only explicit local request_path and output_dir arguments cross this MCP boundary.',
+      'Only explicit local paths and the closed prepare/run selectors declared by these tool schemas cross this MCP boundary; ambient chat and inline source bodies are rejected.',
       'The adapter freezes one bounded read of request_path in a private read-only copy before classifying or spawning the CLI.',
       'The adapter starts a separate CLI process with bounded time, output, stdin, and environment.',
       'Only a parsed mdp.run-request.v1 with mode=generative may inherit OPENAI_API_KEY and MDP_ALLOW_NATIVE_MODEL_CALLS from the server startup environment; tool arguments cannot supply or enable either.',
@@ -733,7 +763,7 @@ const handleRequest = async (message) => {
               capabilities: { tools: { listChanged: false } },
               serverInfo: { name: SERVER_NAME, version: serverVersion },
               instructions:
-                'Use mdp_run with an already-written run-request file and a new output directory. Use mdp_verify_run to independently check the resulting bundle and receipt. The surrounding agent is control plane only; only the CLI result and receipt have decision authority.',
+                'Use the canonical path in order: mdp_run_tools, mdp_prepare_run, mdp_run, then mdp_verify_run. Each stage consumes explicit local paths and returns CLI-owned artifacts. The surrounding agent and MCP adapter are control plane only; only CLI results and receipts have decision authority.',
             })
       case 'notifications/initialized':
         return null
