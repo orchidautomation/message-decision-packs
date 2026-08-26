@@ -141,6 +141,37 @@ fn help_after_subcommand_wraps_as_one_parseable_json_value() {
     let value = value.expect("trace help parses");
     assert_eq!(value["ok"], serde_json::json!(true));
     assert_eq!(value["command"], "help");
+    // The help text must be scoped to the requested subcommand, not the root.
+    let text = value["data"]["text"]
+        .as_str()
+        .expect("help text is a string");
+    assert!(
+        text.contains("mdp trace [OPTIONS]"),
+        "subcommand help should describe the trace subcommand, got: {text}"
+    );
+    assert!(
+        !text.contains("Usage: mdp [OPTIONS] <COMMAND>"),
+        "subcommand help should not be the root help, got: {text}"
+    );
+}
+
+#[test]
+fn help_for_nested_subcommand_wraps_as_one_parseable_json_value() {
+    // Deep subcommand help (e.g. `conformance compile --help`) must also be
+    // scoped to the requested subcommand.
+    let (code, _, stderr, value) = run(&["--json", "conformance", "compile", "--help"], Case::Ok);
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let value = value.expect("conformance compile help parses");
+    assert_eq!(value["ok"], serde_json::json!(true));
+    assert_eq!(value["command"], "help");
+    let text = value["data"]["text"]
+        .as_str()
+        .expect("help text is a string");
+    assert!(
+        text.contains("mdp conformance compile [OPTIONS]"),
+        "subcommand help should describe conformance compile, got: {text}"
+    );
 }
 
 #[test]

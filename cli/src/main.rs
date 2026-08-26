@@ -45,21 +45,17 @@ fn main() {
             );
             if is_display {
                 if json_mode {
-                    // Wrap the rendered help or version text in a successful
-                    // JSON envelope without writing a prelude. Render directly
-                    // from `Cli::command()` to avoid clap's color/stderr path.
-                    let text = if matches!(err.kind(), ErrorKind::DisplayHelp) {
-                        <Cli as clap::CommandFactory>::command()
-                            .render_help()
-                            .to_string()
-                    } else {
-                        <Cli as clap::CommandFactory>::command().render_version()
-                    };
+                    // Render the help or version text via the clap error
+                    // itself. `err.render()` carries the parsed command
+                    // context (top-level or subcommand) so `mdp --json trace
+                    // --help` returns the `trace` help, not the root help,
+                    // and bypasses clap's color/stderr path.
                     let kind = if matches!(err.kind(), ErrorKind::DisplayHelp) {
                         DisplayKind::Help
                     } else {
                         DisplayKind::Version
                     };
+                    let text = err.render().to_string();
                     let _ = crate::output::print_display_envelope(true, kind, &text);
                 } else {
                     let _ = err.print();

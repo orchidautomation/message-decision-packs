@@ -8,11 +8,11 @@ pub(crate) const OUTPUT_MODE_CONFLICT_CODE: &str = "output_mode_conflict";
 
 /// Resolves the effective JSON presentation from parsed CLI state.
 ///
-/// The runtime gate and the capabilities metadata both consume one shared table
-/// so they cannot drift. The matrix is intentionally exhaustive: every public
-/// presentation selector/value combination must resolve to exactly one of the
-/// outcomes below. Adding a new presentation flag is a typed change in this
-/// module, not free-form metadata.
+/// The runtime gate and the capabilities metadata both consume one shared
+/// table so they cannot drift. The matrix is intentionally exhaustive: every
+/// public presentation selector/value combination must resolve to exactly one
+/// of the outcomes below. Adding a new presentation flag is a typed change in
+/// this module, not free-form metadata.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PresentationOutcome {
     /// No presentation conflict; success envelope may proceed.
@@ -39,102 +39,234 @@ impl DisplayKind {
     }
 }
 
-/// Resolves whether a parsed CLI invocation is compatible with JSON output.
-pub(crate) fn resolve_presentation(command: &Commands) -> PresentationOutcome {
+/// One accepted value for a presentation selector. The runtime gate, the
+/// capabilities metadata, and the in-source contract tests all consume this
+/// single entry, so the matrix and the runtime cannot drift.
+#[derive(Debug, Clone, Copy)]
+struct SelectorValue {
+    /// CLI value as the user types it (e.g. `"mermaid"`, `"true"`).
+    name: &'static str,
+    /// True when the value can coexist with global `--json`.
+    json_compatible: bool,
+}
+
+impl SelectorValue {
+    const fn new(name: &'static str, json_compatible: bool) -> Self {
+        Self {
+            name,
+            json_compatible,
+        }
+    }
+}
+
+/// One public presentation selector. The `matcher` resolves which value is
+/// active for a parsed `Commands`; returning `None` means the selector does
+/// not apply to that command.
+#[derive(Debug, Clone, Copy)]
+struct PresentationSelector {
+    /// Fully qualified selector name used in the capabilities matrix
+    /// (e.g. `"trace --format"`).
+    name: &'static str,
+    /// Short flag surfaced in the conflict envelope
+    /// (e.g. `"--format"`).
+    selector: &'static str,
+    /// Every public value the selector accepts, in declared order.
+    values: &'static [SelectorValue],
+    /// Resolves which value (by `name`) is active for a parsed `Commands`,
+    /// or `None` if this selector does not apply.
+    matcher: fn(&Commands) -> Option<&'static str>,
+}
+
+const fn selector(
+    name: &'static str,
+    selector: &'static str,
+    values: &'static [SelectorValue],
+    matcher: fn(&Commands) -> Option<&'static str>,
+) -> PresentationSelector {
+    PresentationSelector {
+        name,
+        selector,
+        values,
+        matcher,
+    }
+}
+
+fn match_trace(command: &Commands) -> Option<&'static str> {
     match command {
         Commands::Trace { format, .. } => {
             if *format == TraceFormat::Mermaid {
-                PresentationOutcome::Conflict {
-                    selector: "--format",
-                    value: "mermaid",
-                }
+                Some("mermaid")
             } else {
-                PresentationOutcome::Ok
+                Some("json")
             }
         }
+        _ => None,
+    }
+}
+
+fn match_verify_output_readable(command: &Commands) -> Option<&'static str> {
+    match command {
         Commands::VerifyOutput { readable, .. } => {
             if *readable {
-                PresentationOutcome::Conflict {
-                    selector: "--readable",
-                    value: "true",
-                }
+                Some("true")
             } else {
-                PresentationOutcome::Ok
+                Some("false")
             }
         }
+        _ => None,
+    }
+}
+
+fn match_render_brief_format(command: &Commands) -> Option<&'static str> {
+    match command {
         Commands::RenderBrief { format, .. } => {
             if *format == HumanBriefFormat::Markdown {
-                PresentationOutcome::Conflict {
-                    selector: "--format",
-                    value: "markdown",
-                }
+                Some("markdown")
             } else {
-                PresentationOutcome::Ok
+                Some("json")
             }
         }
+        _ => None,
+    }
+}
+
+fn match_sample_leads_format(command: &Commands) -> Option<&'static str> {
+    match command {
         Commands::SampleLeads { format, .. } => {
             if *format == SampleLeadsFormat::Yaml {
-                PresentationOutcome::Conflict {
-                    selector: "--format",
-                    value: "yaml",
-                }
+                Some("yaml")
             } else {
-                PresentationOutcome::Ok
+                Some("json")
             }
         }
+        _ => None,
+    }
+}
+
+fn match_brief_readable(command: &Commands) -> Option<&'static str> {
+    match command {
         Commands::Brief { readable, .. } => {
             if *readable {
-                PresentationOutcome::Conflict {
-                    selector: "--readable",
-                    value: "true",
-                }
+                Some("true")
             } else {
-                PresentationOutcome::Ok
+                Some("false")
             }
         }
-        _ => PresentationOutcome::Ok,
+        _ => None,
     }
+}
+
+/// The single source of truth for the presentation contract. The runtime
+/// gate, the capabilities metadata, and the contract tests all read from this
+/// array, so adding a new public presentation flag is a typed change here.
+static PRESENTATION_SELECTORS: &[PresentationSelector] = &[
+    selector(
+        "trace --format",
+        "--format",
+        &[
+            SelectorValue::new("json", true),
+            SelectorValue::new("mermaid", false),
+        ],
+        match_trace,
+    ),
+    selector(
+        "verify-output --readable",
+        "--readable",
+        &[
+            SelectorValue::new("false", true),
+            SelectorValue::new("true", false),
+        ],
+        match_verify_output_readable,
+    ),
+    selector(
+        "render-brief --format",
+        "--format",
+        &[
+            SelectorValue::new("json", true),
+            SelectorValue::new("markdown", false),
+        ],
+        match_render_brief_format,
+    ),
+    selector(
+        "sample-leads --format",
+        "--format",
+        &[
+            SelectorValue::new("json", true),
+            SelectorValue::new("yaml", false),
+        ],
+        match_sample_leads_format,
+    ),
+    selector(
+        "brief --readable",
+        "--readable",
+        &[
+            SelectorValue::new("false", true),
+            SelectorValue::new("true", false),
+        ],
+        match_brief_readable,
+    ),
+];
+
+fn find_selector_value(
+    entry: &PresentationSelector,
+    value_name: &str,
+) -> Option<&'static SelectorValue> {
+    entry.values.iter().find(|value| value.name == value_name)
+}
+
+/// Resolves whether a parsed CLI invocation is compatible with JSON output.
+pub(crate) fn resolve_presentation(command: &Commands) -> PresentationOutcome {
+    for entry in PRESENTATION_SELECTORS {
+        let Some(active_name) = (entry.matcher)(command) else {
+            continue;
+        };
+        let Some(active) = find_selector_value(entry, active_name) else {
+            // The matcher returned a value name that is not in the declared
+            // `values` list. Treat it as a conflict so the gate never silently
+            // allows a value the contract does not advertise.
+            return PresentationOutcome::Conflict {
+                selector: entry.selector,
+                value: active_name,
+            };
+        };
+        if !active.json_compatible {
+            return PresentationOutcome::Conflict {
+                selector: entry.selector,
+                value: active.name,
+            };
+        }
+    }
+    PresentationOutcome::Ok
 }
 
 /// Public selectors covered by the presentation contract. Consumed by both
-/// `resolve_presentation` and the capabilities metadata projection.
-pub(crate) fn presentation_selectors() -> &'static [(&'static str, &'static [&'static str])] {
-    &[
-        ("trace --format", &["json", "mermaid"]),
-        ("verify-output --readable", &["false", "true"]),
-        ("render-brief --format", &["json", "markdown"]),
-        ("sample-leads --format", &["json", "yaml"]),
-        ("brief --readable", &["false", "true"]),
-    ]
-}
-
-fn is_json_compatible_value(selector: &str, value: &str) -> bool {
-    match (selector, value) {
-        ("trace --format", "json") => true,
-        ("trace --format", "mermaid") => false,
-        ("verify-output --readable", "false") => true,
-        ("verify-output --readable", "true") => false,
-        ("render-brief --format", "json") => true,
-        ("render-brief --format", "markdown") => false,
-        ("sample-leads --format", "json") => true,
-        ("sample-leads --format", "yaml") => false,
-        ("brief --readable", "false") => true,
-        ("brief --readable", "true") => false,
-        _ => true,
-    }
+/// `resolve_presentation` and the capabilities metadata projection. The data
+/// is derived from the shared `PRESENTATION_SELECTORS` table.
+pub(crate) fn presentation_selectors() -> Vec<(&'static str, Vec<&'static str>)> {
+    PRESENTATION_SELECTORS
+        .iter()
+        .map(|entry| {
+            (
+                entry.name,
+                entry.values.iter().map(|value| value.name).collect(),
+            )
+        })
+        .collect()
 }
 
 pub(crate) fn presentation_compatibility_matrix() -> Value {
-    let selectors = presentation_selectors();
-    let mut rows = Vec::with_capacity(selectors.len());
-    for (selector, values) in selectors {
-        for value in *values {
-            let json_compatible = is_json_compatible_value(selector, value);
+    let total_rows: usize = PRESENTATION_SELECTORS
+        .iter()
+        .map(|entry| entry.values.len())
+        .sum();
+    let mut rows: Vec<Value> = Vec::with_capacity(total_rows);
+    for entry in PRESENTATION_SELECTORS {
+        for value in entry.values {
             rows.push(json!({
-                "selector": selector,
-                "value": value,
-                "json_compatible": json_compatible,
-                "conflict_code": if json_compatible { Value::Null } else { json!(OUTPUT_MODE_CONFLICT_CODE) },
+                "selector": entry.name,
+                "value": value.name,
+                "json_compatible": value.json_compatible,
+                "conflict_code": if value.json_compatible { Value::Null } else { json!(OUTPUT_MODE_CONFLICT_CODE) },
             }));
         }
     }
@@ -1365,10 +1497,10 @@ mod tests {
             })
             .collect();
         let selectors = presentation_selectors();
-        for (selector, values) in selectors {
-            for value in *values {
+        for (selector, values) in &selectors {
+            for value in values {
                 assert!(
-                    runtime_pairs.contains(&(selector.to_string(), value.to_string())),
+                    runtime_pairs.contains(&((*selector).to_string(), (*value).to_string())),
                     "matrix missing ({selector}, {value})"
                 );
             }
@@ -1391,6 +1523,75 @@ mod tests {
         assert_eq!(contract["stdout_invariant"]["prelude_allowed"], false);
         assert_eq!(contract["stdout_invariant"]["trailing_text_allowed"], false);
         assert_eq!(contract["stdout_invariant"]["stderr_empty"], true);
+    }
+
+    #[test]
+    fn presentation_selectors_runtime_and_metadata_share_one_typed_table() {
+        // The runtime gate, the matrix projection, and the contract metadata
+        // all read from the single `PRESENTATION_SELECTORS` table. If this
+        // test compiles and passes, the three surfaces are guaranteed to use
+        // the same entries. Any drift is a programming error in the table.
+        let selectors = presentation_selectors();
+        let matrix = presentation_compatibility_matrix();
+        let contract = presentation_contract();
+        let matrix_rows = matrix["selectors"].as_array().expect("matrix rows");
+
+        // Every declared selector appears in `presentation_selectors()`,
+        // every (selector, value) appears in the matrix, and the contract
+        // exposes the same selector names.
+        for entry in PRESENTATION_SELECTORS {
+            let selector_match = selectors
+                .iter()
+                .find(|(name, _)| *name == entry.name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "selector {} missing from presentation_selectors",
+                        entry.name
+                    )
+                });
+            let declared_values: Vec<&'static str> = entry.values.iter().map(|v| v.name).collect();
+            assert_eq!(selector_match.1, declared_values);
+
+            for value in entry.values {
+                let row = matrix_rows
+                    .iter()
+                    .find(|row| row["selector"] == entry.name && row["value"] == value.name)
+                    .unwrap_or_else(|| panic!("matrix missing ({}={})", entry.name, value.name));
+                assert_eq!(
+                    row["json_compatible"],
+                    serde_json::json!(value.json_compatible)
+                );
+                if value.json_compatible {
+                    assert!(row["conflict_code"].is_null());
+                } else {
+                    assert_eq!(row["conflict_code"], OUTPUT_MODE_CONFLICT_CODE);
+                }
+            }
+        }
+
+        // The matrix and `presentation_selectors()` agree on value count and
+        // selector count exactly.
+        let matrix_pair_count: usize = matrix_rows.len();
+        let declared_pair_count: usize = PRESENTATION_SELECTORS
+            .iter()
+            .map(|entry| entry.values.len())
+            .sum();
+        assert_eq!(matrix_pair_count, declared_pair_count);
+        assert_eq!(selectors.len(), PRESENTATION_SELECTORS.len());
+
+        // The contract metadata surfaces the same selector list.
+        let contract_selectors = contract["selectors"]
+            .as_array()
+            .expect("contract selectors array");
+        let contract_names: Vec<String> = contract_selectors
+            .iter()
+            .map(|row| row[0].as_str().unwrap().to_string())
+            .collect();
+        let table_names: Vec<String> = PRESENTATION_SELECTORS
+            .iter()
+            .map(|entry| entry.name.to_string())
+            .collect();
+        assert_eq!(contract_names, table_names);
     }
 
     #[test]
