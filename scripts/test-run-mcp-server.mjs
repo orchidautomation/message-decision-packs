@@ -418,6 +418,28 @@ test('rejects a request whose pack_dir is outside the approved pack root before 
   assert.equal(existsSync(`${output}.invocation.json`), false)
 })
 
+test('rejects a declared deterministic input outside the approved input root before spawning', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-input-root-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const approvedInput = join(root, 'approved-input')
+  const outsideInput = join(root, 'outside-input.json')
+  mkdirSync(approvedInput)
+  writeFileSync(outsideInput, 'outside')
+  const request = join(approvedInput, 'request.json')
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', inputs: [{ logical_name: 'source', source_path: outsideInput }] }))
+  const output = join(root, 'run')
+  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', { request_path: request, output_dir: output })], {
+    MDP_MCP_PACK_ROOTS: root,
+    MDP_MCP_INPUT_ROOTS: approvedInput,
+    MDP_MCP_OUTPUT_ROOTS: root,
+    MDP_MCP_WORK_ROOTS: root,
+    MDP_MCP_CONSENT_ROOTS: root,
+  })
+  assert.equal(reply.error.code, -32602)
+  assert.match(reply.error.message, /outside approved roots/)
+  assert.equal(existsSync(`${output}.invocation.json`), false)
+})
+
 test('forwards native model permission and credential only for generative requests', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))

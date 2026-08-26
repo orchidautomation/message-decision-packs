@@ -638,6 +638,19 @@ const callProposalRun = async (args) => {
     ? policy.existing('input', mockResponseArg, 'file').path
     : null
   const frozenMock = mockResponsePath ? policy.freeze('input', mockResponsePath, MAX_SOURCE_FILE_BYTES) : null
+  const finalCheckInputs = () => {
+    policy.finalCheck('pack', packReservation.path, packReservation, 'directory')
+    for (const source of frozenSources) policy.finalCheck('input', source.path, source)
+    if (frozenIntake) policy.finalCheck('approval', frozenIntake.path, frozenIntake)
+    if (frozenAudit) policy.finalCheck('approval', frozenAudit.path, frozenAudit)
+    if (frozenMock) policy.finalCheck('input', frozenMock.path, frozenMock)
+    if (workReservation.newLeaf) {
+      const current = policy.newOutput('work', workdir)
+      if (current.root !== workReservation.root || current.parent !== workReservation.parent || current.parentIdentity.dev !== workReservation.parentIdentity.dev || current.parentIdentity.ino !== workReservation.parentIdentity.ino) throw new Error('work path changed before use')
+    } else {
+      policy.finalCheck('work', workdir, workReservation, 'directory')
+    }
+  }
   const promptId = optionalString(parsedArgs, 'prompt_id')
   const maxSourceBytes = optionalInteger(parsedArgs, 'max_source_bytes')
   if (maxSourceBytes !== null && (maxSourceBytes < 1000 || maxSourceBytes > MAX_SOURCE_BYTES)) {
@@ -675,11 +688,7 @@ const callProposalRun = async (args) => {
       model,
       workdir,
     })
-    policy.finalCheck('pack', packReservation.path, packReservation, 'directory')
-    for (const source of frozenSources) policy.finalCheck('input', source.path, source)
-    if (frozenIntake) policy.finalCheck('approval', frozenIntake.path, frozenIntake)
-    if (frozenAudit) policy.finalCheck('approval', frozenAudit.path, frozenAudit)
-    policy.finalCheck('work', workParent.path, workParent, 'directory')
+    finalCheckInputs()
     consumeProviderConsent({ policy, consentId, provider: 'openai', purpose: 'mdp.proposal-run', requestSha256, sourceSha256s: frozenSources.map((source) => source.sha256), outputRoot: workReservation.root })
   }
 
@@ -703,14 +712,7 @@ const callProposalRun = async (args) => {
   if (maxSourceBytes !== null) runnerArgs.push('--max-source-bytes', String(maxSourceBytes))
   runnerArgs.push('--timeout-ms', String(timeoutMs))
 
-  if (providerCapable) {
-    policy.finalCheck('pack', packReservation.path, packReservation, 'directory')
-    for (const source of frozenSources) policy.finalCheck('input', source.path, source)
-    if (frozenIntake) policy.finalCheck('approval', frozenIntake.path, frozenIntake)
-    if (frozenAudit) policy.finalCheck('approval', frozenAudit.path, frozenAudit)
-    if (frozenMock) policy.finalCheck('input', frozenMock.path, frozenMock)
-    policy.finalCheck('work', workParent.path, workParent, 'directory')
-  }
+  finalCheckInputs()
   const result = await runNode(runnerPath, runnerArgs, timeoutMs, providerCapable)
   let parsed = null
   try {

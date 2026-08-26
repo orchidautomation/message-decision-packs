@@ -489,8 +489,7 @@ const callRun = async (args, signal = null) => {
 
   let invocation
   let plan = null
-  const finalCheckProviderInputs = () => {
-    if (!providerCapable) return
+  const finalCheckInputs = () => {
     if (approvedPack) policy.finalCheck('pack', approvedPack.path, approvedPack, 'directory')
     for (const input of frozenInputs) policy.finalCheck('input', input.path, input)
   }
@@ -509,7 +508,8 @@ const callRun = async (args, signal = null) => {
         outputRoot: outputParent.root,
       })
     }
-    finalCheckProviderInputs()
+    finalCheckInputs()
+    policy.finalCheck('output', outputParent.path, outputParent, 'directory')
     const parentDeadline = performance.now() + timeoutMs
     const preflightBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
     const preflight = await invokeCli(
@@ -542,7 +542,8 @@ const callRun = async (args, signal = null) => {
     if (!validateDeadlinePlan(plan, timeoutMs, frozenRequest.executionId)) {
       return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'run-preflight-malformed' }, true)
     }
-    finalCheckProviderInputs()
+    finalCheckInputs()
+    policy.finalCheck('output', outputParent.path, outputParent, 'directory')
     const outputReservation = policy.newOutput('output', outputRequest)
     const outputDir = outputReservation.path
     const runBudget = Math.max(1, Math.ceil(parentDeadline - performance.now()))
