@@ -281,6 +281,8 @@ export const cleanupStaleOwnedTempWorkspaces = ({
   baseDir = tmpdir(),
   minAgeMs = DEFAULT_STALE_AGE_MS,
   nowMs = Date.now(),
+  secureHelperPath,
+  secureHelperDiagnostics,
 } = {}) => {
   const normalizedPurpose = safePurpose(purpose)
   if (!Number.isSafeInteger(minAgeMs) || minAgeMs < 60_000) {
@@ -292,13 +294,29 @@ export const cleanupStaleOwnedTempWorkspaces = ({
   for (const entry of readdirSync(canonicalBase, { withFileTypes: true })) {
     if (!entry.name.startsWith(prefix) || !entry.isDirectory() || entry.isSymbolicLink()) continue
     const candidate = join(canonicalBase, entry.name)
+    // A fresh named root cannot be stale. This cheap, conservative filter
+    // avoids spawning one native inspection helper per active workspace.
+    try {
+      const candidateStats = lstatSync(candidate)
+      if (!candidateStats.isDirectory() || candidateStats.isSymbolicLink() || nowMs - candidateStats.mtimeMs < minAgeMs) continue
+    } catch { continue }
     let inspected
-    try { inspected = inspectOwnedTempWorkspace(candidate, { purpose: normalizedPurpose }) } catch { continue }
+    try {
+      inspected = inspectOwnedTempWorkspace(candidate, {
+        purpose: normalizedPurpose,
+        secureHelperPath,
+        secureHelperDiagnostics,
+      })
+    } catch { continue }
     const newestIdentityTime = inspected
       ? Math.max(inspected.marker.created_at_ms, inspected.rootStats.mtimeMs, inspected.markerStats.mtimeMs)
       : nowMs
     if (!inspected || nowMs - newestIdentityTime < minAgeMs || processIsAlive(inspected.marker.pid)) continue
-    if (cleanupOwnedTempWorkspace(candidate, { purpose: normalizedPurpose })) removed.push(candidate)
+    if (cleanupOwnedTempWorkspace(candidate, {
+      purpose: normalizedPurpose,
+      secureHelperPath,
+      secureHelperDiagnostics,
+    })) removed.push(candidate)
   }
   return removed
 }

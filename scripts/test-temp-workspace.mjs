@@ -168,6 +168,31 @@ test('stale cleanup requires marker, owner-safe modes, age, and a dead pid', (t)
   for (const path of [live, young, badMode, badMarkerMode, unrelated, symlink]) assert.equal(existsSync(path), true)
 })
 
+test('stale sweep skips young roots before spawning the secure inspector', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-young-prefilter-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const now = Date.now()
+  const young = createOwnedTempWorkspace({
+    purpose: 'run-mcp-freeze',
+    baseDir: base,
+    nowMs: now - 1_000,
+    pid: 999_999_999,
+  })
+  const spawned = join(base, 'inspector-spawned')
+  const helper = join(base, 'must-not-spawn')
+  writeFileSync(helper, `#!/bin/sh\ntouch '${spawned}'\nexit 73\n`, { mode: 0o700 })
+
+  assert.deepEqual(cleanupStaleOwnedTempWorkspaces({
+    purpose: 'run-mcp-freeze',
+    baseDir: base,
+    minAgeMs: 60_000,
+    nowMs: now,
+    secureHelperPath: helper,
+  }), [])
+  assert.equal(existsSync(young), true)
+  assert.equal(existsSync(spawned), false)
+})
+
 test('tampered marker and unrelated temp data are never removed', (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-tamper-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
