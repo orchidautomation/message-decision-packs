@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const workflowPath = join(root, '.github/workflows/release.yml')
+const ciWorkflowPath = join(root, '.github/workflows/ci.yml')
 const stepName = 'Install and smoke-test the published release'
 const buildCommand = 'cargo build --manifest-path cli/Cargo.toml'
 const smokeCommand = 'scripts/release-install-smoke.sh "$version"'
@@ -56,8 +57,20 @@ function assertReleaseSmokeContract(workflow) {
   assert.ok(buildIndex < smokeIndex, 'source CLI build must execute before published smoke')
 }
 
+function assertAssetParityCiContract(workflow) {
+  const commands = runBlock(workflow, 'Validate authored asset parity')
+    .filter((line) => !line.startsWith('#'))
+  assert.deepEqual(
+    commands,
+    ['make validate-asset-sync'],
+    'required CI must execute authored asset parity unconditionally',
+  )
+}
+
 const workflow = readFileSync(workflowPath, 'utf8')
 assertReleaseSmokeContract(workflow)
+const ciWorkflow = readFileSync(ciWorkflowPath, 'utf8')
+assertAssetParityCiContract(ciWorkflow)
 
 for (const [name, mutation] of [
   ['commented build', workflow.replace(buildCommand, `# ${buildCommand}`)],
@@ -79,4 +92,13 @@ for (const [name, mutation] of [
   assert.throws(() => assertReleaseSmokeContract(mutation), undefined, name)
 }
 
-console.log('Release workflow source-build contract passed.')
+
+for (const [name, mutation] of [
+  ['commented asset parity', ciWorkflow.replace('          make validate-asset-sync', '          # make validate-asset-sync')],
+  ['echoed asset parity', ciWorkflow.replace('          make validate-asset-sync', '          echo make validate-asset-sync')],
+  ['unreachable asset parity', ciWorkflow.replace('          make validate-asset-sync', '          if false; then\n            make validate-asset-sync\n          fi')],
+]) {
+  assert.throws(() => assertAssetParityCiContract(mutation), undefined, name)
+}
+
+console.log('Release workflow and authored-asset CI contracts passed.')

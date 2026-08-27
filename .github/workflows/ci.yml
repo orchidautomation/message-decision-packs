@@ -33,10 +33,12 @@ jobs:
               - "rust-toolchain.toml"
               - "Makefile"
               - "plugin/.codex-plugin/plugin.json"
+              - "plugin/assets/**"
               - "plugin/assets/templates/**"
               - "plugin/assets/authority-conformance/**"
               - "plugin/assets/**/*.md"
               - "assets/authority-conformance/**"
+              - "assets/**"
               - "assets/**/*.md"
               - "plugin/skills/**"
               - "plugin/skill-evals/**"
@@ -83,6 +85,9 @@ jobs:
         working-directory: cli
       - name: Validate release workflow contract
         run: node scripts/test-release-workflow.mjs
+      - name: Validate authored asset parity
+        run: |
+          make validate-asset-sync
       - name: Test CLI
         run: cargo test
         working-directory: cli
