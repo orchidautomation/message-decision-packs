@@ -10,6 +10,11 @@ const workflowPath = join(root, '.github/workflows/release.yml')
 const stepName = 'Install and smoke-test the published release'
 const buildCommand = 'cargo build --manifest-path cli/Cargo.toml'
 const smokeCommand = 'scripts/release-install-smoke.sh "$version"'
+const requiredPrefix = [
+  'set -euo pipefail',
+  'version="${{ steps.version.outputs.version }}"',
+  buildCommand,
+]
 
 function runBlock(workflow, name) {
   const lines = workflow.split(/\r?\n/)
@@ -41,6 +46,11 @@ function assertReleaseSmokeContract(workflow) {
   const commands = runBlock(workflow, stepName).filter((line) => !line.startsWith('#'))
   const buildIndex = commands.indexOf(buildCommand)
   const smokeIndex = commands.indexOf(smokeCommand)
+  assert.deepEqual(
+    commands.slice(0, requiredPrefix.length),
+    requiredPrefix,
+    'source CLI build must be an unconditional top-level command after strict setup',
+  )
   assert.notEqual(buildIndex, -1, 'release smoke step must execute the exact source CLI build')
   assert.notEqual(smokeIndex, -1, 'release smoke step must execute the published smoke')
   assert.ok(buildIndex < smokeIndex, 'source CLI build must execute before published smoke')
@@ -52,6 +62,13 @@ assertReleaseSmokeContract(workflow)
 for (const [name, mutation] of [
   ['commented build', workflow.replace(buildCommand, `# ${buildCommand}`)],
   ['echoed build', workflow.replace(buildCommand, `echo ${buildCommand}`)],
+  [
+    'unreachable build',
+    workflow.replace(
+      `          ${buildCommand}`,
+      `          if false; then\n            ${buildCommand}\n          fi`,
+    ),
+  ],
   [
     'late build',
     workflow
