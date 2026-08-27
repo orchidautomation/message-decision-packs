@@ -14,6 +14,7 @@ const TARGET_COMMANDS: &[&str] = &[
     "requirements",
     "prepare-run",
     "run",
+    "recover-run",
     "run-preflight",
     "verify-run",
     "check-claims",
@@ -190,6 +191,22 @@ fn project_codes(command: &str, codes: Vec<String>) -> Vec<ActionableDiagnostic>
 
 fn project(command: &str, raw_code: &str) -> ActionableDiagnostic {
     let code = stable_code(raw_code);
+    if code == "output-directory-claimed" {
+        return ActionableDiagnostic {
+            contract: ACTIONABLE_DIAGNOSTIC_CONTRACT,
+            phase: "execution",
+            code,
+            retryability: Retryability::AfterUserAction,
+            summary: "A prior run transaction still owns this output name.".into(),
+            prerequisites: vec![Prerequisite {
+                kind: "runtime",
+                summary: "Confirm the prior run is no longer live and keep the same final output directory.",
+            }],
+            next_action: manual_action(
+                "Preview `mdp recover-run --out-dir SAME_OUTPUT_DIR`; apply only if its validated stale-state check succeeds.",
+            ),
+        };
+    }
     let class = diagnostic_class(&code);
     let (retryability, summary, prerequisites, next_action) = match class {
         DiagnosticClass::InvalidInput => (
@@ -330,7 +347,7 @@ fn phase(command: &str, code: &str) -> &'static str {
         "init" | "doctor" => "setup",
         "validate" => "validation",
         "skills" | "requirements" => "readiness",
-        "prepare-run" | "run" | "run-preflight" | "verify-run" => "execution",
+        "prepare-run" | "run" | "recover-run" | "run-preflight" | "verify-run" => "execution",
         "check-claims" => "policy",
         "route" | "route-budget" | "fit" | "brief" | "emit-brief" => "routing",
         _ => "input",
@@ -423,7 +440,9 @@ fn fallback_code(command: &str) -> &'static str {
     match command {
         "skills" | "requirements" => "readiness_blocked",
         "check-claims" => "claim_policy_blocked",
-        "prepare-run" | "run" | "run-preflight" | "verify-run" => "execution_unavailable",
+        "prepare-run" | "run" | "recover-run" | "run-preflight" | "verify-run" => {
+            "execution_unavailable"
+        }
         "route" | "route-budget" | "fit" | "brief" | "emit-brief" => "governed_routing_blocked",
         _ => "command_blocked",
     }
@@ -472,6 +491,20 @@ mod tests {
             assert_eq!(value["retryability"], retryability);
             assert_eq!(value["next_action"]["kind"], action_kind);
         }
+    }
+
+    #[test]
+    fn claimed_run_output_points_to_validated_recovery_preview() {
+        let value = serde_json::to_value(project("run", "output-directory-claimed")).unwrap();
+        assert_eq!(value["phase"], "execution");
+        assert_eq!(value["retryability"], "after-user-action");
+        assert!(
+            value["next_action"]["summary"]
+                .as_str()
+                .unwrap()
+                .contains("mdp recover-run --out-dir SAME_OUTPUT_DIR")
+        );
+        assert!(value["next_action"].get("command").is_none());
     }
 
     #[test]

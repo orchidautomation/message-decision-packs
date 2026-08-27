@@ -107,6 +107,7 @@ pub(crate) const SUPPORTED_COMMAND_SURFACES: &[(&str, SurfaceRole)] = &[
     ("trace", SurfaceRole::Projection),
     ("consume-run", SurfaceRole::Lifecycle),
     ("run", SurfaceRole::AuthorityOrigin),
+    ("recover-run", SurfaceRole::Lifecycle),
     ("run-preflight", SurfaceRole::Diagnostic),
     ("verify-output", SurfaceRole::Verifier),
     ("author-proof-output", SurfaceRole::ArtifactWriter),

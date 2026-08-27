@@ -9,6 +9,10 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 
+pub(crate) fn recover_run_output(output_root: &Path, apply: bool) -> Result<Value> {
+    crate::run_runtime::recover_run_output(output_root, apply)
+}
+
 pub(crate) fn run_request_file(request_path: &Path, output_root: &Path) -> Result<Value> {
     run_request_file_with_transport(request_path, output_root, None)
 }
@@ -122,6 +126,8 @@ fn failure_result(
     };
     let diagnostics = if matches!(kind, RunFailureKind::PolicyBlocked) {
         serde_json::to_value(diagnostics).unwrap_or_else(|_| serde_json::json!([]))
+    } else if reason_code == "output-directory-claimed" {
+        json!([{"code": "output-directory-claimed"}])
     } else {
         serde_json::json!([])
     };

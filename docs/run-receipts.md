@@ -410,6 +410,21 @@ Older v1 receipts without this optional projection remain readable; evidence is
 unknown rather than inferred. The clock is checked at safe phase boundaries;
 blocking filesystem syscalls are not claimed to be preemptible.
 
+### Recover a hard-killed direct run
+
+If `mdp run` reports `output-directory-claimed`, keep the same `--out-dir` and
+preview the bounded recovery plan:
+
+```bash
+mdp --json recover-run --out-dir RUN_DIR
+```
+
+Only rerun with `--apply` after the preview reports `status: ready`. Recovery
+requires a stale, non-live v2 claim plus exact owner, mode, type, device, and
+inode matches for its bound hidden transaction. It refuses a present final run
+directory, recent/live or ambiguous claims, links, and changed metadata. It
+never selects the final published run, pack, or customer workdir for removal.
+
 ### Governed host envelope
 
 The `mdp.governed-host-envelope.v1` declaration separates model judgment from
