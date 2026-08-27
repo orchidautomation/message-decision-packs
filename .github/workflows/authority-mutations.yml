@@ -50,7 +50,7 @@ jobs:
     name: authority-mutation-shard-${{ matrix.shard }}
     needs: authority-mutation-tool
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:

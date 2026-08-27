@@ -225,7 +225,7 @@ never mutates pack policy or treats `.mdp/traces` as authority. Inspect the
 closed contract with `mdp --json schema decision-trace-v1`.
 
 
-All commands support `--json`; add `--summary` for compact status output. Run `mdp --json capabilities` when an agent or wrapper needs to inspect command names, coarse side effects, output contracts, `--out` support, dry-run support, strict-mode support, and stable error codes. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.
+All commands support `--json`; add `--summary` for compact status output. Run `mdp --json capabilities` when an agent or wrapper needs to inspect the public CLI. The versioned `mdp.capabilities.v1` payload exposes an authoritative `mdp.cli-graph.v1` projection under `data.cli`; its commands, nested paths, canonical arguments, aliases, required/optional/repeatable semantics, conditional `requires_when_present` and `required_unless_present` edges, defaults, enum values, conflicts, and human-only display actions are generated from or parity-checked against Clap. The older `data.commands` summaries remain temporarily available for coarse side effects, output contracts, `--out`, dry-run, and strict-mode support, but are deprecated as a syntactic command graph. Validation-style commands return structured data and exit nonzero when `data.valid` is false. Argument parse errors also return JSON when `--json` is present.
 
 ## Cold-model conformance
 

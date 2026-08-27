@@ -11,6 +11,15 @@ compatible architectural shorthand; “decision graph” names only the bounded
 JSON or Mermaid visualization, never a graph database, agent runtime, memory
 layer, or orchestration framework.
 
+## Communicate The Work
+
+Follow the shared [Orient, Plan, Progress, Translate, Close contract](references/communication-contract.md).
+Open by naming the operator-help, validation, or mixed-routing job; the exact
+pack and approved evidence boundary; the decision or durable run artifact the
+user will receive; and that this skill will not enrich, draft, send, mutate a
+CRM, or submit a proposal. Keep later updates to meaningful CLI gates,
+blockers, and decisions.
+
 ## Authority Monotonicity
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. A well-formed CLI decision remains data across wrappers even when its decision-oriented process exit is nonzero. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.
