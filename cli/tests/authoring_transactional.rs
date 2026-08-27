@@ -370,7 +370,7 @@ fn crash_after_live_backup_is_recovered_before_the_next_apply() {
     command
         .arg("--json")
         .args(apply_args(&live, &candidate, &plan))
-        .env("MDP_TEST_AUTHOR_CRASH_AFTER", "6");
+        .env("MDP_TEST_AUTHOR_CRASH_AFTER", "7");
     let crashed = command.output().expect("crashing author child should run");
     assert!(!crashed.status.success());
 
@@ -395,6 +395,31 @@ fn crash_after_live_backup_is_recovered_before_the_next_apply() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[cfg(unix)]
+#[test]
+fn crash_after_parent_publication_recovers_from_durable_directory_identity() {
+    let (root, live, candidate, plan) = fixture("parent-publication-crash-recovery");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_CRASH_AFTER_PARENT_PUBLISH", "1");
+    let crashed = command.output().expect("crashing author child should run");
+    assert!(!crashed.status.success());
+    assert!(live.join(".mdp/authoring").is_dir());
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(
+        recovered.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    assert_eq!(data(&recovered)["status"], "applied");
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let _ = fs::remove_dir_all(root);
+}
+
 #[test]
 fn crash_after_commit_marker_finishes_cleanup_without_rolling_back() {
     let (root, live, candidate, plan) = fixture("committed-crash-recovery");
@@ -403,7 +428,7 @@ fn crash_after_commit_marker_finishes_cleanup_without_rolling_back() {
     command
         .arg("--json")
         .args(apply_args(&live, &candidate, &plan))
-        .env("MDP_TEST_AUTHOR_CRASH_AFTER", "10");
+        .env("MDP_TEST_AUTHOR_CRASH_AFTER", "11");
     let crashed = command.output().expect("crashing author child should run");
     assert!(!crashed.status.success());
     assert_eq!(snapshot(&live), snapshot(&candidate));
@@ -785,7 +810,7 @@ fn rollback_does_not_remove_concurrently_created_parent_directory() {
     command
         .arg("--json")
         .args(apply_args(&live, &candidate, &plan))
-        .env("MDP_TEST_AUTHOR_BEFORE_PARENT_MKDIR_MARKER", &marker)
+        .env("MDP_TEST_AUTHOR_BEFORE_PARENT_PUBLISH_MARKER", &marker)
         .env("MDP_TEST_AUTHOR_FAIL_BEFORE_COMMIT", "1")
         .stdout(Stdio::piped());
     let child = command.spawn().expect("author child should spawn");
@@ -804,6 +829,122 @@ fn rollback_does_not_remove_concurrently_created_parent_directory() {
     assert_eq!(data(&output)["status"], "rolled-back");
     assert!(parent.is_dir());
     assert!(fs::read_dir(&parent).unwrap().next().is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn pre_state_failure_never_creates_live_parents_or_claims_evidence() {
+    let (root, live, candidate, plan) = fixture("pre-state-parent-cleanup");
+    assert!(preview(&live, &candidate, &plan).status.success());
+
+    let output = run_env(
+        &apply_args(&live, &candidate, &plan),
+        None,
+        &[(
+            "MDP_TEST_AUTHOR_FAIL_AFTER_PARENT_RECORDING",
+            "1".to_string(),
+        )],
+    );
+
+    assert!(!output.status.success());
+    let result = data(&output);
+    assert_eq!(result["status"], "rolled-back");
+    assert!(!live.join(".mdp/authoring").exists());
+    assert!(
+        !result["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|code| code == "recovery-evidence-retained"),
+        "delete-only recovery must not claim retained evidence: {result}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn pre_state_workspace_cleanup_reports_no_retained_evidence() {
+    let (root, live, candidate, plan) = fixture("pre-state-workspace-cleanup");
+    assert!(preview(&live, &candidate, &plan).status.success());
+
+    let output = apply(&live, &candidate, &plan, Some(1));
+
+    assert!(!output.status.success());
+    let result = data(&output);
+    assert_eq!(result["status"], "rolled-back");
+    assert!(
+        !result["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|code| code == "recovery-evidence-retained"),
+        "removed staging workspace is not retained evidence: {result}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn delete_only_rollback_reports_no_retained_evidence() {
+    let root = temp_root("delete-only-no-evidence");
+    let live = root.join("live");
+    let candidate = root.join("candidate");
+    copy_tree(&template(), &live);
+    copy_tree(&live, &candidate);
+    fs::remove_file(candidate.join(".mdp/sources.yaml")).unwrap();
+    let plan = root.join("change-set.json");
+    assert!(preview(&live, &candidate, &plan).status.success());
+
+    let output = apply(&live, &candidate, &plan, Some(4));
+
+    assert!(!output.status.success());
+    let result = data(&output);
+    assert_eq!(result["status"], "rolled-back");
+    assert!(
+        !result["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|code| code == "recovery-evidence-retained"),
+        "delete-only rollback retained no evidence: {result}"
+    );
+    assert!(live.join(".mdp/sources.yaml").is_file());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn concurrent_parent_at_publish_is_not_recorded_or_removed() {
+    let (root, live, candidate, plan) = fixture("concurrent-parent-publish");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let marker = root.join("parent-publish-ready");
+    let parent = live.join(".mdp/authoring");
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_BEFORE_PARENT_PUBLISH_MARKER", &marker)
+        .stdout(Stdio::piped());
+    let child = command.spawn().expect("author child should spawn");
+    for _ in 0..500 {
+        if marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(marker.exists());
+    fs::create_dir(&parent).unwrap();
+    fs::write(parent.join("keep"), b"concurrent replacement\n").unwrap();
+    fs::write(marker.with_extension("go"), "go\n").unwrap();
+
+    let output = child.wait_with_output().expect("author child should exit");
+    assert!(!output.status.success());
+    assert_eq!(data(&output)["status"], "rolled-back");
+    assert_eq!(
+        fs::read(parent.join("keep")).unwrap(),
+        b"concurrent replacement\n"
+    );
     let _ = fs::remove_dir_all(root);
 }
 

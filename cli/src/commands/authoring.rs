@@ -384,7 +384,9 @@ pub(crate) fn apply_pack_change_set(
         ));
     }
 
-    if recovered == RecoveryOutcome::Committed && inventory(&live_root)? == expected_candidate {
+    if recovered.outcome == RecoveryOutcome::Committed
+        && inventory(&live_root)? == expected_candidate
+    {
         return Ok(result_from_change_set(
             &change_set,
             "applied",
@@ -471,6 +473,12 @@ enum RecoveryOutcome {
     Committed,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RecoveryResult {
+    outcome: RecoveryOutcome,
+    evidence_retained: bool,
+}
+
 fn publish(
     live_root: &Path,
     change_set: &ChangeSet,
@@ -482,6 +490,7 @@ fn publish(
     let staging_name = format!(".mdp.author.staging.{nonce}");
     let backup_name = format!(".mdp.author.backup.{nonce}");
     let mut touched = BTreeSet::new();
+    let mut created_directories = BTreeMap::new();
     let mut fault = BoundaryFault::from_env();
     let publication = (|| -> Result<bool> {
         let parent = open_verified_directory(live_root.parent().unwrap_or(live_root))?;
@@ -503,7 +512,6 @@ fn publish(
         let live = open_child_directory(&root, ".mdp")?;
         let mut backup_states = Vec::new();
         let mut install_states = Vec::new();
-        let mut created_directories = BTreeMap::new();
 
         for file in &change_set.files {
             if !file.candidate.present || file.action == "unchanged" {
@@ -527,9 +535,12 @@ fn publish(
             if !file.candidate.present || file.action == "unchanged" {
                 continue;
             }
-            for created in ensure_logical_parents(&live, &file.path)? {
-                created_directories.insert(created.path.clone(), created);
-            }
+            record_missing_logical_parents(&live, &staging, &file.path, &mut created_directories)?;
+        }
+        if cfg!(debug_assertions)
+            && std::env::var_os("MDP_TEST_AUTHOR_FAIL_AFTER_PARENT_RECORDING").is_some()
+        {
+            return Err(anyhow!("test failure after author parent recording"));
         }
         for file in &change_set.files {
             if !matches!(file.action.as_str(), "change" | "delete") {
@@ -566,13 +577,41 @@ fn publish(
             parent_ino: file_identity(&parent)?.1,
             staging_name: staging_name.clone(),
             backup_name: backup_name.clone(),
-            created_directories: created_directories.into_values().collect(),
+            created_directories: created_directories.values().cloned().collect(),
             backups: backup_states,
             installs: install_states,
         };
         write_transaction_state(&parent, live_root, &transaction)?;
         test_pause("MDP_TEST_AUTHOR_PUBLICATION_MARKER")?;
         fault.crossed()?;
+        let created_roots = created_directories
+            .values()
+            .filter(|directory| {
+                let relative = directory.path.trim_start_matches(".mdp/");
+                let parent = Path::new(relative).parent().and_then(Path::to_str);
+                !parent.is_some_and(|parent| {
+                    !parent.is_empty()
+                        && created_directories.contains_key(&format!(".mdp/{parent}"))
+                })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for created in &created_roots {
+            test_pause("MDP_TEST_AUTHOR_BEFORE_PARENT_PUBLISH_MARKER")?;
+            rename_logical_no_replace(&staging, &live, &created.path, false)?;
+            if logical_directory_identity(&live, &created.path)? != Some((created.dev, created.ino))
+            {
+                return Err(anyhow!(
+                    "published author authority parent identity mismatch"
+                ));
+            }
+            if cfg!(debug_assertions)
+                && std::env::var_os("MDP_TEST_AUTHOR_CRASH_AFTER_PARENT_PUBLISH").is_some()
+            {
+                std::process::abort();
+            }
+            fault.crossed()?;
+        }
         for moved in &transaction.backups {
             rename_logical_no_replace(&live, &backup, &moved.path, true)?;
             touched.insert(moved.path.clone());
@@ -595,7 +634,12 @@ fn publish(
             fault.crossed()?;
         }
         for installed in &transaction.installs {
-            rename_logical_no_replace(&staging, &live, &installed.path, true)?;
+            let published_with_parent = created_roots
+                .iter()
+                .any(|directory| installed.path.starts_with(&format!("{}/", directory.path)));
+            if !published_with_parent {
+                rename_logical_no_replace(&staging, &live, &installed.path, true)?;
+            }
             if logical_identity(&live, &installed.path)? != Some((installed.dev, installed.ino)) {
                 return Err(anyhow!("published authority identity mismatch"));
             }
@@ -628,11 +672,16 @@ fn publish(
             });
         }
         return match recover_or_cleanup_transaction(live_root, &staging_name, &backup_name) {
-            Ok(RecoveryOutcome::Committed) => Ok(true),
-            Ok(_) => Err(PublicationFailure::RolledBack {
-                paths: touched.into_iter().collect(),
-                evidence_retained: true,
-            }),
+            Ok(recovery) => {
+                if recovery.outcome == RecoveryOutcome::Committed {
+                    Ok(recovery.evidence_retained)
+                } else {
+                    Err(PublicationFailure::RolledBack {
+                        paths: touched.into_iter().collect(),
+                        evidence_retained: recovery.evidence_retained,
+                    })
+                }
+            }
             Err(rollback) => Err(PublicationFailure::Indeterminate {
                 message: format!(
                     "author publication indeterminate; durable recovery state retained ({rollback}; publication error: {error})"
@@ -827,64 +876,67 @@ fn open_logical_parent(root: &File, path: &str, create: bool) -> Result<(File, C
 }
 
 #[cfg(unix)]
-fn ensure_logical_parents(root: &File, path: &str) -> Result<Vec<PublishedDirectoryState>> {
+fn record_missing_logical_parents(
+    live: &File,
+    staging: &File,
+    path: &str,
+    created: &mut BTreeMap<String, PublishedDirectoryState>,
+) -> Result<()> {
     let components = logical_components(path)?;
     let (_, parents) = components
         .split_last()
         .ok_or_else(|| anyhow!("authoring path must name a file"))?;
-    let mut directory = root.try_clone()?;
+    let mut directory = live.try_clone()?;
     let mut logical = Vec::new();
-    let mut created = Vec::new();
+    let mut missing = false;
     for component in parents {
         logical.push(component.clone());
         let name = component_name(component)?;
-        let mut fd = unsafe {
-            libc::openat(
-                directory.as_raw_fd(),
-                name.as_ptr(),
-                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            )
-        };
-        let mut created_here = false;
-        if fd < 0 {
-            let error = std::io::Error::last_os_error();
-            if error.kind() != std::io::ErrorKind::NotFound {
-                return Err(error).context("inspecting author authority parent");
-            }
-            test_pause("MDP_TEST_AUTHOR_BEFORE_PARENT_MKDIR_MARKER")?;
-            if unsafe { libc::mkdirat(directory.as_raw_fd(), name.as_ptr(), 0o700) } == 0 {
-                created_here = true;
-                directory.sync_all()?;
-            } else {
-                let error = std::io::Error::last_os_error();
-                if error.kind() != std::io::ErrorKind::AlreadyExists {
-                    return Err(error).context("creating author authority parent");
-                }
-            }
-            fd = unsafe {
+        if !missing {
+            let fd = unsafe {
                 libc::openat(
                     directory.as_raw_fd(),
                     name.as_ptr(),
                     libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
                 )
             };
-            if fd < 0 {
-                return Err(std::io::Error::last_os_error())
-                    .context("opening author authority parent");
+            if fd >= 0 {
+                directory = unsafe { File::from_raw_fd(fd) };
+                continue;
             }
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(error).context("inspecting author authority parent");
+            }
+            missing = true;
         }
-        let opened = unsafe { File::from_raw_fd(fd) };
-        if created_here {
-            let (dev, ino) = file_identity(&opened)?;
-            created.push(PublishedDirectoryState {
-                path: format!(".mdp/{}", logical.join("/")),
-                dev,
-                ino,
-            });
+        let state_path = format!(".mdp/{}", logical.join("/"));
+        let probe = format!("{state_path}/.mdp-author-directory-probe");
+        let (staged_directory, _) = open_logical_parent(staging, &probe, false)?;
+        let identity = file_identity(&staged_directory)?;
+        if logical_directory_identity(staging, &state_path)? != Some(identity) {
+            return Err(anyhow!(
+                "staged author authority parent identity changed while recording"
+            ));
         }
-        directory = opened;
+        if let Some(recorded) = created.get(&state_path) {
+            if (recorded.dev, recorded.ino) != identity {
+                return Err(anyhow!(
+                    "staged author authority parent identity changed between files"
+                ));
+            }
+        } else {
+            created.insert(
+                state_path.clone(),
+                PublishedDirectoryState {
+                    path: state_path,
+                    dev: identity.0,
+                    ino: identity.1,
+                },
+            );
+        }
     }
-    Ok(created)
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -966,6 +1018,28 @@ fn logical_identity(root: &File, path: &str) -> Result<Option<(u64, u64)>> {
             Ok(Some((dev, ino)))
         }
         Some(_) => Err(anyhow!("author authority leaf is not a regular file")),
+    }
+}
+
+#[cfg(unix)]
+fn logical_directory_identity(root: &File, path: &str) -> Result<Option<(u64, u64)>> {
+    let (parent, leaf) = match open_logical_parent(root, path, false) {
+        Ok(value) => value,
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+    match named_identity(&parent, &leaf)? {
+        None => Ok(None),
+        Some((dev, ino, mode)) if mode & (libc::S_IFMT as u32) == libc::S_IFDIR as u32 => {
+            Ok(Some((dev, ino)))
+        }
+        Some(_) => Err(anyhow!("author authority parent is not a directory")),
     }
 }
 
@@ -1607,7 +1681,7 @@ fn published_backup_state(item: &PublishedBackupState) -> FileState {
 }
 
 #[cfg(unix)]
-fn recover_pending_transaction(live_root: &Path) -> Result<RecoveryOutcome> {
+fn recover_pending_transaction(live_root: &Path) -> Result<RecoveryResult> {
     let parent = open_verified_directory(live_root.parent().unwrap_or(live_root))?;
     if read_transaction_state(&parent, live_root)?.is_none() {
         let pending_name = pending_state_leaf(live_root);
@@ -1638,16 +1712,22 @@ fn recover_pending_transaction(live_root: &Path) -> Result<RecoveryOutcome> {
         }
     }
     let Some((state, _)) = read_transaction_state(&parent, live_root)? else {
-        return Ok(RecoveryOutcome::None);
+        return Ok(RecoveryResult {
+            outcome: RecoveryOutcome::None,
+            evidence_retained: false,
+        });
     };
     let root = open_verified_directory(live_root)?;
     validate_transaction_state(&state, live_root, &parent, &root)?;
     let committed = state.phase == 1;
-    cleanup_transaction(&parent, live_root, &state, !committed)?;
-    Ok(if committed {
-        RecoveryOutcome::Committed
-    } else {
-        RecoveryOutcome::RolledBack
+    let cleanup = cleanup_transaction(&parent, live_root, &state, !committed)?;
+    Ok(RecoveryResult {
+        outcome: if committed {
+            RecoveryOutcome::Committed
+        } else {
+            RecoveryOutcome::RolledBack
+        },
+        evidence_retained: cleanup.evidence_retained,
     })
 }
 
@@ -1656,7 +1736,7 @@ fn recover_or_cleanup_transaction(
     live_root: &Path,
     staging_name: &str,
     backup_name: &str,
-) -> Result<RecoveryOutcome> {
+) -> Result<RecoveryResult> {
     let parent = open_verified_directory(live_root.parent().unwrap_or(live_root))?;
     if read_transaction_state(&parent, live_root)?.is_some() {
         return recover_pending_transaction(live_root);
@@ -1672,7 +1752,10 @@ fn recover_or_cleanup_transaction(
         }
     }
     remove_incomplete_pending_state(&parent, &pending_state_leaf(live_root))?;
-    Ok(RecoveryOutcome::None)
+    Ok(RecoveryResult {
+        outcome: RecoveryOutcome::None,
+        evidence_retained: false,
+    })
 }
 
 #[cfg(unix)]
@@ -1690,14 +1773,14 @@ fn remove_incomplete_pending_state(parent: &File, name: &str) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn recover_pending_transaction(_: &Path) -> Result<RecoveryOutcome> {
+fn recover_pending_transaction(_: &Path) -> Result<RecoveryResult> {
     Err(anyhow!(
         "identity-bound pack authoring is unsupported on this platform"
     ))
 }
 
 #[cfg(not(unix))]
-fn recover_or_cleanup_transaction(_: &Path, _: &str, _: &str) -> Result<RecoveryOutcome> {
+fn recover_or_cleanup_transaction(_: &Path, _: &str, _: &str) -> Result<RecoveryResult> {
     Err(anyhow!(
         "identity-bound pack authoring is unsupported on this platform"
     ))
