@@ -214,6 +214,17 @@ function assertNoWorkflowShellOverride(workflow) {
   )
 }
 
+function assertNoWorkflowYamlIndirection(workflow) {
+  const indirection = workflow
+    .split(/\r?\n/)
+    .find((line) => /(?:^|[\s{[,:])(?:&|\*)[A-Za-z0-9_-]+(?=\s|[,}\]:]|$)/u.test(line))
+  assert.equal(
+    indirection,
+    undefined,
+    'required CI workflow must not use YAML anchors or aliases',
+  )
+}
+
 function assertCliPathFilter(workflow, requiredGlob) {
   const lines = filterStepBlock(workflow)
   const filtersIndex = lines.findIndex((line) => line.trim() === 'filters: |')
@@ -259,6 +270,7 @@ function assertReleaseSmokeContract(workflow) {
 
 function assertAssetParityCiContract(workflow) {
   assertNoWorkflowShellOverride(workflow)
+  assertNoWorkflowYamlIndirection(workflow)
   assertCliJobWiring(workflow)
   assertCliPathFilter(workflow, 'plugin/assets/**')
   assertCliPathFilter(workflow, 'assets/**')
@@ -406,6 +418,13 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       'jobs:\n',
       'defaults: { run: { "\\u0073hell": "/bin/true {0}" } }\n\njobs:\n',
+    ),
+  ],
+  [
+    'aliased workflow shell key',
+    ciWorkflow.replace(
+      'jobs:\n',
+      'env:\n  SHELL_KEY: &shell_key shell\ndefaults: { run: { *shell_key: "/bin/true {0}" } }\n\njobs:\n',
     ),
   ],
   [
