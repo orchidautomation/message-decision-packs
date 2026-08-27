@@ -23,8 +23,13 @@ function hasShellOverride(line) {
 }
 
 function hasMappingKey(line, key) {
-  const trimmed = line.trim()
-  const doubleQuoted = trimmed.match(/^("(?:\\.|[^"\\])*")\s*:/u)
+  let trimmed = line.trim()
+  const explicit = trimmed.startsWith('?')
+  if (explicit) {
+    trimmed = trimmed.slice(1).trimStart()
+  }
+  const terminator = explicit ? '(?:\\s*:|\\s*$)' : '\\s*:'
+  const doubleQuoted = trimmed.match(new RegExp(`^("(?:\\\\.|[^"\\\\])*")${terminator}`, 'u'))
   if (doubleQuoted) {
     try {
       return JSON.parse(doubleQuoted[1]) === key
@@ -34,11 +39,11 @@ function hasMappingKey(line, key) {
       return doubleQuoted[1].includes('\\')
     }
   }
-  const singleQuoted = trimmed.match(/^'((?:''|[^'])*)'\s*:/u)
+  const singleQuoted = trimmed.match(new RegExp(`^'((?:''|[^'])*)'${terminator}`, 'u'))
   if (singleQuoted) {
     return singleQuoted[1].replaceAll("''", "'") === key
   }
-  const plain = trimmed.match(/^([^\s:{},][^:]*)\s*:/u)
+  const plain = trimmed.match(new RegExp(`^([^\\s:{},][^:]*)${terminator}`, 'u'))
   return plain?.[1].trim() === key
 }
 
@@ -335,6 +340,13 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       `          ${assetParityCommand}\n`,
       `          ${assetParityCommand}\n        "\\U00000069f": false\n`,
+    ),
+  ],
+  [
+    'explicit mapping-key disabled asset parity step',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        ? "if"\n        : false\n`,
     ),
   ],
   [
