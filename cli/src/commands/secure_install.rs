@@ -81,7 +81,7 @@ fn quarantine_name() -> Result<CString> {
 }
 
 #[cfg(target_os = "linux")]
-fn rename_no_replace(dir_fd: RawFd, from: &CString, to: &CString) -> Result<()> {
+fn rename_no_replace(dir_fd: RawFd, from: &std::ffi::CStr, to: &std::ffi::CStr) -> Result<()> {
     let status = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
@@ -99,7 +99,7 @@ fn rename_no_replace(dir_fd: RawFd, from: &CString, to: &CString) -> Result<()> 
 }
 
 #[cfg(target_os = "macos")]
-fn rename_no_replace(dir_fd: RawFd, from: &CString, to: &CString) -> Result<()> {
+fn rename_no_replace(dir_fd: RawFd, from: &std::ffi::CStr, to: &std::ffi::CStr) -> Result<()> {
     const RENAME_EXCL: u32 = 0x00000004;
     let status =
         unsafe { libc::renameatx_np(dir_fd, from.as_ptr(), dir_fd, to.as_ptr(), RENAME_EXCL) };
@@ -110,7 +110,7 @@ fn rename_no_replace(dir_fd: RawFd, from: &CString, to: &CString) -> Result<()> 
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn rename_no_replace(_dir_fd: RawFd, _from: &CString, _to: &CString) -> Result<()> {
+fn rename_no_replace(_dir_fd: RawFd, _from: &std::ffi::CStr, _to: &std::ffi::CStr) -> Result<()> {
     bail!("secure identity-conditional removal is unsupported on this platform")
 }
 
@@ -275,7 +275,10 @@ fn remove_empty_directory_if_identity(
     Ok(())
 }
 
-fn remove_directory_contents(dir_fd: RawFd) -> Result<()> {
+fn remove_directory_contents_with_hook<F: FnMut(RawFd, &std::ffi::CStr, bool)>(
+    dir_fd: RawFd,
+    hook: &mut F,
+) -> Result<()> {
     let duplicate = unsafe { libc::dup(dir_fd) };
     if duplicate < 0 {
         return Err(io::Error::last_os_error()).map_err(Into::into);
@@ -285,6 +288,7 @@ fn remove_directory_contents(dir_fd: RawFd) -> Result<()> {
         unsafe { libc::close(duplicate) };
         return Err(io::Error::last_os_error()).map_err(Into::into);
     }
+    let mut names = Vec::new();
     loop {
         let entry = unsafe { libc::readdir(stream) };
         if entry.is_null() {
@@ -294,6 +298,14 @@ fn remove_directory_contents(dir_fd: RawFd) -> Result<()> {
         if name.to_bytes() == b"." || name.to_bytes() == b".." {
             continue;
         }
+        names.push(name.to_owned());
+    }
+    if unsafe { libc::closedir(stream) } != 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    // Snapshot names before introducing quarantine leaves so the iterator can
+    // never consume names created by this transaction.
+    for name in &names {
         let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
         if unsafe {
             libc::fstatat(
@@ -304,11 +316,13 @@ fn remove_directory_contents(dir_fd: RawFd) -> Result<()> {
             )
         } != 0
         {
-            unsafe { libc::closedir(stream) };
             return Err(io::Error::last_os_error()).map_err(Into::into);
         }
         let stat = unsafe { stat.assume_init() };
-        if stat.st_mode & libc::S_IFMT == libc::S_IFDIR {
+        let expected = (stat.st_dev as u64, stat.st_ino as u64);
+        let quarantine = quarantine_name()?;
+        let is_directory = stat.st_mode & libc::S_IFMT == libc::S_IFDIR;
+        if is_directory {
             let child_fd = unsafe {
                 libc::openat(
                     dir_fd,
@@ -317,25 +331,50 @@ fn remove_directory_contents(dir_fd: RawFd) -> Result<()> {
                 )
             };
             if child_fd < 0 {
-                unsafe { libc::closedir(stream) };
                 return Err(io::Error::last_os_error()).map_err(Into::into);
             }
             let child = unsafe { File::from_raw_fd(child_fd) };
-            remove_directory_contents(child_fd)?;
+            if opened_identity(child_fd)? != expected {
+                bail!("secure directory entry identity changed before quarantine");
+            }
+            hook(dir_fd, name, true);
+            rename_no_replace(dir_fd, name, &quarantine)?;
+            if named_identity(dir_fd, &quarantine)? != expected {
+                rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
+                    anyhow!("secure directory entry mismatch restore failed: {error}")
+                })?;
+                bail!("secure directory entry identity changed during quarantine");
+            }
+            remove_directory_contents_with_hook(child_fd, hook)?;
             drop(child);
-            if unsafe { libc::unlinkat(dir_fd, name.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
-                unsafe { libc::closedir(stream) };
+            if named_identity(dir_fd, &quarantine)? != expected {
+                rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
+                    anyhow!("secure directory entry pre-remove restore failed: {error}")
+                })?;
+                bail!("secure directory entry identity changed before removal");
+            }
+            if unsafe { libc::unlinkat(dir_fd, quarantine.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
                 return Err(io::Error::last_os_error()).map_err(Into::into);
             }
-        } else if unsafe { libc::unlinkat(dir_fd, name.as_ptr(), 0) } != 0 {
-            unsafe { libc::closedir(stream) };
-            return Err(io::Error::last_os_error()).map_err(Into::into);
+        } else {
+            hook(dir_fd, name, false);
+            rename_no_replace(dir_fd, name, &quarantine)?;
+            if named_identity(dir_fd, &quarantine)? != expected {
+                rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
+                    anyhow!("secure file entry mismatch restore failed: {error}")
+                })?;
+                bail!("secure file entry identity changed during quarantine");
+            }
+            if unsafe { libc::unlinkat(dir_fd, quarantine.as_ptr(), 0) } != 0 {
+                return Err(io::Error::last_os_error()).map_err(Into::into);
+            }
         }
     }
-    if unsafe { libc::closedir(stream) } != 0 {
-        return Err(io::Error::last_os_error()).map_err(Into::into);
-    }
     Ok(())
+}
+
+fn remove_directory_contents(dir_fd: RawFd) -> Result<()> {
+    remove_directory_contents_with_hook(dir_fd, &mut |_, _, _| {})
 }
 
 fn remove_directory_tree_if_identity(
@@ -363,11 +402,22 @@ fn remove_directory_tree_if_identity(
     if named_identity(dir_fd, name)? != opened {
         bail!("secure remove directory tree identity changed before removal");
     }
+    let quarantine = quarantine_name()?;
+    rename_no_replace(dir_fd, name, &quarantine)?;
+    if named_identity(dir_fd, &quarantine)? != opened {
+        rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
+            anyhow!("secure remove directory tree mismatch restore failed: {error}")
+        })?;
+        bail!("secure remove directory tree identity changed during quarantine");
+    }
     remove_directory_contents(target_fd)?;
-    if named_identity(dir_fd, name)? != opened {
+    if named_identity(dir_fd, &quarantine)? != opened {
+        rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
+            anyhow!("secure remove directory tree pre-remove restore failed: {error}")
+        })?;
         bail!("secure remove directory tree identity changed during removal");
     }
-    if unsafe { libc::unlinkat(dir_fd, name.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
+    if unsafe { libc::unlinkat(dir_fd, quarantine.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
         return Err(io::Error::last_os_error()).map_err(Into::into);
     }
     drop(target);
@@ -713,6 +763,68 @@ mod tests {
         .unwrap();
         assert!(!tree.exists());
         assert_eq!(std::fs::read(&outside).unwrap(), b"outside");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn recursive_cleanup_preserves_entries_swapped_after_classification() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-tree-race-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let file_tree = root.join("files");
+        std::fs::create_dir(&file_tree).unwrap();
+        std::fs::write(file_tree.join("victim"), b"owned").unwrap();
+        let replacement_file = root.join("replacement-file");
+        std::fs::write(&replacement_file, b"replacement").unwrap();
+        let file_dir = File::open(&file_tree).unwrap();
+        let file_result = remove_directory_contents_with_hook(
+            file_dir.as_raw_fd(),
+            &mut |_, name, is_directory| {
+                if name.to_bytes() == b"victim" && !is_directory {
+                    std::fs::rename(file_tree.join("victim"), file_tree.join("saved")).unwrap();
+                    std::fs::rename(&replacement_file, file_tree.join("victim")).unwrap();
+                }
+            },
+        );
+        assert!(file_result.is_err());
+        assert_eq!(std::fs::read(file_tree.join("saved")).unwrap(), b"owned");
+        assert_eq!(
+            std::fs::read(file_tree.join("victim")).unwrap(),
+            b"replacement"
+        );
+
+        let dir_tree = root.join("dirs");
+        std::fs::create_dir_all(dir_tree.join("victim")).unwrap();
+        std::fs::write(dir_tree.join("victim/owned"), b"owned").unwrap();
+        let replacement_dir = root.join("replacement-dir");
+        std::fs::create_dir(&replacement_dir).unwrap();
+        std::fs::write(replacement_dir.join("keep"), b"replacement").unwrap();
+        let dir_fd = File::open(&dir_tree).unwrap();
+        let dir_result = remove_directory_contents_with_hook(
+            dir_fd.as_raw_fd(),
+            &mut |_, name, is_directory| {
+                if name.to_bytes() == b"victim" && is_directory {
+                    std::fs::rename(dir_tree.join("victim"), dir_tree.join("saved")).unwrap();
+                    std::fs::rename(&replacement_dir, dir_tree.join("victim")).unwrap();
+                }
+            },
+        );
+        assert!(dir_result.is_err());
+        assert_eq!(
+            std::fs::read(dir_tree.join("saved/owned")).unwrap(),
+            b"owned"
+        );
+        assert_eq!(
+            std::fs::read(dir_tree.join("victim/keep")).unwrap(),
+            b"replacement"
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 
