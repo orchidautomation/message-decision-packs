@@ -415,10 +415,17 @@ struct MarkdownFenceScanner {
     container: MarkdownContainer,
     blank_lines: usize,
     paragraph_open: bool,
+    definition_title_pending: bool,
 }
 
 impl MarkdownFenceScanner {
     fn line_is_fenced(&mut self, line: &str) -> bool {
+        let definition_title_continuation =
+            self.definition_title_pending && is_link_title_continuation(line);
+        self.definition_title_pending = false;
+        if definition_title_continuation {
+            self.paragraph_open = false;
+        }
         let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
         let opening = self
             .fence
@@ -487,7 +494,10 @@ impl MarkdownFenceScanner {
             self.paragraph_open = false;
             true
         } else {
-            self.paragraph_open = line_continues_paragraph(block_content);
+            self.definition_title_pending =
+                link_reference_title_state(block_content) == Some(false);
+            self.paragraph_open =
+                !definition_title_continuation && line_continues_paragraph(block_content);
             false
         }
     }
@@ -666,9 +676,13 @@ fn is_thematic_or_setext_line(line: &str) -> bool {
 }
 
 fn is_link_reference_definition(line: &str) -> bool {
+    link_reference_title_state(line).is_some()
+}
+
+fn link_reference_title_state(line: &str) -> Option<bool> {
     let trimmed = line.trim_start_matches(' ');
     if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
-        return false;
+        return None;
     }
     let bytes = trimmed.as_bytes();
     let mut escaped = false;
@@ -676,21 +690,21 @@ fn is_link_reference_definition(line: &str) -> bool {
         match bytes[index] {
             b'\\' if !escaped => escaped = true,
             b']' if !escaped => {
-                return index > 1
-                    && bytes.get(index + 1) == Some(&b':')
-                    && valid_link_definition_suffix(&trimmed[index + 2..]);
+                return (index > 1 && bytes.get(index + 1) == Some(&b':'))
+                    .then(|| link_definition_suffix_title_state(&trimmed[index + 2..]))
+                    .flatten();
             }
-            b'[' if !escaped => return false,
+            b'[' if !escaped => return None,
             _ => escaped = false,
         }
     }
-    false
+    None
 }
 
-fn valid_link_definition_suffix(suffix: &str) -> bool {
+fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
     let rest = suffix.trim_start_matches([' ', '\t']);
     if rest.is_empty() {
-        return false;
+        return None;
     }
     let destination_end = if let Some(angle) = rest.strip_prefix('<') {
         let mut escaped = false;
@@ -702,13 +716,13 @@ fn valid_link_definition_suffix(suffix: &str) -> bool {
                     closing = Some(1 + index + character.len_utf8());
                     break;
                 }
-                '<' | '\n' | '\r' if !escaped => return false,
-                character if character.is_whitespace() && !escaped => return false,
+                '<' | '\n' | '\r' if !escaped => return None,
+                character if character.is_whitespace() && !escaped => return None,
                 _ => escaped = false,
             }
         }
         let Some(closing) = closing else {
-            return false;
+            return None;
         };
         closing
     } else {
@@ -723,19 +737,23 @@ fn valid_link_definition_suffix(suffix: &str) -> bool {
                 '\\' if !escaped => escaped = true,
                 '(' if !escaped => depth += 1,
                 ')' if !escaped && depth > 0 => depth -= 1,
-                ')' if !escaped => return false,
-                character if character.is_control() && !escaped => return false,
+                ')' if !escaped => return None,
+                character if character.is_control() && !escaped => return None,
                 _ => escaped = false,
             }
             end = index + character.len_utf8();
         }
         if end == 0 || depth != 0 {
-            return false;
+            return None;
         }
         end
     };
     let trailing = rest[destination_end..].trim_matches([' ', '\t']);
-    trailing.is_empty() || valid_link_title(trailing)
+    if trailing.is_empty() {
+        Some(false)
+    } else {
+        valid_link_title(trailing).then_some(true)
+    }
 }
 
 fn valid_link_title(title: &str) -> bool {
@@ -762,6 +780,11 @@ fn valid_link_title(title: &str) -> bool {
         }
     }
     false
+}
+
+fn is_link_title_continuation(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    line.len() - trimmed.len() <= 3 && valid_link_title(trimmed)
 }
 
 /// Return byte ranges `(start, content_end, line_end)` for every Markdown line.
@@ -1304,6 +1327,21 @@ mod tests {
         assert!(open_fence_at_eof(&invalid_definition).is_some());
         assert_eq!(extract_ownership_block(&invalid_definition), None);
         assert_eq!(extract_inventory_block(&invalid_definition), None);
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let multiline_definition = format!(
+            "[ref]: /url\n  \"title\"\n2. ```markdown\n   body\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&multiline_definition).is_ok());
+        assert!(open_fence_at_eof(&multiline_definition).is_none());
+        assert_eq!(
+            extract_ownership_block(&multiline_definition),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&multiline_definition),
+            Some(inventory)
+        );
     }
 
     #[test]

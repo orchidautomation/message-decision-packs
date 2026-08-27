@@ -307,9 +307,16 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut container_state = MarkdownContainerState::default();
     let mut previous_container = None;
     let mut paragraph_open = false;
+    let mut definition_title_pending = false;
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
+        let definition_title_continuation =
+            definition_title_pending && is_link_title_continuation(line);
+        definition_title_pending = false;
+        if definition_title_continuation {
+            paragraph_open = false;
+        }
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) =
             container_state.project(line, opening_container, paragraph_open);
@@ -377,7 +384,8 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         // re-enables block start; ordinary prose keeps later indentation in
         // the paragraph, where inline code spans remain mechanically visible.
         indented_code_can_start = blank;
-        paragraph_open = line_continues_paragraph(block_content);
+        definition_title_pending = link_reference_title_state(block_content) == Some(false);
+        paragraph_open = !definition_title_continuation && line_continues_paragraph(block_content);
     }
     code_span_tokens(&visible)
 }
@@ -435,9 +443,13 @@ fn is_thematic_or_setext_line(line: &str) -> bool {
 }
 
 fn is_link_reference_definition(line: &str) -> bool {
+    link_reference_title_state(line).is_some()
+}
+
+fn link_reference_title_state(line: &str) -> Option<bool> {
     let trimmed = line.trim_start_matches(' ');
     if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
-        return false;
+        return None;
     }
     let bytes = trimmed.as_bytes();
     let mut escaped = false;
@@ -445,21 +457,21 @@ fn is_link_reference_definition(line: &str) -> bool {
         match bytes[index] {
             b'\\' if !escaped => escaped = true,
             b']' if !escaped => {
-                return index > 1
-                    && bytes.get(index + 1) == Some(&b':')
-                    && valid_link_definition_suffix(&trimmed[index + 2..]);
+                return (index > 1 && bytes.get(index + 1) == Some(&b':'))
+                    .then(|| link_definition_suffix_title_state(&trimmed[index + 2..]))
+                    .flatten();
             }
-            b'[' if !escaped => return false,
+            b'[' if !escaped => return None,
             _ => escaped = false,
         }
     }
-    false
+    None
 }
 
-fn valid_link_definition_suffix(suffix: &str) -> bool {
+fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
     let rest = suffix.trim_start_matches([' ', '\t']);
     if rest.is_empty() {
-        return false;
+        return None;
     }
     let destination_end = if let Some(angle) = rest.strip_prefix('<') {
         let mut escaped = false;
@@ -471,13 +483,13 @@ fn valid_link_definition_suffix(suffix: &str) -> bool {
                     closing = Some(1 + index + character.len_utf8());
                     break;
                 }
-                '<' | '\n' | '\r' if !escaped => return false,
-                character if character.is_whitespace() && !escaped => return false,
+                '<' | '\n' | '\r' if !escaped => return None,
+                character if character.is_whitespace() && !escaped => return None,
                 _ => escaped = false,
             }
         }
         let Some(closing) = closing else {
-            return false;
+            return None;
         };
         closing
     } else {
@@ -492,19 +504,23 @@ fn valid_link_definition_suffix(suffix: &str) -> bool {
                 '\\' if !escaped => escaped = true,
                 '(' if !escaped => depth += 1,
                 ')' if !escaped && depth > 0 => depth -= 1,
-                ')' if !escaped => return false,
-                character if character.is_control() && !escaped => return false,
+                ')' if !escaped => return None,
+                character if character.is_control() && !escaped => return None,
                 _ => escaped = false,
             }
             end = index + character.len_utf8();
         }
         if end == 0 || depth != 0 {
-            return false;
+            return None;
         }
         end
     };
     let trailing = rest[destination_end..].trim_matches([' ', '\t']);
-    trailing.is_empty() || valid_link_title(trailing)
+    if trailing.is_empty() {
+        Some(false)
+    } else {
+        valid_link_title(trailing).then_some(true)
+    }
 }
 
 fn valid_link_title(title: &str) -> bool {
@@ -531,6 +547,11 @@ fn valid_link_title(title: &str) -> bool {
         }
     }
     false
+}
+
+fn is_link_title_continuation(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    line.len() - trimmed.len() <= 3 && valid_link_title(trimmed)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -780,9 +801,16 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut fence: Option<(char, usize, MarkdownContainer)> = None;
     let mut container_state = MarkdownContainerState::default();
     let mut paragraph_open = false;
+    let mut definition_title_pending = false;
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
+        let definition_title_continuation =
+            definition_title_pending && is_link_title_continuation(line);
+        definition_title_pending = false;
+        if definition_title_continuation {
+            paragraph_open = false;
+        }
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) =
             container_state.project(line, opening_container, paragraph_open);
@@ -813,7 +841,8 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             paragraph_open = false;
             continue;
         }
-        paragraph_open = line_continues_paragraph(block_content);
+        definition_title_pending = link_reference_title_state(block_content) == Some(false);
+        paragraph_open = !definition_title_continuation && line_continues_paragraph(block_content);
         if !in_sources {
             continue;
         }
@@ -1551,6 +1580,13 @@ Inline `inline-code` must be ignored.
             ),
             vec!["cards/invalid-definition-visible.yaml"],
             "a definition-shaped invalid destination remains paragraph text"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "[ref]: /url\n  \"title\"\n2. ```markdown\n   `cards/multiline-definition-hidden.yaml`\n   ```\nRoot `cards/multiline-definition-visible.yaml`.\n"
+            ),
+            vec!["cards/multiline-definition-visible.yaml"],
+            "an optional title continuation remains part of the definition block"
         );
     }
 
