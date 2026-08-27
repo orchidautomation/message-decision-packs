@@ -396,13 +396,18 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         // re-enables block start; ordinary prose keeps later indentation in
         // the paragraph, where inline code spans remain mechanically visible.
         indented_code_can_start = blank;
-        definition_title_pending = (link_reference_title_state(block_content) == Some(false)
+        let definition_can_start = !paragraph_open;
+        definition_title_pending = ((definition_can_start
+            && link_reference_title_state(block_content) == Some(false))
             || definition_destination_continuation == Some(false))
         .then_some(container.clone());
-        definition_destination_pending =
-            is_link_reference_destination_pending(block_content).then_some(container.clone());
+        definition_destination_pending = (definition_can_start
+            && is_link_reference_destination_pending(block_content))
+        .then_some(container.clone());
         let paragraph_continues = line_continues_paragraph(block_content)
-            || (paragraph_open && markdown_indent_columns(block_content) >= 4);
+            || (paragraph_open
+                && (markdown_indent_columns(block_content) >= 4
+                    || is_link_reference_definition(block_content)));
         paragraph_open = !definition_title_continuation
             && definition_destination_continuation.is_none()
             && paragraph_continues;
@@ -446,10 +451,7 @@ fn is_thematic_or_setext_line(line: &str) -> bool {
     if trimmed.len() >= 1 && trimmed.bytes().all(|byte| byte == b'=') {
         return true;
     }
-    if !trimmed.is_empty()
-        && trimmed.bytes().all(|byte| byte == b'-')
-        && (trimmed.len() >= 3 || line.trim_end_matches([' ', '\t']) == line)
-    {
+    if !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'-') {
         return true;
     }
     for marker in [b'-', b'_', b'*'] {
@@ -910,13 +912,18 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             paragraph_open = false;
             continue;
         }
-        definition_title_pending = (link_reference_title_state(block_content) == Some(false)
+        let definition_can_start = !paragraph_open;
+        definition_title_pending = ((definition_can_start
+            && link_reference_title_state(block_content) == Some(false))
             || definition_destination_continuation == Some(false))
         .then_some(container.clone());
-        definition_destination_pending =
-            is_link_reference_destination_pending(block_content).then_some(container.clone());
+        definition_destination_pending = (definition_can_start
+            && is_link_reference_destination_pending(block_content))
+        .then_some(container.clone());
         let paragraph_continues = line_continues_paragraph(block_content)
-            || (paragraph_open && markdown_indent_columns(block_content) >= 4);
+            || (paragraph_open
+                && (markdown_indent_columns(block_content) >= 4
+                    || is_link_reference_definition(block_content)));
         paragraph_open = !definition_title_continuation
             && definition_destination_continuation.is_none()
             && paragraph_continues;
@@ -1702,7 +1709,7 @@ Inline `inline-code` must be ignored.
         );
         assert_eq!(
             inline_code_tokens(
-                "Paragraph\n- \n2. ```markdown\n   `cards/after-empty-item-visible.yaml`\n   ```\nRoot `cards/after-empty-item-hidden.yaml`.\n"
+                "Paragraph\n* \n2. ```markdown\n   `cards/after-empty-item-visible.yaml`\n   ```\nRoot `cards/after-empty-item-hidden.yaml`.\n"
             ),
             vec!["cards/after-empty-item-visible.yaml"],
             "an empty list item cannot interrupt an open paragraph"
@@ -1713,6 +1720,20 @@ Inline `inline-code` must be ignored.
             ),
             vec!["cards/after-short-setext-visible.yaml"],
             "a single hyphen is a valid setext underline"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "Heading\n-   \n2. ```markdown\n   `cards/after-spaced-setext-hidden.yaml`\n   ```\nRoot `cards/after-spaced-setext-visible.yaml`.\n"
+            ),
+            vec!["cards/after-spaced-setext-visible.yaml"],
+            "a short setext underline permits trailing whitespace"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "Paragraph\n[ref]: /url\n2. ```markdown\n   `cards/paragraph-definition-visible.yaml`\n   ```\nRoot `cards/paragraph-definition-hidden.yaml`.\n"
+            ),
+            vec!["cards/paragraph-definition-visible.yaml"],
+            "a link definition cannot interrupt an open paragraph"
         );
     }
 

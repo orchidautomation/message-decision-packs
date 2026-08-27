@@ -506,14 +506,18 @@ impl MarkdownFenceScanner {
             self.paragraph_open = false;
             true
         } else {
-            self.definition_title_pending = (link_reference_title_state(block_content)
-                == Some(false)
+            let definition_can_start = !self.paragraph_open;
+            self.definition_title_pending = ((definition_can_start
+                && link_reference_title_state(block_content) == Some(false))
                 || definition_destination_continuation == Some(false))
             .then_some(container.clone());
-            self.definition_destination_pending =
-                is_link_reference_destination_pending(block_content).then_some(container);
+            self.definition_destination_pending = (definition_can_start
+                && is_link_reference_destination_pending(block_content))
+            .then_some(container);
             let paragraph_continues = line_continues_paragraph(block_content)
-                || (self.paragraph_open && markdown_indent_columns(block_content) >= 4);
+                || (self.paragraph_open
+                    && (markdown_indent_columns(block_content) >= 4
+                        || is_link_reference_definition(block_content)));
             self.paragraph_open = !definition_title_continuation
                 && definition_destination_continuation.is_none()
                 && paragraph_continues;
@@ -681,10 +685,7 @@ fn is_thematic_or_setext_line(line: &str) -> bool {
     if !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'=') {
         return true;
     }
-    if !trimmed.is_empty()
-        && trimmed.bytes().all(|byte| byte == b'-')
-        && (trimmed.len() >= 3 || line.trim_end_matches([' ', '\t']) == line)
-    {
+    if !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'-') {
         return true;
     }
     for marker in [b'-', b'_', b'*'] {
@@ -1434,7 +1435,7 @@ mod tests {
         let ownership = render_ownership_block();
         let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
         let empty_item = format!(
-            "Paragraph\n- \n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
+            "Paragraph\n* \n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
         );
         assert!(validate_readme_regions(&empty_item).is_ok());
         assert!(open_fence_at_eof(&empty_item).is_some());
@@ -1457,6 +1458,24 @@ mod tests {
         assert!(open_fence_at_eof(&short_setext).is_none());
         assert_eq!(extract_ownership_block(&short_setext), Some(ownership));
         assert_eq!(extract_inventory_block(&short_setext), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let spaced_setext = format!(
+            "Heading\n-   \n2. ```markdown\n   fenced body\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&spaced_setext).is_ok());
+        assert!(open_fence_at_eof(&spaced_setext).is_none());
+        assert_eq!(extract_ownership_block(&spaced_setext), Some(ownership));
+        assert_eq!(extract_inventory_block(&spaced_setext), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let paragraph_definition = format!(
+            "Paragraph\n[ref]: /url\n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&paragraph_definition).is_ok());
+        assert!(open_fence_at_eof(&paragraph_definition).is_some());
+        assert_eq!(extract_ownership_block(&paragraph_definition), None);
+        assert_eq!(extract_inventory_block(&paragraph_definition), None);
     }
 
     #[test]
