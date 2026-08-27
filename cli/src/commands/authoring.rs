@@ -526,12 +526,23 @@ fn publish(
         fault.crossed()?;
         for moved in &transaction.backups {
             rename_logical_no_replace(&live, &backup, &moved.path, true)?;
-            if logical_identity(&backup, &moved.path)? != Some((moved.dev, moved.ino)) {
+            touched.insert(moved.path.clone());
+            let planned = change_set
+                .files
+                .iter()
+                .find(|file| file.path == moved.path)
+                .ok_or_else(|| anyhow!("backup authority is absent from the sealed plan"))?;
+            let (backed_up, identity) = state_and_identity(&backup, &moved.path)?;
+            if identity != Some((moved.dev, moved.ino)) {
                 return Err(anyhow!(
                     "live authority identity changed while being backed up"
                 ));
             }
-            touched.insert(moved.path.clone());
+            if backed_up != planned.expected {
+                return Err(anyhow!(
+                    "live authority content changed while being backed up"
+                ));
+            }
             fault.crossed()?;
         }
         for installed in &transaction.installs {

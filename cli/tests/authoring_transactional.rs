@@ -558,6 +558,54 @@ fn rollback_preserves_an_atomic_concurrent_replacement() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[cfg(unix)]
+#[test]
+fn publication_refuses_same_inode_rewrite_and_preserves_concurrent_bytes() {
+    use std::os::unix::fs::MetadataExt;
+
+    let (root, live, candidate, plan) = fixture("concurrent-in-place-rewrite");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let marker = root.join("publication-ready");
+    let readme = live.join(".mdp/README.md");
+    let inode_before = fs::metadata(&readme).unwrap().ino();
+    let concurrent = b"operator concurrent in-place rewrite\n";
+    let mut expected = snapshot(&live);
+    expected.insert(".mdp/README.md".to_string(), concurrent.to_vec());
+
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_PUBLICATION_MARKER", &marker)
+        .stdout(Stdio::piped());
+    let child = command.spawn().expect("author child should spawn");
+    for _ in 0..500 {
+        if marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(marker.exists(), "publication handshake should become ready");
+    fs::write(&readme, concurrent).unwrap();
+    assert_eq!(fs::metadata(&readme).unwrap().ino(), inode_before);
+    fs::write(marker.with_extension("go"), "go\n").unwrap();
+
+    let output = child.wait_with_output().expect("author child should exit");
+    assert!(!output.status.success());
+    let result = data(&output);
+    assert_eq!(result["status"], "rolled-back");
+    assert!(
+        result["rolled_back"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|path| path == ".mdp/README.md")
+    );
+    assert_eq!(snapshot(&live), expected);
+    assert!(!live.join(".mdp/authoring").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
 #[test]
 fn cleanup_failure_is_indeterminate_and_recoverable() {
     let (root, live, candidate, plan) = fixture("cleanup-failure");
