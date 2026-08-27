@@ -1,8 +1,10 @@
 # Compound Learning
 
-After a validated MDP fix produces a reusable lesson, inspect
-`docs/solutions/README.md` and capture a sanitized solution note from
-`docs/solutions/TEMPLATE.md`.
+After a validated MDP fix produces a reusable lesson, use the current
+repository's own solution index and template when it provides them. Their
+presence is optional and is not an installed-skill prerequisite. Otherwise
+return the sanitized lesson in the handoff without inventing a repository
+path.
 
 Capture only verified facts and reproducible validation. Never include private
 customer material, credentials, raw transcripts, private endpoints, or

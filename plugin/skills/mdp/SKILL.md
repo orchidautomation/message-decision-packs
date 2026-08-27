@@ -1,6 +1,8 @@
 ---
 name: mdp
 description: Use for MDP CLI/operator questions, contract inspection, validation-command guidance, or an explicitly mixed workflow spanning multiple MDP skills. Do not use merely because a specialized builder, pack-review, GTM, or proposal request names MDP.
+metadata:
+  compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
 ---
 
 # MDP
@@ -41,6 +43,7 @@ For operator/validation mechanics, read [operator runtime](references/operator-r
 For a managed run, read [workflow bundle handoff](references/workflow-bundle-handoff.md).
 For cold-model qualification only, read [cold-model conformance](references/cold-model-conformance.md).
 For product boundaries only, read [mental model](references/mental-model.md).
+Before using the CLI, MCP, or a plugin helper, read [runtime compatibility](references/runtime-compatibility.md).
 Managed resume/review requires an explicit run directory and fresh verification; never select ambient/latest state.
 Do not load all references by default, and references must not require a second
 local-reference hop.

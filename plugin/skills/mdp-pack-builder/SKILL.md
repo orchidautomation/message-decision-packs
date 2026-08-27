@@ -1,6 +1,8 @@
 ---
 name: mdp-pack-builder
 description: Use when the user intends to create, initialize, reconstruct, or edit a Message Decision Pack from approved GTM, source, RFP, proposal, or capture material. Do not use for read-only pack audit or for applying a pack to a prospect or proposal.
+metadata:
+  compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
 ---
 
 # MDP Pack Builder
@@ -11,7 +13,7 @@ approved material; never take a read-only review request from
 
 ## Communicate The Work
 
-Follow the shared [Orient, Plan, Progress, Translate, Close contract](../mdp/references/communication-contract.md).
+Follow the shared [Orient, Plan, Progress, Translate, Close contract](references/communication-contract.md).
 Open by naming the selected authoring job; the exact pack and approved-source evidence boundary; the files and readiness handoff the user will receive; and
 what this skill will not do. Keep updates to meaningful validation gates,
 blockers, and authoring decisions.
@@ -29,6 +31,7 @@ output](references/boundaries-output.md) only for claims, avoid rules, output
 constraints, or proof-carrying artifacts. After mode selection and before any
 edit, load [safe authoring](references/safe-authoring.md). These are direct,
 one-level references; do not load every reference by default.
+Before using the CLI, MCP, or a plugin helper, read [runtime compatibility](references/runtime-compatibility.md).
 
 ## Golden Authoring Path
 

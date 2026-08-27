@@ -293,6 +293,28 @@ class SkillContractTests(unittest.TestCase):
         path.write_text(path.read_text() + "\n[escape](references/../../mdp-pack-builder/SKILL.md)\n")
         self.assertIn("skill_link_escape", self.codes())
 
+    def test_every_skill_declares_actionable_runtime_compatibility(self):
+        for path in sorted(Path("plugin/skills").glob("*/SKILL.md")):
+            text = path.read_text()
+            for marker in ("metadata:", "compatibility:", "mdp CLI", "Node.js 18+", "portable skill", "MCP"):
+                self.assertIn(marker, text, path)
+        path = self.root / "plugin/skills/mdp/SKILL.md"
+        path.write_text(path.read_text().replace("Node.js 18+", "Node runtime", 1))
+        self.assertIn("frontmatter_compatibility_invalid", self.codes())
+
+    def test_repo_only_document_dependency_fails(self):
+        path = self.root / "plugin/skills/mdp/references/operator-runtime.md"
+        path.write_text(path.read_text() + "\nRead `docs/private-contract.md`.\n")
+        self.assertIn("repo_only_document_dependency", self.codes())
+
+    def test_sibling_skill_reference_fails_isolated_portability(self):
+        path = self.root / "plugin/skills/mdp-pack-review/SKILL.md"
+        path.write_text(
+            path.read_text()
+            + "\n[cross-skill](../mdp/references/communication-contract.md)\n"
+        )
+        self.assertIn("skill_link_escape", self.codes())
+
     def test_outside_skill_and_load_time_shell_fail(self):
         outside = self.root / "active/rogue/SKILL.md"
         outside.parent.mkdir(parents=True)

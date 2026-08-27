@@ -360,7 +360,11 @@ mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation is
 
 Use `mdp --json schema runner-audit` for the host-owned native/headless runner evidence. Prefer the canonical CLI path for a proposal sample run. For MCP-capable hosts, use `scripts/mdp-run-mcp-server.mjs` or `${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs` and call `mdp_run_tools` → `mdp_prepare_run` → `mdp_run` → `mdp_verify_run`. Require prepare `out` under the approved work root, pass that request and prepare-returned `request_sha256` to run, and verify the emitted bundle/receipt from the approved output root. Those stages produce the boundary inventory, `mdp.run-request.v1`, run bundle/receipt, and `mdp.run-verification.v1`; MCP adds no authority or isolation assurance. The proposal runner and proposal MCP remain compatibility-only for existing v0 source-intake/receipt consumers. The lower-level optional BYOK native reference runner at `scripts/mdp-native-normalize-openai.mjs` or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` is also v0 compatibility; dry-run/mock checks require no API key, while a real model call requires the operator's secure `OPENAI_API_KEY`. Pluxx-packaged skills can route users toward the canonical run path, but pack authoring alone does not prove the model context boundary.
 
-Runner contract acceptance and integration support are separate. Consult [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix) and use only `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only`. Pack authoring, a documented recipe, a schema-valid audit, or MCP transport does not prove a verified integration.
+Runner contract acceptance and integration support are separate. This
+installed release has no `verified` runner integration: named native/headless
+recipes are `recipe-only`, demo/mock evidence is `fixture/mock-only`, and any
+other integration is `unsupported`. Pack authoring, a documented recipe, a
+schema-valid audit, or MCP transport does not prove a verified integration.
 
 7. Bind each agent-routable job to exactly one canonical `skill_id`. Use only the closed v1 pairs documented in the profile reference.
 8. Add realistic pack eval fixtures for proceed, insufficient context, refusal/unsafe output, job routing, and target-isolation failure when the manifest declares a target. Decision-input examples also need synthetic expected outcomes for ready, insufficient-context, disqualified, human-review, malformed, and provider-error.
@@ -408,4 +412,3 @@ Run the loop for every advertised job even when one job is already ready; a
 single ready job never authorizes calling the pack complete while a sibling job
 is blocked. Re-author entries/gaps and re-run the loop instead of upgrading a
 `false` result in prose.
-

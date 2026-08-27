@@ -2,7 +2,8 @@
 
 Read this when a proposal review needs to produce or repair a `mdp.proof-output.v0` artifact.
 
-Use the repo-level guide `docs/proof-output-drafting.md` as the complete contract reference. Inside a review session, keep this sequence:
+This installed reference is self-contained. Inside a review session, keep this
+sequence:
 
 1. Confirm source and pack refs are already available and approved for this local pack.
 2. Build a `mdp.proof-output-draft.v0` file with `route`, `output.kind`, `output.format`, and ordered `segments`.

@@ -251,4 +251,8 @@ applicability does not bypass scope, policy, caps, or budgets.
   prose.
 - Keep evaluation output and temporary packs outside committed source paths.
 
-Report integration support separately from the current receipt. Use only the canonical `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only` state from [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix); do not promote a runner based on its identifier, recipe, schema acceptance, MCP availability, or one accepted receipt.
+Report integration support separately from the current receipt. This installed
+release has no `verified` runner integration: named native/headless recipes are
+`recipe-only`, demo/mock evidence is `fixture/mock-only`, and any other
+integration is `unsupported`. Do not promote a runner based on its identifier,
+recipe, schema acceptance, MCP availability, or one accepted receipt.
