@@ -1,24 +1,27 @@
 use crate::artifact_hash::{canonical_json_bytes, sha256_hex};
 use crate::cli::{
-    Cli, Commands, ConformanceCommand, ConformanceReportVisibility, HumanBriefFormat,
-    ReadmeCommand, SampleLeadsFormat, TraceFormat,
+    AuthorCommand, Cli, Commands, ConformanceCommand, ConformanceReportVisibility,
+    HumanBriefFormat, ReadmeCommand, SampleLeadsFormat, TraceFormat,
 };
 use crate::commands::briefs::prospect_brief_from_fit_with_context;
 use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
 use crate::commands::routing::{fit_for_job, fit_normalized};
+#[cfg(unix)]
+use crate::commands::secure_install;
 use crate::commands::{
     AssembleConformancePaths, BehavioralEvidencePaths, RunReceiptOptions, TargetInitOptions,
-    assemble_conformance, author_proof_output_file, capabilities, check_claims_scoped,
-    check_readme, compile_candidate_file, demo_copy, doctor, emit_brief_scoped, eval_pack, explain,
-    gaps, init_pack_targeted, init_pack_targeted_dry_run, pack, project_conformance_file,
-    project_conformance_report, project_prompt_output_validation_file, project_run_files,
-    project_source_file, prospect_brief_with_context, rebind_synthetic_chain, refresh_readme,
-    render_human_brief_file, render_human_brief_markdown, render_mermaid,
-    render_readable_prospect_brief, requirements, route_budget_preflight_command,
-    route_budget_preflight_query_command, route_scoped, run_preflight_file, run_receipt,
-    run_request_file_with_transport, sample_leads, schema, skills, validate_behavioral_files,
-    validate_pack, validate_prompt_output_file_with_inputs, validate_source_binding_file,
-    verify_output_file, verify_output_readable_file, verify_run_files,
+    apply_pack_change_set, assemble_conformance, author_proof_output_file, capabilities,
+    check_claims_scoped, check_readme, compile_candidate_file, demo_copy, doctor,
+    emit_brief_scoped, eval_pack, explain, gaps, init_pack_targeted, init_pack_targeted_dry_run,
+    pack, preview_pack_change_set, project_conformance_file, project_conformance_report,
+    project_prompt_output_validation_file, project_run_files, project_source_file,
+    prospect_brief_with_context, rebind_synthetic_chain, refresh_readme, render_human_brief_file,
+    render_human_brief_markdown, render_mermaid, render_readable_prospect_brief, requirements,
+    route_budget_preflight_command, route_budget_preflight_query_command, route_scoped,
+    run_preflight_file, run_receipt, run_request_file_with_transport, sample_leads, schema, skills,
+    validate_behavioral_files, validate_pack, validate_prompt_output_file_with_inputs,
+    validate_source_binding_file, verify_output_file, verify_output_readable_file,
+    verify_run_files,
 };
 use crate::output::{
     PresentationOutcome, print_output, print_output_mode_conflict, resolve_presentation,
@@ -184,6 +187,28 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             };
             print_output(json_mode, summary_mode, "init", data)
         }
+        Commands::Author { command } => match command {
+            AuthorCommand::Preview {
+                dir,
+                candidate,
+                out,
+            } => print_checked(
+                json_mode,
+                summary_mode,
+                "author-preview",
+                preview_pack_change_set(&dir, &candidate, &out)?,
+            ),
+            AuthorCommand::Apply {
+                dir,
+                candidate,
+                change_set,
+            } => print_checked(
+                json_mode,
+                summary_mode,
+                "author-apply",
+                apply_pack_change_set(&dir, &candidate, &change_set)?,
+            ),
+        },
         Commands::Doctor { dir } => print_output(json_mode, summary_mode, "doctor", doctor(&dir)),
         Commands::Skills { dir, job } => print_output(
             json_mode,
@@ -230,6 +255,35 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 compiled.output(options.full),
             )
         }
+        #[cfg(unix)]
+        Commands::SecureInstall {
+            action,
+            source,
+            name,
+            to_name,
+            dir_fd,
+            expected_dev,
+            expected_ino,
+            expected_file_dev,
+            expected_file_ino,
+            receipt_fd,
+        } => print_output(
+            json_mode,
+            summary_mode,
+            "secure-install",
+            secure_install(
+                &action,
+                source.as_deref(),
+                &name,
+                dir_fd,
+                expected_dev,
+                expected_ino,
+                expected_file_dev,
+                expected_file_ino,
+                receipt_fd,
+                to_name.as_deref(),
+            )?,
+        ),
         Commands::RebindSyntheticChain {
             dir,
             job,

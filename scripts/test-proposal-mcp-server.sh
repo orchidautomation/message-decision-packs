@@ -274,6 +274,8 @@ for v1_field in ["authority_contract", "terminal_state", "canonical_authority"]:
     assert v1_field in output_schema["properties"], f"missing v1 outputSchema field {v1_field}"
 
 tools_call = result(3, "tools/call mdp_proposal_tools")
+assert tools_call["structuredContent"]["compatibility_only"] is True
+assert tools_call["structuredContent"]["canonical_migration"]["tools"] == ["mdp_run_tools", "mdp_prepare_run", "mdp_run", "mdp_verify_run"]
 assert tools_call["isError"] is False
 assert tools_call["structuredContent"]["contract"] == "mdp.proposal-mcp-tools.v0"
 assert tools_call["structuredContent"]["hosted_or_remote_mcp"] is False

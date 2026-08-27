@@ -1,3 +1,4 @@
+pub(crate) mod authoring;
 pub(crate) mod briefs;
 pub(crate) mod capabilities;
 pub(crate) mod conformance;
@@ -18,10 +19,15 @@ pub(crate) mod run_receipt;
 pub(crate) mod run_verification;
 pub(crate) mod sample_leads;
 pub(crate) mod schemas;
+#[cfg(unix)]
+pub(crate) mod secure_install;
 pub(crate) mod skills;
 pub(crate) mod source_binding;
 pub(crate) mod synthetic_chain;
 
+pub(crate) use authoring::{
+    PACK_AUTHORING_RESULT_V1, apply_pack_change_set, preview_pack_change_set,
+};
 pub(crate) use briefs::{
     demo_copy, emit_brief_scoped, prospect_brief_with_context, render_readable_prospect_brief,
 };
@@ -57,6 +63,8 @@ pub(crate) use run_receipt::{RunReceiptOptions, run_receipt};
 pub(crate) use run_verification::verify_run_files;
 pub(crate) use sample_leads::sample_leads;
 pub(crate) use schemas::schema;
+#[cfg(unix)]
+pub(crate) use secure_install::secure_install;
 pub(crate) use skills::skills;
 pub(crate) use source_binding::validate_source_binding_file;
 pub(crate) use synthetic_chain::rebind_synthetic_chain;

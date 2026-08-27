@@ -510,16 +510,16 @@ const proposalRunOutputSchema = {
 const tools = [
   {
     name: 'mdp_proposal_tools',
-    title: 'Inspect MDP proposal runner boundaries',
+    title: 'Inspect compatibility-only MDP proposal runner boundaries',
     description:
-      'Return the local proposal runner tool-boundary contract. This is read-only and helps the host understand source intake, normalization, validation, receipt, and review phases.',
+      'Compatibility-only v0 surface for existing proposal consumers. New integrations must migrate to mdp_run_tools, mdp_prepare_run, mdp_run, and mdp_verify_run in mdp-run-mcp-server.mjs.',
     inputSchema: proposalToolsSchema,
   },
   {
     name: 'mdp_proposal_run',
-    title: 'Run MDP proposal normalization pipeline',
+    title: 'Run compatibility-only MDP proposal normalization pipeline',
     description:
-      'Run the local proposal runner from explicit local file paths only. It stages supplied sources, builds a declared-input-only native request, optionally invokes the native runner, and can hand an existing output to canonical Rust mdp run v1 for deterministic validation and receipt authority. The v1 handoff does not claim the Rust runtime performed upstream model inference.',
+      'Compatibility-only v0 wrapper for existing proposal consumers. New integrations must compile with mdp_prepare_run and execute with mdp_run. This path accepts explicit local file paths only and never changes CLI authority.',
     inputSchema: proposalRunSchema,
     outputSchema: proposalRunOutputSchema,
   },
@@ -548,6 +548,11 @@ const callProposalTools = async (args) => {
     contract: 'mdp.proposal-mcp-tools.v0',
     mcp_transport: 'stdio',
     hosted_or_remote_mcp: false,
+    compatibility_only: true,
+    canonical_migration: {
+      server: 'scripts/mdp-run-mcp-server.mjs',
+      tools: ['mdp_run_tools', 'mdp_prepare_run', 'mdp_run', 'mdp_verify_run'],
+    },
     server: { name: SERVER_NAME, version: serverVersion },
     runner_tools: envelope,
     guardrails: [
@@ -823,7 +828,7 @@ const handleRequest = async (message) => {
             version: serverVersion,
           },
           instructions:
-            'Use mdp_proposal_run only with explicit local file paths. Do not pass ambient chat/source text as proposal evidence. clean_run_v1 delegates deterministic validation and receipt authority to canonical Rust mdp run but does not prove the Rust runtime performed upstream model inference.',
+            'Compatibility-only v0 server for existing proposal consumers. Use only explicit local file paths. New integrations must migrate to the canonical mdp_run_tools, mdp_prepare_run, mdp_run, and mdp_verify_run path in mdp-run-mcp-server.mjs. Do not pass ambient chat/source text as evidence. MCP never changes CLI decision authority.',
         })
       }
       case 'notifications/initialized':

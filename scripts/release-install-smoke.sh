@@ -42,7 +42,17 @@ else
   install_home="$(mktemp -d)"
   cleanup_home=1
 fi
+cleanup_artifact_root=0
+if [ -n "${MDP_TEMP_ROOT:-}" ]; then
+  artifact_root="$MDP_TEMP_ROOT"
+else
+  artifact_root="$(mktemp -d)"
+  cleanup_artifact_root=1
+fi
 cleanup() {
+  if [ "$cleanup_artifact_root" = "1" ]; then
+    rm -rf "$artifact_root"
+  fi
   if [ "$cleanup_home" = "1" ]; then
     rm -rf "$install_home"
   fi
@@ -310,6 +320,7 @@ for expected in \
   "message-decision-packs-proposal" \
   "mdp_proposal_tools" \
   "mdp_proposal_run" \
+  "Compatibility-only v0 surface" \
   "Raw chat text is intentionally not accepted"; do
   if ! printf '%s\n' "$mcp_list_stdout" | grep -F "$expected" >/dev/null; then
     echo "Installed proposal MCP server list output missing expected text: $expected" >&2
@@ -327,6 +338,7 @@ run_mcp_list_stdout="$(
 for expected in \
   "message-decision-packs-runner" \
   "mdp_run_tools" \
+  "mdp_prepare_run" \
   "mdp_run" \
   "mdp_verify_run" \
   "Raw chat, source bodies, inline requests, and assurance overrides are not accepted"; do
@@ -337,13 +349,13 @@ for expected in \
   fi
 done
 
-proposal_fixture="$(mktemp -d)"
-run_fixture="$(mktemp -d)"
+proposal_fixture="$(mktemp -d "$artifact_root/proposal.XXXXXX")"
+run_fixture="$(mktemp -d "$artifact_root/run.XXXXXX")"
 trap 'rm -rf "$proposal_fixture" "$run_fixture"; cleanup' EXIT
-"$mdp_bin" --json init --template proposal --dir "$proposal_fixture" >/tmp/mdp-release-install-init.json
-"$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
+"$mdp_bin" --json init --template proposal --dir "$proposal_fixture" >"$artifact_root/mdp-release-install-init.json"
+"$mdp_bin" --json validate --dir "$proposal_fixture" >"$artifact_root/mdp-release-install-validate.json"
 installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
-"$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-init.json
+"$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >"$artifact_root/mdp-release-install-gtm-init.json"
 source_route_budget_bin="$ROOT/cli/target/debug/mdp"
 if [ ! -x "$source_route_budget_bin" ]; then
   echo "Route-budget installed parity requires a source CLI binary: $source_route_budget_bin" >&2
@@ -361,8 +373,8 @@ MDP_BIN="$mdp_bin" \
 MDP_PARITY_GTM_PACK="$installed_gtm_fixture" \
 MDP_PARITY_PROPOSAL_PACK="$proposal_fixture" \
   "$node_bin" "$codex_plugin_root/scripts/test-universal-native-parity.mjs"
-"$mdp_bin" --json validate --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-validate.json
-"$mdp_bin" --json eval --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-eval.json
+"$mdp_bin" --json validate --strict --dir "$installed_gtm_fixture" >"$artifact_root/mdp-release-install-gtm-strict-validate.json"
+"$mdp_bin" --json eval --strict --dir "$installed_gtm_fixture" >"$artifact_root/mdp-release-install-gtm-strict-eval.json"
 gtm_route="$("$mdp_bin" --json route --entries \
   --dir "$installed_gtm_fixture" \
   --persona PMM \
@@ -428,7 +440,7 @@ assert data["query"]["persona"] == "PMM"
 assert data["route_count"] == 1
 assert data["routes"][0]["job_id"] == data["routes"][0]["job"]
 PY
-"$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-gaps.json
+"$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >"$artifact_root/mdp-release-install-gtm-gaps.json"
 for job_id in prospect-fit-or-brief outbound-copy-brief outbound-copy-review; do
   requirements_json="$proposal_fixture/installed-gtm-$job_id-requirements.json"
   "$mdp_bin" --json requirements --dir "$installed_gtm_fixture" --job "$job_id" >"$requirements_json"
@@ -448,7 +460,7 @@ PY
 done
 gtm_fixture="$proposal_fixture/gtm-pack"
 cp -R "$ROOT/examples/clay-audiences-self-serve-enterprise-expansion" "$gtm_fixture"
-"$mdp_bin" --json validate --dir "$gtm_fixture" >/tmp/mdp-release-install-gtm-validate.json
+"$mdp_bin" --json validate --dir "$gtm_fixture" >"$artifact_root/mdp-release-install-gtm-validate.json"
 
 persona_fixture_root="$proposal_fixture/persona-reference-packs"
 declared_persona_fixture="$persona_fixture_root/declared"
@@ -630,7 +642,7 @@ for profile in proposal gtm; do
     --artifact-root "$run_dir") >"$proposal_fixture/$profile-verify.json"
 done
 
-python3 - "$proposal_fixture/proposal-request.json" "$proposal_fixture/mcp-run-request.json" <<'PY'
+python3 - "$proposal_fixture/proposal-request.json" "$run_fixture/mcp-run-request.json" <<'PY'
 import json, sys
 value = json.load(open(sys.argv[1]))
 value["execution_id"] = "release-smoke-mcp"
@@ -639,10 +651,12 @@ open(sys.argv[2], "a").write("\n")
 PY
 mcp_run_stdout="$({
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
-  python3 - "$proposal_fixture/mcp-run-request.json" "$run_fixture/mcp-run" <<'PY'
-import json, sys
+  python3 - "$run_fixture/mcp-run-request.json" "$run_fixture/mcp-run" <<'PY'
+import hashlib, json, sys
 print(json.dumps({"jsonrpc":"2.0", "id":2, "method":"tools/call", "params": {
-    "name":"mdp_run", "arguments":{"request_path":sys.argv[1], "output_dir":sys.argv[2]}}}))
+    "name":"mdp_run", "arguments":{"request_path":sys.argv[1],
+    "request_sha256":hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest(),
+    "output_dir":sys.argv[2]}}}))
 PY
 } | (cd "$install_home" && \
   MDP_BIN="$mdp_bin" \
@@ -670,13 +684,11 @@ activation_output="$(
   bash "$codex_plugin_root/scripts/mdp-activate.sh"
 )"
 for expected in \
-  "Local proposal runner: available in the plugin/source bundle." \
-  "Native OpenAI runner: available as the lower-level BYOK stateless API boundary." \
+  "Canonical native OpenAI driver: available for an operator-authorized BYOK model step." \
   "OPENAI_API_KEY: not detected; only required for an optional real native OpenAI runner call." \
-  "Local stdio MCP wrapper: available" \
-  "MCP tools: mdp_proposal_tools and mdp_proposal_run" \
-  "The bundled MCP is local stdio only, not a hosted or remote MCP service." \
-  "MCP transport alone is not audit-grade; audit-grade proposal reviews still need: mdp run-receipt --runner-audit ... --require-runner-audit." \
+  "Canonical local stdio MCP: available" \
+  "MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run." \
+  "The canonical MCP is local stdio transport only, not a hosted or remote MCP service." \
   "Hooks report readiness only; the CLI receipt is the blocking gate."; do
   if ! printf '%s\n' "$activation_output" | grep -F "$expected" >/dev/null; then
     echo "Installed activation output missing expected guardrail: $expected" >&2
@@ -691,7 +703,7 @@ if [ -f "$ROOT/scripts/skill-eval-harness.py" ]; then
     --corpus "$ROOT/plugin/skill-evals" \
     --mdp-bin "$mdp_bin" \
     --installed-skills-root "$codex_plugin_root/skills" \
-    --installed-corpus "$codex_plugin_root/skill-evals" >/tmp/mdp-release-install-skill-eval.json
+    --installed-corpus "$codex_plugin_root/skill-evals" >"$artifact_root/mdp-release-install-skill-eval.json"
 fi
 
 echo "Release install smoke passed for $version at $install_home"

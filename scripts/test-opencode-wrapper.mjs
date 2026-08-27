@@ -102,8 +102,9 @@ assert(
     releaseInstallSmoke.includes('mdp-native-normalize-openai.mjs') &&
     releaseInstallSmoke.includes('driver-request-v2') &&
     releaseInstallSmoke.includes('driver-result-v2') &&
-    releaseInstallSmoke.includes('mdp-proposal-mcp-server.mjs') &&
-    releaseInstallSmoke.includes('The bundled MCP is local stdio only, not a hosted or remote MCP service') &&
+    releaseInstallSmoke.includes('mdp-run-mcp-server.mjs') &&
+    releaseInstallSmoke.includes('MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run.') &&
+    releaseInstallSmoke.includes('The canonical MCP is local stdio transport only, not a hosted or remote MCP service') &&
     releaseInstallSmoke.includes('Hooks report readiness only; the CLI receipt is the blocking gate.'),
   'Release install smoke must exercise the documented --agents installer path and installed runner guardrails.',
 )

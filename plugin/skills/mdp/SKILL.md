@@ -110,11 +110,15 @@ key-free and never prove provider execution.
 For MCP-capable hosts, the profile-neutral adapter is
 `scripts/mdp-run-mcp-server.mjs` or
 `${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs`. It exposes `mdp_run_tools`,
-`mdp_run`, and read-only `mdp_verify_run`; pass only existing authority-file
-paths and, for execution, a new `output_dir`. The MCP server transports the
-file-oriented CLI calls and returns canonical CLI data unchanged. It owns no
-assurance dimension and must never accept ambient chat, inline evidence, or an
-assurance override.
+`mdp_prepare_run`, `mdp_run`, and read-only `mdp_verify_run`. Use them in that
+order: boundary inventory → `mdp.run-request.v1` → run bundle/receipt →
+`mdp.run-verification.v1`. Preparation requires a new `out` path under an
+approved work root; pass that same persisted request and prepare-returned
+`request_sha256` to `mdp_run`, which rejects a mismatch before writing a new
+`output_dir` under an approved output root. Verify the emitted bundle and
+receipt from that output root. The MCP server transports the file-oriented CLI
+calls and returns canonical CLI data unchanged. It owns no assurance dimension
+and must never accept ambient chat, inline evidence, or an assurance override.
 
 The current conversation is a control plane, never proof of fresh context. Do
 not add chat facts, rewrite a decision, or repair a no-draft result after the

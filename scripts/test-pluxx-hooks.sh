@@ -4,6 +4,33 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
+cleanup_artifact_root=0
+if [ -n "${MDP_TEMP_ROOT:-}" ]; then
+  artifact_root="$MDP_TEMP_ROOT"
+else
+  artifact_root="$(mktemp -d)"
+  cleanup_artifact_root=1
+fi
+lint_json="$artifact_root/mdp-pluxx-lint.json"
+build_json="$artifact_root/mdp-pluxx-build.json"
+packaging_json="$artifact_root/mdp-skill-packaging.json"
+export MDP_PLUXX_LINT_JSON="$lint_json"
+workspace_fixture=""
+plugin_fixture=""
+proposal_fixture=""
+root_fallback_fixture=""
+cleanup() {
+  for fixture in "${workspace_fixture:-}" "${plugin_fixture:-}" "${proposal_fixture:-}" "${root_fallback_fixture:-}"; do
+    if [ -n "$fixture" ]; then
+      rm -rf "$fixture"
+    fi
+  done
+  if [ "$cleanup_artifact_root" = "1" ]; then
+    rm -rf "$artifact_root"
+  fi
+}
+trap cleanup EXIT
+
 PLUXX_VERSION="${PLUXX_VERSION:-0.1.40}"
 if command -v pluxx >/dev/null 2>&1 && [ "$(pluxx --version)" = "$PLUXX_VERSION" ]; then
   PLUXX_CMD=(pluxx)
@@ -14,21 +41,20 @@ else
   exit 0
 fi
 
-"${PLUXX_CMD[@]}" lint --json >/tmp/mdp-pluxx-lint.json
+"${PLUXX_CMD[@]}" lint --json >"$lint_json"
 find "$ROOT/scripts" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$ROOT/dist" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
-"${PLUXX_CMD[@]}" build --json >/tmp/mdp-pluxx-build.json
+"${PLUXX_CMD[@]}" build --json >"$build_json"
 if find "$ROOT/dist" -type d -name __pycache__ | grep -q .; then
   echo "Generated Pluxx bundles must not include Python __pycache__ directories." >&2
   find "$ROOT/dist" -type d -name __pycache__ >&2
   exit 1
 fi
-python3 scripts/validate-skill-packaging.py --require-bundles >/tmp/mdp-skill-packaging.json
+python3 scripts/validate-skill-packaging.py --require-bundles >"$packaging_json"
 
-workspace_fixture="$(mktemp -d)"
-plugin_fixture="$(mktemp -d)"
-proposal_fixture="$(mktemp -d)"
-trap 'rm -rf "$workspace_fixture" "$plugin_fixture" "$proposal_fixture"' EXIT
+workspace_fixture="$(mktemp -d "$artifact_root/workspace.XXXXXX")"
+plugin_fixture="$(mktemp -d "$artifact_root/plugin.XXXXXX")"
+proposal_fixture="$(mktemp -d "$artifact_root/proposal.XXXXXX")"
 mkdir -p "$workspace_fixture/.mdp" "$plugin_fixture/.mdp" "$proposal_fixture/.mdp/prompts"
 printf 'name: hook-workspace-fixture\nversion: 0.1.0\n' >"$workspace_fixture/.mdp/manifest.yaml"
 printf 'name: plugin-root-should-not-activate\nversion: 0.1.0\n' >"$plugin_fixture/.mdp/manifest.yaml"
@@ -41,6 +67,21 @@ activation_output="$(
 )"
 if ! printf '%s\n' "$activation_output" | grep -F "detected in $workspace_fixture" >/dev/null; then
   echo "MDP activation must use PLUXX_HOOK_WORKSPACE_ROOT when hook cwd is the plugin root." >&2
+  exit 1
+fi
+if ! printf '%s\n' "$activation_output" | grep -F "MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run." >/dev/null; then
+  echo "MDP activation must expose the canonical MCP path for a basic/GTM pack." >&2
+  printf '%s\n' "$activation_output" >&2
+  exit 1
+fi
+
+source_activation_output="$(
+  cd "$plugin_fixture"
+  env -u PLUGIN_ROOT MDP_HOOK_DIR="$workspace_fixture" bash "$ROOT/scripts/mdp-activate.sh"
+)"
+if ! printf '%s\n' "$source_activation_output" | grep -F "available as node \"$ROOT/scripts/mdp-run-mcp-server.mjs\"" >/dev/null; then
+  echo "Direct source activation must discover the canonical MCP without PLUGIN_ROOT." >&2
+  printf '%s\n' "$source_activation_output" >&2
   exit 1
 fi
 
@@ -57,28 +98,28 @@ proposal_output="$(
   cd "$plugin_fixture"
   PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$proposal_fixture" OPENAI_API_KEY= bash "$ROOT/scripts/mdp-activate.sh"
 )"
-if ! printf '%s\n' "$proposal_output" | grep -F "MDP proposal audit readiness:" >/dev/null; then
-  echo "MDP activation must print proposal audit readiness for proposal packs." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "MDP clean-run readiness:" >/dev/null; then
+  echo "MDP activation must print clean-run readiness for proposal packs." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "Local proposal runner: available in the plugin/source bundle." >/dev/null; then
-  echo "MDP activation must report local proposal runner availability for proposal packs." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "Canonical local stdio MCP: available" >/dev/null; then
+  echo "MDP activation must report canonical local stdio MCP availability for proposal packs." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "Local stdio MCP wrapper: available" >/dev/null; then
-  echo "MDP activation must report local stdio MCP wrapper availability for proposal packs." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "Canonical native OpenAI driver: available for an operator-authorized BYOK model step." >/dev/null; then
+  echo "MDP activation must report the canonical native driver." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "The bundled MCP is local stdio only, not a hosted or remote MCP service." >/dev/null; then
+if ! printf '%s\n' "$proposal_output" | grep -F "The canonical MCP is local stdio transport only, not a hosted or remote MCP service." >/dev/null; then
   echo "MDP activation must avoid implying a hosted/remote MCP service exists." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "MCP transport alone is not audit-grade" >/dev/null; then
-  echo "MDP activation must explain MCP transport alone is not audit-grade." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run." >/dev/null; then
+  echo "MDP activation must report the canonical four-tool path." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
@@ -108,8 +149,7 @@ if printf '%s\n' "$key_output" | grep -F "sk-test-do-not-print" >/dev/null; then
 fi
 
 if command -v cargo >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
-  root_fallback_fixture="$(mktemp -d)"
-  trap 'rm -rf "$workspace_fixture" "$plugin_fixture" "$proposal_fixture" "$root_fallback_fixture"' EXIT
+  root_fallback_fixture="$(mktemp -d "$artifact_root/root-fallback.XXXXXX")"
   cp -R "$ROOT/plugin/assets/templates/basic/.mdp" "$root_fallback_fixture/.mdp"
   ln -s "$ROOT/cli" "$root_fallback_fixture/cli"
   ln -s "$ROOT/rust-toolchain.toml" "$root_fallback_fixture/rust-toolchain.toml"
@@ -155,7 +195,7 @@ const claudeHooks = readJson('dist/claude-code/hooks/hooks.json')
 const codexManifest = readJson('dist/codex/.codex-plugin/plugin.json')
 const codexHooks = readJson('dist/codex/hooks/hooks.json')
 const codexCompanion = readJson('dist/codex/.codex/hooks.generated.json')
-const lintResult = readJson('/tmp/mdp-pluxx-lint.json')
+const lintResult = readJson(process.env.MDP_PLUXX_LINT_JSON)
 
 const truncationIssues = lintResult.issues.filter((issue) => issue.code === 'skill-description-truncation')
 assert(truncationIssues.length === 0, 'Pluxx lint must not truncate skill descriptions on supported hosts.')
