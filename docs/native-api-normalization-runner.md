@@ -146,9 +146,12 @@ It exposes one canonical four-stage path:
 1. `mdp_run_tools` inventories the boundary and the next stages.
 2. `mdp_prepare_run` compiles a pack, exact job/model step, and declared input
    paths into a required persisted `mdp.run-request.v1`. Pass `out` under an
-   approved work root; `manifest_out` is optional under the same role.
-3. `mdp_run` accepts that existing work-root request path and a new output
-   directory, then returns the CLI-owned bundle and receipt.
+   approved work root; `manifest_out` is optional under the same role. Prepare
+   also returns the exact persisted `request_sha256`.
+3. `mdp_run` requires that existing work-root request path, prepare-returned
+   `request_sha256`, and a new output directory. It freezes the request and
+   rejects a digest mismatch before execution, then returns the CLI-owned bundle
+   and receipt.
 4. `mdp_verify_run` reads the resulting bundle and receipt from the approved
    output root and returns the terminal CLI verification.
 

@@ -314,7 +314,7 @@ const tools = [
     name: 'mdp_prepare_run',
     title: 'Prepare an MDP run request offline',
     description:
-      'Compile and persist one sealed mdp.run-request.v1 under an approved work root from a pack, selected job/step, and declared local input paths. No provider is invoked. Next, pass that request path to mdp_run.',
+      'Compile and persist one sealed mdp.run-request.v1 under an approved work root from a pack, selected job/step, and declared local input paths. No provider is invoked. Next, pass that request path and returned request_sha256 to mdp_run.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -347,11 +347,16 @@ const tools = [
     inputSchema: {
       type: 'object',
       additionalProperties: false,
-      required: ['request_path', 'output_dir'],
+      required: ['request_path', 'request_sha256', 'output_dir'],
       properties: {
         request_path: {
           type: 'string',
           description: 'Existing regular, single-link, non-symlink mdp.run-request.v1 file under an approved work root.',
+        },
+        request_sha256: {
+          type: 'string',
+          pattern: '^[0-9a-f]{64}$',
+          description: 'Exact SHA-256 returned by mdp_prepare_run for this persisted request.',
         },
         output_dir: {
           type: 'string',
@@ -411,7 +416,7 @@ const callRunTools = (args) => {
       {
         stage: 'run',
         tool: 'mdp_run',
-        input: 'mdp.run-request.v1 path and a new output directory',
+        input: 'mdp.run-request.v1 path, prepare-returned request_sha256, and a new output directory',
         artifact: 'run-bundle.json, run-receipt.json, and declared run artifacts',
         next: 'mdp_verify_run',
       },
@@ -521,9 +526,23 @@ const readInstallReceipt = (output) => {
   return { dev: BigInt(receipt.dev), ino: BigInt(receipt.ino), stagingLeaf: receipt.staging_leaf }
 }
 
+const assertPrepareInvocationSucceeded = (invocation, phase) => {
+  const code = invocation.cancelled
+    ? 'cli-cancelled'
+    : invocation.timedOut
+      ? 'cli-timeout'
+      : invocation.overflowed
+        ? 'cli-output-limit'
+        : invocation.spawnFailed
+          ? 'cli-unavailable'
+          : null
+  if (code) throw Object.assign(new Error(`secure output ${phase} did not complete`), { code })
+}
+
 const publishPinnedOutput = async (output, deadline, terminationGraceMs, signal) => {
   const invocation = await invokeSecureInstaller(output, 'install', deadline, terminationGraceMs, signal)
   output.installedIdentity = readInstallReceipt(output)
+  assertPrepareInvocationSucceeded(invocation, 'publication')
   assertPrepareActive(signal)
   let envelope
   try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output installer returned invalid data') }
@@ -539,6 +558,7 @@ const publishPinnedOutput = async (output, deadline, terminationGraceMs, signal)
 
 const verifyPinnedOutput = async (output, deadline, terminationGraceMs, signal) => {
   const invocation = await invokeSecureInstaller(output, 'verify', deadline, terminationGraceMs, signal)
+  assertPrepareInvocationSucceeded(invocation, 'verification')
   assertPrepareActive(signal)
   let envelope
   try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output verifier returned invalid data') }
@@ -657,6 +677,10 @@ const callPrepareRunValidated = async (args, signal = null) => {
         throw new Error(`prepared request exceeds mdp_run limit of ${MAX_REQUEST_FILE_BYTES} bytes`)
       }
     }
+    const stagedRequestSha256 = createHash('sha256').update(readFileSync(pinnedOutputs[0].cliPath)).digest('hex')
+    if (envelope.data.request_sha256 !== stagedRequestSha256) {
+      throw new Error('prepare-run request_sha256 did not match the persisted request')
+    }
     for (const output of pinnedOutputs) {
       await publishPinnedOutput(output, workDeadline, terminationGraceMs, signal)
     }
@@ -700,20 +724,26 @@ const callPrepareRun = async (args, signal = null) => {
   try {
     return await callPrepareRunValidated(args, signal)
   } catch (error) {
-    const code = ['mcp-cleanup-incomplete', 'cli-cancelled'].includes(error?.code) ? error.code : 'mcp-arguments-invalid'
+    const code = ['mcp-cleanup-incomplete', 'cli-cancelled', 'cli-timeout', 'cli-output-limit', 'cli-unavailable'].includes(error?.code) ? error.code : 'mcp-arguments-invalid'
     return blockedPrepareRun(code, error?.message || 'preparation refused')
   }
 }
 
 const callRun = async (args, signal = null) => {
   const parsed = asObject(args || {}, 'arguments')
-  assertOnly(parsed, new Set(['request_path', 'output_dir', 'timeout_ms', 'consent_id']))
+  assertOnly(parsed, new Set(['request_path', 'request_sha256', 'output_dir', 'timeout_ms', 'consent_id']))
   const requestPath = requiredString(parsed, 'request_path')
+  const requestSha256 = requiredString(parsed, 'request_sha256')
+  if (!/^[0-9a-f]{64}$/.test(requestSha256)) throw new Error('request_sha256 must be a lowercase SHA-256 digest')
   const policy = requirePolicy()
   const outputRequest = requiredString(parsed, 'output_dir')
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
   const frozenRequest = freezeRequestFile(policy.existing('work', requestPath, 'file').path)
+  if (frozenRequest.sha256 !== requestSha256) {
+    rmSync(frozenRequest.privateDir, { recursive: true, force: true })
+    throw new Error('request_sha256 does not match the prepared request')
+  }
   const approvedPack = frozenRequest.packDir
     ? policy.existing('pack', frozenRequest.packDir, 'directory')
     : null

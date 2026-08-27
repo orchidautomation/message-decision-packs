@@ -150,6 +150,7 @@ export const superviseProcess = ({
   inheritedFds = [],
   absoluteDeadlineMs = null,
   terminationMode = 'term-kill',
+  startTimeoutAfter = null,
 }) =>
   new Promise((resolveResult) => {
     const startedAt = performance.now()
@@ -215,10 +216,22 @@ export const superviseProcess = ({
     child.on('error', () => {
       spawnFailed = true
     })
-    const timeout = setTimeout(() => {
-      timedOut = true
-      escalate()
-    }, timeoutMs)
+    let timeout = null
+    const armTimeout = () => {
+      if (finishRequested) return
+      timeout = setTimeout(() => {
+        timedOut = true
+        escalate()
+      }, timeoutMs)
+    }
+    if (startTimeoutAfter) {
+      Promise.resolve(startTimeoutAfter).then(armTimeout, () => {
+        spawnFailed = true
+        escalate()
+      })
+    } else {
+      armTimeout()
+    }
     const cancel = () => {
       if (finishRequested || timedOut || cancelled) return
       cancelled = true

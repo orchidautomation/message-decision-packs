@@ -21,6 +21,7 @@ const fixtureCli = (root) => {
     path,
     `#!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 const args = process.argv.slice(2)
 if (args.includes('prepare-run')) {
@@ -54,7 +55,7 @@ if (args.includes('prepare-run')) {
   writeFileSync(out, requestBytes)
   const manifestIndex = args.indexOf('--manifest-out')
   if (manifestIndex >= 0) writeFileSync(args[manifestIndex + 1], JSON.stringify({ contract: 'mdp.run-request-compile-manifest.v1' }))
-  process.stdout.write(JSON.stringify({ ok: true, command: 'prepare-run', data: { contract: 'mdp.run-request-compile.v1', status: 'ready', request_path: out } }))
+  process.stdout.write(JSON.stringify({ ok: true, command: 'prepare-run', data: { contract: 'mdp.run-request-compile.v1', status: 'ready', request_path: out, request_sha256: createHash('sha256').update(requestBytes).digest('hex') } }))
   process.exit(0)
 }
 if (args.includes('verify-run')) {
@@ -236,11 +237,18 @@ const rpc = (cli, messages, extraEnv = {}) =>
     child.stdin.end()
   })
 
+const requestSha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
+
 const toolCall = (id, name, args = {}) => ({
   jsonrpc: '2.0',
   id,
   method: 'tools/call',
-  params: { name, arguments: args },
+  params: {
+    name,
+    arguments: name === 'mdp_run' && typeof args.request_path === 'string' && args.request_sha256 === undefined
+      ? { ...args, request_sha256: requestSha256(args.request_path) }
+      : args,
+  },
 })
 
 const consentFixture = (root, id, overrides = {}) => {
@@ -350,6 +358,9 @@ test('lists preparation, run, and verification tools and identifies MCP as trans
   assert.match(replies[2].result.structuredContent.guardrails.join(' '), /does not prove fresh context/)
   const prepareTool = replies[1].result.tools.find((tool) => tool.name === 'mdp_prepare_run')
   assert(prepareTool.inputSchema.required.includes('out'))
+  const runTool = replies[1].result.tools.find((tool) => tool.name === 'mdp_run')
+  assert(runTool.inputSchema.required.includes('request_sha256'))
+  assert.match(replies[2].result.structuredContent.canonical_path[2].input, /request_sha256/)
 })
 
 test('completes prepare, run, and verify across disjoint approved roots for any profile', async (t) => {
@@ -365,28 +376,48 @@ test('completes prepare, run, and verify across disjoint approved roots for any 
     { name: 'proposal', job: 'bid-no-bid-review' },
   ]
   const roleEnv = Object.fromEntries(Object.entries(roots).map(([role, path]) => [`MDP_MCP_${role.toUpperCase()}_ROOTS`, path]))
-  const messages = []
   for (const [index, profile] of profiles.entries()) {
     const pack = join(roots.pack, `${profile.name}-pack`)
     mkdirSync(pack)
     const request = join(roots.work, `${profile.name}-request.json`)
     const manifest = join(roots.work, `${profile.name}-manifest.json`)
     const run = join(roots.output, `${profile.name}-run`)
-    const id = index * 3
-    messages.push(
-      toolCall(id + 1, 'mdp_prepare_run', { dir: pack, job: profile.job, model: 'fixture-model', out: request, manifest_out: manifest }),
-      toolCall(id + 2, 'mdp_run', { request_path: request, output_dir: run }),
-      toolCall(id + 3, 'mdp_verify_run', { bundle_path: join(run, 'run-bundle.json'), receipt_path: join(run, 'run-receipt.json'), artifact_root: run }),
-    )
+    const [prepared] = await rpc(fixtureCli(root), [
+      toolCall(index * 3 + 1, 'mdp_prepare_run', { dir: pack, job: profile.job, model: 'fixture-model', out: request, manifest_out: manifest }),
+    ], roleEnv)
+    assert.equal(prepared.result.structuredContent.status, 'ready', JSON.stringify(prepared))
+    assert.equal(existsSync(manifest), true)
+    const [ran] = await rpc(fixtureCli(root), [toolCall(index * 3 + 2, 'mdp_run', {
+      request_path: request,
+      request_sha256: prepared.result.structuredContent.request_sha256,
+      output_dir: run,
+    })], roleEnv)
+    assert.equal(ran.result.structuredContent.contract, 'mdp.run-execution.v1')
+    const [verified] = await rpc(fixtureCli(root), [
+      toolCall(index * 3 + 3, 'mdp_verify_run', { bundle_path: join(run, 'run-bundle.json'), receipt_path: join(run, 'run-receipt.json'), artifact_root: run }),
+    ], roleEnv)
+    assert.equal(verified.result.structuredContent.contract, 'mdp.run-verification.v1')
+    assert.equal(verified.result.structuredContent.valid, true)
   }
-  const replies = await rpc(fixtureCli(root), messages, roleEnv)
-  for (let index = 0; index < profiles.length; index += 1) {
-    assert.equal(replies[index * 3].result.structuredContent.status, 'ready', JSON.stringify(replies[index * 3]))
-    assert.equal(existsSync(join(roots.work, `${profiles[index].name}-manifest.json`)), true)
-    assert.equal(replies[index * 3 + 1].result.structuredContent.contract, 'mdp.run-execution.v1')
-    assert.equal(replies[index * 3 + 2].result.structuredContent.contract, 'mdp.run-verification.v1')
-    assert.equal(replies[index * 3 + 2].result.structuredContent.valid, true)
-  }
+})
+
+test('run rejects a substituted prepared request before spawning the CLI', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-request-digest-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const request = join(root, 'request.json')
+  const spawnMarker = join(root, 'cli-spawned')
+  const markerCli = join(root, 'must-not-spawn.mjs')
+  writeFileSync(markerCli, `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(spawnMarker)}, 'spawned')\n`)
+  chmodSync(markerCli, 0o755)
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', execution_id: 'replacement', mode: 'deterministic' }))
+  const [reply] = await rpc(markerCli, [toolCall(1, 'mdp_run', {
+    request_path: request,
+    request_sha256: '0'.repeat(64),
+    output_dir: join(root, 'run'),
+  })])
+  assert.equal(reply.error.code, -32602)
+  assert.match(reply.error.message, /request_sha256 does not match/)
+  assert.equal(existsSync(spawnMarker), false)
 })
 
 test('prepare refuses request and manifest parent swaps without escaped or partial writes', async (t) => {
@@ -593,6 +624,7 @@ esac
   const blocked = await waitForReply(1)
   const elapsed = Date.now() - started
   assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(blocked.result.structuredContent.diagnostics[0].code, 'cli-timeout', JSON.stringify(blocked))
   assert(elapsed < 550, `the caller timeout must include helper termination and cleanup; elapsed=${elapsed}`)
   assert.equal(existsSync(request), false, 'cleanup must remove a complete install whose identity envelope was lost')
   assert.equal(existsSync(manifest), false, 'every sibling output must receive cleanup within the reserved deadline window')
@@ -652,6 +684,39 @@ esac
   assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
   assert.equal(existsSync(request), false)
   assert.equal(readdirSync(work).some((name) => name.startsWith('.mdp-quarantine-')), false)
+})
+
+test('prepare reports verifier timeout accurately and removes the published request', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-verify-timeout-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  mkdirSync(pack)
+  mkdirSync(work)
+  const wrapper = join(root, 'secure-verify-timeout.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action verify "*) "${realCli}" "$@" >/dev/null; sleep 10 ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 400,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(blocked.result.structuredContent.diagnostics[0].code, 'cli-timeout', JSON.stringify(blocked))
+  assert.equal(existsSync(request), false)
 })
 
 test('receipt-bound timeout cleanup preserves an identical concurrent replacement', async (t) => {
@@ -956,6 +1021,7 @@ sys.stdout.write(json.dumps({
     assert.doesNotMatch(JSON.stringify(prepared[index].result.structuredContent), /\/proc\/|mdp-run-mcp-prepare-/)
     assert.equal(existsSync(profile.request), true)
     const requestBytes = readFileSync(profile.request)
+    assert.equal(prepared[index].result.structuredContent.request_sha256, createHash('sha256').update(requestBytes).digest('hex'))
     const request = JSON.parse(requestBytes)
     const sourceSha256s = request.inputs.map((input) => createHash('sha256').update(readFileSync(input.source_path)).digest('hex'))
     const expiresAt = new Date(Date.now() + 60_000).toISOString()
@@ -963,7 +1029,7 @@ sys.stdout.write(json.dumps({
       contract: 'mdp.mcp-provider-consent.v1',
       provider: 'openai',
       purpose: 'mdp.run',
-      request_sha256: createHash('sha256').update(requestBytes).digest('hex'),
+      request_sha256: prepared[index].result.structuredContent.request_sha256,
       source_sha256s: sourceSha256s,
       output_root: realpathSync(roots.output),
       expires_at: expiresAt,
@@ -984,7 +1050,12 @@ sys.stdout.write(json.dumps({
   const completed = []
   for (const [index, profile] of profiles.entries()) {
     completed.push(...await rpc(realCli, [
-      toolCall(index * 2 + 1, 'mdp_run', { request_path: profile.request, output_dir: profile.run, consent_id: profile.consent }),
+      toolCall(index * 2 + 1, 'mdp_run', {
+        request_path: profile.request,
+        request_sha256: prepared[index].result.structuredContent.request_sha256,
+        output_dir: profile.run,
+        consent_id: profile.consent,
+      }),
       toolCall(index * 2 + 2, 'mdp_verify_run', {
         bundle_path: join(profile.run, 'run-bundle.json'),
         receipt_path: join(profile.run, 'run-receipt.json'),
@@ -1447,18 +1518,22 @@ test('TERM-only supervisor mode never escalates a finite safety helper to SIGKIL
   const root = mkdtempSync(join(tmpdir(), 'mdp-supervisor-term-only-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const marker = join(root, 'restored')
-  const started = Date.now()
-  const result = await superviseProcess({
+  const ready = join(root, 'ready')
+  const readyPromise = waitForFile(ready)
+  const resultPromise = superviseProcess({
     command: [process.execPath],
-    args: ['-e', `const fs=require('node:fs');process.on('SIGTERM',()=>setTimeout(()=>{fs.writeFileSync(${JSON.stringify(marker)},'restored');process.exit(0)},100));setInterval(()=>{},1000)`],
+    args: ['-e', `const fs=require('node:fs');process.on('SIGTERM',()=>setTimeout(()=>{fs.writeFileSync(${JSON.stringify(marker)},'restored');process.exit(0)},100));fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)`],
     cwd: root,
     environment: process.env,
     timeoutMs: 25,
     terminationGraceMs: 10,
-    absoluteDeadlineMs: started + 60,
     terminationMode: 'term-only',
+    startTimeoutAfter: readyPromise,
     maxOutputBytes: 1024,
   })
+  await readyPromise
+  const started = Date.now()
+  const result = await resultPromise
   assert.equal(result.timedOut, true)
   assert.equal(readFileSync(marker, 'utf8'), 'restored', 'helper must finish after the nominal kill deadline')
   assert(Date.now() - started >= 100, 'TERM-only mode must wait rather than escalating to SIGKILL')

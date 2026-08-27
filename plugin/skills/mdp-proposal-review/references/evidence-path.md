@@ -115,7 +115,8 @@ presented as a second default path.
 
 For v1, pass the exact approved source/input files as `logical_name=path`
 mappings to `mdp_prepare_run`, require its `out` path under an approved work
-root, then pass that same request path to `mdp_run`. Verify the emitted
+root, then pass that same request path and prepare-returned `request_sha256` to
+`mdp_run`; it rejects a mismatch before execution. Verify the emitted
 `run-bundle.json` and `run-receipt.json` from the approved output root. Raw
 proposal text and ambient chat are never MCP arguments. Treat any MCP tool
 error or invalid CLI verification as blocked.
