@@ -870,6 +870,8 @@ fn parse_new_container_prefixes<'a>(
             container.push(MarkdownContainerSegment::Quote);
             line = content;
             paragraph_open = false;
+        } else if is_thematic_or_setext_line(line, false) {
+            return line;
         } else if let Some((indent, content)) = list_item_content(line, paragraph_open) {
             container.push(MarkdownContainerSegment::List(indent));
             line = content;
@@ -1185,6 +1187,7 @@ fn valid_link_title(title: &str) -> bool {
     for (index, character) in title[opening.len_utf8()..].char_indices() {
         match character {
             '\\' if !escaped => escaped = true,
+            '(' if opening == '(' && !escaped => return false,
             character if character == closing && !escaped => {
                 return title[opening.len_utf8() + index + character.len_utf8()..]
                     .trim_matches([' ', '\t'])
@@ -1239,6 +1242,7 @@ fn incomplete_title_closer(title: &str) -> Option<char> {
     for character in title[opening.len_utf8()..].chars() {
         match character {
             '\\' if !escaped => escaped = true,
+            '(' if opening == '(' && !escaped => return None,
             character if character == closing && !escaped => return None,
             _ => escaped = false,
         }
