@@ -595,6 +595,7 @@ def validate_outputs(
     assertion_ids: set[str] = set()
     scenario_splits: dict[str, set[str]] = defaultdict(set)
     coverage_seen: set[tuple[str, str, str]] = set()
+    communication_seen: set[tuple[str, str]] = set()
     allowed_categories = set(
         coverage.get("output_requirements", {}).get("allowed_assertion_categories", [])
     )
@@ -658,6 +659,8 @@ def validate_outputs(
                 errors.append(f"{case_id}: invalid assertion category {category}")
             else:
                 categories.add(category)
+                if category == "communication":
+                    communication_seen.add((skill_id, split))
             if not isinstance(criterion, str) or not criterion.strip():
                 errors.append(f"{case_id}: assertion criterion must be non-empty")
             if assertion.get("required") is not True:
@@ -675,6 +678,14 @@ def validate_outputs(
             for split in SPLITS:
                 if (skill_id, mode, split) not in coverage_seen:
                     errors.append(f"output coverage missing {skill_id}/{mode}/{split}")
+        if coverage.get("output_requirements", {}).get(
+            "require_communication_per_skill_split"
+        ) is True:
+            for split in SPLITS:
+                if (skill_id, split) not in communication_seen:
+                    errors.append(
+                        f"output communication coverage missing {skill_id}/{split}"
+                    )
 
     return {
         "total": len(cases),

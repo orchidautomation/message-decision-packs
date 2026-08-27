@@ -7,6 +7,16 @@ description: Use when creating, initializing, reconstructing, or improving a Mes
 
 Build evidence-grounded `.mdp/` decision context. Use the CLI for deterministic structure and validation; use judgment only for interpreting approved source material and authoring explicit decisions.
 
+## Communicate The Work
+
+Follow the shared [Orient, Plan, Progress, Translate, Close contract](../mdp/references/communication-contract.md).
+Open by naming the source-plan, source-extract, GTM-authoring, or
+proposal-authoring job; the exact pack and approved-source evidence boundary;
+the pack files and readiness handoff the user will receive; and that this skill
+will not scrape gated sources, invent authority, draft outreach or proposals,
+send, or mutate downstream systems. Keep later updates to meaningful
+validation gates, blockers, and authoring decisions.
+
 ## Authority Monotonicity
 
 The Rust CLI is the decision authority. Preserve or reduce its authority; never upgrade `blocked`, `no-draft`, `unavailable`, invalid, or unknown results to ready, needs-review, transport success that implies decision success, or usable governed generation. New evidence requires a new CLI evaluation; user intent cannot override an existing result in place.

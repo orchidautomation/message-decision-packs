@@ -41,6 +41,41 @@ class SkillContractTests(unittest.TestCase):
             self.assertIn("New evidence requires a new CLI evaluation", skill, path)
             self.assertIn("cannot override an existing result in place", skill, path)
 
+    def test_all_canonical_skills_share_the_communication_contract(self):
+        communication = Path(
+            "plugin/skills/mdp/references/communication-contract.md"
+        ).read_text()
+        for term in (*module.COMMUNICATION_STAGES, *module.READINESS_TERMS):
+            self.assertIn(term, communication)
+        for path in sorted(Path("plugin/skills").glob("*/SKILL.md")):
+            skill = path.read_text()
+            self.assertIn("Orient, Plan, Progress, Translate, Close contract", skill)
+            self.assertIn("Open by naming", skill)
+            self.assertIn("evidence boundary", skill)
+            self.assertIn("user will receive", skill)
+            self.assertIn("will not", skill)
+            self.assertIn("meaningful", skill)
+
+    def test_missing_communication_contract_fails_validation(self):
+        skill = self.root / "plugin/skills/mdp-pack-review/SKILL.md"
+        skill.write_text(
+            skill.read_text().replace(
+                "Orient, Plan, Progress, Translate, Close contract",
+                "removed communication contract",
+                1,
+            )
+        )
+        self.assertIn("communication_opening_missing:mdp-pack-review", self.codes())
+
+        communication = (
+            self.root
+            / "plugin/skills/mdp/references/communication-contract.md"
+        )
+        communication.write_text(
+            communication.read_text().replace("safe-to-draft", "removed")
+        )
+        self.assertIn("communication_contract_missing:safe-to-draft", self.codes())
+
     def test_core_skill_exposes_job_bound_requirements_handoff(self):
         skill = Path("plugin/skills/mdp/SKILL.md").read_text()
         operator = Path("plugin/skills/mdp/references/cli-operator.md").read_text()
