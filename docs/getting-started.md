@@ -45,6 +45,31 @@ mdp --version
 mdp --json doctor --dir .
 ```
 
+For one read-only, offline answer that composes the existing structural,
+profile, job, input, and route-budget authorities, select an exact job:
+
+```bash
+mdp check --dir ./mdp-demo --job outbound-copy-brief
+```
+
+`mdp check` emits `mdp.readiness.v1`. It does not replace `doctor`, `validate`,
+`skills`, `requirements`, or `route-budget`; its JSON cites the fields it
+projected from each contributing contract. The gates use four states:
+`true`, `false`, `unknown`, and `not-applicable`. In particular, omitting a
+governed-input validation result is `unknown`, never `false` and never ready.
+After validating a normalized input, supply the exact JSON result to include
+that authority in the projection:
+
+```bash
+mdp check --dir ./mdp-demo --job outbound-copy-brief \
+  --input-validation ./validation-result.json
+```
+
+Human output names the first blocking or unknown gate and the smallest safe
+next action. Use `mdp --json check ...` for the complete machine contract and
+`mdp schema readiness-v1` for its schema. Paths, input bodies, and low-level
+diagnostic messages are not copied into readiness output.
+
 If `mdp` is not found, make sure the install directory printed by the installer is on `PATH`, then restart your agent host.
 
 Supported agent bundles package activation and validation hooks where the host supports them: detect `.mdp/`, surface MDP guidance, then run focused validation after relevant pack edits. Do not make hooks silently generate full briefs, enrich leads, or write private scratch outside documented ignored paths. See [Agent Hook Guidance](agent-hook-guidance.md).

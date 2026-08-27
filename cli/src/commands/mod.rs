@@ -11,6 +11,7 @@ pub(crate) mod init_transaction;
 pub(crate) mod pack;
 pub(crate) mod prompt_output;
 pub(crate) mod proof_output;
+pub(crate) mod readiness;
 pub(crate) mod readme;
 pub(crate) mod requirements;
 pub(crate) mod routing;
@@ -52,6 +53,7 @@ pub(crate) use prompt_output::validate_prompt_output_file_with_inputs;
 pub(crate) use proof_output::{
     author_proof_output_file, verify_output_file, verify_output_readable_file, verify_output_value,
 };
+pub(crate) use readiness::readiness;
 pub(crate) use readme::{check_readme, refresh_readme};
 pub(crate) use requirements::requirements;
 pub(crate) use routing::{

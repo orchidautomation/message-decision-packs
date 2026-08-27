@@ -1,5 +1,6 @@
 {
   "model": "mdp.skill-eval-coverage.v1",
+  "revision": "mdp-257.v1",
   "skills": [
     {
       "id": "mdp",

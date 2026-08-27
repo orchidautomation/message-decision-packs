@@ -344,6 +344,7 @@ pub(crate) fn capabilities() -> Value {
             author_command("preview", "writes-new-change-set", &["--candidate", "--out"], &["--dir"]),
             author_command("apply", "transactional-pack-write", &["--candidate", "--change-set"], &["--dir"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
+            command("check", "mdp.readiness.v1", "read-only", false, false, false, &["--dir", "--job", "--input-validation"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
             command("prepare-run", RUN_REQUEST_COMPILE_V1, "read-only-unless-out", false, true, false, &["--dir", "--job", "--operation", "--input", "--model", "--retention-policy", "--created-at", "--out", "--manifest-out", "--full"]),
@@ -387,7 +388,8 @@ pub(crate) fn capabilities() -> Value {
             {"code": "identity-observation-unavailable", "meaning": "MDP-231 runtime identity observations could not be established"},
             {"code": "invalid_prospect", "meaning": "A prospect input uses unsupported fields or invalid structure"},
             {"code": "missing_card", "meaning": "A referenced card could not be found or read"},
-            {"code": "readme_inventory_drift", "meaning": "The generated README inventory block does not match loaded structured authority"},
+            {"code": "readme_marker_layout_invalid", "meaning": "Machine-owned README region markers are malformed, duplicated, nested, or unmatched"},
+            {"code": "readme_inventory_drift", "meaning": "A machine-owned README ownership or inventory region does not match its canonical projection"},
             {"code": "unsupported_claim", "meaning": "Draft text contains unsupported claims or claim-check failures"},
             {"code": "invalid_proof_output", "meaning": "A proof-output artifact is malformed or references missing or incompatible pack IDs"},
             {"code": "invalid_human_brief", "meaning": "A human-brief source artifact is malformed or missing required gate/proof fields"},
@@ -816,6 +818,12 @@ mod tests {
                 .iter()
                 .any(|code| code["code"] == "output_mode_conflict"),
             "stable_error_codes must list output_mode_conflict"
+        );
+        assert!(
+            error_codes
+                .iter()
+                .any(|code| code["code"] == "readme_marker_layout_invalid"),
+            "stable_error_codes must list every validation-emitted README marker error"
         );
 
         let matrix = contract["matrix"]

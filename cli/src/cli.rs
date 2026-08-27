@@ -80,6 +80,24 @@ pub(crate) enum Commands {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
     },
+    #[command(
+        about = "Project one authoritative, offline readiness answer",
+        after_help = "Example: mdp check --dir ./mdp-demo --job outbound-copy-brief"
+    )]
+    Check {
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(
+            long,
+            help = "Exact jobs[].id to assess; omit for generic pack readiness"
+        )]
+        job: Option<String>,
+        #[arg(
+            long,
+            help = "Optional JSON result from validate-prompt-output for this job's governed input"
+        )]
+        input_validation: Option<PathBuf>,
+    },
     #[command(about = "Print canonical skill inventory and pack-aware eligibility")]
     Skills {
         #[arg(long)]
@@ -191,7 +209,7 @@ pub(crate) enum Commands {
         #[arg(long, help = "Fail validation-style flows on warnings where supported")]
         strict: bool,
     },
-    #[command(about = "Check or refresh the generated README inventory block")]
+    #[command(about = "Check or refresh the machine-owned README ownership and inventory regions")]
     Readme {
         #[command(subcommand)]
         command: ReadmeCommand,
@@ -728,12 +746,14 @@ pub(crate) enum ConformanceCommand {
 
 #[derive(Subcommand)]
 pub(crate) enum ReadmeCommand {
-    #[command(about = "Check the generated README inventory block against loaded authority")]
+    #[command(
+        about = "Check the machine-owned README ownership and inventory regions against loaded authority"
+    )]
     Check {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
     },
-    #[command(about = "Regenerate only the owned README inventory block")]
+    #[command(about = "Regenerate only the machine-owned README ownership and inventory regions")]
     Refresh {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
@@ -809,6 +829,7 @@ pub(crate) enum SchemaTarget {
     Prospect,
     Eval,
     Skills,
+    ReadinessV1,
     RouteBudget,
     RouteBudgetSummaryV1,
 }
@@ -882,6 +903,22 @@ impl RunIsolation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readme_help_names_both_machine_owned_regions() {
+        for args in [
+            vec!["mdp", "readme", "--help"],
+            vec!["mdp", "readme", "check", "--help"],
+            vec!["mdp", "readme", "refresh", "--help"],
+        ] {
+            let help = Cli::try_parse_from(args)
+                .err()
+                .expect("--help should return Clap display output")
+                .to_string();
+            assert!(help.contains("ownership"), "help omitted ownership: {help}");
+            assert!(help.contains("inventory"), "help omitted inventory: {help}");
+        }
+    }
 
     #[test]
     fn conformance_compile_requires_candidate_and_artifact_root() {
@@ -1146,6 +1183,41 @@ mod tests {
             parsed.command,
             Commands::Requirements { dir, job }
                 if dir == PathBuf::from("example-pack") && job == "prospect-fit-or-brief"
+        ));
+    }
+
+    #[test]
+    fn check_accepts_generic_job_and_optional_input_validation_forms() {
+        let generic = Cli::try_parse_from(["mdp", "check", "--dir", "pack"])
+            .expect("generic readiness form should parse");
+        assert!(matches!(
+            generic.command,
+            Commands::Check {
+                dir,
+                job: None,
+                input_validation: None
+            } if dir == PathBuf::from("pack")
+        ));
+
+        let selected = Cli::try_parse_from([
+            "mdp",
+            "--json",
+            "check",
+            "--dir",
+            "pack",
+            "--job",
+            "outbound-copy-brief",
+            "--input-validation",
+            "validation.json",
+        ])
+        .expect("selected readiness form should parse");
+        assert!(matches!(
+            selected.command,
+            Commands::Check {
+                job: Some(job),
+                input_validation: Some(path),
+                ..
+            } if job == "outbound-copy-brief" && path == PathBuf::from("validation.json")
         ));
     }
 

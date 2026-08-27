@@ -19,7 +19,7 @@ belong in `signals[].source` and `normalization_trace`, not in `inputs_used`.
 
 ## Workflow
 
-For the normal path, follow [Managed Workflow Bundle Handoff](../../mdp/references/workflow-bundle-handoff.md).
+For the normal path, follow Managed Workflow Bundle Handoff.
 Keep requirements, source-attempt requests, collected results, normalization,
 routing, and prompt receipts inside the invocation-owned restricted scratch
 root. The user supplies only the exact pack, job, and approved prospect/source

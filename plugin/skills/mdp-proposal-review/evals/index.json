@@ -5,7 +5,8 @@
   "trigger_case_ids": [
     "proposal-bid-train", "proposal-compliance-train", "proposal-proof-train", "proposal-red-team-train",
     "proposal-bid-validation", "proposal-compliance-validation", "proposal-proof-validation", "proposal-red-team-validation",
-    "proposal-bid-typo-train", "proposal-proof-indirect-train", "proposal-compliance-typo-validation", "proposal-red-team-indirect-validation"
+    "proposal-bid-typo-train", "proposal-proof-indirect-train", "proposal-compliance-typo-validation", "proposal-red-team-indirect-validation",
+    "proposal-named-mdp-train", "proposal-named-mdp-validation"
   ],
   "output_case_ids": [
     "proposal-bid-train", "proposal-compliance-train", "proposal-proof-train", "proposal-red-team-train",

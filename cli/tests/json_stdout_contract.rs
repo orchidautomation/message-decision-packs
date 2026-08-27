@@ -174,9 +174,17 @@ fn prepare_run_argument_errors_share_the_actionable_code_across_presentations() 
     assert!(json_stderr.is_empty());
     let value = value.expect("JSON prepare-run error envelope");
     assert_eq!(
-        value["data"]["actionable_diagnostics"][0]["code"],
+        value["actionable_diagnostics"][0]["code"],
         "invalid_argument"
     );
+    assert_eq!(value["diagnostic_contract"], "mdp.actionable-diagnostic.v1");
+    assert!(value["data"].get("diagnostic_contract").is_none());
+    assert!(value["data"].get("actionable_diagnostics").is_none());
+
+    let (_, _, _, schema) = run(&["--json", "schema", "run-request-compile-v1"], Case::Ok);
+    let schema = schema.expect("compile schema envelope");
+    jsonschema::draft202012::validate(&schema["data"], &value["data"])
+        .expect("argument-error data must satisfy the closed compile schema");
 
     let output = Command::new(mdp_bin())
         .args(["prepare-run", "--definitely-unsupported"])
@@ -213,6 +221,273 @@ fn successful_target_command_advertises_empty_versioned_diagnostics() {
         "transport diagnostics must not mutate the init domain contract"
     );
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn strict_validate_keeps_readme_mechanical_warning_advisory_in_json_and_exit() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-strict-readme-advisory-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create fixture root");
+    let init = Command::new(mdp_bin())
+        .args(["--json", "init", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("initialize fixture pack");
+    assert!(init.status.success(), "init failed: {:?}", init.stdout);
+
+    let readme_path = root.join(".mdp/README.md");
+    let readme = std::fs::read_to_string(&readme_path).expect("read starter README");
+    let edited = readme.replacen(
+        "## Sources\n\n",
+        "## Sources\n\n- `missing-advisory`: synthetic fixture\n",
+        1,
+    );
+    assert_ne!(
+        edited, readme,
+        "fixture should edit the exact Sources section"
+    );
+    std::fs::write(&readme_path, edited).expect("write advisory reference");
+
+    let output = Command::new(mdp_bin())
+        .args(["--json", "validate", "--strict", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("strict validate fixture pack");
+    assert_eq!(output.status.code(), Some(0), "stdout: {:?}", output.stdout);
+    assert!(output.stderr.is_empty());
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one JSON validation envelope");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["data"]["valid"], true);
+    assert_eq!(envelope["data"]["strict"]["warning_count"], 0);
+    assert!(envelope["data"]["issues"].as_array().is_some_and(|issues| {
+        issues.iter().any(|issue| {
+            issue["code"] == "readme_human_source_reference_missing"
+                && issue["authority"] == "non-authoritative-mechanical-warning"
+        })
+    }));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn validate_and_strict_fail_closed_on_malformed_readme_markers() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-validate-readme-markers-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create fixture root");
+    let init = Command::new(mdp_bin())
+        .args(["--json", "init", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("initialize fixture pack");
+    assert!(init.status.success(), "init failed: {:?}", init.stdout);
+
+    let readme_path = root.join(".mdp/README.md");
+    let mut readme = std::fs::read_to_string(&readme_path).expect("read starter README");
+    readme.push_str("<!-- mdp:readme-ownership v1 begin -->");
+    std::fs::write(&readme_path, readme).expect("write malformed marker layout");
+
+    for strict in [false, true] {
+        let mut command = Command::new(mdp_bin());
+        command.args(["--json", "validate"]);
+        if strict {
+            command.arg("--strict");
+        }
+        let output = command
+            .arg("--dir")
+            .arg(&root)
+            .output()
+            .expect("validate fixture pack");
+        assert_eq!(output.status.code(), Some(1), "stdout: {:?}", output.stdout);
+        assert!(output.stderr.is_empty());
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("one JSON validation envelope");
+        assert_eq!(envelope["ok"], true);
+        assert_eq!(envelope["data"]["valid"], false);
+        assert!(envelope["data"]["issues"].as_array().is_some_and(|issues| {
+            issues.iter().any(|issue| {
+                issue["code"] == "readme_marker_layout_invalid" && issue["severity"] == "error"
+            })
+        }));
+    }
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn ownership_legend_drift_blocks_check_and_strict_but_remains_warning_first() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-readme-ownership-drift-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create fixture root");
+    let init = Command::new(mdp_bin())
+        .args(["--json", "init", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("initialize fixture pack");
+    assert!(init.status.success(), "init failed: {:?}", init.stdout);
+
+    let readme_path = root.join(".mdp/README.md");
+    let readme = std::fs::read_to_string(&readme_path).expect("read starter README");
+    let edited = readme.replacen(
+        "Machine-owned: this ownership legend",
+        "Machine-owned: edited ownership legend",
+        1,
+    );
+    assert_ne!(edited, readme, "fixture must edit the owned legend");
+    std::fs::write(&readme_path, edited).expect("write edited legend");
+
+    let check = Command::new(mdp_bin())
+        .args(["--json", "readme", "check", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("readme check");
+    assert_eq!(check.status.code(), Some(1), "stdout: {:?}", check.stdout);
+    assert!(check.stderr.is_empty());
+    let check_envelope: serde_json::Value =
+        serde_json::from_slice(&check.stdout).expect("readme check JSON");
+    assert_eq!(check_envelope["data"]["status"], "stale");
+    assert_eq!(
+        check_envelope["data"]["changed_generated_regions"],
+        serde_json::json!(["ownership"])
+    );
+    assert_eq!(
+        check_envelope["data"]["diagnostics"][0]["code"],
+        "readme_inventory_drift"
+    );
+
+    for (strict, expected_exit, expected_valid) in [(false, 0, true), (true, 1, false)] {
+        let mut command = Command::new(mdp_bin());
+        command.args(["--json", "validate"]);
+        if strict {
+            command.arg("--strict");
+        }
+        let output = command
+            .arg("--dir")
+            .arg(&root)
+            .output()
+            .expect("validate fixture pack");
+        assert_eq!(output.status.code(), Some(expected_exit));
+        assert!(output.stderr.is_empty());
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("validate JSON");
+        assert_eq!(envelope["data"]["valid"], expected_valid);
+        assert!(envelope["data"]["issues"].as_array().is_some_and(|issues| {
+            issues.iter().any(|issue| {
+                issue["code"] == "readme_inventory_drift" && issue["severity"] == "warning"
+            })
+        }));
+        if strict {
+            assert_eq!(envelope["data"]["strict"]["warning_count"], 1);
+            assert_eq!(
+                envelope["data"]["strict_warnings"][0]["code"],
+                "readme_inventory_drift"
+            );
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn partial_readme_regions_are_stale_and_strict_blocked_in_both_directions() {
+    let cases = [
+        (
+            "ownership",
+            "<!-- mdp:readme-inventory v1 begin -->",
+            "<!-- mdp:readme-inventory v1 end -->",
+            "inventory",
+        ),
+        (
+            "inventory",
+            "<!-- mdp:readme-ownership v1 begin -->",
+            "<!-- mdp:readme-ownership v1 end -->",
+            "ownership",
+        ),
+    ];
+    for (kept, remove_begin, remove_end, missing) in cases {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-readme-partial-{kept}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create fixture root");
+        let init = Command::new(mdp_bin())
+            .args(["--json", "init", "--dir"])
+            .arg(&root)
+            .output()
+            .expect("initialize fixture pack");
+        assert!(init.status.success(), "init failed: {:?}", init.stdout);
+
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("read starter README");
+        let begin = readme.find(remove_begin).expect("begin marker");
+        let end_marker =
+            readme[begin..].find(remove_end).expect("end marker") + begin + remove_end.len();
+        let end = if readme.as_bytes().get(end_marker) == Some(&b'\n') {
+            end_marker + 1
+        } else {
+            end_marker
+        };
+        let partial = format!("{}{}", &readme[..begin], &readme[end..]);
+        std::fs::write(&readme_path, partial).expect("write partial README");
+
+        let check = Command::new(mdp_bin())
+            .args(["--json", "readme", "check", "--dir"])
+            .arg(&root)
+            .output()
+            .expect("readme check");
+        assert_eq!(check.status.code(), Some(1), "kept {kept}");
+        assert!(check.stderr.is_empty());
+        let check_envelope: serde_json::Value =
+            serde_json::from_slice(&check.stdout).expect("readme check JSON");
+        assert_eq!(check_envelope["data"]["status"], "stale");
+        assert_eq!(check_envelope["data"]["valid"], false);
+        assert_eq!(
+            check_envelope["data"]["generated_region_sha256"][missing]["actual"],
+            serde_json::Value::Null
+        );
+        assert!(check_envelope["data"]["generated_region_sha256"][kept]["actual"].is_string());
+
+        let strict = Command::new(mdp_bin())
+            .args(["--json", "validate", "--strict", "--dir"])
+            .arg(&root)
+            .output()
+            .expect("strict validate");
+        assert_eq!(strict.status.code(), Some(1), "kept {kept}");
+        assert!(strict.stderr.is_empty());
+        let strict_envelope: serde_json::Value =
+            serde_json::from_slice(&strict.stdout).expect("strict validate JSON");
+        assert_eq!(strict_envelope["data"]["valid"], false);
+        assert!(
+            strict_envelope["data"]["strict_warnings"]
+                .as_array()
+                .is_some_and(|warnings| warnings
+                    .iter()
+                    .any(|warning| warning["code"] == "readme_inventory_drift"))
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
 
 #[test]
@@ -472,16 +747,37 @@ fn unknown_subcommand_in_json_mode_writes_one_json_envelope() {
 
 #[test]
 fn prepare_run_blocked_envelope_preserves_single_json_value() {
-    let (code, stdout, _stderr, value) = run(&["--json", "prepare-run"], Case::Ok);
+    let (code, stdout, _stderr, value) = run(
+        &[
+            "--json",
+            "prepare-run",
+            "--job",
+            "missing-job",
+            "--model",
+            "test-model",
+        ],
+        Case::Ok,
+    );
     let parsed = value.expect("prepare-run blocked parses as JSON");
     assert_eq!(parsed["ok"], serde_json::json!(false));
     assert_eq!(parsed["command"], "prepare-run");
     assert_eq!(parsed["data"]["contract"], "mdp.run-request-compile.v1");
     assert_eq!(parsed["data"]["status"], "blocked");
+    let blocked_code = parsed["data"]["diagnostics"][0]["code"]
+        .as_str()
+        .expect("bounded blocked diagnostic code");
     assert_eq!(
-        parsed["data"]["diagnostics"][0]["code"],
-        "cli-arguments-invalid"
+        parsed["diagnostic_contract"],
+        "mdp.actionable-diagnostic.v1"
     );
+    assert_eq!(parsed["actionable_diagnostics"][0]["code"], blocked_code);
+    assert!(parsed["data"].get("diagnostic_contract").is_none());
+    assert!(parsed["data"].get("actionable_diagnostics").is_none());
+
+    let (_, _, _, schema) = run(&["--json", "schema", "run-request-compile-v1"], Case::Ok);
+    let schema = schema.expect("compile schema envelope");
+    jsonschema::draft202012::validate(&schema["data"], &parsed["data"])
+        .expect("blocked data must satisfy the closed compile schema");
     assert!(!stdout.contains("error:"));
     let _ = code;
 }
