@@ -308,10 +308,12 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut previous_container = None;
     let mut paragraph_open = false;
     let mut definition_title_pending: Option<MarkdownContainer> = None;
+    let mut definition_destination_pending: Option<MarkdownContainer> = None;
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
         let pending_definition_title = definition_title_pending.take();
+        let pending_definition_destination = definition_destination_pending.take();
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) =
             container_state.project(line, opening_container, paragraph_open);
@@ -323,6 +325,13 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
                         && project_container_path(line, opening_container).is_some()
                         && is_link_title_continuation(block_content)
                 });
+        let definition_destination_continuation = pending_definition_destination
+            .as_ref()
+            .filter(|opening_container| {
+                **opening_container == container
+                    && project_container_path(line, opening_container).is_some()
+            })
+            .and_then(|_| link_definition_suffix_title_state(block_content));
         if previous_container.is_some_and(|previous| previous != container) {
             indented_code = false;
             indented_code_can_start = true;
@@ -387,9 +396,14 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         // re-enables block start; ordinary prose keeps later indentation in
         // the paragraph, where inline code spans remain mechanically visible.
         indented_code_can_start = blank;
-        definition_title_pending =
-            (link_reference_title_state(block_content) == Some(false)).then_some(container.clone());
-        paragraph_open = !definition_title_continuation && line_continues_paragraph(block_content);
+        definition_title_pending = (link_reference_title_state(block_content) == Some(false)
+            || definition_destination_continuation == Some(false))
+        .then_some(container.clone());
+        definition_destination_pending =
+            is_link_reference_destination_pending(block_content).then_some(container.clone());
+        paragraph_open = !definition_title_continuation
+            && definition_destination_continuation.is_none()
+            && line_continues_paragraph(block_content);
     }
     code_span_tokens(&visible)
 }
@@ -470,6 +484,28 @@ fn link_reference_title_state(line: &str) -> Option<bool> {
         }
     }
     None
+}
+
+fn is_link_reference_destination_pending(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
+        return false;
+    }
+    let bytes = trimmed.as_bytes();
+    let mut escaped = false;
+    for index in 1..bytes.len().min(1001) {
+        match bytes[index] {
+            b'\\' if !escaped => escaped = true,
+            b']' if !escaped => {
+                return index > 1
+                    && bytes.get(index + 1) == Some(&b':')
+                    && trimmed[index + 2..].trim_matches([' ', '\t']).is_empty();
+            }
+            b'[' if !escaped => return false,
+            _ => escaped = false,
+        }
+    }
+    false
 }
 
 fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
@@ -705,6 +741,9 @@ fn list_item_content(line: &str, paragraph_open: bool) -> Option<(usize, &str)> 
     if whitespace_end == marker_end {
         return None;
     }
+    if paragraph_open && whitespace_end == bytes.len() {
+        return None;
+    }
     let padding = content_column - marker_column;
     let (content_start, content_indent) = if padding <= 4 || whitespace_end == bytes.len() {
         (whitespace_end, content_column)
@@ -806,10 +845,12 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut container_state = MarkdownContainerState::default();
     let mut paragraph_open = false;
     let mut definition_title_pending: Option<MarkdownContainer> = None;
+    let mut definition_destination_pending: Option<MarkdownContainer> = None;
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
         let pending_definition_title = definition_title_pending.take();
+        let pending_definition_destination = definition_destination_pending.take();
         let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) =
             container_state.project(line, opening_container, paragraph_open);
@@ -821,6 +862,13 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
                         && project_container_path(line, opening_container).is_some()
                         && is_link_title_continuation(block_content)
                 });
+        let definition_destination_continuation = pending_definition_destination
+            .as_ref()
+            .filter(|opening_container| {
+                **opening_container == container
+                    && project_container_path(line, opening_container).is_some()
+            })
+            .and_then(|_| link_definition_suffix_title_state(block_content));
         if fence
             .as_ref()
             .is_some_and(|(_, _, opening_container)| *opening_container != container)
@@ -848,9 +896,14 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             paragraph_open = false;
             continue;
         }
-        definition_title_pending =
-            (link_reference_title_state(block_content) == Some(false)).then_some(container.clone());
-        paragraph_open = !definition_title_continuation && line_continues_paragraph(block_content);
+        definition_title_pending = (link_reference_title_state(block_content) == Some(false)
+            || definition_destination_continuation == Some(false))
+        .then_some(container.clone());
+        definition_destination_pending =
+            is_link_reference_destination_pending(block_content).then_some(container.clone());
+        paragraph_open = !definition_title_continuation
+            && definition_destination_continuation.is_none()
+            && line_continues_paragraph(block_content);
         if !in_sources {
             continue;
         }
@@ -1623,6 +1676,20 @@ Inline `inline-code` must be ignored.
             ),
             vec!["cards/sibling-definition-visible.yaml"],
             "a definition title continuation cannot move to a sibling list item"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "[ref]:\n  /url\n2. ```markdown\n   `cards/destination-continuation-hidden.yaml`\n   ```\nRoot `cards/destination-continuation-visible.yaml`.\n"
+            ),
+            vec!["cards/destination-continuation-visible.yaml"],
+            "a continued link destination completes the definition block"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "Paragraph\n- \n2. ```markdown\n   `cards/after-empty-item-visible.yaml`\n   ```\nRoot `cards/after-empty-item-hidden.yaml`.\n"
+            ),
+            vec!["cards/after-empty-item-visible.yaml"],
+            "an empty list item cannot interrupt an open paragraph"
         );
     }
 
