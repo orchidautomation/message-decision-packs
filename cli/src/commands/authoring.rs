@@ -355,6 +355,10 @@ pub(crate) fn apply_pack_change_set(
     let captured_candidate = capture_inventory(&candidate_root)?;
     let validation = validation_summary_for_snapshot(&captured_candidate)?;
     if !validation.valid {
+        let reason_codes = reasons_with_recovery_evidence(
+            vec!["candidate-validation-failed"],
+            recovered.evidence_retained,
+        );
         return Ok(result_value(
             Some(&change_set),
             "refused",
@@ -365,7 +369,7 @@ pub(crate) fn apply_pack_change_set(
             &paths_for(&change_set, "delete"),
             &[".mdp".to_string()],
             &[],
-            &["candidate-validation-failed"],
+            &reason_codes,
             Some(validation),
         ));
     }
@@ -373,13 +377,17 @@ pub(crate) fn apply_pack_change_set(
     let expected_candidate = candidate_inventory(&change_set);
     let candidate_conflicts = inventory_conflicts(&expected_candidate, &captured_candidate.states);
     if !candidate_conflicts.is_empty() {
+        let reason_codes = reasons_with_recovery_evidence(
+            vec!["candidate-changed-after-preview"],
+            recovered.evidence_retained,
+        );
         return Ok(result_from_change_set(
             &change_set,
             "refused",
             false,
             &candidate_conflicts,
             &[],
-            &["candidate-changed-after-preview"],
+            &reason_codes,
             None,
         ));
     }
@@ -387,13 +395,17 @@ pub(crate) fn apply_pack_change_set(
     if recovered.outcome == RecoveryOutcome::Committed
         && inventory(&live_root)? == expected_candidate
     {
+        let reason_codes = reasons_with_recovery_evidence(
+            vec!["interrupted-commit-recovered"],
+            recovered.evidence_retained,
+        );
         return Ok(result_from_change_set(
             &change_set,
             "applied",
             true,
             &[],
             &[],
-            &["interrupted-commit-recovered"],
+            &reason_codes,
             None,
         ));
     }
@@ -402,13 +414,17 @@ pub(crate) fn apply_pack_change_set(
     let expected_live = expected_inventory(&change_set);
     let live_conflicts = inventory_conflicts(&expected_live, &live);
     if !live_conflicts.is_empty() {
+        let reason_codes = reasons_with_recovery_evidence(
+            vec!["live-pack-changed-after-preview"],
+            recovered.evidence_retained,
+        );
         return Ok(result_from_change_set(
             &change_set,
             "refused",
             false,
             &live_conflicts,
             &[],
-            &["live-pack-changed-after-preview"],
+            &reason_codes,
             None,
         ));
     }
@@ -420,38 +436,39 @@ pub(crate) fn apply_pack_change_set(
         initial_live_identity,
         initial_parent_identity,
     ) {
-        Ok(evidence_retained) => Ok(result_from_change_set(
-            &change_set,
-            "applied",
-            true,
-            &[],
-            &[],
-            if evidence_retained {
-                &["recovery-evidence-retained"]
-            } else {
-                &[]
-            },
-            None,
-        )),
+        Ok(evidence_retained) => {
+            let reason_codes = reasons_with_recovery_evidence(
+                vec![],
+                recovered.evidence_retained || evidence_retained,
+            );
+            Ok(result_from_change_set(
+                &change_set,
+                "applied",
+                true,
+                &[],
+                &[],
+                &reason_codes,
+                None,
+            ))
+        }
         Err(PublicationFailure::RolledBack {
             paths,
             evidence_retained,
-        }) => Ok(result_from_change_set(
-            &change_set,
-            "rolled-back",
-            false,
-            &[],
-            &paths,
-            if evidence_retained {
-                &[
-                    "publication-failed-rolled-back",
-                    "recovery-evidence-retained",
-                ]
-            } else {
-                &["publication-failed-rolled-back"]
-            },
-            None,
-        )),
+        }) => {
+            let reason_codes = reasons_with_recovery_evidence(
+                vec!["publication-failed-rolled-back"],
+                recovered.evidence_retained || evidence_retained,
+            );
+            Ok(result_from_change_set(
+                &change_set,
+                "rolled-back",
+                false,
+                &[],
+                &paths,
+                &reason_codes,
+                None,
+            ))
+        }
         Err(PublicationFailure::Indeterminate { message }) => Err(anyhow!(message)),
     }
 }
@@ -477,6 +494,16 @@ enum RecoveryOutcome {
 struct RecoveryResult {
     outcome: RecoveryOutcome,
     evidence_retained: bool,
+}
+
+fn reasons_with_recovery_evidence(
+    mut reason_codes: Vec<&'static str>,
+    evidence_retained: bool,
+) -> Vec<&'static str> {
+    if evidence_retained && !reason_codes.contains(&"recovery-evidence-retained") {
+        reason_codes.push("recovery-evidence-retained");
+    }
+    reason_codes
 }
 
 fn publish(

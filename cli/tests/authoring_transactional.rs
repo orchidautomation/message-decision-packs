@@ -444,6 +444,14 @@ fn crash_after_commit_marker_finishes_cleanup_without_rolling_back() {
             .iter()
             .any(|code| code == "interrupted-commit-recovered")
     );
+    assert!(
+        result["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|code| code == "recovery-evidence-retained"),
+        "interrupted commit recovery must report retained evidence: {result}"
+    );
     assert_eq!(snapshot(&live), snapshot(&candidate));
     let _ = fs::remove_dir_all(root);
 }
