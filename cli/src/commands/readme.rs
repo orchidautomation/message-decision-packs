@@ -854,6 +854,17 @@ fn is_link_reference_destination_pending(line: &str) -> bool {
 }
 
 fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
+    let trailing = link_definition_trailing_title(suffix)?;
+    if trailing.is_empty() {
+        Some(false)
+    } else if incomplete_title_closer(trailing).is_some() {
+        Some(false)
+    } else {
+        valid_link_title(trailing).then_some(true)
+    }
+}
+
+fn link_definition_trailing_title(suffix: &str) -> Option<&str> {
     let rest = suffix.trim_start_matches([' ', '\t']);
     if rest.is_empty() {
         return None;
@@ -900,14 +911,7 @@ fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
         }
         end
     };
-    let trailing = rest[destination_end..].trim_matches([' ', '\t']);
-    if trailing.is_empty() {
-        Some(false)
-    } else if incomplete_link_title_closer(trailing).is_some() {
-        Some(false)
-    } else {
-        valid_link_title(trailing).then_some(true)
-    }
+    Some(rest[destination_end..].trim_matches([' ', '\t']))
 }
 
 fn link_definition_continuation_title_state(line: &str) -> Option<bool> {
@@ -943,23 +947,45 @@ fn valid_link_title(title: &str) -> bool {
 }
 
 fn incomplete_link_title_closer(line: &str) -> Option<char> {
-    let trimmed = line.trim_start_matches([' ', '\t']);
-    let mut candidates = Vec::new();
-    for (index, character) in trimmed.char_indices() {
-        if matches!(character, '"' | '\'' | '(')
-            && (index == 0
-                || trimmed[..index]
-                    .chars()
-                    .next_back()
-                    .is_some_and(|previous| matches!(previous, ' ' | '\t')))
-        {
-            candidates.push((index, character));
+    let suffix = reference_definition_suffix(line).unwrap_or(line);
+    let trailing = link_definition_trailing_title(suffix)?;
+    incomplete_title_closer(trailing)
+}
+
+fn reference_definition_suffix(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start_matches(' ');
+    if !trimmed.starts_with('[') {
+        return None;
+    }
+    let mut escaped = false;
+    let mut label_characters = 0usize;
+    for (offset, character) in trimmed[1..].char_indices() {
+        let index = 1 + offset;
+        match character {
+            '\\' if !escaped => escaped = true,
+            ']' if !escaped => {
+                return (trimmed.as_bytes().get(index + 1) == Some(&b':'))
+                    .then_some(&trimmed[index + 2..]);
+            }
+            '[' if !escaped => return None,
+            _ => escaped = false,
+        }
+        label_characters += 1;
+        if label_characters > 999 {
+            return None;
         }
     }
-    let (index, opening) = candidates.into_iter().next_back()?;
+    None
+}
+
+fn incomplete_title_closer(title: &str) -> Option<char> {
+    let opening = title.chars().next()?;
+    if !matches!(opening, '"' | '\'' | '(') {
+        return None;
+    }
     let closing = if opening == '(' { ')' } else { opening };
     let mut escaped = false;
-    for character in trimmed[index + opening.len_utf8()..].chars() {
+    for character in title[opening.len_utf8()..].chars() {
         match character {
             '\\' if !escaped => escaped = true,
             character if character == closing && !escaped => return None,
@@ -2591,6 +2617,32 @@ Inline `inline-code` must be ignored.
         );
         assert_eq!(
             std::fs::read_to_string(&readme_path).expect("README after refusal"),
+            adversarial
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn multiline_title_tracks_its_actual_opening_delimiter() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-title-delimiter-{}", nonce()));
+        init_pack(&root, "Title Delimiter Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let prefix = "[ref]: /url \"multi '\nline\"\n2. ```markdown\n   human fence body\n   ```";
+        let adversarial = readme.replacen(
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            &format!("{prefix}\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+            1,
+        );
+        std::fs::write(&readme_path, &adversarial).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "fresh", "{checked}");
+        let dry_run = refresh_readme(&root, None, true).expect("dry-run refresh");
+        assert_eq!(dry_run["status"], "dry-run");
+        assert_eq!(
+            std::fs::read_to_string(&readme_path).expect("README after dry run"),
             adversarial
         );
         let _ = std::fs::remove_dir_all(root);
