@@ -21,15 +21,10 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
     let readme_path = root.join(DEFAULT_DIR).join("README.md");
     let existing = fs::read_to_string(&readme_path).unwrap_or_default();
     validate_readme_regions(&existing).map_err(|message| anyhow!(message))?;
-    let (manifest, cards, source_ledger, prompt_ids) = load_readme_authority(root)?;
-    let warnings = human_reference_warnings(&existing, &manifest, &source_ledger, &readme_path);
-    let card_refs = cards.iter().collect::<Vec<_>>();
-    let fresh_block = render_inventory_block(&manifest, &card_refs, &source_ledger, &prompt_ids);
-    let fresh_ownership = render_ownership_block();
     let existing_ownership = extract_ownership_block(&existing);
     let existing_inventory = extract_inventory_block(&existing);
-    let changed_generated_regions = changed_generated_regions(&existing, Some(&fresh_block));
     if existing_ownership.is_none() && existing_inventory.is_none() {
+        let changed_generated_regions = vec!["ownership", "inventory"];
         return Ok(json!({
             "contract": README_INVENTORY_CONTRACT,
             "status": "unassessed",
@@ -43,9 +38,15 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
             "changed_generated_regions": changed_generated_regions,
             "untouched_human_regions": untouched_human_regions(),
             "semantic_prose_review": "not-performed",
-            "warnings": warnings
+            "warnings": []
         }));
     }
+    let (manifest, cards, source_ledger, prompt_ids) = load_readme_authority(root)?;
+    let warnings = human_reference_warnings(&existing, &manifest, &source_ledger, &readme_path);
+    let card_refs = cards.iter().collect::<Vec<_>>();
+    let fresh_block = render_inventory_block(&manifest, &card_refs, &source_ledger, &prompt_ids);
+    let fresh_ownership = render_ownership_block();
+    let changed_generated_regions = changed_generated_regions(&existing, Some(&fresh_block));
 
     if changed_generated_regions.is_empty() {
         Ok(json!({
@@ -395,7 +396,6 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         // CommonMark indented code cannot interrupt a paragraph. A blank line
         // re-enables block start; ordinary prose keeps later indentation in
         // the paragraph, where inline code spans remain mechanically visible.
-        indented_code_can_start = blank;
         let definition_can_start = !paragraph_open;
         definition_title_pending = ((definition_can_start
             && link_reference_title_state(block_content) == Some(false))
@@ -404,10 +404,11 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         definition_destination_pending = (definition_can_start
             && is_link_reference_destination_pending(block_content))
         .then_some(container.clone());
-        let paragraph_continues = line_continues_paragraph(block_content)
+        let paragraph_continues = line_continues_paragraph(block_content, paragraph_open)
             || (paragraph_open
                 && (markdown_indent_columns(block_content) >= 4
                     || is_link_reference_definition(block_content)));
+        indented_code_can_start = blank || !paragraph_continues;
         paragraph_open = !definition_title_continuation
             && definition_destination_continuation.is_none()
             && paragraph_continues;
@@ -427,12 +428,12 @@ fn markdown_indent_columns(line: &str) -> usize {
     columns
 }
 
-fn line_continues_paragraph(line: &str) -> bool {
+fn line_continues_paragraph(line: &str, paragraph_open: bool) -> bool {
     let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
     !blank
         && markdown_indent_columns(line) < 4
         && !is_atx_heading(line)
-        && !is_thematic_or_setext_line(line)
+        && !is_thematic_or_setext_line(line, paragraph_open)
         && !is_link_reference_definition(line)
         && !line.trim_start_matches([' ', '\t']).starts_with("<!--")
 }
@@ -446,12 +447,12 @@ fn is_atx_heading(line: &str) -> bool {
     (1..=6).contains(&hashes) && matches!(trimmed.as_bytes().get(hashes), None | Some(b' ' | b'\t'))
 }
 
-fn is_thematic_or_setext_line(line: &str) -> bool {
+fn is_thematic_or_setext_line(line: &str, paragraph_open: bool) -> bool {
     let trimmed = line.trim_matches([' ', '\t']);
-    if trimmed.len() >= 1 && trimmed.bytes().all(|byte| byte == b'=') {
+    if paragraph_open && !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'=') {
         return true;
     }
-    if !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'-') {
+    if paragraph_open && !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'-') {
         return true;
     }
     for marker in [b'-', b'_', b'*'] {
@@ -485,9 +486,13 @@ fn link_reference_title_state(line: &str) -> Option<bool> {
         match bytes[index] {
             b'\\' if !escaped => escaped = true,
             b']' if !escaped => {
-                return (index > 1 && bytes.get(index + 1) == Some(&b':'))
-                    .then(|| link_definition_suffix_title_state(&trimmed[index + 2..]))
-                    .flatten();
+                return (index > 1
+                    && trimmed[1..index]
+                        .chars()
+                        .any(|character| !character.is_whitespace())
+                    && bytes.get(index + 1) == Some(&b':'))
+                .then(|| link_definition_suffix_title_state(&trimmed[index + 2..]))
+                .flatten();
             }
             b'[' if !escaped => return None,
             _ => escaped = false,
@@ -508,6 +513,9 @@ fn is_link_reference_destination_pending(line: &str) -> bool {
             b'\\' if !escaped => escaped = true,
             b']' if !escaped => {
                 return index > 1
+                    && trimmed[1..index]
+                        .chars()
+                        .any(|character| !character.is_whitespace())
                     && bytes.get(index + 1) == Some(&b':')
                     && trimmed[index + 2..].trim_matches([' ', '\t']).is_empty();
             }
@@ -920,7 +928,7 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
         definition_destination_pending = (definition_can_start
             && is_link_reference_destination_pending(block_content))
         .then_some(container.clone());
-        let paragraph_continues = line_continues_paragraph(block_content)
+        let paragraph_continues = line_continues_paragraph(block_content, paragraph_open)
             || (paragraph_open
                 && (markdown_indent_columns(block_content) >= 4
                     || is_link_reference_definition(block_content)));
@@ -1269,6 +1277,12 @@ mod tests {
         );
         assert_eq!(result["generated_regions"][0]["changed"], true);
         assert_eq!(result["generated_regions"][1]["changed"], true);
+        let manifest = read_manifest(&root).expect("manifest");
+        let missing_card = resolve_pack_path(&root, &manifest.cards[0].path).expect("card path");
+        std::fs::remove_file(missing_card).expect("remove declared card");
+        let broken_authority = check_readme(&root).expect("markerless check stays unassessed");
+        assert_eq!(broken_authority["status"], "unassessed");
+        assert_eq!(broken_authority["warnings"], json!([]));
         assert!(readme_validation_issues(&root).is_empty());
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1734,6 +1748,24 @@ Inline `inline-code` must be ignored.
             ),
             vec!["cards/paragraph-definition-visible.yaml"],
             "a link definition cannot interrupt an open paragraph"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "=\n2. ```markdown\n   `cards/standalone-equals-visible.yaml`\n   ```\nRoot `cards/standalone-equals-hidden.yaml`.\n"
+            ),
+            vec!["cards/standalone-equals-visible.yaml"],
+            "a standalone equals line is paragraph content, not a setext underline"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "[ ]: /url\n2. ```markdown\n   `cards/blank-label-visible.yaml`\n   ```\nRoot `cards/blank-label-hidden.yaml`.\n"
+            ),
+            vec!["cards/blank-label-visible.yaml"],
+            "a whitespace-only reference label is invalid paragraph content"
+        );
+        assert!(
+            inline_code_tokens("# Example\n    `cards/heading-indented-code.yaml`\n").is_empty(),
+            "indented code may begin immediately after a heading"
         );
     }
 

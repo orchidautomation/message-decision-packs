@@ -514,7 +514,7 @@ impl MarkdownFenceScanner {
             self.definition_destination_pending = (definition_can_start
                 && is_link_reference_destination_pending(block_content))
             .then_some(container);
-            let paragraph_continues = line_continues_paragraph(block_content)
+            let paragraph_continues = line_continues_paragraph(block_content, self.paragraph_open)
                 || (self.paragraph_open
                     && (markdown_indent_columns(block_content) >= 4
                         || is_link_reference_definition(block_content)));
@@ -661,12 +661,12 @@ fn markdown_indent_columns(line: &str) -> usize {
     columns
 }
 
-fn line_continues_paragraph(line: &str) -> bool {
+fn line_continues_paragraph(line: &str, paragraph_open: bool) -> bool {
     let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
     !blank
         && markdown_indent_columns(line) < 4
         && !is_atx_heading(line)
-        && !is_thematic_or_setext_line(line)
+        && !is_thematic_or_setext_line(line, paragraph_open)
         && !is_link_reference_definition(line)
         && !line.trim_start_matches([' ', '\t']).starts_with("<!--")
 }
@@ -680,12 +680,12 @@ fn is_atx_heading(line: &str) -> bool {
     (1..=6).contains(&hashes) && matches!(trimmed.as_bytes().get(hashes), None | Some(b' ' | b'\t'))
 }
 
-fn is_thematic_or_setext_line(line: &str) -> bool {
+fn is_thematic_or_setext_line(line: &str, paragraph_open: bool) -> bool {
     let trimmed = line.trim_matches([' ', '\t']);
-    if !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'=') {
+    if paragraph_open && !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'=') {
         return true;
     }
-    if !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'-') {
+    if paragraph_open && !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'-') {
         return true;
     }
     for marker in [b'-', b'_', b'*'] {
@@ -719,9 +719,13 @@ fn link_reference_title_state(line: &str) -> Option<bool> {
         match bytes[index] {
             b'\\' if !escaped => escaped = true,
             b']' if !escaped => {
-                return (index > 1 && bytes.get(index + 1) == Some(&b':'))
-                    .then(|| link_definition_suffix_title_state(&trimmed[index + 2..]))
-                    .flatten();
+                return (index > 1
+                    && trimmed[1..index]
+                        .chars()
+                        .any(|character| !character.is_whitespace())
+                    && bytes.get(index + 1) == Some(&b':'))
+                .then(|| link_definition_suffix_title_state(&trimmed[index + 2..]))
+                .flatten();
             }
             b'[' if !escaped => return None,
             _ => escaped = false,
@@ -742,6 +746,9 @@ fn is_link_reference_destination_pending(line: &str) -> bool {
             b'\\' if !escaped => escaped = true,
             b']' if !escaped => {
                 return index > 1
+                    && trimmed[1..index]
+                        .chars()
+                        .any(|character| !character.is_whitespace())
                     && bytes.get(index + 1) == Some(&b':')
                     && trimmed[index + 2..].trim_matches([' ', '\t']).is_empty();
             }
@@ -1476,6 +1483,18 @@ mod tests {
         assert!(open_fence_at_eof(&paragraph_definition).is_some());
         assert_eq!(extract_ownership_block(&paragraph_definition), None);
         assert_eq!(extract_inventory_block(&paragraph_definition), None);
+        for prefix in ["=", "[ ]: /url"] {
+            let ownership = render_ownership_block();
+            let inventory =
+                format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+            let invalid_block = format!(
+                "{prefix}\n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
+            );
+            assert!(validate_readme_regions(&invalid_block).is_ok());
+            assert!(open_fence_at_eof(&invalid_block).is_some());
+            assert_eq!(extract_ownership_block(&invalid_block), None);
+            assert_eq!(extract_inventory_block(&invalid_block), None);
+        }
     }
 
     #[test]
