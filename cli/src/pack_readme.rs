@@ -9,7 +9,7 @@ pub(crate) const README_OWNERSHIP_END: &str = "<!-- mdp:readme-ownership v1 end 
 pub(crate) const README_INVENTORY_BEGIN: &str = "<!-- mdp:readme-inventory v1 begin -->";
 pub(crate) const README_INVENTORY_END: &str = "<!-- mdp:readme-inventory v1 end -->";
 pub(crate) const README_MARKER_DIAGNOSTIC: &str = "README machine-owned markers are malformed; expected zero or exactly one non-overlapping begin/end pair for each generated region";
-pub(crate) const README_FENCE_DIAGNOSTIC: &str = "README refresh cannot append a missing machine-owned region after an unterminated Markdown fence";
+pub(crate) const README_FENCE_DIAGNOSTIC: &str = "README refresh cannot append a missing machine-owned region inside an unterminated Markdown code or raw HTML block";
 
 pub(crate) fn render_pack_readme(
     manifest: &Manifest,
@@ -306,10 +306,10 @@ pub(crate) fn replace_readme_regions(
     fresh_inventory: &str,
 ) -> Result<String, &'static str> {
     validate_readme_regions(readme)?;
-    if extract_inventory_block(readme).is_none() && open_fence_at_eof(readme).is_some() {
+    if extract_inventory_block(readme).is_none() && unsafe_append_block_at_eof(readme) {
         // Inventory migration appends after every existing human-owned byte.
-        // Appending while a valid fence is open would hide the generated
-        // markers inside human code and make every later refresh append again.
+        // Appending while a fenced-code or raw-HTML block is open would hide
+        // the generated markers and make every later refresh append again.
         // Refuse before constructing or writing a changed README instead.
         return Err(README_FENCE_DIAGNOSTIC);
     }
@@ -390,6 +390,7 @@ fn standalone_marker_line_offsets(readme: &str, marker: &str) -> Vec<(usize, usi
     offsets
 }
 
+#[cfg(test)]
 fn open_fence_at_eof(readme: &str) -> Option<(char, usize)> {
     let mut scanner = MarkdownFenceScanner::default();
     for (start, content_end, _) in markdown_line_offsets(readme) {
@@ -399,6 +400,14 @@ fn open_fence_at_eof(readme: &str) -> Option<(char, usize)> {
         .fence
         .as_ref()
         .map(|(character, length, _)| (*character, *length))
+}
+
+fn unsafe_append_block_at_eof(readme: &str) -> bool {
+    let mut scanner = MarkdownFenceScanner::default();
+    for (start, content_end, _) in markdown_line_offsets(readme) {
+        scanner.line_is_fenced(&readme[start..content_end]);
+    }
+    scanner.fence.is_some() || scanner.raw_html_end.is_some()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -582,7 +591,9 @@ fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag
             && lower[opener.len()..]
                 .chars()
                 .next()
-                .is_some_and(|character| character.is_ascii_whitespace() || character == '>')
+                .map_or(true, |character| {
+                    character.is_ascii_whitespace() || character == '>'
+                })
         {
             if !lower.contains(&format!("</{tag}>")) {
                 *end = Some(RawHtmlEnd::Literal(match tag {
@@ -1520,6 +1531,9 @@ mod tests {
         for human in [
             "# Human\n\n```markdown\nkeep these bytes\n",
             "# Human\n\n~~~text\nkeep these bytes\n",
+            "# Human\n\n<script>\nkeep these bytes\n",
+            "# Human\n\n<script\nkeep these bytes\n",
+            "# Human\n\n<!--\nkeep these bytes\n",
         ] {
             for _ in 0..2 {
                 assert_eq!(
@@ -1528,6 +1542,7 @@ mod tests {
                     "an open fence must fail closed on every refresh"
                 );
             }
+            assert!(unsafe_append_block_at_eof(human));
             assert!(extract_ownership_block(human).is_none());
             assert!(extract_inventory_block(human).is_none());
         }
@@ -1769,6 +1784,14 @@ mod tests {
         assert!(validate_readme_regions(&raw_html).is_ok());
         assert_eq!(extract_ownership_block(&raw_html), Some(ownership));
         assert_eq!(extract_inventory_block(&raw_html), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let eol_script = format!(
+            "<script\n{README_OWNERSHIP_BEGIN}\nhuman script bytes\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman script bytes\n{README_INVENTORY_END}\n</script>\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&eol_script).is_ok());
+        assert_eq!(extract_ownership_block(&eol_script), Some(ownership));
+        assert_eq!(extract_inventory_block(&eol_script), Some(inventory));
         let ownership = render_ownership_block();
         let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
         let fenced_script = format!("```markdown\n<script>\n```\n{ownership}\n{inventory}");

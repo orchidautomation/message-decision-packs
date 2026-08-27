@@ -488,7 +488,9 @@ fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag
             && lower[opener.len()..]
                 .chars()
                 .next()
-                .is_some_and(|character| character.is_ascii_whitespace() || character == '>')
+                .map_or(true, |character| {
+                    character.is_ascii_whitespace() || character == '>'
+                })
         {
             if !lower.contains(&format!("</{tag}>")) {
                 *end = Some(RawHtmlEnd::Literal(match tag {
@@ -1649,6 +1651,9 @@ mod tests {
         for human in [
             "# Human README\n\n```markdown\nkeep backtick bytes\n",
             "# Human README\n\n~~~text\nkeep tilde bytes\n",
+            "# Human README\n\n<script>\nkeep raw HTML bytes\n",
+            "# Human README\n\n<script\nkeep EOL-opener bytes\n",
+            "# Human README\n\n<!--\nkeep comment bytes\n",
             "# Human README\n\n```markdown\nNBSP is not a close\n```\u{00a0}\n",
             "# Human README\n\n~~~text\nem space is not a close\n~~~\u{2003}\n",
             "# Human README\r\r```markdown\rbare CR stays open\r",
@@ -2072,6 +2077,13 @@ Inline `inline-code` must be ignored.
             ),
             vec!["cards/raw-root.yaml"],
             "raw HTML block content is not inline-parsed"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "<script\n`cards/raw-eol-html.yaml`\n</script>\nRoot `cards/raw-eol-root.yaml`.\n"
+            ),
+            vec!["cards/raw-eol-root.yaml"],
+            "a type-1 raw HTML opener may end at EOL"
         );
         assert_eq!(
             inline_code_tokens(
