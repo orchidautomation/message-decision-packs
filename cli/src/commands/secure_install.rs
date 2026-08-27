@@ -338,6 +338,7 @@ fn remove_directory_contents_with_hooks<
     dir_fd: RawFd,
     hook: &mut F,
     after_quarantine: &mut G,
+    preserve_owned_marker: bool,
 ) -> Result<()> {
     // dup(2) shares a directory cursor with the pinned descriptor. Open "."
     // relative to it so each enumeration gets an independent file description.
@@ -370,6 +371,9 @@ fn remove_directory_contents_with_hooks<
     // Snapshot names before introducing quarantine leaves so the iterator can
     // never consume names created by this transaction.
     for name in &names {
+        if preserve_owned_marker && is_owned_marker_name(name) {
+            continue;
+        }
         let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
         if unsafe {
             libc::fstatat(
@@ -410,7 +414,7 @@ fn remove_directory_contents_with_hooks<
                 bail!("secure directory entry identity changed during quarantine");
             }
             after_quarantine(dir_fd, name, true);
-            remove_directory_contents_with_hooks(child_fd, hook, after_quarantine)?;
+            remove_directory_contents_with_hooks(child_fd, hook, after_quarantine, false)?;
             drop(child);
             if named_identity(dir_fd, &quarantine)? != expected {
                 rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
@@ -444,13 +448,14 @@ fn remove_directory_contents_with_hook<F: FnMut(RawFd, &std::ffi::CStr, bool)>(
     dir_fd: RawFd,
     hook: &mut F,
 ) -> Result<()> {
-    remove_directory_contents_with_hooks(dir_fd, hook, &mut |_, _, _| {})
+    remove_directory_contents_with_hooks(dir_fd, hook, &mut |_, _, _| {}, false)
 }
 
 fn remove_directory_tree_if_identity_with_hooks<
     F: FnMut(RawFd, &std::ffi::CStr, bool),
     G: FnMut(RawFd, &std::ffi::CStr, bool),
     H: FnOnce(),
+    I: FnOnce(),
 >(
     dir_fd: RawFd,
     name: &CString,
@@ -459,6 +464,7 @@ fn remove_directory_tree_if_identity_with_hooks<
     hook: &mut F,
     after_entry_quarantine: &mut G,
     after_outer_quarantine: H,
+    after_marker_unlink: I,
 ) -> Result<()> {
     let target_fd = unsafe {
         libc::openat(
@@ -504,18 +510,7 @@ fn remove_directory_tree_if_identity_with_hooks<
         }
     }
     after_outer_quarantine();
-    let removal = (|| -> Result<()> {
-        remove_directory_contents_with_hooks(target_fd, hook, after_entry_quarantine)?;
-        if named_identity(dir_fd, &quarantine)? != opened {
-            bail!("secure remove directory tree identity changed during removal");
-        }
-        if unsafe { libc::unlinkat(dir_fd, quarantine.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
-            return Err(io::Error::last_os_error()).map_err(Into::into);
-        }
-        Ok(())
-    })();
-    if let Err(removal_error) = removal {
-        let _sigterm_guard = SigtermMaskGuard::block()?;
+    let restore_after_failure = |removal_error: &anyhow::Error| -> Result<()> {
         if let Some(proof) = &owned_marker_proof {
             ensure_owned_marker_proof(target_fd, proof).map_err(|proof_error| {
                 anyhow!(
@@ -538,7 +533,58 @@ fn remove_directory_tree_if_identity_with_hooks<
                 "secure remove directory tree failed ({removal_error}); quarantine status failed: {status_error}"
             ),
         }
-        return Err(removal_error);
+        bail!("{removal_error}")
+    };
+    if let Err(removal_error) = remove_directory_contents_with_hooks(
+        target_fd,
+        hook,
+        after_entry_quarantine,
+        owned_marker_proof.is_some(),
+    ) {
+        let _sigterm_guard = SigtermMaskGuard::block()?;
+        return restore_after_failure(&removal_error);
+    }
+    let _terminal_sigterm_guard = SigtermMaskGuard::block()?;
+    let terminal = (|| -> Result<()> {
+        if owned_marker_proof.is_some() {
+            let marker_name = current_owned_marker_name(target_fd)?;
+            let marker_fd = unsafe {
+                libc::openat(
+                    target_fd,
+                    marker_name.as_ptr(),
+                    libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            };
+            if marker_fd < 0 {
+                return Err(io::Error::last_os_error()).map_err(Into::into);
+            }
+            let marker = unsafe { File::from_raw_fd(marker_fd) };
+            let marker_identity = opened_identity(marker_fd)?;
+            if named_identity(target_fd, &marker_name)? != marker_identity {
+                bail!("owned workspace marker identity changed before terminal removal");
+            }
+            let marker_quarantine = entry_quarantine_name(&marker_name)?;
+            rename_no_replace(target_fd, &marker_name, &marker_quarantine)?;
+            if named_identity(target_fd, &marker_quarantine)? != marker_identity {
+                bail!("owned workspace marker identity changed during terminal removal");
+            }
+            after_entry_quarantine(target_fd, &marker_name, false);
+            drop(marker);
+            if unsafe { libc::unlinkat(target_fd, marker_quarantine.as_ptr(), 0) } != 0 {
+                return Err(io::Error::last_os_error()).map_err(Into::into);
+            }
+            after_marker_unlink();
+        }
+        if named_identity(dir_fd, &quarantine)? != opened {
+            bail!("secure remove directory tree identity changed during removal");
+        }
+        if unsafe { libc::unlinkat(dir_fd, quarantine.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
+            return Err(io::Error::last_os_error()).map_err(Into::into);
+        }
+        Ok(())
+    })();
+    if let Err(removal_error) = terminal {
+        return restore_after_failure(&removal_error);
     }
     drop(target);
     Ok(())
@@ -558,6 +604,7 @@ fn remove_directory_tree_if_identity_with_hook<F: FnMut(RawFd, &std::ffi::CStr, 
         expected_ino,
         hook,
         &mut |_, _, _| {},
+        || {},
         || {},
     )
 }
@@ -634,6 +681,21 @@ fn recovery_marker_name(dir_fd: RawFd, requested: &CStr) -> Result<CString> {
         bail!("owned workspace recovery marker is missing or ambiguous");
     }
     Ok(matches.remove(0))
+}
+
+fn current_owned_marker_name(dir_fd: RawFd) -> Result<CString> {
+    let canonical = CString::new(OWNED_MARKER_NAME)?;
+    match named_identity(dir_fd, &canonical) {
+        Ok(_) => Ok(canonical),
+        Err(error)
+            if error
+                .downcast_ref::<io::Error>()
+                .is_some_and(|error| error.kind() == io::ErrorKind::NotFound) =>
+        {
+            recovery_marker_name(dir_fd, &canonical)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn inspect_owned_marker_with_hook<F: FnOnce()>(
@@ -1251,6 +1313,11 @@ mod tests {
                         unsafe { libc::kill(libc::getpid(), libc::SIGKILL) };
                     }
                 },
+                || {
+                    if stage == "terminal" {
+                        unsafe { libc::pthread_kill(libc::pthread_self(), libc::SIGTERM) };
+                    }
+                },
             );
             panic!("kill hook returned");
         }
@@ -1370,6 +1437,24 @@ mod tests {
             marker_identity.ino(),
         )
         .unwrap();
+
+        std::fs::create_dir(&tree).unwrap();
+        std::fs::write(tree.join(".mdp-owned-temp-workspace.json"), b"{}").unwrap();
+        std::fs::set_permissions(
+            tree.join(".mdp-owned-temp-workspace.json"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        let terminal_status = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("killed_tree_removal_preserves_a_discoverable_owned_quarantine")
+            .arg("--nocapture")
+            .env(CHILD_ROOT, &root)
+            .env("MDP_TEST_KILLED_TREE_NAME", &initial_name)
+            .env("MDP_TEST_KILLED_TREE_STAGE", "terminal")
+            .status()
+            .unwrap();
+        assert_eq!(terminal_status.signal(), Some(libc::SIGTERM));
+        assert!(std::fs::read_dir(&root).unwrap().next().is_none());
         std::fs::remove_dir(&root).unwrap();
     }
 
@@ -1411,7 +1496,7 @@ mod tests {
             identity.dev(),
             identity.ino(),
             &mut |directory_fd, entry, _| {
-                if entry.to_bytes() == OWNED_MARKER_NAME && !added {
+                if entry.to_bytes() == b"private" && !added {
                     let mut current = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
                     assert_eq!(
                         unsafe {
