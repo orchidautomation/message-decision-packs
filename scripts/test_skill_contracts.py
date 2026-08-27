@@ -121,6 +121,21 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("provider enums", builder)
         self.assertIn("External field", review)
 
+    def test_pack_skills_describe_both_readme_owned_regions(self):
+        for relative_path in (
+            "plugin/skills/mdp-pack-builder/SKILL.md",
+            "plugin/skills/mdp-pack-review/SKILL.md",
+        ):
+            skill = Path(relative_path).read_text()
+            normalized = " ".join(skill.split())
+            self.assertIn("two machine-generated regions", normalized, relative_path)
+            self.assertIn("<!-- mdp:readme-ownership v1 begin -->", skill, relative_path)
+            self.assertIn("<!-- mdp:readme-ownership v1 end -->", skill, relative_path)
+            self.assertIn("<!-- mdp:readme-inventory v1 begin -->", skill, relative_path)
+            self.assertIn("<!-- mdp:readme-inventory v1 end -->", skill, relative_path)
+            self.assertIn("Never hand-edit", skill, relative_path)
+            self.assertIn("preserves every byte", skill, relative_path)
+
     def test_gtm_brief_preserves_decision_input_and_legacy_normalization_paths(self):
         skill = Path("plugin/skills/mdp-gtm-brief/SKILL.md").read_text()
         mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()

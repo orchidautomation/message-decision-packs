@@ -4,8 +4,12 @@ use serde_yaml::Value as YamlValue;
 use std::collections::BTreeSet;
 
 pub(crate) const README_INVENTORY_CONTRACT: &str = "mdp.readme-inventory.v1";
+pub(crate) const README_OWNERSHIP_BEGIN: &str = "<!-- mdp:readme-ownership v1 begin -->";
+pub(crate) const README_OWNERSHIP_END: &str = "<!-- mdp:readme-ownership v1 end -->";
 pub(crate) const README_INVENTORY_BEGIN: &str = "<!-- mdp:readme-inventory v1 begin -->";
 pub(crate) const README_INVENTORY_END: &str = "<!-- mdp:readme-inventory v1 end -->";
+pub(crate) const README_MARKER_DIAGNOSTIC: &str = "README machine-owned markers are malformed; expected zero or exactly one non-overlapping begin/end pair for each generated region";
+pub(crate) const README_FENCE_DIAGNOSTIC: &str = "README refresh cannot append a missing machine-owned region inside an unterminated Markdown code or raw HTML block";
 
 pub(crate) fn render_pack_readme(
     manifest: &Manifest,
@@ -15,6 +19,8 @@ pub(crate) fn render_pack_readme(
 ) -> String {
     let mut out = String::new();
     line(&mut out, &format!("# {}", manifest.name));
+    line(&mut out, "");
+    out.push_str(&render_ownership_block());
     line(&mut out, "");
     section(&mut out, "Authority");
     line(
@@ -164,9 +170,30 @@ pub(crate) fn render_pack_readme(
     out
 }
 
-/// Render the deterministic, marker-delimited inventory block that is the only
-/// machine-owned region of the README. Refresh replaces exactly this region and
-/// preserves arbitrary human orientation outside it.
+/// Render the small machine-owned ownership legend. Everything outside this
+/// block and the inventory block is explicitly human-owned prose that refresh
+/// preserves but does not semantically review.
+pub(crate) fn render_ownership_block() -> String {
+    let mut out = String::new();
+    line(&mut out, README_OWNERSHIP_BEGIN);
+    line(&mut out, "");
+    line(&mut out, "## README ownership");
+    line(&mut out, "");
+    bullet(
+        &mut out,
+        "Machine-owned: this ownership legend and the marker-delimited Inventory block. `mdp readme refresh` may replace only those regions.",
+    );
+    bullet(
+        &mut out,
+        "Human-owned: every other README byte. Refresh preserves that prose without reviewing its thesis, claims, source interpretation, or gaps.",
+    );
+    line(&mut out, README_OWNERSHIP_END);
+    out
+}
+
+/// Render the deterministic, marker-delimited inventory block. Along with the
+/// ownership legend, this is a machine-owned README region; refresh preserves
+/// arbitrary human orientation outside those two regions.
 pub(crate) fn render_inventory_block(
     _manifest: &Manifest,
     cards: &[&Card],
@@ -252,16 +279,1110 @@ pub(crate) fn render_inventory_block(
 /// unassessed and unable to affect pack readiness. The captured string equals
 /// the freshly rendered block byte-for-byte for unchanged authority.
 pub(crate) fn extract_inventory_block(readme: &str) -> Option<String> {
-    let begin = readme.find(README_INVENTORY_BEGIN)?;
-    let end = block_end_offset(readme, begin)?;
-    Some(readme[begin..end].to_string())
+    extract_marked_block(readme, README_INVENTORY_BEGIN, README_INVENTORY_END)
+}
+
+pub(crate) fn extract_ownership_block(readme: &str) -> Option<String> {
+    extract_marked_block(readme, README_OWNERSHIP_BEGIN, README_OWNERSHIP_END)
 }
 
 /// Replace the owned inventory block in `readme` with `fresh_block`. When no
 /// owned block is present, append the block at the end as an explicit migration
 /// from legacy orientation-only prose.
 pub(crate) fn replace_inventory_block(readme: &str, fresh_block: &str) -> String {
-    match extract_inventory_block_offsets(readme) {
+    replace_marked_block(
+        readme,
+        fresh_block,
+        README_INVENTORY_BEGIN,
+        README_INVENTORY_END,
+    )
+}
+
+/// Refresh both machine-owned README regions. A legacy README is migrated by
+/// prepending the ownership legend and appending the generated inventory; its
+/// existing human prose remains byte-for-byte intact between those additions.
+pub(crate) fn replace_readme_regions(
+    readme: &str,
+    fresh_inventory: &str,
+) -> Result<String, &'static str> {
+    validate_readme_regions(readme)?;
+    if extract_inventory_block(readme).is_none() && unsafe_append_block_at_eof(readme) {
+        // Inventory migration appends after every existing human-owned byte.
+        // Appending while a fenced-code or raw-HTML block is open would hide
+        // the generated markers and make every later refresh append again.
+        // Refuse before constructing or writing a changed README instead.
+        return Err(README_FENCE_DIAGNOSTIC);
+    }
+    let ownership = render_ownership_block();
+    let with_ownership = if extract_ownership_block(readme).is_some() {
+        replace_marked_block(
+            readme,
+            &ownership,
+            README_OWNERSHIP_BEGIN,
+            README_OWNERSHIP_END,
+        )
+    } else {
+        insert_ownership_block(readme, &ownership)
+    };
+    Ok(replace_inventory_block(&with_ownership, fresh_inventory))
+}
+
+pub(crate) fn human_owned_readme(readme: &str) -> String {
+    let without_ownership =
+        remove_marked_block(readme, README_OWNERSHIP_BEGIN, README_OWNERSHIP_END);
+    remove_marked_block(
+        &without_ownership,
+        README_INVENTORY_BEGIN,
+        README_INVENTORY_END,
+    )
+}
+
+fn extract_marked_block(readme: &str, begin_marker: &str, end_marker: &str) -> Option<String> {
+    let (begin, end) = inspect_marked_region(readme, begin_marker, end_marker)
+        .ok()
+        .flatten()?;
+    Some(readme[begin..end].to_string())
+}
+
+/// Reject ambiguous marker layouts before any generated-region replacement.
+/// This keeps malformed or duplicated markers from turning intervening human
+/// prose into a machine-owned span on a later refresh.
+pub(crate) fn validate_readme_regions(readme: &str) -> Result<(), &'static str> {
+    let ownership = inspect_marked_region(readme, README_OWNERSHIP_BEGIN, README_OWNERSHIP_END)?;
+    let inventory = inspect_marked_region(readme, README_INVENTORY_BEGIN, README_INVENTORY_END)?;
+    if let (Some((left_begin, left_end)), Some((right_begin, right_end))) = (ownership, inventory)
+        && left_begin < right_end
+        && right_begin < left_end
+    {
+        return Err(README_MARKER_DIAGNOSTIC);
+    }
+    Ok(())
+}
+
+fn inspect_marked_region(
+    readme: &str,
+    begin_marker: &str,
+    end_marker: &str,
+) -> Result<Option<(usize, usize)>, &'static str> {
+    let begins = standalone_marker_line_offsets(readme, begin_marker);
+    let ends = standalone_marker_line_offsets(readme, end_marker);
+    match (begins.as_slice(), ends.as_slice()) {
+        ([], []) => Ok(None),
+        ([(begin, _)], [(end, end_after_line)]) if begin < end => {
+            Ok(Some((*begin, *end_after_line)))
+        }
+        _ => Err(README_MARKER_DIAGNOSTIC),
+    }
+}
+
+/// Locate exact, standalone marker lines outside Markdown fenced code blocks.
+/// LF, CRLF, and bare-CR line endings are recognized and included in replacement
+/// offsets. Quoted, inline, indented, or fenced marker text remains human prose.
+fn standalone_marker_line_offsets(readme: &str, marker: &str) -> Vec<(usize, usize)> {
+    let mut offsets = Vec::new();
+    let mut scanner = MarkdownFenceScanner::default();
+    for (start, content_end, line_end) in markdown_line_offsets(readme) {
+        let line = &readme[start..content_end];
+        if !scanner.line_is_fenced(line) && line == marker {
+            offsets.push((start, line_end));
+        }
+    }
+    offsets
+}
+
+#[cfg(test)]
+fn open_fence_at_eof(readme: &str) -> Option<(char, usize)> {
+    let mut scanner = MarkdownFenceScanner::default();
+    for (start, content_end, _) in markdown_line_offsets(readme) {
+        scanner.line_is_fenced(&readme[start..content_end]);
+    }
+    scanner
+        .fence
+        .as_ref()
+        .map(|(character, length, _)| (*character, *length))
+}
+
+fn unsafe_append_block_at_eof(readme: &str) -> bool {
+    let mut scanner = MarkdownFenceScanner::default();
+    for (start, content_end, _) in markdown_line_offsets(readme) {
+        scanner.line_is_fenced(&readme[start..content_end]);
+    }
+    scanner.fence.is_some() || scanner.raw_html_end.is_some()
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum MarkdownContainerSegment {
+    Quote,
+    List(usize),
+}
+
+type MarkdownContainer = Vec<MarkdownContainerSegment>;
+
+#[derive(Default)]
+struct MarkdownFenceScanner {
+    fence: Option<(char, usize, MarkdownContainer)>,
+    container: MarkdownContainer,
+    blank_lines: usize,
+    paragraph_open: bool,
+    definition_title_pending: Option<MarkdownContainer>,
+    definition_destination_pending: Option<MarkdownContainer>,
+    open_definition_title: Option<(MarkdownContainer, char)>,
+    raw_html_end: Option<RawHtmlEnd>,
+    raw_html_container: Option<MarkdownContainer>,
+}
+
+impl MarkdownFenceScanner {
+    fn line_is_fenced(&mut self, line: &str) -> bool {
+        let pending_definition_title = self.definition_title_pending.take();
+        let pending_definition_destination = self.definition_destination_pending.take();
+        let open_definition_title = self.open_definition_title.take();
+        let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
+        let opening = self
+            .fence
+            .as_ref()
+            .map(|(_, _, container)| container.clone());
+        let fenced_projection = opening.as_ref().and_then(|container| {
+            project_container_path(line, container).or_else(|| {
+                (blank
+                    && container
+                        .iter()
+                        .any(|segment| matches!(segment, MarkdownContainerSegment::List(_))))
+                .then_some("")
+            })
+        });
+        if opening.is_some() && fenced_projection.is_none() {
+            self.fence = None;
+        }
+        let (block_content, container) = if let Some(content) = fenced_projection {
+            (content, opening.expect("fenced projection has an opening"))
+        } else if blank {
+            self.blank_lines += 1;
+            if self.blank_lines >= 2 {
+                self.container.clear();
+                self.blank_lines = 0;
+            }
+            ("", self.container.clone())
+        } else {
+            self.blank_lines = 0;
+            let mut container = self.container.clone();
+            let projection = (!container.is_empty())
+                .then(|| project_container_path(line, &container))
+                .flatten();
+            let lazy_continuation = !container.is_empty()
+                && projection.is_none()
+                && self.paragraph_open
+                && !line_interrupts_container_paragraph(line);
+            let exited_container =
+                !container.is_empty() && projection.is_none() && !lazy_continuation;
+            let content = if container.is_empty() {
+                line
+            } else if let Some(content) = projection {
+                content
+            } else if lazy_continuation {
+                line
+            } else {
+                container.clear();
+                line
+            };
+            if exited_container {
+                self.paragraph_open = false;
+            }
+            let content =
+                parse_new_container_prefixes(content, &mut container, self.paragraph_open);
+            self.container = container.clone();
+            (content, container)
+        };
+        if self.raw_html_end.is_some() && self.raw_html_container.as_ref() != Some(&container) {
+            self.raw_html_end = None;
+            self.raw_html_container = None;
+        }
+        if let Some((opening_container, closing)) = open_definition_title
+            && opening_container == container
+            && project_container_path(line, &opening_container).is_some()
+        {
+            if let Some(closed) = multiline_title_line_state(block_content, closing) {
+                if !closed {
+                    self.open_definition_title = Some((opening_container, closing));
+                }
+                self.paragraph_open = false;
+                return false;
+            }
+            self.paragraph_open = true;
+        }
+        let canonical_owned_marker = self.raw_html_end.is_none()
+            && container.is_empty()
+            && matches!(
+                block_content,
+                README_OWNERSHIP_BEGIN
+                    | README_OWNERSHIP_END
+                    | README_INVENTORY_BEGIN
+                    | README_INVENTORY_END
+            );
+        let continuing_raw_html = self.raw_html_end.is_some();
+        if !canonical_owned_marker
+            && (self.raw_html_end.is_some() || self.fence.is_none())
+            && line_is_raw_html(block_content, &mut self.raw_html_end, !self.paragraph_open)
+        {
+            if !continuing_raw_html && self.raw_html_end.is_some() {
+                self.raw_html_container = Some(container);
+            } else if self.raw_html_end.is_none() {
+                self.raw_html_container = None;
+            }
+            self.paragraph_open = false;
+            return true;
+        }
+        let definition_title_continuation =
+            pending_definition_title
+                .as_ref()
+                .is_some_and(|opening_container| {
+                    *opening_container == container
+                        && project_container_path(line, opening_container).is_some()
+                        && is_link_title_continuation(block_content)
+                });
+        let definition_destination_continuation = pending_definition_destination
+            .as_ref()
+            .filter(|opening_container| {
+                **opening_container == container
+                    && project_container_path(line, opening_container).is_some()
+            })
+            .and_then(|_| link_definition_continuation_title_state(block_content));
+        if self
+            .fence
+            .as_ref()
+            .is_some_and(|(_, _, opening_container)| *opening_container != container)
+        {
+            self.fence = None;
+        }
+        let open = self
+            .fence
+            .as_ref()
+            .map(|(character, length, _)| (*character, *length));
+        if let Some((character, length, closing)) = fence_delimiter(block_content, open) {
+            self.paragraph_open = false;
+            if closing {
+                self.fence = None;
+                return false;
+            }
+            if self.fence.is_none() {
+                self.fence = Some((character, length, container));
+            }
+            return true;
+        }
+        if self.fence.is_some() {
+            self.paragraph_open = false;
+            true
+        } else {
+            let definition_can_start = !self.paragraph_open;
+            let pending_title_closer = ((definition_can_start
+                && link_reference_title_state(block_content) == Some(false))
+                || definition_destination_continuation == Some(false))
+            .then(|| incomplete_link_title_closer(block_content))
+            .flatten();
+            self.open_definition_title =
+                pending_title_closer.map(|closing| (container.clone(), closing));
+            self.definition_title_pending = (pending_title_closer.is_none()
+                && ((definition_can_start
+                    && link_reference_title_state(block_content) == Some(false))
+                    || definition_destination_continuation == Some(false)))
+            .then_some(container.clone());
+            self.definition_destination_pending = (definition_can_start
+                && is_link_reference_destination_pending(block_content))
+            .then_some(container);
+            let paragraph_continues = line_continues_paragraph(block_content, self.paragraph_open)
+                || (self.paragraph_open
+                    && (markdown_indent_columns(block_content) >= 4
+                        || is_link_reference_definition(block_content)));
+            self.paragraph_open = !definition_title_continuation
+                && definition_destination_continuation.is_none()
+                && paragraph_continues;
+            false
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum RawHtmlEnd {
+    Literal(&'static str),
+    BlankLine,
+}
+
+fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag: bool) -> bool {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let lower = trimmed.to_ascii_lowercase();
+    if let Some(termination) = end.as_ref() {
+        let closed = match termination {
+            RawHtmlEnd::Literal(literal) => lower.contains(literal),
+            RawHtmlEnd::BlankLine => lower.trim().is_empty(),
+        };
+        if closed {
+            *end = None;
+        }
+        return true;
+    }
+    if markdown_indent_columns(line) > 3 {
+        return false;
+    }
+    for tag in ["script", "pre", "style", "textarea"] {
+        let opener = format!("<{tag}");
+        if lower.starts_with(&opener)
+            && lower[opener.len()..]
+                .chars()
+                .next()
+                .map_or(true, |character| {
+                    character.is_ascii_whitespace() || character == '>'
+                })
+        {
+            if !lower.contains(&format!("</{tag}>")) {
+                *end = Some(RawHtmlEnd::Literal(match tag {
+                    "script" => "</script>",
+                    "pre" => "</pre>",
+                    "style" => "</style>",
+                    _ => "</textarea>",
+                }));
+            }
+            return true;
+        }
+    }
+    for (opener, closer) in [("<!--", "-->"), ("<?", "?>")] {
+        if trimmed.starts_with(opener) {
+            if !trimmed.contains(closer) {
+                *end = Some(RawHtmlEnd::Literal(closer));
+            }
+            return true;
+        }
+    }
+    if trimmed.starts_with("<![CDATA[") {
+        if !trimmed.contains("]]>") {
+            *end = Some(RawHtmlEnd::Literal("]]>"));
+        }
+        return true;
+    }
+    if trimmed.starts_with("<!")
+        && trimmed
+            .as_bytes()
+            .get(2)
+            .is_some_and(u8::is_ascii_uppercase)
+    {
+        if !trimmed.contains('>') {
+            *end = Some(RawHtmlEnd::Literal(">"));
+        }
+        return true;
+    }
+    if starts_block_html_tag(&lower) {
+        *end = Some(RawHtmlEnd::BlankLine);
+        return true;
+    }
+    if allow_complete_tag && is_complete_html_tag(&lower) {
+        *end = Some(RawHtmlEnd::BlankLine);
+        return true;
+    }
+    false
+}
+
+fn is_complete_html_tag(line: &str) -> bool {
+    let bytes = line.trim_end_matches([' ', '\t']).as_bytes();
+    let mut index = 0;
+    if bytes.get(index) != Some(&b'<') {
+        return false;
+    }
+    index += 1;
+    let closing = bytes.get(index) == Some(&b'/');
+    index += usize::from(closing);
+    if !bytes.get(index).is_some_and(u8::is_ascii_alphabetic) {
+        return false;
+    }
+    index += 1;
+    while bytes
+        .get(index)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+    {
+        index += 1;
+    }
+    if closing {
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        return bytes.get(index) == Some(&b'>') && index + 1 == bytes.len();
+    }
+    loop {
+        let separator_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        let attribute_separated = index > separator_start;
+        if bytes.get(index) == Some(&b'>') {
+            return index + 1 == bytes.len();
+        }
+        if bytes.get(index) == Some(&b'/') && bytes.get(index + 1) == Some(&b'>') {
+            return index + 2 == bytes.len();
+        }
+        if !attribute_separated {
+            return false;
+        }
+        if !bytes
+            .get(index)
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
+        {
+            return false;
+        }
+        index += 1;
+        while bytes.get(index).is_some_and(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b':' | b'-')
+        }) {
+            index += 1;
+        }
+        let value_separator_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        if bytes.get(index) != Some(&b'=') {
+            index = value_separator_start;
+            continue;
+        }
+        index += 1;
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        match bytes.get(index).copied() {
+            Some(quote @ (b'\'' | b'"')) => {
+                index += 1;
+                while bytes.get(index).is_some_and(|byte| *byte != quote) {
+                    index += 1;
+                }
+                if bytes.get(index) != Some(&quote) {
+                    return false;
+                }
+                index += 1;
+            }
+            Some(byte) if !byte.is_ascii_whitespace() && !b"\"'=<>`".contains(&byte) => {
+                index += 1;
+                while bytes
+                    .get(index)
+                    .is_some_and(|byte| !byte.is_ascii_whitespace() && !b"\"'=<>`".contains(byte))
+                {
+                    index += 1;
+                }
+            }
+            _ => return false,
+        }
+    }
+}
+
+fn starts_block_html_tag(line: &str) -> bool {
+    const TAGS: &[&str] = &[
+        "address",
+        "article",
+        "aside",
+        "base",
+        "basefont",
+        "blockquote",
+        "body",
+        "caption",
+        "center",
+        "col",
+        "colgroup",
+        "dd",
+        "details",
+        "dialog",
+        "dir",
+        "div",
+        "dl",
+        "dt",
+        "fieldset",
+        "figcaption",
+        "figure",
+        "footer",
+        "form",
+        "frame",
+        "frameset",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "head",
+        "header",
+        "hr",
+        "html",
+        "iframe",
+        "legend",
+        "li",
+        "link",
+        "main",
+        "menu",
+        "menuitem",
+        "nav",
+        "noframes",
+        "ol",
+        "optgroup",
+        "option",
+        "p",
+        "param",
+        "search",
+        "section",
+        "summary",
+        "table",
+        "tbody",
+        "td",
+        "tfoot",
+        "th",
+        "thead",
+        "title",
+        "tr",
+        "track",
+        "ul",
+    ];
+    let candidate = line.strip_prefix("</").or_else(|| line.strip_prefix('<'));
+    candidate.is_some_and(|candidate| {
+        TAGS.iter().any(|tag| {
+            candidate.strip_prefix(tag).is_some_and(|suffix| {
+                suffix.is_empty()
+                    || suffix.starts_with("/>")
+                    || suffix.chars().next().is_some_and(|character| {
+                        character.is_ascii_whitespace() || character == '>'
+                    })
+            })
+        })
+    })
+}
+
+fn project_container_path<'a>(
+    mut line: &'a str,
+    container: &[MarkdownContainerSegment],
+) -> Option<&'a str> {
+    for segment in container {
+        line = match segment {
+            MarkdownContainerSegment::Quote => strip_one_blockquote_prefix(line)?,
+            MarkdownContainerSegment::List(indent) => strip_indent_columns(line, *indent)?,
+        };
+    }
+    Some(line)
+}
+
+fn parse_new_container_prefixes<'a>(
+    mut line: &'a str,
+    container: &mut MarkdownContainer,
+    mut paragraph_open: bool,
+) -> &'a str {
+    loop {
+        if let Some(content) = strip_one_blockquote_prefix(line) {
+            container.push(MarkdownContainerSegment::Quote);
+            line = content;
+            paragraph_open = false;
+        } else if is_thematic_or_setext_line(line, false) {
+            return line;
+        } else if let Some((indent, content)) = list_item_content(line, paragraph_open) {
+            container.push(MarkdownContainerSegment::List(indent));
+            line = content;
+            paragraph_open = false;
+        } else {
+            return line;
+        }
+    }
+}
+
+fn strip_one_blockquote_prefix(line: &str) -> Option<&str> {
+    let bytes = line.as_bytes();
+    let spaces = bytes
+        .iter()
+        .take(3)
+        .take_while(|byte| **byte == b' ')
+        .count();
+    if bytes.get(spaces) != Some(&b'>') {
+        return None;
+    }
+    let mut consumed = spaces + 1;
+    if matches!(bytes.get(consumed), Some(b' ' | b'\t')) {
+        consumed += 1;
+    }
+    Some(&line[consumed..])
+}
+
+fn list_item_content(line: &str, paragraph_open: bool) -> Option<(usize, &str)> {
+    let bytes = line.as_bytes();
+    let leading = bytes
+        .iter()
+        .take(3)
+        .take_while(|byte| **byte == b' ')
+        .count();
+    let (marker_end, ordered_start) = match bytes.get(leading)? {
+        b'-' | b'+' | b'*' => (leading + 1, None),
+        byte if byte.is_ascii_digit() => {
+            let mut cursor = leading;
+            while bytes.get(cursor).is_some_and(u8::is_ascii_digit) && cursor - leading < 9 {
+                cursor += 1;
+            }
+            if !matches!(bytes.get(cursor), Some(b'.' | b')')) {
+                return None;
+            }
+            (cursor + 1, Some(&line[leading..cursor]))
+        }
+        _ => return None,
+    };
+    if paragraph_open && ordered_start.is_some_and(|start| start != "1") {
+        return None;
+    }
+    let mut whitespace_end = marker_end;
+    let marker_column = marker_end;
+    let mut content_column = marker_column;
+    while let Some(byte @ (b' ' | b'\t')) = bytes.get(whitespace_end) {
+        content_column = advance_markdown_column(content_column, *byte);
+        whitespace_end += 1;
+    }
+    if whitespace_end == marker_end {
+        return None;
+    }
+    if paragraph_open && whitespace_end == bytes.len() {
+        return None;
+    }
+    let padding = content_column - marker_column;
+    let (content_start, content_indent) = if padding <= 4 || whitespace_end == bytes.len() {
+        (whitespace_end, content_column)
+    } else {
+        let first = bytes[marker_end];
+        (
+            marker_end + 1,
+            advance_markdown_column(marker_column, first),
+        )
+    };
+    Some((content_indent, &line[content_start..]))
+}
+
+fn strip_indent_columns(line: &str, required: usize) -> Option<&str> {
+    let mut columns = 0;
+    for (index, byte) in line.bytes().enumerate() {
+        match byte {
+            b' ' => columns += 1,
+            b'\t' => columns += 4 - (columns % 4),
+            _ => return (columns >= required).then_some(&line[index..]),
+        }
+        if columns >= required {
+            return Some(&line[index + 1..]);
+        }
+    }
+    (columns >= required).then_some("")
+}
+
+fn advance_markdown_column(column: usize, byte: u8) -> usize {
+    if byte == b'\t' {
+        column + 4 - (column % 4)
+    } else {
+        column + 1
+    }
+}
+
+fn markdown_indent_columns(line: &str) -> usize {
+    let mut columns = 0;
+    for byte in line.bytes() {
+        match byte {
+            b' ' => columns += 1,
+            b'\t' => columns += 4 - (columns % 4),
+            _ => break,
+        }
+    }
+    columns
+}
+
+fn line_continues_paragraph(line: &str, paragraph_open: bool) -> bool {
+    let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
+    !blank
+        && markdown_indent_columns(line) < 4
+        && !is_atx_heading(line)
+        && !is_thematic_or_setext_line(line, paragraph_open)
+        && !is_link_reference_definition(line)
+        && !line.trim_start_matches([' ', '\t']).starts_with("<!--")
+}
+
+fn line_interrupts_container_paragraph(line: &str) -> bool {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    if markdown_indent_columns(line) > 3 {
+        return false;
+    }
+    let mut raw_html = None;
+    trimmed.starts_with('>')
+        || is_atx_heading(line)
+        || list_item_content(line, false).is_some()
+        || fence_delimiter(line, None).is_some()
+        || is_thematic_or_setext_line(line, false)
+        || line_is_raw_html(line, &mut raw_html, false)
+}
+
+fn is_atx_heading(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 {
+        return false;
+    }
+    let hashes = trimmed.bytes().take_while(|byte| *byte == b'#').count();
+    (1..=6).contains(&hashes) && matches!(trimmed.as_bytes().get(hashes), None | Some(b' ' | b'\t'))
+}
+
+fn is_thematic_or_setext_line(line: &str, paragraph_open: bool) -> bool {
+    let trimmed = line.trim_matches([' ', '\t']);
+    if paragraph_open && !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'=') {
+        return true;
+    }
+    if paragraph_open && !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'-') {
+        return true;
+    }
+    for marker in [b'-', b'_', b'*'] {
+        let count = trimmed
+            .bytes()
+            .filter(|byte| !matches!(byte, b' ' | b'\t'))
+            .count();
+        if count >= 3
+            && trimmed
+                .bytes()
+                .all(|byte| byte == marker || matches!(byte, b' ' | b'\t'))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_link_reference_definition(line: &str) -> bool {
+    link_reference_title_state(line).is_some()
+}
+
+fn link_reference_title_state(line: &str) -> Option<bool> {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
+        return None;
+    }
+    let mut escaped = false;
+    let mut label_characters = 0usize;
+    for (offset, character) in trimmed[1..].char_indices() {
+        let index = 1 + offset;
+        match character {
+            '\\' if !escaped => escaped = true,
+            ']' if !escaped => {
+                return (index > 1
+                    && trimmed[1..index]
+                        .chars()
+                        .any(|character| !character.is_whitespace())
+                    && trimmed.as_bytes().get(index + 1) == Some(&b':'))
+                .then(|| link_definition_suffix_title_state(&trimmed[index + 2..]))
+                .flatten();
+            }
+            '[' if !escaped => return None,
+            _ => escaped = false,
+        }
+        label_characters += 1;
+        if label_characters > 999 {
+            return None;
+        }
+    }
+    None
+}
+
+fn is_link_reference_destination_pending(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
+        return false;
+    }
+    let mut escaped = false;
+    let mut label_characters = 0usize;
+    for (offset, character) in trimmed[1..].char_indices() {
+        let index = 1 + offset;
+        match character {
+            '\\' if !escaped => escaped = true,
+            ']' if !escaped => {
+                return index > 1
+                    && trimmed[1..index]
+                        .chars()
+                        .any(|character| !character.is_whitespace())
+                    && trimmed.as_bytes().get(index + 1) == Some(&b':')
+                    && trimmed[index + 2..].trim_matches([' ', '\t']).is_empty();
+            }
+            '[' if !escaped => return false,
+            _ => escaped = false,
+        }
+        label_characters += 1;
+        if label_characters > 999 {
+            return false;
+        }
+    }
+    false
+}
+
+fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
+    let trailing = link_definition_trailing_title(suffix)?;
+    if trailing.is_empty() {
+        Some(false)
+    } else if incomplete_title_closer(trailing).is_some() {
+        Some(false)
+    } else {
+        valid_link_title(trailing).then_some(true)
+    }
+}
+
+fn link_definition_trailing_title(suffix: &str) -> Option<&str> {
+    let rest = suffix.trim_start_matches([' ', '\t']);
+    if rest.is_empty() {
+        return None;
+    }
+    let destination_end = if let Some(angle) = rest.strip_prefix('<') {
+        let mut escaped = false;
+        let mut closing = None;
+        for (index, character) in angle.char_indices() {
+            match character {
+                '\\' if !escaped => escaped = true,
+                '>' if !escaped => {
+                    closing = Some(1 + index + character.len_utf8());
+                    break;
+                }
+                '<' | '\n' | '\r' if !escaped => return None,
+                character if character.is_whitespace() => return None,
+                _ => escaped = false,
+            }
+        }
+        let Some(closing) = closing else {
+            return None;
+        };
+        closing
+    } else {
+        let mut depth = 0usize;
+        let mut escaped = false;
+        let mut end = 0usize;
+        for (index, character) in rest.char_indices() {
+            if character.is_whitespace() {
+                break;
+            }
+            match character {
+                '\\' if !escaped => escaped = true,
+                '(' if !escaped => depth += 1,
+                ')' if !escaped && depth > 0 => depth -= 1,
+                ')' if !escaped => return None,
+                character if character.is_control() && !escaped => return None,
+                _ => escaped = false,
+            }
+            end = index + character.len_utf8();
+        }
+        if end == 0 || depth != 0 {
+            return None;
+        }
+        end
+    };
+    Some(rest[destination_end..].trim_matches([' ', '\t']))
+}
+
+fn link_definition_continuation_title_state(line: &str) -> Option<bool> {
+    (markdown_indent_columns(line) <= 3)
+        .then(|| link_definition_suffix_title_state(line))
+        .flatten()
+}
+
+fn valid_link_title(title: &str) -> bool {
+    let Some(opening) = title.chars().next() else {
+        return false;
+    };
+    let closing = match opening {
+        '"' => '"',
+        '\'' => '\'',
+        '(' => ')',
+        _ => return false,
+    };
+    let mut escaped = false;
+    for (index, character) in title[opening.len_utf8()..].char_indices() {
+        match character {
+            '\\' if !escaped => escaped = true,
+            '(' if opening == '(' && !escaped => return false,
+            character if character == closing && !escaped => {
+                return title[opening.len_utf8() + index + character.len_utf8()..]
+                    .trim_matches([' ', '\t'])
+                    .is_empty();
+            }
+            '\n' | '\r' if !escaped => return false,
+            _ => escaped = false,
+        }
+    }
+    false
+}
+
+fn incomplete_link_title_closer(line: &str) -> Option<char> {
+    let suffix = reference_definition_suffix(line).unwrap_or(line);
+    let trailing = link_definition_trailing_title(suffix)?;
+    incomplete_title_closer(trailing)
+}
+
+fn reference_definition_suffix(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start_matches(' ');
+    if !trimmed.starts_with('[') {
+        return None;
+    }
+    let mut escaped = false;
+    let mut label_characters = 0usize;
+    for (offset, character) in trimmed[1..].char_indices() {
+        let index = 1 + offset;
+        match character {
+            '\\' if !escaped => escaped = true,
+            ']' if !escaped => {
+                return (trimmed.as_bytes().get(index + 1) == Some(&b':'))
+                    .then_some(&trimmed[index + 2..]);
+            }
+            '[' if !escaped => return None,
+            _ => escaped = false,
+        }
+        label_characters += 1;
+        if label_characters > 999 {
+            return None;
+        }
+    }
+    None
+}
+
+fn incomplete_title_closer(title: &str) -> Option<char> {
+    let opening = title.chars().next()?;
+    if !matches!(opening, '"' | '\'' | '(') {
+        return None;
+    }
+    let closing = if opening == '(' { ')' } else { opening };
+    let mut escaped = false;
+    for character in title[opening.len_utf8()..].chars() {
+        match character {
+            '\\' if !escaped => escaped = true,
+            '(' if opening == '(' && !escaped => return None,
+            character if character == closing && !escaped => return None,
+            _ => escaped = false,
+        }
+    }
+    Some(closing)
+}
+
+fn multiline_title_line_state(line: &str, closing: char) -> Option<bool> {
+    if markdown_indent_columns(line) > 3 || line.trim_matches([' ', '\t']).is_empty() {
+        return None;
+    }
+    let mut escaped = false;
+    for (index, character) in line.char_indices() {
+        match character {
+            '\\' if !escaped => escaped = true,
+            character if character == closing && !escaped => {
+                return line[index + character.len_utf8()..]
+                    .trim_matches([' ', '\t'])
+                    .is_empty()
+                    .then_some(true);
+            }
+            _ => escaped = false,
+        }
+    }
+    Some(false)
+}
+
+fn is_link_title_continuation(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    line.len() - trimmed.len() <= 3 && valid_link_title(trimmed)
+}
+
+/// Return byte ranges `(start, content_end, line_end)` for every Markdown line.
+/// The content range excludes its line ending while `line_end` includes the
+/// exact LF, CRLF, or bare-CR bytes so generated-region replacement is lossless.
+pub(crate) fn markdown_line_offsets(markdown: &str) -> Vec<(usize, usize, usize)> {
+    let bytes = markdown.as_bytes();
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        match bytes[cursor] {
+            b'\r' => {
+                let line_end = if bytes.get(cursor + 1) == Some(&b'\n') {
+                    cursor + 2
+                } else {
+                    cursor + 1
+                };
+                lines.push((start, cursor, line_end));
+                start = line_end;
+                cursor = line_end;
+            }
+            b'\n' => {
+                let line_end = cursor + 1;
+                lines.push((start, cursor, line_end));
+                start = line_end;
+                cursor = line_end;
+            }
+            _ => cursor += 1,
+        }
+    }
+    if start < bytes.len() {
+        lines.push((start, bytes.len(), bytes.len()));
+    }
+    lines
+}
+
+pub(crate) fn fence_delimiter(
+    line: &str,
+    open: Option<(char, usize)>,
+) -> Option<(char, usize, bool)> {
+    let leading_spaces = line
+        .chars()
+        .take_while(|character| *character == ' ')
+        .count();
+    if leading_spaces > 3 {
+        return None;
+    }
+    let rest = &line[leading_spaces..];
+    let character = rest.chars().next()?;
+    if !matches!(character, '`' | '~') {
+        return None;
+    }
+    let length = rest
+        .chars()
+        .take_while(|candidate| *candidate == character)
+        .count();
+    if length < 3 {
+        return None;
+    }
+    match open {
+        Some((open_character, open_length)) => {
+            let suffix = &rest[length..];
+            let closing = character == open_character
+                && length >= open_length
+                && suffix.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
+            closing.then_some((character, length, true))
+        }
+        None => {
+            let info = &rest[length..];
+            if character == '`' && info.contains('`') {
+                // CommonMark forbids backticks in a backtick fence's info
+                // string. Treat this as ordinary prose so subsequent marker
+                // lines remain visible instead of being hidden by a fake fence.
+                None
+            } else {
+                Some((character, length, false))
+            }
+        }
+    }
+}
+
+fn insert_ownership_block(readme: &str, ownership: &str) -> String {
+    if readme.starts_with("# ") {
+        if let Some(line_end) = readme.find('\n') {
+            let insertion = line_end + 1;
+            let mut out = String::with_capacity(readme.len() + ownership.len() + 1);
+            out.push_str(&readme[..insertion]);
+            out.push('\n');
+            out.push_str(ownership);
+            out.push('\n');
+            out.push_str(&readme[insertion..]);
+            return out;
+        }
+    }
+    let mut out = ownership.to_string();
+    if !readme.is_empty() {
+        out.push('\n');
+        out.push_str(readme);
+    }
+    out
+}
+
+fn replace_marked_block(
+    readme: &str,
+    fresh_block: &str,
+    begin_marker: &str,
+    end_marker: &str,
+) -> String {
+    match marked_block_offsets(readme, begin_marker, end_marker) {
         Some((begin, end)) => {
             let mut out = String::with_capacity(readme.len() + fresh_block.len());
             out.push_str(&readme[..begin]);
@@ -270,9 +1391,18 @@ pub(crate) fn replace_inventory_block(readme: &str, fresh_block: &str) -> String
             out
         }
         None => {
-            let mut out = readme.trim_end_matches('\n').to_string();
+            // Legacy prose is human-owned byte-for-byte, including trailing
+            // whitespace and newline choices. Append a separator after those
+            // bytes rather than normalizing or removing any of them.
+            let mut out = readme.to_string();
             if !out.is_empty() {
-                out.push_str("\n\n");
+                if out.ends_with("\n\n") {
+                    // Existing blank-line separation is sufficient.
+                } else if out.ends_with('\n') {
+                    out.push('\n');
+                } else {
+                    out.push_str("\n\n");
+                }
             }
             out.push_str(fresh_block);
             out
@@ -280,24 +1410,24 @@ pub(crate) fn replace_inventory_block(readme: &str, fresh_block: &str) -> String
     }
 }
 
-fn extract_inventory_block_offsets(readme: &str) -> Option<(usize, usize)> {
-    let begin = readme.find(README_INVENTORY_BEGIN)?;
-    let end = block_end_offset(readme, begin)?;
-    Some((begin, end))
+fn remove_marked_block(readme: &str, begin_marker: &str, end_marker: &str) -> String {
+    let Some((begin, end)) = marked_block_offsets(readme, begin_marker, end_marker) else {
+        return readme.to_string();
+    };
+    let mut out = String::with_capacity(readme.len() - (end - begin));
+    out.push_str(&readme[..begin]);
+    out.push_str(&readme[end..]);
+    out
 }
 
-/// Return the offset just past the end of the owned block beginning at `begin`,
-/// consuming the single line terminator after the end marker so the captured
-/// string equals the freshly rendered block byte-for-byte.
-fn block_end_offset(readme: &str, begin: usize) -> Option<usize> {
-    let end_marker_start = begin + readme[begin..].find(README_INVENTORY_END)?;
-    let after_marker = end_marker_start + README_INVENTORY_END.len();
-    let bytes = readme.as_bytes();
-    if after_marker < bytes.len() && bytes[after_marker] == b'\n' {
-        Some(after_marker + 1)
-    } else {
-        Some(after_marker)
-    }
+fn marked_block_offsets(
+    readme: &str,
+    begin_marker: &str,
+    end_marker: &str,
+) -> Option<(usize, usize)> {
+    inspect_marked_region(readme, begin_marker, end_marker)
+        .ok()
+        .flatten()
 }
 
 fn source_ids(source_ledger: &Value) -> Vec<String> {
@@ -409,6 +1539,18 @@ mod tests {
     }
 
     #[test]
+    fn bundled_starter_readmes_mark_machine_and_human_ownership() {
+        for readme in [
+            include_str!("../../plugin/assets/templates/basic/.mdp/README.md"),
+            include_str!("../../plugin/assets/templates/proposal/.mdp/README.md"),
+        ] {
+            assert!(extract_ownership_block(readme).is_some());
+            assert!(extract_inventory_block(readme).is_some());
+            assert!(readme.contains("Human-owned: every other README byte"));
+        }
+    }
+
+    #[test]
     fn inventory_block_is_deterministic_and_byte_stable_for_unchanged_authority() {
         let manifest = manifest_with("Deterministic Pack");
         let cards = vec![
@@ -477,6 +1619,9 @@ mod tests {
         let prompts = vec!["generate-outbound-copy".to_string()];
         let readme = render_pack_readme(&manifest, &card_refs, &ledger, &prompts);
         assert!(readme.contains("## Authority"));
+        assert!(readme.contains(README_OWNERSHIP_BEGIN));
+        assert!(readme.contains(README_OWNERSHIP_END));
+        assert!(readme.contains("Human-owned: every other README byte"));
         assert!(readme.contains(README_INVENTORY_BEGIN));
         assert!(readme.contains(README_INVENTORY_END));
         let extracted = extract_inventory_block(&readme).expect("block should extract");
@@ -488,6 +1633,509 @@ mod tests {
     fn extract_returns_none_for_legacy_readme_without_marker() {
         let legacy = "# Human Pack\n\nOrientation prose only.\n";
         assert!(extract_inventory_block(legacy).is_none());
+    }
+
+    #[test]
+    fn marker_text_in_inline_quotes_and_fences_remains_human_prose() {
+        let human = format!(
+            "Inline `{README_OWNERSHIP_BEGIN}` and quoted text:\n> {README_INVENTORY_BEGIN}\n\n```markdown\n{README_OWNERSHIP_BEGIN}\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\n{README_INVENTORY_END}\n```\n"
+        );
+        assert!(validate_readme_regions(&human).is_ok());
+        assert!(extract_ownership_block(&human).is_none());
+        assert!(extract_inventory_block(&human).is_none());
+
+        let manifest = manifest_with("Quoted Marker Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        let refreshed = replace_readme_regions(&human, &fresh).expect("refresh legacy prose");
+        assert!(
+            refreshed.contains(&human),
+            "refresh must retain adversarial human prose byte-for-byte"
+        );
+        assert_eq!(refreshed.matches(README_OWNERSHIP_BEGIN).count(), 3);
+        assert_eq!(refreshed.matches(README_INVENTORY_BEGIN).count(), 3);
+        assert!(validate_readme_regions(&refreshed).is_ok());
+    }
+
+    #[test]
+    fn invalid_backtick_info_string_does_not_hide_owned_marker_lines() {
+        let readme = format!(
+            "```markdown`invalid\n{README_OWNERSHIP_BEGIN}\nlegend\n{README_OWNERSHIP_END}\n```\n"
+        );
+        assert!(validate_readme_regions(&readme).is_ok());
+        let extracted = extract_ownership_block(&readme).expect("visible ownership region");
+        assert!(extracted.starts_with(README_OWNERSHIP_BEGIN));
+        assert!(extracted.ends_with(&format!("{README_OWNERSHIP_END}\n")));
+    }
+
+    #[test]
+    fn missing_inventory_refuses_append_after_unterminated_fence() {
+        let manifest = manifest_with("Open Fence Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        for human in [
+            "# Human\n\n```markdown\nkeep these bytes\n",
+            "# Human\n\n~~~text\nkeep these bytes\n",
+            "# Human\n\n<script>\nkeep these bytes\n",
+            "# Human\n\n<script\nkeep these bytes\n",
+            "# Human\n\n<!--\nkeep these bytes\n",
+        ] {
+            for _ in 0..2 {
+                assert_eq!(
+                    replace_readme_regions(human, &fresh),
+                    Err(README_FENCE_DIAGNOSTIC),
+                    "an open fence must fail closed on every refresh"
+                );
+            }
+            assert!(unsafe_append_block_at_eof(human));
+            assert!(extract_ownership_block(human).is_none());
+            assert!(extract_inventory_block(human).is_none());
+        }
+    }
+
+    #[test]
+    fn unicode_whitespace_does_not_close_a_fence() {
+        let manifest = manifest_with("Unicode Fence Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        let human = "# Human\n\n```markdown\nkeep bytes\n```\u{00a0}\n";
+        assert_eq!(
+            replace_readme_regions(human, &fresh),
+            Err(README_FENCE_DIAGNOSTIC),
+            "CommonMark closing suffix permits ASCII space/tab only"
+        );
+        assert!(open_fence_at_eof(human).is_some());
+    }
+
+    #[test]
+    fn standalone_crlf_marker_lines_are_recognized_with_exact_offsets() {
+        let ownership = render_ownership_block().replace('\n', "\r\n");
+        let inventory =
+            format!("{README_INVENTORY_BEGIN}\r\n## Inventory\r\n{README_INVENTORY_END}\r\n");
+        let readme = format!("{ownership}\r\nHuman bytes.\r\n\r\n{inventory}");
+        assert!(validate_readme_regions(&readme).is_ok());
+        assert_eq!(
+            extract_ownership_block(&readme).as_deref(),
+            Some(ownership.as_str())
+        );
+        assert_eq!(
+            extract_inventory_block(&readme).as_deref(),
+            Some(inventory.as_str())
+        );
+
+        let fresh_inventory =
+            format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let refreshed = replace_readme_regions(&readme, &fresh_inventory).expect("refresh CRLF");
+        assert!(refreshed.contains("Human bytes.\r\n\r\n"));
+        assert_eq!(
+            extract_ownership_block(&refreshed),
+            Some(render_ownership_block())
+        );
+        assert_eq!(extract_inventory_block(&refreshed), Some(fresh_inventory));
+    }
+
+    #[test]
+    fn standalone_bare_cr_markers_and_fences_keep_exact_offsets() {
+        let ownership = render_ownership_block().replace('\n', "\r");
+        let inventory = format!("{README_INVENTORY_BEGIN}\r## Inventory\r{README_INVENTORY_END}\r");
+        let readme = format!("{ownership}\rHuman bytes.\r\r{inventory}");
+        assert!(validate_readme_regions(&readme).is_ok());
+        assert_eq!(
+            extract_ownership_block(&readme).as_deref(),
+            Some(ownership.as_str())
+        );
+        assert_eq!(
+            extract_inventory_block(&readme).as_deref(),
+            Some(inventory.as_str())
+        );
+
+        let fenced_markers = format!(
+            "# Legacy\r\r```markdown\r{README_OWNERSHIP_BEGIN}\r{README_OWNERSHIP_END}\r{README_INVENTORY_BEGIN}\r{README_INVENTORY_END}\r```\rHuman bytes.\r"
+        );
+        let manifest = manifest_with("Bare CR Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        let once = replace_readme_regions(&fenced_markers, &fresh).expect("first refresh");
+        assert!(once.contains(&fenced_markers));
+        assert!(validate_readme_regions(&once).is_ok());
+        let twice = replace_readme_regions(&once, &fresh).expect("second refresh");
+        assert_eq!(
+            twice, once,
+            "bare-CR fenced marker prose must not duplicate regions"
+        );
+    }
+
+    #[test]
+    fn list_container_exit_closes_fence_before_owned_markers() {
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        for prefix in [
+            "- example\n  ```markdown\n  unclosed list fence\n",
+            "- > ```markdown\n  > unclosed nested fence\n",
+            "- outer\n  - ```markdown\n    unclosed nested-list fence\n",
+        ] {
+            let readme = format!("{prefix}Root prose.\n\n{ownership}\n{inventory}");
+            assert!(validate_readme_regions(&readme).is_ok());
+            assert_eq!(extract_ownership_block(&readme), Some(ownership.clone()));
+            assert_eq!(extract_inventory_block(&readme), Some(inventory.clone()));
+            assert!(open_fence_at_eof(&readme).is_none());
+        }
+        assert!(
+            open_fence_at_eof("- ```markdown\n underindented body").is_none(),
+            "a bullet continuation includes marker width plus padding"
+        );
+        assert!(
+            open_fence_at_eof("Paragraph\n2. ```markdown\n   body").is_none(),
+            "an ordered list not starting at one cannot interrupt a paragraph"
+        );
+        assert!(
+            open_fence_at_eof("Paragraph\n1. ```markdown\n   body").is_some(),
+            "an ordered list starting at one may interrupt a paragraph"
+        );
+        let after_heading =
+            format!("# Heading\n2. ```markdown\n   fenced body\n   ```\n{ownership}\n{inventory}");
+        assert!(validate_readme_regions(&after_heading).is_ok());
+        assert!(open_fence_at_eof(&after_heading).is_none());
+        assert_eq!(extract_ownership_block(&after_heading), Some(ownership));
+        assert_eq!(extract_inventory_block(&after_heading), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let after_definition = format!(
+            "[ref]: /url\n2. ```markdown\n   fenced body\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&after_definition).is_ok());
+        assert!(open_fence_at_eof(&after_definition).is_none());
+        assert_eq!(extract_ownership_block(&after_definition), Some(ownership));
+        assert_eq!(extract_inventory_block(&after_definition), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let invalid_definition =
+            format!("[ref]: <foo bar>\n2. ```markdown\n   body\n   ```\n{ownership}\n{inventory}");
+        assert!(validate_readme_regions(&invalid_definition).is_ok());
+        assert!(open_fence_at_eof(&invalid_definition).is_some());
+        assert_eq!(extract_ownership_block(&invalid_definition), None);
+        assert_eq!(extract_inventory_block(&invalid_definition), None);
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let multiline_definition = format!(
+            "[ref]: /url\n  \"title\"\n2. ```markdown\n   body\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&multiline_definition).is_ok());
+        assert!(open_fence_at_eof(&multiline_definition).is_none());
+        assert_eq!(
+            extract_ownership_block(&multiline_definition),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&multiline_definition),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let quoted_definition = format!(
+            "> [ref]: /url\n>   \"title\"\n> 2. ```markdown\n>    body\n>    ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&quoted_definition).is_ok());
+        assert!(open_fence_at_eof(&quoted_definition).is_none());
+        assert_eq!(extract_ownership_block(&quoted_definition), Some(ownership));
+        assert_eq!(extract_inventory_block(&quoted_definition), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let escaped_definition = format!(
+            "> [ref]: /url\n\"title\"\n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&escaped_definition).is_ok());
+        assert!(open_fence_at_eof(&escaped_definition).is_some());
+        assert_eq!(extract_ownership_block(&escaped_definition), None);
+        assert_eq!(extract_inventory_block(&escaped_definition), None);
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let continued_destination = format!(
+            "[ref]:\n  /url\n2. ```markdown\n   fenced body\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&continued_destination).is_ok());
+        assert!(open_fence_at_eof(&continued_destination).is_none());
+        assert_eq!(
+            extract_ownership_block(&continued_destination),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&continued_destination),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let empty_item = format!(
+            "Paragraph\n* \n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&empty_item).is_ok());
+        assert!(open_fence_at_eof(&empty_item).is_some());
+        assert_eq!(extract_ownership_block(&empty_item), None);
+        assert_eq!(extract_inventory_block(&empty_item), None);
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let overindented_destination = format!(
+            "[ref]:\n    /url\n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&overindented_destination).is_ok());
+        assert!(open_fence_at_eof(&overindented_destination).is_some());
+        assert_eq!(extract_ownership_block(&overindented_destination), None);
+        assert_eq!(extract_inventory_block(&overindented_destination), None);
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let short_setext =
+            format!("Heading\n-\n2. ```markdown\n   fenced body\n   ```\n{ownership}\n{inventory}");
+        assert!(validate_readme_regions(&short_setext).is_ok());
+        assert!(open_fence_at_eof(&short_setext).is_none());
+        assert_eq!(extract_ownership_block(&short_setext), Some(ownership));
+        assert_eq!(extract_inventory_block(&short_setext), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let spaced_setext = format!(
+            "Heading\n-   \n2. ```markdown\n   fenced body\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&spaced_setext).is_ok());
+        assert!(open_fence_at_eof(&spaced_setext).is_none());
+        assert_eq!(extract_ownership_block(&spaced_setext), Some(ownership));
+        assert_eq!(extract_inventory_block(&spaced_setext), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let paragraph_definition = format!(
+            "Paragraph\n[ref]: /url\n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&paragraph_definition).is_ok());
+        assert!(open_fence_at_eof(&paragraph_definition).is_some());
+        assert_eq!(extract_ownership_block(&paragraph_definition), None);
+        assert_eq!(extract_inventory_block(&paragraph_definition), None);
+        for prefix in ["=", "[ ]: /url"] {
+            let ownership = render_ownership_block();
+            let inventory =
+                format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+            let invalid_block = format!(
+                "{prefix}\n2. ```markdown\n   visible paragraph\n   ```\n{ownership}\n{inventory}"
+            );
+            assert!(validate_readme_regions(&invalid_block).is_ok());
+            assert!(open_fence_at_eof(&invalid_block).is_some());
+            assert_eq!(extract_ownership_block(&invalid_block), None);
+            assert_eq!(extract_inventory_block(&invalid_block), None);
+        }
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let raw_html = format!(
+            "<script>\n{README_OWNERSHIP_BEGIN}\nhuman script bytes\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman script bytes\n{README_INVENTORY_END}\n</script>\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&raw_html).is_ok());
+        assert_eq!(extract_ownership_block(&raw_html), Some(ownership));
+        assert_eq!(extract_inventory_block(&raw_html), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let thematic_before_html = format!(
+            "- - -\n<x>\n{README_OWNERSHIP_BEGIN}\nhuman raw HTML bytes\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman raw HTML bytes\n{README_INVENTORY_END}\n\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&thematic_before_html).is_ok());
+        assert_eq!(
+            extract_ownership_block(&thematic_before_html),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&thematic_before_html),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let valueless_attributes = format!(
+            "<x disabled class=foo>\n{README_OWNERSHIP_BEGIN}\nhuman raw HTML bytes\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman raw HTML bytes\n{README_INVENTORY_END}\n\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&valueless_attributes).is_ok());
+        assert_eq!(
+            extract_ownership_block(&valueless_attributes),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&valueless_attributes),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let eol_script = format!(
+            "<script\n{README_OWNERSHIP_BEGIN}\nhuman script bytes\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman script bytes\n{README_INVENTORY_END}\n</script>\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&eol_script).is_ok());
+        assert_eq!(extract_ownership_block(&eol_script), Some(ownership));
+        assert_eq!(extract_inventory_block(&eol_script), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let fenced_script = format!("```markdown\n<script>\n```\n{ownership}\n{inventory}");
+        assert!(validate_readme_regions(&fenced_script).is_ok());
+        assert!(open_fence_at_eof(&fenced_script).is_none());
+        assert_eq!(extract_ownership_block(&fenced_script), Some(ownership));
+        assert_eq!(extract_inventory_block(&fenced_script), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let indented_script = format!("    <script>\n{ownership}{inventory}</script>\n");
+        assert!(validate_readme_regions(&indented_script).is_ok());
+        assert_eq!(extract_ownership_block(&indented_script), Some(ownership));
+        assert_eq!(extract_inventory_block(&indented_script), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let lowercase_cdata = format!("<![cdata[\n{ownership}{inventory}]]>\n");
+        assert!(validate_readme_regions(&lowercase_cdata).is_ok());
+        assert_eq!(extract_ownership_block(&lowercase_cdata), Some(ownership));
+        assert_eq!(extract_inventory_block(&lowercase_cdata), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let invalid_unseparated_attribute = format!("<x:y>\n{ownership}{inventory}");
+        assert!(validate_readme_regions(&invalid_unseparated_attribute).is_ok());
+        assert_eq!(
+            extract_ownership_block(&invalid_unseparated_attribute),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&invalid_unseparated_attribute),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let invalid_slash_boundary = format!("<div/x\n{ownership}{inventory}");
+        assert!(validate_readme_regions(&invalid_slash_boundary).is_ok());
+        assert_eq!(
+            extract_ownership_block(&invalid_slash_boundary),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&invalid_slash_boundary),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let exited_paragraph = format!(
+            "> quoted paragraph\n2. ```markdown\n   human fence body\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&exited_paragraph).is_ok());
+        assert!(open_fence_at_eof(&exited_paragraph).is_none());
+        assert_eq!(extract_ownership_block(&exited_paragraph), Some(ownership));
+        assert_eq!(extract_inventory_block(&exited_paragraph), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let multiline_title = format!(
+            "[ref]: /url \"multi\nline\"\n2. ```markdown\n   human fence body\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&multiline_title).is_ok());
+        assert!(open_fence_at_eof(&multiline_title).is_none());
+        assert_eq!(extract_ownership_block(&multiline_title), Some(ownership));
+        assert_eq!(extract_inventory_block(&multiline_title), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let mixed_delimiter_title = format!(
+            "[ref]: /url \"multi '\nline\"\n2. ```markdown\n   human fence body\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&mixed_delimiter_title).is_ok());
+        assert!(open_fence_at_eof(&mixed_delimiter_title).is_none());
+        assert_eq!(
+            extract_ownership_block(&mixed_delimiter_title),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&mixed_delimiter_title),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let invalid_multiline_title = format!(
+            "[ref]: /url \"multi\n    line\"\n2. ```markdown\n   human paragraph\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&invalid_multiline_title).is_ok());
+        assert!(open_fence_at_eof(&invalid_multiline_title).is_some());
+        assert_eq!(extract_ownership_block(&invalid_multiline_title), None);
+        assert_eq!(extract_inventory_block(&invalid_multiline_title), None);
+        for invalid_parenthesized_title in ["[ref]: /url (foo ( bar)", "[ref]: /url (foo ( bar"] {
+            let ownership = render_ownership_block();
+            let inventory =
+                format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+            let invalid_title = format!(
+                "{invalid_parenthesized_title}\n2. ```markdown\n   human paragraph\n   ```\n{ownership}{inventory}"
+            );
+            assert!(validate_readme_regions(&invalid_title).is_ok());
+            assert!(open_fence_at_eof(&invalid_title).is_some());
+            assert_eq!(extract_ownership_block(&invalid_title), None);
+            assert_eq!(extract_inventory_block(&invalid_title), None);
+        }
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let escaped_destination_space =
+            format!("[ref]: /url\\ space\n2. ```markdown\n\n   ```\n{ownership}{inventory}");
+        assert!(validate_readme_regions(&escaped_destination_space).is_ok());
+        assert!(open_fence_at_eof(&escaped_destination_space).is_some());
+        assert_eq!(extract_ownership_block(&escaped_destination_space), None);
+        assert_eq!(extract_inventory_block(&escaped_destination_space), None);
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let unicode_label = "é".repeat(999);
+        let max_character_label = format!(
+            "[{unicode_label}]: /url\n2. ```markdown\n   human fence body\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&max_character_label).is_ok());
+        assert!(open_fence_at_eof(&max_character_label).is_none());
+        assert_eq!(
+            extract_ownership_block(&max_character_label),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&max_character_label),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let overlong_unicode_label = "é".repeat(1000);
+        let over_character_limit = format!(
+            "[{overlong_unicode_label}]: /url\n2. ```markdown\n   human paragraph\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&over_character_limit).is_ok());
+        assert!(open_fence_at_eof(&over_character_limit).is_some());
+        assert_eq!(extract_ownership_block(&over_character_limit), None);
+        assert_eq!(extract_inventory_block(&over_character_limit), None);
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let lazy_list_paragraph = format!("- paragraph\n<x>\n{ownership}{inventory}");
+        assert!(validate_readme_regions(&lazy_list_paragraph).is_ok());
+        assert_eq!(
+            extract_ownership_block(&lazy_list_paragraph),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&lazy_list_paragraph),
+            Some(inventory)
+        );
+        for opener in ["> <div>", "- <div>"] {
+            let ownership = render_ownership_block();
+            let inventory =
+                format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+            let contained_html = format!("{opener}\n{ownership}{inventory}");
+            assert!(validate_readme_regions(&contained_html).is_ok());
+            assert_eq!(extract_ownership_block(&contained_html), Some(ownership));
+            assert_eq!(extract_inventory_block(&contained_html), Some(inventory));
+        }
+        for (open, close) in [
+            ("<?php", "?>"),
+            ("<![CDATA[", "]]>"),
+            ("<div>", "\n"),
+            ("<div", "\n"),
+            ("<widget data-value='human'>", "\n"),
+        ] {
+            let ownership = render_ownership_block();
+            let inventory =
+                format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+            let non_tag_html = format!(
+                "{open}\n{README_OWNERSHIP_BEGIN}\nhuman\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman\n{README_INVENTORY_END}\n{close}\n{ownership}\n{inventory}"
+            );
+            assert!(validate_readme_regions(&non_tag_html).is_ok());
+            assert_eq!(extract_ownership_block(&non_tag_html), Some(ownership));
+            assert_eq!(extract_inventory_block(&non_tag_html), Some(inventory));
+        }
     }
 
     #[test]
@@ -526,6 +2174,28 @@ mod tests {
         assert!(updated.starts_with("# Legacy Pack"));
         assert!(updated.contains(README_INVENTORY_BEGIN));
         assert_eq!(updated.matches(README_INVENTORY_BEGIN).count(), 1);
+    }
+
+    #[test]
+    fn appending_missing_inventory_preserves_every_legacy_trailing_byte() {
+        let manifest = manifest_with("Trailing Byte Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        let cases = [
+            "# Legacy\nprose without newline",
+            "# Legacy\nprose with one newline\n",
+            "# Legacy\nprose with three newlines\n\n\n",
+            "# Legacy\nprose with trailing whitespace\n \t\n",
+        ];
+        for human in cases {
+            let updated = replace_inventory_block(human, &fresh);
+            assert!(
+                updated.as_bytes().starts_with(human.as_bytes()),
+                "legacy bytes must remain an exact prefix: {human:?}"
+            );
+            assert_eq!(updated.matches(README_INVENTORY_BEGIN).count(), 1);
+        }
     }
 
     #[test]

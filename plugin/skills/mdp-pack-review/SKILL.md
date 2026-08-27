@@ -76,15 +76,19 @@ artifacts. Reject mixed v1/v2 chains. Structured repeated observations belong
 only in the v2 normalized envelope. Confirm roles are explicit pack authority,
 not inferred from titles, IDs, provider fields, attributes, or source prose.
 
-Also run `mdp --json readme check --dir PACK_ROOT`. A generated README owns one
-machine-generated inventory block delimited by `<!-- mdp:readme-inventory v1
-begin -->` / `<!-- mdp:readme-inventory v1 end -->` that projects exact card
-entry counts, prompt ids, and source ids. A `stale` block is a blocking
-authoring finding; hand-maintained numeric inventory anywhere in the README is
-a finding. Legacy READMEs without the owned marker are orientation-only and
-unassessed. Recommend `mdp --json readme refresh --dir PACK_ROOT` to repair
- drift; it regenerates only the owned block and preserves human orientation
-prose outside it.
+Also run `mdp --json readme check --dir PACK_ROOT`. A generated README owns two
+machine-generated regions: the fixed ownership legend delimited by
+`<!-- mdp:readme-ownership v1 begin -->` / `<!-- mdp:readme-ownership v1 end -->`
+and the inventory delimited by `<!-- mdp:readme-inventory v1 begin -->` /
+`<!-- mdp:readme-inventory v1 end -->`, which projects exact card entry counts,
+prompt ids, and source ids. Never hand-edit either region or hand-maintain
+numeric inventory elsewhere. A stale inventory or malformed, duplicate, or
+nested ownership marker is a blocking authoring finding. Legacy READMEs without
+the generated markers are orientation-only and unassessed. Recommend
+`mdp --json readme refresh --dir PACK_ROOT` to repair drift; it replaces exactly
+the two machine-owned regions, inserting them when migrating a legacy README,
+and preserves every byte of human-owned prose outside them without semantic
+review.
 
 Also run `skills --job` and `requirements --job` for every exact canonical job
 that declares or should declare a product-foundation binding. Inspect the
