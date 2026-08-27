@@ -309,21 +309,26 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        let opening_container = fence.map(|(_, _, container)| container);
+        let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) = container_state.project(line, opening_container);
         if previous_container.is_some_and(|previous| previous != container) {
             indented_code = false;
             indented_code_can_start = true;
         }
-        previous_container = Some(container);
-        if fence.is_some_and(|(_, _, opening_container)| opening_container != container) {
+        previous_container = Some(container.clone());
+        if fence
+            .as_ref()
+            .is_some_and(|(_, _, opening_container)| *opening_container != container)
+        {
             // Block containers bound fenced code. Leaving an opening quote or
             // list item implicitly ends its unclosed fence; root prose must not
             // remain hidden until an unrelated matching delimiter appears.
             fence = None;
             indented_code_can_start = true;
         }
-        let open_delimiter = fence.map(|(character, length, _)| (character, length));
+        let open_delimiter = fence
+            .as_ref()
+            .map(|(character, length, _)| (*character, *length));
 
         if let Some((character, length, closing)) = fence_delimiter(block_content, open_delimiter) {
             if closing {
@@ -382,15 +387,17 @@ fn markdown_indent_columns(line: &str) -> usize {
     columns
 }
 
-// Block quotes may occur both outside and inside a list item. Keep the two
-// quote depths separate so a continuation such as `  > body` is not mistaken
-// for a root block quote merely because CommonMark permits up to three spaces
-// before `>`.
-type MarkdownContainer = (usize, Option<usize>, usize);
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum MarkdownContainerSegment {
+    Quote,
+    List(usize),
+}
+
+type MarkdownContainer = Vec<MarkdownContainerSegment>;
 
 #[derive(Default)]
 struct MarkdownContainerState {
-    list: Option<(usize, usize)>,
+    active: MarkdownContainer,
     blank_lines: usize,
 }
 
@@ -398,75 +405,75 @@ impl MarkdownContainerState {
     fn project<'a>(
         &mut self,
         line: &'a str,
-        opening: Option<MarkdownContainer>,
+        opening: Option<&MarkdownContainer>,
     ) -> (&'a str, MarkdownContainer) {
-        // An open fence owns an exact ordered container path. Project that
-        // path directly instead of greedily interpreting a nested quote as an
-        // outer quote before the active list continuation has been removed.
-        if let Some(
-            opening_container @ (opening_outer_quotes, opening_list, opening_nested_quotes),
-        ) = opening
-        {
-            let projected = strip_exact_blockquote_prefixes(line, opening_outer_quotes)
-                .and_then(|content| match opening_list {
-                    Some(indent) => strip_indent_columns(content, indent),
-                    None => Some(content),
-                })
-                .and_then(|content| {
-                    strip_exact_blockquote_prefixes(content, opening_nested_quotes)
-                });
-            if let Some(content) = projected {
-                return (content, opening_container);
+        let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
+        if let Some(opening) = opening {
+            if let Some(content) = project_container_path(line, opening) {
+                return (content, opening.clone());
             }
-        }
-        let (outer_quotes, quoted_content) = strip_blockquote_prefixes(line);
-        if self.list.is_some_and(|(depth, _)| depth != outer_quotes) {
-            self.list = None;
-            self.blank_lines = 0;
-        }
-        let quoted_blank = quoted_content
-            .bytes()
-            .all(|byte| matches!(byte, b' ' | b'\t'));
-
-        let list_content = if let Some((content_indent, item_content)) =
-            list_item_content(quoted_content)
-        {
-            self.list = Some((outer_quotes, content_indent));
-            self.blank_lines = 0;
-            item_content
-        } else if let Some((_, content_indent)) = self.list {
-            if quoted_blank {
-                self.blank_lines += 1;
-                if self.blank_lines >= 2 {
-                    self.list = None;
-                    self.blank_lines = 0;
-                }
-                ""
-            } else if let Some(continuation) = strip_indent_columns(quoted_content, content_indent)
+            if blank
+                && opening
+                    .iter()
+                    .any(|segment| matches!(segment, MarkdownContainerSegment::List(_)))
             {
-                self.blank_lines = 0;
-                continuation
-            } else {
-                self.list = None;
-                self.blank_lines = 0;
-                quoted_content
+                return ("", opening.clone());
             }
+        }
+
+        if blank {
+            self.blank_lines += 1;
+            if self.blank_lines >= 2 {
+                self.active.clear();
+                self.blank_lines = 0;
+            }
+            return ("", self.active.clone());
+        }
+        self.blank_lines = 0;
+
+        let mut container = self.active.clone();
+        let content = if container.is_empty() {
+            line
+        } else if let Some(content) = project_container_path(line, &container) {
+            content
         } else {
-            quoted_content
+            container.clear();
+            line
         };
-        let (nested_quotes, content) = strip_blockquote_prefixes(list_content);
-        let list_indent = self
-            .list
-            .and_then(|(depth, indent)| (depth == outer_quotes).then_some(indent));
-        (content, (outer_quotes, list_indent, nested_quotes))
+        let content = parse_new_container_prefixes(content, &mut container);
+        self.active = container.clone();
+        (content, container)
     }
 }
 
-fn strip_exact_blockquote_prefixes(mut line: &str, depth: usize) -> Option<&str> {
-    for _ in 0..depth {
-        line = strip_one_blockquote_prefix(line)?;
+fn project_container_path<'a>(
+    mut line: &'a str,
+    container: &[MarkdownContainerSegment],
+) -> Option<&'a str> {
+    for segment in container {
+        line = match segment {
+            MarkdownContainerSegment::Quote => strip_one_blockquote_prefix(line)?,
+            MarkdownContainerSegment::List(indent) => strip_indent_columns(line, *indent)?,
+        };
     }
     Some(line)
+}
+
+fn parse_new_container_prefixes<'a>(
+    mut line: &'a str,
+    container: &mut MarkdownContainer,
+) -> &'a str {
+    loop {
+        if let Some(content) = strip_one_blockquote_prefix(line) {
+            container.push(MarkdownContainerSegment::Quote);
+            line = content;
+        } else if let Some((indent, content)) = list_item_content(line) {
+            container.push(MarkdownContainerSegment::List(indent));
+            line = content;
+        } else {
+            return line;
+        }
+    }
 }
 
 fn strip_one_blockquote_prefix(line: &str) -> Option<&str> {
@@ -484,15 +491,6 @@ fn strip_one_blockquote_prefix(line: &str) -> Option<&str> {
         consumed += 1;
     }
     Some(&line[consumed..])
-}
-
-fn strip_blockquote_prefixes(mut line: &str) -> (usize, &str) {
-    let mut depth = 0;
-    while let Some(content) = strip_one_blockquote_prefix(line) {
-        line = content;
-        depth += 1;
-    }
-    (depth, line)
 }
 
 fn list_item_content(line: &str) -> Option<(usize, &str)> {
@@ -631,12 +629,17 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        let opening_container = fence.map(|(_, _, container)| container);
+        let opening_container = fence.as_ref().map(|(_, _, container)| container);
         let (block_content, container) = container_state.project(line, opening_container);
-        if fence.is_some_and(|(_, _, opening_container)| opening_container != container) {
+        if fence
+            .as_ref()
+            .is_some_and(|(_, _, opening_container)| *opening_container != container)
+        {
             fence = None;
         }
-        let open = fence.map(|(character, length, _)| (character, length));
+        let open = fence
+            .as_ref()
+            .map(|(character, length, _)| (*character, *length));
         if let Some((character, length, closing)) = fence_delimiter(block_content, open) {
             if closing {
                 fence = None;
@@ -1337,6 +1340,7 @@ Inline `inline-code` must be ignored.
             "> ```markdown\n> `cards/quoted-hidden.yaml`\nRoot `cards/quoted-visible.yaml`.\n",
             "- ```markdown\n  `cards/list-hidden.yaml`\nRoot `cards/list-visible.yaml`.\n",
             "- > ```markdown\n  > `cards/nested-hidden.yaml`\nRoot `cards/nested-visible.yaml`.\n",
+            "- outer\n  - ```markdown\n    `cards/nested-list-hidden.yaml`\nRoot `cards/nested-list-visible.yaml`.\n",
         ] {
             let tokens = inline_code_tokens(markdown);
             assert_eq!(
@@ -1375,7 +1379,7 @@ Inline `inline-code` must be ignored.
         let readme_path = root.join(".mdp/README.md");
         let mut readme = std::fs::read_to_string(&readme_path).expect("README");
         readme.push_str(
-            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
+            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
         );
         std::fs::write(&readme_path, readme).expect("write human examples");
 
@@ -1393,6 +1397,7 @@ Inline `inline-code` must be ignored.
                 "cards/list-missing.yaml",
                 "cards/quoted-root.yaml",
                 "cards/list-root.yaml",
+                "cards/nested-list-root.yaml",
                 "cards/visible-missing.yaml"
             ]
         );
@@ -1408,6 +1413,7 @@ Inline `inline-code` must be ignored.
                 "cards/list-missing.yaml",
                 "cards/quoted-root.yaml",
                 "cards/list-root.yaml",
+                "cards/nested-list-root.yaml",
                 "cards/visible-missing.yaml"
             ]
         );

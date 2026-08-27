@@ -397,94 +397,79 @@ fn open_fence_at_eof(readme: &str) -> Option<(char, usize)> {
     }
     scanner
         .fence
-        .map(|(character, length, _)| (character, length))
+        .as_ref()
+        .map(|(character, length, _)| (*character, *length))
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum MarkdownContainerSegment {
+    Quote,
+    List(usize),
+}
+
+type MarkdownContainer = Vec<MarkdownContainerSegment>;
 
 #[derive(Default)]
 struct MarkdownFenceScanner {
-    fence: Option<(char, usize, (usize, Option<usize>, usize))>,
-    list_container: Option<(usize, usize)>,
-    list_blank_lines: usize,
+    fence: Option<(char, usize, MarkdownContainer)>,
+    container: MarkdownContainer,
+    blank_lines: usize,
 }
 
 impl MarkdownFenceScanner {
     fn line_is_fenced(&mut self, line: &str) -> bool {
-        let fenced_projection = self.fence.and_then(
-            |(_, _, (opening_outer_quotes, opening_list, opening_nested_quotes))| {
-                strip_exact_blockquote_prefixes(line, opening_outer_quotes)
-                    .and_then(|content| match opening_list {
-                        Some(indent) => strip_indent_columns(content, indent),
-                        None => Some(content),
-                    })
-                    .and_then(|content| {
-                        strip_exact_blockquote_prefixes(content, opening_nested_quotes)
-                    })
-            },
-        );
-        let (quote_depth, quoted_content) = strip_blockquote_prefixes(line);
-        if self
-            .list_container
-            .is_some_and(|(depth, _)| depth != quote_depth)
-        {
-            self.list_container = None;
-            self.list_blank_lines = 0;
-        }
-        let quoted_blank = quoted_content
-            .bytes()
-            .all(|byte| matches!(byte, b' ' | b'\t'));
-        if self.fence.is_some() && fenced_projection.is_none() {
+        let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
+        let opening = self
+            .fence
+            .as_ref()
+            .map(|(_, _, container)| container.clone());
+        let fenced_projection = opening.as_ref().and_then(|container| {
+            project_container_path(line, container).or_else(|| {
+                (blank
+                    && container
+                        .iter()
+                        .any(|segment| matches!(segment, MarkdownContainerSegment::List(_))))
+                .then_some("")
+            })
+        });
+        if opening.is_some() && fenced_projection.is_none() {
             self.fence = None;
         }
-        let list_content = if let Some(content) = fenced_projection {
-            content
-        } else if let Some((content_indent, item_content)) = list_item_content(quoted_content) {
-            self.list_container = Some((quote_depth, content_indent));
-            self.list_blank_lines = 0;
-            item_content
-        } else if let Some((_, content_indent)) = self.list_container {
-            if quoted_blank {
-                self.list_blank_lines += 1;
-                if self.list_blank_lines >= 2 {
-                    self.list_container = None;
-                    self.list_blank_lines = 0;
-                }
-                ""
-            } else if let Some(continuation) = strip_indent_columns(quoted_content, content_indent)
-            {
-                self.list_blank_lines = 0;
-                continuation
-            } else {
-                self.list_container = None;
-                self.list_blank_lines = 0;
-                quoted_content
+        let (block_content, container) = if let Some(content) = fenced_projection {
+            (content, opening.expect("fenced projection has an opening"))
+        } else if blank {
+            self.blank_lines += 1;
+            if self.blank_lines >= 2 {
+                self.container.clear();
+                self.blank_lines = 0;
             }
+            ("", self.container.clone())
         } else {
-            quoted_content
-        };
-        let (nested_quotes, block_content) = if fenced_projection.is_some() {
-            (0, list_content)
-        } else {
-            strip_blockquote_prefixes(list_content)
-        };
-        let container = if fenced_projection.is_some() {
-            self.fence
-                .map(|(_, _, opening_container)| opening_container)
-                .expect("fenced projection requires an open fence")
-        } else {
-            (
-                quote_depth,
-                self.list_container
-                    .and_then(|(depth, indent)| (depth == quote_depth).then_some(indent)),
-                nested_quotes,
-            )
+            self.blank_lines = 0;
+            let mut container = self.container.clone();
+            let content = if container.is_empty() {
+                line
+            } else if let Some(content) = project_container_path(line, &container) {
+                content
+            } else {
+                container.clear();
+                line
+            };
+            let content = parse_new_container_prefixes(content, &mut container);
+            self.container = container.clone();
+            (content, container)
         };
         if self
             .fence
-            .is_some_and(|(_, _, opening_container)| opening_container != container)
+            .as_ref()
+            .is_some_and(|(_, _, opening_container)| *opening_container != container)
         {
             self.fence = None;
         }
-        let open = self.fence.map(|(character, length, _)| (character, length));
+        let open = self
+            .fence
+            .as_ref()
+            .map(|(character, length, _)| (*character, *length));
         if let Some((character, length, closing)) = fence_delimiter(block_content, open) {
             if closing {
                 self.fence = None;
@@ -499,11 +484,34 @@ impl MarkdownFenceScanner {
     }
 }
 
-fn strip_exact_blockquote_prefixes(mut line: &str, depth: usize) -> Option<&str> {
-    for _ in 0..depth {
-        line = strip_one_blockquote_prefix(line)?;
+fn project_container_path<'a>(
+    mut line: &'a str,
+    container: &[MarkdownContainerSegment],
+) -> Option<&'a str> {
+    for segment in container {
+        line = match segment {
+            MarkdownContainerSegment::Quote => strip_one_blockquote_prefix(line)?,
+            MarkdownContainerSegment::List(indent) => strip_indent_columns(line, *indent)?,
+        };
     }
     Some(line)
+}
+
+fn parse_new_container_prefixes<'a>(
+    mut line: &'a str,
+    container: &mut MarkdownContainer,
+) -> &'a str {
+    loop {
+        if let Some(content) = strip_one_blockquote_prefix(line) {
+            container.push(MarkdownContainerSegment::Quote);
+            line = content;
+        } else if let Some((indent, content)) = list_item_content(line) {
+            container.push(MarkdownContainerSegment::List(indent));
+            line = content;
+        } else {
+            return line;
+        }
+    }
 }
 
 fn strip_one_blockquote_prefix(line: &str) -> Option<&str> {
@@ -521,15 +529,6 @@ fn strip_one_blockquote_prefix(line: &str) -> Option<&str> {
         consumed += 1;
     }
     Some(&line[consumed..])
-}
-
-fn strip_blockquote_prefixes(mut line: &str) -> (usize, &str) {
-    let mut depth = 0;
-    while let Some(content) = strip_one_blockquote_prefix(line) {
-        line = content;
-        depth += 1;
-    }
-    (depth, line)
 }
 
 fn list_item_content(line: &str) -> Option<(usize, &str)> {
@@ -1096,6 +1095,7 @@ mod tests {
         for prefix in [
             "- example\n  ```markdown\n  unclosed list fence\n",
             "- > ```markdown\n  > unclosed nested fence\n",
+            "- outer\n  - ```markdown\n    unclosed nested-list fence\n",
         ] {
             let readme = format!("{prefix}Root prose.\n\n{ownership}\n{inventory}");
             assert!(validate_readme_regions(&readme).is_ok());
