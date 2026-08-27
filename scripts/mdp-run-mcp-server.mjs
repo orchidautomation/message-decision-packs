@@ -467,7 +467,11 @@ const remainingPrepareTimeout = (deadline, terminationGraceMs = 0) => {
   return remaining
 }
 
-const invokeSecureInstaller = (output, action, deadline, terminationGraceMs) => {
+const assertPrepareActive = (signal) => {
+  if (signal?.aborted) throw Object.assign(new Error('preparation cancelled'), { code: 'cli-cancelled' })
+}
+
+const invokeSecureInstaller = (output, action, deadline, terminationGraceMs, signal = null) => {
   const args = [
     '--json', '__secure-install',
     '--action', action,
@@ -495,6 +499,7 @@ const invokeSecureInstaller = (output, action, deadline, terminationGraceMs) => 
     terminationGraceMs,
     maxOutputBytes: MAX_CHILD_BUFFER_BYTES,
     inheritedFds: [output.fd, output.receiptFd],
+    signal,
   })
 }
 
@@ -508,9 +513,10 @@ const readInstallReceipt = (output) => {
   return { dev: BigInt(receipt.dev), ino: BigInt(receipt.ino) }
 }
 
-const publishPinnedOutput = async (output, deadline, terminationGraceMs) => {
-  const invocation = await invokeSecureInstaller(output, 'install', deadline, terminationGraceMs)
+const publishPinnedOutput = async (output, deadline, terminationGraceMs, signal) => {
+  const invocation = await invokeSecureInstaller(output, 'install', deadline, terminationGraceMs, signal)
   output.installedIdentity = readInstallReceipt(output)
+  assertPrepareActive(signal)
   let envelope
   try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output installer returned invalid data') }
   const stagedSha256 = createHash('sha256').update(readFileSync(output.cliPath)).digest('hex')
@@ -523,8 +529,9 @@ const publishPinnedOutput = async (output, deadline, terminationGraceMs) => {
   }
 }
 
-const verifyPinnedOutput = async (output, deadline, terminationGraceMs) => {
-  const invocation = await invokeSecureInstaller(output, 'verify', deadline, terminationGraceMs)
+const verifyPinnedOutput = async (output, deadline, terminationGraceMs, signal) => {
+  const invocation = await invokeSecureInstaller(output, 'verify', deadline, terminationGraceMs, signal)
+  assertPrepareActive(signal)
   let envelope
   try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output verifier returned invalid data') }
   const stagedSha256 = createHash('sha256').update(readFileSync(output.cliPath)).digest('hex')
@@ -534,8 +541,16 @@ const verifyPinnedOutput = async (output, deadline, terminationGraceMs) => {
 }
 
 const removePinnedOutput = async (output, deadline, terminationGraceMs) => {
-  if (!output.installedIdentity) return
-  try { await invokeSecureInstaller(output, 'remove', deadline, terminationGraceMs) } catch { /* preserve missing or concurrently replaced nodes */ }
+  if (!output.installedIdentity) return true
+  try {
+    const invocation = await invokeSecureInstaller(output, 'remove', deadline, terminationGraceMs)
+    let envelope
+    try { envelope = JSON.parse(invocation.stdout) } catch { return false }
+    return invocation.status === 0 && envelope?.ok === true && envelope?.command === 'secure-install' &&
+      envelope.data?.contract === 'mdp.secure-install.v1' && ['removed', 'absent'].includes(envelope.data?.status)
+  } catch {
+    return false
+  }
 }
 
 const normalizePreparedOutputPaths = (data, outputs) => {
@@ -549,7 +564,7 @@ const normalizePreparedOutputPaths = (data, outputs) => {
   return normalized
 }
 
-const callPrepareRunValidated = async (args) => {
+const callPrepareRunValidated = async (args, signal = null) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['dir', 'job', 'operation', 'inputs', 'model', 'retention_policy', 'created_at', 'out', 'manifest_out', 'full', 'timeout_ms']))
   const policy = requirePolicy()
@@ -599,9 +614,9 @@ const callPrepareRunValidated = async (args) => {
     cliArgs.push('--out', pinnedOutputs[0].cliPath)
     if (manifestOut) cliArgs.push('--manifest-out', pinnedOutputs[1].cliPath)
     if (parsed.full === true) cliArgs.push('--full')
-    const invocation = await invokeCli(cliArgs, dir, remainingPrepareTimeout(workDeadline, terminationGraceMs), null, false, null, null, terminationGraceMs)
-    if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
-      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable' }, true)
+    const invocation = await invokeCli(cliArgs, dir, remainingPrepareTimeout(workDeadline, terminationGraceMs), null, false, null, signal, terminationGraceMs)
+    if (invocation.timedOut || invocation.cancelled || invocation.overflowed || invocation.spawnFailed) {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.cancelled ? 'cli-cancelled' : invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable' }, true)
     }
     let envelope
     try { envelope = JSON.parse(invocation.stdout) } catch { return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true) }
@@ -621,7 +636,7 @@ const callPrepareRunValidated = async (args) => {
       }
     }
     for (const output of pinnedOutputs) {
-      await publishPinnedOutput(output, workDeadline, terminationGraceMs)
+      await publishPinnedOutput(output, workDeadline, terminationGraceMs, signal)
     }
     policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
     if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
@@ -629,26 +644,34 @@ const callPrepareRunValidated = async (args) => {
     if (manifestOut) policy.existing('work', manifestOut, 'file')
     policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
     if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
-    for (const output of pinnedOutputs) await verifyPinnedOutput(output, workDeadline, terminationGraceMs)
+    for (const output of pinnedOutputs) await verifyPinnedOutput(output, workDeadline, terminationGraceMs, signal)
+    assertPrepareActive(signal)
     published = true
     return toolResult(normalizePreparedOutputPaths(envelope.data, pinnedOutputs))
   } finally {
-    if (!published) {
-      await Promise.all(pinnedOutputs.map((output) => removePinnedOutput(output, deadline, terminationGraceMs)))
+    let cleanupComplete = true
+    try {
+      if (!published) {
+        const results = await Promise.all(pinnedOutputs.map((output) => removePinnedOutput(output, deadline, terminationGraceMs)))
+        cleanupComplete = results.every(Boolean)
+      }
+    } finally {
+      for (const output of pinnedOutputs) {
+        closeSync(output.fd)
+        closeSync(output.receiptFd)
+      }
+      rmSync(privateDir, { recursive: true, force: true })
     }
-    for (const output of pinnedOutputs) {
-      closeSync(output.fd)
-      closeSync(output.receiptFd)
-    }
-    rmSync(privateDir, { recursive: true, force: true })
+    if (!cleanupComplete) throw Object.assign(new Error('secure output cleanup incomplete; inspect required output paths before retry'), { code: 'mcp-cleanup-incomplete' })
   }
 }
 
-const callPrepareRun = async (args) => {
+const callPrepareRun = async (args, signal = null) => {
   try {
-    return await callPrepareRunValidated(args)
+    return await callPrepareRunValidated(args, signal)
   } catch (error) {
-    return blockedPrepareRun('mcp-arguments-invalid', error?.message || 'preparation refused')
+    const code = ['mcp-cleanup-incomplete', 'cli-cancelled'].includes(error?.code) ? error.code : 'mcp-arguments-invalid'
+    return blockedPrepareRun(code, error?.message || 'preparation refused')
   }
 }
 
@@ -882,7 +905,7 @@ const handleToolCall = async (params, signal = null) => {
     case 'mdp_run_tools':
       return callRunTools(call.arguments || {})
     case 'mdp_prepare_run':
-      return await callPrepareRun(call.arguments || {})
+      return await callPrepareRun(call.arguments || {}, signal)
     case 'mdp_run':
       return await callRun(call.arguments || {}, signal)
     case 'mdp_verify_run':

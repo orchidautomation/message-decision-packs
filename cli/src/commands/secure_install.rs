@@ -245,6 +245,17 @@ pub(crate) fn secure_install(
                 expected_file_dev.ok_or_else(|| anyhow!("expected file dev is required"))?;
             let expected_file_ino =
                 expected_file_ino.ok_or_else(|| anyhow!("expected file ino is required"))?;
+            match named_identity(dir_fd, &name) {
+                Err(error)
+                    if error
+                        .downcast_ref::<io::Error>()
+                        .is_some_and(|error| error.kind() == io::ErrorKind::NotFound) =>
+                {
+                    return Ok(json!({"contract": "mdp.secure-install.v1", "status": "absent"}));
+                }
+                Err(error) => return Err(error),
+                Ok(_) => {}
+            }
             remove_if_identity(dir_fd, &name, expected_file_dev, expected_file_ino)?;
             Ok(json!({"contract": "mdp.secure-install.v1", "status": "removed"}))
         }
@@ -366,6 +377,19 @@ mod tests {
         )
         .unwrap();
         assert!(!renamed.join("request.json").exists());
+        let absent = secure_install(
+            "remove",
+            None,
+            "request.json",
+            directory.as_raw_fd(),
+            identity.dev(),
+            identity.ino(),
+            Some(installed["dev"].as_str().unwrap().parse().unwrap()),
+            Some(installed["ino"].as_str().unwrap().parse().unwrap()),
+            None,
+        )
+        .unwrap();
+        assert_eq!(absent["status"], "absent");
         std::fs::remove_dir_all(&root).unwrap();
     }
 

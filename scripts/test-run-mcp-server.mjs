@@ -617,6 +617,83 @@ esac
   assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
 })
 
+test('prepare surfaces a cleanup helper refusal instead of claiming recovery', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-cleanup-refusal-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-cleanup-refusal.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action install "*) exec "${realCli}" "$@" ;;
+  *) exit 73 ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 1_000,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(blocked.result.structuredContent.diagnostics[0].code, 'mcp-cleanup-incomplete')
+  assert.match(blocked.result.structuredContent.diagnostics[0].message, /inspect required output paths before retry/)
+  assert.equal(existsSync(request), true, 'failed cleanup must not be reported as recovered')
+})
+
+test('notifications/cancelled aborts prepare and cleans any publication independently', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-cancel-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const ready = join(root, 'prepare.ready')
+  writeFileSync(join(pack, '.prepare-pause.json'), JSON.stringify({ ready, continue: join(root, 'prepare.continue') }))
+  const request = join(work, 'request.json')
+  const child = spawn(process.execPath, [server], {
+    env: { ...process.env, MDP_BIN: fixtureCli(root), ...(existsSync(realCli) ? { MDP_SECURE_INSTALL_BIN: realCli } : {}), ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])) },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  let outputText = ''
+  const replies = []
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    outputText += chunk
+    let newline
+    while ((newline = outputText.indexOf('\n')) >= 0) {
+      const line = outputText.slice(0, newline)
+      outputText = outputText.slice(newline + 1)
+      if (line.trim()) replies.push(JSON.parse(line))
+    }
+  })
+  child.stdin.write(`${JSON.stringify(toolCall(1, 'mdp_prepare_run', { dir: pack, job: 'prospect-fit-or-brief', model: 'fixture-model', out: request, timeout_ms: 2_000 }))}\n`)
+  await waitForFile(ready)
+  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 1 } })}\n`)
+  await new Promise((resolvePromise, rejectPromise) => {
+    const deadline = setTimeout(() => rejectPromise(new Error('prepare cancellation response timed out')), 3_000)
+    const poll = setInterval(() => {
+      if (replies.some((reply) => reply.id === 1)) {
+        clearTimeout(deadline)
+        clearInterval(poll)
+        resolvePromise()
+      }
+    }, 10)
+  })
+  const reply = replies.find((item) => item.id === 1)
+  assert.equal(reply.result.structuredContent.code, 'cli-cancelled', JSON.stringify(reply))
+  assert.equal(existsSync(request), false)
+  child.kill('SIGKILL')
+})
+
 test('real CLI completes canonical GTM and proposal handoffs across disjoint roots', async (t) => {
   if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
   if (process.platform === 'win32') return t.skip('offline native-driver fixture requires a Unix executable')
