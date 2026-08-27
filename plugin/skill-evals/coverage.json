@@ -60,8 +60,10 @@
       "boundary",
       "safety",
       "handoff",
-      "human-review"
-    ]
+      "human-review",
+      "communication"
+    ],
+    "require_communication_per_skill_split": true
   },
   "host_observation_requirements": {
     "require_all_trigger_cases": true,

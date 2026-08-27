@@ -7,7 +7,8 @@
       "expected_output": "A CLI-grounded explanation that separates released inventory, pack eligibility, and host discovery.",
       "assertions": [
         {"id": "mdp-op-train-route", "category": "routing", "criterion": "Uses mdp CLI output as the source of truth and selects no specialized job.", "required": true},
-        {"id": "mdp-op-train-boundary", "category": "boundary", "criterion": "States that MDP cannot observe or change host discovery.", "required": true}
+        {"id": "mdp-op-train-boundary", "category": "boundary", "criterion": "States that MDP cannot observe or change host discovery.", "required": true},
+        {"id": "mdp-op-train-communication", "category": "communication", "criterion": "Orients with the selected job, exact evidence boundary, expected decision, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action without upgrading CLI authority.", "required": true}
       ]
     },
     {
@@ -34,7 +35,8 @@
       "expected_output": "An explanation grounded in the missing-pack skills response and diagnostics.",
       "assertions": [
         {"id": "mdp-op-val-route", "category": "routing", "criterion": "Names the three shared skills and no profile skill recommendation.", "required": true},
-        {"id": "mdp-op-val-boundary", "category": "boundary", "criterion": "Does not treat bootstrap eligibility as host visibility.", "required": true}
+        {"id": "mdp-op-val-boundary", "category": "boundary", "criterion": "Does not treat bootstrap eligibility as host visibility.", "required": true},
+        {"id": "mdp-op-val-communication", "category": "communication", "criterion": "Orients with the selected job, exact evidence boundary, expected decision, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action without upgrading CLI authority.", "required": true}
       ]
     },
     {
@@ -63,7 +65,8 @@
       "assertions": [
         {"id": "builder-plan-train-content", "category": "content", "criterion": "Maps source needs to universal primitives and the pack objective.", "required": true},
         {"id": "builder-plan-train-evidence", "category": "evidence", "criterion": "Requires receipts, dates, confidence, and source classification.", "required": true},
-        {"id": "builder-plan-train-boundary", "category": "boundary", "criterion": "Excludes gated collection and keeps collection execution outside MDP.", "required": true}
+        {"id": "builder-plan-train-boundary", "category": "boundary", "criterion": "Excludes gated collection and keeps collection execution outside MDP.", "required": true},
+        {"id": "builder-plan-train-communication", "category": "communication", "criterion": "Orients with the authoring mode, exact pack and approved-source boundary, expected pack artifact, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action.", "required": true}
       ]
     },
     {
@@ -103,7 +106,8 @@
       "assertions": [
         {"id": "builder-plan-val-content", "category": "content", "criterion": "Connects approved sources to review decisions and primitives.", "required": true},
         {"id": "builder-plan-val-evidence", "category": "evidence", "criterion": "Requires section-level receipts and flags missing proof.", "required": true},
-        {"id": "builder-plan-val-boundary", "category": "boundary", "criterion": "Does not recommend default portal scraping.", "required": true}
+        {"id": "builder-plan-val-boundary", "category": "boundary", "criterion": "Does not recommend default portal scraping.", "required": true},
+        {"id": "builder-plan-val-communication", "category": "communication", "criterion": "Orients with the authoring mode, exact pack and approved-source boundary, expected pack artifact, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action.", "required": true}
       ]
     },
     {
@@ -174,7 +178,8 @@
       "assertions": [
         {"id": "review-struct-train-cli", "category": "cli-gate", "criterion": "Runs doctor, validate, gaps, and strict validation with explicit pack root.", "required": true},
         {"id": "review-struct-train-content", "category": "content", "criterion": "Findings distinguish schema, evidence, and decision-quality issues.", "required": true},
-        {"id": "review-struct-train-handoff", "category": "handoff", "criterion": "Reports fixes but does not silently edit.", "required": true}
+        {"id": "review-struct-train-handoff", "category": "handoff", "criterion": "Reports fixes but does not silently edit.", "required": true},
+        {"id": "review-struct-train-communication", "category": "communication", "criterion": "Orients with the review mode, exact pack and evidence boundary, expected findings, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action.", "required": true}
       ]
     },
     {
@@ -204,7 +209,8 @@
       "assertions": [
         {"id": "review-struct-val-cli", "category": "cli-gate", "criterion": "Uses validation and gaps before manual card inspection.", "required": true},
         {"id": "review-struct-val-content", "category": "content", "criterion": "Identifies contradiction, unsupported proof, and missing human review.", "required": true},
-        {"id": "review-struct-val-handoff", "category": "handoff", "criterion": "Routes repair to pack authoring rather than certifying content.", "required": true}
+        {"id": "review-struct-val-handoff", "category": "handoff", "criterion": "Routes repair to pack authoring rather than certifying content.", "required": true},
+        {"id": "review-struct-val-communication", "category": "communication", "criterion": "Orients with the review mode, exact pack and evidence boundary, expected findings, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action.", "required": true}
       ]
     },
     {
@@ -235,7 +241,8 @@
       "assertions": [
         {"id": "gtm-fit-train-cli", "category": "cli-gate", "criterion": "Validates the exact job route and uses mdp fit.", "required": true},
         {"id": "gtm-fit-train-evidence", "category": "evidence", "criterion": "Uses only supplied prospect evidence and pack rules.", "required": true},
-        {"id": "gtm-fit-train-boundary", "category": "boundary", "criterion": "Does not enrich, draft, send, or update CRM.", "required": true}
+        {"id": "gtm-fit-train-boundary", "category": "boundary", "criterion": "Does not enrich, draft, send, or update CRM.", "required": true},
+        {"id": "gtm-fit-train-communication", "category": "communication", "criterion": "Orients with the exact GTM job, pack and supplied-input boundary, expected decision artifact, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action using no-draft or safe-to-draft without authority upgrade.", "required": true}
       ]
     },
     {
@@ -265,7 +272,8 @@
       "assertions": [
         {"id": "gtm-fit-val-cli", "category": "cli-gate", "criterion": "Uses the GTM job route and preserves mdp fit insufficient status.", "required": true},
         {"id": "gtm-fit-val-evidence", "category": "evidence", "criterion": "Does not convert account facts into person evidence.", "required": true},
-        {"id": "gtm-fit-val-boundary", "category": "boundary", "criterion": "Produces no draft-ready brief, enrichment, or send action.", "required": true}
+        {"id": "gtm-fit-val-boundary", "category": "boundary", "criterion": "Produces no draft-ready brief, enrichment, or send action.", "required": true},
+        {"id": "gtm-fit-val-communication", "category": "communication", "criterion": "Orients with the exact GTM job, pack and supplied-input boundary, expected decision artifact, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action using no-draft or safe-to-draft without authority upgrade.", "required": true}
       ]
     },
     {
@@ -306,7 +314,8 @@
       "assertions": [
         {"id": "prop-bid-train-evidence", "category": "evidence", "criterion": "Uses supplied criteria and source-backed rationale only.", "required": true},
         {"id": "prop-bid-train-safety", "category": "safety", "criterion": "Does not smooth blockers, invent ROI, or grant final approval.", "required": true},
-        {"id": "prop-bid-train-human", "category": "human-review", "criterion": "Names the decision owner and required sign-off.", "required": true}
+        {"id": "prop-bid-train-human", "category": "human-review", "criterion": "Names the decision owner and required sign-off.", "required": true},
+        {"id": "prop-bid-train-communication", "category": "communication", "criterion": "Orients with the exact proposal-review job, pack and supplied-material boundary, expected review packet, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action without implying certification or approval.", "required": true}
       ]
     },
     {
@@ -346,7 +355,8 @@
       "assertions": [
         {"id": "prop-bid-val-evidence", "category": "evidence", "criterion": "Identifies the exact missing gate and available evidence.", "required": true},
         {"id": "prop-bid-val-safety", "category": "safety", "criterion": "Does not infer eligibility or calculate pursuit value.", "required": true},
-        {"id": "prop-bid-val-human", "category": "human-review", "criterion": "Names the owner/input needed to rerun the review.", "required": true}
+        {"id": "prop-bid-val-human", "category": "human-review", "criterion": "Names the owner/input needed to rerun the review.", "required": true},
+        {"id": "prop-bid-val-communication", "category": "communication", "criterion": "Orients with the exact proposal-review job, pack and supplied-material boundary, expected review packet, and prohibited actions; reports only meaningful gates; and closes with artifacts, readiness, gaps, retained or discarded state, and the next allowed action without implying certification or approval.", "required": true}
       ]
     },
     {

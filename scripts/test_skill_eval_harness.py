@@ -140,6 +140,23 @@ class SkillEvalHarnessMutationTests(unittest.TestCase):
         self.assertEqual(summary["indexes"], 5)
         self.assertEqual(errors, [])
 
+    def test_communication_assertions_cover_every_skill_split(self) -> None:
+        payload = copy.deepcopy(self.outputs)
+        for case in payload["cases"]:
+            if case["skill_id"] == "mdp" and case["split"] == "train":
+                case["assertions"] = [
+                    assertion
+                    for assertion in case["assertions"]
+                    if assertion["category"] != "communication"
+                ]
+        errors: list[str] = []
+
+        HARNESS.validate_outputs(
+            payload, self.coverage, self.skills, self.definitions, errors
+        )
+
+        self.assertIn("output communication coverage missing mdp/train", errors)
+
     def test_missing_index_and_installed_corpus_drift_fail(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-installed-evals-") as temp:
             installed_skills = Path(temp) / "skills"
