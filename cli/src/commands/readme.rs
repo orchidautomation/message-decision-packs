@@ -301,7 +301,7 @@ fn reference_warning(code: &str, kind: &str, reference: &str, path: &Path) -> Va
 }
 
 fn inline_code_tokens(markdown: &str) -> Vec<String> {
-    let mut fence: Option<(char, usize)> = None;
+    let mut fence: Option<(char, usize, (usize, Option<usize>))> = None;
     let mut indented_code = false;
     let mut indented_code_can_start = true;
     let mut list_container: Option<(usize, usize)> = None;
@@ -347,12 +347,25 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
             quoted_content
         };
 
-        if let Some((character, length, closing)) = fence_delimiter(block_content, fence) {
+        let container = (
+            quote_depth,
+            list_container.and_then(|(depth, indent)| (depth == quote_depth).then_some(indent)),
+        );
+        if fence.is_some_and(|(_, _, opening_container)| opening_container != container) {
+            // Block containers bound fenced code. Leaving an opening quote or
+            // list item implicitly ends its unclosed fence; root prose must not
+            // remain hidden until an unrelated matching delimiter appears.
+            fence = None;
+            indented_code_can_start = true;
+        }
+        let open_delimiter = fence.map(|(character, length, _)| (character, length));
+
+        if let Some((character, length, closing)) = fence_delimiter(block_content, open_delimiter) {
             if closing {
                 fence = None;
                 indented_code_can_start = true;
             } else if fence.is_none() {
-                fence = Some((character, length));
+                fence = Some((character, length, container));
             }
             // Preserve a block boundary without exposing fence delimiters as
             // inline code or joining prose from opposite sides of the block.
@@ -446,16 +459,38 @@ fn list_item_content(line: &str) -> Option<(usize, &str)> {
         }
         _ => return None,
     };
-    let spacing_start = marker_end;
-    let mut content_start = spacing_start;
-    while matches!(bytes.get(content_start), Some(b' ' | b'\t')) {
-        content_start += 1;
+    let mut whitespace_end = marker_end;
+    let mut content_column = markdown_indent_columns(&line[..marker_end]);
+    while let Some(byte @ (b' ' | b'\t')) = bytes.get(whitespace_end) {
+        content_column = advance_markdown_column(content_column, *byte);
+        whitespace_end += 1;
     }
-    if content_start == spacing_start {
+    if whitespace_end == marker_end {
         return None;
     }
-    let content_indent = markdown_indent_columns(&line[..content_start]);
+    let marker_column = markdown_indent_columns(&line[..marker_end]);
+    let padding = content_column - marker_column;
+    let (content_start, content_indent) = if padding <= 4 || whitespace_end == bytes.len() {
+        (whitespace_end, content_column)
+    } else {
+        // With more than four columns after a marker, CommonMark uses one
+        // whitespace character as list padding and leaves the excess as item
+        // content. That remaining four-column indent can therefore start code.
+        let first = bytes[marker_end];
+        (
+            marker_end + 1,
+            advance_markdown_column(marker_column, first),
+        )
+    };
     Some((content_indent, &line[content_start..]))
+}
+
+fn advance_markdown_column(column: usize, byte: u8) -> usize {
+    if byte == b'\t' {
+        column + 4 - (column % 4)
+    } else {
+        column + 1
+    }
 }
 
 fn strip_indent_columns(line: &str, required: usize) -> Option<&str> {
@@ -1210,16 +1245,29 @@ Inline `inline-code` must be ignored.
 
     #[test]
     fn card_reference_parser_excludes_indented_code_blocks_only() {
-        let markdown = "    `cards/first-code.yaml`\n\n\t`cards/continued-code.yaml`\nOutside `cards/visible.yaml`.\nParagraph continuation\n    `cards/paragraph-span.yaml`\n\n- item\n\n    Human `cards/list-continuation.yaml`\n\n>     `cards/blockquote-code.yaml`\n";
+        let markdown = "    `cards/first-code.yaml`\n\n\t`cards/continued-code.yaml`\nOutside `cards/visible.yaml`.\nParagraph continuation\n    `cards/paragraph-span.yaml`\n\n- item\n\n    Human `cards/list-continuation.yaml`\n\n>     `cards/blockquote-code.yaml`\n\n-     `cards/list-code.yaml`\n\n10. ordered\n\n    Human `cards/ordered-continuation.yaml`\n\n10.     `cards/ordered-code.yaml`\n";
         assert_eq!(
             inline_code_tokens(markdown),
             vec![
                 "cards/visible.yaml",
                 "cards/paragraph-span.yaml",
-                "cards/list-continuation.yaml"
+                "cards/list-continuation.yaml",
+                "cards/ordered-continuation.yaml"
             ],
             "code blocks respect paragraph, list-container, and blockquote boundaries"
         );
+    }
+
+    #[test]
+    fn unclosed_container_fences_do_not_hide_root_card_prose() {
+        for markdown in [
+            "> ```markdown\n> `cards/quoted-hidden.yaml`\nRoot `cards/quoted-visible.yaml`.\n",
+            "- ```markdown\n  `cards/list-hidden.yaml`\nRoot `cards/list-visible.yaml`.\n",
+        ] {
+            let tokens = inline_code_tokens(markdown);
+            assert_eq!(tokens.len(), 1);
+            assert!(tokens[0].ends_with("-visible.yaml"), "tokens: {tokens:?}");
+        }
     }
 
     #[test]
@@ -1229,7 +1277,7 @@ Inline `inline-code` must be ignored.
         let readme_path = root.join(".mdp/README.md");
         let mut readme = std::fs::read_to_string(&readme_path).expect("README");
         readme.push_str(
-            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\nHuman `cards/visible-missing.yaml`.\n",
+            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
         );
         std::fs::write(&readme_path, readme).expect("write human examples");
 
@@ -1243,7 +1291,12 @@ Inline `inline-code` must be ignored.
             .collect::<Vec<_>>();
         assert_eq!(
             check_refs,
-            vec!["cards/list-missing.yaml", "cards/visible-missing.yaml"]
+            vec![
+                "cards/list-missing.yaml",
+                "cards/quoted-root.yaml",
+                "cards/list-root.yaml",
+                "cards/visible-missing.yaml"
+            ]
         );
 
         let validate_refs = readme_validation_issues(&root)
@@ -1253,7 +1306,12 @@ Inline `inline-code` must be ignored.
             .collect::<Vec<_>>();
         assert_eq!(
             validate_refs,
-            vec!["cards/list-missing.yaml", "cards/visible-missing.yaml"]
+            vec![
+                "cards/list-missing.yaml",
+                "cards/quoted-root.yaml",
+                "cards/list-root.yaml",
+                "cards/visible-missing.yaml"
+            ]
         );
         let _ = std::fs::remove_dir_all(root);
     }
