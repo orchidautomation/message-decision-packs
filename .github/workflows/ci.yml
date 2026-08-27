@@ -53,6 +53,8 @@ jobs:
               - "llms-full.txt"
               - "scripts/skill-eval-harness.py"
               - "scripts/test_skill_eval_harness.py"
+              - "scripts/run-skill-behavioral-evals.py"
+              - "scripts/test_skill_behavioral_evals.py"
               - "scripts/validate-skill-packaging.py"
               - "scripts/test_skill_packaging.py"
               - "scripts/test-authority-conformance.mjs"
@@ -104,7 +106,7 @@ jobs:
         working-directory: cli
       - name: Validate five-skill routing and eval corpus
         run: |
-          python3 -m unittest scripts/test_skill_eval_harness.py scripts/test_skill_packaging.py
+          python3 -m unittest scripts/test_skill_eval_harness.py scripts/test_skill_behavioral_evals.py scripts/test_skill_packaging.py
           python3 scripts/skill-eval-harness.py --mdp-bin cli/target/debug/mdp
       - name: Validate public skills with skills-ref
         run: make validate-skill-ref

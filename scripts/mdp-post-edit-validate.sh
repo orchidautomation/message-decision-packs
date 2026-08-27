@@ -180,7 +180,7 @@ if matches_any '^plugin/skills/|^pluxx\.config\.ts$|^scripts/validate-skill-pack
   run_skill_packaging=1
 fi
 
-if matches_any '^plugin/skill-evals/|^scripts/(skill-eval-harness|test_skill_eval_harness)\.py$|^cli/src/.*\.rs$'; then
+if matches_any '^plugin/skill-evals/|^scripts/(skill-eval-harness|test_skill_eval_harness|run-skill-behavioral-evals|test_skill_behavioral_evals)\.py$|^cli/src/.*\.rs$'; then
   should_run=1
   run_skill_evals=1
 fi

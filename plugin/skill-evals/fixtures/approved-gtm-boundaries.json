@@ -1,0 +1,23 @@
+{
+  "model": "mdp.skill-eval-input.v1",
+  "synthetic": true,
+  "approved_by": "synthetic-reviewer",
+  "approved_at": "2026-08-27T00:00:00Z",
+  "receipts": [
+    {
+      "id": "synthetic-product-terms",
+      "source": "Synthetic product brief, section 2",
+      "approved_text": "Use decision context and routing contract as the canonical product terms."
+    },
+    {
+      "id": "synthetic-case-proof",
+      "source": "Synthetic case note, paragraph 3",
+      "approved_text": "The example team reduced review rework after adopting explicit evidence and gap handoffs."
+    },
+    {
+      "id": "synthetic-outcome-boundary",
+      "source": "Synthetic outcomes memo, line 8",
+      "approved_text": "Describe the outcome only as reduced review rework; do not claim revenue, conversion, or speed improvements."
+    }
+  ]
+}
