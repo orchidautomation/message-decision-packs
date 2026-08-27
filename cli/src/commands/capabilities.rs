@@ -523,7 +523,7 @@ fn collect_commands(command: &Command, parent_path: &[String], output: &mut Vec<
     for subcommand in command.get_subcommands() {
         let mut path = parent_path.to_vec();
         path.push(subcommand.get_name().to_string());
-        let human_only_reason = (subcommand.get_name() == "help").then_some(
+        let human_only_reason = path.iter().any(|segment| segment == "help").then_some(
             "Clap-generated help navigation; use --json with an authored command for a machine envelope",
         );
         output.push(json!({
@@ -1228,6 +1228,20 @@ mod tests {
         assert_eq!(
             projected_argument(fit, "--prompt")["requires_when_present"],
             json!(["--normalized-input"])
+        );
+
+        let nested_help = projected_command(commands, &["help", "conformance", "compile"]);
+        assert_eq!(nested_help["classification"], "human-only");
+        assert!(nested_help["human_only_reason"].is_string());
+        assert!(
+            commands
+                .iter()
+                .filter(|command| {
+                    command["path"]
+                        .as_array()
+                        .is_some_and(|path| path.first() == Some(&json!("help")))
+                })
+                .all(|command| command["classification"] == "human-only")
         );
     }
 
