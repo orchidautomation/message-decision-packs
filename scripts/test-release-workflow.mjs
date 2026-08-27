@@ -41,8 +41,9 @@ function hasMappingKey(line, key) {
     )
     if (quotedWithComment) {
       trimmed = `${quotedWithComment[1]}:`
-    } else if (!trimmed.includes(':')) {
-      trimmed = `${trimmed.replace(/\s+#.*$/u, '').trimEnd()}:`
+    } else {
+      const uncommented = trimmed.replace(/\s+#.*$/u, '').trimEnd()
+      trimmed = uncommented.includes(':') ? uncommented : `${uncommented}:`
     }
   }
   const terminator = '\\s*:'
@@ -392,6 +393,13 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       `          ${assetParityCommand}\n`,
       `          ${assetParityCommand}\n        ? "shell" # explicit key comment\n        : "/bin/true {0}"\n`,
+    ),
+  ],
+  [
+    'colon-commented plain explicit parity shell',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        ? shell # comment: colon\n        : "/bin/true {0}"\n`,
     ),
   ],
   [
