@@ -475,6 +475,12 @@ fn remove_directory_contents_with_hooks<
                 bail!("secure file entry identity changed during quarantine");
             }
             after_quarantine(dir_fd, name, false);
+            if named_identity(dir_fd, &quarantine)? != expected {
+                rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
+                    anyhow!("secure file entry pre-remove restore failed: {error}")
+                })?;
+                bail!("secure file entry identity changed before removal");
+            }
             if unsafe { libc::unlinkat(dir_fd, quarantine.as_ptr(), 0) } != 0 {
                 return Err(io::Error::last_os_error()).map_err(Into::into);
             }
@@ -1347,6 +1353,52 @@ mod tests {
         assert_eq!(
             std::fs::read(file_tree.join("victim")).unwrap(),
             b"replacement"
+        );
+
+        let quarantined_file_tree = root.join("quarantined-files");
+        std::fs::create_dir(&quarantined_file_tree).unwrap();
+        std::fs::write(quarantined_file_tree.join("victim"), b"owned").unwrap();
+        let quarantined_replacement = root.join("quarantined-replacement");
+        std::fs::write(&quarantined_replacement, b"replacement").unwrap();
+        let quarantined_dir = File::open(&quarantined_file_tree).unwrap();
+        let quarantined_result = remove_directory_contents_with_hooks(
+            quarantined_dir.as_raw_fd(),
+            &mut |_, _, _| {},
+            &mut |_, name, is_directory| {
+                if name.to_bytes() == b"victim" && !is_directory {
+                    let quarantine = std::fs::read_dir(&quarantined_file_tree)
+                        .unwrap()
+                        .map(|entry| entry.unwrap().path())
+                        .find(|path| {
+                            path.file_name()
+                                .unwrap()
+                                .to_string_lossy()
+                                .starts_with(".mdp-quarantine-")
+                        })
+                        .unwrap();
+                    std::fs::rename(&quarantine, quarantined_file_tree.join("saved")).unwrap();
+                    std::fs::rename(&quarantined_replacement, &quarantine).unwrap();
+                }
+            },
+            false,
+        );
+        assert!(quarantined_result.is_err());
+        assert_eq!(
+            std::fs::read(quarantined_file_tree.join("saved")).unwrap(),
+            b"owned"
+        );
+        assert_eq!(
+            std::fs::read(quarantined_file_tree.join("victim")).unwrap(),
+            b"replacement"
+        );
+        assert!(
+            std::fs::read_dir(&quarantined_file_tree)
+                .unwrap()
+                .all(|entry| !entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".mdp-quarantine-"))
         );
 
         let dir_tree = root.join("dirs");
