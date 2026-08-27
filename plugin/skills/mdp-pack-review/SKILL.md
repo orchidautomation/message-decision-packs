@@ -12,9 +12,11 @@ Review an existing pack and produce evidence-backed findings. Do not silently re
 Follow the shared [Orient, Plan, Progress, Translate, Close contract](../mdp/references/communication-contract.md).
 Open by naming the structural, routing-eval, or installed-QA job; the exact pack
 and CLI evidence boundary; the severity-ordered findings or QA decision the
-user will receive; and that this skill will not edit the pack, enrich, review
-business copy, certify compliance, submit work, or mutate downstream systems.
-Keep later updates to meaningful QA gates, blockers, and decisions.
+user will receive; and that this skill will not silently edit the pack, enrich,
+review business copy, certify compliance, submit work, or mutate downstream
+systems. Edit only when the user explicitly requests review plus repair, and
+state that repair route up front. Keep later updates to meaningful QA gates,
+blockers, and decisions.
 
 ## Authority Monotonicity
 

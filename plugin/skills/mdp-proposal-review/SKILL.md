@@ -13,9 +13,10 @@ Follow the shared [Orient, Plan, Progress, Translate, Close contract](../mdp/ref
 Open by naming the bid/no-bid, compliance, proof, or red-team job; the exact
 pack and supplied pursuit-material evidence boundary; the review packet and
 assurance decision the user will receive; and that this skill will not invent
-proof, certify compliance, approve or submit work, rewrite proposal material,
-or mutate downstream systems. Keep later updates to meaningful evidence gates,
-blockers, and decisions.
+proof, certify compliance, approve or submit work, or mutate downstream
+systems. Rewrite proposal material only when the user separately requests it,
+then revalidate every resulting claim. Keep later updates to meaningful
+evidence gates, blockers, and decisions.
 
 ## Authority Monotonicity
 
