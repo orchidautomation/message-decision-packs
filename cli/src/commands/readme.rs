@@ -467,6 +467,9 @@ fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag
         }
         return true;
     }
+    if markdown_indent_columns(line) > 3 {
+        return false;
+    }
     for tag in ["script", "pre", "style", "textarea"] {
         let opener = format!("<{tag}");
         if lower.starts_with(&opener)
@@ -2173,6 +2176,43 @@ Inline `inline-code` must be ignored.
                 "cards/visible-missing.yaml"
             ]
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn four_space_html_opener_does_not_hide_or_duplicate_owned_regions() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-indented-html-{}", nonce()));
+        init_pack(&root, "Indented HTML Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let with_indented_opener = readme.replacen(
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            &format!(
+                "    <script>\n{}",
+                crate::pack_readme::README_OWNERSHIP_BEGIN
+            ),
+            1,
+        ) + "</script>\n";
+        std::fs::write(&readme_path, &with_indented_opener).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "fresh", "{checked}");
+        refresh_readme(&root, None, false).expect("refresh README");
+        let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_OWNERSHIP_BEGIN)
+                .count(),
+            1
+        );
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_INVENTORY_BEGIN)
+                .count(),
+            1
+        );
+        assert!(refreshed.contains("    <script>\n"));
+        assert!(refreshed.ends_with("</script>\n"));
         let _ = std::fs::remove_dir_all(root);
     }
 

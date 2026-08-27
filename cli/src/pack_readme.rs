@@ -561,6 +561,9 @@ fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag
         }
         return true;
     }
+    if markdown_indent_columns(line) > 3 {
+        return false;
+    }
     for tag in ["script", "pre", "style", "textarea"] {
         let opener = format!("<{tag}");
         if lower.starts_with(&opener)
@@ -1750,6 +1753,12 @@ mod tests {
         assert!(open_fence_at_eof(&fenced_script).is_none());
         assert_eq!(extract_ownership_block(&fenced_script), Some(ownership));
         assert_eq!(extract_inventory_block(&fenced_script), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let indented_script = format!("    <script>\n{ownership}{inventory}</script>\n");
+        assert!(validate_readme_regions(&indented_script).is_ok());
+        assert_eq!(extract_ownership_block(&indented_script), Some(ownership));
+        assert_eq!(extract_inventory_block(&indented_script), Some(inventory));
         for (open, close) in [
             ("<?php", "?>"),
             ("<![CDATA[", "]]>"),
