@@ -445,9 +445,88 @@ fn is_link_reference_definition(line: &str) -> bool {
         match bytes[index] {
             b'\\' if !escaped => escaped = true,
             b']' if !escaped => {
-                return index > 1 && bytes.get(index + 1) == Some(&b':');
+                return index > 1
+                    && bytes.get(index + 1) == Some(&b':')
+                    && valid_link_definition_suffix(&trimmed[index + 2..]);
             }
             b'[' if !escaped => return false,
+            _ => escaped = false,
+        }
+    }
+    false
+}
+
+fn valid_link_definition_suffix(suffix: &str) -> bool {
+    let rest = suffix.trim_start_matches([' ', '\t']);
+    if rest.is_empty() {
+        return false;
+    }
+    let destination_end = if let Some(angle) = rest.strip_prefix('<') {
+        let mut escaped = false;
+        let mut closing = None;
+        for (index, character) in angle.char_indices() {
+            match character {
+                '\\' if !escaped => escaped = true,
+                '>' if !escaped => {
+                    closing = Some(1 + index + character.len_utf8());
+                    break;
+                }
+                '<' | '\n' | '\r' if !escaped => return false,
+                character if character.is_whitespace() && !escaped => return false,
+                _ => escaped = false,
+            }
+        }
+        let Some(closing) = closing else {
+            return false;
+        };
+        closing
+    } else {
+        let mut depth = 0usize;
+        let mut escaped = false;
+        let mut end = 0usize;
+        for (index, character) in rest.char_indices() {
+            if character.is_whitespace() && !escaped {
+                break;
+            }
+            match character {
+                '\\' if !escaped => escaped = true,
+                '(' if !escaped => depth += 1,
+                ')' if !escaped && depth > 0 => depth -= 1,
+                ')' if !escaped => return false,
+                character if character.is_control() && !escaped => return false,
+                _ => escaped = false,
+            }
+            end = index + character.len_utf8();
+        }
+        if end == 0 || depth != 0 {
+            return false;
+        }
+        end
+    };
+    let trailing = rest[destination_end..].trim_matches([' ', '\t']);
+    trailing.is_empty() || valid_link_title(trailing)
+}
+
+fn valid_link_title(title: &str) -> bool {
+    let Some(opening) = title.chars().next() else {
+        return false;
+    };
+    let closing = match opening {
+        '"' => '"',
+        '\'' => '\'',
+        '(' => ')',
+        _ => return false,
+    };
+    let mut escaped = false;
+    for (index, character) in title[opening.len_utf8()..].char_indices() {
+        match character {
+            '\\' if !escaped => escaped = true,
+            character if character == closing && !escaped => {
+                return title[opening.len_utf8() + index + character.len_utf8()..]
+                    .trim_matches([' ', '\t'])
+                    .is_empty();
+            }
+            '\n' | '\r' if !escaped => return false,
             _ => escaped = false,
         }
     }
@@ -1465,6 +1544,13 @@ Inline `inline-code` must be ignored.
             ),
             vec!["cards/after-definition-visible.yaml"],
             "a link reference definition closes before an ordered list"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "[ref]: <foo bar>\n2. ```markdown\n   `cards/invalid-definition-visible.yaml`\n   ```\n"
+            ),
+            vec!["cards/invalid-definition-visible.yaml"],
+            "a definition-shaped invalid destination remains paragraph text"
         );
     }
 
