@@ -84,11 +84,29 @@ function filterStepBlock(workflow) {
     ),
     'filter step must use dorny/paths-filter@v4',
   )
+  assert.equal(
+    step.find(
+      (line) =>
+        line.match(/^\s*/u)[0].length === 8 &&
+        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)),
+    ),
+    undefined,
+    'projected paths-filter step must not be bypassable',
+  )
   return step
 }
 
 function assertCliJobWiring(workflow) {
   const changes = jobBlock(workflow, 'changes')
+  assert.equal(
+    changes.find(
+      (line) =>
+        line.match(/^\s*/u)[0].length === 4 &&
+        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)),
+    ),
+    undefined,
+    'changes job must not be bypassable',
+  )
   const outputsIndex = changes.findIndex(
     (line) => line.match(/^\s*/u)[0].length === 4 && line.trim() === 'outputs:',
   )
@@ -102,6 +120,14 @@ function assertCliJobWiring(workflow) {
   const cli = jobBlock(workflow, 'cli')
   assertDirectJobProperty(cli, 'needs', 'changes')
   assertDirectJobProperty(cli, 'if', "needs.changes.outputs.cli == 'true'")
+  assert.equal(
+    cli.find(
+      (line) =>
+        line.match(/^\s*/u)[0].length === 4 && line.trim().startsWith('continue-on-error:'),
+    ),
+    undefined,
+    'cli job must not ignore failures',
+  )
   filterStepBlock(workflow)
 }
 
@@ -120,10 +146,14 @@ function runBlock(workflow, name) {
 
 function assertUnconditionalStep(workflow, name) {
   const { lines, start, end, stepIndent } = stepBlock(workflow, name)
-  const condition = lines
+  const control = lines
     .slice(start + 1, end)
-    .find((line) => line.trim().startsWith('if:') && line.match(/^\s*/u)[0].length > stepIndent)
-  assert.equal(condition, undefined, `required CI step must not have a step-level condition: ${name}`)
+    .find(
+      (line) =>
+        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)) &&
+        line.match(/^\s*/u)[0].length === stepIndent + 2,
+    )
+  assert.equal(control, undefined, `required CI step must not be bypassable: ${name}`)
 }
 
 function assertCliPathFilter(workflow, requiredGlob) {
@@ -221,6 +251,13 @@ for (const [name, mutation] of [
     ),
   ],
   [
+    'ignored asset parity failure',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        continue-on-error: true\n',
+    ),
+  ],
+  [
     'missing canonical asset filter',
     ciWorkflow.replace('              - "plugin/assets/**"\n', ''),
   ],
@@ -243,6 +280,13 @@ for (const [name, mutation] of [
     ),
   ],
   [
+    'ignored cli job failure',
+    ciWorkflow.replace(
+      "    if: needs.changes.outputs.cli == 'true'\n",
+      "    if: needs.changes.outputs.cli == 'true'\n    continue-on-error: true\n",
+    ),
+  ],
+  [
     'cli job no longer needs changes',
     ciWorkflow.replace('    needs: changes', '    needs: pluxx'),
   ],
@@ -253,6 +297,14 @@ for (const [name, mutation] of [
   [
     'replaced paths filter action',
     ciWorkflow.replace('        uses: dorny/paths-filter@v4', '        uses: actions/checkout@v4'),
+  ],
+  [
+    'disabled paths filter step',
+    ciWorkflow.replace('      - id: filter\n', '      - id: filter\n        if: false\n'),
+  ],
+  [
+    'disabled changes job',
+    ciWorkflow.replace('  changes:\n    runs-on:', '  changes:\n    if: false\n    runs-on:'),
   ],
 ]) {
   assert.throws(() => assertAssetParityCiContract(mutation), undefined, name)
