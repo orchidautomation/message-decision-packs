@@ -1,0 +1,31 @@
+{
+  "model": "mdp.skill-behavioral-suite.v1",
+  "revision": "mdp-262.v1",
+  "trigger_repeats": 2,
+  "trigger_case_ids": [
+    "builder-named-mdp-validation",
+    "review-structural-typo-validation",
+    "gtm-enrichment-refusal-validation",
+    "null-generic-research-train",
+    "null-gtm-on-proposal-validation",
+    "proposal-red-team-indirect-validation"
+  ],
+  "output_case_ids": [
+    "mdp-operator-help-validation",
+    "builder-gtm-approved-boundary-train",
+    "review-structural-validation",
+    "gtm-fit-validation",
+    "proposal-bid-validation"
+  ],
+  "input_files": {
+    "builder-named-mdp-validation": ["plugin/assets/templates/basic/.mdp/manifest.yaml"],
+    "gtm-enrichment-refusal-validation": ["plugin/assets/templates/basic/.mdp/manifest.yaml", "plugin/assets/templates/basic/examples/clay-row.json"],
+    "null-gtm-on-proposal-validation": ["plugin/assets/templates/proposal/.mdp/manifest.yaml"],
+    "proposal-red-team-indirect-validation": ["plugin/assets/templates/proposal/.mdp/manifest.yaml"],
+    "builder-gtm-approved-boundary-train": ["plugin/assets/templates/basic/.mdp/manifest.yaml", "plugin/skill-evals/fixtures/approved-gtm-boundaries.json"],
+    "review-structural-validation": ["plugin/assets/templates/proposal/.mdp/manifest.yaml", "plugin/assets/templates/proposal/.mdp/evals/invented-proof-guardrail.yaml"],
+    "gtm-fit-validation": ["plugin/assets/templates/basic/.mdp/manifest.yaml", "plugin/assets/templates/basic/examples/clay-row.json"],
+    "proposal-bid-validation": ["plugin/assets/templates/proposal/.mdp/manifest.yaml", "plugin/assets/templates/proposal/.mdp/evals/bid-no-bid-route.yaml"]
+  },
+  "comparison_modes": ["with-skill", "baseline", "previous-version"]
+}

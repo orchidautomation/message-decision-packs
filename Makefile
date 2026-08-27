@@ -109,7 +109,7 @@ validate-skill-contracts:
 	$(PYTHON) scripts/validate-skill-contracts.py
 
 validate-skill-evals:
-	$(PYTHON) -m unittest scripts/test_skill_eval_harness.py
+	$(PYTHON) -m unittest scripts/test_skill_eval_harness.py scripts/test_skill_behavioral_evals.py
 	$(PYTHON) scripts/skill-eval-harness.py --plugin-skills plugin/skills --output "$${MDP_TEMP_ROOT}/mdp-skill-evals"
 
 validate-skill-packaging:

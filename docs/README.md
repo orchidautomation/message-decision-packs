@@ -9,6 +9,7 @@ These are the current public docs:
 - [Prompt Contracts](prompt-extraction-contract.md): normalization and extraction schemas.
 - [Decision Input Contracts](decision-input-contracts.md): attempted-complete job inputs, source-attempt policy, normalized envelopes, and no-draft behavior.
 - [Cold-model Conformance](cold-model-conformance.md): deterministic sufficiency, recorded behavioral trials, composite authority, private/public reports, and privacy boundaries.
+- [Behavioral skill evaluations](skill-behavioral-evals.md): clean-context skill trials, baseline/previous comparisons, sanitized aggregates, and blind human review.
 - [Runner Receipts](run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
 - [Compatibility Proposal Runner Surface](proposal-runner.md): bounded v0 command/MCP compatibility for existing proposal consumers.
 - [Deterministic Proposal Evidence Harness](proposal-evidence-harness.md): network-free synthetic contract and negative-boundary proof for CI.
