@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs'
+import { closeSync, constants, fstatSync, openSync, statSync } from 'node:fs'
 
 export const identityBoundDirectoryCandidates = (platform, pid, fd) => {
   if (platform === 'linux') return [`/proc/self/fd/${fd}`, `/proc/${pid}/fd/${fd}`]
@@ -12,16 +12,24 @@ export const resolveIdentityBoundDirectory = ({
   fd,
   identity,
 }) => {
+  const matchesIdentity = (current) => current.isDirectory() &&
+    current.dev === BigInt(identity.dev) &&
+    current.ino === BigInt(identity.ino)
   for (const candidate of identityBoundDirectoryCandidates(platform, pid, fd)) {
     try {
       const current = statSync(candidate, { bigint: true })
-      if (
-        current.isDirectory() &&
-        current.dev === BigInt(identity.dev) &&
-        current.ino === BigInt(identity.ino)
-      ) return candidate
+      if (matchesIdentity(current)) return candidate
+    } catch {
+      // Some descriptor filesystems do not project the target identity via stat.
+    }
+    let duplicate
+    try {
+      duplicate = openSync(candidate, constants.O_RDONLY | (constants.O_DIRECTORY || 0))
+      if (matchesIdentity(fstatSync(duplicate, { bigint: true }))) return candidate
     } catch {
       // Try the next kernel-owned descriptor namespace, if one exists.
+    } finally {
+      if (duplicate !== undefined) closeSync(duplicate)
     }
   }
   throw Object.assign(
