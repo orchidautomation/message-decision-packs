@@ -338,7 +338,13 @@ fn stable_code(raw: &str) -> String {
         code = code.replace("__", "_");
     }
     let code = code.trim_matches('_').to_string();
-    if code.is_empty() {
+    if code == "cli-arguments-invalid" {
+        // `prepare-run` preserves its older compiler-envelope code in the
+        // low-level payload. The shared actionable projection must still use
+        // the same stable input code as every other Clap failure so JSON and
+        // human presentation cannot classify identical input differently.
+        "invalid_argument".to_string()
+    } else if code.is_empty() {
         "mdp_error".to_string()
     } else {
         code

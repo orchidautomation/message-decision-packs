@@ -165,6 +165,32 @@ fn actionable_diagnostic_is_shared_by_json_and_human_errors() {
 }
 
 #[test]
+fn prepare_run_argument_errors_share_the_actionable_code_across_presentations() {
+    let (json_code, _, json_stderr, value) = run(
+        &["--json", "prepare-run", "--definitely-unsupported"],
+        Case::Ok,
+    );
+    assert_eq!(json_code, 2);
+    assert!(json_stderr.is_empty());
+    let value = value.expect("JSON prepare-run error envelope");
+    assert_eq!(
+        value["actionable_diagnostics"][0]["code"],
+        "invalid_argument"
+    );
+
+    let output = Command::new(mdp_bin())
+        .args(["prepare-run", "--definitely-unsupported"])
+        .output()
+        .expect("human prepare-run error invocation");
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("diagnostic [input / invalid_argument]"),
+        "human stderr: {stderr}"
+    );
+}
+
+#[test]
 fn successful_target_command_advertises_empty_versioned_diagnostics() {
     let root = std::env::temp_dir().join(format!(
         "mdp-actionable-diagnostics-{}-{}",
