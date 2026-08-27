@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { cleanupOwnedTempWorkspace, cleanupStaleOwnedTempWorkspaces, createOwnedTempWorkspace, TEMP_WORKSPACE_MARKER } from './lib/temp-workspace.mjs'
+import { cleanupOwnedTempWorkspace, cleanupStaleOwnedTempWorkspaces, createOwnedTempWorkspace, resolveDescriptorDirectoryPath, TEMP_WORKSPACE_MARKER } from './lib/temp-workspace.mjs'
 
 const wrapper = fileURLToPath(new URL('./with-temp-workspace.mjs', import.meta.url))
 
@@ -95,6 +95,28 @@ test('wrapper supports a temporary base path containing spaces', async (t) => {
   const observed = readFileSync(observedPath, 'utf8')
   assert.ok(observed.startsWith(`${base}/mdp-owned-validation-`))
   assert.equal(existsSync(observed), false)
+})
+
+test('macOS descriptor resolver verifies an opened directory duplicate', () => {
+  const closed = []
+  const identity = { dev: 7, ino: 11 }
+  const resolved = resolveDescriptorDirectoryPath({
+    fd: 9,
+    identity,
+    platform: 'darwin',
+    stat: () => ({ dev: 1, ino: 2 }),
+    open: (path) => {
+      assert.equal(path, '/dev/fd/9')
+      return 13
+    },
+    fstat: (fd) => {
+      assert.equal(fd, 13)
+      return identity
+    },
+    close: (fd) => closed.push(fd),
+  })
+  assert.equal(resolved, '/dev/fd/9')
+  assert.deepEqual(closed, [13])
 })
 
 test('handled interruption forwards the signal and cleans the owned root', async (t) => {

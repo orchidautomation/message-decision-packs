@@ -11,15 +11,33 @@ const MAX_MARKER_BYTES = 4_096
 const currentUid = () => (typeof process.getuid === 'function' ? process.getuid() : null)
 const mode = (stats) => stats.mode & 0o777
 const sameIdentity = (left, right) => left.dev === right.dev && left.ino === right.ino
-const descriptorDirectoryPath = (fd, identity) => {
-  const candidates = process.platform === 'linux'
-    ? [`/proc/self/fd/${fd}`, `/proc/${process.pid}/fd/${fd}`]
-    : process.platform === 'darwin' ? [`/dev/fd/${fd}`] : []
+export const resolveDescriptorDirectoryPath = ({
+  fd,
+  identity,
+  platform = process.platform,
+  pid = process.pid,
+  stat = statSync,
+  open = openSync,
+  fstat = fstatSync,
+  close = closeSync,
+} = {}) => {
+  const candidates = platform === 'linux'
+    ? [`/proc/self/fd/${fd}`, `/proc/${pid}/fd/${fd}`]
+    : platform === 'darwin' ? [`/dev/fd/${fd}`] : []
   for (const candidate of candidates) {
     try {
-      if (sameIdentity(statSync(candidate), identity)) return candidate
+      if (sameIdentity(stat(candidate), identity)) return candidate
+    } catch {
+      // Some descriptor filesystems do not project the target identity via stat.
+    }
+    let duplicate
+    try {
+      duplicate = open(candidate, constants.O_RDONLY | (constants.O_DIRECTORY || 0))
+      if (sameIdentity(fstat(duplicate), identity)) return candidate
     } catch {
       // Try the next kernel-owned descriptor namespace.
+    } finally {
+      if (duplicate !== undefined) close(duplicate)
     }
   }
   return null
@@ -109,7 +127,8 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     parentFd = openSync(parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
     const parentStats = fstatSync(parentFd)
     if (!parentStats.isDirectory()) return false
-    const parentReference = descriptorDirectoryPath(parentFd, parentStats) || parent
+    const parentReference = resolveDescriptorDirectoryPath({ fd: parentFd, identity: parentStats })
+    if (!parentReference) return false
     const ownedPath = join(parentReference, basename(inspected.root))
     const quarantine = join(parentReference, quarantineLeaf)
     try {
@@ -137,7 +156,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
       quarantineFd = openSync(quarantine, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
       const quarantineStats = fstatSync(quarantineFd)
       if (!sameIdentity(quarantineStats, inspected.rootStats)) return false
-      const quarantineReference = descriptorDirectoryPath(quarantineFd, quarantineStats)
+      const quarantineReference = resolveDescriptorDirectoryPath({ fd: quarantineFd, identity: quarantineStats })
       // Without a kernel-owned descriptor path, preserve the quarantine rather
       // than fall back to a replaceable pathname for recursive deletion.
       if (!quarantineReference) {
