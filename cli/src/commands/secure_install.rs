@@ -275,6 +275,125 @@ fn remove_empty_directory_if_identity(
     Ok(())
 }
 
+fn remove_directory_contents(dir_fd: RawFd) -> Result<()> {
+    let duplicate = unsafe { libc::dup(dir_fd) };
+    if duplicate < 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    let stream = unsafe { libc::fdopendir(duplicate) };
+    if stream.is_null() {
+        unsafe { libc::close(duplicate) };
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    loop {
+        let entry = unsafe { libc::readdir(stream) };
+        if entry.is_null() {
+            break;
+        }
+        let name = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) };
+        if name.to_bytes() == b"." || name.to_bytes() == b".." {
+            continue;
+        }
+        let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+        if unsafe {
+            libc::fstatat(
+                dir_fd,
+                name.as_ptr(),
+                stat.as_mut_ptr(),
+                libc::AT_SYMLINK_NOFOLLOW,
+            )
+        } != 0
+        {
+            unsafe { libc::closedir(stream) };
+            return Err(io::Error::last_os_error()).map_err(Into::into);
+        }
+        let stat = unsafe { stat.assume_init() };
+        if stat.st_mode & libc::S_IFMT == libc::S_IFDIR {
+            let child_fd = unsafe {
+                libc::openat(
+                    dir_fd,
+                    name.as_ptr(),
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            };
+            if child_fd < 0 {
+                unsafe { libc::closedir(stream) };
+                return Err(io::Error::last_os_error()).map_err(Into::into);
+            }
+            let child = unsafe { File::from_raw_fd(child_fd) };
+            remove_directory_contents(child_fd)?;
+            drop(child);
+            if unsafe { libc::unlinkat(dir_fd, name.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
+                unsafe { libc::closedir(stream) };
+                return Err(io::Error::last_os_error()).map_err(Into::into);
+            }
+        } else if unsafe { libc::unlinkat(dir_fd, name.as_ptr(), 0) } != 0 {
+            unsafe { libc::closedir(stream) };
+            return Err(io::Error::last_os_error()).map_err(Into::into);
+        }
+    }
+    if unsafe { libc::closedir(stream) } != 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    Ok(())
+}
+
+fn remove_directory_tree_if_identity(
+    dir_fd: RawFd,
+    name: &CString,
+    expected_dev: u64,
+    expected_ino: u64,
+) -> Result<()> {
+    let target_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if target_fd < 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    let target = unsafe { File::from_raw_fd(target_fd) };
+    let opened = opened_identity(target_fd)?;
+    if opened != (expected_dev, expected_ino) || named_identity(dir_fd, name)? != opened {
+        bail!("secure remove directory tree identity mismatch");
+    }
+    let _sigterm_guard = SigtermMaskGuard::block()?;
+    if named_identity(dir_fd, name)? != opened {
+        bail!("secure remove directory tree identity changed before removal");
+    }
+    remove_directory_contents(target_fd)?;
+    if named_identity(dir_fd, name)? != opened {
+        bail!("secure remove directory tree identity changed during removal");
+    }
+    if unsafe { libc::unlinkat(dir_fd, name.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    drop(target);
+    Ok(())
+}
+
+fn directory_identity_status(
+    dir_fd: RawFd,
+    name: &CString,
+    expected_dev: u64,
+    expected_ino: u64,
+) -> Result<&'static str> {
+    match named_identity(dir_fd, name) {
+        Ok(identity) if identity == (expected_dev, expected_ino) => Ok("match"),
+        Ok(_) => Ok("mismatch"),
+        Err(error)
+            if error
+                .downcast_ref::<io::Error>()
+                .is_some_and(|e| e.kind() == io::ErrorKind::NotFound) =>
+        {
+            Ok("absent")
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn secure_install_with_hook<F: FnOnce()>(
     source: &Path,
     name: &CString,
@@ -466,8 +585,25 @@ pub(crate) fn secure_install(
             )?;
             Ok(json!({"contract": "mdp.secure-install.v1", "status": "removed"}))
         }
+        "remove-directory-tree" => {
+            let expected_file_dev =
+                expected_file_dev.ok_or_else(|| anyhow!("expected directory dev is required"))?;
+            let expected_file_ino =
+                expected_file_ino.ok_or_else(|| anyhow!("expected directory ino is required"))?;
+            remove_directory_tree_if_identity(dir_fd, &name, expected_file_dev, expected_file_ino)?;
+            Ok(json!({"contract": "mdp.secure-install.v1", "status": "removed"}))
+        }
+        "verify-directory" => {
+            let expected_file_dev =
+                expected_file_dev.ok_or_else(|| anyhow!("expected directory dev is required"))?;
+            let expected_file_ino =
+                expected_file_ino.ok_or_else(|| anyhow!("expected directory ino is required"))?;
+            let status =
+                directory_identity_status(dir_fd, &name, expected_file_dev, expected_file_ino)?;
+            Ok(json!({"contract": "mdp.secure-install.v1", "status": status}))
+        }
         _ => bail!(
-            "secure install action must be install, verify, remove, move-directory, or remove-directory"
+            "secure install action must be install, verify, remove, move-directory, remove-directory, remove-directory-tree, or verify-directory"
         ),
     }
 }
@@ -549,6 +685,34 @@ mod tests {
         )
         .unwrap();
         assert!(!destination.exists());
+
+        let tree = root.join("tree");
+        let outside = root.join("outside");
+        std::fs::create_dir_all(tree.join("nested")).unwrap();
+        std::fs::write(tree.join("nested/file"), b"owned").unwrap();
+        std::fs::write(&outside, b"outside").unwrap();
+        symlink(&outside, tree.join("link")).unwrap();
+        let tree_identity = std::fs::metadata(&tree).unwrap();
+        let tree_name = CString::new("tree").unwrap();
+        assert_eq!(
+            directory_identity_status(
+                parent.as_raw_fd(),
+                &tree_name,
+                tree_identity.dev(),
+                tree_identity.ino(),
+            )
+            .unwrap(),
+            "match"
+        );
+        remove_directory_tree_if_identity(
+            parent.as_raw_fd(),
+            &tree_name,
+            tree_identity.dev(),
+            tree_identity.ino(),
+        )
+        .unwrap();
+        assert!(!tree.exists());
+        assert_eq!(std::fs::read(&outside).unwrap(), b"outside");
         std::fs::remove_dir_all(&root).unwrap();
     }
 

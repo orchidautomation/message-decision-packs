@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,20 +47,16 @@ const secureDirectoryAction = ({ action, parentFd, parentStats, name, toName, ex
   if (result.status !== 0 || result.error) return failure('process-failed')
   try {
     const envelope = JSON.parse(result.stdout)
-    const expectedStatus = action === 'move-directory' ? 'moved' : 'removed'
+    const expectedStatus = action === 'move-directory' ? 'moved'
+      : action === 'verify-directory' ? envelope?.data?.status
+        : 'removed'
     const ok = envelope?.ok === true &&
       envelope?.command === 'secure-install' &&
       envelope?.data?.contract === 'mdp.secure-install.v1' &&
       envelope?.data?.status === expectedStatus
-    return ok ? { ok: true } : failure('invalid-envelope')
+    return ok ? { ok: true, status: envelope.data.status } : failure('invalid-envelope')
   } catch {
     return failure('invalid-json')
-  }
-}
-const identityAt = (path) => {
-  try { return lstatSync(path, { bigint: true }) } catch (error) {
-    if (error?.code === 'ENOENT') return null
-    throw error
   }
 }
 export const resolveDescriptorDirectoryPath = ({
@@ -192,7 +188,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
   const {
     beforeQuarantine,
     beforeRestore,
-    resolveDescriptor = resolveDescriptorDirectoryPath,
+    beforeRemove,
     secureHelperPath,
     secureHelperDiagnostics,
     ...inspectionOptions
@@ -207,30 +203,27 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     parentFd = openSync(parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
     const parentStats = fstatSync(parentFd, { bigint: true })
     if (!parentStats.isDirectory()) return false
-    const parentReference = resolveDescriptor({
-      fd: parentFd,
-      identity: parentStats,
-      stat: (path) => statSync(path, { bigint: true }),
-      fstat: (fd) => fstatSync(fd, { bigint: true }),
-    })
-    if (!parentReference) return false
-    const ownedPath = join(parentReference, basename(inspected.root))
-    const quarantine = join(parentReference, quarantineLeaf)
-    try {
-      lstatSync(quarantine)
-      return false
-    } catch (error) {
-      if (error?.code !== 'ENOENT') return false
+    const ownedName = basename(inspected.root)
+    const ownedPath = join(parent, ownedName)
+    const quarantine = join(parent, quarantineLeaf)
+    const statusFor = (name) => {
+      const result = secureDirectoryAction({
+        action: 'verify-directory', parentFd, parentStats, name,
+        expected: inspected.rootIdentity, helper: secureHelperPath,
+      })
+      if ((!result.ok || !['match', 'mismatch', 'absent'].includes(result.status)) && Array.isArray(secureHelperDiagnostics)) {
+        secureHelperDiagnostics.push({ action: 'verify-directory', name, ...result })
+      }
+      return result
     }
-    const finalStats = lstatSync(ownedPath, { bigint: true })
-    if (!sameIdentity(finalStats, inspected.rootIdentity)) return false
+    if (statusFor(ownedName).status !== 'match' || statusFor(quarantineLeaf).status !== 'absent') return false
     if (typeof beforeQuarantine === 'function') beforeQuarantine({ ownedPath, quarantine })
     if (!sameIdentity(fstatSync(parentFd, { bigint: true }), parentStats)) return false
     const moveResult = secureDirectoryAction({
       action: 'move-directory',
       parentFd,
       parentStats,
-      name: basename(inspected.root),
+      name: ownedName,
       toName: quarantineLeaf,
       expected: inspected.rootIdentity,
       helper: secureHelperPath,
@@ -240,68 +233,35 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     // transaction, so it can mutate safely yet exit before printing JSON.
     // Reconcile the identity-bound postcondition rather than trusting process
     // status alone.
-    if (identityAt(ownedPath) !== null) return false
-    const movedStats = identityAt(quarantine)
-    if (movedStats === null) return false
-    if (!sameIdentity(movedStats, inspected.rootIdentity)) {
+    if (statusFor(ownedName).status !== 'absent' || statusFor(quarantineLeaf).status !== 'match') {
       if (typeof beforeRestore === 'function') beforeRestore({ ownedPath, quarantine })
       const restoreResult = secureDirectoryAction({
         action: 'move-directory',
         parentFd,
         parentStats,
         name: quarantineLeaf,
-        toName: basename(inspected.root),
+        toName: ownedName,
         expected: inspected.rootIdentity,
         helper: secureHelperPath,
       })
       if (!restoreResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'restore-directory', ...restoreResult })
       return false
     }
-    let quarantineFd
-    try {
-      quarantineFd = openSync(quarantine, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
-      const quarantineStats = fstatSync(quarantineFd, { bigint: true })
-      if (!sameIdentity(quarantineStats, inspected.rootIdentity)) return false
-      const quarantineReference = resolveDescriptor({
-        fd: quarantineFd,
-        identity: quarantineStats,
-        stat: (path) => statSync(path, { bigint: true }),
-        fstat: (fd) => fstatSync(fd, { bigint: true }),
+    if (typeof beforeRemove === 'function' && beforeRemove({ ownedPath, quarantine }) === false) {
+      if (typeof beforeRestore === 'function') beforeRestore({ ownedPath, quarantine })
+      const restoreResult = secureDirectoryAction({
+        action: 'move-directory', parentFd, parentStats, name: quarantineLeaf,
+        toName: ownedName, expected: inspected.rootIdentity, helper: secureHelperPath,
       })
-      // Without a kernel-owned descriptor path, preserve the quarantine rather
-      // than fall back to a replaceable pathname for recursive deletion.
-      if (!quarantineReference) {
-        if (typeof beforeRestore === 'function') beforeRestore({ ownedPath, quarantine })
-        const restoreResult = secureDirectoryAction({
-          action: 'move-directory',
-          parentFd,
-          parentStats,
-          name: quarantineLeaf,
-          toName: basename(inspected.root),
-          expected: inspected.rootIdentity,
-          helper: secureHelperPath,
-        })
-        if (!restoreResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'restore-directory', ...restoreResult })
-        return false
-      }
-      for (const entry of readdirSync(quarantineReference)) {
-        rmSync(join(quarantineReference, entry), { recursive: true, force: false })
-      }
-      const namedStats = lstatSync(quarantine, { bigint: true })
-      if (!sameIdentity(namedStats, inspected.rootIdentity)) return false
-      const removeResult = secureDirectoryAction({
-        action: 'remove-directory',
-        parentFd,
-        parentStats,
-        name: quarantineLeaf,
-        expected: inspected.rootIdentity,
-        helper: secureHelperPath,
-      })
-      if (!removeResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'remove-directory', ...removeResult })
-      if (identityAt(quarantine) !== null) return false
-    } finally {
-      if (quarantineFd !== undefined) closeSync(quarantineFd)
+      if (!restoreResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'restore-directory', ...restoreResult })
+      return false
     }
+    const removeResult = secureDirectoryAction({
+      action: 'remove-directory-tree', parentFd, parentStats, name: quarantineLeaf,
+      expected: inspected.rootIdentity, helper: secureHelperPath,
+    })
+    if (!removeResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'remove-directory-tree', ...removeResult })
+    if (statusFor(quarantineLeaf).status !== 'absent') return false
     return true
   } catch {
     return false

@@ -293,9 +293,19 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, inde
   if (value.startsWith('--') && all[index + 1] && !all[index + 1].startsWith('--')) pairs.push([value.slice(2), all[index + 1]])
   return pairs
 }, []))
-const parent = process.platform === 'darwin' ? '/dev/fd/3' : '/proc/self/fd/3'
-if (args.action === 'move-directory') fs.renameSync(path.join(parent, args.name), path.join(parent, args['to-name']))
-else if (args.action === 'remove-directory') fs.rmdirSync(path.join(parent, args.name))
+const parent = ${JSON.stringify(base)}
+const target = path.join(parent, args.name)
+if (args.action === 'verify-directory') {
+  let status = 'absent'
+  try {
+    const stats = fs.lstatSync(target, { bigint: true })
+    status = String(stats.dev) === args['expected-file-dev'] && String(stats.ino) === args['expected-file-ino'] ? 'match' : 'mismatch'
+  } catch (error) { if (error.code !== 'ENOENT') throw error }
+  fs.writeSync(1, JSON.stringify({ ok: true, command: 'secure-install', data: { contract: 'mdp.secure-install.v1', status } }) + '\\n')
+  process.exit(0)
+}
+if (args.action === 'move-directory') fs.renameSync(target, path.join(parent, args['to-name']))
+else if (args.action === 'remove-directory-tree') fs.rmSync(target, { recursive: true })
 else process.exit(2)
 process.kill(process.pid, 'SIGTERM')
 `, { mode: 0o700 })
@@ -303,10 +313,12 @@ process.kill(process.pid, 'SIGTERM')
   const root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
   writeFileSync(join(root, 'owned'), 'owned bytes')
 
+  const diagnostics = []
   assert.equal(cleanupOwnedTempWorkspace(root, {
     purpose: 'validation',
     secureHelperPath: helper,
-  }), true)
+    secureHelperDiagnostics: diagnostics,
+  }), true, JSON.stringify(diagnostics))
   assert.equal(existsSync(root), false)
   assert.deepEqual(readdirSync(base).sort(), ['mutate-then-signal'])
 })
@@ -316,15 +328,11 @@ test('restore destination collision preserves replacement and quarantined origin
   t.after(() => rmSync(base, { recursive: true, force: true }))
   const root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
   writeFileSync(join(root, 'owned'), 'owned bytes')
-  let resolverCalls = 0
   let quarantine
 
   const removed = cleanupOwnedTempWorkspace(root, {
     purpose: 'validation',
-    resolveDescriptor: (args) => {
-      resolverCalls += 1
-      return resolverCalls === 1 ? resolveDescriptorDirectoryPath(args) : null
-    },
+    beforeRemove: () => false,
     beforeRestore: (paths) => {
       quarantine = paths.quarantine
       mkdirSync(paths.ownedPath, { mode: 0o700 })
