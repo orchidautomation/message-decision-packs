@@ -209,7 +209,7 @@ pub(crate) enum Commands {
         #[arg(long, help = "Fail validation-style flows on warnings where supported")]
         strict: bool,
     },
-    #[command(about = "Check or refresh the generated README inventory block")]
+    #[command(about = "Check or refresh the machine-owned README ownership and inventory regions")]
     Readme {
         #[command(subcommand)]
         command: ReadmeCommand,
@@ -746,12 +746,14 @@ pub(crate) enum ConformanceCommand {
 
 #[derive(Subcommand)]
 pub(crate) enum ReadmeCommand {
-    #[command(about = "Check the generated README inventory block against loaded authority")]
+    #[command(
+        about = "Check the machine-owned README ownership and inventory regions against loaded authority"
+    )]
     Check {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
     },
-    #[command(about = "Regenerate only the owned README inventory block")]
+    #[command(about = "Regenerate only the machine-owned README ownership and inventory regions")]
     Refresh {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
@@ -901,6 +903,22 @@ impl RunIsolation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readme_help_names_both_machine_owned_regions() {
+        for args in [
+            vec!["mdp", "readme", "--help"],
+            vec!["mdp", "readme", "check", "--help"],
+            vec!["mdp", "readme", "refresh", "--help"],
+        ] {
+            let help = Cli::try_parse_from(args)
+                .err()
+                .expect("--help should return Clap display output")
+                .to_string();
+            assert!(help.contains("ownership"), "help omitted ownership: {help}");
+            assert!(help.contains("inventory"), "help omitted inventory: {help}");
+        }
+    }
 
     #[test]
     fn conformance_compile_requires_candidate_and_artifact_root() {

@@ -1,5 +1,7 @@
 {
   "model": "mdp.skill-trigger-corpus.v1",
+  "revision": "mdp-257.v1",
+  "change_summary": "Specialized intent keeps ownership even when the request explicitly names MDP.",
   "collisions": [
     {"id": "mdp-vs-builder-train", "case_id": "mdp-operator-train", "competing_skill_id": "mdp-pack-builder"},
     {"id": "mdp-vs-pack-review-train", "case_id": "mdp-validate-train", "competing_skill_id": "mdp-pack-review"},
@@ -45,8 +47,114 @@
     {"id": "proposal-vs-builder-validation", "case_id": "proposal-compliance-validation", "competing_skill_id": "mdp-pack-builder"},
     {"id": "proposal-vs-pack-review-validation", "case_id": "proposal-proof-validation", "competing_skill_id": "mdp-pack-review"},
     {"id": "proposal-vs-gtm-validation", "case_id": "proposal-red-team-validation", "competing_skill_id": "mdp-gtm-brief"}
+    ,
+    {"id": "builder-named-mdp-vs-coordinator-train", "case_id": "builder-named-mdp-train", "competing_skill_id": "mdp"},
+    {"id": "builder-named-mdp-vs-coordinator-validation", "case_id": "builder-named-mdp-validation", "competing_skill_id": "mdp"},
+    {"id": "review-named-mdp-vs-coordinator-train", "case_id": "review-named-mdp-train", "competing_skill_id": "mdp"},
+    {"id": "review-named-mdp-vs-coordinator-validation", "case_id": "review-named-mdp-validation", "competing_skill_id": "mdp"},
+    {"id": "gtm-named-mdp-vs-coordinator-train", "case_id": "gtm-named-mdp-train", "competing_skill_id": "mdp"},
+    {"id": "gtm-named-mdp-vs-coordinator-validation", "case_id": "gtm-named-mdp-validation", "competing_skill_id": "mdp"},
+    {"id": "proposal-named-mdp-vs-coordinator-train", "case_id": "proposal-named-mdp-train", "competing_skill_id": "mdp"},
+    {"id": "proposal-named-mdp-vs-coordinator-validation", "case_id": "proposal-named-mdp-validation", "competing_skill_id": "mdp"}
   ],
   "cases": [
+    {
+      "id": "builder-named-mdp-train",
+      "split": "train",
+      "scenario_family": "specialized-builder-names-mdp-train",
+      "case_type": "positive",
+      "query_shape": "direct",
+      "mode": "gtm-authoring",
+      "query": "Update this MDP pack from my approved GTM notes and preview the changes before applying them.",
+      "expected_skill_id": "mdp-pack-builder",
+      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "rationale": "Explicit pack mutation belongs to the builder even though MDP is named."
+    },
+    {
+      "id": "builder-named-mdp-validation",
+      "split": "validation",
+      "scenario_family": "specialized-builder-names-mdp-validation",
+      "case_type": "positive",
+      "query_shape": "direct",
+      "mode": "gtm-authoring",
+      "query": "Update my MDP with these approved personas; seal a candidate and apply it safely.",
+      "expected_skill_id": "mdp-pack-builder",
+      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "rationale": "Edit intent is builder-owned rather than coordinator-owned."
+    },
+    {
+      "id": "review-named-mdp-train",
+      "split": "train",
+      "scenario_family": "specialized-review-names-mdp-train",
+      "case_type": "positive",
+      "query_shape": "direct",
+      "mode": "structural",
+      "query": "Audit this existing MDP for structural defects and report findings without editing it.",
+      "expected_skill_id": "mdp-pack-review",
+      "context": {"pack_profile": "gtm", "host_discovered": true},
+      "rationale": "Read-only pack audit belongs to pack review even though MDP is named."
+    },
+    {
+      "id": "review-named-mdp-validation",
+      "split": "validation",
+      "scenario_family": "specialized-review-names-mdp-validation",
+      "case_type": "positive",
+      "query_shape": "direct",
+      "mode": "structural",
+      "query": "Audit this MDP pack's evidence and gaps, but do not repair anything.",
+      "expected_skill_id": "mdp-pack-review",
+      "context": {"pack_profile": "proposal", "host_discovered": true},
+      "rationale": "Explicit read-only intent stays with pack review."
+    },
+    {
+      "id": "gtm-named-mdp-train",
+      "split": "train",
+      "scenario_family": "specialized-gtm-names-mdp-train",
+      "case_type": "positive",
+      "query_shape": "direct",
+      "mode": "outbound-copy-review",
+      "query": "Use the active MDP to review this supplied outbound draft against the supplied prospect.",
+      "expected_skill_id": "mdp-gtm-brief",
+      "context": {"pack_profile": "gtm", "job_id": "outbound-copy-review", "host_discovered": true},
+      "rationale": "Applying a GTM pack to supplied copy is owned by the GTM skill."
+    },
+    {
+      "id": "gtm-named-mdp-validation",
+      "split": "validation",
+      "scenario_family": "specialized-gtm-names-mdp-validation",
+      "case_type": "positive",
+      "query_shape": "direct",
+      "mode": "prospect-fit-or-brief",
+      "query": "Run the MDP fit decision for this supplied prospect and preserve no-draft blockers.",
+      "expected_skill_id": "mdp-gtm-brief",
+      "context": {"pack_profile": "gtm", "job_id": "prospect-fit-or-brief", "host_discovered": true},
+      "rationale": "A supplied-prospect fit request belongs to the GTM skill."
+    },
+    {
+      "id": "proposal-named-mdp-train",
+      "split": "train",
+      "scenario_family": "specialized-proposal-names-mdp-train",
+      "case_type": "positive",
+      "query_shape": "direct",
+      "mode": "proof",
+      "query": "Use our proposal MDP to review which supplied proof supports these themes.",
+      "expected_skill_id": "mdp-proposal-review",
+      "context": {"pack_profile": "proposal", "job_id": "proof-review", "host_discovered": true},
+      "rationale": "Evidence-bounded proposal review stays with proposal review."
+    },
+    {
+      "id": "proposal-named-mdp-validation",
+      "split": "validation",
+      "scenario_family": "specialized-proposal-names-mdp-validation",
+      "case_type": "positive",
+      "query_shape": "direct",
+      "mode": "proof",
+      "query": "Check this proposal theme against the MDP proof set without inventing missing evidence.",
+      "expected_skill_id": "mdp-proposal-review",
+      "context": {"pack_profile": "proposal", "job_id": "proof-review", "host_discovered": true},
+      "rationale": "Proposal proof review is specialized even when MDP is explicit."
+    },
+
     {
       "id": "mdp-operator-train",
       "split": "train",

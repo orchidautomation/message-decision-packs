@@ -1,7 +1,7 @@
 use crate::cli::{Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
 use crate::diagnostics::{
-    ACTIONABLE_DIAGNOSTICS_FIELD, contract_metadata, enrich_result, error_diagnostic, render_human,
-    render_human_error,
+    ACTIONABLE_DIAGNOSTICS_FIELD, contract_metadata, diagnostics_for_result, error_diagnostic,
+    render_human, render_human_error,
 };
 use crate::routing::route_budget_summary_projection;
 use anyhow::Result;
@@ -332,49 +332,51 @@ pub(crate) fn print_output(
     json_mode: bool,
     summary_mode: bool,
     command: &str,
-    mut data: Value,
+    data: Value,
 ) -> Result<()> {
-    enrich_result(command, &mut data);
+    let actionable_diagnostics = diagnostics_for_result(command, &data);
     if summary_mode {
-        let mut summary = summarize(command, &data);
+        let summary = summarize(command, &data);
         if command == "route-budget" {
-            // Validate the existing closed route-budget projection before
-            // attaching the additive cross-command diagnostic contract.
             crate::commands::schemas::validate_route_budget_summary_output(&summary)?;
         }
-        if !data["diagnostic_contract"].is_null()
-            && let Some(object) = summary.as_object_mut()
-        {
-            object.insert(
-                "diagnostic_contract".to_string(),
-                data["diagnostic_contract"].clone(),
-            );
-            object.insert(
-                ACTIONABLE_DIAGNOSTICS_FIELD.to_string(),
-                data[ACTIONABLE_DIAGNOSTICS_FIELD].clone(),
-            );
-        }
         if json_mode {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(
-                    &json!({"ok": true, "command": command, "summary": summary})
-                )?
-            );
+            let mut envelope = json!({"ok": true, "command": command, "summary": summary});
+            attach_actionable_fields(&mut envelope, actionable_diagnostics.as_ref());
+            println!("{}", serde_json::to_string_pretty(&envelope)?);
         } else {
             print_summary(command, &summary)?;
+            if let Some(diagnostics) = actionable_diagnostics.as_ref() {
+                render_human(diagnostics);
+            }
         }
         return Ok(());
     }
     if json_mode {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({"ok": true, "command": command, "data": data}))?
-        );
+        let mut envelope = json!({"ok": true, "command": command, "data": data});
+        attach_actionable_fields(&mut envelope, actionable_diagnostics.as_ref());
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
         print_human(command, &data)?;
+        if let Some(diagnostics) = actionable_diagnostics.as_ref() {
+            render_human(diagnostics);
+        }
     }
     Ok(())
+}
+
+fn attach_actionable_fields(envelope: &mut Value, diagnostics: Option<&Value>) {
+    let (Some(object), Some(diagnostics)) = (envelope.as_object_mut(), diagnostics) else {
+        return;
+    };
+    object.insert(
+        "diagnostic_contract".to_string(),
+        json!(crate::diagnostics::ACTIONABLE_DIAGNOSTIC_CONTRACT),
+    );
+    object.insert(
+        ACTIONABLE_DIAGNOSTICS_FIELD.to_string(),
+        diagnostics.clone(),
+    );
 }
 
 fn summarize(command: &str, data: &Value) -> Value {
@@ -1059,7 +1061,6 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
         }
         _ => println!("{}", serde_json::to_string_pretty(data)?),
     }
-    render_human(&data[ACTIONABLE_DIAGNOSTICS_FIELD]);
     Ok(())
 }
 

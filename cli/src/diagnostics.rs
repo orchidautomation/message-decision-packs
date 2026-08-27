@@ -61,25 +61,40 @@ struct ActionableDiagnostic {
 /// Add the versioned diagnostic projection to public command results without
 /// replacing their established low-level issue and authority fields.
 pub(crate) fn enrich_result(command: &str, data: &mut Value) {
-    if !TARGET_COMMANDS.contains(&command) || !data.is_object() {
+    let Some(diagnostics) = diagnostics_for_result(command, data) else {
         return;
-    }
-    let mut raw = Vec::new();
-    collect_legacy_diagnostics(data, &mut raw, 0);
-    if raw.is_empty() && result_is_blocked(data) {
-        raw.push(fallback_code(command).to_string());
-    }
-    let diagnostics = project_codes(command, raw);
+    };
     if let Some(object) = data.as_object_mut() {
         object.insert(
             "diagnostic_contract".to_string(),
             json!(ACTIONABLE_DIAGNOSTIC_CONTRACT),
         );
-        object.insert(
-            ACTIONABLE_DIAGNOSTICS_FIELD.to_string(),
-            serde_json::to_value(diagnostics).unwrap_or_else(|_| json!([])),
-        );
+        object.insert(ACTIONABLE_DIAGNOSTICS_FIELD.to_string(), diagnostics);
     }
+}
+
+/// Project diagnostics without mutating the command's domain data contract.
+/// Normal command envelopes use this form so additive transport metadata does
+/// not change closed or hash-bound authority objects such as requirements,
+/// skills, routing decisions, and run evidence.
+pub(crate) fn diagnostics_for_result(command: &str, data: &Value) -> Option<Value> {
+    if !TARGET_COMMANDS.contains(&command) || !data.is_object() {
+        return None;
+    }
+    let mut raw = Vec::new();
+    collect_legacy_diagnostics(data, &mut raw, 0);
+    if raw.is_empty() && command == "fit" {
+        match data["status"].as_str() {
+            Some("disqualified") => raw.push("fit_policy_disqualified".to_string()),
+            Some("insufficient-context") => raw.push("fit_insufficient_context".to_string()),
+            _ => {}
+        }
+    }
+    if raw.is_empty() && result_is_blocked(data) {
+        raw.push(fallback_code(command).to_string());
+    }
+    let diagnostics = project_codes(command, raw);
+    Some(serde_json::to_value(diagnostics).unwrap_or_else(|_| json!([])))
 }
 
 pub(crate) fn error_diagnostic(code: &str) -> Value {
@@ -360,7 +375,6 @@ fn collect_legacy_diagnostics(value: &Value, codes: &mut Vec<String>, depth: usi
         Value::Object(object) => {
             collect_named_array(object, "issues", codes, depth);
             collect_named_array(object, "diagnostics", codes, depth);
-            collect_named_array(object, "reason_codes", codes, depth);
             for (key, nested) in object {
                 if !matches!(key.as_str(), "issues" | "diagnostics" | "reason_codes") {
                     collect_legacy_diagnostics(nested, codes, depth + 1);
@@ -459,6 +473,32 @@ mod tests {
             assert_eq!(value["retryability"], retryability);
             assert_eq!(value["next_action"]["kind"], action_kind);
         }
+    }
+
+    #[test]
+    fn ready_routing_reasons_are_not_projected_as_failures() {
+        let data = json!({
+            "status": "qualified",
+            "context": {"entries": [{"reason_codes": ["persona_applicability", "job_match"]}]}
+        });
+        assert_eq!(diagnostics_for_result("fit", &data), Some(json!([])));
+    }
+
+    #[test]
+    fn fit_outcomes_distinguish_policy_from_missing_context() {
+        let policy =
+            diagnostics_for_result("fit", &json!({"valid": true, "status": "disqualified"}))
+                .unwrap();
+        assert_eq!(policy[0]["code"], "fit_policy_disqualified");
+        assert_eq!(policy[0]["retryability"], "not-retryable");
+
+        let missing = diagnostics_for_result(
+            "fit",
+            &json!({"valid": true, "status": "insufficient-context"}),
+        )
+        .unwrap();
+        assert_eq!(missing[0]["code"], "fit_insufficient_context");
+        assert_eq!(missing[0]["retryability"], "after-user-action");
     }
 
     #[test]

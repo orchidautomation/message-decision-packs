@@ -4,7 +4,7 @@ Read this only for `outbound-copy-brief`.
 
 ## Workflow
 
-Use the shared [managed workflow bundle handoff](../../mdp/references/workflow-bundle-handoff.md)
+Use the shared managed workflow bundle handoff
 as the default. Requirements, routed context, receipts, and request files are
 private workflow state in one restricted scratch root. Accept only the exact
 pack, job, and approved prospect/copy inputs; return one verified durable run

@@ -4,7 +4,7 @@ Read this only for `outbound-copy-review` and only when the user supplies copy.
 
 ## Workflow
 
-Use the shared [managed workflow bundle handoff](../../mdp/references/workflow-bundle-handoff.md)
+Use the shared managed workflow bundle handoff
 for normal reviews. Keep source, routing, prompt, and invocation intermediates
 private; do not exchange their bodies or paths through chat. Return one
 verified durable run directory, canonical decision/gaps, retention result, and
