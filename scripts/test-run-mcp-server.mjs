@@ -24,6 +24,12 @@ const args = process.argv.slice(2)
 if (args.includes('prepare-run')) {
   const packDir = args[args.indexOf('--dir') + 1]
   const out = args[args.indexOf('--out') + 1]
+  const pausePath = packDir + '/.prepare-pause.json'
+  if (existsSync(pausePath)) {
+    const pause = JSON.parse(readFileSync(pausePath, 'utf8'))
+    writeFileSync(pause.ready, '')
+    while (!existsSync(pause.continue)) await new Promise((resolveWait) => setTimeout(resolveWait, 5))
+  }
   if (!out) {
     process.stdout.write(JSON.stringify({ ok: false, command: 'prepare-run', data: { contract: 'mdp.run-request-compile.v1', status: 'blocked' } }))
     process.exit(1)
@@ -345,10 +351,11 @@ test('completes prepare, run, and verify across disjoint approved roots for any 
     const pack = join(roots.pack, `${profile.name}-pack`)
     mkdirSync(pack)
     const request = join(roots.work, `${profile.name}-request.json`)
+    const manifest = join(roots.work, `${profile.name}-manifest.json`)
     const run = join(roots.output, `${profile.name}-run`)
     const id = index * 3
     messages.push(
-      toolCall(id + 1, 'mdp_prepare_run', { dir: pack, job: profile.job, model: 'fixture-model', out: request }),
+      toolCall(id + 1, 'mdp_prepare_run', { dir: pack, job: profile.job, model: 'fixture-model', out: request, manifest_out: manifest }),
       toolCall(id + 2, 'mdp_run', { request_path: request, output_dir: run }),
       toolCall(id + 3, 'mdp_verify_run', { bundle_path: join(run, 'run-bundle.json'), receipt_path: join(run, 'run-receipt.json'), artifact_root: run }),
     )
@@ -356,9 +363,63 @@ test('completes prepare, run, and verify across disjoint approved roots for any 
   const replies = await rpc(fixtureCli(root), messages, roleEnv)
   for (let index = 0; index < profiles.length; index += 1) {
     assert.equal(replies[index * 3].result.structuredContent.status, 'ready', JSON.stringify(replies[index * 3]))
+    assert.equal(existsSync(join(roots.work, `${profiles[index].name}-manifest.json`)), true)
     assert.equal(replies[index * 3 + 1].result.structuredContent.contract, 'mdp.run-execution.v1')
     assert.equal(replies[index * 3 + 2].result.structuredContent.contract, 'mdp.run-verification.v1')
     assert.equal(replies[index * 3 + 2].result.structuredContent.valid, true)
+  }
+})
+
+test('prepare refuses request and manifest parent swaps without escaped or partial writes', async (t) => {
+  if (process.platform !== 'linux') return t.skip('identity-bound /proc directory handles require Linux')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-parent-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const packRoot = join(root, 'packs')
+  const inputRoot = join(root, 'inputs')
+  const workRoot = join(root, 'work')
+  const outputRoot = join(root, 'output')
+  const consentRoot = join(root, 'consent')
+  for (const path of [packRoot, inputRoot, workRoot, outputRoot, consentRoot]) mkdirSync(path)
+  const roleEnv = {
+    MDP_MCP_PACK_ROOTS: packRoot,
+    MDP_MCP_INPUT_ROOTS: inputRoot,
+    MDP_MCP_WORK_ROOTS: workRoot,
+    MDP_MCP_OUTPUT_ROOTS: outputRoot,
+    MDP_MCP_CONSENT_ROOTS: consentRoot,
+  }
+
+  for (const attacked of ['request', 'manifest']) {
+    const pack = join(packRoot, attacked)
+    const requestParent = join(workRoot, `${attacked}-request-parent`)
+    const manifestParent = join(workRoot, `${attacked}-manifest-parent`)
+    const escapedParent = join(root, `${attacked}-escaped`)
+    const ready = join(root, `${attacked}.ready`)
+    const continuePath = join(root, `${attacked}.continue`)
+    for (const path of [pack, requestParent, manifestParent, escapedParent]) mkdirSync(path)
+    writeFileSync(join(pack, '.prepare-pause.json'), JSON.stringify({ ready, continue: continuePath }))
+    const request = join(requestParent, 'request.json')
+    const manifest = join(manifestParent, 'manifest.json')
+    const attackedParent = attacked === 'request' ? requestParent : manifestParent
+    const renamedParent = `${attackedParent}-renamed`
+    const pending = rpc(fixtureCli(root), [
+      toolCall(1, 'mdp_prepare_run', {
+        dir: pack,
+        job: 'prospect-fit-or-brief',
+        model: 'fixture-model',
+        out: request,
+        manifest_out: manifest,
+      }),
+    ], roleEnv)
+    await waitForFile(ready)
+    renameSync(attackedParent, renamedParent)
+    symlinkSync(escapedParent, attackedParent, 'dir')
+    writeFileSync(continuePath, '')
+    const [reply] = await pending
+    assert.equal(reply.result.structuredContent.status, 'blocked', JSON.stringify(reply))
+    assert.match(reply.result.structuredContent.diagnostics[0].message, /changed|outside approved roots/)
+    assert.equal(existsSync(join(escapedParent, attacked === 'request' ? 'request.json' : 'manifest.json')), false)
+    assert.equal(existsSync(join(renamedParent, attacked === 'request' ? 'request.json' : 'manifest.json')), false)
+    assert.equal(existsSync(attacked === 'request' ? manifest : request), false)
   }
 })
 
@@ -460,6 +521,7 @@ sys.stdout.write(json.dumps({
   }
   for (const [index, profile] of profiles.entries()) {
     assert.equal(prepared[index].result.structuredContent.status, 'ready', JSON.stringify(prepared[index]))
+    assert.doesNotMatch(JSON.stringify(prepared[index].result.structuredContent), /\/proc\/|mdp-run-mcp-prepare-/)
     assert.equal(existsSync(profile.request), true)
     const requestBytes = readFileSync(profile.request)
     const request = JSON.parse(requestBytes)

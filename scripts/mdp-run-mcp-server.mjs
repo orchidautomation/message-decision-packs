@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import {
   closeSync,
   constants,
+  copyFileSync,
   existsSync,
   fstatSync,
   lstatSync,
@@ -438,6 +439,48 @@ const blockedPrepareRun = (code, message, nextCommand = 'mdp prepare-run --help'
   next_command: nextCommand,
 })
 
+const pinOutputParent = (reservation) => {
+  if (process.platform !== 'linux') {
+    throw Object.assign(new Error('identity-bound output publication is unavailable on this platform'), { code: 'mcp-output-denied' })
+  }
+  let fd
+  try {
+    fd = openSync(reservation.parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
+    const opened = fstatSync(fd, { bigint: true })
+    if (!opened.isDirectory() || opened.dev !== BigInt(reservation.parentIdentity.dev) || opened.ino !== BigInt(reservation.parentIdentity.ino)) {
+      throw Object.assign(new Error('work output parent changed while being pinned'), { code: 'mcp-output-denied' })
+    }
+    const pinnedParent = `/proc/${process.pid}/fd/${fd}`
+    if (realpathSync(pinnedParent) !== reservation.parent) {
+      throw Object.assign(new Error('work output parent could not be identity-bound'), { code: 'mcp-output-denied' })
+    }
+    return { ...reservation, fd, securePath: join(pinnedParent, basename(reservation.path)) }
+  } catch (error) {
+    if (fd !== undefined) closeSync(fd)
+    throw error
+  }
+}
+
+const removePinnedOutput = (output) => {
+  if (!output.installedIdentity) return
+  try {
+    const current = lstatSync(output.securePath, { bigint: true })
+    if (current.dev === output.installedIdentity.dev && current.ino === output.installedIdentity.ino) rmSync(output.securePath)
+  } catch { /* preserve unknown or concurrently replaced nodes */ }
+}
+
+const normalizePreparedOutputPaths = (data, outputs) => {
+  const normalized = { ...data }
+  for (const key of ['request_path', 'manifest_path', 'next_command']) {
+    if (typeof normalized[key] !== 'string') continue
+    for (const output of outputs) {
+      normalized[key] = normalized[key].replaceAll(output.securePath, output.path)
+      if (output.cliPath) normalized[key] = normalized[key].replaceAll(output.cliPath, output.path)
+    }
+  }
+  return normalized
+}
+
 const callPrepareRunValidated = async (args) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['dir', 'job', 'operation', 'inputs', 'model', 'retention_policy', 'created_at', 'out', 'manifest_out', 'full', 'timeout_ms']))
@@ -463,34 +506,62 @@ const callPrepareRunValidated = async (args) => {
   const out = requestOutput.path
   const manifestOutput = parsed.manifest_out === undefined ? null : policy.newOutput('work', requiredString(parsed, 'manifest_out'))
   const manifestOut = manifestOutput?.path ?? null
+  if (manifestOut === out) throw new Error('out and manifest_out must name distinct files')
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
-  const cliArgs = ['--json', 'prepare-run', '--dir', dir, '--job', job, '--model', model]
-  if (parsed.operation !== undefined) cliArgs.push('--operation', parsed.operation)
-  for (const mapping of frozenInputs) cliArgs.push('--input', mapping)
-  if (parsed.retention_policy !== undefined) cliArgs.push('--retention-policy', parsed.retention_policy)
-  if (parsed.created_at !== undefined) cliArgs.push('--created-at', parsed.created_at)
-  cliArgs.push('--out', out)
-  if (manifestOut) cliArgs.push('--manifest-out', manifestOut)
-  if (parsed.full === true) cliArgs.push('--full')
-  const invocation = await invokeCli(cliArgs, dir, timeoutMs)
-  if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable' }, true)
-  }
-  let envelope
-  try { envelope = JSON.parse(invocation.stdout) } catch { return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true) }
-  if (envelope?.ok === false && envelope?.command === 'prepare-run' && envelope.data?.contract === 'mdp.run-request-compile.v1') {
-    return toolResult(envelope.data)
-  }
-  if (envelope?.ok !== true || envelope?.command !== 'prepare-run' || !envelope.data || envelope.data.contract !== 'mdp.run-request-compile.v1' || envelope.data.status !== 'ready') {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.status === 0 ? 'invalid-cli-contract' : 'prepare-run-refused' }, true)
-  }
+  const pinnedOutputs = []
+  const privateDir = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-'))
+  let published = false
   try {
+    pinnedOutputs.push({ ...pinOutputParent(requestOutput), cliPath: join(privateDir, 'request.json'), installedIdentity: null })
+    if (manifestOutput) pinnedOutputs.push({ ...pinOutputParent(manifestOutput), cliPath: join(privateDir, 'manifest.json'), installedIdentity: null })
+    const requestParent = { path: requestOutput.parent, root: requestOutput.root, identity: requestOutput.parentIdentity }
+    const manifestParent = manifestOutput && { path: manifestOutput.parent, root: manifestOutput.root, identity: manifestOutput.parentIdentity }
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    const cliArgs = ['--json', 'prepare-run', '--dir', dir, '--job', job, '--model', model]
+    if (parsed.operation !== undefined) cliArgs.push('--operation', parsed.operation)
+    for (const mapping of frozenInputs) cliArgs.push('--input', mapping)
+    if (parsed.retention_policy !== undefined) cliArgs.push('--retention-policy', parsed.retention_policy)
+    if (parsed.created_at !== undefined) cliArgs.push('--created-at', parsed.created_at)
+    cliArgs.push('--out', pinnedOutputs[0].cliPath)
+    if (manifestOut) cliArgs.push('--manifest-out', pinnedOutputs[1].cliPath)
+    if (parsed.full === true) cliArgs.push('--full')
+    const invocation = await invokeCli(cliArgs, dir, timeoutMs)
+    if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable' }, true)
+    }
+    let envelope
+    try { envelope = JSON.parse(invocation.stdout) } catch { return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true) }
+    if (envelope?.ok === false && envelope?.command === 'prepare-run' && envelope.data?.contract === 'mdp.run-request-compile.v1') {
+      return toolResult(normalizePreparedOutputPaths(envelope.data, pinnedOutputs))
+    }
+    if (envelope?.ok !== true || envelope?.command !== 'prepare-run' || !envelope.data || envelope.data.contract !== 'mdp.run-request-compile.v1' || envelope.data.status !== 'ready') {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.status === 0 ? 'invalid-cli-contract' : 'prepare-run-refused' }, true)
+    }
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    for (const output of pinnedOutputs) {
+      const staged = lstatSync(output.cliPath)
+      if (staged.isSymbolicLink() || !staged.isFile()) throw new Error('prepared output was not a regular file')
+      copyFileSync(output.cliPath, output.securePath, constants.COPYFILE_EXCL)
+      const installed = lstatSync(output.securePath, { bigint: true })
+      if (!installed.isFile() || installed.isSymbolicLink()) throw new Error('prepared output publication was not a regular file')
+      output.installedIdentity = { dev: installed.dev, ino: installed.ino }
+    }
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
     policy.existing('work', out, 'file')
-  } catch {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'prepared-request-missing' }, true)
+    if (manifestOut) policy.existing('work', manifestOut, 'file')
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    published = true
+    return toolResult(normalizePreparedOutputPaths(envelope.data, pinnedOutputs))
+  } finally {
+    if (!published) for (const output of pinnedOutputs) removePinnedOutput(output)
+    for (const output of pinnedOutputs) closeSync(output.fd)
+    rmSync(privateDir, { recursive: true, force: true })
   }
-  return toolResult(envelope.data)
 }
 
 const callPrepareRun = async (args) => {
