@@ -517,7 +517,11 @@ fn list_item_content(line: &str) -> Option<(usize, &str)> {
         _ => return None,
     };
     let mut whitespace_end = marker_end;
-    let mut content_column = markdown_indent_columns(&line[..marker_end]);
+    // Continuation indentation includes both the marker width and padding.
+    // Counting leading whitespace alone makes `- ` require one column rather
+    // than two and makes multi-digit ordered items even more permissive.
+    let marker_column = marker_end;
+    let mut content_column = marker_column;
     while let Some(byte @ (b' ' | b'\t')) = bytes.get(whitespace_end) {
         content_column = advance_markdown_column(content_column, *byte);
         whitespace_end += 1;
@@ -525,7 +529,6 @@ fn list_item_content(line: &str) -> Option<(usize, &str)> {
     if whitespace_end == marker_end {
         return None;
     }
-    let marker_column = markdown_indent_columns(&line[..marker_end]);
     let padding = content_column - marker_column;
     let (content_start, content_indent) = if padding <= 4 || whitespace_end == bytes.len() {
         (whitespace_end, content_column)
@@ -1343,6 +1346,16 @@ Inline `inline-code` must be ignored.
             );
             assert!(tokens[0].ends_with("-visible.yaml"), "tokens: {tokens:?}");
         }
+        assert_eq!(
+            inline_code_tokens(
+                "- ```markdown\n `cards/underindented-visible.yaml`\nRoot `cards/root-visible.yaml`.\n"
+            ),
+            vec![
+                "cards/underindented-visible.yaml",
+                "cards/root-visible.yaml"
+            ],
+            "a bullet continuation includes marker width plus padding"
+        );
     }
 
     #[test]

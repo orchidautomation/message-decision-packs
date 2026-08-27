@@ -554,7 +554,7 @@ fn list_item_content(line: &str) -> Option<(usize, &str)> {
         _ => return None,
     };
     let mut whitespace_end = marker_end;
-    let marker_column = markdown_indent_columns(&line[..marker_end]);
+    let marker_column = marker_end;
     let mut content_column = marker_column;
     while let Some(byte @ (b' ' | b'\t')) = bytes.get(whitespace_end) {
         content_column = advance_markdown_column(content_column, *byte);
@@ -589,18 +589,6 @@ fn strip_indent_columns(line: &str, required: usize) -> Option<&str> {
         }
     }
     (columns >= required).then_some("")
-}
-
-fn markdown_indent_columns(line: &str) -> usize {
-    let mut columns = 0;
-    for byte in line.bytes() {
-        match byte {
-            b' ' => columns += 1,
-            b'\t' => columns += 4 - (columns % 4),
-            _ => break,
-        }
-    }
-    columns
 }
 
 fn advance_markdown_column(column: usize, byte: u8) -> usize {
@@ -1115,6 +1103,10 @@ mod tests {
             assert_eq!(extract_inventory_block(&readme), Some(inventory.clone()));
             assert!(open_fence_at_eof(&readme).is_none());
         }
+        assert!(
+            open_fence_at_eof("- ```markdown\n underindented body").is_none(),
+            "a bullet continuation includes marker width plus padding"
+        );
     }
 
     #[test]
