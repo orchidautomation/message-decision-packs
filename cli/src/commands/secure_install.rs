@@ -53,6 +53,20 @@ fn named_identity(dir_fd: RawFd, name: &CString) -> Result<(u64, u64)> {
     Ok((stat.st_dev as u64, stat.st_ino as u64))
 }
 
+fn fresh_directory_description(dir_fd: RawFd) -> Result<RawFd> {
+    let fd = unsafe {
+        libc::openat(
+            dir_fd,
+            c".".as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    Ok(fd)
+}
+
 fn file_sha256(file: &mut File) -> Result<String> {
     file.seek(SeekFrom::Start(0))?;
     let mut hasher = Sha256::new();
@@ -325,10 +339,9 @@ fn remove_directory_contents_with_hooks<
     hook: &mut F,
     after_quarantine: &mut G,
 ) -> Result<()> {
-    let duplicate = unsafe { libc::dup(dir_fd) };
-    if duplicate < 0 {
-        return Err(io::Error::last_os_error()).map_err(Into::into);
-    }
+    // dup(2) shares a directory cursor with the pinned descriptor. Open "."
+    // relative to it so each enumeration gets an independent file description.
+    let duplicate = fresh_directory_description(dir_fd)?;
     let stream = unsafe { libc::fdopendir(duplicate) };
     if stream.is_null() {
         unsafe { libc::close(duplicate) };
@@ -582,10 +595,7 @@ fn recovery_marker_name(dir_fd: RawFd, requested: &CStr) -> Result<CString> {
     if requested.to_bytes() != OWNED_MARKER_NAME {
         bail!("owned workspace marker is absent");
     }
-    let duplicate = unsafe { libc::dup(dir_fd) };
-    if duplicate < 0 {
-        return Err(io::Error::last_os_error()).map_err(Into::into);
-    }
+    let duplicate = fresh_directory_description(dir_fd)?;
     let stream = unsafe { libc::fdopendir(duplicate) };
     if stream.is_null() {
         unsafe { libc::close(duplicate) };
@@ -1251,6 +1261,13 @@ mod tests {
         let tree = root.join(&initial_name);
         std::fs::create_dir(&tree).unwrap();
         std::fs::write(tree.join("private"), b"private bytes").unwrap();
+        std::fs::write(tree.join(".mdp-owned-temp-workspace.json"), b"{}").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            tree.join(".mdp-owned-temp-workspace.json"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
         let identity = std::fs::metadata(&tree).unwrap();
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .arg("killed_tree_removal_preserves_a_discoverable_owned_quarantine")
@@ -1291,7 +1308,6 @@ mod tests {
         std::fs::create_dir(&tree).unwrap();
         std::fs::write(tree.join("private"), b"private bytes").unwrap();
         std::fs::write(tree.join(".mdp-owned-temp-workspace.json"), b"{}").unwrap();
-        use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(
             tree.join(".mdp-owned-temp-workspace.json"),
             std::fs::Permissions::from_mode(0o600),
