@@ -1,6 +1,8 @@
 ---
 name: mdp
 description: Use for MDP CLI/operator questions, contract inspection, validation-command guidance, or an explicitly mixed workflow spanning multiple MDP skills. Do not use merely because a specialized builder, pack-review, GTM, or proposal request names MDP.
+metadata:
+  compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
 ---
 
 # MDP
@@ -18,6 +20,19 @@ gates, blockers, and decisions.
 
 ## Route Before Loading Detail
 
+Present MDP as two product journeys, not as five skills the user must learn:
+
+- **Author and maintain** creates, explicitly edits, validates, and reviews
+  durable pack authority. Route mutations to `$mdp-pack-builder`; route
+  read-only pack QA to `$mdp-pack-review`.
+- **Use and decide** selects an existing pack, exact job, and supplied input,
+  then returns a bounded decision or workflow bundle without changing pack
+  authority. Route GTM work to `$mdp-gtm-brief` and proposal work to
+  `$mdp-proposal-review`.
+
+Ask which journey is intended only when the request is genuinely ambiguous.
+Absent explicit edit intent, default to Use and decide or read-only review.
+
 - Creating or editing `.mdp/`: `$mdp-pack-builder`.
 - Read-only pack audit, hardening, or installed QA: `$mdp-pack-review`.
 - Supplied-prospect fit, bounded GTM context, or supplied-copy review:
@@ -28,6 +43,13 @@ gates, blockers, and decisions.
 
 Naming MDP does not override these ownership rules. Hand off one bounded phase
 at a time; never let the coordinator silently perform the specialized work.
+
+For a mixed request, declare the lane order before starting. Complete and
+close one lane before crossing: a usage-discovered gap remains a bounded
+finding until the user explicitly approves an Author and maintain follow-up.
+Never treat a request to decide, audit, validate, or explain as permission to
+edit durable pack authority. After an authoring handoff, rerun the CLI before
+resuming use; do not reuse the earlier decision.
 
 ## Minimal Operator Journey
 
@@ -41,6 +63,7 @@ For operator/validation mechanics, read [operator runtime](references/operator-r
 For a managed run, read [workflow bundle handoff](references/workflow-bundle-handoff.md).
 For cold-model qualification only, read [cold-model conformance](references/cold-model-conformance.md).
 For product boundaries only, read [mental model](references/mental-model.md).
+Before using the CLI, MCP, or a plugin helper, read [runtime compatibility](references/runtime-compatibility.md).
 Managed resume/review requires an explicit run directory and fresh verification; never select ambient/latest state.
 Do not load all references by default, and references must not require a second
 local-reference hop.
@@ -61,5 +84,9 @@ The Rust CLI is the decision authority. Preserve or reduce its authority; never 
 
 ## Closeout
 
-Report the pack root, selected owner/job, commands run, readiness state,
-durable artifacts, unresolved gaps, and installed-versus-source uncertainty.
+Name the journey and report the pack root, selected owner/job, commands run,
+readiness state, durable artifacts, unresolved gaps, next action, and
+installed-versus-source uncertainty. Author and maintain closes only with
+validated file changes or read-only findings; Use and decide closes with the
+canonical decision, verified bundle when present, gaps, and next permitted
+action.

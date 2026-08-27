@@ -106,7 +106,12 @@ skill owns the source/runner/MCP decision tree. Do not answer from tool
 availability or confidence: without a current audit-grade receipt, report
 `advisory` or `blocked` and hand off the exact missing evidence step.
 
-Integration support and per-run assurance are separate. Consult [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix) and use only `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only` for integration state. Never infer `verified` from a runner name, installed command, schema-valid audit, documented recipe, or MCP availability. Demo, fixture, mock, and synthetic evidence is always `fixture/mock-only`.
+Integration support and per-run assurance are separate. This installed release
+has no `verified` runner integration: its named native and headless runner
+recipes are `recipe-only`, and demo, fixture, mock, and synthetic evidence is
+always `fixture/mock-only`. Use `unsupported` for any other integration. Never
+infer `verified` from a runner name, installed command, schema-valid audit,
+documented recipe, MCP availability, or one accepted receipt.
 
 If the command is missing, run `command -v mdp` and `mdp --version`. Report the missing runtime and point to the documented installer; do not emulate CLI validation in prose.
 
@@ -299,4 +304,3 @@ This applies consistently to `route --entries`, `brief --context`, and
 `route-budget`: universal means no persona filter only. Job/channel policy,
 lifecycle, portfolio scope, guardrails, route-card caps, and context budgets
 still decide whether the result is usable.
-

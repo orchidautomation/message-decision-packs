@@ -81,8 +81,10 @@ validate-cold-model-conformance:
 
 validate-run-mcp:
 	node --check scripts/lib/process-supervisor.mjs
+	node --check scripts/lib/mcp-lifecycle.mjs
 	node --check scripts/lib/temp-workspace.mjs
 	node --check scripts/mdp-run-mcp-server.mjs
+	node --test scripts/test-mcp-lifecycle.mjs
 	node --test scripts/test-run-mcp-server.mjs
 
 validate-temp-workspace:
@@ -159,6 +161,7 @@ validate-proposal-evidence-harness:
 	node scripts/mdp-proposal-evidence-harness.mjs --mdp-bin cli/target/debug/mdp --out-dir "$${MDP_TEMP_ROOT}/mdp-proposal-evidence-harness" >"$${MDP_TEMP_ROOT}/mdp-proposal-evidence-harness.json"
 
 validate-proposal-mcp:
+	node --check scripts/lib/mcp-lifecycle.mjs
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	bash -n scripts/test-proposal-mcp-server.sh
 	bash scripts/test-proposal-mcp-server.sh

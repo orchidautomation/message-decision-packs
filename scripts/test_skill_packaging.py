@@ -107,6 +107,49 @@ class SkillPackagingMutationTests(unittest.TestCase):
             PACKAGING.compare_bundle(ROOT / "plugin/skills", bundle, "test", errors)
         self.assertTrue(any("symlink is not allowed" in error for error in errors))
 
+    def test_each_skill_passes_isolated_portable_layout(self) -> None:
+        errors: list[str] = []
+        PACKAGING.validate_portable_skill_layout(ROOT / "plugin/skills", errors)
+        self.assertEqual(errors, [])
+
+    def test_shared_portable_references_match_canonical_bytes(self) -> None:
+        errors: list[str] = []
+        PACKAGING.validate_shared_reference_parity(ROOT / "plugin/skills", errors)
+        self.assertEqual(errors, [])
+
+    def test_shared_reference_drift_fails_packaging(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-shared-") as temp:
+            skills = Path(temp) / "skills"
+            shutil.copytree(ROOT / "plugin/skills", skills)
+            projected = skills / "mdp-gtm-brief/references/communication-contract.md"
+            projected.write_text(projected.read_text() + "\ndrift\n")
+            errors: list[str] = []
+            PACKAGING.validate_shared_reference_parity(skills, errors)
+        self.assertTrue(any("shared reference drift" in error for error in errors))
+
+    def test_cross_skill_link_fails_portable_layout(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-portable-") as temp:
+            skills = Path(temp) / "skills"
+            shutil.copytree(ROOT / "plugin/skills", skills)
+            entrypoint = skills / "mdp-pack-review" / "SKILL.md"
+            entrypoint.write_text(
+                entrypoint.read_text()
+                + "\n[cross-skill](../mdp/references/communication-contract.md)\n"
+            )
+            errors: list[str] = []
+            PACKAGING.validate_portable_skill_layout(skills, errors)
+        self.assertTrue(any("escapes isolated root" in error for error in errors))
+
+    def test_native_bundle_requires_referenced_helpers(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mdp-native-") as temp:
+            bundle = Path(temp) / "bundle"
+            (bundle / "scripts").mkdir(parents=True)
+            errors: list[str] = []
+            PACKAGING.validate_native_helpers(
+                ROOT / "plugin/skills", bundle, "test", errors
+            )
+        self.assertTrue(any("missing referenced helper" in error for error in errors))
+
     def test_wrong_destination_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mdp-packaging-") as temp:
             wrong_root = Path(temp) / "assets" / "skill-evals"

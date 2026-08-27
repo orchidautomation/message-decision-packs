@@ -19,6 +19,8 @@ GENERATED_INVENTORIES = {
     "opencode": "skills.generated.json",
 }
 FRONTMATTER_NAME = re.compile(r"^name:\s*['\"]?([^'\"\n]+?)['\"]?\s*$", re.MULTILINE)
+MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+SCRIPT_TOKEN = re.compile(r"(?<![\w/])scripts/(mdp-[a-z0-9-]+\.mjs)")
 PACKAGED_DOC_SURFACES = (
     Path("plugin/skills"),
     Path("assets"),
@@ -178,6 +180,74 @@ def compare_tree(source: Path, bundle: Path, label: str, errors: list[str]) -> N
             errors.append(f"{label}: executable-bit drift: {path}")
 
 
+def validate_portable_skill_layout(source: Path, errors: list[str]) -> None:
+    """Validate each skill as an isolated Agent Skills installation."""
+    for skill_dir in sorted(path for path in source.iterdir() if path.is_dir()):
+        for doc in sorted(skill_dir.rglob("*.md")):
+            for raw_target in MARKDOWN_LINK.findall(doc.read_text(encoding="utf-8")):
+                target = raw_target.split("#", 1)[0]
+                if (
+                    not target
+                    or "://" in target
+                    or target.startswith(("#", "mailto:", "/"))
+                    or not target.endswith(".md")
+                ):
+                    continue
+                resolved = (doc.parent / target).resolve()
+                try:
+                    resolved.relative_to(skill_dir.resolve())
+                except ValueError:
+                    errors.append(
+                        f"portable skill link escapes isolated root: {doc}: {raw_target}"
+                    )
+                    continue
+                if not resolved.is_file():
+                    errors.append(
+                        f"portable skill link is missing: {doc}: {raw_target}"
+                    )
+
+
+def validate_shared_reference_parity(source: Path, errors: list[str]) -> None:
+    projections = {
+        "communication-contract.md": set(skill_inventory(source, [])),
+        "runtime-compatibility.md": set(skill_inventory(source, [])),
+        "workflow-bundle-handoff.md": {
+            "mdp",
+            "mdp-gtm-brief",
+            "mdp-pack-review",
+            "mdp-proposal-review",
+        },
+    }
+    for filename, skill_ids in projections.items():
+        canonical = source / "mdp" / "references" / filename
+        if not canonical.is_file():
+            errors.append(f"missing canonical shared reference: {canonical}")
+            continue
+        canonical_digest = file_digest(canonical)
+        for skill_id in sorted(skill_ids):
+            projected = source / skill_id / "references" / filename
+            if not projected.is_file():
+                errors.append(f"portable skill missing shared reference: {projected}")
+            elif file_digest(projected) != canonical_digest:
+                errors.append(f"portable shared reference drift: {projected}")
+
+
+def referenced_helpers(source: Path) -> set[str]:
+    helpers: set[str] = set()
+    for doc in sorted(source.rglob("*.md")):
+        helpers.update(SCRIPT_TOKEN.findall(doc.read_text(encoding="utf-8")))
+    return helpers
+
+
+def validate_native_helpers(
+    source: Path, bundle: Path, host: str, errors: list[str]
+) -> None:
+    for helper in sorted(referenced_helpers(source)):
+        path = bundle / "scripts" / helper
+        if not path.is_file():
+            errors.append(f"{host} native bundle missing referenced helper: scripts/{helper}")
+
+
 def load_json(path: Path, errors: list[str]) -> dict:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -313,6 +383,8 @@ def main() -> int:
         )
 
     expected = skill_inventory(args.source, errors)
+    validate_portable_skill_layout(args.source, errors)
+    validate_shared_reference_parity(args.source, errors)
     validate_source_eval_indexes(args.source, args.corpus, expected, errors)
     validate_current_agent_surfaces(errors)
     validate_packaged_doc_references(errors)
@@ -329,6 +401,7 @@ def main() -> int:
                 compare_bundle(args.source, bundle_root, host, errors)
             corpus_bundle = args.dist / host / "skill-evals"
             compare_tree(args.corpus, corpus_bundle, f"{host} skill-evals", errors)
+            validate_native_helpers(args.source, args.dist / host, host, errors)
         for host in GENERATED_INVENTORIES:
             validate_generated_inventory(args.dist, host, expected, errors)
 

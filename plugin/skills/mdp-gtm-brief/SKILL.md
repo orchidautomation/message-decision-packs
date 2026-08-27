@@ -1,16 +1,19 @@
 ---
 name: mdp-gtm-brief
-description: Use when applying a GTM Message Decision Pack to a supplied prospect for fit/readiness, bounded pre-draft context, or review of supplied outbound copy. Do not use for pack editing, generic prospecting, enrichment, copywriting, sending, CRM, or proposals.
+description: Use when applying a GTM Message Decision Pack to a supplied prospect for fit/readiness, bounded pre-draft context, or review of supplied outbound copy. Do not use for pack editing, prospecting, enrichment, copywriting, sending, CRM, or proposals.
+metadata:
+  compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
 ---
 
 # MDP GTM Brief
 
-Apply a GTM pack to supplied inputs for bounded decision support. Never enrich,
-draft outreach, send, schedule, or update a CRM.
+Own the GTM branch of **Use and decide**. Apply a GTM pack to supplied inputs
+for bounded decision support without changing durable pack authority. Never
+enrich, draft outreach, send, schedule, or update a CRM.
 
 ## Communicate The Work
 
-Follow the shared [Orient, Plan, Progress, Translate, Close contract](../mdp/references/communication-contract.md).
+Follow the shared [Orient, Plan, Progress, Translate, Close contract](references/communication-contract.md).
 Open by naming the selected GTM job; the exact pack and supplied-input evidence boundary; the fit decision, bounded brief, or review artifact the user will receive; and what this skill will not do. Keep updates to meaningful readiness
 gates, blockers, and decisions.
 
@@ -24,7 +27,8 @@ Validate `mdp --json skills --dir PACK_ROOT --job JOB_ID`. Proceed only when
 the exact recommendation is this skill and `pack_ready` is true; there is no
 fallback job. Load [governed execution](references/governed-execution.md) only
 when the selected mode requires normalized input, routed context, a model step,
-or receipts. For a managed run, load the direct [workflow bundle handoff](../mdp/references/workflow-bundle-handoff.md).
+or receipts. For a managed run, load the direct [workflow bundle handoff](references/workflow-bundle-handoff.md).
+Before using the CLI, MCP, or a plugin helper, read [runtime compatibility](references/runtime-compatibility.md).
 Managed resume/review requires an explicit run directory and fresh verification; never select ambient/latest state.
 Do not load every mode or follow a second local-reference hop.
 
@@ -56,8 +60,15 @@ or unsupported signals. Use only supplied inputs and selected pack authority.
 This skill is not a pack editor, enrichment provider, copywriter, sequencer, or
 CRM operator.
 
+If use reveals missing, stale, or conflicting authority, preserve it as a
+bounded gap or finding. Do not add evidence, edit `.mdp/`, auto-approve a
+source, or repair the pack. Offer the smallest explicit Author and maintain
+handoff to `$mdp-pack-builder`; resume this usage job only after that separate
+edit is validated and the CLI is rerun.
+
 ## Response
 
-Return the exact job and pack, canonical status, fit/brief/review result,
-accepted and rejected evidence, gaps, minimality/receipt state, durable run
-pointer when present, and the next permitted action.
+Close Use and decide with the exact job and pack, canonical decision or
+fit/brief/review result, accepted and rejected evidence, verified bundle/run
+pointer when present, gaps, minimality/receipt state, and the next permitted
+action. Never report pack files as changed.

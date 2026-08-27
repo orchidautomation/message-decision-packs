@@ -1,17 +1,22 @@
 ---
 name: mdp-pack-review
 description: Use for read-only audit, validation, hardening, testing, or diagnosis of an existing Message Decision Pack itself, including structure, jobs, routes, prompts, gaps, evals, and installed parity. Do not edit unless review plus repair is explicit.
+metadata:
+  compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
 ---
 
 # MDP Pack Review
 
-Own read-only pack and installed-bundle QA for versioned decision context for agents. Flag graph database, agent runtime, orchestration, persistent memory, universal graph, and source truth claims; a decision graph is only a bounded projection. Produce evidence-backed findings;
+Own the read-only maintenance phase of **Author and maintain** for versioned
+decision context for agents. Flag graph database, agent runtime,
+orchestration, persistent memory, universal graph, and source truth claims; a
+decision graph is only a bounded projection. Produce evidence-backed findings;
 do not silently repair the pack or take an authoring request from
 `$mdp-pack-builder`.
 
 ## Communicate The Work
 
-Follow the shared [Orient, Plan, Progress, Translate, Close contract](../mdp/references/communication-contract.md).
+Follow the shared [Orient, Plan, Progress, Translate, Close contract](references/communication-contract.md).
 Open by naming the selected review job; the exact pack and CLI evidence boundary; the findings or QA decision the user will receive; and what this
 skill will not do. Keep updates to meaningful QA gates, blockers, and
 decisions.
@@ -24,7 +29,8 @@ decisions.
 
 Load [review protocol](references/review-protocol.md) only after selecting a
 mode that needs its deterministic or evidence gates. For execution evidence,
-load the direct [managed workflow bundle handoff](../mdp/references/workflow-bundle-handoff.md).
+load the direct [managed workflow bundle handoff](references/workflow-bundle-handoff.md).
+Before using the CLI, MCP, or a plugin helper, read [runtime compatibility](references/runtime-compatibility.md).
 Managed resume/review requires an explicit run directory and fresh verification; never select ambient/latest state.
 Do not load every reference by default or follow a second local-reference hop.
 
@@ -53,11 +59,14 @@ The Rust CLI is the decision authority. Preserve or reduce its authority; never 
 
 
 Never upgrade `blocked`, `no-draft`, `unavailable`, invalid, unknown, or
-unassessed. Edit only when the user explicitly requests review plus repair and
-state that route before touching files. This skill does not enrich, review
-business copy, certify compliance, submit work, or mutate downstream systems.
+unassessed. If the user explicitly requests review plus repair, finish the
+read-only review and state the transition to `$mdp-pack-builder`; do not touch
+pack files in the review result. This skill does not enrich, review business
+copy, certify compliance, submit work, or mutate downstream systems.
 
 ## Findings
 
-Return severity, location, CLI evidence, impact, repair recommendation,
-validation commands, reviewed roots, readiness state, and unresolved gaps.
+Close Author and maintain review with severity, location, CLI evidence,
+impact, repair recommendation, validation commands, reviewed roots, readiness
+state, unresolved gaps, and an explicit optional builder handoff. Do not claim
+that a finding has changed the pack.

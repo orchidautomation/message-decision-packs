@@ -94,7 +94,11 @@ mutation, or publication. Public projections must omit paths, raw content,
 identities, provider/session data, evaluator rationale, reviewer identity, and
 private hashes.
 
-Use [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix) for integration state. The only states are `verified`, `recipe-only`, `unsupported`, and `fixture/mock-only`; schema acceptance, a recipe, MCP availability, or one valid receipt does not promote a row.
+This installed release has no `verified` runner integration. Its named native
+and headless runner recipes are `recipe-only`; demo/mock evidence is
+`fixture/mock-only`; and any other integration is `unsupported`. Schema
+acceptance, a recipe, MCP availability, or one valid receipt does not promote
+an integration.
 
 - `validate-prompt-output`: validate model-produced normalization or governed-artifact output against the exact selected prompt. Its file-based result is `mdp.prompt-output-validation.v1`, binding the pack, canonical prompt, job when unambiguous, exact validator-input hashes, exact prompt-output bytes, and validator outcome. Raw `mdp.prompt-output.v0` remains untrusted and must never be treated as trace or decision authority. To inspect validated output, run `trace --file VALIDATION_JSON --dir PACK_ROOT --prompt-output OUTPUT_JSON` and repeat each validator file as `--validation-input LOGICAL_NAME=PATH`; trace only verifies those immutable bindings and does not rerun validation. Governed artifacts require `--invocation-receipt` with the host-created `mdp.prompt-invocation.v1` job/prompt/input-hash receipt and, when declared, `--routed-context` with the exact canonical `mdp.routed-context.v1` bytes. Pass `--source-audit` for proposal PDF/doc extraction ledgers when raw-field/snippet citations must resolve. Generated prose still requires `check-claims` or `verify-output`.
 - Migrated governed prompts declare `mdp.governed-host-envelope.v1`: submit semantic JSON only. The host wraps deterministic prompt, job, context, receipt, and input identities before `validate-prompt-output`; a model response containing any owned field is rejected. Legacy prompts without the declaration still require the existing echo-shaped output.
@@ -250,3 +254,18 @@ policy. Timeout/cancellation receipts expose a closed phase/limit observation
 and remain no-draft; old v1 receipts without that optional evidence remain
 readable. Interpret phases as safe runtime checkpoints—blocking filesystem
 syscalls are not preempted.
+
+## Direct-run crash recovery
+
+When `mdp run` returns `output-directory-claimed`, first preview the validated
+recovery plan using the exact same final output directory:
+
+```bash
+mdp --json recover-run --out-dir RUN_DIR
+```
+
+Use `--apply` only when that preview returns `status: ready`. Do not manually
+generalize the two reported hidden paths or clean nearby directories. The CLI
+refuses recent/live claims, links, unsafe owner/mode/type metadata, changed
+transaction identity, and any destination that already contains a published
+run.

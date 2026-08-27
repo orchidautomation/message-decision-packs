@@ -1,4 +1,8 @@
 use crate::cli::{Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
+use crate::diagnostics::{
+    ACTIONABLE_DIAGNOSTICS_FIELD, contract_metadata, diagnostics_for_result, error_diagnostic,
+    render_human, render_human_error,
+};
 use crate::routing::route_budget_summary_projection;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -319,7 +323,8 @@ pub(crate) fn presentation_contract() -> Value {
             "prelude_allowed": false,
             "trailing_text_allowed": false,
             "stderr_empty": true
-        }
+        },
+        "actionable_diagnostics": contract_metadata()
     })
 }
 
@@ -329,32 +334,59 @@ pub(crate) fn print_output(
     command: &str,
     data: Value,
 ) -> Result<()> {
+    print_output_with_status(json_mode, summary_mode, command, data, true)
+}
+
+pub(crate) fn print_output_with_status(
+    json_mode: bool,
+    summary_mode: bool,
+    command: &str,
+    data: Value,
+    ok: bool,
+) -> Result<()> {
+    let actionable_diagnostics = diagnostics_for_result(command, &data);
     if summary_mode {
         let summary = summarize(command, &data);
         if command == "route-budget" {
             crate::commands::schemas::validate_route_budget_summary_output(&summary)?;
         }
         if json_mode {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(
-                    &json!({"ok": true, "command": command, "summary": summary})
-                )?
-            );
+            let mut envelope = json!({"ok": ok, "command": command, "summary": summary});
+            attach_actionable_fields(&mut envelope, actionable_diagnostics.as_ref());
+            println!("{}", serde_json::to_string_pretty(&envelope)?);
         } else {
             print_summary(command, &summary)?;
+            if let Some(diagnostics) = actionable_diagnostics.as_ref() {
+                render_human(diagnostics);
+            }
         }
         return Ok(());
     }
     if json_mode {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({"ok": true, "command": command, "data": data}))?
-        );
+        let mut envelope = json!({"ok": ok, "command": command, "data": data});
+        attach_actionable_fields(&mut envelope, actionable_diagnostics.as_ref());
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
         print_human(command, &data)?;
+        if let Some(diagnostics) = actionable_diagnostics.as_ref() {
+            render_human(diagnostics);
+        }
     }
     Ok(())
+}
+
+fn attach_actionable_fields(envelope: &mut Value, diagnostics: Option<&Value>) {
+    let (Some(object), Some(diagnostics)) = (envelope.as_object_mut(), diagnostics) else {
+        return;
+    };
+    object.insert(
+        "diagnostic_contract".to_string(),
+        json!(crate::diagnostics::ACTIONABLE_DIAGNOSTIC_CONTRACT),
+    );
+    object.insert(
+        ACTIONABLE_DIAGNOSTICS_FIELD.to_string(),
+        diagnostics.clone(),
+    );
 }
 
 fn summarize(command: &str, data: &Value) -> Value {
@@ -510,7 +542,18 @@ fn summarize(command: &str, data: &Value) -> Value {
             "integration_releases": data["integration_releases"],
             "diagnostics": data["diagnostics"]
         }),
-        "doctor" | "validate" | "validate-prompt-output" => json!({
+        "doctor" => json!({
+            "status": data["status"],
+            "valid": data["valid"],
+            "error_count": data["error_count"],
+            "warning_count": data["warning_count"],
+            "issue_count": array_len(&data["issues"]),
+            "activation_state": data["activation"]["status"],
+            "job_readiness_state": data["job_readiness"]["state"],
+            "next_command": data["next_command"],
+            "issues": data["issues"]
+        }),
+        "validate" | "validate-prompt-output" => json!({
             "valid": data["valid"],
             "strict": data["strict"],
             "error_count": data["error_count"],
@@ -851,6 +894,7 @@ pub(crate) fn print_output_mode_conflict(
     selector: &str,
     value: &str,
 ) -> Result<()> {
+    let diagnostic = error_diagnostic(OUTPUT_MODE_CONFLICT_CODE);
     let envelope = json!({
         "ok": false,
         "error": {
@@ -859,7 +903,9 @@ pub(crate) fn print_output_mode_conflict(
                 "--json cannot be combined with human-only presentation {selector}={value}"
             ),
             "details": [selector, value]
-        }
+        },
+        "diagnostic_contract": crate::diagnostics::ACTIONABLE_DIAGNOSTIC_CONTRACT,
+        "actionable_diagnostics": [diagnostic]
     });
     if json_mode {
         println!("{}", serde_json::to_string_pretty(&envelope)?);
@@ -892,12 +938,18 @@ pub(crate) fn print_error(json_mode: bool, err: anyhow::Error) -> Result<()> {
         .map(|cause| cause.to_string())
         .collect::<Vec<_>>();
     let code = classify_error(&message, &details);
-    let payload =
-        json!({"ok": false, "error": {"code": code, "message": message, "details": details}});
+    let diagnostic = error_diagnostic(code);
+    let payload = json!({
+        "ok": false,
+        "error": {"code": code, "message": message, "details": details},
+        "diagnostic_contract": crate::diagnostics::ACTIONABLE_DIAGNOSTIC_CONTRACT,
+        "actionable_diagnostics": [diagnostic]
+    });
     if json_mode {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
         eprintln!("error: {}", err);
+        render_human_error(&payload["actionable_diagnostics"]);
     }
     Ok(())
 }
@@ -976,7 +1028,45 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                 }
             }
         }
-        "doctor" | "validate" => {
+        "doctor" => {
+            println!("doctor: {}", data["status"].as_str().unwrap_or("unknown"));
+            println!(
+                "installation: {}",
+                data["installation"]["state"].as_str().unwrap_or("unknown")
+            );
+            println!(
+                "pack validity: {}",
+                if data["valid"] == true {
+                    "valid"
+                } else {
+                    "invalid"
+                }
+            );
+            println!(
+                "profile activation: {}",
+                data["activation"]["status"]
+                    .as_str()
+                    .unwrap_or("not-assessed")
+            );
+            println!(
+                "job readiness: {}",
+                data["job_readiness"]["state"]
+                    .as_str()
+                    .unwrap_or("not-assessed")
+            );
+            if let Some(items) = data["issues"].as_array() {
+                for item in items {
+                    println!("- {}", issue_message(item));
+                }
+            }
+            println!(
+                "Next: {}",
+                data["next_command"]
+                    .as_str()
+                    .unwrap_or("Run mdp check with an exact job id.")
+            );
+        }
+        "validate" => {
             println!(
                 "{}: {}",
                 command,
@@ -991,6 +1081,24 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                     println!("- {}", issue_message(item));
                 }
             }
+        }
+        "check" => {
+            println!("check: {}", data["status"].as_str().unwrap_or("unknown"));
+            if let Some(blocker) = data["first_blocker"].as_object() {
+                println!(
+                    "first blocker: {}",
+                    blocker
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("readiness is blocked")
+                );
+            }
+            println!(
+                "next: {}",
+                data["next_action"]
+                    .as_str()
+                    .unwrap_or("Review the readiness JSON.")
+            );
         }
         "brief" | "emit-brief" | "pack" | "author-proof-output"
             if data["dry_run"].as_bool() == Some(true) =>
