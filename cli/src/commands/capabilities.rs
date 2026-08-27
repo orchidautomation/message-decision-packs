@@ -496,15 +496,15 @@ fn nested_command_with_outputs(
 /// Return the authoritative syntactic CLI contract directly from Clap.
 ///
 /// Semantic annotations such as output contracts and side-effect classes remain
-/// in the compatibility `commands` array. Keeping argument structure here
-/// derived from [`Cli`] makes adding or changing a Clap command automatically
-/// change the machine-readable contract instead of relying on a second,
-/// hand-maintained command graph.
+/// in the compatibility `commands` array. Argument shape is reflected from
+/// [`Cli`]. Clap does not expose conditional requirements through its stable
+/// reflection API, so those few edges live in the closed registry below and are
+/// exercised against real Clap parsing in the parity tests.
 fn cli_contract() -> Value {
     let mut root = Cli::command();
     root.build();
 
-    let root_arguments = arguments_for(&root);
+    let root_arguments = arguments_for(&root, &[]);
     let root_groups = groups_for(&root);
     let mut commands = Vec::new();
     collect_commands(&root, &[], &mut commands);
@@ -532,7 +532,7 @@ fn collect_commands(command: &Command, parent_path: &[String], output: &mut Vec<
             "argv": path.clone(),
             "aliases": subcommand.get_all_aliases().collect::<Vec<_>>(),
             "about": subcommand.get_about().map(ToString::to_string),
-            "arguments": arguments_for(subcommand),
+            "arguments": arguments_for(subcommand, &path),
             "argument_groups": groups_for(subcommand),
             "classification": if human_only_reason.is_some() { "human-only" } else { "agent-callable" },
             "human_only_reason": human_only_reason
@@ -560,14 +560,14 @@ fn groups_for(command: &Command) -> Vec<Value> {
         .collect()
 }
 
-fn arguments_for(command: &Command) -> Vec<Value> {
+fn arguments_for(command: &Command, path: &[String]) -> Vec<Value> {
     command
         .get_arguments()
-        .map(|argument| argument_contract(command, argument))
+        .map(|argument| argument_contract(command, argument, path))
         .collect()
 }
 
-fn argument_contract(command: &Command, argument: &Arg) -> Value {
+fn argument_contract(command: &Command, argument: &Arg, path: &[String]) -> Value {
     let action = action_name(argument.get_action());
     let long = argument.get_long().map(|name| format!("--{name}"));
     let short = argument.get_short().map(|name| format!("-{name}"));
@@ -617,6 +617,10 @@ fn argument_contract(command: &Command, argument: &Arg) -> Value {
         argument.get_action(),
         ArgAction::Help | ArgAction::HelpShort | ArgAction::HelpLong | ArgAction::Version
     );
+    let conditional = conditional_requirements(path, argument.get_id().as_str());
+    let requires = canonical_argument_ids(command, conditional.requires_when_present);
+    let required_unless_present =
+        canonical_argument_ids(command, conditional.required_unless_present);
 
     json!({
         "id": argument.get_id().as_str(),
@@ -635,10 +639,87 @@ fn argument_contract(command: &Command, argument: &Arg) -> Value {
         "default_values": argument.get_default_values().iter().map(|value| value.to_string_lossy().into_owned()).collect::<Vec<_>>(),
         "enum_values": enum_values,
         "conflicts_with": conflicts,
+        "requires_when_present": requires,
+        "required_unless_present": required_unless_present,
         "help": argument.get_help().map(ToString::to_string),
         "classification": if human_only { "human-only" } else { "agent-callable" },
         "human_only_reason": human_only.then_some("Clap display action; it does not execute a product command")
     })
+}
+
+#[derive(Clone, Copy, Default)]
+struct ConditionalRequirements {
+    requires_when_present: &'static [&'static str],
+    required_unless_present: &'static [&'static str],
+}
+
+fn conditional_requirements(path: &[String], argument_id: &str) -> ConditionalRequirements {
+    let path = path.iter().map(String::as_str).collect::<Vec<_>>();
+    match (path.as_slice(), argument_id) {
+        (["skills"], "job") => ConditionalRequirements {
+            requires_when_present: &["dir"],
+            ..Default::default()
+        },
+        (["rebind-synthetic-chain"], "force") => ConditionalRequirements {
+            requires_when_present: &["apply"],
+            ..Default::default()
+        },
+        (["trace"], "dir") => ConditionalRequirements {
+            requires_when_present: &["file", "prompt_output"],
+            ..Default::default()
+        },
+        (["trace"], "prompt_output") => ConditionalRequirements {
+            requires_when_present: &["file", "dir"],
+            ..Default::default()
+        },
+        (["trace"], "validation_inputs") => ConditionalRequirements {
+            requires_when_present: &["file", "dir", "prompt_output"],
+            ..Default::default()
+        },
+        (["trace"], "bundle") => ConditionalRequirements {
+            requires_when_present: &["receipt"],
+            ..Default::default()
+        },
+        (["trace"], "receipt") => ConditionalRequirements {
+            requires_when_present: &["bundle"],
+            ..Default::default()
+        },
+        (["fit"], "prospect") | (["brief"], "prospect") => ConditionalRequirements {
+            required_unless_present: &["normalized_input"],
+            ..Default::default()
+        },
+        (["fit"], "prompt")
+        | (["fit"], "source_binding")
+        | (["fit"], "source_attempt_request")
+        | (["fit"], "collected_attempt_results")
+        | (["fit"], "job")
+        | (["brief"], "prompt")
+        | (["brief"], "source_binding")
+        | (["brief"], "source_attempt_request")
+        | (["brief"], "collected_attempt_results") => ConditionalRequirements {
+            requires_when_present: &["normalized_input"],
+            ..Default::default()
+        },
+        _ => ConditionalRequirements::default(),
+    }
+}
+
+fn canonical_argument_ids(command: &Command, ids: &[&str]) -> Vec<String> {
+    ids.iter()
+        .map(|id| {
+            let argument = command
+                .get_arguments()
+                .find(|argument| argument.get_id().as_str() == *id)
+                .unwrap_or_else(|| {
+                    panic!("conditional requirement references unknown argument {id}")
+                });
+            argument
+                .get_long()
+                .map(|name| format!("--{name}"))
+                .or_else(|| argument.get_short().map(|name| format!("-{name}")))
+                .unwrap_or_else(|| argument.get_id().to_string())
+        })
+        .collect()
 }
 
 fn action_name(action: &ArgAction) -> &'static str {
@@ -659,6 +740,7 @@ fn action_name(action: &ArgAction) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
 
     #[test]
     fn capabilities_exposes_presentation_contract() {
@@ -1064,17 +1146,15 @@ mod tests {
                 .map(|part| part.as_str().unwrap())
                 .collect::<Vec<_>>();
             let clap_command = clap_command_at(&clap, &path);
-            let expected_ids = clap_command
-                .get_arguments()
-                .map(|argument| argument.get_id().as_str())
-                .collect::<Vec<_>>();
-            let projected_ids = command["arguments"]
-                .as_array()
-                .unwrap()
+            let owned_path = path
                 .iter()
-                .map(|argument| argument["id"].as_str().unwrap())
+                .map(|part| (*part).to_string())
                 .collect::<Vec<_>>();
-            assert_eq!(projected_ids, expected_ids, "argument drift at {path:?}");
+            assert_eq!(
+                command["arguments"],
+                json!(arguments_for(clap_command, &owned_path)),
+                "argument semantic drift at {path:?}"
+            );
         }
     }
 
@@ -1116,6 +1196,95 @@ mod tests {
         assert_eq!(
             projected_argument(rebind, "--dry-run")["conflicts_with"],
             json!(["--apply", "--force"])
+        );
+        assert_eq!(
+            projected_argument(rebind, "--force")["requires_when_present"],
+            json!(["--apply"])
+        );
+
+        let skills = projected_command(commands, &["skills"]);
+        assert_eq!(
+            projected_argument(skills, "--job")["requires_when_present"],
+            json!(["--dir"])
+        );
+        assert_eq!(
+            projected_argument(trace, "--dir")["requires_when_present"],
+            json!(["--file", "--prompt-output"])
+        );
+        assert_eq!(
+            projected_argument(trace, "--bundle")["requires_when_present"],
+            json!(["--receipt"])
+        );
+        assert_eq!(
+            projected_argument(trace, "--receipt")["requires_when_present"],
+            json!(["--bundle"])
+        );
+
+        let fit = projected_command(commands, &["fit"]);
+        assert_eq!(
+            projected_argument(fit, "--prospect")["required_unless_present"],
+            json!(["--normalized-input"])
+        );
+        assert_eq!(
+            projected_argument(fit, "--prompt")["requires_when_present"],
+            json!(["--normalized-input"])
+        );
+    }
+
+    #[test]
+    fn projected_conditional_requirements_match_clap_parsing() {
+        assert!(Cli::try_parse_from(["mdp", "skills", "--job", "outbound-copy-brief"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "skills",
+                "--job",
+                "outbound-copy-brief",
+                "--dir",
+                "."
+            ])
+            .is_ok()
+        );
+
+        let rebind = [
+            "mdp",
+            "rebind-synthetic-chain",
+            "--job",
+            "outbound-copy-brief",
+            "--out-dir",
+            "out",
+            "--force",
+        ];
+        assert!(Cli::try_parse_from(rebind).is_err());
+        assert!(
+            Cli::try_parse_from(rebind.into_iter().chain(["--apply"]).collect::<Vec<_>>()).is_ok()
+        );
+
+        assert!(Cli::try_parse_from(["mdp", "trace", "--dir", "."]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "trace",
+                "--file",
+                "result.json",
+                "--dir",
+                ".",
+                "--prompt-output",
+                "prompt-output.json"
+            ])
+            .is_ok()
+        );
+        assert!(Cli::try_parse_from(["mdp", "trace", "--bundle", "bundle.json"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "mdp",
+                "trace",
+                "--bundle",
+                "bundle.json",
+                "--receipt",
+                "receipt.json"
+            ])
+            .is_ok()
         );
     }
 
