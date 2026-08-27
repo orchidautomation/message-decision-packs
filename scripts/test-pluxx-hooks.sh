@@ -49,6 +49,16 @@ if ! printf '%s\n' "$activation_output" | grep -F "MCP path: mdp_run_tools -> md
   exit 1
 fi
 
+source_activation_output="$(
+  cd "$plugin_fixture"
+  env -u PLUGIN_ROOT MDP_HOOK_DIR="$workspace_fixture" bash "$ROOT/scripts/mdp-activate.sh"
+)"
+if ! printf '%s\n' "$source_activation_output" | grep -F "available as node \"$ROOT/scripts/mdp-run-mcp-server.mjs\"" >/dev/null; then
+  echo "Direct source activation must discover the canonical MCP without PLUGIN_ROOT." >&2
+  printf '%s\n' "$source_activation_output" >&2
+  exit 1
+fi
+
 plugin_root_output="$(
   cd "$plugin_fixture"
   PLUGIN_ROOT="$plugin_fixture" bash "$ROOT/scripts/mdp-activate.sh"

@@ -105,23 +105,24 @@ native_runner_available() {
   return 1
 }
 
-run_mcp_available() {
-  local candidate
-  for candidate in \
-    "${PLUGIN_ROOT:-}/scripts/mdp-run-mcp-server.mjs" \
-    "$SCRIPT_DIR/mdp-run-mcp-server.mjs"; do
-    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
-      return 0
-    fi
-  done
+run_mcp_path() {
+  if [ -n "${PLUGIN_ROOT:-}" ] && [ -f "$PLUGIN_ROOT/scripts/mdp-run-mcp-server.mjs" ]; then
+    printf '%s\n' "$PLUGIN_ROOT/scripts/mdp-run-mcp-server.mjs"
+    return 0
+  fi
+  if [ -f "$SCRIPT_DIR/mdp-run-mcp-server.mjs" ]; then
+    printf '%s\n' "$SCRIPT_DIR/mdp-run-mcp-server.mjs"
+    return 0
+  fi
   return 1
 }
 
 print_clean_run_readiness() {
+  local run_mcp=""
   echo
   echo "MDP clean-run readiness:"
-  if run_mcp_available; then
-    echo "  Canonical local stdio MCP: available as node \"${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs\"."
+  if run_mcp="$(run_mcp_path)"; then
+    echo "  Canonical local stdio MCP: available as node \"$run_mcp\"."
     echo "  MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run."
     echo "  Artifacts: boundary inventory -> mdp.run-request.v1 -> run bundle/receipt -> mdp.run-verification.v1."
   else
