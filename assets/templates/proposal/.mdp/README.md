@@ -1,5 +1,13 @@
 # Proposal Reference Profile Sample
 
+<!-- mdp:readme-ownership v1 begin -->
+
+## README ownership
+
+- Machine-owned: this ownership legend and the marker-delimited Inventory block. `mdp readme refresh` may replace only those regions.
+- Human-owned: every other README byte. Refresh preserves that prose without reviewing its thesis, claims, source interpretation, or gaps.
+<!-- mdp:readme-ownership v1 end -->
+
 
 ## Authority
 
