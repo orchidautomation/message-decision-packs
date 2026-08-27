@@ -32,19 +32,11 @@ function hasShellOverride(line) {
 }
 
 function hasMappingKey(line, key) {
-  let trimmed = line.trim()
-  const explicit = trimmed.startsWith('?')
-  if (explicit) {
-    trimmed = trimmed.slice(1).trimStart()
-    const quotedWithComment = trimmed.match(
-      /^((?:"(?:\\.|[^"\\])*")|(?:'(?:''|[^'])*'))\s+#.*$/u,
-    )
-    if (quotedWithComment) {
-      trimmed = `${quotedWithComment[1]}:`
-    } else {
-      const uncommented = trimmed.replace(/\s+#.*$/u, '').trimEnd()
-      trimmed = uncommented.includes(':') ? uncommented : `${uncommented}:`
-    }
+  const trimmed = line.trim()
+  if (trimmed.startsWith('?')) {
+    // Explicit YAML keys admit quoted, escaped, commented, and block-scalar
+    // forms. Required CI scopes do not need them, so reject all of them.
+    return true
   }
   const terminator = '\\s*:'
   const doubleQuoted = trimmed.match(new RegExp(`^("(?:\\\\.|[^"\\\\])*")${terminator}`, 'u'))
@@ -400,6 +392,13 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       `          ${assetParityCommand}\n`,
       `          ${assetParityCommand}\n        ? shell # comment: colon\n        : "/bin/true {0}"\n`,
+    ),
+  ],
+  [
+    'block-scalar explicit parity shell',
+    ciWorkflow.replace(
+      '        run: |\n',
+      '        ? >-\n          shell\n        : "/bin/true {0}"\n        run: |\n',
     ),
   ],
   [
