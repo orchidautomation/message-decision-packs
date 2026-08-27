@@ -327,6 +327,12 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, inde
 }, []))
 const parent = ${JSON.stringify(base)}
 const target = path.join(parent, args.name)
+if (args.action === 'inspect-owned-workspace') {
+  const marker = JSON.parse(fs.readFileSync(target, 'utf8'))
+  const marker_mtime_ms = fs.statSync(target).mtimeMs
+  fs.writeSync(1, JSON.stringify({ ok: true, command: 'secure-install', data: { contract: 'mdp.secure-install.v1', status: 'inspected', marker, marker_mtime_ms } }) + '\\n')
+  process.exit(0)
+}
 if (args.action === 'verify-directory') {
   let status = 'absent'
   try {
@@ -340,6 +346,7 @@ if (args.action === 'move-directory') fs.renameSync(target, path.join(parent, ar
 else if (args.action === 'remove-directory-tree') fs.rmSync(target, { recursive: true })
 else process.exit(2)
 process.kill(process.pid, 'SIGTERM')
+setTimeout(() => {}, 1_000)
 `, { mode: 0o700 })
   chmodSync(helper, 0o700)
   const root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
@@ -350,9 +357,10 @@ process.kill(process.pid, 'SIGTERM')
     purpose: 'validation',
     secureHelperPath: helper,
     secureHelperDiagnostics: diagnostics,
-  }), true, JSON.stringify(diagnostics))
-  assert.equal(existsSync(root), false)
-  assert.deepEqual(readdirSync(base).sort(), ['mutate-then-signal'])
+  }), false)
+  assert.equal(diagnostics.length > 0, true, JSON.stringify(diagnostics))
+  if (existsSync(root)) assert.equal(readFileSync(join(root, 'owned'), 'utf8'), 'owned bytes')
+  assert.equal(readdirSync(base).some((name) => name.includes('quarantine')), false)
 })
 
 test('restore destination collision preserves replacement and quarantined original', (t) => {

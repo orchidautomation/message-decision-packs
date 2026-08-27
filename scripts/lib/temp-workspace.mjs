@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdtempSync, openSync, readdirSync, realpathSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url'
 export const TEMP_WORKSPACE_CONTRACT = 'mdp.owned-temp-workspace.v1'
 export const TEMP_WORKSPACE_MARKER = '.mdp-owned-temp-workspace.json'
 export const DEFAULT_STALE_AGE_MS = 24 * 60 * 60 * 1000
-const MAX_MARKER_BYTES = 4_096
 
 const currentUid = () => (typeof process.getuid === 'function' ? process.getuid() : null)
 const mode = (stats) => stats.mode & 0o777
@@ -50,12 +49,13 @@ const secureDirectoryAction = ({ action, parentFd, parentStats, name, toName, ex
     const envelope = JSON.parse(result.stdout)
     const expectedStatus = action === 'move-directory' ? 'moved'
       : action === 'verify-directory' ? envelope?.data?.status
+        : action === 'inspect-owned-workspace' ? 'inspected'
         : 'removed'
     const ok = envelope?.ok === true &&
       envelope?.command === 'secure-install' &&
       envelope?.data?.contract === 'mdp.secure-install.v1' &&
       envelope?.data?.status === expectedStatus
-    return ok ? { ok: true, status: envelope.data.status } : failure('invalid-envelope')
+    return ok ? { ok: true, status: envelope.data.status, data: envelope.data } : failure('invalid-envelope')
   } catch {
     return failure('invalid-json')
   }
@@ -144,13 +144,12 @@ export const createOwnedTempWorkspace = ({ purpose, baseDir = tmpdir(), nowMs = 
   }
 }
 
-export const inspectOwnedTempWorkspace = (root, { purpose, afterMarkerRead } = {}) => {
+export const inspectOwnedTempWorkspace = (root, { purpose, afterMarkerRead, secureHelperPath, secureHelperDiagnostics } = {}) => {
   const requested = resolve(root)
   let rootFd
-  let markerFd
   try {
-    // Pin the candidate before consuming any ownership proof, then bind the
-    // no-follow marker read to this identity with named checks on both sides.
+    // Pin the candidate before consuming ownership proof. The native helper
+    // opens and reads the marker with openat(O_NOFOLLOW) relative to this FD.
     rootFd = openSync(requested, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
     const rootStats = fstatSync(rootFd)
     const rootIdentity = fstatSync(rootFd, { bigint: true })
@@ -158,15 +157,16 @@ export const inspectOwnedTempWorkspace = (root, { purpose, afterMarkerRead } = {
     const uid = currentUid()
     if (uid !== null && rootStats.uid !== uid) return null
     if (!sameIdentity(lstatSync(requested, { bigint: true }), rootIdentity)) return null
-    // macOS /dev/fd duplicates can be opened and fstat'd but are not reliably
-    // traversable as directories. Read the no-follow marker by its canonical
-    // pathname, then bind the proof back to the already-pinned root identity.
-    markerFd = openSync(join(requested, TEMP_WORKSPACE_MARKER), constants.O_RDONLY | (constants.O_NOFOLLOW || 0))
-    const markerStats = fstatSync(markerFd)
-    if (!markerStats.isFile() || mode(markerStats) !== 0o600 || markerStats.size > MAX_MARKER_BYTES) return null
-    if (uid !== null && markerStats.uid !== uid) return null
-    let marker
-    try { marker = JSON.parse(readFileSync(markerFd, 'utf8')) } catch { return null }
+    const result = secureDirectoryAction({
+      action: 'inspect-owned-workspace', parentFd: rootFd, parentStats: rootIdentity,
+      name: TEMP_WORKSPACE_MARKER, expected: rootIdentity, helper: secureHelperPath,
+    })
+    if (!result.ok) {
+      if (Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'inspect-owned-workspace', ...result })
+      return null
+    }
+    const marker = result.data.marker
+    const markerStats = { mtimeMs: result.data.marker_mtime_ms }
     if (typeof afterMarkerRead === 'function') afterMarkerRead({ requested })
     if (!sameIdentity(lstatSync(requested, { bigint: true }), rootIdentity)) return null
     if (
@@ -180,7 +180,6 @@ export const inspectOwnedTempWorkspace = (root, { purpose, afterMarkerRead } = {
     ) return null
     return { root: requested, marker, rootStats, rootIdentity, markerStats }
   } finally {
-    if (markerFd !== undefined) closeSync(markerFd)
     if (rootFd !== undefined) closeSync(rootFd)
   }
 }
@@ -195,7 +194,13 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     ...inspectionOptions
   } = options
   let inspected
-  try { inspected = inspectOwnedTempWorkspace(root, inspectionOptions) } catch { return false }
+  try {
+    inspected = inspectOwnedTempWorkspace(root, {
+      ...inspectionOptions,
+      secureHelperPath,
+      secureHelperDiagnostics,
+    })
+  } catch { return false }
   if (!inspected) return false
   const parent = dirname(inspected.root)
   const quarantineLeaf = `.mdp-owned-temp-quarantine-${randomBytes(16).toString('hex')}`
@@ -262,7 +267,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
       expected: inspected.rootIdentity, helper: secureHelperPath,
     })
     if (!removeResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'remove-directory-tree', ...removeResult })
-    if (statusFor(quarantineLeaf).status !== 'absent') return false
+    if (!removeResult.ok || statusFor(quarantineLeaf).status !== 'absent') return false
     return true
   } catch {
     return false

@@ -373,15 +373,12 @@ fn remove_directory_contents_with_hook<F: FnMut(RawFd, &std::ffi::CStr, bool)>(
     Ok(())
 }
 
-fn remove_directory_contents(dir_fd: RawFd) -> Result<()> {
-    remove_directory_contents_with_hook(dir_fd, &mut |_, _, _| {})
-}
-
-fn remove_directory_tree_if_identity(
+fn remove_directory_tree_if_identity_with_hook<F: FnMut(RawFd, &std::ffi::CStr, bool)>(
     dir_fd: RawFd,
     name: &CString,
     expected_dev: u64,
     expected_ino: u64,
+    hook: &mut F,
 ) -> Result<()> {
     let target_fd = unsafe {
         libc::openat(
@@ -410,18 +407,51 @@ fn remove_directory_tree_if_identity(
         })?;
         bail!("secure remove directory tree identity changed during quarantine");
     }
-    remove_directory_contents(target_fd)?;
-    if named_identity(dir_fd, &quarantine)? != opened {
-        rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
-            anyhow!("secure remove directory tree pre-remove restore failed: {error}")
-        })?;
-        bail!("secure remove directory tree identity changed during removal");
-    }
-    if unsafe { libc::unlinkat(dir_fd, quarantine.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
-        return Err(io::Error::last_os_error()).map_err(Into::into);
+    let removal = (|| -> Result<()> {
+        remove_directory_contents_with_hook(target_fd, hook)?;
+        if named_identity(dir_fd, &quarantine)? != opened {
+            bail!("secure remove directory tree identity changed during removal");
+        }
+        if unsafe { libc::unlinkat(dir_fd, quarantine.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
+            return Err(io::Error::last_os_error()).map_err(Into::into);
+        }
+        Ok(())
+    })();
+    if let Err(removal_error) = removal {
+        match named_identity(dir_fd, &quarantine) {
+            Ok(identity) if identity == opened => {
+                rename_no_replace(dir_fd, &quarantine, name).map_err(|restore_error| {
+                    anyhow!(
+                        "secure remove directory tree failed ({removal_error}); restore failed: {restore_error}"
+                    )
+                })?;
+            }
+            Ok(_) => bail!(
+                "secure remove directory tree failed ({removal_error}); quarantine identity changed and was preserved"
+            ),
+            Err(status_error) => bail!(
+                "secure remove directory tree failed ({removal_error}); quarantine status failed: {status_error}"
+            ),
+        }
+        return Err(removal_error);
     }
     drop(target);
     Ok(())
+}
+
+fn remove_directory_tree_if_identity(
+    dir_fd: RawFd,
+    name: &CString,
+    expected_dev: u64,
+    expected_ino: u64,
+) -> Result<()> {
+    remove_directory_tree_if_identity_with_hook(
+        dir_fd,
+        name,
+        expected_dev,
+        expected_ino,
+        &mut |_, _, _| {},
+    )
 }
 
 fn directory_identity_status(
@@ -442,6 +472,61 @@ fn directory_identity_status(
         }
         Err(error) => Err(error),
     }
+}
+
+fn inspect_owned_marker_with_hook<F: FnOnce()>(
+    dir_fd: RawFd,
+    name: &CString,
+    hook: F,
+) -> Result<Value> {
+    let marker_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if marker_fd < 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    let marker = unsafe { File::from_raw_fd(marker_fd) };
+    let mut root_stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+    let mut marker_stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+    if unsafe { libc::fstat(dir_fd, root_stat.as_mut_ptr()) } != 0
+        || unsafe { libc::fstat(marker_fd, marker_stat.as_mut_ptr()) } != 0
+    {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    let root_stat = unsafe { root_stat.assume_init() };
+    let marker_stat = unsafe { marker_stat.assume_init() };
+    if marker_stat.st_mode & libc::S_IFMT != libc::S_IFREG
+        || marker_stat.st_mode & 0o777 != 0o600
+        || marker_stat.st_uid != root_stat.st_uid
+        || marker_stat.st_size < 0
+        || marker_stat.st_size > 4_096
+    {
+        bail!("owned workspace marker metadata is invalid");
+    }
+    hook();
+    let mut bytes = Vec::new();
+    marker.take(4_097).read_to_end(&mut bytes)?;
+    if bytes.len() > 4_096 {
+        bail!("owned workspace marker exceeds size limit");
+    }
+    let value: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| anyhow!("owned workspace marker JSON is invalid"))?;
+    #[cfg(target_os = "linux")]
+    let mtime_ms = marker_stat.st_mtime * 1_000 + marker_stat.st_mtime_nsec / 1_000_000;
+    #[cfg(target_os = "macos")]
+    let mtime_ms =
+        marker_stat.st_mtimespec.tv_sec * 1_000 + marker_stat.st_mtimespec.tv_nsec / 1_000_000;
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let mtime_ms = marker_stat.st_mtime * 1_000;
+    Ok(json!({"value": value, "mtime_ms": mtime_ms}))
+}
+
+fn inspect_owned_marker(dir_fd: RawFd, name: &CString) -> Result<Value> {
+    inspect_owned_marker_with_hook(dir_fd, name, || {})
 }
 
 fn secure_install_with_hook<F: FnOnce()>(
@@ -652,8 +737,14 @@ pub(crate) fn secure_install(
                 directory_identity_status(dir_fd, &name, expected_file_dev, expected_file_ino)?;
             Ok(json!({"contract": "mdp.secure-install.v1", "status": status}))
         }
+        "inspect-owned-workspace" => {
+            let inspected = inspect_owned_marker(dir_fd, &name)?;
+            Ok(
+                json!({"contract": "mdp.secure-install.v1", "status": "inspected", "marker": inspected["value"], "marker_mtime_ms": inspected["mtime_ms"]}),
+            )
+        }
         _ => bail!(
-            "secure install action must be install, verify, remove, move-directory, remove-directory, remove-directory-tree, or verify-directory"
+            "secure install action must be install, verify, remove, move-directory, remove-directory, remove-directory-tree, verify-directory, or inspect-owned-workspace"
         ),
     }
 }
@@ -825,6 +916,105 @@ mod tests {
             std::fs::read(dir_tree.join("victim/keep")).unwrap(),
             b"replacement"
         );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn owned_marker_inspection_stays_bound_during_root_path_swap() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-marker-race-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let victim = root.join("victim");
+        let replacement = root.join("replacement");
+        std::fs::create_dir_all(&victim).unwrap();
+        std::fs::create_dir(&replacement).unwrap();
+        let marker_name = CString::new("marker.json").unwrap();
+        std::fs::write(victim.join("marker.json"), br#"{"owner":"victim"}"#).unwrap();
+        std::fs::write(
+            replacement.join("marker.json"),
+            br#"{"owner":"replacement"}"#,
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            victim.join("marker.json"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            replacement.join("marker.json"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        let directory = File::open(&victim).unwrap();
+
+        let inspected = inspect_owned_marker_with_hook(directory.as_raw_fd(), &marker_name, || {
+            std::fs::rename(&victim, root.join("saved")).unwrap();
+            std::fs::rename(&replacement, &victim).unwrap();
+        })
+        .unwrap();
+        assert_eq!(inspected["value"]["owner"], "victim");
+        assert_eq!(
+            std::fs::read_to_string(victim.join("marker.json")).unwrap(),
+            r#"{"owner":"replacement"}"#
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn failed_tree_removal_restores_discoverable_outer_name() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-tree-restore-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let tree = root.join("tree");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::write(tree.join("seed"), b"seed").unwrap();
+        let parent = File::open(&root).unwrap();
+        let identity = std::fs::metadata(&tree).unwrap();
+        let name = CString::new("tree").unwrap();
+        let mut added = false;
+        let result = remove_directory_tree_if_identity_with_hook(
+            parent.as_raw_fd(),
+            &name,
+            identity.dev(),
+            identity.ino(),
+            &mut |directory_fd, _, _| {
+                if !added {
+                    let late = CString::new("late").unwrap();
+                    let fd = unsafe {
+                        libc::openat(
+                            directory_fd,
+                            late.as_ptr(),
+                            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_CLOEXEC,
+                            0o600,
+                        )
+                    };
+                    assert!(fd >= 0);
+                    let mut file = unsafe { File::from_raw_fd(fd) };
+                    file.write_all(b"concurrent").unwrap();
+                    added = true;
+                }
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(tree.join("late")).unwrap(), b"concurrent");
+        assert!(std::fs::read_dir(&root).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".mdp-quarantine-")
+        }));
         std::fs::remove_dir_all(&root).unwrap();
     }
 
