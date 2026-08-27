@@ -152,29 +152,26 @@ export const inspectOwnedTempWorkspace = (root, { purpose, afterMarkerRead } = {
   let rootFd
   let markerFd
   try {
-    // Pin the candidate before consuming any ownership proof. Marker metadata
-    // and bytes are then read through that descriptor, so a pathname swap can
-    // never splice an old marker onto a replacement root identity.
+    // Pin the candidate before consuming any ownership proof, then bind the
+    // no-follow marker read to this identity with named checks on both sides.
     rootFd = openSync(requested, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
     const rootStats = fstatSync(rootFd)
     const rootIdentity = fstatSync(rootFd, { bigint: true })
     if (!rootStats.isDirectory() || mode(rootStats) !== 0o700) return null
     const uid = currentUid()
     if (uid !== null && rootStats.uid !== uid) return null
-    const rootReference = resolveDescriptorDirectoryPath({
-      fd: rootFd,
-      identity: rootIdentity,
-      stat: (path) => statSync(path, { bigint: true }),
-      fstat: (fd) => fstatSync(fd, { bigint: true }),
-    })
-    if (!rootReference) return null
-    markerFd = openSync(join(rootReference, TEMP_WORKSPACE_MARKER), constants.O_RDONLY | (constants.O_NOFOLLOW || 0))
+    if (!sameIdentity(lstatSync(requested, { bigint: true }), rootIdentity)) return null
+    // macOS /dev/fd duplicates can be opened and fstat'd but are not reliably
+    // traversable as directories. Read the no-follow marker by its canonical
+    // pathname, then bind the proof back to the already-pinned root identity.
+    markerFd = openSync(join(requested, TEMP_WORKSPACE_MARKER), constants.O_RDONLY | (constants.O_NOFOLLOW || 0))
     const markerStats = fstatSync(markerFd)
     if (!markerStats.isFile() || mode(markerStats) !== 0o600 || markerStats.size > MAX_MARKER_BYTES) return null
     if (uid !== null && markerStats.uid !== uid) return null
     let marker
     try { marker = JSON.parse(readFileSync(markerFd, 'utf8')) } catch { return null }
-    if (typeof afterMarkerRead === 'function') afterMarkerRead({ requested, rootReference })
+    if (typeof afterMarkerRead === 'function') afterMarkerRead({ requested })
+    if (!sameIdentity(lstatSync(requested, { bigint: true }), rootIdentity)) return null
     if (
       marker?.contract !== TEMP_WORKSPACE_CONTRACT ||
       marker.basename !== basename(requested) ||
