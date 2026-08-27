@@ -797,22 +797,27 @@ fn link_reference_title_state(line: &str) -> Option<bool> {
     if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
         return None;
     }
-    let bytes = trimmed.as_bytes();
     let mut escaped = false;
-    for index in 1..bytes.len().min(1001) {
-        match bytes[index] {
-            b'\\' if !escaped => escaped = true,
-            b']' if !escaped => {
+    let mut label_characters = 0usize;
+    for (offset, character) in trimmed[1..].char_indices() {
+        let index = 1 + offset;
+        match character {
+            '\\' if !escaped => escaped = true,
+            ']' if !escaped => {
                 return (index > 1
                     && trimmed[1..index]
                         .chars()
                         .any(|character| !character.is_whitespace())
-                    && bytes.get(index + 1) == Some(&b':'))
+                    && trimmed.as_bytes().get(index + 1) == Some(&b':'))
                 .then(|| link_definition_suffix_title_state(&trimmed[index + 2..]))
                 .flatten();
             }
-            b'[' if !escaped => return None,
+            '[' if !escaped => return None,
             _ => escaped = false,
+        }
+        label_characters += 1;
+        if label_characters > 999 {
+            return None;
         }
     }
     None
@@ -823,21 +828,26 @@ fn is_link_reference_destination_pending(line: &str) -> bool {
     if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
         return false;
     }
-    let bytes = trimmed.as_bytes();
     let mut escaped = false;
-    for index in 1..bytes.len().min(1001) {
-        match bytes[index] {
-            b'\\' if !escaped => escaped = true,
-            b']' if !escaped => {
+    let mut label_characters = 0usize;
+    for (offset, character) in trimmed[1..].char_indices() {
+        let index = 1 + offset;
+        match character {
+            '\\' if !escaped => escaped = true,
+            ']' if !escaped => {
                 return index > 1
                     && trimmed[1..index]
                         .chars()
                         .any(|character| !character.is_whitespace())
-                    && bytes.get(index + 1) == Some(&b':')
+                    && trimmed.as_bytes().get(index + 1) == Some(&b':')
                     && trimmed[index + 2..].trim_matches([' ', '\t']).is_empty();
             }
-            b'[' if !escaped => return false,
+            '[' if !escaped => return false,
             _ => escaped = false,
+        }
+        label_characters += 1;
+        if label_characters > 999 {
+            return false;
         }
     }
     false
@@ -2611,6 +2621,32 @@ Inline `inline-code` must be ignored.
         );
         assert_eq!(
             std::fs::read_to_string(&readme_path).expect("README after refusal"),
+            adversarial
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unicode_reference_label_limit_keeps_check_refresh_aligned() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-unicode-label-{}", nonce()));
+        init_pack(&root, "Unicode Label Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let label = "é".repeat(999);
+        let prefix = format!("[{label}]: /url\n2. ```markdown\n   human fence body\n   ```");
+        let adversarial = readme.replacen(
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            &format!("{prefix}\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+            1,
+        );
+        std::fs::write(&readme_path, &adversarial).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "fresh", "{checked}");
+        let dry_run = refresh_readme(&root, None, true).expect("dry-run refresh");
+        assert_eq!(dry_run["status"], "dry-run");
+        assert_eq!(
+            std::fs::read_to_string(&readme_path).expect("README after dry run"),
             adversarial
         );
         let _ = std::fs::remove_dir_all(root);

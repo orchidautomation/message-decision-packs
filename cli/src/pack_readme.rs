@@ -1046,22 +1046,27 @@ fn link_reference_title_state(line: &str) -> Option<bool> {
     if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
         return None;
     }
-    let bytes = trimmed.as_bytes();
     let mut escaped = false;
-    for index in 1..bytes.len().min(1001) {
-        match bytes[index] {
-            b'\\' if !escaped => escaped = true,
-            b']' if !escaped => {
+    let mut label_characters = 0usize;
+    for (offset, character) in trimmed[1..].char_indices() {
+        let index = 1 + offset;
+        match character {
+            '\\' if !escaped => escaped = true,
+            ']' if !escaped => {
                 return (index > 1
                     && trimmed[1..index]
                         .chars()
                         .any(|character| !character.is_whitespace())
-                    && bytes.get(index + 1) == Some(&b':'))
+                    && trimmed.as_bytes().get(index + 1) == Some(&b':'))
                 .then(|| link_definition_suffix_title_state(&trimmed[index + 2..]))
                 .flatten();
             }
-            b'[' if !escaped => return None,
+            '[' if !escaped => return None,
             _ => escaped = false,
+        }
+        label_characters += 1;
+        if label_characters > 999 {
+            return None;
         }
     }
     None
@@ -1072,21 +1077,26 @@ fn is_link_reference_destination_pending(line: &str) -> bool {
     if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
         return false;
     }
-    let bytes = trimmed.as_bytes();
     let mut escaped = false;
-    for index in 1..bytes.len().min(1001) {
-        match bytes[index] {
-            b'\\' if !escaped => escaped = true,
-            b']' if !escaped => {
+    let mut label_characters = 0usize;
+    for (offset, character) in trimmed[1..].char_indices() {
+        let index = 1 + offset;
+        match character {
+            '\\' if !escaped => escaped = true,
+            ']' if !escaped => {
                 return index > 1
                     && trimmed[1..index]
                         .chars()
                         .any(|character| !character.is_whitespace())
-                    && bytes.get(index + 1) == Some(&b':')
+                    && trimmed.as_bytes().get(index + 1) == Some(&b':')
                     && trimmed[index + 2..].trim_matches([' ', '\t']).is_empty();
             }
-            b'[' if !escaped => return false,
+            '[' if !escaped => return false,
             _ => escaped = false,
+        }
+        label_characters += 1;
+        if label_characters > 999 {
+            return false;
         }
     }
     false
@@ -1975,6 +1985,32 @@ mod tests {
         assert!(open_fence_at_eof(&escaped_destination_space).is_some());
         assert_eq!(extract_ownership_block(&escaped_destination_space), None);
         assert_eq!(extract_inventory_block(&escaped_destination_space), None);
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let unicode_label = "é".repeat(999);
+        let max_character_label = format!(
+            "[{unicode_label}]: /url\n2. ```markdown\n   human fence body\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&max_character_label).is_ok());
+        assert!(open_fence_at_eof(&max_character_label).is_none());
+        assert_eq!(
+            extract_ownership_block(&max_character_label),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&max_character_label),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let overlong_unicode_label = "é".repeat(1000);
+        let over_character_limit = format!(
+            "[{overlong_unicode_label}]: /url\n2. ```markdown\n   human paragraph\n   ```\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&over_character_limit).is_ok());
+        assert!(open_fence_at_eof(&over_character_limit).is_some());
+        assert_eq!(extract_ownership_block(&over_character_limit), None);
+        assert_eq!(extract_inventory_block(&over_character_limit), None);
         let ownership = render_ownership_block();
         let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
         let lazy_list_paragraph = format!("- paragraph\n<x>\n{ownership}{inventory}");
