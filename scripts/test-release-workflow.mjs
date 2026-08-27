@@ -22,6 +22,15 @@ function hasShellOverride(line) {
   return /(?:^|[\s{,])(?:shell|["']shell["'])\s*:/u.test(line.trim())
 }
 
+function hasMappingKey(line, key) {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  return new RegExp(`^(?:${escaped}|["']${escaped}["'])\\s*:`, 'u').test(line.trim())
+}
+
+function hasBypassControl(line) {
+  return hasMappingKey(line, 'if') || hasMappingKey(line, 'continue-on-error')
+}
+
 function stepBlock(workflow, name) {
   const lines = workflow.split(/\r?\n/)
   const marker = `- name: ${name}`
@@ -93,8 +102,7 @@ function filterStepBlock(workflow) {
     step.find(
       (line) =>
         line.match(/^\s*/u)[0].length === 8 &&
-        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)) ||
-        hasShellOverride(line),
+        hasBypassControl(line) || hasShellOverride(line),
     ),
     undefined,
     'projected paths-filter step must not be bypassable',
@@ -108,8 +116,7 @@ function assertCliJobWiring(workflow) {
     changes.find(
       (line) =>
         line.match(/^\s*/u)[0].length === 4 &&
-        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)) ||
-        hasShellOverride(line),
+        hasBypassControl(line) || hasShellOverride(line),
     ),
     undefined,
     'changes job must not be bypassable',
@@ -130,7 +137,7 @@ function assertCliJobWiring(workflow) {
   assert.equal(
     cli.find(
       (line) =>
-        line.match(/^\s*/u)[0].length === 4 && line.trim().startsWith('continue-on-error:'),
+        line.match(/^\s*/u)[0].length === 4 && hasMappingKey(line, 'continue-on-error'),
     ),
     undefined,
     'cli job must not ignore failures',
@@ -162,8 +169,7 @@ function assertUnconditionalStep(workflow, name) {
     .slice(start + 1, end)
     .find(
       (line) =>
-        (['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)) ||
-          hasShellOverride(line)) &&
+        (hasBypassControl(line) || hasShellOverride(line)) &&
         line.match(/^\s*/u)[0].length === stepIndent + 2,
     )
   assert.equal(control, undefined, `required CI step must not be bypassable: ${name}`)
@@ -171,12 +177,8 @@ function assertUnconditionalStep(workflow, name) {
 
 function assertNoWorkflowShellOverride(workflow) {
   const lines = workflow.split(/\r?\n/)
-  const jobsIndex = lines.findIndex(
-    (line) => line.trim() === 'jobs:' && line.match(/^\s*/u)[0].length === 0,
-  )
-  assert.notEqual(jobsIndex, -1, 'missing jobs block')
   assert.equal(
-    lines.slice(0, jobsIndex).find(hasShellOverride),
+    lines.find(hasShellOverride),
     undefined,
     'workflow must not override run-command execution',
   )
@@ -286,6 +288,13 @@ for (const [name, mutation] of [
     ),
   ],
   [
+    'quoted disabled asset parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        "if": false\n',
+    ),
+  ],
+  [
     'ignored asset parity failure',
     ciWorkflow.replace(
       '      - name: Validate authored asset parity\n',
@@ -357,6 +366,10 @@ for (const [name, mutation] of [
     ),
   ],
   [
+    'post-jobs workflow shell',
+    `${ciWorkflow}\ndefaults: { run: { "shell": "/bin/true {0}" } }\n`,
+  ],
+  [
     'cli job no longer needs changes',
     ciWorkflow.replace('    needs: changes', '    needs: pluxx'),
   ],
@@ -373,8 +386,16 @@ for (const [name, mutation] of [
     ciWorkflow.replace('      - id: filter\n', '      - id: filter\n        if: false\n'),
   ],
   [
+    'quoted disabled paths filter step',
+    ciWorkflow.replace('      - id: filter\n', '      - id: filter\n        "if": false\n'),
+  ],
+  [
     'disabled changes job',
     ciWorkflow.replace('  changes:\n    runs-on:', '  changes:\n    if: false\n    runs-on:'),
+  ],
+  [
+    'quoted disabled changes job',
+    ciWorkflow.replace('  changes:\n    runs-on:', '  changes:\n    "if": false\n    runs-on:'),
   ],
   [
     'parity step moved to disabled job',
