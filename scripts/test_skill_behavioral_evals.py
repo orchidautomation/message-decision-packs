@@ -64,8 +64,8 @@ class BehavioralEvalTests(unittest.TestCase):
     def test_direct_shared_skill_references_are_loaded(self) -> None:
         _, inputs = MOD.skill_material(ROOT / "plugin/skills", "mdp-gtm-brief")
         paths = {row["path"] for row in inputs}
-        self.assertIn("mdp/references/communication-contract.md", paths)
-        self.assertIn("mdp/references/workflow-bundle-handoff.md", paths)
+        self.assertIn("mdp-gtm-brief/references/communication-contract.md", paths)
+        self.assertIn("mdp-gtm-brief/references/workflow-bundle-handoff.md", paths)
 
 
 if __name__ == "__main__":
