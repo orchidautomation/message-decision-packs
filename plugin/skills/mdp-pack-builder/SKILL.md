@@ -5,9 +5,9 @@ description: Use when the user intends to create, initialize, reconstruct, or ed
 
 # MDP Pack Builder
 
-Own pack mutations. Build evidence-grounded `.mdp/` decision context from
-approved material; never take a read-only review request from
-`$mdp-pack-review`.
+Own the mutation phase of **Author and maintain**. Build evidence-grounded
+`.mdp/` decision context from approved material; never take a read-only review
+request from `$mdp-pack-review` or infer edit permission from a usage gap.
 
 ## Communicate The Work
 
@@ -56,8 +56,15 @@ Never scrape gated sources, commit restricted material, invent authority,
 draft outreach or proposals, send, submit proposals, or mutate downstream
 systems.
 
+An explicit authoring handoff may start after a use or review result, but it
+must name the approved finding, source boundary, intended files, and edit
+request. Treat that as a new lane: preview and apply safely, validate the new
+authority, and require fresh CLI evaluation before any Use and decide work
+resumes.
+
 ## Response
 
-Report the selected mode, pack/candidate roots, source classes, changed files,
-preview/apply status, validation/readiness state, durable artifacts, and
-remaining gaps.
+Close Author and maintain with the selected mode, pack/candidate roots, source
+classes, changed files, preview/apply status, validation/readiness state,
+durable artifacts, and remaining gaps. Do not return a usage decision from the
+authoring result.
