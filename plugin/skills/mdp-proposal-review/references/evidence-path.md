@@ -1,6 +1,6 @@
 # Proposal Evidence Path
 
-For the normal v1 path, first follow [Managed Workflow Bundle Handoff](../../mdp/references/workflow-bundle-handoff.md).
+For the normal v1 path, first follow Managed Workflow Bundle Handoff.
 Keep source intake, requirements, normalization, routed context, and receipts
 inside one restricted invocation scratch root. Return one verified durable run
 directory or canonical blocked/advisory gaps. The v0 runner/MCP choreography

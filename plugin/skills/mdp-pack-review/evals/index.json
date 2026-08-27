@@ -5,7 +5,8 @@
   "trigger_case_ids": [
     "review-structural-train", "review-routing-train", "review-installed-train", "review-structural-secondary-train",
     "review-structural-validation", "review-routing-validation", "review-installed-validation", "review-routing-secondary-validation",
-    "review-structural-typo-train", "review-routing-indirect-train", "review-structural-typo-validation", "review-installed-indirect-validation"
+    "review-structural-typo-train", "review-routing-indirect-train", "review-structural-typo-validation", "review-installed-indirect-validation",
+    "review-named-mdp-train", "review-named-mdp-validation"
   ],
   "output_case_ids": [
     "review-structural-train", "review-routing-train", "review-installed-train",

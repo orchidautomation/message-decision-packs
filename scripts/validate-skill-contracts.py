@@ -14,6 +14,7 @@ FIELD = re.compile(r"^([a-zA-Z][\w-]*):\s*(.+?)\s*$", re.M)
 MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 SCRIPT_TOKEN = re.compile(r"(?<![\w/])scripts/(mdp-[a-z0-9-]+\.mjs)")
 LOCAL_PREFIXES = ("references/", "scripts/", "assets/")
+MAX_ENTRYPOINT_BYTES = 6000
 IGNORED_SKILL_ROOTS = ("docs/orchid/history/", "dist/", "target/", ".git/")
 LOAD_TIME_HAZARDS = (
     re.compile(r"\bSKILL_DIR\s*=\s*\$\("),
@@ -114,6 +115,13 @@ def validate(root: Path, source: Path) -> dict:
             error(errors, "skill_file_missing", skill_file, "skill directory requires SKILL.md")
             continue
         text = skill_file.read_text(encoding="utf-8")
+        if len(text.encode("utf-8")) > MAX_ENTRYPOINT_BYTES:
+            error(
+                errors,
+                "skill_entrypoint_too_large",
+                skill_file,
+                f"SKILL.md exceeds the {MAX_ENTRYPOINT_BYTES}-byte activation budget",
+            )
         match = FRONTMATTER.match(text)
         if not match:
             error(errors, "frontmatter_invalid", skill_file, "SKILL.md requires bounded YAML frontmatter")
@@ -129,6 +137,17 @@ def validate(root: Path, source: Path) -> dict:
             doc_text = doc.read_text(encoding="utf-8")
             for target in MARKDOWN_LINK.findall(doc_text):
                 target = target.split("#", 1)[0]
+                if (
+                    doc.parent.name == "references"
+                    and target.endswith(".md")
+                    and "://" not in target
+                ):
+                    error(
+                        errors,
+                        "nested_skill_reference",
+                        doc,
+                        f"reference documents cannot require another local markdown hop: {target}",
+                    )
                 if not target.startswith(LOCAL_PREFIXES):
                     continue
                 resolved = (doc.parent / target).resolve()
