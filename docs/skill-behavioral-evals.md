@@ -17,6 +17,8 @@ python3 scripts/run-skill-behavioral-evals.py materialize \
 git archive <previous-commit> plugin/skills | tar -x -C /tmp/mdp-previous
 python3 scripts/run-skill-behavioral-evals.py run \
   --previous-skills /tmp/mdp-previous/plugin/skills \
+  --skill-version <current-commit> \
+  --previous-skill-version <previous-commit> \
   --codex-home /tmp/isolated-codex-home \
   --out .agent-artifacts/mdp-262-trials
 python3 scripts/run-skill-behavioral-evals.py aggregate \

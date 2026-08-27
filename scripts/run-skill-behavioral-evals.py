@@ -210,10 +210,17 @@ def run(args: argparse.Namespace) -> None:
         required = {row["id"] for row in case.get("assertions", []) if row.get("required") is True}
         evidence = {row.get("assertion_id"): row for row in result.get("assertion_evidence", [])}
         passed = result.get("selected_skill_id") == expected and required == set(evidence) and all(row.get("passed") is True for row in evidence.values())
+        skill_version = (
+            "none"
+            if mode == "baseline"
+            else args.previous_skill_version
+            if mode == "previous-version"
+            else args.skill_version or suite["revision"]
+        )
         record = {
             "trial_id": f"{case['id']}:{mode}:{repeat}", "case_id": case["id"], "kind": kind,
             "comparison_mode": mode, "repeat": repeat, "prompt": prompt,
-            "inputs": inputs, "skill_version": suite["revision"],
+            "inputs": inputs, "skill_version": skill_version,
             "host": "codex-exec", "model_id": args.model or "host-default",
             "output": result, "elapsed_ms": elapsed, "total_tokens": tokens,
             "assertion_evidence": result.get("assertion_evidence", []), "passed": passed
@@ -267,6 +274,8 @@ def main() -> int:
     execute.add_argument("--previous-skills", type=Path)
     execute.add_argument("--codex-home", type=Path)
     execute.add_argument("--model")
+    execute.add_argument("--skill-version", help="Exact current skill commit/release (defaults to suite revision)")
+    execute.add_argument("--previous-skill-version", default="operator-supplied-previous-tree", help="Exact previous skill commit/release")
     execute.add_argument("--case-id", action="append", help="Run only a selected suite case (repeatable)")
     execute.add_argument("--out", type=Path, required=True)
     execute.set_defaults(func=run)
