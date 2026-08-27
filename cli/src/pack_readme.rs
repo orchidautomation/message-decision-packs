@@ -796,7 +796,7 @@ fn starts_block_html_tag(line: &str) -> bool {
                 && candidate[tag.len()..]
                     .chars()
                     .next()
-                    .is_some_and(|character| {
+                    .map_or(true, |character| {
                         character.is_ascii_whitespace() || matches!(character, '>' | '/')
                     })
         })
@@ -1824,6 +1824,7 @@ mod tests {
             ("<?php", "?>"),
             ("<![CDATA[", "]]>"),
             ("<div>", "\n"),
+            ("<div", "\n"),
             ("<widget data-value='human'>", "\n"),
         ] {
             let ownership = render_ownership_block();

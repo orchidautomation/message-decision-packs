@@ -693,7 +693,7 @@ fn starts_block_html_tag(line: &str) -> bool {
                 && candidate[tag.len()..]
                     .chars()
                     .next()
-                    .is_some_and(|character| {
+                    .map_or(true, |character| {
                         character.is_ascii_whitespace() || matches!(character, '>' | '/')
                     })
         })
@@ -2170,7 +2170,7 @@ Inline `inline-code` must be ignored.
             "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nParagraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n\n# Heading\n2. ```markdown\n   `cards/after-heading-hidden.yaml`\n   ```\nRoot `cards/after-heading-visible.yaml`.\n\n[ref]: /url\n2. ```markdown\n   `cards/after-definition-hidden.yaml`\n   ```\nRoot `cards/after-definition-visible.yaml`.\n\n> [ref]: /url\n>   \"title\"\n> 2. ```markdown\n>    `cards/quoted-definition-hidden.yaml`\n>    ```\nRoot `cards/quoted-definition-visible.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
         );
         readme.push_str(&format!(
-            "\n[title-ref]: /url\n  \"See `cards/definition-title-missing.yaml`\"\n\n<script>\n`cards/raw-html-missing.yaml`\n{}\nhuman raw marker\n{}\n{}\nhuman raw marker\n{}\n</script>\n<?php\n`cards/raw-processing-missing.yaml`\n?>\n<![CDATA[\n`cards/raw-cdata-missing.yaml`\n]]>\n<div>\n`cards/raw-block-missing.yaml`\n\n<widget data-value='human'>\n`cards/raw-custom-missing.yaml`\n\n",
+            "\n[title-ref]: /url\n  \"See `cards/definition-title-missing.yaml`\"\n\n<script>\n`cards/raw-html-missing.yaml`\n{}\nhuman raw marker\n{}\n{}\nhuman raw marker\n{}\n</script>\n<?php\n`cards/raw-processing-missing.yaml`\n?>\n<![CDATA[\n`cards/raw-cdata-missing.yaml`\n]]>\n<div>\n`cards/raw-block-missing.yaml`\n\n<div\n`cards/raw-block-eol-missing.yaml`\n\n<widget data-value='human'>\n`cards/raw-custom-missing.yaml`\n\n",
             crate::pack_readme::README_OWNERSHIP_BEGIN,
             crate::pack_readme::README_OWNERSHIP_END,
             crate::pack_readme::README_INVENTORY_BEGIN,
@@ -2184,6 +2184,7 @@ Inline `inline-code` must be ignored.
             "`cards/raw-processing-missing.yaml`",
             "`cards/raw-cdata-missing.yaml`",
             "`cards/raw-block-missing.yaml`",
+            "`cards/raw-block-eol-missing.yaml`",
             "`cards/raw-custom-missing.yaml`",
         ] {
             assert!(
