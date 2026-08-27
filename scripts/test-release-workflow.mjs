@@ -11,7 +11,7 @@ const ciWorkflowPath = join(root, '.github/workflows/ci.yml')
 const stepName = 'Install and smoke-test the published release'
 const buildCommand = 'cargo build --manifest-path cli/Cargo.toml'
 const smokeCommand = 'scripts/release-install-smoke.sh "$version"'
-const assetParityCommand = '/usr/bin/env -i /usr/bin/diff -qr plugin/assets assets'
+const assetParityCommand = '/usr/bin/env -i /usr/bin/diff -qr "${{ github.workspace }}/plugin/assets" "${{ github.workspace }}/assets"'
 const requiredPrefix = [
   'set -euo pipefail',
   'version="${{ steps.version.outputs.version }}"',
@@ -23,8 +23,21 @@ function hasShellOverride(line) {
 }
 
 function hasMappingKey(line, key) {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-  return new RegExp(`^(?:${escaped}|["']${escaped}["'])\\s*:`, 'u').test(line.trim())
+  const trimmed = line.trim()
+  const doubleQuoted = trimmed.match(/^("(?:\\.|[^"\\])*")\s*:/u)
+  if (doubleQuoted) {
+    try {
+      return JSON.parse(doubleQuoted[1]) === key
+    } catch {
+      return false
+    }
+  }
+  const singleQuoted = trimmed.match(/^'((?:''|[^'])*)'\s*:/u)
+  if (singleQuoted) {
+    return singleQuoted[1].replaceAll("''", "'") === key
+  }
+  const plain = trimmed.match(/^([^\s:{},][^:]*)\s*:/u)
+  return plain?.[1].trim() === key
 }
 
 function hasBypassControl(line) {
@@ -281,6 +294,13 @@ for (const [name, mutation] of [
     ),
   ],
   [
+    'relative comparison in alternate working directory',
+    ciWorkflow.replace(
+      `        run: |\n          ${assetParityCommand}`,
+      '        working-directory: ${{ runner.temp }}\n        run: |\n          /usr/bin/env -i /usr/bin/diff -qr plugin/assets assets',
+    ),
+  ],
+  [
     'disabled asset parity step',
     ciWorkflow.replace(
       '      - name: Validate authored asset parity\n',
@@ -292,6 +312,13 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       '      - name: Validate authored asset parity\n',
       '      - name: Validate authored asset parity\n        "if": false\n',
+    ),
+  ],
+  [
+    'escaped quoted disabled asset parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        "\\u0069f": false\n',
     ),
   ],
   [

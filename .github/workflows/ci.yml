@@ -87,7 +87,7 @@ jobs:
         run: node scripts/test-release-workflow.mjs
       - name: Validate authored asset parity
         run: |
-          /usr/bin/env -i /usr/bin/diff -qr plugin/assets assets
+          /usr/bin/env -i /usr/bin/diff -qr "${{ github.workspace }}/plugin/assets" "${{ github.workspace }}/assets"
       - name: Test CLI
         run: cargo test
         working-directory: cli
