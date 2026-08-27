@@ -83,15 +83,39 @@ test('wrapper refuses child success when owned-root cleanup is incomplete', asyn
   assert.doesNotMatch(stderr, /mdp-owned|request|private/i)
 })
 
-test('validation wrapper resolves the helper from Cargo effective target directory', () => {
-  const target = join(tmpdir(), 'mdp-custom-cargo-target')
-  const result = spawnSync('make', ['-pn', 'validate-temp-workspace', 'MDP_TEMP_WORKSPACE_ACTIVE=1'], {
+test('validation wrapper executes nested CLI checks from Cargo effective target directory', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-custom-cargo-target-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const target = join(base, 'target')
+  const debug = join(target, 'debug')
+  mkdirSync(debug, { recursive: true })
+  const probe = join(base, 'invoked')
+  const realCli = fileURLToPath(new URL('../cli/target/debug/mdp', import.meta.url))
+  const customCli = join(debug, 'mdp')
+  writeFileSync(customCli, `#!/bin/sh
+printf invoked >>"${probe}"
+exec "${realCli}" "$@"
+`, { mode: 0o700 })
+  const cargo = join(base, 'cargo')
+  writeFileSync(cargo, '#!/bin/sh\nif [ "$1" = metadata ]; then printf \'{"target_directory":"%s"}\\n\' "$CARGO_TARGET_DIR"; fi\nexit 0\n', { mode: 0o700 })
+  const environment = {
+    ...process.env,
+    CARGO: cargo,
+    CARGO_TARGET_DIR: target,
+    TMPDIR: base,
+  }
+  delete environment.MDP_BIN
+  delete environment.MDP_SECURE_INSTALL_BIN
+  delete environment.MDP_TEMP_WORKSPACE_ACTIVE
+  delete environment.NODE_TEST_CONTEXT
+  const result = spawnSync('make', ['validate-cold-model-conformance'], {
     cwd: repositoryRoot,
     encoding: 'utf8',
-    env: { ...process.env, CARGO_TARGET_DIR: target },
+    env: environment,
+    timeout: 120_000,
   })
-  assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, new RegExp(`^MDP_BUILD_BIN := ${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/debug/mdp$`, 'm'))
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  assert.equal(readFileSync(probe, 'utf8').includes('invoked'), true)
 })
 
 test('concurrent validation wrappers use distinct roots and clean both', async (t) => {
@@ -179,6 +203,51 @@ test('handled interruption forwards the signal and cleans the owned root', async
   const result = await new Promise((resolve) => child.on('exit', (code, signal) => resolve({ code, signal })))
   assert.deepEqual(result, { code: null, signal: 'SIGTERM' })
   assert.equal(existsSync(ownedRoot), false)
+})
+
+test('stale sweep recovers an owned root interrupted after quarantine publication', async (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-quarantine-recovery-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const realCli = fileURLToPath(new URL('../cli/target/debug/mdp', import.meta.url))
+  const helper = join(base, 'kill-after-move')
+  writeFileSync(helper, `#!/bin/sh
+"${realCli}" "$@"
+status=$?
+case " $* " in
+  *" --action move-directory "*) if [ "$status" -eq 0 ]; then kill -KILL "$PPID"; fi ;;
+esac
+exit "$status"
+`, { mode: 0o700 })
+  const root = createOwnedTempWorkspace({
+    purpose: 'validation',
+    baseDir: base,
+    nowMs: 0,
+    pid: 999_999_999,
+  })
+  writeFileSync(join(root, 'private'), 'private bytes')
+  const environment = { ...process.env }
+  delete environment.NODE_TEST_CONTEXT
+  const child = spawn(process.execPath, [
+    '--input-type=module',
+    '-e',
+    `import { cleanupOwnedTempWorkspace } from ${JSON.stringify(new URL('./lib/temp-workspace.mjs', import.meta.url).href)}; cleanupOwnedTempWorkspace(${JSON.stringify(root)}, { purpose: 'validation', secureHelperPath: ${JSON.stringify(helper)} })`,
+  ], { env: environment })
+  const result = await new Promise((resolve) => child.on('exit', (code, signal) => resolve({ code, signal })))
+  assert.equal(result.signal, 'SIGKILL')
+  assert.equal(existsSync(root), false)
+  const quarantine = readdirSync(base).find((name) => name.startsWith('.mdp-owned-temp-quarantine-'))
+  assert.ok(quarantine)
+  assert.equal(readFileSync(join(base, quarantine, 'private'), 'utf8'), 'private bytes')
+
+  const removed = cleanupStaleOwnedTempWorkspaces({
+    purpose: 'validation',
+    baseDir: base,
+    minAgeMs: 60_000,
+    nowMs: Date.now() + 120_000,
+    secureHelperPath: realCli,
+  })
+  assert.deepEqual(removed, [join(base, quarantine)])
+  assert.equal(existsSync(join(base, quarantine)), false)
 })
 
 test('stale cleanup requires marker, owner-safe modes, age, and a dead pid', (t) => {

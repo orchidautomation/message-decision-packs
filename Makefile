@@ -15,7 +15,7 @@ VALIDATION_TARGETS := validate validate-cli validate-authority-conformance valid
 ifneq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)
 $(VALIDATION_TARGETS):
 	$(CARGO) build --manifest-path cli/Cargo.toml
-	MDP_SECURE_INSTALL_BIN="$${MDP_SECURE_INSTALL_BIN:-$(MDP_BUILD_BIN)}" node scripts/with-temp-workspace.mjs --purpose validation -- $(MAKE) $@
+	MDP_BIN="$${MDP_BIN:-$(MDP_BUILD_BIN)}" MDP_SECURE_INSTALL_BIN="$${MDP_SECURE_INSTALL_BIN:-$(MDP_BUILD_BIN)}" node scripts/with-temp-workspace.mjs --purpose validation -- $(MAKE) $@
 endif
 
 ifeq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)

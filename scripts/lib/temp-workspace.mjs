@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 export const TEMP_WORKSPACE_CONTRACT = 'mdp.owned-temp-workspace.v1'
 export const TEMP_WORKSPACE_MARKER = '.mdp-owned-temp-workspace.json'
 export const DEFAULT_STALE_AGE_MS = 24 * 60 * 60 * 1000
+const TEMP_WORKSPACE_QUARANTINE_PREFIX = '.mdp-owned-temp-quarantine-'
 
 const currentUid = () => (typeof process.getuid === 'function' ? process.getuid() : null)
 const mode = (stats) => stats.mode & 0o777
@@ -98,6 +99,16 @@ const safePurpose = (purpose) => {
   return purpose
 }
 
+const quarantineLeaf = (ownedBasename) =>
+  `${TEMP_WORKSPACE_QUARANTINE_PREFIX}${ownedBasename}-${randomBytes(16).toString('hex')}`
+
+const quarantinedOwnedBasename = (leaf) => {
+  if (!leaf.startsWith(TEMP_WORKSPACE_QUARANTINE_PREFIX)) return null
+  const encoded = leaf.slice(TEMP_WORKSPACE_QUARANTINE_PREFIX.length)
+  const match = /^(mdp-owned-[a-z][a-z0-9-]{0,47}-[A-Za-z0-9]{6})-[0-9a-f]{32}$/.exec(encoded)
+  return match?.[1] ?? null
+}
+
 const processIsAlive = (pid) => {
   if (!Number.isSafeInteger(pid) || pid < 1) return false
   try {
@@ -144,8 +155,11 @@ export const createOwnedTempWorkspace = ({ purpose, baseDir = tmpdir(), nowMs = 
   }
 }
 
-export const inspectOwnedTempWorkspace = (root, { purpose, afterMarkerRead, secureHelperPath, secureHelperDiagnostics } = {}) => {
+export const inspectOwnedTempWorkspace = (root, { purpose, expectedMarkerBasename, afterMarkerRead, secureHelperPath, secureHelperDiagnostics } = {}) => {
   const requested = resolve(root)
+  const requestedBasename = basename(requested)
+  const proofBasename = expectedMarkerBasename ?? requestedBasename
+  if (proofBasename !== requestedBasename && quarantinedOwnedBasename(requestedBasename) !== proofBasename) return null
   let rootFd
   try {
     // Pin the candidate before consuming ownership proof. The native helper
@@ -171,7 +185,7 @@ export const inspectOwnedTempWorkspace = (root, { purpose, afterMarkerRead, secu
     if (!sameIdentity(lstatSync(requested, { bigint: true }), rootIdentity)) return null
     if (
       marker?.contract !== TEMP_WORKSPACE_CONTRACT ||
-      marker.basename !== basename(requested) ||
+      marker.basename !== proofBasename ||
       typeof marker.purpose !== 'string' ||
       (purpose !== undefined && marker.purpose !== purpose) ||
       !Number.isSafeInteger(marker.created_at_ms) || marker.created_at_ms < 0 ||
@@ -203,7 +217,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
   } catch { return false }
   if (!inspected) return false
   const parent = dirname(inspected.root)
-  const quarantineLeaf = `.mdp-owned-temp-quarantine-${randomBytes(16).toString('hex')}`
+  const quarantineName = quarantineLeaf(inspected.marker.basename)
   let parentFd
   try {
     parentFd = openSync(parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
@@ -211,7 +225,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     if (!parentStats.isDirectory()) return false
     const ownedName = basename(inspected.root)
     const ownedPath = join(parent, ownedName)
-    const quarantine = join(parent, quarantineLeaf)
+    const quarantine = join(parent, quarantineName)
     const statusFor = (name) => {
       const result = secureDirectoryAction({
         action: 'verify-directory', parentFd, parentStats, name,
@@ -222,7 +236,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
       }
       return result
     }
-    if (statusFor(ownedName).status !== 'match' || statusFor(quarantineLeaf).status !== 'absent') return false
+    if (statusFor(ownedName).status !== 'match' || statusFor(quarantineName).status !== 'absent') return false
     if (typeof beforeQuarantine === 'function') beforeQuarantine({ ownedPath, quarantine })
     if (!sameIdentity(fstatSync(parentFd, { bigint: true }), parentStats)) return false
     const moveResult = secureDirectoryAction({
@@ -230,7 +244,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
       parentFd,
       parentStats,
       name: ownedName,
-      toName: quarantineLeaf,
+      toName: quarantineName,
       expected: inspected.rootIdentity,
       helper: secureHelperPath,
     })
@@ -239,13 +253,13 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     // transaction, so it can mutate safely yet exit before printing JSON.
     // Reconcile the identity-bound postcondition rather than trusting process
     // status alone.
-    if (statusFor(ownedName).status !== 'absent' || statusFor(quarantineLeaf).status !== 'match') {
+    if (statusFor(ownedName).status !== 'absent' || statusFor(quarantineName).status !== 'match') {
       if (typeof beforeRestore === 'function') beforeRestore({ ownedPath, quarantine })
       const restoreResult = secureDirectoryAction({
         action: 'move-directory',
         parentFd,
         parentStats,
-        name: quarantineLeaf,
+        name: quarantineName,
         toName: ownedName,
         expected: inspected.rootIdentity,
         helper: secureHelperPath,
@@ -256,18 +270,18 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     if (typeof beforeRemove === 'function' && beforeRemove({ ownedPath, quarantine }) === false) {
       if (typeof beforeRestore === 'function') beforeRestore({ ownedPath, quarantine })
       const restoreResult = secureDirectoryAction({
-        action: 'move-directory', parentFd, parentStats, name: quarantineLeaf,
+        action: 'move-directory', parentFd, parentStats, name: quarantineName,
         toName: ownedName, expected: inspected.rootIdentity, helper: secureHelperPath,
       })
       if (!restoreResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'restore-directory', ...restoreResult })
       return false
     }
     const removeResult = secureDirectoryAction({
-      action: 'remove-directory-tree', parentFd, parentStats, name: quarantineLeaf,
+      action: 'remove-directory-tree', parentFd, parentStats, name: quarantineName,
       expected: inspected.rootIdentity, helper: secureHelperPath,
     })
     if (!removeResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'remove-directory-tree', ...removeResult })
-    if (!removeResult.ok || statusFor(quarantineLeaf).status !== 'absent') return false
+    if (!removeResult.ok || statusFor(quarantineName).status !== 'absent') return false
     return true
   } catch {
     return false
@@ -292,7 +306,11 @@ export const cleanupStaleOwnedTempWorkspaces = ({
   const prefix = `mdp-owned-${normalizedPurpose}-`
   const removed = []
   for (const entry of readdirSync(canonicalBase, { withFileTypes: true })) {
-    if (!entry.name.startsWith(prefix) || !entry.isDirectory() || entry.isSymbolicLink()) continue
+    const recoveredBasename = quarantinedOwnedBasename(entry.name)
+    const expectedMarkerBasename = entry.name.startsWith(prefix)
+      ? entry.name
+      : recoveredBasename?.startsWith(prefix) ? recoveredBasename : null
+    if (!expectedMarkerBasename || !entry.isDirectory() || entry.isSymbolicLink()) continue
     const candidate = join(canonicalBase, entry.name)
     // A fresh named root cannot be stale. This cheap, conservative filter
     // avoids spawning one native inspection helper per active workspace.
@@ -304,6 +322,7 @@ export const cleanupStaleOwnedTempWorkspaces = ({
     try {
       inspected = inspectOwnedTempWorkspace(candidate, {
         purpose: normalizedPurpose,
+        expectedMarkerBasename,
         secureHelperPath,
         secureHelperDiagnostics,
       })
@@ -314,6 +333,7 @@ export const cleanupStaleOwnedTempWorkspaces = ({
     if (!inspected || nowMs - newestIdentityTime < minAgeMs || processIsAlive(inspected.marker.pid)) continue
     if (cleanupOwnedTempWorkspace(candidate, {
       purpose: normalizedPurpose,
+      expectedMarkerBasename,
       secureHelperPath,
       secureHelperDiagnostics,
     })) removed.push(candidate)
