@@ -1,6 +1,8 @@
 ---
 name: mdp-proposal-review
 description: Use when applying an existing proposal MDP to supplied RFP, capture, requirement, proof, matrix, or draft material for bid/no-bid, compliance, proof, or red-team review. Never certify, invent proof, grant final approval, write, or submit proposals.
+metadata:
+  compatibility: Requires the mdp CLI on PATH. Native plugin helper scripts additionally require Node.js 18+; portable skill installs use the CLI-only path and do not assume PLUGIN_ROOT or MCP support.
 ---
 
 # MDP Proposal Review
@@ -12,7 +14,7 @@ production.
 
 ## Communicate The Work
 
-Follow the shared [Orient, Plan, Progress, Translate, Close contract](../mdp/references/communication-contract.md).
+Follow the shared [Orient, Plan, Progress, Translate, Close contract](references/communication-contract.md).
 Open by naming the selected proposal job; the exact pack and supplied-material evidence boundary; the review packet and assurance decision the user will receive; and what this skill will not do. Keep updates to meaningful evidence
 gates, blockers, and decisions.
 
@@ -28,7 +30,8 @@ the exact recommendation is this skill and `pack_ready` is true; there is no
 fallback. Read [evidence path](references/evidence-path.md) only when assurance
 or source/runner choice is at issue. Read [governed review](references/governed-review.md)
 only after mode selection. Read [proof-output drafting](references/proof-output-drafting.md)
-only if the user separately requests a rewrite after review. For a managed run, load the direct [workflow bundle handoff](../mdp/references/workflow-bundle-handoff.md).
+only if the user separately requests a rewrite after review. For a managed run, load the direct [workflow bundle handoff](references/workflow-bundle-handoff.md).
+Before using the CLI, MCP, or a plugin helper, read [runtime compatibility](references/runtime-compatibility.md).
 Managed resume/review requires an explicit run directory and fresh verification; never select ambient/latest state.
 Do not load every
 reference or follow a second local-reference hop.

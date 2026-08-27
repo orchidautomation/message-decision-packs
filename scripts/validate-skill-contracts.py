@@ -11,10 +11,14 @@ from pathlib import Path
 MODEL = "mdp.skill-contract-validation.v1"
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 FIELD = re.compile(r"^([a-zA-Z][\w-]*):\s*(.+?)\s*$", re.M)
+COMPATIBILITY_METADATA = re.compile(r"^\s{2}compatibility:\s*(.+?)\s*$", re.M)
 MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 PLAIN_REFERENCE_PATH = re.compile(r"(?<![/\w])references/[A-Za-z0-9._/-]+\.md")
 SCRIPT_TOKEN = re.compile(r"(?<![\w/])scripts/(mdp-[a-z0-9-]+\.mjs)")
-LOCAL_PREFIXES = ("references/", "scripts/", "assets/")
+REPO_DOC_TOKEN = re.compile(r"(?<![/\w])docs/[A-Za-z0-9._/-]+\.md(?:#[A-Za-z0-9._-]+)?")
+REPO_DOC_URL = re.compile(
+    r"https://github\.com/orchidautomation/message-decision-packs/(?:blob|tree)/[^\s)]+/docs/"
+)
 MAX_ENTRYPOINT_BYTES = 6000
 IGNORED_SKILL_ROOTS = ("docs/orchid/history/", "dist/", "target/", ".git/")
 LOAD_TIME_HAZARDS = (
@@ -129,13 +133,24 @@ def validate(root: Path, source: Path) -> dict:
             continue
         fields = dict(FIELD.findall(match.group(1)))
         name, description = fields.get("name", "").strip("'\""), fields.get("description", "").strip("'\"")
+        compatibility_match = COMPATIBILITY_METADATA.search(match.group(1))
+        compatibility = (
+            compatibility_match.group(1).strip("'\"")
+            if compatibility_match
+            else ""
+        )
         if name != skill_dir.name or not (1 <= len(name) <= 64):
             error(errors, "frontmatter_name_invalid", skill_file, "name must match the directory and be 1-64 characters")
         if not (20 <= len(description) <= 1024) or "\n" in description:
             error(errors, "frontmatter_description_invalid", skill_file, "description must be one line and 20-1024 characters")
+        for marker in ("mdp CLI", "Node.js 18+", "portable skill", "MCP"):
+            if marker not in compatibility:
+                error(errors, "frontmatter_compatibility_invalid", skill_file, f"compatibility must name the runtime boundary: {marker}")
 
         for doc in sorted(skill_dir.rglob("*.md")):
             doc_text = doc.read_text(encoding="utf-8")
+            if REPO_DOC_TOKEN.search(doc_text) or REPO_DOC_URL.search(doc_text):
+                error(errors, "repo_only_document_dependency", doc, "installed skill documentation cannot depend on a repository-only document")
             if doc.parent.name == "references" and PLAIN_REFERENCE_PATH.search(doc_text):
                 error(
                     errors,
@@ -156,7 +171,12 @@ def validate(root: Path, source: Path) -> dict:
                         doc,
                         f"reference documents cannot require another local markdown hop: {target}",
                     )
-                if not target.startswith(LOCAL_PREFIXES):
+                if (
+                    not target
+                    or "://" in target
+                    or target.startswith(("#", "mailto:", "/"))
+                    or not target.endswith(".md")
+                ):
                     continue
                 resolved = (doc.parent / target).resolve()
                 if not inside(resolved, skill_dir):
