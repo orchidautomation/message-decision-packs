@@ -36,7 +36,11 @@ test('creates unpredictable private roots and cleans handled success and failure
   assert.notEqual(first, second)
   assert.equal(lstatSync(first).mode & 0o777, 0o700)
   assert.equal(lstatSync(join(first, TEMP_WORKSPACE_MARKER)).mode & 0o777, 0o600)
-  assert.equal(cleanupOwnedTempWorkspace(first, { purpose: 'validation' }), true)
+  const diagnostics = []
+  assert.equal(cleanupOwnedTempWorkspace(first, {
+    purpose: 'validation',
+    secureHelperDiagnostics: diagnostics,
+  }), true, JSON.stringify(diagnostics))
   assert.equal(cleanupOwnedTempWorkspace(second, { purpose: 'validation' }), true)
 
   for (const exitCode of [0, 7]) {

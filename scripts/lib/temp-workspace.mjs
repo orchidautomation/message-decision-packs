@@ -36,16 +36,25 @@ const secureDirectoryAction = ({ action, parentFd, parentStats, name, toName, ex
     encoding: 'utf8',
     timeout: 10_000,
   })
-  if (result.status !== 0 || result.error) return false
+  const failure = (reason) => ({
+    ok: false,
+    reason,
+    status: result.status,
+    signal: result.signal,
+    error: result.error?.code ?? result.error?.message ?? null,
+    stderr: String(result.stderr ?? '').slice(0, 2_048),
+  })
+  if (result.status !== 0 || result.error) return failure('process-failed')
   try {
     const envelope = JSON.parse(result.stdout)
     const expectedStatus = action === 'move-directory' ? 'moved' : 'removed'
-    return envelope?.ok === true &&
+    const ok = envelope?.ok === true &&
       envelope?.command === 'secure-install' &&
       envelope?.data?.contract === 'mdp.secure-install.v1' &&
       envelope?.data?.status === expectedStatus
+    return ok ? { ok: true } : failure('invalid-envelope')
   } catch {
-    return false
+    return failure('invalid-json')
   }
 }
 const identityAt = (path) => {
@@ -188,6 +197,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     beforeRestore,
     resolveDescriptor = resolveDescriptorDirectoryPath,
     secureHelperPath,
+    secureHelperDiagnostics,
     ...inspectionOptions
   } = options
   let inspected
@@ -219,7 +229,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     if (!sameIdentity(finalStats, inspected.rootIdentity)) return false
     if (typeof beforeQuarantine === 'function') beforeQuarantine({ ownedPath, quarantine })
     if (!sameIdentity(fstatSync(parentFd, { bigint: true }), parentStats)) return false
-    secureDirectoryAction({
+    const moveResult = secureDirectoryAction({
       action: 'move-directory',
       parentFd,
       parentStats,
@@ -228,6 +238,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
       expected: inspected.rootIdentity,
       helper: secureHelperPath,
     })
+    if (!moveResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'move-directory', ...moveResult })
     // A pending SIGTERM is delivered when the helper leaves its masked finite
     // transaction, so it can mutate safely yet exit before printing JSON.
     // Reconcile the identity-bound postcondition rather than trusting process
@@ -237,7 +248,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     if (movedStats === null) return false
     if (!sameIdentity(movedStats, inspected.rootIdentity)) {
       if (typeof beforeRestore === 'function') beforeRestore({ ownedPath, quarantine })
-      secureDirectoryAction({
+      const restoreResult = secureDirectoryAction({
         action: 'move-directory',
         parentFd,
         parentStats,
@@ -246,6 +257,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
         expected: inspected.rootIdentity,
         helper: secureHelperPath,
       })
+      if (!restoreResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'restore-directory', ...restoreResult })
       return false
     }
     let quarantineFd
@@ -263,7 +275,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
       // than fall back to a replaceable pathname for recursive deletion.
       if (!quarantineReference) {
         if (typeof beforeRestore === 'function') beforeRestore({ ownedPath, quarantine })
-        secureDirectoryAction({
+        const restoreResult = secureDirectoryAction({
           action: 'move-directory',
           parentFd,
           parentStats,
@@ -272,6 +284,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
           expected: inspected.rootIdentity,
           helper: secureHelperPath,
         })
+        if (!restoreResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'restore-directory', ...restoreResult })
         return false
       }
       for (const entry of readdirSync(quarantineReference)) {
@@ -279,7 +292,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
       }
       const namedStats = lstatSync(quarantine, { bigint: true })
       if (!sameIdentity(namedStats, inspected.rootIdentity)) return false
-      secureDirectoryAction({
+      const removeResult = secureDirectoryAction({
         action: 'remove-directory',
         parentFd,
         parentStats,
@@ -287,6 +300,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
         expected: inspected.rootIdentity,
         helper: secureHelperPath,
       })
+      if (!removeResult.ok && Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'remove-directory', ...removeResult })
       if (identityAt(quarantine) !== null) return false
     } finally {
       if (quarantineFd !== undefined) closeSync(quarantineFd)
