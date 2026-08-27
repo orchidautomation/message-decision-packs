@@ -128,6 +128,11 @@ function assertCliJobWiring(workflow) {
     undefined,
     'cli job must not ignore failures',
   )
+  assert.equal(
+    cli.find((line) => line.trim().startsWith('shell:')),
+    undefined,
+    'cli job must not override run-command execution',
+  )
   filterStepBlock(workflow)
 }
 
@@ -150,10 +155,23 @@ function assertUnconditionalStep(workflow, name) {
     .slice(start + 1, end)
     .find(
       (line) =>
-        ['if:', 'continue-on-error:'].some((key) => line.trim().startsWith(key)) &&
+        ['if:', 'continue-on-error:', 'shell:'].some((key) => line.trim().startsWith(key)) &&
         line.match(/^\s*/u)[0].length === stepIndent + 2,
     )
   assert.equal(control, undefined, `required CI step must not be bypassable: ${name}`)
+}
+
+function assertNoWorkflowShellOverride(workflow) {
+  const lines = workflow.split(/\r?\n/)
+  const jobsIndex = lines.findIndex(
+    (line) => line.trim() === 'jobs:' && line.match(/^\s*/u)[0].length === 0,
+  )
+  assert.notEqual(jobsIndex, -1, 'missing jobs block')
+  assert.equal(
+    lines.slice(0, jobsIndex).find((line) => line.trim().startsWith('shell:')),
+    undefined,
+    'workflow must not override run-command execution',
+  )
 }
 
 function assertCliPathFilter(workflow, requiredGlob) {
@@ -200,6 +218,7 @@ function assertReleaseSmokeContract(workflow) {
 }
 
 function assertAssetParityCiContract(workflow) {
+  assertNoWorkflowShellOverride(workflow)
   assertCliJobWiring(workflow)
   assertCliPathFilter(workflow, 'plugin/assets/**')
   assertCliPathFilter(workflow, 'assets/**')
@@ -259,6 +278,13 @@ for (const [name, mutation] of [
     ),
   ],
   [
+    'custom parity shell',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        shell: /bin/true {0}\n',
+    ),
+  ],
+  [
     'missing canonical asset filter',
     ciWorkflow.replace('              - "plugin/assets/**"\n', ''),
   ],
@@ -285,6 +311,20 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       "    if: needs.changes.outputs.cli == 'true'\n",
       "    if: needs.changes.outputs.cli == 'true'\n    continue-on-error: true\n",
+    ),
+  ],
+  [
+    'custom cli job shell',
+    ciWorkflow.replace(
+      '  cli:\n',
+      '  cli:\n    defaults:\n      run:\n        shell: /bin/true {0}\n',
+    ),
+  ],
+  [
+    'custom workflow shell',
+    ciWorkflow.replace(
+      'jobs:\n',
+      'defaults:\n  run:\n    shell: /bin/true {0}\n\njobs:\n',
     ),
   ],
   [
