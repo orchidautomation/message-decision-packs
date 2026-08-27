@@ -2,7 +2,6 @@ import { closeSync, constants, fstatSync, openSync, statSync } from 'node:fs'
 
 export const identityBoundDirectoryCandidates = (platform, pid, fd) => {
   if (platform === 'linux') return [`/proc/self/fd/${fd}`, `/proc/${pid}/fd/${fd}`]
-  if (platform === 'darwin') return [`/dev/fd/${fd}`]
   return []
 }
 

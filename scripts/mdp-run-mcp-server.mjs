@@ -448,10 +448,8 @@ const pinOutputParent = (reservation) => {
     if (!opened.isDirectory() || opened.dev !== BigInt(reservation.parentIdentity.dev) || opened.ino !== BigInt(reservation.parentIdentity.ino)) {
       throw Object.assign(new Error('work output parent changed while being pinned'), { code: 'mcp-output-denied' })
     }
-    const pinnedParent = resolveIdentityBoundDirectory({
-      fd,
-      identity: reservation.parentIdentity,
-    })
+    if (process.platform === 'darwin') return { ...reservation, fd, securePath: null }
+    const pinnedParent = resolveIdentityBoundDirectory({ fd, identity: reservation.parentIdentity })
     return { ...reservation, fd, securePath: join(pinnedParent, basename(reservation.path)) }
   } catch (error) {
     if (fd !== undefined) closeSync(fd)
@@ -459,8 +457,53 @@ const pinOutputParent = (reservation) => {
   }
 }
 
-const removePinnedOutput = (output) => {
+const invokeSecureInstaller = (output, action) => {
+  const args = [
+    '--json', '__secure-install',
+    '--action', action,
+    '--name', basename(output.path),
+    '--dir-fd', '3',
+    '--expected-dev', output.parentIdentity.dev.toString(),
+    '--expected-ino', output.parentIdentity.ino.toString(),
+  ]
+  if (action === 'install') args.push('--source', output.cliPath)
+  else args.push(
+    '--expected-file-dev', output.installedIdentity.dev.toString(),
+    '--expected-file-ino', output.installedIdentity.ino.toString(),
+  )
+  return superviseProcess({
+    command: [process.env.MDP_SECURE_INSTALL_BIN || process.env.MDP_BIN || 'mdp'],
+    args,
+    cwd: output.parent,
+    environment: childEnvironment(false),
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    maxOutputBytes: MAX_CHILD_BUFFER_BYTES,
+    inheritedFds: [output.fd],
+  })
+}
+
+const publishPinnedOutput = async (output) => {
+  if (output.securePath) {
+    copyFileSync(output.cliPath, output.securePath, constants.COPYFILE_EXCL)
+    const installed = lstatSync(output.securePath, { bigint: true })
+    if (!installed.isFile() || installed.isSymbolicLink()) throw new Error('prepared output publication was not a regular file')
+    return { dev: installed.dev, ino: installed.ino }
+  }
+  const invocation = await invokeSecureInstaller(output, 'install')
+  let envelope
+  try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output installer returned invalid data') }
+  if (invocation.status !== 0 || envelope?.ok !== true || envelope?.command !== 'secure-install' || envelope.data?.contract !== 'mdp.secure-install.v1' || envelope.data?.status !== 'installed') {
+    throw new Error('secure output installer refused publication')
+  }
+  return { dev: BigInt(envelope.data.dev), ino: BigInt(envelope.data.ino) }
+}
+
+const removePinnedOutput = async (output) => {
   if (!output.installedIdentity) return
+  if (!output.securePath) {
+    try { await invokeSecureInstaller(output, 'remove') } catch { /* preserve unknown or concurrently replaced nodes */ }
+    return
+  }
   try {
     const current = lstatSync(output.securePath, { bigint: true })
     if (current.dev === output.installedIdentity.dev && current.ino === output.installedIdentity.ino) rmSync(output.securePath)
@@ -472,7 +515,7 @@ const normalizePreparedOutputPaths = (data, outputs) => {
   for (const key of ['request_path', 'manifest_path', 'next_command']) {
     if (typeof normalized[key] !== 'string') continue
     for (const output of outputs) {
-      normalized[key] = normalized[key].replaceAll(output.securePath, output.path)
+      if (output.securePath) normalized[key] = normalized[key].replaceAll(output.securePath, output.path)
       if (output.cliPath) normalized[key] = normalized[key].replaceAll(output.cliPath, output.path)
     }
   }
@@ -542,10 +585,7 @@ const callPrepareRunValidated = async (args) => {
     for (const output of pinnedOutputs) {
       const staged = lstatSync(output.cliPath)
       if (staged.isSymbolicLink() || !staged.isFile()) throw new Error('prepared output was not a regular file')
-      copyFileSync(output.cliPath, output.securePath, constants.COPYFILE_EXCL)
-      const installed = lstatSync(output.securePath, { bigint: true })
-      if (!installed.isFile() || installed.isSymbolicLink()) throw new Error('prepared output publication was not a regular file')
-      output.installedIdentity = { dev: installed.dev, ino: installed.ino }
+      output.installedIdentity = await publishPinnedOutput(output)
     }
     policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
     if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
@@ -556,7 +596,7 @@ const callPrepareRunValidated = async (args) => {
     published = true
     return toolResult(normalizePreparedOutputPaths(envelope.data, pinnedOutputs))
   } finally {
-    if (!published) for (const output of pinnedOutputs) removePinnedOutput(output)
+    if (!published) for (const output of pinnedOutputs) await removePinnedOutput(output)
     for (const output of pinnedOutputs) closeSync(output.fd)
     rmSync(privateDir, { recursive: true, force: true })
   }

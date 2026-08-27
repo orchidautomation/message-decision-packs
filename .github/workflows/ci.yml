@@ -105,10 +105,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build secure publication helper
+        run: cargo build --manifest-path cli/Cargo.toml
       - name: Verify identity-bound MCP prepare publication
         run: >-
           node --test
-          --test-name-pattern='maps identity-bound|completes prepare, run, and verify|prepare refuses request and manifest parent swaps'
+          --test-name-pattern='maps path-backed identity-bound|completes prepare, run, and verify|prepare refuses request and manifest parent swaps'
           scripts/test-run-mcp-server.mjs
 
   pluxx:

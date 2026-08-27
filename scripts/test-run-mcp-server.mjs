@@ -197,7 +197,7 @@ const rpc = (cli, messages, extraEnv = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
     const roots = testRoot(messages)
     const child = spawn(process.execPath, [server], {
-      env: { ...process.env, MDP_BIN: cli, MDP_MCP_SECRET_MARKER: 'must-not-cross-boundary', ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, roots])), ...extraEnv },
+      env: { ...process.env, MDP_BIN: cli, ...(existsSync(realCli) ? { MDP_SECURE_INSTALL_BIN: realCli } : {}), MDP_MCP_SECRET_MARKER: 'must-not-cross-boundary', ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, roots])), ...extraEnv },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -287,12 +287,12 @@ test('resolves consent across configured roots and rejects missing or ambiguous 
   }
 })
 
-test('maps identity-bound directory handles only for supported host platforms', () => {
+test('maps path-backed identity-bound directory handles only where supported', () => {
   assert.deepEqual(identityBoundDirectoryCandidates('linux', 42, 7), [
     '/proc/self/fd/7',
     '/proc/42/fd/7',
   ])
-  assert.deepEqual(identityBoundDirectoryCandidates('darwin', 42, 7), ['/dev/fd/7'])
+  assert.deepEqual(identityBoundDirectoryCandidates('darwin', 42, 7), [])
   assert.deepEqual(identityBoundDirectoryCandidates('win32', 42, 7), [])
 })
 

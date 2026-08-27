@@ -145,6 +145,7 @@ export const superviseProcess = ({
   recovery = null,
   deadlineMetadata = null,
   signal = null,
+  inheritedFds = [],
 }) =>
   new Promise((resolveResult) => {
     const startedAt = performance.now()
@@ -161,7 +162,7 @@ export const superviseProcess = ({
       cwd,
       detached: process.platform !== 'win32',
       env: environment,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe', ...(inheritedFds || [])],
     })
     const processGroupId = child.pid
 
