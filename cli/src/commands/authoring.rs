@@ -218,6 +218,8 @@ struct PublishedBackupState {
     path: String,
     dev: u64,
     ino: u64,
+    sha256: String,
+    bytes: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -226,6 +228,8 @@ struct PublishedInstallState {
     path: String,
     dev: u64,
     ino: u64,
+    sha256: String,
+    bytes: u64,
 }
 
 pub(crate) fn preview_pack_change_set(
@@ -487,6 +491,8 @@ fn publish(
                 path: file.path.clone(),
                 dev: identity.0,
                 ino: identity.1,
+                sha256: sha256_hex(bytes),
+                bytes: bytes.len() as u64,
             });
             created_directories.extend(missing_logical_parents(&live, &file.path)?);
             fault.crossed()?;
@@ -505,6 +511,15 @@ fn publish(
                 path: file.path.clone(),
                 dev,
                 ino,
+                sha256: file
+                    .expected
+                    .sha256
+                    .clone()
+                    .ok_or_else(|| anyhow!("expected live authority digest is absent"))?,
+                bytes: file
+                    .expected
+                    .bytes
+                    .ok_or_else(|| anyhow!("expected live authority byte count is absent"))?,
             });
         }
         let mut transaction = TransactionState {
@@ -553,12 +568,14 @@ fn publish(
             touched.insert(installed.path.clone());
             fault.crossed()?;
         }
+        test_pause("MDP_TEST_AUTHOR_BEFORE_PUBLISHED_VALIDATION_MARKER")?;
         let published = capture_directory_snapshot(&live)?;
         if published.states != candidate.states {
             return Err(anyhow!(
                 "published pack does not match the staged candidate"
             ));
         }
+        validate_backup_contents(&backup, &transaction.backups)?;
         mark_transaction_committed(&parent, live_root, &transaction)?;
         transaction.phase = 1;
         fault.crossed()?;
@@ -1147,9 +1164,11 @@ fn validate_transaction_state(
     }
     for item in &state.backups {
         validate_logical_path(&item.path)?;
+        validate_state(&published_backup_state(item))?;
     }
     for item in &state.installs {
         validate_logical_path(&item.path)?;
+        validate_state(&published_install_state(item))?;
     }
     for directory in &state.created_directories {
         validate_logical_path(&format!("{directory}/placeholder"))?;
@@ -1251,7 +1270,8 @@ fn cleanup_transaction(
     let mut rolled_back = Vec::new();
     if rollback {
         for installed in state.installs.iter().rev() {
-            match logical_identity(&live, &installed.path)? {
+            let live_identity = logical_identity(&live, &installed.path)?;
+            match live_identity {
                 None => {
                     if let Some(identity) = staging
                         .as_ref()
@@ -1267,16 +1287,31 @@ fn cleanup_transaction(
                     }
                 }
                 Some(identity) if identity == (installed.dev, installed.ino) => {
+                    let (live_state, opened_identity) = state_and_identity(&live, &installed.path)?;
+                    if opened_identity != Some(identity) {
+                        return Err(anyhow!(
+                            "rollback preserved an identity-changing published authority at {}",
+                            installed.path
+                        ));
+                    }
+                    if live_state != published_install_state(installed) {
+                        return Err(anyhow!(
+                            "rollback preserved concurrently edited published authority at {}",
+                            installed.path
+                        ));
+                    }
                     let staging = staging.as_ref().ok_or_else(|| {
                         anyhow!("rollback staging workspace is absent while live authority remains")
                     })?;
                     rename_logical_no_replace(&live, staging, &installed.path, true)?;
-                    if logical_identity(staging, &installed.path)?
-                        != Some((installed.dev, installed.ino))
+                    let (staged_state, staged_identity) =
+                        state_and_identity(staging, &installed.path)?;
+                    if staged_identity != Some((installed.dev, installed.ino))
+                        || staged_state != published_install_state(installed)
                     {
                         let _ = rename_logical_no_replace(staging, &live, &installed.path, true);
                         return Err(anyhow!(
-                            "rollback quarantined a concurrent replacement at {}",
+                            "rollback preserved a concurrently edited quarantined authority at {}",
                             installed.path
                         ));
                     }
@@ -1349,6 +1384,7 @@ fn cleanup_transaction(
         std::process::abort();
     }
     if let Some(backup) = backup.as_ref() {
+        test_pause("MDP_TEST_AUTHOR_BEFORE_BACKUP_CLEANUP_MARKER")?;
         validate_backup_contents(backup, &state.backups)?;
         remove_workspace(parent, &state.backup_name, backup)?;
     }
@@ -1371,8 +1407,12 @@ fn validate_workspace_contents(root: &File, expected: &[PublishedInstallState]) 
             .iter()
             .find(|item| &item.path == path)
             .ok_or_else(|| anyhow!("author staging workspace contains an unrecognized file"))?;
-        if logical_identity(root, path)? != Some((item.dev, item.ino)) {
-            return Err(anyhow!("author staging workspace identity mismatch"));
+        if logical_identity(root, path)? != Some((item.dev, item.ino))
+            || snapshot.states.get(path) != Some(&published_install_state(item))
+        {
+            return Err(anyhow!(
+                "author staging workspace content or identity mismatch"
+            ));
         }
     }
     Ok(())
@@ -1391,11 +1431,31 @@ fn validate_backup_contents(root: &File, expected: &[PublishedBackupState]) -> R
             .iter()
             .find(|item| &item.path == path)
             .ok_or_else(|| anyhow!("author backup workspace contains an unrecognized file"))?;
-        if logical_identity(root, path)? != Some((item.dev, item.ino)) {
-            return Err(anyhow!("author backup workspace identity mismatch"));
+        if logical_identity(root, path)? != Some((item.dev, item.ino))
+            || snapshot.states.get(path) != Some(&published_backup_state(item))
+        {
+            return Err(anyhow!(
+                "author backup workspace content or identity mismatch"
+            ));
         }
     }
     Ok(())
+}
+
+fn published_install_state(item: &PublishedInstallState) -> FileState {
+    FileState {
+        present: true,
+        sha256: Some(item.sha256.clone()),
+        bytes: Some(item.bytes),
+    }
+}
+
+fn published_backup_state(item: &PublishedBackupState) -> FileState {
+    FileState {
+        present: true,
+        sha256: Some(item.sha256.clone()),
+        bytes: Some(item.bytes),
+    }
 }
 
 #[cfg(unix)]

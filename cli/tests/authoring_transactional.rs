@@ -3,6 +3,8 @@
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::process::{Command, Output};
@@ -603,6 +605,139 @@ fn publication_refuses_same_inode_rewrite_and_preserves_concurrent_bytes() {
     );
     assert_eq!(snapshot(&live), expected);
     assert!(!live.join(".mdp/authoring").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn final_backup_revalidation_retains_late_open_fd_rewrite() {
+    let (root, live, candidate, plan) = fixture("late-backup-open-fd-rewrite");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let publication_marker = root.join("publication-ready");
+    let cleanup_marker = root.join("backup-cleanup-ready");
+    let readme = live.join(".mdp/README.md");
+    let mut original = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&readme)
+        .unwrap();
+    let concurrent = b"operator late backup rewrite through open fd\n";
+
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_PUBLICATION_MARKER", &publication_marker)
+        .env(
+            "MDP_TEST_AUTHOR_BEFORE_BACKUP_CLEANUP_MARKER",
+            &cleanup_marker,
+        )
+        .stdout(Stdio::piped());
+    let child = command.spawn().expect("author child should spawn");
+    for _ in 0..500 {
+        if publication_marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(publication_marker.exists());
+    fs::write(publication_marker.with_extension("go"), "go\n").unwrap();
+    for _ in 0..500 {
+        if cleanup_marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(cleanup_marker.exists());
+    original.set_len(0).unwrap();
+    original.seek(SeekFrom::Start(0)).unwrap();
+    original.write_all(concurrent).unwrap();
+    original.sync_all().unwrap();
+    fs::write(cleanup_marker.with_extension("go"), "go\n").unwrap();
+
+    let output = child.wait_with_output().expect("author child should exit");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("durable recovery state retained"));
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let backup = fs::read_dir(&root)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".mdp.author.backup.")
+        })
+        .expect("drifted backup recovery evidence should remain");
+    assert_eq!(fs::read(backup.join("README.md")).unwrap(), concurrent);
+    assert!(fs::read_dir(&root).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".mdp.author.state.")
+    }));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn rollback_preserves_in_place_edit_of_newly_installed_inode() {
+    let (root, live, candidate, plan) = fixture("installed-open-fd-rewrite");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let publication_marker = root.join("publication-ready");
+    let validation_marker = root.join("published-validation-ready");
+    let concurrent = b"operator edited newly installed authority\n";
+
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_PUBLICATION_MARKER", &publication_marker)
+        .env(
+            "MDP_TEST_AUTHOR_BEFORE_PUBLISHED_VALIDATION_MARKER",
+            &validation_marker,
+        )
+        .stdout(Stdio::piped());
+    let child = command.spawn().expect("author child should spawn");
+    for _ in 0..500 {
+        if publication_marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(publication_marker.exists());
+    fs::write(publication_marker.with_extension("go"), "go\n").unwrap();
+    for _ in 0..500 {
+        if validation_marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(validation_marker.exists());
+    let readme = live.join(".mdp/README.md");
+    let mut installed = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&readme)
+        .unwrap();
+    installed.set_len(0).unwrap();
+    installed.seek(SeekFrom::Start(0)).unwrap();
+    installed.write_all(concurrent).unwrap();
+    installed.sync_all().unwrap();
+    fs::write(validation_marker.with_extension("go"), "go\n").unwrap();
+
+    let output = child.wait_with_output().expect("author child should exit");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("durable recovery state retained"));
+    assert_eq!(fs::read(&readme).unwrap(), concurrent);
+    assert!(fs::read_dir(&root).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".mdp.author.state.")
+    }));
     let _ = fs::remove_dir_all(root);
 }
 
