@@ -35,6 +35,49 @@ function stepBlock(workflow, name) {
   return { lines, start, end, stepIndent }
 }
 
+function jobBlock(workflow, name) {
+  const lines = workflow.split(/\r?\n/)
+  const marker = `${name}:`
+  const start = lines.findIndex(
+    (line) => line.trim() === marker && line.match(/^\s*/u)[0].length === 2,
+  )
+  assert.notEqual(start, -1, `missing CI job: ${name}`)
+  let end = lines.length
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim()
+    const indent = lines[index].match(/^\s*/u)[0].length
+    if (trimmed && indent <= 2) {
+      end = index
+      break
+    }
+  }
+  return lines.slice(start, end)
+}
+
+function assertDirectJobProperty(lines, property, expected) {
+  const matches = lines.filter(
+    (line) => line.match(/^\s*/u)[0].length === 4 && line.trim().startsWith(`${property}:`),
+  )
+  assert.deepEqual(matches.map((line) => line.trim()), [`${property}: ${expected}`])
+}
+
+function assertCliJobWiring(workflow) {
+  const changes = jobBlock(workflow, 'changes')
+  const outputsIndex = changes.findIndex(
+    (line) => line.match(/^\s*/u)[0].length === 4 && line.trim() === 'outputs:',
+  )
+  assert.notEqual(outputsIndex, -1, 'changes job must expose outputs')
+  assert.equal(
+    changes[outputsIndex + 1]?.trim(),
+    'cli: ${{ steps.filter.outputs.cli }}',
+    'changes.outputs.cli must project the paths-filter cli result',
+  )
+
+  const cli = jobBlock(workflow, 'cli')
+  assertDirectJobProperty(cli, 'needs', 'changes')
+  assertDirectJobProperty(cli, 'if', "needs.changes.outputs.cli == 'true'")
+}
+
 function runBlock(workflow, name) {
   const { lines, start, end } = stepBlock(workflow, name)
   const runIndex = lines.findIndex(
@@ -100,6 +143,7 @@ function assertReleaseSmokeContract(workflow) {
 }
 
 function assertAssetParityCiContract(workflow) {
+  assertCliJobWiring(workflow)
   assertCliPathFilter(workflow, 'plugin/assets/**')
   assertCliPathFilter(workflow, 'assets/**')
   assertUnconditionalStep(workflow, 'Validate authored asset parity')
@@ -156,6 +200,24 @@ for (const [name, mutation] of [
   [
     'missing packaged asset filter',
     ciWorkflow.replace('              - "assets/**"\n', ''),
+  ],
+  [
+    'disconnected cli output',
+    ciWorkflow.replace(
+      '      cli: ${{ steps.filter.outputs.cli }}',
+      '      cli: false',
+    ),
+  ],
+  [
+    'disabled cli job',
+    ciWorkflow.replace(
+      "    if: needs.changes.outputs.cli == 'true'",
+      '    if: false',
+    ),
+  ],
+  [
+    'cli job no longer needs changes',
+    ciWorkflow.replace('    needs: changes', '    needs: pluxx'),
   ],
 ]) {
   assert.throws(() => assertAssetParityCiContract(mutation), undefined, name)
