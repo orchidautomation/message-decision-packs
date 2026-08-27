@@ -11,6 +11,7 @@ const ciWorkflowPath = join(root, '.github/workflows/ci.yml')
 const stepName = 'Install and smoke-test the published release'
 const buildCommand = 'cargo build --manifest-path cli/Cargo.toml'
 const smokeCommand = 'scripts/release-install-smoke.sh "$version"'
+const assetParityCommand = '/usr/bin/env -i /usr/bin/diff -qr plugin/assets assets'
 const requiredPrefix = [
   'set -euo pipefail',
   'version="${{ steps.version.outputs.version }}"',
@@ -235,7 +236,7 @@ function assertAssetParityCiContract(workflow) {
     .filter((line) => !line.startsWith('#'))
   assert.deepEqual(
     commands,
-    ['make validate-asset-sync'],
+    [assetParityCommand],
     'required CI must execute authored asset parity unconditionally',
   )
 }
@@ -267,9 +268,16 @@ for (const [name, mutation] of [
 
 
 for (const [name, mutation] of [
-  ['commented asset parity', ciWorkflow.replace('          make validate-asset-sync', '          # make validate-asset-sync')],
-  ['echoed asset parity', ciWorkflow.replace('          make validate-asset-sync', '          echo make validate-asset-sync')],
-  ['unreachable asset parity', ciWorkflow.replace('          make validate-asset-sync', '          if false; then\n            make validate-asset-sync\n          fi')],
+  ['commented asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          # ${assetParityCommand}`)],
+  ['echoed asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          echo ${assetParityCommand}`)],
+  ['unreachable asset parity', ciWorkflow.replace(`          ${assetParityCommand}`, `          if false; then\n            ${assetParityCommand}\n          fi`)],
+  [
+    'dry-run make substitution',
+    ciWorkflow.replace(
+      `      - name: Validate authored asset parity\n        run: |\n          ${assetParityCommand}`,
+      '      - name: Validate authored asset parity\n        env: { MAKEFLAGS: "-n" }\n        run: |\n          make validate-asset-sync',
+    ),
+  ],
   [
     'disabled asset parity step',
     ciWorkflow.replace(
@@ -372,12 +380,12 @@ for (const [name, mutation] of [
     'parity step moved to disabled job',
     ciWorkflow
       .replace(
-        '      - name: Validate authored asset parity\n        run: |\n          make validate-asset-sync\n',
+        `      - name: Validate authored asset parity\n        run: |\n          ${assetParityCommand}\n`,
         '',
       )
       .replace(
         '  mcp-macos:\n',
-        '  dead-parity:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n      - name: Validate authored asset parity\n        run: |\n          make validate-asset-sync\n\n  mcp-macos:\n',
+        `  dead-parity:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n      - name: Validate authored asset parity\n        run: |\n          ${assetParityCommand}\n\n  mcp-macos:\n`,
       ),
   ],
 ]) {
