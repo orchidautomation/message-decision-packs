@@ -5,19 +5,16 @@ PLUGIN_VALIDATOR ?= $(HOME)/.codex/skills/.system/plugin-creator/scripts/validat
 PYTHONDONTWRITEBYTECODE ?= 1
 export PYTHONDONTWRITEBYTECODE
 
-CARGO_TARGET_DIRECTORY := $(shell $(CARGO) metadata --manifest-path cli/Cargo.toml --format-version 1 --no-deps 2>/dev/null | $(PYTHON) -c "import json,sys; print(json.load(sys.stdin)['target_directory'])")
-MDP_BUILD_TARGET_DIRECTORY := $(if $(strip $(CARGO_BUILD_TARGET)),$(strip $(CARGO_BUILD_TARGET))/,)
-MDP_BUILD_BIN := $(CARGO_TARGET_DIRECTORY)/$(MDP_BUILD_TARGET_DIRECTORY)debug/mdp
-
 .PHONY: validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity install-cli demo
 
 VALIDATION_TARGETS := validate validate-cli validate-authority-conformance validate-authority-mutations validate-run-v1-golden validate-run-conformance validate-cold-model-conformance validate-run-mcp validate-temp-workspace validate-template validate-skills validate-skill-contracts validate-skill-evals validate-skill-packaging validate-skill-ref validate-asset-sync validate-plugin validate-version-sync validate-native-runner validate-native-parity validate-proposal-runner validate-proposal-evidence-harness validate-proposal-mcp validate-public-artifacts validate-pluxx-hooks validate-installers validate-llms validate-route-budget validate-route-budget-installed-parity
 
 ifneq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)
 $(VALIDATION_TARGETS):
-	$(CARGO) build --manifest-path cli/Cargo.toml
 	@flags="$${MAKEFLAGS%% *}"; case "$$flags" in *n*) exit 0 ;; esac; \
-	MDP_BIN="$${MDP_BIN:-$(MDP_BUILD_BIN)}" MDP_SECURE_INSTALL_BIN="$${MDP_SECURE_INSTALL_BIN:-$(MDP_BUILD_BIN)}" node scripts/with-temp-workspace.mjs --purpose validation -- $(MAKE) $@
+	mdp_build_bin="$$($(CARGO) build --manifest-path cli/Cargo.toml --message-format=json-render-diagnostics | $(PYTHON) -c 'import json,sys; artifacts=[m.get("executable") for line in sys.stdin if (m:=json.loads(line)).get("reason")=="compiler-artifact" and m.get("target",{}).get("name")=="mdp" and "bin" in m.get("target",{}).get("kind",[]) and m.get("executable")]; print(artifacts[-1] if artifacts else "")')"; \
+	test -n "$$mdp_build_bin" && test -x "$$mdp_build_bin"; \
+	MDP_BIN="$${MDP_BIN:-$$mdp_build_bin}" MDP_SECURE_INSTALL_BIN="$${MDP_SECURE_INSTALL_BIN:-$$mdp_build_bin}" node scripts/with-temp-workspace.mjs --purpose validation -- $(MAKE) $@
 endif
 
 ifeq ($(MDP_TEMP_WORKSPACE_ACTIVE),1)

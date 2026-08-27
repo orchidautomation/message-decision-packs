@@ -83,7 +83,7 @@ test('wrapper refuses child success when owned-root cleanup is incomplete', asyn
   assert.doesNotMatch(stderr, /mdp-owned|request|private/i)
 })
 
-test('validation wrapper executes nested CLI checks from Cargo effective target directory', (t) => {
+test('validation wrapper executes nested CLI checks from a Cargo-configured build target', (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-custom-cargo-target-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
   const target = join(base, 'target')
@@ -98,12 +98,20 @@ printf invoked >>"${probe}"
 exec "${realCli}" "$@"
 `, { mode: 0o700 })
   const cargo = join(base, 'cargo')
-  writeFileSync(cargo, '#!/bin/sh\nif [ "$1" = metadata ]; then printf \'{"target_directory":"%s"}\\n\' "$CARGO_TARGET_DIR"; fi\nexit 0\n', { mode: 0o700 })
+  const cargoHome = join(base, 'cargo-home')
+  mkdirSync(cargoHome)
+  writeFileSync(join(cargoHome, 'config.toml'), `[build]\ntarget = "${buildTarget}"\n`)
+  writeFileSync(cargo, `#!/bin/sh
+grep -q 'target = "${buildTarget}"' "$CARGO_HOME/config.toml" || exit 64
+if [ "$1" = build ]; then
+  printf '%s\\n' '${JSON.stringify({ reason: 'compiler-artifact', target: { name: 'mdp', kind: ['bin'] }, executable: customCli })}'
+fi
+exit 0
+`, { mode: 0o700 })
   const environment = {
     ...process.env,
     CARGO: cargo,
-    CARGO_BUILD_TARGET: buildTarget,
-    CARGO_TARGET_DIR: target,
+    CARGO_HOME: cargoHome,
     TMPDIR: base,
   }
   delete environment.MDP_BIN

@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::fd::{FromRawFd, RawFd};
@@ -67,17 +67,34 @@ fn file_sha256(file: &mut File) -> Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn quarantine_name() -> Result<CString> {
+fn quarantine_nonce() -> Result<String> {
     let mut random = [0_u8; 16];
     File::open("/dev/urandom")?.read_exact(&mut random)?;
-    CString::new(format!(
-        ".mdp-quarantine-{}",
-        random
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
-    ))
-    .map_err(Into::into)
+    Ok(random
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>())
+}
+
+fn quarantine_name() -> Result<CString> {
+    CString::new(format!(".mdp-quarantine-{}", quarantine_nonce()?)).map_err(Into::into)
+}
+
+fn directory_tree_quarantine_name(name: &CStr) -> Result<CString> {
+    const PREFIX: &str = ".mdp-owned-temp-quarantine-";
+    let leaf = name.to_str().unwrap_or_default();
+    let recoverable_owned_name = leaf.strip_prefix(PREFIX).and_then(|encoded| {
+        let (owned_name, nonce) = encoded.rsplit_once('-')?;
+        (owned_name.starts_with("mdp-owned-")
+            && nonce.len() == 32
+            && nonce.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then_some(owned_name)
+    });
+    match recoverable_owned_name {
+        Some(owned_name) => CString::new(format!("{PREFIX}{owned_name}-{}", quarantine_nonce()?))
+            .map_err(Into::into),
+        None => quarantine_name(),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -303,6 +320,11 @@ fn remove_directory_contents_with_hook<F: FnMut(RawFd, &std::ffi::CStr, bool)>(
     if unsafe { libc::closedir(stream) } != 0 {
         return Err(io::Error::last_os_error()).map_err(Into::into);
     }
+    // The ownership marker is the recovery proof for an interrupted outer
+    // temp-workspace quarantine. Remove it only after every potentially
+    // sensitive sibling has been removed, so a crash mid-walk remains
+    // discoverable and safely retryable.
+    names.sort_by_key(|name| name.to_bytes() == b".mdp-owned-temp-workspace.json");
     // Snapshot names before introducing quarantine leaves so the iterator can
     // never consume names created by this transaction.
     for name in &names {
@@ -373,12 +395,16 @@ fn remove_directory_contents_with_hook<F: FnMut(RawFd, &std::ffi::CStr, bool)>(
     Ok(())
 }
 
-fn remove_directory_tree_if_identity_with_hook<F: FnMut(RawFd, &std::ffi::CStr, bool)>(
+fn remove_directory_tree_if_identity_with_hooks<
+    F: FnMut(RawFd, &std::ffi::CStr, bool),
+    G: FnOnce(),
+>(
     dir_fd: RawFd,
     name: &CString,
     expected_dev: u64,
     expected_ino: u64,
     hook: &mut F,
+    after_outer_quarantine: G,
 ) -> Result<()> {
     let target_fd = unsafe {
         libc::openat(
@@ -399,7 +425,7 @@ fn remove_directory_tree_if_identity_with_hook<F: FnMut(RawFd, &std::ffi::CStr, 
     if named_identity(dir_fd, name)? != opened {
         bail!("secure remove directory tree identity changed before removal");
     }
-    let quarantine = quarantine_name()?;
+    let quarantine = directory_tree_quarantine_name(name)?;
     rename_no_replace(dir_fd, name, &quarantine)?;
     if named_identity(dir_fd, &quarantine)? != opened {
         rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
@@ -407,6 +433,7 @@ fn remove_directory_tree_if_identity_with_hook<F: FnMut(RawFd, &std::ffi::CStr, 
         })?;
         bail!("secure remove directory tree identity changed during quarantine");
     }
+    after_outer_quarantine();
     let removal = (|| -> Result<()> {
         remove_directory_contents_with_hook(target_fd, hook)?;
         if named_identity(dir_fd, &quarantine)? != opened {
@@ -437,6 +464,23 @@ fn remove_directory_tree_if_identity_with_hook<F: FnMut(RawFd, &std::ffi::CStr, 
     }
     drop(target);
     Ok(())
+}
+
+fn remove_directory_tree_if_identity_with_hook<F: FnMut(RawFd, &std::ffi::CStr, bool)>(
+    dir_fd: RawFd,
+    name: &CString,
+    expected_dev: u64,
+    expected_ino: u64,
+    hook: &mut F,
+) -> Result<()> {
+    remove_directory_tree_if_identity_with_hooks(
+        dir_fd,
+        name,
+        expected_dev,
+        expected_ino,
+        hook,
+        || {},
+    )
 }
 
 fn remove_directory_tree_if_identity(
@@ -1014,6 +1058,81 @@ mod tests {
                 .starts_with(".mdp-quarantine-")
         }));
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn killed_tree_removal_preserves_a_discoverable_owned_quarantine() {
+        const CHILD_ROOT: &str = "MDP_TEST_KILLED_TREE_ROOT";
+        if let Ok(root) = std::env::var(CHILD_ROOT) {
+            let root = std::path::PathBuf::from(root);
+            let initial_name = std::env::var("MDP_TEST_KILLED_TREE_NAME").unwrap();
+            let tree = root.join(&initial_name);
+            let identity = std::fs::metadata(&tree).unwrap();
+            let parent = File::open(&root).unwrap();
+            let _ = remove_directory_tree_if_identity_with_hooks(
+                parent.as_raw_fd(),
+                &CString::new(initial_name).unwrap(),
+                identity.dev(),
+                identity.ino(),
+                &mut |_, _, _| {},
+                || unsafe {
+                    libc::kill(libc::getpid(), libc::SIGKILL);
+                },
+            );
+            panic!("kill hook returned");
+        }
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-tree-kill-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let initial_name = format!(
+            ".mdp-owned-temp-quarantine-mdp-owned-validation-Ab12Cd-{}",
+            "1".repeat(32)
+        );
+        let tree = root.join(&initial_name);
+        std::fs::create_dir(&tree).unwrap();
+        std::fs::write(tree.join("private"), b"private bytes").unwrap();
+        let identity = std::fs::metadata(&tree).unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("killed_tree_removal_preserves_a_discoverable_owned_quarantine")
+            .arg("--nocapture")
+            .env(CHILD_ROOT, &root)
+            .env("MDP_TEST_KILLED_TREE_NAME", &initial_name)
+            .status()
+            .unwrap();
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
+        assert!(!tree.exists());
+
+        let entries = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1);
+        let recovered_name = &entries[0];
+        assert!(
+            recovered_name.starts_with(".mdp-owned-temp-quarantine-mdp-owned-validation-Ab12Cd-")
+        );
+        assert_eq!(
+            std::fs::read(root.join(recovered_name).join("private")).unwrap(),
+            b"private bytes"
+        );
+
+        let parent = File::open(&root).unwrap();
+        remove_directory_tree_if_identity(
+            parent.as_raw_fd(),
+            &CString::new(recovered_name.as_str()).unwrap(),
+            identity.dev(),
+            identity.ino(),
+        )
+        .unwrap();
+        assert!(std::fs::read_dir(&root).unwrap().next().is_none());
+        std::fs::remove_dir(&root).unwrap();
     }
 
     #[test]
