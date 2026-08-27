@@ -7,6 +7,7 @@ mod cli;
 mod commands;
 mod conformance;
 mod constants;
+mod diagnostics;
 mod model_steps;
 mod models;
 mod output;
@@ -65,29 +66,31 @@ fn main() {
             let exit_code = 2;
             if json_mode {
                 if is_prepare_run_invocation(&raw_args) {
+                    let mut data = serde_json::json!({
+                        "contract": "mdp.run-request-compile.v1",
+                        "status": "blocked",
+                        "diagnostics": [{
+                            "code": "cli-arguments-invalid",
+                            "contract": "mdp.run-request-compile.v1",
+                            "message": "cli-arguments-invalid: preparation refused",
+                            "next_command": "mdp prepare-run --help"
+                        }],
+                        "next_command": "mdp prepare-run --help"
+                    });
+                    crate::diagnostics::enrich_result("prepare-run", &mut data);
                     println!(
                         "{}",
                         serde_json::json!({
                             "ok": false,
                             "command": "prepare-run",
-                            "data": {
-                                "contract": "mdp.run-request-compile.v1",
-                                "status": "blocked",
-                                "diagnostics": [{
-                                    "code": "cli-arguments-invalid",
-                                    "contract": "mdp.run-request-compile.v1",
-                                    "message": "cli-arguments-invalid: preparation refused",
-                                    "next_command": "mdp prepare-run --help"
-                                }],
-                                "next_command": "mdp prepare-run --help"
-                            }
+                            "data": data
                         })
                     );
                 } else {
                     let _ = print_error(json_mode, anyhow::anyhow!(err.to_string()));
                 }
             } else {
-                let _ = err.print();
+                let _ = print_error(false, anyhow::anyhow!(err.to_string()));
             }
             std::process::exit(exit_code);
         }
@@ -97,13 +100,15 @@ fn main() {
         if json_mode {
             if let Some(failure) = err.downcast_ref::<CompilerError>() {
                 let diagnostic = &failure.0;
+                let mut data = serde_json::json!({
+                    "contract": diagnostic.contract, "status": "blocked",
+                    "diagnostics": [diagnostic], "next_command": diagnostic.next_command
+                });
+                crate::diagnostics::enrich_result("prepare-run", &mut data);
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&serde_json::json!({
-                        "ok": false, "command": "prepare-run", "data": {
-                            "contract": diagnostic.contract, "status": "blocked",
-                            "diagnostics": [diagnostic], "next_command": diagnostic.next_command
-                        }
+                        "ok": false, "command": "prepare-run", "data": data
                     }))
                     .unwrap_or_else(|_| "{\"ok\":false}".into())
                 );

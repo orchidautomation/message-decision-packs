@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdp.orchidlabs.dev/schemas/actionable-diagnostic-v1.schema.json",
+  "title": "MDP actionable diagnostic v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "phase",
+    "code",
+    "retryability",
+    "summary",
+    "prerequisites",
+    "next_action"
+  ],
+  "properties": {
+    "contract": { "const": "mdp.actionable-diagnostic.v1" },
+    "phase": {
+      "enum": ["input", "setup", "validation", "readiness", "routing", "policy", "execution"]
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+      "maxLength": 128
+    },
+    "retryability": {
+      "enum": ["after-user-action", "transient", "not-retryable"]
+    },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "prerequisites": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "summary"],
+        "properties": {
+          "kind": {
+            "enum": ["operator-input", "pack", "authority", "policy", "runtime"]
+          },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      }
+    },
+    "next_action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "summary", "command"],
+          "properties": {
+            "kind": { "const": "command" },
+            "summary": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "command": { "const": "mdp --help" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "summary"],
+          "properties": {
+            "kind": { "const": "manual" },
+            "summary": { "type": "string", "minLength": 1, "maxLength": 256 }
+          }
+        }
+      ]
+    }
+  }
+}

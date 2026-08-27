@@ -129,6 +129,63 @@ fn capabilities_envelope_is_one_parseable_json_value() {
 }
 
 #[test]
+fn actionable_diagnostic_is_shared_by_json_and_human_errors() {
+    let args = ["init", "--bogus"];
+    let (json_code, _, json_stderr, value) = run(&["--json", "init", "--bogus"], Case::Ok);
+    assert_eq!(json_code, 2);
+    assert!(json_stderr.is_empty());
+    let value = value.expect("JSON error envelope");
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "invalid_argument");
+    assert_eq!(value["diagnostic_contract"], "mdp.actionable-diagnostic.v1");
+    let diagnostic = &value["actionable_diagnostics"][0];
+    assert_eq!(diagnostic["phase"], "input");
+    assert_eq!(diagnostic["code"], "invalid_argument");
+    assert_eq!(diagnostic["retryability"], "after-user-action");
+    assert_eq!(diagnostic["next_action"]["command"], "mdp --help");
+
+    let output = Command::new(mdp_bin())
+        .args(args)
+        .output()
+        .expect("human error invocation");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let expected = format!(
+        "diagnostic [{} / {}]: {}",
+        diagnostic["phase"].as_str().unwrap(),
+        diagnostic["code"].as_str().unwrap(),
+        diagnostic["summary"].as_str().unwrap()
+    );
+    assert!(stderr.contains(&expected), "human stderr: {stderr}");
+    assert!(
+        stderr.contains("next: mdp --help"),
+        "human stderr: {stderr}"
+    );
+}
+
+#[test]
+fn successful_target_command_advertises_empty_versioned_diagnostics() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-actionable-diagnostics-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("fixture root");
+    let root_arg = root.display().to_string();
+    let (code, _, stderr, value) = run(&["--json", "init", "--dir", root_arg.as_str()], Case::Ok);
+    assert_eq!(code, 0);
+    assert!(stderr.is_empty());
+    let data = &value.expect("init envelope")["data"];
+    assert_eq!(data["diagnostic_contract"], "mdp.actionable-diagnostic.v1");
+    assert_eq!(data["actionable_diagnostics"], serde_json::json!([]));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn help_and_version_wrap_as_one_parseable_json_value() {
     let (help_code, _, help_stderr, help_value) = run(&["--json", "--help"], Case::Ok);
     assert_eq!(help_code, 0);
