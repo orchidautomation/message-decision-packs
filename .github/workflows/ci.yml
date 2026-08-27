@@ -28,6 +28,7 @@ jobs:
           filters: |
             cli:
               - ".github/workflows/ci.yml"
+              - ".github/workflows/release.yml"
               - "cli/**"
               - "rust-toolchain.toml"
               - "Makefile"
@@ -58,6 +59,7 @@ jobs:
               - "scripts/test-proposal-mcp-server.sh"
               - "scripts/mdp-proposal-mcp-server.mjs"
               - "scripts/mdp-proposal-runner.mjs"
+              - "scripts/test-release-workflow.mjs"
               - "scripts/test-native-model-driver.mjs"
               - "scripts/mdp-native-model-openai.mjs"
               - "scripts/mdp-native-normalize-openai.mjs"
@@ -79,6 +81,8 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
         working-directory: cli
+      - name: Validate release workflow contract
+        run: node scripts/test-release-workflow.mjs
       - name: Test CLI
         run: cargo test
         working-directory: cli
