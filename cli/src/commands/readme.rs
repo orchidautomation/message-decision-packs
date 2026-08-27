@@ -226,7 +226,7 @@ fn human_reference_warnings(
     let card_paths = manifest
         .cards
         .iter()
-        .map(|card| card.path.as_str())
+        .filter_map(|card| normalize_card_path(&card.path))
         .collect::<std::collections::BTreeSet<_>>();
     let source_ids = source_ledger["sources"]
         .as_array()
@@ -237,10 +237,13 @@ fn human_reference_warnings(
     let mut warnings = Vec::new();
     let mut seen_cards = std::collections::BTreeSet::new();
     for token in inline_code_tokens(&human) {
-        if token.starts_with("cards/")
-            && matches!(token.rsplit_once('.'), Some((_, "yaml" | "yml")))
-            && !card_paths.contains(token.as_str())
-            && seen_cards.insert(token.clone())
+        let Some(normalized) = normalize_card_path(&token) else {
+            continue;
+        };
+        if normalized.starts_with("cards/")
+            && matches!(normalized.rsplit_once('.'), Some((_, "yaml" | "yml")))
+            && !card_paths.contains(&normalized)
+            && seen_cards.insert(normalized)
         {
             warnings.push(reference_warning(
                 "readme_human_card_reference_missing",
@@ -262,6 +265,24 @@ fn human_reference_warnings(
         }
     }
     warnings
+}
+
+fn normalize_card_path(path: &str) -> Option<String> {
+    let mut normalized = Vec::new();
+    for component in Path::new(path).components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(segment) => {
+                normalized.push(segment.to_str()?.to_string());
+            }
+            // Card references are pack-relative. Never make absolute, parent,
+            // root, or platform-prefix paths equivalent to an authority path.
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => return None,
+        }
+    }
+    (!normalized.is_empty()).then(|| normalized.join("/"))
 }
 
 fn reference_warning(code: &str, kind: &str, reference: &str, path: &Path) -> Value {
@@ -802,6 +823,8 @@ mod tests {
         for human in [
             "# Human README\n\n```markdown\nkeep backtick bytes\n",
             "# Human README\n\n~~~text\nkeep tilde bytes\n",
+            "# Human README\n\n```markdown\nNBSP is not a close\n```\u{00a0}\n",
+            "# Human README\n\n~~~text\nem space is not a close\n~~~\u{2003}\n",
         ] {
             std::fs::write(&readme_path, human).expect("write open-fence README");
             let before = check_readme(&root).expect("check legacy open-fence README");
@@ -1028,6 +1051,34 @@ Inline `inline-code` must be ignored.
                 "cards/multiline.yaml"
             ]
         );
+    }
+
+    #[test]
+    fn card_reference_membership_normalizes_safe_relative_paths_only() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-card-paths-{}", nonce()));
+        init_pack(&root, "Card Path Pack", "gtm", true, false).expect("pack should initialize");
+        let mut manifest = read_manifest(&root).expect("manifest");
+        manifest.cards[0].path = "./cards/equivalent.yaml".to_string();
+        let readme = "Canonical `cards/equivalent.yaml`; missing `./cards/missing.yaml`; reject `cards/../escape.yaml` and `/cards/absolute.yaml`.";
+        let warnings = human_reference_warnings(
+            readme,
+            &manifest,
+            &Value::Null,
+            &root.join(".mdp/README.md"),
+        );
+        let card_warnings = warnings
+            .iter()
+            .filter(|warning| warning["code"] == "readme_human_card_reference_missing")
+            .collect::<Vec<_>>();
+        assert_eq!(card_warnings.len(), 1);
+        assert_eq!(card_warnings[0]["reference"], "./cards/missing.yaml");
+        assert_eq!(
+            normalize_card_path("./cards/equivalent.yaml").as_deref(),
+            Some("cards/equivalent.yaml")
+        );
+        assert!(normalize_card_path("cards/../escape.yaml").is_none());
+        assert!(normalize_card_path("/cards/absolute.yaml").is_none());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

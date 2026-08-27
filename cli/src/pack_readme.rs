@@ -440,9 +440,10 @@ pub(crate) fn fence_delimiter(
     }
     match open {
         Some((open_character, open_length)) => {
+            let suffix = &rest[length..];
             let closing = character == open_character
                 && length >= open_length
-                && rest[length..].trim().is_empty();
+                && suffix.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
             closing.then_some((character, length, true))
         }
         None => {
@@ -793,6 +794,21 @@ mod tests {
             assert!(extract_ownership_block(human).is_none());
             assert!(extract_inventory_block(human).is_none());
         }
+    }
+
+    #[test]
+    fn unicode_whitespace_does_not_close_a_fence() {
+        let manifest = manifest_with("Unicode Fence Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        let human = "# Human\n\n```markdown\nkeep bytes\n```\u{00a0}\n";
+        assert_eq!(
+            replace_readme_regions(human, &fresh),
+            Err(README_FENCE_DIAGNOSTIC),
+            "CommonMark closing suffix permits ASCII space/tab only"
+        );
+        assert!(open_fence_at_eof(human).is_some());
     }
 
     #[test]
