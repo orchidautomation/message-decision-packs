@@ -220,7 +220,8 @@ function assertNoWorkflowYamlIndirection(workflow) {
     .find(
       (line) =>
         /(?:^|[\s{[,:])(?:&|\*)[A-Za-z0-9_-]+(?=\s|[,}\]:]|$)/u.test(line) ||
-        /(?:^|[\s{[,:])!(?:!|<)?[A-Za-z0-9_:/.-]+>?/u.test(line),
+        /(?:^|[\s{[,:])!(?:!|<)?[A-Za-z0-9_:/.-]+>?/u.test(line) ||
+        /(?:^|[\s{[,:])!(?=\s)/u.test(line),
     )
   assert.equal(
     indirection,
@@ -436,6 +437,13 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       '      - name: Validate authored asset parity\n',
       '      - name: Validate authored asset parity\n        !!str if: false\n',
+    ),
+  ],
+  [
+    'bare-tag disabled parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        ! if: false\n',
     ),
   ],
   [
