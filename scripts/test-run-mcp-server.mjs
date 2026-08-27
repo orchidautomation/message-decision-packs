@@ -1442,6 +1442,28 @@ test('absolute supervisor deadline bounds non-closing process-group polling', as
   assert(Date.now() - started < 300, 'closure polling must not add its default one-second window')
 })
 
+test('TERM-only supervisor mode never escalates a finite safety helper to SIGKILL', async (t) => {
+  if (process.platform === 'win32') return t.skip('Unix process-group behavior')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-supervisor-term-only-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const marker = join(root, 'restored')
+  const started = Date.now()
+  const result = await superviseProcess({
+    command: [process.execPath],
+    args: ['-e', `const fs=require('node:fs');process.on('SIGTERM',()=>setTimeout(()=>{fs.writeFileSync(${JSON.stringify(marker)},'restored');process.exit(0)},100));setInterval(()=>{},1000)`],
+    cwd: root,
+    environment: process.env,
+    timeoutMs: 25,
+    terminationGraceMs: 10,
+    absoluteDeadlineMs: started + 60,
+    terminationMode: 'term-only',
+    maxOutputBytes: 1024,
+  })
+  assert.equal(result.timedOut, true)
+  assert.equal(readFileSync(marker, 'utf8'), 'restored', 'helper must finish after the nominal kill deadline')
+  assert(Date.now() - started >= 100, 'TERM-only mode must wait rather than escalating to SIGKILL')
+})
+
 test('interrupting the real CLI during staging removes its exact claim and private transaction', async (t) => {
   if (process.platform === 'win32') return t.skip('Unix process-group and ownership behavior')
   if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')

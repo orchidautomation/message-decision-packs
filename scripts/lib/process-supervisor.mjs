@@ -149,6 +149,7 @@ export const superviseProcess = ({
   signal = null,
   inheritedFds = [],
   absoluteDeadlineMs = null,
+  terminationMode = 'term-kill',
 }) =>
   new Promise((resolveResult) => {
     const startedAt = performance.now()
@@ -172,6 +173,18 @@ export const superviseProcess = ({
     const escalate = () => {
       if (escalationPromise) return escalationPromise
       terminateProcessGroup(child, processGroupId, 'SIGTERM')
+      if (terminationMode === 'term-only') {
+        // Safety-critical finite helpers restore their invariants before
+        // unmasking SIGTERM. Never SIGKILL them mid-transaction; resolution
+        // waits for the child close event after the pending TERM is delivered.
+        escalationPromise = new Promise((resolveEscalation) => {
+          child.once('close', () => resolveEscalation({
+            processGroupClosed: groupIsClosed(processGroupId),
+            recovered: false,
+          }))
+        })
+        return escalationPromise
+      }
       escalationPromise = new Promise((resolveEscalation) => {
         const graceMs = absoluteDeadlineMs === null
           ? terminationGraceMs

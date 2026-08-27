@@ -330,7 +330,12 @@ const tools = [
         out: { type: 'string', description: 'Required new mdp.run-request.v1 path under an approved work root.' },
         manifest_out: { type: 'string', description: 'Optional new full compiler manifest path under an approved work root.' },
         full: { type: 'boolean' },
-        timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
+        timeout_ms: {
+          type: 'integer',
+          minimum: 100,
+          maximum: MAX_TIMEOUT_MS,
+          description: 'Normal prepare deadline in milliseconds. On failure, a finite TERM-only identity cleanup may finish restoring filesystem invariants before the response returns.',
+        },
       },
     },
   },
@@ -502,6 +507,7 @@ const invokeSecureInstaller = (output, action, deadline, terminationGraceMs, sig
     inheritedFds: [output.fd, output.receiptFd],
     signal,
     absoluteDeadlineMs: deadline,
+    terminationMode: action === 'remove' ? 'term-only' : 'term-kill',
   })
 }
 
@@ -612,7 +618,6 @@ const callPrepareRunValidated = async (args, signal = null) => {
   const deadline = Date.now() + timeoutMs
   const cleanupReserveMs = Math.min(MAX_PREPARE_CLEANUP_RESERVE_MS, Math.max(25, Math.floor(timeoutMs / 4)))
   const terminationGraceMs = Math.min(MAX_PREPARE_TERMINATION_GRACE_MS, Math.max(5, Math.floor(cleanupReserveMs / 4)))
-  const cleanupTerminationGraceMs = Math.max(terminationGraceMs, Math.min(50, Math.max(10, Math.floor(cleanupReserveMs / 2))))
   const workDeadline = deadline - cleanupReserveMs
   const privateDir = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-'))
   let published = false
@@ -677,7 +682,7 @@ const callPrepareRunValidated = async (args, signal = null) => {
     let cleanupComplete = true
     try {
       if (!published) {
-        const results = await Promise.all(pinnedOutputs.map((output) => removePinnedOutput(output, deadline, cleanupTerminationGraceMs)))
+        const results = await Promise.all(pinnedOutputs.map((output) => removePinnedOutput(output, deadline, terminationGraceMs)))
         cleanupComplete = results.every(Boolean)
       }
     } finally {
