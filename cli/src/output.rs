@@ -1,4 +1,8 @@
 use crate::cli::{Commands, HumanBriefFormat, SampleLeadsFormat, TraceFormat};
+use crate::diagnostics::{
+    ACTIONABLE_DIAGNOSTICS_FIELD, contract_metadata, diagnostics_for_result, error_diagnostic,
+    render_human, render_human_error,
+};
 use crate::routing::route_budget_summary_projection;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -319,7 +323,8 @@ pub(crate) fn presentation_contract() -> Value {
             "prelude_allowed": false,
             "trailing_text_allowed": false,
             "stderr_empty": true
-        }
+        },
+        "actionable_diagnostics": contract_metadata()
     })
 }
 
@@ -329,32 +334,49 @@ pub(crate) fn print_output(
     command: &str,
     data: Value,
 ) -> Result<()> {
+    let actionable_diagnostics = diagnostics_for_result(command, &data);
     if summary_mode {
         let summary = summarize(command, &data);
         if command == "route-budget" {
             crate::commands::schemas::validate_route_budget_summary_output(&summary)?;
         }
         if json_mode {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(
-                    &json!({"ok": true, "command": command, "summary": summary})
-                )?
-            );
+            let mut envelope = json!({"ok": true, "command": command, "summary": summary});
+            attach_actionable_fields(&mut envelope, actionable_diagnostics.as_ref());
+            println!("{}", serde_json::to_string_pretty(&envelope)?);
         } else {
             print_summary(command, &summary)?;
+            if let Some(diagnostics) = actionable_diagnostics.as_ref() {
+                render_human(diagnostics);
+            }
         }
         return Ok(());
     }
     if json_mode {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({"ok": true, "command": command, "data": data}))?
-        );
+        let mut envelope = json!({"ok": true, "command": command, "data": data});
+        attach_actionable_fields(&mut envelope, actionable_diagnostics.as_ref());
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
         print_human(command, &data)?;
+        if let Some(diagnostics) = actionable_diagnostics.as_ref() {
+            render_human(diagnostics);
+        }
     }
     Ok(())
+}
+
+fn attach_actionable_fields(envelope: &mut Value, diagnostics: Option<&Value>) {
+    let (Some(object), Some(diagnostics)) = (envelope.as_object_mut(), diagnostics) else {
+        return;
+    };
+    object.insert(
+        "diagnostic_contract".to_string(),
+        json!(crate::diagnostics::ACTIONABLE_DIAGNOSTIC_CONTRACT),
+    );
+    object.insert(
+        ACTIONABLE_DIAGNOSTICS_FIELD.to_string(),
+        diagnostics.clone(),
+    );
 }
 
 fn summarize(command: &str, data: &Value) -> Value {
@@ -851,6 +873,7 @@ pub(crate) fn print_output_mode_conflict(
     selector: &str,
     value: &str,
 ) -> Result<()> {
+    let diagnostic = error_diagnostic(OUTPUT_MODE_CONFLICT_CODE);
     let envelope = json!({
         "ok": false,
         "error": {
@@ -859,7 +882,9 @@ pub(crate) fn print_output_mode_conflict(
                 "--json cannot be combined with human-only presentation {selector}={value}"
             ),
             "details": [selector, value]
-        }
+        },
+        "diagnostic_contract": crate::diagnostics::ACTIONABLE_DIAGNOSTIC_CONTRACT,
+        "actionable_diagnostics": [diagnostic]
     });
     if json_mode {
         println!("{}", serde_json::to_string_pretty(&envelope)?);
@@ -892,12 +917,18 @@ pub(crate) fn print_error(json_mode: bool, err: anyhow::Error) -> Result<()> {
         .map(|cause| cause.to_string())
         .collect::<Vec<_>>();
     let code = classify_error(&message, &details);
-    let payload =
-        json!({"ok": false, "error": {"code": code, "message": message, "details": details}});
+    let diagnostic = error_diagnostic(code);
+    let payload = json!({
+        "ok": false,
+        "error": {"code": code, "message": message, "details": details},
+        "diagnostic_contract": crate::diagnostics::ACTIONABLE_DIAGNOSTIC_CONTRACT,
+        "actionable_diagnostics": [diagnostic]
+    });
     if json_mode {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
         eprintln!("error: {}", err);
+        render_human_error(&payload["actionable_diagnostics"]);
     }
     Ok(())
 }
