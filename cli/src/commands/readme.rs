@@ -310,6 +310,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut paragraph_open = false;
     let mut definition_title_pending: Option<MarkdownContainer> = None;
     let mut definition_destination_pending: Option<MarkdownContainer> = None;
+    let mut raw_html_end_tag = None;
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
@@ -333,6 +334,11 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
                     && project_container_path(line, opening_container).is_some()
             })
             .and_then(|_| link_definition_continuation_title_state(block_content));
+        if line_is_raw_html(block_content, &mut raw_html_end_tag) {
+            visible.push('\n');
+            paragraph_open = false;
+            continue;
+        }
         if previous_container.is_some_and(|previous| previous != container) {
             indented_code = false;
             indented_code_can_start = true;
@@ -392,11 +398,21 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
             paragraph_open = false;
             continue;
         }
-        visible.push_str(&markdown[start..line_end]);
+        let definition_can_start = !paragraph_open;
+        let definition_line = definition_can_start
+            && (link_reference_title_state(block_content).is_some()
+                || is_link_reference_destination_pending(block_content));
+        if definition_line
+            || definition_title_continuation
+            || definition_destination_continuation.is_some()
+        {
+            visible.push('\n');
+        } else {
+            visible.push_str(&markdown[start..line_end]);
+        }
         // CommonMark indented code cannot interrupt a paragraph. A blank line
         // re-enables block start; ordinary prose keeps later indentation in
         // the paragraph, where inline code spans remain mechanically visible.
-        let definition_can_start = !paragraph_open;
         definition_title_pending = ((definition_can_start
             && link_reference_title_state(block_content) == Some(false))
             || definition_destination_continuation == Some(false))
@@ -429,6 +445,31 @@ fn markdown_indent_columns(line: &str) -> usize {
         }
     }
     columns
+}
+
+fn line_is_raw_html(line: &str, end_tag: &mut Option<&'static str>) -> bool {
+    let lower = line.trim_start_matches([' ', '\t']).to_ascii_lowercase();
+    if let Some(tag) = *end_tag {
+        if lower.contains(&format!("</{tag}>")) {
+            *end_tag = None;
+        }
+        return true;
+    }
+    for tag in ["script", "pre", "style", "textarea"] {
+        let opener = format!("<{tag}");
+        if lower.starts_with(&opener)
+            && lower[opener.len()..]
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_whitespace() || character == '>')
+        {
+            if !lower.contains(&format!("</{tag}>")) {
+                *end_tag = Some(tag);
+            }
+            return true;
+        }
+    }
+    false
 }
 
 fn line_continues_paragraph(line: &str, paragraph_open: bool) -> bool {
@@ -873,6 +914,7 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut paragraph_open = false;
     let mut definition_title_pending: Option<MarkdownContainer> = None;
     let mut definition_destination_pending: Option<MarkdownContainer> = None;
+    let mut raw_html_end_tag = None;
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
@@ -896,6 +938,10 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
                     && project_container_path(line, opening_container).is_some()
             })
             .and_then(|_| link_definition_continuation_title_state(block_content));
+        if line_is_raw_html(block_content, &mut raw_html_end_tag) {
+            paragraph_open = false;
+            continue;
+        }
         if fence
             .as_ref()
             .is_some_and(|(_, _, opening_container)| *opening_container != container)
@@ -1777,6 +1823,17 @@ Inline `inline-code` must be ignored.
             .is_empty(),
             "indented code may begin immediately after a definition continuation"
         );
+        assert!(
+            inline_code_tokens("[ref]: /url\n  \"See `cards/definition-title.yaml`\"\n").is_empty(),
+            "link-definition titles are not inline-parsed"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "<script>\n`cards/raw-html.yaml`\n</script>\nRoot `cards/raw-root.yaml`.\n"
+            ),
+            vec!["cards/raw-root.yaml"],
+            "raw HTML block content is not inline-parsed"
+        );
     }
 
     #[test]
@@ -1828,6 +1885,13 @@ Inline `inline-code` must be ignored.
         readme.push_str(
             "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nParagraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n\n# Heading\n2. ```markdown\n   `cards/after-heading-hidden.yaml`\n   ```\nRoot `cards/after-heading-visible.yaml`.\n\n[ref]: /url\n2. ```markdown\n   `cards/after-definition-hidden.yaml`\n   ```\nRoot `cards/after-definition-visible.yaml`.\n\n> [ref]: /url\n>   \"title\"\n> 2. ```markdown\n>    `cards/quoted-definition-hidden.yaml`\n>    ```\nRoot `cards/quoted-definition-visible.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
         );
+        readme.push_str(&format!(
+            "\n[title-ref]: /url\n  \"See `cards/definition-title-missing.yaml`\"\n\n<script>\n`cards/raw-html-missing.yaml`\n{}\nhuman raw marker\n{}\n{}\nhuman raw marker\n{}\n</script>\n",
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            crate::pack_readme::README_OWNERSHIP_END,
+            crate::pack_readme::README_INVENTORY_BEGIN,
+            crate::pack_readme::README_INVENTORY_END,
+        ));
         std::fs::write(&readme_path, readme).expect("write human examples");
 
         let checked = check_readme(&root).expect("check README");

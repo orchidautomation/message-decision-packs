@@ -417,6 +417,7 @@ struct MarkdownFenceScanner {
     paragraph_open: bool,
     definition_title_pending: Option<MarkdownContainer>,
     definition_destination_pending: Option<MarkdownContainer>,
+    raw_html_end_tag: Option<&'static str>,
 }
 
 impl MarkdownFenceScanner {
@@ -465,6 +466,10 @@ impl MarkdownFenceScanner {
             self.container = container.clone();
             (content, container)
         };
+        if line_is_raw_html(block_content, &mut self.raw_html_end_tag) {
+            self.paragraph_open = false;
+            return true;
+        }
         let definition_title_continuation =
             pending_definition_title
                 .as_ref()
@@ -524,6 +529,31 @@ impl MarkdownFenceScanner {
             false
         }
     }
+}
+
+fn line_is_raw_html(line: &str, end_tag: &mut Option<&'static str>) -> bool {
+    let lower = line.trim_start_matches([' ', '\t']).to_ascii_lowercase();
+    if let Some(tag) = *end_tag {
+        if lower.contains(&format!("</{tag}>")) {
+            *end_tag = None;
+        }
+        return true;
+    }
+    for tag in ["script", "pre", "style", "textarea"] {
+        let opener = format!("<{tag}");
+        if lower.starts_with(&opener)
+            && lower[opener.len()..]
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_whitespace() || character == '>')
+        {
+            if !lower.contains(&format!("</{tag}>")) {
+                *end_tag = Some(tag);
+            }
+            return true;
+        }
+    }
+    false
 }
 
 fn project_container_path<'a>(
@@ -1495,6 +1525,14 @@ mod tests {
             assert_eq!(extract_ownership_block(&invalid_block), None);
             assert_eq!(extract_inventory_block(&invalid_block), None);
         }
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let raw_html = format!(
+            "<script>\n{README_OWNERSHIP_BEGIN}\nhuman script bytes\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman script bytes\n{README_INVENTORY_END}\n</script>\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&raw_html).is_ok());
+        assert_eq!(extract_ownership_block(&raw_html), Some(ownership));
+        assert_eq!(extract_inventory_block(&raw_html), Some(inventory));
     }
 
     #[test]
