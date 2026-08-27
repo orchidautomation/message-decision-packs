@@ -301,69 +301,21 @@ fn reference_warning(code: &str, kind: &str, reference: &str, path: &Path) -> Va
 }
 
 fn inline_code_tokens(markdown: &str) -> Vec<String> {
-    let mut fence: Option<(char, usize, (usize, Option<usize>))> = None;
+    let mut fence: Option<(char, usize, MarkdownContainer)> = None;
     let mut indented_code = false;
     let mut indented_code_can_start = true;
-    let mut list_container: Option<(usize, usize)> = None;
-    let mut list_blank_lines = 0;
+    let mut container_state = MarkdownContainerState::default();
+    let mut previous_container = None;
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        let (quote_depth, quoted_content) = strip_blockquote_prefixes(line);
-        if list_container.is_some_and(|(depth, _)| depth != quote_depth) {
-            list_container = None;
-            list_blank_lines = 0;
+        let opening_container = fence.map(|(_, _, container)| container);
+        let (block_content, container) = container_state.project(line, opening_container);
+        if previous_container.is_some_and(|previous| previous != container) {
+            indented_code = false;
+            indented_code_can_start = true;
         }
-        let quoted_blank = quoted_content
-            .bytes()
-            .all(|byte| matches!(byte, b' ' | b'\t'));
-        let fenced_content = fence.and_then(|(_, _, (opening_quote, opening_list))| {
-            if opening_quote != quote_depth {
-                return None;
-            }
-            match opening_list {
-                Some(_) if quoted_blank => Some(""),
-                Some(indent) => strip_indent_columns(quoted_content, indent),
-                None => Some(quoted_content),
-            }
-        });
-        if fence.is_some() && fenced_content.is_none() {
-            fence = None;
-        }
-        let block_content = if let Some(content) = fenced_content {
-            content
-        } else if let Some((content_indent, item_content)) = list_item_content(quoted_content) {
-            list_container = Some((quote_depth, content_indent));
-            list_blank_lines = 0;
-            item_content
-        } else if let Some((_, content_indent)) = list_container {
-            if quoted_blank {
-                list_blank_lines += 1;
-                if list_blank_lines >= 2 {
-                    // Two blank lines terminate a CommonMark list container;
-                    // later indentation is root-relative rather than a lazy
-                    // continuation of the former list item.
-                    list_container = None;
-                    list_blank_lines = 0;
-                }
-                ""
-            } else if let Some(continuation) = strip_indent_columns(quoted_content, content_indent)
-            {
-                list_blank_lines = 0;
-                continuation
-            } else {
-                list_container = None;
-                list_blank_lines = 0;
-                quoted_content
-            }
-        } else {
-            quoted_content
-        };
-
-        let container = (
-            quote_depth,
-            list_container.and_then(|(depth, indent)| (depth == quote_depth).then_some(indent)),
-        );
+        previous_container = Some(container);
         if fence.is_some_and(|(_, _, opening_container)| opening_container != container) {
             // Block containers bound fenced code. Leaving an opening quote or
             // list item implicitly ends its unclosed fence; root prose must not
@@ -430,25 +382,117 @@ fn markdown_indent_columns(line: &str) -> usize {
     columns
 }
 
+// Block quotes may occur both outside and inside a list item. Keep the two
+// quote depths separate so a continuation such as `  > body` is not mistaken
+// for a root block quote merely because CommonMark permits up to three spaces
+// before `>`.
+type MarkdownContainer = (usize, Option<usize>, usize);
+
+#[derive(Default)]
+struct MarkdownContainerState {
+    list: Option<(usize, usize)>,
+    blank_lines: usize,
+}
+
+impl MarkdownContainerState {
+    fn project<'a>(
+        &mut self,
+        line: &'a str,
+        opening: Option<MarkdownContainer>,
+    ) -> (&'a str, MarkdownContainer) {
+        // An open fence owns an exact ordered container path. Project that
+        // path directly instead of greedily interpreting a nested quote as an
+        // outer quote before the active list continuation has been removed.
+        if let Some(
+            opening_container @ (opening_outer_quotes, opening_list, opening_nested_quotes),
+        ) = opening
+        {
+            let projected = strip_exact_blockquote_prefixes(line, opening_outer_quotes)
+                .and_then(|content| match opening_list {
+                    Some(indent) => strip_indent_columns(content, indent),
+                    None => Some(content),
+                })
+                .and_then(|content| {
+                    strip_exact_blockquote_prefixes(content, opening_nested_quotes)
+                });
+            if let Some(content) = projected {
+                return (content, opening_container);
+            }
+        }
+        let (outer_quotes, quoted_content) = strip_blockquote_prefixes(line);
+        if self.list.is_some_and(|(depth, _)| depth != outer_quotes) {
+            self.list = None;
+            self.blank_lines = 0;
+        }
+        let quoted_blank = quoted_content
+            .bytes()
+            .all(|byte| matches!(byte, b' ' | b'\t'));
+
+        let list_content = if let Some((content_indent, item_content)) =
+            list_item_content(quoted_content)
+        {
+            self.list = Some((outer_quotes, content_indent));
+            self.blank_lines = 0;
+            item_content
+        } else if let Some((_, content_indent)) = self.list {
+            if quoted_blank {
+                self.blank_lines += 1;
+                if self.blank_lines >= 2 {
+                    self.list = None;
+                    self.blank_lines = 0;
+                }
+                ""
+            } else if let Some(continuation) = strip_indent_columns(quoted_content, content_indent)
+            {
+                self.blank_lines = 0;
+                continuation
+            } else {
+                self.list = None;
+                self.blank_lines = 0;
+                quoted_content
+            }
+        } else {
+            quoted_content
+        };
+        let (nested_quotes, content) = strip_blockquote_prefixes(list_content);
+        let list_indent = self
+            .list
+            .and_then(|(depth, indent)| (depth == outer_quotes).then_some(indent));
+        (content, (outer_quotes, list_indent, nested_quotes))
+    }
+}
+
+fn strip_exact_blockquote_prefixes(mut line: &str, depth: usize) -> Option<&str> {
+    for _ in 0..depth {
+        line = strip_one_blockquote_prefix(line)?;
+    }
+    Some(line)
+}
+
+fn strip_one_blockquote_prefix(line: &str) -> Option<&str> {
+    let bytes = line.as_bytes();
+    let spaces = bytes
+        .iter()
+        .take(3)
+        .take_while(|byte| **byte == b' ')
+        .count();
+    if bytes.get(spaces) != Some(&b'>') {
+        return None;
+    }
+    let mut consumed = spaces + 1;
+    if matches!(bytes.get(consumed), Some(b' ' | b'\t')) {
+        consumed += 1;
+    }
+    Some(&line[consumed..])
+}
+
 fn strip_blockquote_prefixes(mut line: &str) -> (usize, &str) {
     let mut depth = 0;
-    loop {
-        let bytes = line.as_bytes();
-        let spaces = bytes
-            .iter()
-            .take(3)
-            .take_while(|byte| **byte == b' ')
-            .count();
-        if bytes.get(spaces) != Some(&b'>') {
-            return (depth, line);
-        }
-        let mut consumed = spaces + 1;
-        if matches!(bytes.get(consumed), Some(b' ' | b'\t')) {
-            consumed += 1;
-        }
-        line = &line[consumed..];
+    while let Some(content) = strip_one_blockquote_prefix(line) {
+        line = content;
         depth += 1;
     }
+    (depth, line)
 }
 
 fn list_item_content(line: &str) -> Option<(usize, &str)> {
@@ -579,63 +623,13 @@ fn normalize_code_span(content: &str) -> String {
 
 fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut in_sources = false;
-    let mut fence: Option<(char, usize, (usize, Option<usize>))> = None;
-    let mut list_container: Option<(usize, usize)> = None;
-    let mut list_blank_lines = 0;
+    let mut fence: Option<(char, usize, MarkdownContainer)> = None;
+    let mut container_state = MarkdownContainerState::default();
     let mut ids = Vec::new();
     for (start, content_end, _) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        let (quote_depth, quoted_content) = strip_blockquote_prefixes(line);
-        if list_container.is_some_and(|(depth, _)| depth != quote_depth) {
-            list_container = None;
-            list_blank_lines = 0;
-        }
-        let quoted_blank = quoted_content
-            .bytes()
-            .all(|byte| matches!(byte, b' ' | b'\t'));
-        let fenced_content = fence.and_then(|(_, _, (opening_quote, opening_list))| {
-            if opening_quote != quote_depth {
-                return None;
-            }
-            match opening_list {
-                Some(_) if quoted_blank => Some(""),
-                Some(indent) => strip_indent_columns(quoted_content, indent),
-                None => Some(quoted_content),
-            }
-        });
-        if fence.is_some() && fenced_content.is_none() {
-            fence = None;
-        }
-        let block_content = if let Some(content) = fenced_content {
-            content
-        } else if let Some((content_indent, item_content)) = list_item_content(quoted_content) {
-            list_container = Some((quote_depth, content_indent));
-            list_blank_lines = 0;
-            item_content
-        } else if let Some((_, content_indent)) = list_container {
-            if quoted_blank {
-                list_blank_lines += 1;
-                if list_blank_lines >= 2 {
-                    list_container = None;
-                    list_blank_lines = 0;
-                }
-                ""
-            } else if let Some(continuation) = strip_indent_columns(quoted_content, content_indent)
-            {
-                list_blank_lines = 0;
-                continuation
-            } else {
-                list_container = None;
-                list_blank_lines = 0;
-                quoted_content
-            }
-        } else {
-            quoted_content
-        };
-        let container = (
-            quote_depth,
-            list_container.and_then(|(depth, indent)| (depth == quote_depth).then_some(indent)),
-        );
+        let opening_container = fence.map(|(_, _, container)| container);
+        let (block_content, container) = container_state.project(line, opening_container);
         if fence.is_some_and(|(_, _, opening_container)| opening_container != container) {
             fence = None;
         }
@@ -1339,11 +1333,26 @@ Inline `inline-code` must be ignored.
         for markdown in [
             "> ```markdown\n> `cards/quoted-hidden.yaml`\nRoot `cards/quoted-visible.yaml`.\n",
             "- ```markdown\n  `cards/list-hidden.yaml`\nRoot `cards/list-visible.yaml`.\n",
+            "- > ```markdown\n  > `cards/nested-hidden.yaml`\nRoot `cards/nested-visible.yaml`.\n",
         ] {
             let tokens = inline_code_tokens(markdown);
-            assert_eq!(tokens.len(), 1);
+            assert_eq!(
+                tokens.len(),
+                1,
+                "markdown: {markdown:?}; tokens: {tokens:?}"
+            );
             assert!(tokens[0].ends_with("-visible.yaml"), "tokens: {tokens:?}");
         }
+    }
+
+    #[test]
+    fn blockquote_entry_resets_paragraph_state_for_indented_code() {
+        let markdown =
+            "Paragraph\n>     `cards/quoted-code.yaml`\nRoot `cards/root-visible.yaml`.\n";
+        assert_eq!(
+            inline_code_tokens(markdown),
+            vec!["cards/root-visible.yaml"]
+        );
     }
 
     #[test]
