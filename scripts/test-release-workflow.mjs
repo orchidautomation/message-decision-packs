@@ -36,8 +36,16 @@ function hasMappingKey(line, key) {
   const explicit = trimmed.startsWith('?')
   if (explicit) {
     trimmed = trimmed.slice(1).trimStart()
+    const quotedWithComment = trimmed.match(
+      /^((?:"(?:\\.|[^"\\])*")|(?:'(?:''|[^'])*'))\s+#.*$/u,
+    )
+    if (quotedWithComment) {
+      trimmed = `${quotedWithComment[1]}:`
+    } else if (!trimmed.includes(':')) {
+      trimmed = `${trimmed.replace(/\s+#.*$/u, '').trimEnd()}:`
+    }
   }
-  const terminator = explicit ? '(?:\\s*:|\\s*$)' : '\\s*:'
+  const terminator = '\\s*:'
   const doubleQuoted = trimmed.match(new RegExp(`^("(?:\\\\.|[^"\\\\])*")${terminator}`, 'u'))
   if (doubleQuoted) {
     try {
@@ -377,6 +385,13 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       `          ${assetParityCommand}\n`,
       `          ${assetParityCommand}\n        ? "shell"\n        : "/bin/true {0}"\n`,
+    ),
+  ],
+  [
+    'commented explicit mapping-key parity shell',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        ? "shell" # explicit key comment\n        : "/bin/true {0}"\n`,
     ),
   ],
   [
