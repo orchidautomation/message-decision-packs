@@ -514,9 +514,7 @@ pub(crate) fn validate_pack(root: &Path) -> Result<Value> {
     );
     let generated_roots = validate_generated_artifact_boundaries(root, &mut issues)?;
     validate_target_identity(root, &manifest, &generated_roots, &mut issues)?;
-    if let Some(drift_issue) = crate::commands::readme::readme_drift_issue(root) {
-        issues.push(drift_issue);
-    }
+    issues.extend(crate::commands::readme::readme_validation_issues(root));
     let error_count = issue_count(&issues, "error");
     let warning_count = issue_count(&issues, "warning");
     Ok(json!({

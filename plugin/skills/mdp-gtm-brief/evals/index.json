@@ -5,7 +5,8 @@
   "trigger_case_ids": [
     "gtm-fit-train", "gtm-brief-train", "gtm-copy-review-train", "gtm-no-send-train",
     "gtm-fit-validation", "gtm-brief-validation", "gtm-copy-review-validation", "gtm-enrichment-refusal-validation",
-    "gtm-fit-typo-train", "gtm-brief-indirect-train", "gtm-fit-typo-validation", "gtm-review-indirect-validation"
+    "gtm-fit-typo-train", "gtm-brief-indirect-train", "gtm-fit-typo-validation", "gtm-review-indirect-validation",
+    "gtm-named-mdp-train", "gtm-named-mdp-validation"
   ],
   "output_case_ids": [
     "gtm-fit-train", "gtm-brief-train", "gtm-copy-review-train",

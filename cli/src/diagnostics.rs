@@ -15,6 +15,7 @@ const TARGET_COMMANDS: &[&str] = &[
     "requirements",
     "prepare-run",
     "run",
+    "recover-run",
     "run-preflight",
     "verify-run",
     "check-claims",
@@ -61,25 +62,40 @@ struct ActionableDiagnostic {
 /// Add the versioned diagnostic projection to public command results without
 /// replacing their established low-level issue and authority fields.
 pub(crate) fn enrich_result(command: &str, data: &mut Value) {
-    if !TARGET_COMMANDS.contains(&command) || !data.is_object() {
+    let Some(diagnostics) = diagnostics_for_result(command, data) else {
         return;
-    }
-    let mut raw = Vec::new();
-    collect_legacy_diagnostics(data, &mut raw, 0);
-    if raw.is_empty() && result_is_blocked(data) {
-        raw.push(fallback_code(command).to_string());
-    }
-    let diagnostics = project_codes(command, raw);
+    };
     if let Some(object) = data.as_object_mut() {
         object.insert(
             "diagnostic_contract".to_string(),
             json!(ACTIONABLE_DIAGNOSTIC_CONTRACT),
         );
-        object.insert(
-            ACTIONABLE_DIAGNOSTICS_FIELD.to_string(),
-            serde_json::to_value(diagnostics).unwrap_or_else(|_| json!([])),
-        );
+        object.insert(ACTIONABLE_DIAGNOSTICS_FIELD.to_string(), diagnostics);
     }
+}
+
+/// Project diagnostics without mutating the command's domain data contract.
+/// Normal command envelopes use this form so additive transport metadata does
+/// not change closed or hash-bound authority objects such as requirements,
+/// skills, routing decisions, and run evidence.
+pub(crate) fn diagnostics_for_result(command: &str, data: &Value) -> Option<Value> {
+    if !TARGET_COMMANDS.contains(&command) || !data.is_object() {
+        return None;
+    }
+    let mut raw = Vec::new();
+    collect_legacy_diagnostics(data, &mut raw, 0);
+    if raw.is_empty() && command == "fit" {
+        match data["status"].as_str() {
+            Some("disqualified") => raw.push("fit_policy_disqualified".to_string()),
+            Some("insufficient-context") => raw.push("fit_insufficient_context".to_string()),
+            _ => {}
+        }
+    }
+    if raw.is_empty() && result_is_blocked(data) {
+        raw.push(fallback_code(command).to_string());
+    }
+    let diagnostics = project_codes(command, raw);
+    Some(serde_json::to_value(diagnostics).unwrap_or_else(|_| json!([])))
 }
 
 pub(crate) fn error_diagnostic(code: &str) -> Value {
@@ -176,6 +192,22 @@ fn project_codes(command: &str, codes: Vec<String>) -> Vec<ActionableDiagnostic>
 
 fn project(command: &str, raw_code: &str) -> ActionableDiagnostic {
     let code = stable_code(raw_code);
+    if code == "output-directory-claimed" {
+        return ActionableDiagnostic {
+            contract: ACTIONABLE_DIAGNOSTIC_CONTRACT,
+            phase: "execution",
+            code,
+            retryability: Retryability::AfterUserAction,
+            summary: "A prior run transaction still owns this output name.".into(),
+            prerequisites: vec![Prerequisite {
+                kind: "runtime",
+                summary: "Confirm the prior run is no longer live and keep the same final output directory.",
+            }],
+            next_action: manual_action(
+                "Preview `mdp recover-run --out-dir SAME_OUTPUT_DIR`; apply only if its validated stale-state check succeeds.",
+            ),
+        };
+    }
     let class = diagnostic_class(&code);
     let (retryability, summary, prerequisites, next_action) = match class {
         DiagnosticClass::InvalidInput => (
@@ -316,7 +348,7 @@ fn phase(command: &str, code: &str) -> &'static str {
         "init" | "doctor" => "setup",
         "validate" => "validation",
         "skills" | "requirements" => "readiness",
-        "prepare-run" | "run" | "run-preflight" | "verify-run" => "execution",
+        "prepare-run" | "run" | "recover-run" | "run-preflight" | "verify-run" => "execution",
         "check-claims" => "policy",
         "route" | "route-budget" | "fit" | "brief" | "emit-brief" => "routing",
         _ => "input",
@@ -360,7 +392,6 @@ fn collect_legacy_diagnostics(value: &Value, codes: &mut Vec<String>, depth: usi
         Value::Object(object) => {
             collect_named_array(object, "issues", codes, depth);
             collect_named_array(object, "diagnostics", codes, depth);
-            collect_named_array(object, "reason_codes", codes, depth);
             for (key, nested) in object {
                 if !matches!(key.as_str(), "issues" | "diagnostics" | "reason_codes") {
                     collect_legacy_diagnostics(nested, codes, depth + 1);
@@ -410,7 +441,9 @@ fn fallback_code(command: &str) -> &'static str {
     match command {
         "skills" | "requirements" => "readiness_blocked",
         "check-claims" => "claim_policy_blocked",
-        "prepare-run" | "run" | "run-preflight" | "verify-run" => "execution_unavailable",
+        "prepare-run" | "run" | "recover-run" | "run-preflight" | "verify-run" => {
+            "execution_unavailable"
+        }
         "route" | "route-budget" | "fit" | "brief" | "emit-brief" => "governed_routing_blocked",
         _ => "command_blocked",
     }
@@ -459,6 +492,46 @@ mod tests {
             assert_eq!(value["retryability"], retryability);
             assert_eq!(value["next_action"]["kind"], action_kind);
         }
+    }
+
+    #[test]
+    fn claimed_run_output_points_to_validated_recovery_preview() {
+        let value = serde_json::to_value(project("run", "output-directory-claimed")).unwrap();
+        assert_eq!(value["phase"], "execution");
+        assert_eq!(value["retryability"], "after-user-action");
+        assert!(
+            value["next_action"]["summary"]
+                .as_str()
+                .unwrap()
+                .contains("mdp recover-run --out-dir SAME_OUTPUT_DIR")
+        );
+        assert!(value["next_action"].get("command").is_none());
+    }
+
+    #[test]
+    fn ready_routing_reasons_are_not_projected_as_failures() {
+        let data = json!({
+            "status": "qualified",
+            "context": {"entries": [{"reason_codes": ["persona_applicability", "job_match"]}]}
+        });
+        assert_eq!(diagnostics_for_result("fit", &data), Some(json!([])));
+    }
+
+    #[test]
+    fn fit_outcomes_distinguish_policy_from_missing_context() {
+        let policy =
+            diagnostics_for_result("fit", &json!({"valid": true, "status": "disqualified"}))
+                .unwrap();
+        assert_eq!(policy[0]["code"], "fit_policy_disqualified");
+        assert_eq!(policy[0]["retryability"], "not-retryable");
+
+        let missing = diagnostics_for_result(
+            "fit",
+            &json!({"valid": true, "status": "insufficient-context"}),
+        )
+        .unwrap();
+        assert_eq!(missing[0]["code"], "fit_insufficient_context");
+        assert_eq!(missing[0]["retryability"], "after-user-action");
     }
 
     #[test]

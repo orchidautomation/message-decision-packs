@@ -77,7 +77,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("communication_contract_missing:safe-to-draft", self.codes())
 
     def test_core_skill_exposes_job_bound_requirements_handoff(self):
-        skill = Path("plugin/skills/mdp/SKILL.md").read_text()
+        skill = Path("plugin/skills/mdp/references/operator-runtime.md").read_text()
         operator = Path("plugin/skills/mdp/references/cli-operator.md").read_text()
         command = "mdp --json requirements --dir"
         self.assertIn(command, skill)
@@ -109,10 +109,10 @@ class SkillContractTests(unittest.TestCase):
             self.assertIn(expected_boundary, normalized)
 
     def test_existing_skills_route_provider_neutral_source_binding(self):
-        core = Path("plugin/skills/mdp/SKILL.md").read_text()
+        core = Path("plugin/skills/mdp/references/operator-runtime.md").read_text()
         operator = Path("plugin/skills/mdp/references/cli-operator.md").read_text()
-        builder = Path("plugin/skills/mdp-pack-builder/SKILL.md").read_text()
-        review = Path("plugin/skills/mdp-pack-review/SKILL.md").read_text()
+        builder = Path("plugin/skills/mdp-pack-builder/references/safe-authoring.md").read_text()
+        review = Path("plugin/skills/mdp-pack-review/references/review-protocol.md").read_text()
         command = "mdp --json validate-source-binding"
         for text in [core, operator, builder, review]:
             self.assertIn(command, text)
@@ -121,8 +121,23 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("provider enums", builder)
         self.assertIn("External field", review)
 
+    def test_pack_skills_describe_both_readme_owned_regions(self):
+        for relative_path in (
+            "plugin/skills/mdp-pack-builder/references/safe-authoring.md",
+            "plugin/skills/mdp-pack-review/references/review-protocol.md",
+        ):
+            skill = Path(relative_path).read_text()
+            normalized = " ".join(skill.split())
+            self.assertIn("two machine-generated regions", normalized, relative_path)
+            self.assertIn("<!-- mdp:readme-ownership v1 begin -->", skill, relative_path)
+            self.assertIn("<!-- mdp:readme-ownership v1 end -->", skill, relative_path)
+            self.assertIn("<!-- mdp:readme-inventory v1 begin -->", skill, relative_path)
+            self.assertIn("<!-- mdp:readme-inventory v1 end -->", skill, relative_path)
+            self.assertIn("Never hand-edit", skill, relative_path)
+            self.assertIn("preserves every byte", skill, relative_path)
+
     def test_gtm_brief_preserves_decision_input_and_legacy_normalization_paths(self):
-        skill = Path("plugin/skills/mdp-gtm-brief/SKILL.md").read_text()
+        skill = Path("plugin/skills/mdp-gtm-brief/references/governed-execution.md").read_text()
         mode = Path("plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md").read_text()
         for text in [skill, mode]:
             normalized = " ".join(text.split())
@@ -161,7 +176,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertLess(resume, validate)
 
     def test_gtm_brief_requires_host_supplied_attempt_ledger(self):
-        skill = Path("plugin/skills/mdp-gtm-brief/SKILL.md").read_text()
+        skill = Path("plugin/skills/mdp-gtm-brief/references/governed-execution.md").read_text()
         self.assertIn("do not collect or normalize inside this skill", skill)
         self.assertIn("complete `mdp --json requirements` result", skill)
         self.assertIn("`data.source_attempt_request_schema`", skill)
@@ -190,7 +205,7 @@ class SkillContractTests(unittest.TestCase):
 
     def test_gtm_brief_validates_resumed_artifacts_without_rehandoff(self):
         for path in [
-            "plugin/skills/mdp-gtm-brief/SKILL.md",
+            "plugin/skills/mdp-gtm-brief/references/governed-execution.md",
             "plugin/skills/mdp-gtm-brief/references/prospect-fit-or-brief.md",
         ]:
             text = Path(path).read_text()
@@ -208,7 +223,7 @@ class SkillContractTests(unittest.TestCase):
             self.assertLess(missing, handoff)
 
     def test_pack_builder_preserves_decision_input_and_legacy_validation_paths(self):
-        skill = Path("plugin/skills/mdp-pack-builder/SKILL.md").read_text()
+        skill = Path("plugin/skills/mdp-pack-builder/references/safe-authoring.md").read_text()
         self.assertIn("data.available", skill)
         self.assertIn("`output_contract.output_kind`", skill)
         self.assertIn("`decision-input-normalization`", skill)
@@ -240,7 +255,7 @@ class SkillContractTests(unittest.TestCase):
         )
 
     def test_core_skill_distinguishes_legacy_normalization_from_extraction(self):
-        skill = Path("plugin/skills/mdp/SKILL.md").read_text()
+        skill = Path("plugin/skills/mdp/references/operator-runtime.md").read_text()
         normalized = " ".join(skill.split())
         self.assertIn("regardless of job-wide `data.available`", normalized)
         self.assertIn("prospect-normalization prompt", skill)
@@ -258,6 +273,20 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("frontmatter_name_invalid", self.codes())
         self.assertIn("frontmatter_description_invalid", self.codes())
         self.assertIn("skill_link_missing", self.codes())
+
+    def test_entrypoints_stay_bounded_and_references_are_one_level(self):
+        for path in sorted(Path("plugin/skills").glob("*/SKILL.md")):
+            self.assertLessEqual(path.stat().st_size, module.MAX_ENTRYPOINT_BYTES, path)
+        reference = self.root / "plugin/skills/mdp/references/operator-runtime.md"
+        original = reference.read_text()
+        reference.write_text(original + "\n[next](cli-operator.md)\n")
+        self.assertIn("nested_skill_reference", self.codes())
+        reference.write_text(original + "\nRead references/cli-operator.md.\n")
+        self.assertIn("nested_skill_reference", self.codes())
+
+        skill = self.root / "plugin/skills/mdp/SKILL.md"
+        skill.write_text(skill.read_text() + ("\nexcess\n" * 1000))
+        self.assertIn("skill_entrypoint_too_large", self.codes())
 
     def test_skill_local_link_escape_fails(self):
         path = self.root / "plugin/skills/mdp/SKILL.md"

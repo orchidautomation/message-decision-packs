@@ -42,7 +42,7 @@ const readRecoveryClaim = (claimPath) => {
   }
 }
 
-export const cleanupMdpRecoveryClaim = ({ outputDir, executionId }) => {
+export const cleanupMdpRecoveryClaim = ({ outputDir, executionId, expectedProcessId = null }) => {
   if (!EXECUTION_ID_PATTERN.test(executionId || '')) return false
   const requestedOutput = resolve(outputDir)
   const outputLeaf = basename(requestedOutput)
@@ -64,9 +64,25 @@ export const cleanupMdpRecoveryClaim = ({ outputDir, executionId }) => {
   if (!claim) return false
   const value = claim.value
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  if (Object.keys(value).sort().join(',') !== 'contract,execution_id,transaction_leaf') return false
-  if (value.contract !== 'mdp.run-recovery-claim.v1' || value.execution_id !== executionId) return false
+  const v1Keys = 'contract,execution_id,transaction_leaf'
+  const v2Keys = 'contract,created_unix_seconds,execution_id,owner_uid,process_id,transaction_dev,transaction_ino,transaction_leaf'
+  const keys = Object.keys(value).sort().join(',')
+  const isV1 = value.contract === 'mdp.run-recovery-claim.v1' && keys === v1Keys
+  const isV2 = value.contract === 'mdp.run-recovery-claim.v2' && keys === v2Keys
+  if ((!isV1 && !isV2) || value.execution_id !== executionId) return false
   if (!EXECUTION_ID_PATTERN.test(value.execution_id)) return false
+  if (isV2) {
+    if (
+      !Number.isSafeInteger(value.created_unix_seconds) || value.created_unix_seconds <= 0 ||
+      !Number.isSafeInteger(value.owner_uid) || value.owner_uid < 0 ||
+      !Number.isSafeInteger(value.process_id) || value.process_id <= 0 ||
+      !Number.isSafeInteger(value.transaction_dev) || value.transaction_dev <= 0 ||
+      !Number.isSafeInteger(value.transaction_ino) || value.transaction_ino <= 0 ||
+      (typeof process.getuid === 'function' && value.owner_uid !== process.getuid()) ||
+      (expectedProcessId !== null && value.process_id !== expectedProcessId) ||
+      (claim.stats.mode & 0o777) !== 0o600
+    ) return false
+  }
   const transactionPattern = new RegExp(`^\\.${escapeRegExp(outputLeaf)}\\.tmp-[0-9a-f]{32}$`)
   if (
     typeof value.transaction_leaf !== 'string' ||
@@ -81,6 +97,11 @@ export const cleanupMdpRecoveryClaim = ({ outputDir, executionId }) => {
   try {
     transactionStats = lstatSync(transactionPath)
     if (!transactionStats.isDirectory() || transactionStats.isSymbolicLink() || !ownedByCurrentUser(transactionStats)) return false
+    if (isV2 && (
+      (transactionStats.mode & 0o777) !== 0o700 ||
+      transactionStats.dev !== value.transaction_dev ||
+      transactionStats.ino !== value.transaction_ino
+    )) return false
     const canonicalTransaction = realpathSync(transactionPath)
     if (dirname(canonicalTransaction) !== parent || basename(canonicalTransaction) !== value.transaction_leaf) return false
     const beforeRemoval = lstatSync(transactionPath)
@@ -193,9 +214,14 @@ export const superviseProcess = ({
         setTimeout(async () => {
           terminateProcessGroup(child, processGroupId, 'SIGKILL')
           const processGroupClosed = await waitForClosedGroup(processGroupId, 40, absoluteDeadlineMs)
-          const recovered = processGroupClosed && recovery
-            ? cleanupMdpRecoveryClaim(recovery)
-            : false
+          let recovered = false
+          if (processGroupClosed && recovery) {
+            try {
+              recovered = cleanupMdpRecoveryClaim({ ...recovery, expectedProcessId: processGroupId })
+            } catch {
+              recovered = false
+            }
+          }
           resolveEscalation({ processGroupClosed, recovered })
         }, graceMs)
       })

@@ -357,6 +357,7 @@ pub(crate) fn capabilities() -> Value {
             command("trace", DECISION_TRACE_V1, "read-only-unless-out", false, true, false, &["--file", "--dir", "--prompt-output", "--validation-input", "--bundle", "--receipt", "--artifact-root", "--format", "--out"]),
             command("consume-run", "mdp.run-consumption-result.v1", "writes-local-ledger", false, false, false, &["--ledger", "--job-id", "--idempotency-key", "--receipt-sha256", "--expected-prior-version", "--permit-exact-replay"]),
             command("run", RUN_EXECUTION_V1, "writes-new-run-directory", false, true, false, &["--request", "--out-dir", "--transport-timeout-ms"]),
+            command("recover-run", "mdp.run-recovery.v1", "validated-stale-transaction-removal-with-apply", false, false, false, &["--out-dir", "--apply"]),
             command("run-preflight", "mdp.run-preflight.v1", "read-only", false, false, false, &["--request", "--transport-timeout-ms"]),
             command("verify-output", "mdp.verify-output.v0", "read-only", false, false, false, &["--dir", "--file", "--readable"]),
             command("author-proof-output", "mdp.author-proof-output.v0", "writes-files-with-out", true, true, false, &["--dir", "--draft", "--out", "--dry-run"]),
@@ -388,7 +389,8 @@ pub(crate) fn capabilities() -> Value {
             {"code": "identity-observation-unavailable", "meaning": "MDP-231 runtime identity observations could not be established"},
             {"code": "invalid_prospect", "meaning": "A prospect input uses unsupported fields or invalid structure"},
             {"code": "missing_card", "meaning": "A referenced card could not be found or read"},
-            {"code": "readme_inventory_drift", "meaning": "The generated README inventory block does not match loaded structured authority"},
+            {"code": "readme_marker_layout_invalid", "meaning": "Machine-owned README region markers are malformed, duplicated, nested, or unmatched"},
+            {"code": "readme_inventory_drift", "meaning": "A machine-owned README ownership or inventory region does not match its canonical projection"},
             {"code": "unsupported_claim", "meaning": "Draft text contains unsupported claims or claim-check failures"},
             {"code": "invalid_proof_output", "meaning": "A proof-output artifact is malformed or references missing or incompatible pack IDs"},
             {"code": "invalid_human_brief", "meaning": "A human-brief source artifact is malformed or missing required gate/proof fields"},
@@ -397,6 +399,9 @@ pub(crate) fn capabilities() -> Value {
             {"code": "route_budget_filter_not_found", "meaning": "An exact route-budget job or declared persona selector did not match"},
             {"code": "write_conflict", "meaning": "A write would overwrite an existing file without explicit permission"},
             {"code": "output-directory-inside-pack", "meaning": "A clean-run output directory resolves to the active pack or one of its descendants"},
+            {"code": "output-directory-claimed", "meaning": "A prior run transaction owns the output name; preview recover-run before any explicit stale-state removal"},
+            {"code": "recovery-claim-recent", "meaning": "Run recovery refused a claim or transaction younger than the fixed stale threshold"},
+            {"code": "recovery-process-live-or-unknown", "meaning": "Run recovery could not prove the claim owner process is no longer running"},
             {"code": "synthetic_chain_v2_required", "meaning": "The selected job is not an available signal-aware mdp.requirements.v2 contract"},
             {"code": "synthetic_chain_real_provenance", "meaning": "Synthetic rebinding found a non-synthetic source class or provenance entry"},
             {"code": "synthetic_chain_private_provenance", "meaning": "Synthetic rebinding found a private, customer, credential, or provider provenance field"},
@@ -817,6 +822,12 @@ mod tests {
                 .iter()
                 .any(|code| code["code"] == "output_mode_conflict"),
             "stable_error_codes must list output_mode_conflict"
+        );
+        assert!(
+            error_codes
+                .iter()
+                .any(|code| code["code"] == "readme_marker_layout_invalid"),
+            "stable_error_codes must list every validation-emitted README marker error"
         );
 
         let matrix = contract["matrix"]
