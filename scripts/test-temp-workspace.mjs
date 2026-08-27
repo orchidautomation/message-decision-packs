@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import test from 'node:test'
@@ -97,7 +97,7 @@ test('wrapper supports a temporary base path containing spaces', async (t) => {
   const result = await runWrapper(base, observedPath)
   assert.equal(result.code, 0, result.stderr)
   const observed = readFileSync(observedPath, 'utf8')
-  assert.ok(observed.startsWith(`${base}/mdp-owned-validation-`))
+  assert.ok(observed.startsWith(`${realpathSync(base)}/mdp-owned-validation-`))
   assert.equal(existsSync(observed), false)
 })
 
