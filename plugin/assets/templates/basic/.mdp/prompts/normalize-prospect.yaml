@@ -17,30 +17,38 @@ inputs:
   name: raw_row
   producer: source
   required: true
+  schema_ref: mdp.collected-attempt-results.v2
 - default: N/A
   description: The exact mdp.requirements.v2 data object compiled for the selected canonical job.
   missing_behavior: Return malformed with draft_allowed false.
   name: decision_input_requirements
   producer: pack
   required: true
+  schema_ref: mdp.requirements.v2
 - default: N/A
   description: SHA-256 of the exact validated mdp.source-binding.v2 artifact supplied by the host.
+  media_type: text/plain
   missing_behavior: Return malformed with draft_allowed false.
   name: source_binding_sha256
   producer: host
   required: true
+  schema_ref: mdp.sha256.v1
 - default: N/A
   description: SHA-256 of the exact attempted-complete source request supplied by the host.
+  media_type: text/plain
   missing_behavior: Return malformed with draft_allowed false.
   name: source_attempt_request_sha256
   producer: host
   required: true
+  schema_ref: mdp.sha256.v1
 - default: N/A
   description: SHA-256 of raw_row supplied by the host.
+  media_type: text/plain
   missing_behavior: Return malformed with draft_allowed false.
   name: collected_attempt_results_sha256
   producer: host
   required: true
+  schema_ref: mdp.sha256.v1
 instructions:
 - Use only raw_row, decision_input_requirements, source_binding_sha256, source_attempt_request_sha256, and collected_attempt_results_sha256. Do not browse, scrape, enrich, send, sequence, mutate CRM records, or call external systems.
 - Treat decision_input_requirements.normalized_output_schema as binding and return exactly one mdp.normalized-decision-input.v2 object.

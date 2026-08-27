@@ -10,6 +10,7 @@ inputs:
   name: raw_opportunity
   producer: source
   required: true
+  schema_ref: mdp.input.opportunity.v0
 - default: N/A
   description: Relevant manifest personas, lead_input_requirements.value_contracts, lead_input_requirements.attribute_definitions, proposal cards, source policy, review jobs, and avoid-rules from this MDP.
   missing_behavior: Do not assume proposal roles, stage labels, source kinds, decision labels, proof rules, or review jobs when this field is N/A.

@@ -362,6 +362,153 @@ test('completes prepare, run, and verify across disjoint approved roots for any 
   }
 })
 
+test('real CLI completes canonical GTM and proposal handoffs across disjoint roots', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('offline native-driver fixture requires a Unix executable')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-real-handoff-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const roots = Object.fromEntries(['pack', 'input', 'approval', 'work', 'output', 'consent', 'bin'].map((role) => {
+    const path = join(root, role)
+    mkdirSync(path)
+    return [role, path]
+  }))
+
+  // The real CLI observes and seals this executable during preparation, then
+  // invokes it as its native driver runtime. It returns a canonical local
+  // provider-timeout result without making a provider or network call.
+  const offlineNode = join(roots.bin, 'node')
+  writeFileSync(offlineNode, `#!/usr/bin/python3
+import json
+import sys
+
+request = json.load(sys.stdin)
+sys.stdout.write(json.dumps({
+    "contract": "mdp.native-model-subprocess-result.v1",
+    "execution_id": request["execution_id"],
+    "terminal_state": "no-draft:runner-failed",
+    "output": None,
+    "provider_request_body_sha256": None,
+    "provider_request_schema_id": None,
+    "provider_response_body_sha256": None,
+    "provider_output_schema_sha256": None,
+    "provider_observation": None,
+    "diagnostic_code": "provider_timeout"
+}))
+`)
+  chmodSync(offlineNode, 0o755)
+
+  const gtmPack = join(roots.pack, 'gtm')
+  const proposalPack = join(roots.pack, 'proposal')
+  cpSync(join(repoRoot, 'plugin', 'assets', 'templates', 'basic'), gtmPack, { recursive: true })
+  cpSync(join(repoRoot, 'plugin', 'assets', 'templates', 'proposal'), proposalPack, { recursive: true })
+  const rawRow = join(roots.input, 'collected-attempt-results.json')
+  cpSync(join(repoRoot, 'examples', 'clay-audiences-self-serve-enterprise-expansion', 'fixtures', 'collected-attempt-results.json'), rawRow)
+  const requirements = join(roots.input, 'requirements.json')
+  writeFileSync(requirements, JSON.stringify({ contract: 'mdp.requirements.v2' }))
+  const sourceBindingSha = join(roots.input, 'source-binding.sha256')
+  const sourceAttemptSha = join(roots.input, 'source-attempt.sha256')
+  const collectedResultsSha = join(roots.input, 'collected-results.sha256')
+  for (const path of [sourceBindingSha, sourceAttemptSha, collectedResultsSha]) writeFileSync(path, `${'a'.repeat(64)}\n`)
+  const rawOpportunity = join(roots.input, 'raw-opportunity.json')
+  writeFileSync(rawOpportunity, JSON.stringify({ company_name: 'Synthetic Example', opportunity_summary: 'Conference demonstration fixture' }))
+
+  const profiles = [
+    {
+      name: 'gtm',
+      pack: gtmPack,
+      job: 'prospect-fit-or-brief',
+      operation: 'model:prospect-fit-or-brief/normalization',
+      inputs: [
+        `raw_row=${rawRow}`,
+        `decision_input_requirements=${requirements}`,
+        `source_binding_sha256=${sourceBindingSha}`,
+        `source_attempt_request_sha256=${sourceAttemptSha}`,
+        `collected_attempt_results_sha256=${collectedResultsSha}`,
+      ],
+    },
+    {
+      name: 'proposal',
+      pack: proposalPack,
+      job: 'bid-no-bid-review',
+      operation: 'model:bid-no-bid-review/normalization',
+      inputs: [`raw_opportunity=${rawOpportunity}`],
+    },
+  ].map((profile) => ({
+    ...profile,
+    request: join(roots.work, `${profile.name}-request.json`),
+    run: join(roots.output, `${profile.name}-run`),
+    consent: `${profile.name}-consent`,
+  }))
+  const roleEnv = {
+    ...Object.fromEntries(Object.entries(roots).filter(([role]) => role !== 'bin').map(([role, path]) => [`MDP_MCP_${role.toUpperCase()}_ROOTS`, path])),
+    PATH: `${roots.bin}${delimiter}${process.env.PATH || ''}`,
+    MDP_ALLOW_NATIVE_MODEL_CALLS: '1',
+    OPENAI_API_KEY: 'offline-fixture-key',
+  }
+  const prepared = []
+  for (const [index, profile] of profiles.entries()) {
+    const replies = await rpc(realCli, [toolCall(index + 1, 'mdp_prepare_run', {
+      dir: profile.pack,
+      job: profile.job,
+      operation: profile.operation,
+      inputs: profile.inputs,
+      model: 'gpt-test',
+      out: profile.request,
+    })], roleEnv)
+    assert.equal(replies.length, 1, `${profile.name} preparation must return one MCP reply`)
+    prepared.push(replies[0])
+  }
+  for (const [index, profile] of profiles.entries()) {
+    assert.equal(prepared[index].result.structuredContent.status, 'ready', JSON.stringify(prepared[index]))
+    assert.equal(existsSync(profile.request), true)
+    const requestBytes = readFileSync(profile.request)
+    const request = JSON.parse(requestBytes)
+    const sourceSha256s = request.inputs.map((input) => createHash('sha256').update(readFileSync(input.source_path)).digest('hex'))
+    const expiresAt = new Date(Date.now() + 60_000).toISOString()
+    const consent = {
+      contract: 'mdp.mcp-provider-consent.v1',
+      provider: 'openai',
+      purpose: 'mdp.run',
+      request_sha256: createHash('sha256').update(requestBytes).digest('hex'),
+      source_sha256s: sourceSha256s,
+      output_root: realpathSync(roots.output),
+      expires_at: expiresAt,
+      nonce: `${profile.name}-real-handoff-nonce`,
+    }
+    consent.binding_sha256 = consentBinding({
+      provider: consent.provider,
+      purpose: consent.purpose,
+      requestSha256: consent.request_sha256,
+      sourceSha256s,
+      outputRoot: consent.output_root,
+      expiresAt,
+      nonce: consent.nonce,
+    })
+    writeFileSync(join(roots.consent, `${profile.consent}.json`), JSON.stringify(consent))
+  }
+
+  const completed = []
+  for (const [index, profile] of profiles.entries()) {
+    completed.push(...await rpc(realCli, [
+      toolCall(index * 2 + 1, 'mdp_run', { request_path: profile.request, output_dir: profile.run, consent_id: profile.consent }),
+      toolCall(index * 2 + 2, 'mdp_verify_run', {
+        bundle_path: join(profile.run, 'run-bundle.json'),
+        receipt_path: join(profile.run, 'run-receipt.json'),
+        artifact_root: profile.run,
+      }),
+    ], roleEnv))
+  }
+  for (let index = 0; index < profiles.length; index += 1) {
+    const run = completed[index * 2].result.structuredContent
+    const verification = completed[index * 2 + 1].result.structuredContent
+    assert.equal(run.contract, 'mdp.run-execution.v1', JSON.stringify(completed[index * 2]))
+    assert.equal(run.terminal_state, 'no-draft:runner-failed')
+    assert.equal(run.run_dir, profiles[index].run)
+    assert.equal(verification.contract, 'mdp.run-verification.v1', JSON.stringify(completed[index * 2 + 1]))
+    assert.equal(verification.valid, true)
+  }
+})
+
 test('returns canonical valid and invalid read-only verification data', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
