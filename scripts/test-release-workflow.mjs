@@ -17,7 +17,7 @@ const requiredPrefix = [
   buildCommand,
 ]
 
-function runBlock(workflow, name) {
+function stepBlock(workflow, name) {
   const lines = workflow.split(/\r?\n/)
   const marker = `- name: ${name}`
   const start = lines.findIndex((line) => line.trim() === marker)
@@ -32,6 +32,11 @@ function runBlock(workflow, name) {
       break
     }
   }
+  return { lines, start, end, stepIndent }
+}
+
+function runBlock(workflow, name) {
+  const { lines, start, end } = stepBlock(workflow, name)
   const runIndex = lines.findIndex(
     (line, index) => index > start && index < end && line.trim() === 'run: |',
   )
@@ -41,6 +46,43 @@ function runBlock(workflow, name) {
     .slice(runIndex + 1, end)
     .filter((line) => line.trim() && line.match(/^\s*/u)[0].length > runIndent)
     .map((line) => line.trim())
+}
+
+function assertUnconditionalStep(workflow, name) {
+  const { lines, start, end, stepIndent } = stepBlock(workflow, name)
+  const condition = lines
+    .slice(start + 1, end)
+    .find((line) => line.trim().startsWith('if:') && line.match(/^\s*/u)[0].length > stepIndent)
+  assert.equal(condition, undefined, `required CI step must not have a step-level condition: ${name}`)
+}
+
+function assertCliPathFilter(workflow, requiredGlob) {
+  const lines = workflow.split(/\r?\n/)
+  const filtersIndex = lines.findIndex((line) => line.trim() === 'filters: |')
+  assert.notEqual(filtersIndex, -1, 'missing paths-filter filters block')
+  const filtersIndent = lines[filtersIndex].match(/^\s*/u)[0].length
+  const cliIndex = lines.findIndex(
+    (line, index) =>
+      index > filtersIndex &&
+      line.trim() === 'cli:' &&
+      line.match(/^\s*/u)[0].length > filtersIndent,
+  )
+  assert.notEqual(cliIndex, -1, 'missing cli paths-filter block')
+  const cliIndent = lines[cliIndex].match(/^\s*/u)[0].length
+  let end = lines.length
+  for (let index = cliIndex + 1; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim()
+    const indent = lines[index].match(/^\s*/u)[0].length
+    if (trimmed && indent <= cliIndent) {
+      end = index
+      break
+    }
+  }
+  const entries = lines.slice(cliIndex + 1, end).map((line) => line.trim())
+  assert.ok(
+    entries.includes(`- "${requiredGlob}"`),
+    `cli paths-filter must include ${requiredGlob}`,
+  )
 }
 
 function assertReleaseSmokeContract(workflow) {
@@ -58,6 +100,9 @@ function assertReleaseSmokeContract(workflow) {
 }
 
 function assertAssetParityCiContract(workflow) {
+  assertCliPathFilter(workflow, 'plugin/assets/**')
+  assertCliPathFilter(workflow, 'assets/**')
+  assertUnconditionalStep(workflow, 'Validate authored asset parity')
   const commands = runBlock(workflow, 'Validate authored asset parity')
     .filter((line) => !line.startsWith('#'))
   assert.deepEqual(
@@ -97,6 +142,21 @@ for (const [name, mutation] of [
   ['commented asset parity', ciWorkflow.replace('          make validate-asset-sync', '          # make validate-asset-sync')],
   ['echoed asset parity', ciWorkflow.replace('          make validate-asset-sync', '          echo make validate-asset-sync')],
   ['unreachable asset parity', ciWorkflow.replace('          make validate-asset-sync', '          if false; then\n            make validate-asset-sync\n          fi')],
+  [
+    'disabled asset parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        if: false\n',
+    ),
+  ],
+  [
+    'missing canonical asset filter',
+    ciWorkflow.replace('              - "plugin/assets/**"\n', ''),
+  ],
+  [
+    'missing packaged asset filter',
+    ciWorkflow.replace('              - "assets/**"\n', ''),
+  ],
 ]) {
   assert.throws(() => assertAssetParityCiContract(mutation), undefined, name)
 }
