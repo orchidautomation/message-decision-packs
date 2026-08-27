@@ -408,7 +408,10 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
             || (paragraph_open
                 && (markdown_indent_columns(block_content) >= 4
                     || is_link_reference_definition(block_content)));
-        indented_code_can_start = blank || !paragraph_continues;
+        indented_code_can_start = blank
+            || definition_title_continuation
+            || definition_destination_continuation.is_some()
+            || !paragraph_continues;
         paragraph_open = !definition_title_continuation
             && definition_destination_continuation.is_none()
             && paragraph_continues;
@@ -1766,6 +1769,13 @@ Inline `inline-code` must be ignored.
         assert!(
             inline_code_tokens("# Example\n    `cards/heading-indented-code.yaml`\n").is_empty(),
             "indented code may begin immediately after a heading"
+        );
+        assert!(
+            inline_code_tokens(
+                "[ref]: /url\n  \"title\"\n    `cards/definition-indented-code.yaml`\n"
+            )
+            .is_empty(),
+            "indented code may begin immediately after a definition continuation"
         );
     }
 
