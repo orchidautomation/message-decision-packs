@@ -42,7 +42,7 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
         }));
     };
 
-    if existing_block == fresh_block {
+    if changed_generated_regions.is_empty() {
         Ok(json!({
             "contract": README_INVENTORY_CONTRACT,
             "status": "fresh",
@@ -314,7 +314,7 @@ fn stale_drift_issue(readme_path: &Path, severity: &str) -> Value {
         "readme_inventory_drift",
         severity,
         readme_path.display().to_string(),
-        "README inventory block does not match loaded structured authority; run `mdp readme refresh --dir .` to regenerate the owned block, or remove unverifiable manual counts.",
+        "A machine-owned README region does not match the canonical ownership legend or loaded structured authority; run `mdp readme refresh --dir .` to regenerate both owned regions, or remove unverifiable manual counts.",
     )
 }
 
@@ -444,6 +444,39 @@ mod tests {
         let diag = &result["diagnostics"][0];
         assert_eq!(diag["code"], "readme_inventory_drift");
         assert_eq!(diag["severity"], "error");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn editing_the_ownership_legend_makes_check_and_validate_stale() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-ownership-drift-{}", nonce()));
+        init_pack(&root, "Ownership Drift Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("readme");
+        let edited = readme.replacen(
+            "Machine-owned: this ownership legend",
+            "Machine-owned: edited ownership legend",
+            1,
+        );
+        assert_ne!(edited, readme, "fixture must edit the owned legend");
+        std::fs::write(&readme_path, edited).expect("write edited legend");
+
+        let check = check_readme(&root).expect("check");
+        assert_eq!(check["status"], "stale");
+        assert_eq!(check["valid"], false);
+        assert_eq!(check["changed_generated_regions"], json!(["ownership"]));
+        assert_eq!(check["diagnostics"][0]["code"], "readme_inventory_drift");
+
+        let validation = crate::commands::health::validate_pack(&root).expect("validate");
+        assert_eq!(validation["valid"], true, "drift stays warning-first");
+        let drift = validation["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .find(|issue| issue["code"] == "readme_inventory_drift")
+            .expect("ownership drift warning");
+        assert_eq!(drift["severity"], "warning");
         let _ = std::fs::remove_dir_all(root);
     }
 

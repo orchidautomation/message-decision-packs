@@ -232,6 +232,86 @@ fn validate_and_strict_fail_closed_on_malformed_readme_markers() {
 }
 
 #[test]
+fn ownership_legend_drift_blocks_check_and_strict_but_remains_warning_first() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-readme-ownership-drift-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create fixture root");
+    let init = Command::new(mdp_bin())
+        .args(["--json", "init", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("initialize fixture pack");
+    assert!(init.status.success(), "init failed: {:?}", init.stdout);
+
+    let readme_path = root.join(".mdp/README.md");
+    let readme = std::fs::read_to_string(&readme_path).expect("read starter README");
+    let edited = readme.replacen(
+        "Machine-owned: this ownership legend",
+        "Machine-owned: edited ownership legend",
+        1,
+    );
+    assert_ne!(edited, readme, "fixture must edit the owned legend");
+    std::fs::write(&readme_path, edited).expect("write edited legend");
+
+    let check = Command::new(mdp_bin())
+        .args(["--json", "readme", "check", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("readme check");
+    assert_eq!(check.status.code(), Some(1), "stdout: {:?}", check.stdout);
+    assert!(check.stderr.is_empty());
+    let check_envelope: serde_json::Value =
+        serde_json::from_slice(&check.stdout).expect("readme check JSON");
+    assert_eq!(check_envelope["data"]["status"], "stale");
+    assert_eq!(
+        check_envelope["data"]["changed_generated_regions"],
+        serde_json::json!(["ownership"])
+    );
+    assert_eq!(
+        check_envelope["data"]["diagnostics"][0]["code"],
+        "readme_inventory_drift"
+    );
+
+    for (strict, expected_exit, expected_valid) in [(false, 0, true), (true, 1, false)] {
+        let mut command = Command::new(mdp_bin());
+        command.args(["--json", "validate"]);
+        if strict {
+            command.arg("--strict");
+        }
+        let output = command
+            .arg("--dir")
+            .arg(&root)
+            .output()
+            .expect("validate fixture pack");
+        assert_eq!(output.status.code(), Some(expected_exit));
+        assert!(output.stderr.is_empty());
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("validate JSON");
+        assert_eq!(envelope["data"]["valid"], expected_valid);
+        assert!(envelope["data"]["issues"].as_array().is_some_and(|issues| {
+            issues.iter().any(|issue| {
+                issue["code"] == "readme_inventory_drift" && issue["severity"] == "warning"
+            })
+        }));
+        if strict {
+            assert_eq!(envelope["data"]["strict"]["warning_count"], 1);
+            assert_eq!(
+                envelope["data"]["strict_warnings"][0]["code"],
+                "readme_inventory_drift"
+            );
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn help_and_version_wrap_as_one_parseable_json_value() {
     let (help_code, _, help_stderr, help_value) = run(&["--json", "--help"], Case::Ok);
     assert_eq!(help_code, 0);
