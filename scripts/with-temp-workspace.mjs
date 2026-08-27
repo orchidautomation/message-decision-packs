@@ -1,7 +1,24 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process'
+import { fstatSync } from 'node:fs'
 import { cleanupOwnedTempWorkspace, cleanupStaleOwnedTempWorkspaces, createOwnedTempWorkspace } from './lib/temp-workspace.mjs'
+
+const jobserverStdio = (makeflags = '') => {
+  const stdio = ['inherit', 'inherit', 'inherit']
+  const match = makeflags.match(/(?:^|\s)--jobserver-(?:auth|fds)=([0-9]+),([0-9]+)(?=\s|$)/u)
+  if (!match) return stdio
+  const descriptors = [...new Set(match.slice(1).map(Number))]
+  if (descriptors.some((fd) => !Number.isSafeInteger(fd) || fd < 3 || fd > 1_024)) return stdio
+  try {
+    for (const fd of descriptors) fstatSync(fd)
+  } catch {
+    return stdio
+  }
+  while (stdio.length <= Math.max(...descriptors)) stdio.push('ignore')
+  for (const fd of descriptors) stdio[fd] = fd
+  return stdio
+}
 
 const separator = process.argv.indexOf('--')
 if (separator < 0 || separator === process.argv.length - 1) {
@@ -19,7 +36,7 @@ cleanupStaleOwnedTempWorkspaces({ purpose })
 const root = createOwnedTempWorkspace({ purpose })
 const [command, ...args] = process.argv.slice(separator + 1)
 const child = spawn(command, args, {
-  stdio: 'inherit',
+  stdio: jobserverStdio(process.env.MAKEFLAGS),
   env: { ...process.env, MDP_TEMP_ROOT: root, MDP_TEMP_WORKSPACE_ACTIVE: '1' },
 })
 

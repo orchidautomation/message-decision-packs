@@ -59,6 +59,44 @@ test('concurrent validation wrappers use distinct roots and clean both', async (
   for (const root of roots) assert.equal(existsSync(root), false)
 })
 
+test('wrapper preserves GNU Make jobserver descriptors', async (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-jobserver-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const observedPath = join(base, 'observed')
+  const environment = {
+    ...process.env,
+    MAKEFLAGS: '--jobserver-auth=3,4 -j',
+    TMPDIR: base,
+    OBSERVED_PATH: observedPath,
+  }
+  delete environment.NODE_TEST_CONTEXT
+  const script = "const fs=require('fs'); fs.fstatSync(3); fs.fstatSync(4); fs.writeFileSync(process.env.OBSERVED_PATH, process.env.MDP_TEMP_ROOT)"
+  const child = spawn(
+    process.execPath,
+    [wrapper, '--purpose', 'validation', '--', process.execPath, '-e', script],
+    { env: environment, stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] },
+  )
+  let stderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk) => { stderr += chunk })
+  const code = await new Promise((resolve) => child.on('exit', resolve))
+  assert.equal(code, 0, stderr)
+  assert.equal(existsSync(readFileSync(observedPath, 'utf8')), false)
+})
+
+test('wrapper supports a temporary base path containing spaces', async (t) => {
+  const parent = mkdtempSync(join(tmpdir(), 'mdp-temp-spaces-'))
+  const base = join(parent, 'temporary workspace base')
+  mkdirSync(base)
+  t.after(() => rmSync(parent, { recursive: true, force: true }))
+  const observedPath = join(parent, 'observed')
+  const result = await runWrapper(base, observedPath)
+  assert.equal(result.code, 0, result.stderr)
+  const observed = readFileSync(observedPath, 'utf8')
+  assert.ok(observed.startsWith(`${base}/mdp-owned-validation-`))
+  assert.equal(existsSync(observed), false)
+})
+
 test('handled interruption forwards the signal and cleans the owned root', async (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-signal-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
