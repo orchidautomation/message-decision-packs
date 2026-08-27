@@ -369,6 +369,8 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
             }
             visible.push('\n');
             paragraph_open = false;
+            indented_code = false;
+            indented_code_can_start = true;
             continue;
         }
         if previous_container.is_some_and(|previous| previous != container) {
@@ -755,13 +757,30 @@ fn line_interrupts_container_paragraph(line: &str) -> bool {
         || line_is_raw_html(line, &mut raw_html, false)
 }
 
-fn is_atx_heading(line: &str) -> bool {
+fn atx_heading(line: &str) -> Option<(usize, &str)> {
     let trimmed = line.trim_start_matches(' ');
     if line.len() - trimmed.len() > 3 {
-        return false;
+        return None;
     }
     let hashes = trimmed.bytes().take_while(|byte| *byte == b'#').count();
-    (1..=6).contains(&hashes) && matches!(trimmed.as_bytes().get(hashes), None | Some(b' ' | b'\t'))
+    if !(1..=6).contains(&hashes)
+        || !matches!(trimmed.as_bytes().get(hashes), None | Some(b' ' | b'\t'))
+    {
+        return None;
+    }
+    let mut content = trimmed[hashes..].trim_matches([' ', '\t']);
+    let closing_start = content.trim_end_matches('#').len();
+    if closing_start < content.len()
+        && closing_start > 0
+        && matches!(content.as_bytes()[closing_start - 1], b' ' | b'\t')
+    {
+        content = content[..closing_start].trim_end_matches([' ', '\t']);
+    }
+    Some((hashes, content))
+}
+
+fn is_atx_heading(line: &str) -> bool {
+    atx_heading(line).is_some()
 }
 
 fn is_thematic_or_setext_line(line: &str, paragraph_open: bool) -> bool {
@@ -1367,14 +1386,9 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             paragraph_open = false;
             continue;
         }
-        if is_atx_heading(line) {
-            let level = line
-                .trim_start_matches(' ')
-                .bytes()
-                .take_while(|byte| *byte == b'#')
-                .count();
+        if let Some((level, heading)) = atx_heading(line) {
             if level <= 2 {
-                in_sources = line == "## Sources";
+                in_sources = level == 2 && heading == "Sources";
             }
             paragraph_open = false;
             continue;
@@ -2027,6 +2041,39 @@ mod tests {
     }
 
     #[test]
+    fn normalized_sources_headings_warn_in_check_and_validate() {
+        for (case, heading) in [("indented", "   ## Sources"), ("closing", "## Sources ##")] {
+            let root = std::env::temp_dir()
+                .join(format!("mdp-readme-normalized-source-{case}-{}", nonce()));
+            init_pack(&root, "Normalized Source Pack", "gtm", true, false)
+                .expect("pack should initialize");
+            let readme_path = root.join(".mdp/README.md");
+            let mut readme = std::fs::read_to_string(&readme_path).expect("README");
+            readme.push_str(&format!(
+                "\n{heading}\n- `missing-normalized-source`: removed source\n"
+            ));
+            std::fs::write(&readme_path, readme).expect("write README");
+
+            let checked = check_readme(&root).expect("check README");
+            assert!(
+                checked["warnings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|warning| {
+                        warning["code"] == "readme_human_source_reference_missing"
+                            && warning["reference"] == "missing-normalized-source"
+                    })
+            );
+            assert!(readme_validation_issues(&root).iter().any(|issue| {
+                issue["code"] == "readme_human_source_reference_missing"
+                    && issue["reference"] == "missing-normalized-source"
+            }));
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
     fn source_reference_parser_ignores_near_headings_inline_code_and_fences() {
         let markdown = r#"# Human README
 
@@ -2123,7 +2170,7 @@ Inline `inline-code` must be ignored.
 
     #[test]
     fn card_reference_parser_excludes_indented_code_blocks_only() {
-        let markdown = "    `cards/first-code.yaml`\n\n\t`cards/continued-code.yaml`\nOutside `cards/visible.yaml`.\nParagraph continuation\n    `cards/paragraph-span.yaml`\n\n- item\n\n    Human `cards/list-continuation.yaml`\n\n>     `cards/blockquote-code.yaml`\n\n-     `cards/list-code.yaml`\n\n10. ordered\n\n    Human `cards/ordered-continuation.yaml`\n\n10.     `cards/ordered-code.yaml`\n";
+        let markdown = "    `cards/first-code.yaml`\n\n\t`cards/continued-code.yaml`\nOutside `cards/visible.yaml`.\nParagraph continuation\n    `cards/paragraph-span.yaml`\n\n- item\n\n    Human `cards/list-continuation.yaml`\n\n>     `cards/blockquote-code.yaml`\n\n-     `cards/list-code.yaml`\n\n10. ordered\n\n    Human `cards/ordered-continuation.yaml`\n\n10.     `cards/ordered-code.yaml`\n\nParagraph\n<script></script>\n    `cards/after-raw-html-code.yaml`\n";
         assert_eq!(
             inline_code_tokens(markdown),
             vec![
@@ -2134,6 +2181,31 @@ Inline `inline-code` must be ignored.
             ],
             "code blocks respect paragraph, list-container, and blockquote boundaries"
         );
+    }
+
+    #[test]
+    fn readme_check_and_validate_ignore_indented_code_after_raw_html() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-html-code-{}", nonce()));
+        init_pack(&root, "HTML Code Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let mut readme = std::fs::read_to_string(&readme_path).expect("README");
+        readme.push_str("\nParagraph\n<script></script>\n    `cards/after-raw-html-code.yaml`\n");
+        std::fs::write(&readme_path, readme).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert!(
+            checked["warnings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|warning| { warning["reference"] != "cards/after-raw-html-code.yaml" })
+        );
+        assert!(
+            readme_validation_issues(&root)
+                .iter()
+                .all(|issue| { issue["reference"] != "cards/after-raw-html-code.yaml" })
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
