@@ -231,7 +231,9 @@ const freezeRequestFile = (value) => {
       usesNativeModel: parsed?.contract === 'mdp.run-request.v1' && parsed?.mode === 'generative',
     }
   } catch (error) {
-    if (privateDir) cleanupOwnedTempWorkspace(privateDir, { purpose: 'run-mcp-freeze' })
+    if (privateDir && !cleanupOwnedTempWorkspace(privateDir, { purpose: 'run-mcp-freeze' })) {
+      throw Object.assign(new Error('private request cleanup incomplete'), { code: 'mcp-cleanup-incomplete' })
+    }
     if (error?.code === 'ENOENT') throw new Error('request_path does not exist')
     if (error?.code === 'ELOOP') throw new Error('request_path must not be a symlink')
     throw error
@@ -722,7 +724,7 @@ const callPrepareRunValidated = async (args, signal = null) => {
         closeSync(output.fd)
         closeSync(output.receiptFd)
       }
-      cleanupOwnedTempWorkspace(privateDir, { purpose: 'run-mcp-prepare' })
+      cleanupComplete = cleanupOwnedTempWorkspace(privateDir, { purpose: 'run-mcp-prepare' }) && cleanupComplete
     }
     if (!cleanupComplete) throw Object.assign(new Error('secure output cleanup incomplete; inspect required output paths before retry'), { code: 'mcp-cleanup-incomplete' })
   }
@@ -838,7 +840,9 @@ const callRun = async (args, signal = null) => {
       signal,
     )
   } finally {
-    cleanupOwnedTempWorkspace(frozenRequest.privateDir, { purpose: 'run-mcp-freeze' })
+    if (!cleanupOwnedTempWorkspace(frozenRequest.privateDir, { purpose: 'run-mcp-freeze' })) {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'mcp-cleanup-incomplete' }, true)
+    }
   }
   if (invocation.timedOut || invocation.cancelled || invocation.overflowed || invocation.spawnFailed) {
     const code = invocation.cancelled

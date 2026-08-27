@@ -515,11 +515,9 @@ fn inspect_owned_marker_with_hook<F: FnOnce()>(
     }
     let value: Value = serde_json::from_slice(&bytes)
         .map_err(|_| anyhow!("owned workspace marker JSON is invalid"))?;
-    #[cfg(target_os = "linux")]
-    let mtime_ms = marker_stat.st_mtime * 1_000 + marker_stat.st_mtime_nsec / 1_000_000;
-    #[cfg(target_os = "macos")]
-    let mtime_ms =
-        marker_stat.st_mtimespec.tv_sec * 1_000 + marker_stat.st_mtimespec.tv_nsec / 1_000_000;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let mtime_ms = (marker_stat.st_mtime as i128 * 1_000
+        + marker_stat.st_mtime_nsec as i128 / 1_000_000) as i64;
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let mtime_ms = marker_stat.st_mtime * 1_000;
     Ok(json!({"value": value, "mtime_ms": mtime_ms}))
