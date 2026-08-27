@@ -275,7 +275,7 @@ exit "$status"
     nowMs: Date.now() + 120_000,
     secureHelperPath: realCli,
   })
-  assert.deepEqual(removed, [join(base, quarantine)])
+  assert.deepEqual(removed, [join(realpathSync(base), quarantine)])
   assert.equal(existsSync(join(base, quarantine)), false)
 })
 
