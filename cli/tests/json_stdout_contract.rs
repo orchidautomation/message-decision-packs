@@ -174,7 +174,7 @@ fn prepare_run_argument_errors_share_the_actionable_code_across_presentations() 
     assert!(json_stderr.is_empty());
     let value = value.expect("JSON prepare-run error envelope");
     assert_eq!(
-        value["actionable_diagnostics"][0]["code"],
+        value["data"]["actionable_diagnostics"][0]["code"],
         "invalid_argument"
     );
 
