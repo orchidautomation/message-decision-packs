@@ -106,7 +106,21 @@ fn capabilities_envelope_is_one_parseable_json_value() {
     let value = value.expect("parseable");
     assert_eq!(value["ok"], serde_json::json!(true));
     assert_eq!(value["command"], "capabilities");
-    assert_eq!(value["data"]["contract"], "mdp.capabilities.v0");
+    assert_eq!(value["data"]["contract"], "mdp.capabilities.v1");
+    assert_eq!(value["data"]["cli"]["contract"], "mdp.cli-graph.v1");
+    let skills = value["data"]["cli"]["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|command| command["path"] == serde_json::json!(["skills"]))
+        .expect("skills command projection");
+    let job = skills["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|argument| argument["canonical"] == "--job")
+        .expect("skills --job projection");
+    assert_eq!(job["requires_when_present"], serde_json::json!(["--dir"]));
     assert!(
         value["data"]["presentation_contract"].is_object(),
         "capabilities should expose the presentation contract"
