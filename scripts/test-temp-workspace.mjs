@@ -87,7 +87,8 @@ test('validation wrapper executes nested CLI checks from Cargo effective target 
   const base = mkdtempSync(join(tmpdir(), 'mdp-custom-cargo-target-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
   const target = join(base, 'target')
-  const debug = join(target, 'debug')
+  const buildTarget = 'test-host-triple'
+  const debug = join(target, buildTarget, 'debug')
   mkdirSync(debug, { recursive: true })
   const probe = join(base, 'invoked')
   const realCli = fileURLToPath(new URL('../cli/target/debug/mdp', import.meta.url))
@@ -101,6 +102,7 @@ exec "${realCli}" "$@"
   const environment = {
     ...process.env,
     CARGO: cargo,
+    CARGO_BUILD_TARGET: buildTarget,
     CARGO_TARGET_DIR: target,
     TMPDIR: base,
   }
@@ -116,6 +118,33 @@ exec "${realCli}" "$@"
   })
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
   assert.equal(readFileSync(probe, 'utf8').includes('invoked'), true)
+})
+
+test('validation wrapper does not create a workspace during Make dry runs', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-make-dry-run-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const spawned = join(base, 'helper-spawned')
+  const helper = join(base, 'must-not-spawn')
+  writeFileSync(helper, `#!/bin/sh
+touch "${spawned}"
+exit 73
+`, { mode: 0o700 })
+  const environment = {
+    ...process.env,
+    TMPDIR: base,
+    MDP_SECURE_INSTALL_BIN: helper,
+  }
+  delete environment.MDP_BIN
+  delete environment.MDP_TEMP_WORKSPACE_ACTIVE
+  delete environment.NODE_TEST_CONTEXT
+  const result = spawnSync('make', ['-n', 'validate-version-sync'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+    env: environment,
+  })
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  assert.equal(existsSync(spawned), false)
+  assert.equal(readdirSync(base).some((name) => name.startsWith('mdp-owned-validation-')), false)
 })
 
 test('concurrent validation wrappers use distinct roots and clean both', async (t) => {
