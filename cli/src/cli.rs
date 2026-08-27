@@ -75,7 +75,10 @@ pub(crate) enum Commands {
         #[command(subcommand)]
         command: AuthorCommand,
     },
-    #[command(about = "Report local setup and pack health")]
+    #[command(
+        about = "Report CLI installation health and requested-pack structural validity",
+        after_help = "Doctor checks the running CLI and the requested pack. Profile activation is reported separately and does not make a structurally valid pack invalid. Job readiness is not assessed here; use `mdp check --dir PACK_ROOT --job JOB_ID`."
+    )]
     Doctor {
         #[arg(long, default_value = ".")]
         dir: PathBuf,

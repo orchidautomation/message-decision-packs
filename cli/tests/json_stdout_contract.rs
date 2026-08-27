@@ -129,6 +129,70 @@ fn capabilities_envelope_is_one_parseable_json_value() {
 }
 
 #[test]
+fn doctor_exit_envelope_and_human_output_match_pack_validity() {
+    let missing = std::env::temp_dir().join(format!(
+        "mdp-doctor-contract-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let missing_arg = missing.display().to_string();
+    let (code, _, stderr, value) = run(
+        &["--json", "doctor", "--dir", missing_arg.as_str()],
+        Case::Ok,
+    );
+    assert_eq!(code, 1);
+    assert!(stderr.is_empty());
+    let value = value.expect("doctor JSON envelope");
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["data"]["status"], "pack-missing");
+    assert!(value["data"]["error_count"].is_u64());
+    assert!(value["data"]["warning_count"].is_u64());
+
+    let (summary_code, _, _, summary) = run(
+        &[
+            "--json",
+            "--summary",
+            "doctor",
+            "--dir",
+            missing_arg.as_str(),
+        ],
+        Case::Ok,
+    );
+    assert_eq!(summary_code, 1);
+    let summary = summary.expect("doctor summary envelope");
+    assert_eq!(summary["ok"], false);
+    assert!(summary["summary"]["error_count"].is_u64());
+    assert!(summary["summary"]["warning_count"].is_u64());
+
+    let output = Command::new(mdp_bin())
+        .args(["doctor", "--dir", missing_arg.as_str()])
+        .output()
+        .expect("human doctor invocation");
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("installation: ready"), "{stdout}");
+    assert!(stdout.contains("pack validity: invalid"), "{stdout}");
+    assert!(
+        stdout.contains("profile activation: not-assessed"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("job readiness: not-assessed"), "{stdout}");
+
+    let ready = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../plugin/assets/templates/basic")
+        .display()
+        .to_string();
+    let (code, _, _, value) = run(&["--json", "doctor", "--dir", &ready], Case::Ok);
+    assert_eq!(code, 0);
+    let value = value.expect("ready doctor JSON envelope");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["data"]["status"], "ready");
+    assert_eq!(value["data"]["job_readiness"]["state"], "not-assessed");
+}
+
+#[test]
 fn actionable_diagnostic_is_shared_by_json_and_human_errors() {
     let args = ["init", "--bogus"];
     let (json_code, _, json_stderr, value) = run(&["--json", "init", "--bogus"], Case::Ok);

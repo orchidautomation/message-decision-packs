@@ -493,7 +493,7 @@ fn contributor_projection(
 ) -> Vec<Value> {
     let mut values = vec![
         json!({"contract": "mdp.cli-runtime.v1", "observed": {"tool": "mdp", "version": env!("CARGO_PKG_VERSION")}}),
-        json!({"contract": "mdp.doctor.v0", "observed": {"valid": doctor["valid"]}}),
+        json!({"contract": "mdp.doctor.v1", "observed": {"status": doctor["status"], "valid": doctor["valid"]}}),
         json!({"contract": "mdp.validate.v0", "observed": {"valid": validation.map(|v| v["valid"].clone()).unwrap_or(Value::Null)}}),
         json!({"contract": "mdp.skills.v1", "observed": {"status": skills["status"], "profile_activation_status": skills["profile_activation"]["status"]}}),
     ];

@@ -69,53 +69,194 @@ const BUILTIN_INTERNAL_TARGET_TERMS: &[&str] = &[
 pub(crate) fn doctor(root: &Path) -> Value {
     let pack_dir = root.join(DEFAULT_DIR);
     let manifest_path = pack_dir.join("manifest.yaml");
-    let mut issues = Vec::new();
     let mut checks = BTreeMap::new();
     checks.insert("auth_required", json!(false));
     checks.insert("offline_mode", json!(true));
-    checks.insert("pack_dir_exists", json!(pack_dir.exists()));
+    checks.insert("pack_dir_exists", json!(pack_dir.is_dir()));
     checks.insert("manifest_exists", json!(manifest_path.exists()));
-    if !pack_dir.exists() {
-        issues.push(issue(
-            "pack_dir_missing",
-            "error",
-            DEFAULT_DIR,
-            format!("missing {}", pack_dir.display()),
-        ));
-    }
-    if !manifest_path.exists() {
-        issues.push(issue(
-            "manifest_missing",
-            "error",
-            ".mdp/manifest.yaml",
-            format!("missing {}", manifest_path.display()),
-        ));
-    }
-    if manifest_path.exists() {
+
+    let installation = json!({
+        "state": "ready",
+        "authority": "mdp.cli-runtime.v1",
+        "tool": "mdp",
+        "version": env!("CARGO_PKG_VERSION"),
+        "offline": true,
+        "auth_required": false
+    });
+    let job_readiness = json!({
+        "state": "not-assessed",
+        "authority": "mdp.readiness.v1",
+        "reason_code": "job_not_selected",
+        "next_command": "mdp check --dir PACK_ROOT --job JOB_ID"
+    });
+
+    let result = if !pack_dir.is_dir() || !manifest_path.exists() {
+        let code = if !pack_dir.is_dir() {
+            "pack_dir_missing"
+        } else {
+            "manifest_missing"
+        };
+        let path = if code == "pack_dir_missing" {
+            DEFAULT_DIR
+        } else {
+            ".mdp/manifest.yaml"
+        };
+        doctor_result(
+            "pack-missing",
+            false,
+            checks,
+            vec![issue(code, "error", path, "the requested pack is missing")],
+            installation,
+            json!({"status":"not-assessed","authority":"mdp.profile-activation-decision.v1","reason_code":"pack_missing"}),
+            job_readiness,
+            "mdp init --name <name> --dir PACK_ROOT",
+        )
+    } else if fs::symlink_metadata(&manifest_path)
+        .map(|metadata| !metadata.file_type().is_file())
+        .unwrap_or(true)
+        || fs::File::open(&manifest_path).is_err()
+    {
+        doctor_result(
+            "pack-unreadable",
+            false,
+            checks,
+            vec![issue(
+                "manifest_unreadable",
+                "error",
+                ".mdp/manifest.yaml",
+                "the requested manifest is not a readable regular file",
+            )],
+            installation,
+            json!({"status":"not-assessed","authority":"mdp.profile-activation-decision.v1","reason_code":"pack_unreadable"}),
+            job_readiness,
+            "Select a readable pack root and rerun `mdp doctor`.",
+        )
+    } else {
         match read_manifest(root) {
-            Ok(manifest) => {
-                checks.insert("format", json!(manifest.format));
-                checks.insert("manifest_parseable", json!(true));
-            }
-            Err(err) => {
-                checks.insert("manifest_parseable", json!(false));
-                issues.push(issue(
+            Err(_) => doctor_result(
+                "pack-structurally-invalid",
+                false,
+                checks,
+                vec![issue(
                     "manifest_parse_failed",
                     "error",
                     ".mdp/manifest.yaml",
-                    err.to_string(),
-                ));
+                    "the manifest could not be parsed as the MDP manifest contract",
+                )],
+                installation,
+                json!({"status":"not-assessed","authority":"mdp.profile-activation-decision.v1","reason_code":"pack_structurally_invalid"}),
+                job_readiness,
+                "Run `mdp validate --dir PACK_ROOT` and repair the first error.",
+            ),
+            Ok(manifest) if manifest.format != FORMAT_VERSION => {
+                checks.insert("format", json!(manifest.format));
+                checks.insert("manifest_parseable", json!(true));
+                doctor_result(
+                    "pack-wrong-format",
+                    false,
+                    checks,
+                    vec![issue(
+                        "manifest_format",
+                        "error",
+                        ".mdp/manifest.yaml#/format",
+                        format!("manifest format must be {FORMAT_VERSION}"),
+                    )],
+                    installation,
+                    json!({"status":"not-assessed","authority":"mdp.profile-activation-decision.v1","reason_code":"pack_wrong_format"}),
+                    job_readiness,
+                    "Migrate the pack to the supported format, then rerun `mdp validate`.",
+                )
+            }
+            Ok(manifest) => {
+                checks.insert("format", json!(manifest.format));
+                checks.insert("manifest_parseable", json!(true));
+                match validate_pack(root) {
+                    Err(_) => doctor_result(
+                        "pack-unreadable",
+                        false,
+                        checks,
+                        vec![issue(
+                            "pack_validation_unavailable",
+                            "error",
+                            DEFAULT_DIR,
+                            "the pack could not be fully read for structural validation",
+                        )],
+                        installation,
+                        json!({"status":"not-assessed","authority":"mdp.profile-activation-decision.v1","reason_code":"pack_unreadable"}),
+                        job_readiness,
+                        "Repair pack file readability and rerun `mdp doctor`.",
+                    ),
+                    Ok(validation) if validation["valid"] != true => doctor_result(
+                        "pack-structurally-invalid",
+                        false,
+                        checks,
+                        validation["issues"].as_array().cloned().unwrap_or_default(),
+                        installation,
+                        json!({"status":"not-assessed","authority":"mdp.profile-activation-decision.v1","reason_code":"pack_structurally_invalid"}),
+                        job_readiness,
+                        "Run `mdp validate --dir PACK_ROOT` and repair the first error.",
+                    ),
+                    Ok(validation) => {
+                        let activation = profile_activation_decision(
+                            &validation,
+                            manifest.profile_eval.blocks_activation(),
+                            None,
+                        );
+                        let activation_blocked = activation["status"] == "blocked";
+                        doctor_result(
+                            if activation_blocked {
+                                "activation-blocked"
+                            } else {
+                                "ready"
+                            },
+                            true,
+                            checks,
+                            validation["issues"].as_array().cloned().unwrap_or_default(),
+                            installation,
+                            activation,
+                            job_readiness,
+                            if activation_blocked {
+                                "Resolve profile activation diagnostics; use `mdp check --job JOB_ID` for job readiness."
+                            } else {
+                                "Use `mdp check --dir PACK_ROOT --job JOB_ID` for job readiness."
+                            },
+                        )
+                    }
+                }
             }
         }
-    }
+    };
+    result
+}
+
+fn doctor_result(
+    status: &str,
+    valid: bool,
+    checks: BTreeMap<&str, Value>,
+    issues: Vec<Value>,
+    installation: Value,
+    activation: Value,
+    job_readiness: Value,
+    next_command: &str,
+) -> Value {
+    let error_count = issue_count(&issues, "error");
+    let warning_count = issue_count(&issues, "warning");
     json!({
+        "contract": "mdp.doctor.v1",
+        "status": status,
         "tool": "mdp",
         "format_name": FORMAT_NAME,
         "expected_format": FORMAT_VERSION,
-        "valid": issues.is_empty(),
+        "valid": valid,
+        "error_count": error_count,
+        "warning_count": warning_count,
         "checks": checks,
         "issues": issues,
-        "setup": if issues.is_empty() { Value::Null } else { json!("Run `mdp init --name <name>` from the repo or workspace root.") }
+        "installation": installation,
+        "pack": {"state": if valid { "valid" } else { status }, "structurally_valid": valid},
+        "activation": activation,
+        "job_readiness": job_readiness,
+        "next_command": next_command
     })
 }
 
@@ -6628,6 +6769,83 @@ mod tests {
         init_pack(&root, "Example Message Pack", "gtm", true, false)
             .expect("starter pack should initialize");
         root
+    }
+
+    #[test]
+    fn doctor_state_matrix_separates_pack_activation_and_job_readiness() {
+        let missing = std::env::temp_dir().join(format!(
+            "mdp-doctor-missing-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let missing_result = doctor(&missing);
+        assert_eq!(missing_result["status"], "pack-missing");
+        assert_eq!(missing_result["valid"], false);
+
+        let unreadable = temp_pack("doctor-unreadable");
+        let unreadable_manifest = unreadable.join(".mdp/manifest.yaml");
+        std::fs::remove_file(&unreadable_manifest).unwrap();
+        std::fs::create_dir(&unreadable_manifest).unwrap();
+        let unreadable_result = doctor(&unreadable);
+        assert_eq!(unreadable_result["status"], "pack-unreadable");
+        assert_eq!(unreadable_result["valid"], false);
+
+        let wrong_format = temp_pack("doctor-wrong-format");
+        let wrong_format_manifest = wrong_format.join(".mdp/manifest.yaml");
+        let manifest = std::fs::read_to_string(&wrong_format_manifest).unwrap();
+        std::fs::write(
+            &wrong_format_manifest,
+            manifest.replacen("format: mdp.v0", "format: mdp.v999", 1),
+        )
+        .unwrap();
+        let wrong_format_result = doctor(&wrong_format);
+        assert_eq!(wrong_format_result["status"], "pack-wrong-format");
+        assert_eq!(wrong_format_result["valid"], false);
+
+        let invalid = temp_pack("doctor-invalid");
+        let invalid_manifest = invalid.join(".mdp/manifest.yaml");
+        std::fs::write(&invalid_manifest, "format: mdp.v0\n").unwrap();
+        let invalid_result = doctor(&invalid);
+        assert_eq!(invalid_result["status"], "pack-structurally-invalid");
+        assert_eq!(invalid_result["valid"], false);
+
+        let activation_blocked = temp_pack("doctor-activation-blocked");
+        let activation_manifest = activation_blocked.join(".mdp/manifest.yaml");
+        let manifest = std::fs::read_to_string(&activation_manifest).unwrap();
+        std::fs::write(
+            &activation_manifest,
+            manifest.replacen("status: ready", "status: needs-review", 1),
+        )
+        .unwrap();
+        let blocked_result = doctor(&activation_blocked);
+        assert_eq!(blocked_result["status"], "activation-blocked");
+        assert_eq!(blocked_result["valid"], true);
+        assert_eq!(blocked_result["activation"]["status"], "blocked");
+
+        let ready = temp_pack("doctor-ready");
+        let ready_result = doctor(&ready);
+        assert_eq!(ready_result["status"], "ready");
+        assert_eq!(ready_result["valid"], true);
+        assert_eq!(ready_result["installation"]["state"], "ready");
+        assert_eq!(ready_result["job_readiness"]["state"], "not-assessed");
+
+        for result in [
+            missing_result,
+            unreadable_result,
+            wrong_format_result,
+            invalid_result,
+            blocked_result,
+            ready_result,
+        ] {
+            assert!(result["error_count"].is_u64());
+            assert!(result["warning_count"].is_u64());
+        }
+
+        for root in [unreadable, wrong_format, invalid, activation_blocked, ready] {
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     fn targeted_pack(name: &str, excluded: &[String]) -> PathBuf {

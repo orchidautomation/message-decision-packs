@@ -45,6 +45,14 @@ mdp --version
 mdp --json doctor --dir .
 ```
 
+`doctor` separates the running CLI installation, requested-pack structural
+validity, profile activation, and job readiness. Missing, unreadable,
+wrong-format, or structurally invalid packs return exit 1 and JSON `ok: false`.
+A structurally valid pack returns exit 0 and JSON `ok: true`; activation can
+still be reported as blocked without being mislabeled as structural corruption.
+Doctor never assesses a specific job. Use `mdp check --dir PACK_ROOT --job
+JOB_ID` for the authoritative job-readiness projection.
+
 For one read-only, offline answer that composes the existing structural,
 profile, job, input, and route-budget authorities, select an exact job:
 
