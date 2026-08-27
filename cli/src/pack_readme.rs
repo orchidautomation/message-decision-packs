@@ -410,9 +410,18 @@ fn replace_marked_block(
             out
         }
         None => {
-            let mut out = readme.trim_end_matches('\n').to_string();
+            // Legacy prose is human-owned byte-for-byte, including trailing
+            // whitespace and newline choices. Append a separator after those
+            // bytes rather than normalizing or removing any of them.
+            let mut out = readme.to_string();
             if !out.is_empty() {
-                out.push_str("\n\n");
+                if out.ends_with("\n\n") {
+                    // Existing blank-line separation is sufficient.
+                } else if out.ends_with('\n') {
+                    out.push('\n');
+                } else {
+                    out.push_str("\n\n");
+                }
             }
             out.push_str(fresh_block);
             out
@@ -695,6 +704,28 @@ mod tests {
         assert!(updated.starts_with("# Legacy Pack"));
         assert!(updated.contains(README_INVENTORY_BEGIN));
         assert_eq!(updated.matches(README_INVENTORY_BEGIN).count(), 1);
+    }
+
+    #[test]
+    fn appending_missing_inventory_preserves_every_legacy_trailing_byte() {
+        let manifest = manifest_with("Trailing Byte Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        let cases = [
+            "# Legacy\nprose without newline",
+            "# Legacy\nprose with one newline\n",
+            "# Legacy\nprose with three newlines\n\n\n",
+            "# Legacy\nprose with trailing whitespace\n \t\n",
+        ];
+        for human in cases {
+            let updated = replace_inventory_block(human, &fresh);
+            assert!(
+                updated.as_bytes().starts_with(human.as_bytes()),
+                "legacy bytes must remain an exact prefix: {human:?}"
+            );
+            assert_eq!(updated.matches(README_INVENTORY_BEGIN).count(), 1);
+        }
     }
 
     #[test]
