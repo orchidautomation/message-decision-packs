@@ -278,7 +278,10 @@ class SkillContractTests(unittest.TestCase):
         for path in sorted(Path("plugin/skills").glob("*/SKILL.md")):
             self.assertLessEqual(path.stat().st_size, module.MAX_ENTRYPOINT_BYTES, path)
         reference = self.root / "plugin/skills/mdp/references/operator-runtime.md"
-        reference.write_text(reference.read_text() + "\n[next](cli-operator.md)\n")
+        original = reference.read_text()
+        reference.write_text(original + "\n[next](cli-operator.md)\n")
+        self.assertIn("nested_skill_reference", self.codes())
+        reference.write_text(original + "\nRead references/cli-operator.md.\n")
         self.assertIn("nested_skill_reference", self.codes())
 
         skill = self.root / "plugin/skills/mdp/SKILL.md"

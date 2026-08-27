@@ -20,9 +20,9 @@ invocation, trial, verifier-receipt, and evaluator evidence, chain the exact
 compiled authority with `conformance validate --artifact-root STAGED_ROOT
 --candidate CANDIDATE_JSON --deterministic deterministic.json --out
 behavioral.json`, plus the required evaluator inventory, lifecycle policy, and
-all predeclared repeated evidence flags. Validation does not invoke a model;
-use the complete runnable form in references/cli-operator.md
-instead of guessing required arguments.
+all predeclared repeated evidence flags. Validation does not invoke a model.
+Run `mdp conformance validate --help` and supply every required artifact flag
+instead of guessing arguments.
 Accept verifier receipts and publication approvals only when the CLI confirms
 they match the evaluator inventory's predeclared trusted authority descriptors;
 do not treat self-declared verifier or reviewer identity as proof.
@@ -37,8 +37,5 @@ CRM mutation, or publication authority. Public output must omit paths, raw
 content, identities, provider/session data, evaluator rationale, reviewer
 identity, and private digests.
 
-Read references/cli-operator.md for command selection or artifact-write rules. Read references/mental-model.md when explaining product boundaries, pack primitives, or responsibility splits.
-After a validated fix yields a reusable engineering lesson, read
-references/compound-learning.md before
-capturing it.
-
+Keep command selection, product explanation, and reusable-learning work outside
+this leaf protocol; the entrypoint routes those journeys directly.

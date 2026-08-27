@@ -173,7 +173,8 @@ Preview a portable compilation when needed:
 mdp --json pack --dir PACK_ROOT --out PACK_JSON --dry-run
 ```
 
-Read references/structural-audit.md for manifest, primitive, evidence, and content review. Read references/routing-evals.md for job binding, route, prompt, and eval review. Read references/installed-template-qa.md only when testing a released install or freshly initialized templates.
+Apply only the mode reference selected directly by the entrypoint; this shared
+protocol does not select or load another review resource.
 
 ## Review Rules
 
@@ -251,4 +252,3 @@ applicability does not bypass scope, policy, caps, or budgets.
 - Keep evaluation output and temporary packs outside committed source paths.
 
 Report integration support separately from the current receipt. Use only the canonical `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only` state from [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix); do not promote a runner based on its identifier, recipe, schema acceptance, MCP availability, or one accepted receipt.
-

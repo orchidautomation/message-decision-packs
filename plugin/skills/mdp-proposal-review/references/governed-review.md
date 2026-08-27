@@ -16,8 +16,8 @@ proposal runner/MCP instructions below are compatibility-only advanced paths.
 ## Choose The Evidence Path
 
 Before normalizing proposal material or answering whether a review is
-audit-grade, read references/evidence-path.md and
-follow its decision tree.
+audit-grade, require the assurance/evidence path that the entrypoint selected
+directly.
 
 - Audit-grade requested + no explicit approved source files = `blocked`.
 - Audit-grade requested + no callable local runner/MCP/native boundary =
@@ -177,11 +177,7 @@ upgrade transport into provider-call or model-isolation proof.
 
 Report the current invocation's receipt assurance separately from integration support. For integration support, consult [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix) and use only `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only`. A runner identifier, installed command, documented recipe, MCP tool, or schema-valid audit never proves a verified integration.
 
-1. Load only the selected reference:
-   - references/bid-no-bid.md
-   - references/compliance.md
-   - references/proof.md
-   - references/red-team.md
+1. Apply only the single mode reference selected directly by the entrypoint.
 2. Route bounded context using the pack-appropriate persona and review job label when entry-level evidence is needed:
 
 ```bash
@@ -209,5 +205,5 @@ The draft helper only fills pack identity, joins ordered segment text, and runs 
 mdp --json verify-output --dir PACK_ROOT --file PROOF_OUTPUT_JSON
 ```
 
-Use `--readable` only when the user wants the human-readable review artifact. Read references/proof-output-drafting.md before creating or repairing proof-output drafts.
-
+Use `--readable` only when the user wants the human-readable review artifact.
+Draft creation or repair remains a separately selected entrypoint journey.

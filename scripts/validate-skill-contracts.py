@@ -12,6 +12,7 @@ MODEL = "mdp.skill-contract-validation.v1"
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 FIELD = re.compile(r"^([a-zA-Z][\w-]*):\s*(.+?)\s*$", re.M)
 MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+PLAIN_REFERENCE_PATH = re.compile(r"(?<![/\w])references/[A-Za-z0-9._/-]+\.md")
 SCRIPT_TOKEN = re.compile(r"(?<![\w/])scripts/(mdp-[a-z0-9-]+\.mjs)")
 LOCAL_PREFIXES = ("references/", "scripts/", "assets/")
 MAX_ENTRYPOINT_BYTES = 6000
@@ -135,6 +136,13 @@ def validate(root: Path, source: Path) -> dict:
 
         for doc in sorted(skill_dir.rglob("*.md")):
             doc_text = doc.read_text(encoding="utf-8")
+            if doc.parent.name == "references" and PLAIN_REFERENCE_PATH.search(doc_text):
+                error(
+                    errors,
+                    "nested_skill_reference",
+                    doc,
+                    "reference documents cannot direct another local references/*.md hop",
+                )
             for target in MARKDOWN_LINK.findall(doc_text):
                 target = target.split("#", 1)[0]
                 if (
