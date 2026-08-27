@@ -24,7 +24,8 @@ use crate::commands::{
     verify_output_file, verify_output_readable_file, verify_run_files,
 };
 use crate::output::{
-    PresentationOutcome, print_output, print_output_mode_conflict, resolve_presentation,
+    PresentationOutcome, print_output, print_output_mode_conflict, print_output_with_status,
+    resolve_presentation,
 };
 use crate::pack_io::{planned_json_write, write_json_file};
 use crate::routing::ROUTE_CARD_CAP_DIAGNOSTIC;
@@ -209,7 +210,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 apply_pack_change_set(&dir, &candidate, &change_set)?,
             ),
         },
-        Commands::Doctor { dir } => print_output(json_mode, summary_mode, "doctor", doctor(&dir)),
+        Commands::Doctor { dir } => print_doctor(json_mode, summary_mode, doctor(&dir)),
         Commands::Check {
             dir,
             job,
@@ -942,6 +943,16 @@ fn print_checked(json_mode: bool, summary_mode: bool, command: &str, data: Value
         ),
     };
     print_output(json_mode, summary_mode, command, data)?;
+    if valid {
+        Ok(())
+    } else {
+        std::process::exit(1);
+    }
+}
+
+fn print_doctor(json_mode: bool, summary_mode: bool, data: Value) -> Result<()> {
+    let valid = data["valid"].as_bool().unwrap_or(false);
+    print_output_with_status(json_mode, summary_mode, "doctor", data, valid)?;
     if valid {
         Ok(())
     } else {

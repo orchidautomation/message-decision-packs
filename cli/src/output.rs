@@ -334,6 +334,16 @@ pub(crate) fn print_output(
     command: &str,
     data: Value,
 ) -> Result<()> {
+    print_output_with_status(json_mode, summary_mode, command, data, true)
+}
+
+pub(crate) fn print_output_with_status(
+    json_mode: bool,
+    summary_mode: bool,
+    command: &str,
+    data: Value,
+    ok: bool,
+) -> Result<()> {
     let actionable_diagnostics = diagnostics_for_result(command, &data);
     if summary_mode {
         let summary = summarize(command, &data);
@@ -341,7 +351,7 @@ pub(crate) fn print_output(
             crate::commands::schemas::validate_route_budget_summary_output(&summary)?;
         }
         if json_mode {
-            let mut envelope = json!({"ok": true, "command": command, "summary": summary});
+            let mut envelope = json!({"ok": ok, "command": command, "summary": summary});
             attach_actionable_fields(&mut envelope, actionable_diagnostics.as_ref());
             println!("{}", serde_json::to_string_pretty(&envelope)?);
         } else {
@@ -353,7 +363,7 @@ pub(crate) fn print_output(
         return Ok(());
     }
     if json_mode {
-        let mut envelope = json!({"ok": true, "command": command, "data": data});
+        let mut envelope = json!({"ok": ok, "command": command, "data": data});
         attach_actionable_fields(&mut envelope, actionable_diagnostics.as_ref());
         println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
@@ -532,7 +542,18 @@ fn summarize(command: &str, data: &Value) -> Value {
             "integration_releases": data["integration_releases"],
             "diagnostics": data["diagnostics"]
         }),
-        "doctor" | "validate" | "validate-prompt-output" => json!({
+        "doctor" => json!({
+            "status": data["status"],
+            "valid": data["valid"],
+            "error_count": data["error_count"],
+            "warning_count": data["warning_count"],
+            "issue_count": array_len(&data["issues"]),
+            "activation_state": data["activation"]["status"],
+            "job_readiness_state": data["job_readiness"]["state"],
+            "next_command": data["next_command"],
+            "issues": data["issues"]
+        }),
+        "validate" | "validate-prompt-output" => json!({
             "valid": data["valid"],
             "strict": data["strict"],
             "error_count": data["error_count"],
@@ -1007,7 +1028,45 @@ fn print_human(command: &str, data: &Value) -> Result<()> {
                 }
             }
         }
-        "doctor" | "validate" => {
+        "doctor" => {
+            println!("doctor: {}", data["status"].as_str().unwrap_or("unknown"));
+            println!(
+                "installation: {}",
+                data["installation"]["state"].as_str().unwrap_or("unknown")
+            );
+            println!(
+                "pack validity: {}",
+                if data["valid"] == true {
+                    "valid"
+                } else {
+                    "invalid"
+                }
+            );
+            println!(
+                "profile activation: {}",
+                data["activation"]["status"]
+                    .as_str()
+                    .unwrap_or("not-assessed")
+            );
+            println!(
+                "job readiness: {}",
+                data["job_readiness"]["state"]
+                    .as_str()
+                    .unwrap_or("not-assessed")
+            );
+            if let Some(items) = data["issues"].as_array() {
+                for item in items {
+                    println!("- {}", issue_message(item));
+                }
+            }
+            println!(
+                "Next: {}",
+                data["next_command"]
+                    .as_str()
+                    .unwrap_or("Run mdp check with an exact job id.")
+            );
+        }
+        "validate" => {
             println!(
                 "{}: {}",
                 command,
