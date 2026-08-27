@@ -7,6 +7,7 @@ mod cli;
 mod commands;
 mod conformance;
 mod constants;
+mod diagnostics;
 mod model_steps;
 mod models;
 mod output;
@@ -65,29 +66,23 @@ fn main() {
             let exit_code = 2;
             if json_mode {
                 if is_prepare_run_invocation(&raw_args) {
-                    println!(
-                        "{}",
-                        serde_json::json!({
-                            "ok": false,
-                            "command": "prepare-run",
-                            "data": {
-                                "contract": "mdp.run-request-compile.v1",
-                                "status": "blocked",
-                                "diagnostics": [{
-                                    "code": "cli-arguments-invalid",
-                                    "contract": "mdp.run-request-compile.v1",
-                                    "message": "cli-arguments-invalid: preparation refused",
-                                    "next_command": "mdp prepare-run --help"
-                                }],
-                                "next_command": "mdp prepare-run --help"
-                            }
-                        })
-                    );
+                    let data = serde_json::json!({
+                        "contract": "mdp.run-request-compile.v1",
+                        "status": "blocked",
+                        "diagnostics": [{
+                            "code": "cli-arguments-invalid",
+                            "contract": "mdp.run-request-compile.v1",
+                            "message": "cli-arguments-invalid: preparation refused",
+                            "next_command": "mdp prepare-run --help"
+                        }],
+                        "next_command": "mdp prepare-run --help"
+                    });
+                    println!("{}", prepare_run_error_envelope(data));
                 } else {
                     let _ = print_error(json_mode, anyhow::anyhow!(err.to_string()));
                 }
             } else {
-                let _ = err.print();
+                let _ = print_error(false, anyhow::anyhow!(err.to_string()));
             }
             std::process::exit(exit_code);
         }
@@ -97,15 +92,14 @@ fn main() {
         if json_mode {
             if let Some(failure) = err.downcast_ref::<CompilerError>() {
                 let diagnostic = &failure.0;
+                let data = serde_json::json!({
+                    "contract": diagnostic.contract, "status": "blocked",
+                    "diagnostics": [diagnostic], "next_command": diagnostic.next_command
+                });
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&serde_json::json!({
-                        "ok": false, "command": "prepare-run", "data": {
-                            "contract": diagnostic.contract, "status": "blocked",
-                            "diagnostics": [diagnostic], "next_command": diagnostic.next_command
-                        }
-                    }))
-                    .unwrap_or_else(|_| "{\"ok\":false}".into())
+                    serde_json::to_string_pretty(&prepare_run_error_envelope(data))
+                        .unwrap_or_else(|_| "{\"ok\":false}".into())
                 );
             } else {
                 let _ = print_error(json_mode, err);
@@ -115,6 +109,26 @@ fn main() {
         }
         std::process::exit(1);
     }
+}
+
+fn prepare_run_error_envelope(data: serde_json::Value) -> serde_json::Value {
+    let actionable_diagnostics = crate::diagnostics::diagnostics_for_result("prepare-run", &data);
+    let mut envelope = serde_json::json!({
+        "ok": false,
+        "command": "prepare-run",
+        "data": data
+    });
+    if let (Some(object), Some(diagnostics)) = (envelope.as_object_mut(), actionable_diagnostics) {
+        object.insert(
+            "diagnostic_contract".to_string(),
+            serde_json::json!(crate::diagnostics::ACTIONABLE_DIAGNOSTIC_CONTRACT),
+        );
+        object.insert(
+            crate::diagnostics::ACTIONABLE_DIAGNOSTICS_FIELD.to_string(),
+            diagnostics,
+        );
+    }
+    envelope
 }
 
 fn is_prepare_run_invocation(args: &[String]) -> bool {
