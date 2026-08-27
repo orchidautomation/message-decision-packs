@@ -141,11 +141,23 @@ For MCP-capable hosts, launch the profile-neutral local stdio server:
 node scripts/mdp-run-mcp-server.mjs
 ```
 
-It exposes `mdp_run_tools`, path-only `mdp_run`, and read-only
-`mdp_verify_run`. `mdp_run` accepts an existing request path and a new output
-directory; it does not accept inline source text, credentials, or an enable
-flag. Only a parsed generative request may inherit the key and native-call
-permission that were present when the server started.
+It exposes one canonical four-stage path:
+
+1. `mdp_run_tools` inventories the boundary and the next stages.
+2. `mdp_prepare_run` compiles a pack, exact job/model step, and declared input
+   paths into a required persisted `mdp.run-request.v1`. Pass `out` under an
+   approved work root; `manifest_out` is optional under the same role.
+3. `mdp_run` accepts that existing work-root request path and a new output
+   directory, then returns the CLI-owned bundle and receipt.
+4. `mdp_verify_run` reads the resulting bundle and receipt from the approved
+   output root and returns the terminal CLI verification.
+
+Configure the local server with explicit `MDP_MCP_PACK_ROOTS`,
+`MDP_MCP_INPUT_ROOTS`, `MDP_MCP_WORK_ROOTS`, and `MDP_MCP_OUTPUT_ROOTS` before
+startup. The prepare-to-run handoff stays under the `work` role; it is not
+re-authorized as an input file. These tools do not accept inline source text,
+credentials, or an enable flag. Only a parsed generative request may inherit
+the key and native-call permission that were present when the server started.
 
 MCP is transport only. It invokes the same CLI and returns canonical CLI data
 unchanged; it adds no execution, validation, or isolation authority.

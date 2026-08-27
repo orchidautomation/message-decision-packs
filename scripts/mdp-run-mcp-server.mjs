@@ -542,6 +542,13 @@ const verifyPinnedOutput = async (output, deadline, terminationGraceMs, signal) 
   }
 }
 
+const assertPublishedLeafIdentity = (output) => {
+  const current = lstatSync(output.path, { bigint: true })
+  if (current.isSymbolicLink() || !current.isFile() || current.dev !== output.installedIdentity.dev || current.ino !== output.installedIdentity.ino) {
+    throw new Error('published output leaf identity changed before handoff')
+  }
+}
+
 const removePinnedOutput = async (output, deadline, terminationGraceMs) => {
   if (!output.installedIdentity) return true
   const removeLeaf = async (leaf) => {
@@ -605,6 +612,7 @@ const callPrepareRunValidated = async (args, signal = null) => {
   const deadline = Date.now() + timeoutMs
   const cleanupReserveMs = Math.min(MAX_PREPARE_CLEANUP_RESERVE_MS, Math.max(25, Math.floor(timeoutMs / 4)))
   const terminationGraceMs = Math.min(MAX_PREPARE_TERMINATION_GRACE_MS, Math.max(5, Math.floor(cleanupReserveMs / 4)))
+  const cleanupTerminationGraceMs = Math.max(terminationGraceMs, Math.min(50, Math.max(10, Math.floor(cleanupReserveMs / 2))))
   const workDeadline = deadline - cleanupReserveMs
   const privateDir = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-'))
   let published = false
@@ -654,6 +662,14 @@ const callPrepareRunValidated = async (args, signal = null) => {
     policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
     if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
     for (const output of pinnedOutputs) await verifyPinnedOutput(output, workDeadline, terminationGraceMs, signal)
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    policy.existing('work', out, 'file')
+    if (manifestOut) policy.existing('work', manifestOut, 'file')
+    for (const output of pinnedOutputs) assertPublishedLeafIdentity(output)
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    for (const output of pinnedOutputs) assertPublishedLeafIdentity(output)
     assertPrepareActive(signal)
     published = true
     return toolResult(normalizePreparedOutputPaths(envelope.data, pinnedOutputs))
@@ -661,7 +677,7 @@ const callPrepareRunValidated = async (args, signal = null) => {
     let cleanupComplete = true
     try {
       if (!published) {
-        const results = await Promise.all(pinnedOutputs.map((output) => removePinnedOutput(output, deadline, terminationGraceMs)))
+        const results = await Promise.all(pinnedOutputs.map((output) => removePinnedOutput(output, deadline, cleanupTerminationGraceMs)))
         cleanupComplete = results.every(Boolean)
       }
     } finally {

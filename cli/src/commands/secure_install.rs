@@ -114,6 +114,37 @@ fn rename_no_replace(_dir_fd: RawFd, _from: &CString, _to: &CString) -> Result<(
     bail!("secure identity-conditional removal is unsupported on this platform")
 }
 
+struct SigtermMaskGuard {
+    previous: libc::sigset_t,
+}
+
+impl SigtermMaskGuard {
+    fn block() -> Result<Self> {
+        let mut blocked = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        let mut previous = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        unsafe {
+            libc::sigemptyset(blocked.as_mut_ptr());
+            libc::sigaddset(blocked.as_mut_ptr(), libc::SIGTERM);
+            let status =
+                libc::pthread_sigmask(libc::SIG_BLOCK, blocked.as_ptr(), previous.as_mut_ptr());
+            if status != 0 {
+                return Err(io::Error::from_raw_os_error(status)).map_err(Into::into);
+            }
+            Ok(Self {
+                previous: previous.assume_init(),
+            })
+        }
+    }
+}
+
+impl Drop for SigtermMaskGuard {
+    fn drop(&mut self) {
+        unsafe {
+            libc::pthread_sigmask(libc::SIG_SETMASK, &self.previous, std::ptr::null_mut());
+        }
+    }
+}
+
 fn remove_if_identity(
     dir_fd: RawFd,
     name: &CString,
@@ -121,6 +152,10 @@ fn remove_if_identity(
     expected_file_ino: u64,
 ) -> Result<()> {
     let quarantine = quarantine_name()?;
+    // SIGTERM may arrive from the bounded supervisor, but must not interrupt
+    // the finite rename -> identity check -> unlink/restore transaction. The
+    // caller reserves a termination grace window before any SIGKILL.
+    let _sigterm_guard = SigtermMaskGuard::block()?;
     rename_no_replace(dir_fd, name, &quarantine)?;
     let moved = named_identity(dir_fd, &quarantine);
     match moved {

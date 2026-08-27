@@ -725,6 +725,92 @@ esac
   assert.equal(existsSync(request), true, 'failed cleanup must not be reported as recovered')
 })
 
+test('cleanup timeout restores a quarantined concurrent replacement before escalation', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-cleanup-critical-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-cleanup-critical.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+action=""
+name=""
+previous=""
+for value in "$@"; do
+  if [ "$previous" = "--action" ]; then action="$value"; fi
+  if [ "$previous" = "--name" ]; then name="$value"; fi
+  previous="$value"
+done
+if [ "$action" = "install" ]; then exec "${realCli}" "$@"; fi
+if [ "$action" = "verify" ]; then
+  mv request.json request.original.json
+  cp request.original.json request.json
+  exit 73
+fi
+if [ "$action" = "remove" ] && [ "$name" = "request.json" ]; then
+  quarantine=.mdp-wrapper-quarantine
+  mv request.json "$quarantine"
+  trap 'mv "$quarantine" request.json; exit 143' TERM
+  sleep 10
+fi
+exec "${realCli}" "$@"
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 400,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.diagnostics[0].code, 'mcp-cleanup-incomplete', JSON.stringify(blocked))
+  assert.deepEqual(readFileSync(request), readFileSync(join(work, 'request.original.json')))
+  assert.equal(existsSync(join(work, '.mdp-wrapper-quarantine')), false, 'SIGTERM critical section must restore the unrelated file before SIGKILL')
+})
+
+test('prepare revalidates exact published leaf identity after verifier returns', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-post-verify-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-post-verify-race.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action verify "*)
+    tmp="${join(root, 'verify-result')}.$$"
+    "${realCli}" "$@" >"$tmp" || exit $?
+    mv request.json request.original.json
+    printf concurrent-replacement >request.json
+    cat "$tmp"
+    rm -f "$tmp"
+    ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(readFileSync(request, 'utf8'), 'concurrent-replacement')
+})
+
 test('notifications/cancelled aborts prepare and cleans any publication independently', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-cancel-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
