@@ -125,19 +125,20 @@ fn fixture(label: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
 }
 
 fn preview(live: &Path, candidate: &Path, plan: &Path) -> Output {
-    run(
-        &[
-            "author",
-            "preview",
-            "--dir",
-            live.to_str().unwrap(),
-            "--candidate",
-            candidate.to_str().unwrap(),
-            "--out",
-            plan.to_str().unwrap(),
-        ],
-        None,
-    )
+    run(&preview_args(live, candidate, plan), None)
+}
+
+fn preview_args<'a>(live: &'a Path, candidate: &'a Path, plan: &'a Path) -> [&'a str; 8] {
+    [
+        "author",
+        "preview",
+        "--dir",
+        live.to_str().unwrap(),
+        "--candidate",
+        candidate.to_str().unwrap(),
+        "--out",
+        plan.to_str().unwrap(),
+    ]
 }
 
 fn apply(live: &Path, candidate: &Path, plan: &Path, fault_after: Option<usize>) -> Output {
@@ -417,6 +418,110 @@ fn crash_after_commit_marker_finishes_cleanup_without_rolling_back() {
             .any(|code| code == "interrupted-commit-recovered")
     );
     assert_eq!(snapshot(&live), snapshot(&candidate));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn crash_before_state_publication_recovers_the_complete_pending_state() {
+    let (root, live, candidate, plan) = fixture("pending-state-recovery");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_CRASH_BEFORE_STATE_PUBLISH", "1");
+    let crashed = command.output().expect("crashing author child should run");
+    assert!(!crashed.status.success());
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(
+        recovered.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    assert_eq!(data(&recovered)["status"], "applied");
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let residues = fs::read_dir(&root)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| {
+            name.starts_with(".mdp.author.staging.")
+                || name.starts_with(".mdp.author.backup.")
+                || name.starts_with(".mdp.author.state.")
+                || name.starts_with(".mdp.author.state-pending.")
+        })
+        .collect::<Vec<_>>();
+    assert!(residues.is_empty(), "recovery residue: {residues:?}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn committed_cleanup_restarts_after_staging_workspace_was_removed() {
+    let (root, live, candidate, plan) = fixture("partial-cleanup-recovery");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_CRASH_AFTER_STAGING_CLEANUP", "1");
+    let crashed = command.output().expect("crashing author child should run");
+    assert!(!crashed.status.success());
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(recovered.status.success());
+    assert_eq!(data(&recovered)["status"], "applied");
+    let residues = fs::read_dir(&root)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| {
+            name.starts_with(".mdp.author.staging.")
+                || name.starts_with(".mdp.author.backup.")
+                || name.starts_with(".mdp.author.state.")
+                || name.starts_with(".mdp.author.state-pending.")
+        })
+        .collect::<Vec<_>>();
+    assert!(residues.is_empty(), "recovery residue: {residues:?}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn validation_snapshot_is_private_while_validation_runs() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, live, candidate, plan) = fixture("private-validation-snapshot");
+    let marker = root.join("validation-ready");
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(preview_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_VALIDATION_MARKER", &marker)
+        .stdout(Stdio::null());
+    let mut child = command.spawn().expect("preview child should spawn");
+    for _ in 0..500 {
+        if marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(marker.exists(), "validation handshake should become ready");
+    let snapshot_root = PathBuf::from(fs::read_to_string(&marker).unwrap());
+    assert_eq!(
+        fs::metadata(&snapshot_root).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    assert_eq!(
+        fs::metadata(snapshot_root.join(".mdp/README.md"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    fs::write(marker.with_extension("go"), "go\n").unwrap();
+    assert!(child.wait().unwrap().success());
+    assert!(!snapshot_root.exists());
     let _ = fs::remove_dir_all(root);
 }
 

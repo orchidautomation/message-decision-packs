@@ -635,6 +635,21 @@ fn open_child_directory(parent: &File, name: &str) -> Result<File> {
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
+#[cfg(unix)]
+fn open_optional_child_directory(parent: &File, name: &str) -> Result<Option<File>> {
+    match open_child_directory(parent, name) {
+        Ok(directory) => Ok(Some(directory)),
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn rename_no_replace_between(
     from_dir: &File,
@@ -844,7 +859,9 @@ fn logical_identity(root: &File, path: &str) -> Result<Option<(u64, u64)>> {
     };
     match named_identity(&parent, &leaf)? {
         None => Ok(None),
-        Some((dev, ino, mode)) if mode & libc::S_IFMT == libc::S_IFREG => Ok(Some((dev, ino))),
+        Some((dev, ino, mode)) if mode & (libc::S_IFMT as u32) == libc::S_IFREG as u32 => {
+            Ok(Some((dev, ino)))
+        }
         Some(_) => Err(anyhow!("author authority leaf is not a regular file")),
     }
 }
@@ -855,7 +872,7 @@ fn state_and_identity(root: &File, path: &str) -> Result<(FileState, Option<(u64
     let Some((dev, ino, mode)) = named_identity(&parent, &leaf)? else {
         return Ok((FileState::absent(), None));
     };
-    if mode & libc::S_IFMT != libc::S_IFREG {
+    if mode & (libc::S_IFMT as u32) != libc::S_IFREG as u32 {
         return Err(anyhow!("author authority leaf is not a regular file"));
     }
     let fd = unsafe {
@@ -945,6 +962,14 @@ fn state_leaf(live_root: &Path) -> String {
 }
 
 #[cfg(unix)]
+fn pending_state_leaf(live_root: &Path) -> String {
+    format!(
+        ".mdp.author.state-pending.{}",
+        &root_binding(live_root)[..16]
+    )
+}
+
+#[cfg(unix)]
 fn write_transaction_state(
     parent: &File,
     live_root: &Path,
@@ -956,21 +981,33 @@ fn write_transaction_state(
         return Err(anyhow!("author transaction state exceeds byte limit"));
     }
     let leaf = component_name(&state_leaf(live_root))?;
+    let pending_name = pending_state_leaf(live_root);
+    let pending = component_name(&pending_name)?;
     let fd = unsafe {
         libc::openat(
             parent.as_raw_fd(),
-            leaf.as_ptr(),
+            pending.as_ptr(),
             libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
             0o600,
         )
     };
     if fd < 0 {
         return Err(std::io::Error::last_os_error())
-            .context("creating durable author transaction state");
+            .context("creating pending durable author transaction state");
     }
     let mut file = unsafe { File::from_raw_fd(fd) };
     file.write_all(&bytes)?;
     file.sync_all()?;
+    parent.sync_all()?;
+    if cfg!(debug_assertions)
+        && std::env::var_os("MDP_TEST_AUTHOR_CRASH_BEFORE_STATE_PUBLISH").is_some()
+    {
+        std::process::abort();
+    }
+    if let Err(error) = rename_no_replace_between(parent, &pending, parent, &leaf) {
+        let _ = unsafe { libc::unlinkat(parent.as_raw_fd(), pending.as_ptr(), 0) };
+        return Err(error).context("publishing durable author transaction state");
+    }
     parent.sync_all()?;
     Ok(())
 }
@@ -980,7 +1017,15 @@ fn read_transaction_state(
     parent: &File,
     live_root: &Path,
 ) -> Result<Option<(TransactionState, (u64, u64))>> {
-    let leaf = component_name(&state_leaf(live_root))?;
+    read_transaction_state_named(parent, &state_leaf(live_root))
+}
+
+#[cfg(unix)]
+fn read_transaction_state_named(
+    parent: &File,
+    name: &str,
+) -> Result<Option<(TransactionState, (u64, u64))>> {
+    let leaf = component_name(name)?;
     let fd = unsafe {
         libc::openat(
             parent.as_raw_fd(),
@@ -1107,7 +1152,7 @@ fn remove_tree_contents(directory: &File) -> Result<()> {
         let Some((_, _, mode)) = named_identity(directory, &leaf)? else {
             continue;
         };
-        if mode & libc::S_IFMT == libc::S_IFDIR {
+        if mode & (libc::S_IFMT as u32) == libc::S_IFDIR as u32 {
             let child = open_child_directory(
                 directory,
                 name.to_str()
@@ -1185,15 +1230,19 @@ fn cleanup_transaction(
 ) -> Result<Vec<String>> {
     let root = open_verified_directory(live_root)?;
     validate_transaction_state(state, live_root, parent, &root)?;
-    let staging = open_child_directory(parent, &state.staging_name)?;
-    let backup = open_child_directory(parent, &state.backup_name)?;
+    let staging = open_optional_child_directory(parent, &state.staging_name)?;
+    let backup = open_optional_child_directory(parent, &state.backup_name)?;
     let live = open_child_directory(&root, ".mdp")?;
     let mut rolled_back = Vec::new();
     if rollback {
         for installed in state.installs.iter().rev() {
             match logical_identity(&live, &installed.path)? {
                 None => {
-                    if let Some(identity) = logical_identity(&staging, &installed.path)?
+                    if let Some(identity) = staging
+                        .as_ref()
+                        .map(|staging| logical_identity(staging, &installed.path))
+                        .transpose()?
+                        .flatten()
                         && identity != (installed.dev, installed.ino)
                     {
                         return Err(anyhow!(
@@ -1203,11 +1252,14 @@ fn cleanup_transaction(
                     }
                 }
                 Some(identity) if identity == (installed.dev, installed.ino) => {
-                    rename_logical_no_replace(&live, &staging, &installed.path, true)?;
-                    if logical_identity(&staging, &installed.path)?
+                    let staging = staging.as_ref().ok_or_else(|| {
+                        anyhow!("rollback staging workspace is absent while live authority remains")
+                    })?;
+                    rename_logical_no_replace(&live, staging, &installed.path, true)?;
+                    if logical_identity(staging, &installed.path)?
                         != Some((installed.dev, installed.ino))
                     {
-                        let _ = rename_logical_no_replace(&staging, &live, &installed.path, true);
+                        let _ = rename_logical_no_replace(staging, &live, &installed.path, true);
                         return Err(anyhow!(
                             "rollback quarantined a concurrent replacement at {}",
                             installed.path
@@ -1228,7 +1280,12 @@ fn cleanup_transaction(
             }
         }
         for moved in state.backups.iter().rev() {
-            match logical_identity(&backup, &moved.path)? {
+            let backup_identity = backup
+                .as_ref()
+                .map(|backup| logical_identity(backup, &moved.path))
+                .transpose()?
+                .flatten();
+            match backup_identity {
                 None => {
                     if logical_identity(&live, &moved.path)? != Some((moved.dev, moved.ino)) {
                         return Err(anyhow!(
@@ -1238,15 +1295,18 @@ fn cleanup_transaction(
                     }
                 }
                 Some(identity) if identity == (moved.dev, moved.ino) => {
+                    let backup = backup.as_ref().ok_or_else(|| {
+                        anyhow!("rollback backup workspace disappeared during recovery")
+                    })?;
                     if logical_identity(&live, &moved.path)?.is_some() {
                         return Err(anyhow!(
                             "rollback refused to overwrite concurrent authority {}",
                             moved.path
                         ));
                     }
-                    rename_logical_no_replace(&backup, &live, &moved.path, true)?;
+                    rename_logical_no_replace(backup, &live, &moved.path, true)?;
                     if logical_identity(&live, &moved.path)? != Some((moved.dev, moved.ino)) {
-                        let _ = rename_logical_no_replace(&live, &backup, &moved.path, true);
+                        let _ = rename_logical_no_replace(&live, backup, &moved.path, true);
                         return Err(anyhow!(
                             "rollback moved an unexpected backup authority at {}",
                             moved.path
@@ -1264,10 +1324,19 @@ fn cleanup_transaction(
         }
         remove_recorded_directories(&live, &state.created_directories)?;
     }
-    validate_workspace_contents(&staging, &state.installs)?;
-    validate_backup_contents(&backup, &state.backups)?;
-    remove_workspace(parent, &state.staging_name, &staging)?;
-    remove_workspace(parent, &state.backup_name, &backup)?;
+    if let Some(staging) = staging.as_ref() {
+        validate_workspace_contents(staging, &state.installs)?;
+        remove_workspace(parent, &state.staging_name, staging)?;
+    }
+    if cfg!(debug_assertions)
+        && std::env::var_os("MDP_TEST_AUTHOR_CRASH_AFTER_STAGING_CLEANUP").is_some()
+    {
+        std::process::abort();
+    }
+    if let Some(backup) = backup.as_ref() {
+        validate_backup_contents(backup, &state.backups)?;
+        remove_workspace(parent, &state.backup_name, backup)?;
+    }
     let (_, state_identity) = read_transaction_state(parent, live_root)?
         .ok_or_else(|| anyhow!("durable author transaction state disappeared during cleanup"))?;
     remove_named_identity(parent, &state_leaf(live_root), state_identity)?;
@@ -1317,6 +1386,34 @@ fn validate_backup_contents(root: &File, expected: &[PublishedBackupState]) -> R
 #[cfg(unix)]
 fn recover_pending_transaction(live_root: &Path) -> Result<RecoveryOutcome> {
     let parent = open_verified_directory(live_root.parent().unwrap_or(live_root))?;
+    if read_transaction_state(&parent, live_root)?.is_none() {
+        let pending_name = pending_state_leaf(live_root);
+        let pending_state = match read_transaction_state_named(&parent, &pending_name) {
+            Ok(value) => value,
+            Err(error) => {
+                remove_incomplete_pending_state(&parent, &pending_name).with_context(|| {
+                    format!("discarding incomplete pending transaction state after {error}")
+                })?;
+                None
+            }
+        };
+        if let Some((pending_state, pending_identity)) = pending_state {
+            let root = open_verified_directory(live_root)?;
+            validate_transaction_state(&pending_state, live_root, &parent, &root)?;
+            let pending = component_name(&pending_name)?;
+            let final_leaf = component_name(&state_leaf(live_root))?;
+            rename_no_replace_between(&parent, &pending, &parent, &final_leaf)
+                .context("recovering atomically staged author transaction state")?;
+            if named_identity(&parent, &final_leaf)?.map(|(dev, ino, _)| (dev, ino))
+                != Some(pending_identity)
+            {
+                return Err(anyhow!(
+                    "pending author transaction identity changed during recovery"
+                ));
+            }
+            parent.sync_all()?;
+        }
+    }
     let Some((state, _)) = read_transaction_state(&parent, live_root)? else {
         return Ok(RecoveryOutcome::None);
     };
@@ -1351,7 +1448,22 @@ fn recover_or_cleanup_transaction(
             Err(error) => return Err(error),
         }
     }
+    remove_incomplete_pending_state(&parent, &pending_state_leaf(live_root))?;
     Ok(RecoveryOutcome::None)
+}
+
+#[cfg(unix)]
+fn remove_incomplete_pending_state(parent: &File, name: &str) -> Result<()> {
+    let leaf = component_name(name)?;
+    let Some((dev, ino, mode)) = named_identity(parent, &leaf)? else {
+        return Ok(());
+    };
+    if mode & (libc::S_IFMT as u32) != libc::S_IFREG as u32 {
+        return Err(anyhow!(
+            "pending author transaction state is not a regular file"
+        ));
+    }
+    remove_named_identity(parent, name, (dev, ino))
 }
 
 #[cfg(not(unix))]
@@ -1525,23 +1637,59 @@ fn capture_inventory(_root: &Path) -> Result<InventorySnapshot> {
 }
 
 fn validation_summary_for_snapshot(snapshot: &InventorySnapshot) -> Result<ValidationSummary> {
-    let root = std::env::temp_dir().join(format!("mdp-author-validate-{}", nonce()));
+    let root = std::env::temp_dir().join(format!("mdp-author-validate-{}", secure_nonce()?));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new().mode(0o700).create(&root)?;
+    }
+    #[cfg(not(unix))]
     fs::create_dir(&root)?;
     let materialized = (|| -> Result<ValidationSummary> {
         for (path, bytes) in &snapshot.bytes {
             let logical = logical_from_path(path)?;
             let target = root.join(".mdp").join(logical);
-            fs::create_dir_all(
-                target
-                    .parent()
-                    .ok_or_else(|| anyhow!("invalid snapshot path"))?,
-            )?;
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(target)?;
+            let parent = target
+                .parent()
+                .ok_or_else(|| anyhow!("invalid snapshot path"))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                fs::DirBuilder::new()
+                    .recursive(true)
+                    .mode(0o700)
+                    .create(parent)?;
+            }
+            #[cfg(not(unix))]
+            fs::create_dir_all(parent)?;
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            options.mode(0o600);
+            let mut file = options.open(target)?;
             file.write_all(bytes)?;
             file.sync_all()?;
+        }
+        #[cfg(unix)]
+        {
+            if cfg!(debug_assertions)
+                && let Some(marker) = std::env::var_os("MDP_TEST_AUTHOR_VALIDATION_MARKER")
+            {
+                let marker = PathBuf::from(marker);
+                fs::write(&marker, root.as_os_str().as_bytes())?;
+                let release = marker.with_extension("go");
+                for _ in 0..500 {
+                    if release.exists() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                if !release.exists() {
+                    return Err(anyhow!(
+                        "timed out waiting for validation snapshot test handshake"
+                    ));
+                }
+            }
         }
         Ok(validation_summary(&root))
     })();
@@ -1825,6 +1973,21 @@ fn nonce() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos()
+}
+
+#[cfg(unix)]
+fn secure_nonce() -> Result<String> {
+    let mut bytes = [0_u8; 16];
+    File::open("/dev/urandom")
+        .context("opening operating-system random source")?
+        .read_exact(&mut bytes)
+        .context("reading operating-system random source")?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+#[cfg(not(unix))]
+fn secure_nonce() -> Result<String> {
+    Ok(format!("{:032x}", nonce()))
 }
 
 fn test_pause(variable: &str) -> Result<()> {

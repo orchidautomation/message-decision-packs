@@ -26,8 +26,8 @@ mdp --json author apply \
 Preview runs the same pack validation used by `mdp validate`, captures the
 expected live hashes and candidate hashes, and reports bounded path-only lists:
 `created`, `changed`, `unchanged`, and `deleted`. It does not modify the live
-pack, but it always creates the required `--out` change-set file. That file
-contains no pack bodies.
+pack. A successful preview creates the required `--out` change-set file; a
+refused preview creates no plan. The change-set contains no pack bodies.
 
 Apply revalidates the candidate and refuses when either side differs from the
 preview. `refused` lists the conflicting logical paths. Publication changes
