@@ -341,7 +341,7 @@ pub(crate) fn capabilities() -> Value {
             nested_command("assemble", JOB_CONFORMANCE_V1, &["--candidate", "--deterministic", "--behavioral", "--artifact-root"], &["--trial"], &["--out", "--dry-run"]),
             nested_command_with_outputs("report", &[CONFORMANCE_REPORT_V1, PUBLIC_CONFORMANCE_REPORT_V1], &["--conformance", "--artifact-root", "--visibility", "--generated-at"], &[], &["--out", "--dry-run"]),
             command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--target-name", "--target-kind", "--target-alias", "--exclude-term", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
-            author_command("preview", "read-only-unless-out", &["--candidate", "--out"], &["--dir"]),
+            author_command("preview", "writes-new-change-set", &["--candidate", "--out"], &["--dir"]),
             author_command("apply", "transactional-pack-write", &["--candidate", "--change-set"], &["--dir"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
@@ -888,6 +888,17 @@ mod tests {
                 .expect("commands array")
                 .iter()
                 .any(|command| command["name"] == "capabilities")
+        );
+        let author_preview = result["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .find(|command| command["argv"] == json!(["author", "preview"]))
+            .expect("author preview command");
+        assert_eq!(author_preview["side_effects"], "writes-new-change-set");
+        assert_eq!(
+            author_preview["required_args"],
+            json!(["--candidate", "--out"])
         );
         let report = result["commands"]
             .as_array()

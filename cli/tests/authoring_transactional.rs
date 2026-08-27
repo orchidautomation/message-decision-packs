@@ -4,7 +4,10 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::process::{Command, Output};
+use std::thread;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn binary() -> PathBuf {
@@ -45,10 +48,17 @@ fn copy_tree(source: &Path, target: &Path) {
 }
 
 fn run(args: &[&str], fault_after: Option<usize>) -> Output {
+    run_env(args, fault_after, &[])
+}
+
+fn run_env(args: &[&str], fault_after: Option<usize>, environment: &[(&str, String)]) -> Output {
     let mut command = Command::new(binary());
     command.arg("--json").args(args);
     if let Some(boundary) = fault_after {
         command.env("MDP_TEST_AUTHOR_FAULT_AFTER", boundary.to_string());
+    }
+    for (name, value) in environment {
+        command.env(name, value);
     }
     command.output().expect("mdp author command should run")
 }
@@ -144,6 +154,19 @@ fn apply(live: &Path, candidate: &Path, plan: &Path, fault_after: Option<usize>)
         ],
         fault_after,
     )
+}
+
+fn apply_args<'a>(live: &'a Path, candidate: &'a Path, plan: &'a Path) -> [&'a str; 8] {
+    [
+        "author",
+        "apply",
+        "--dir",
+        live.to_str().unwrap(),
+        "--candidate",
+        candidate.to_str().unwrap(),
+        "--change-set",
+        plan.to_str().unwrap(),
+    ]
 }
 
 #[test]
@@ -320,6 +343,10 @@ fn every_injected_publication_boundary_rolls_back_all_mdp_owned_writes() {
             before,
             "boundary {boundary} left a partial publication"
         );
+        assert!(
+            !live.join(".mdp/authoring").exists(),
+            "boundary {boundary} left a created directory"
+        );
         assert_eq!(
             fs::read_to_string(live.join("operator-notes.txt")).unwrap(),
             "unrelated\n"
@@ -329,5 +356,227 @@ fn every_injected_publication_boundary_rolls_back_all_mdp_owned_writes() {
         exercised >= 4,
         "test should cross every backup/create/install boundary"
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn crash_after_live_backup_is_recovered_before_the_next_apply() {
+    let (root, live, candidate, plan) = fixture("crash-recovery");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_CRASH_AFTER", "6");
+    let crashed = command.output().expect("crashing author child should run");
+    assert!(!crashed.status.success());
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(
+        recovered.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    assert_eq!(data(&recovered)["status"], "applied");
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let residues = fs::read_dir(&root)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| {
+            name.starts_with(".mdp.author.staging.")
+                || name.starts_with(".mdp.author.backup.")
+                || name.starts_with(".mdp.author.state.")
+        })
+        .collect::<Vec<_>>();
+    assert!(residues.is_empty(), "recovery residue: {residues:?}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn crash_after_commit_marker_finishes_cleanup_without_rolling_back() {
+    let (root, live, candidate, plan) = fixture("committed-crash-recovery");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_CRASH_AFTER", "10");
+    let crashed = command.output().expect("crashing author child should run");
+    assert!(!crashed.status.success());
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(recovered.status.success());
+    let result = data(&recovered);
+    assert_eq!(result["status"], "applied");
+    assert!(
+        result["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|code| code == "interrupted-commit-recovered")
+    );
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rollback_preserves_an_atomic_concurrent_replacement() {
+    let (root, live, candidate, plan) = fixture("concurrent-rollback");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let marker = root.join("rollback-ready");
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_FAULT_AFTER", "8")
+        .env("MDP_TEST_AUTHOR_ROLLBACK_MARKER", &marker)
+        .stdout(Stdio::null());
+    let mut child = command.spawn().expect("author child should spawn");
+    for _ in 0..500 {
+        if marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(marker.exists(), "rollback handshake should become ready");
+    let replacement = live.join(".mdp/concurrent-replacement");
+    fs::write(&replacement, "operator concurrent replacement\n").unwrap();
+    fs::rename(&replacement, live.join(".mdp/README.md")).unwrap();
+    fs::write(marker.with_extension("go"), "go\n").unwrap();
+    let status = child.wait().expect("author child should exit");
+    assert!(!status.success());
+    assert_eq!(
+        fs::read_to_string(live.join(".mdp/README.md")).unwrap(),
+        "operator concurrent replacement\n"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn cleanup_failure_is_indeterminate_and_recoverable() {
+    let (root, live, candidate, plan) = fixture("cleanup-failure");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let failed = run_env(
+        &apply_args(&live, &candidate, &plan),
+        Some(6),
+        &[("MDP_TEST_AUTHOR_CLEANUP_FAIL", "staging".to_string())],
+    );
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stdout).contains("durable recovery state retained"));
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(recovered.status.success());
+    assert_eq!(data(&recovered)["status"], "applied");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn preview_rejects_a_union_larger_than_the_applicable_plan_limit() {
+    let (root, live, candidate, plan) = fixture("union-limit");
+    let live_extra = live.join(".mdp/live-only");
+    let candidate_extra = candidate.join(".mdp/candidate-only");
+    fs::create_dir_all(&live_extra).unwrap();
+    fs::create_dir_all(&candidate_extra).unwrap();
+    for index in 0..1_050 {
+        fs::write(live_extra.join(format!("{index:04}.txt")), b"live\n").unwrap();
+        fs::write(
+            candidate_extra.join(format!("{index:04}.txt")),
+            b"candidate\n",
+        )
+        .unwrap();
+    }
+    let output = preview(&live, &candidate, &plan);
+    assert!(!output.status.success());
+    assert!(!plan.exists());
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("change set exceeds managed file limit")
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn preview_stays_bound_to_opened_root_during_ancestor_swap() {
+    use std::os::unix::fs::symlink;
+
+    let (root, live, candidate, plan) = fixture("ancestor-swap");
+    let marker = root.join("root-opened");
+    let escape = root.join("escape");
+    copy_tree(&template(), &escape);
+    let escape_before = snapshot(&escape);
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args([
+            "author",
+            "preview",
+            "--dir",
+            live.to_str().unwrap(),
+            "--candidate",
+            candidate.to_str().unwrap(),
+            "--out",
+            plan.to_str().unwrap(),
+        ])
+        .env("MDP_TEST_AUTHOR_PAUSE_ROOT", &live)
+        .env("MDP_TEST_AUTHOR_ROOT_MARKER", &marker)
+        .stdout(Stdio::null());
+    let mut child = command.spawn().unwrap();
+    for _ in 0..500 {
+        if marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(marker.exists());
+    let original = root.join("live-opened-original");
+    fs::rename(&live, &original).unwrap();
+    symlink(&escape, &live).unwrap();
+    fs::write(marker.with_extension("go"), "go\n").unwrap();
+    let status = child.wait().unwrap();
+    assert!(status.success());
+    assert_eq!(snapshot(&escape), escape_before);
+    fs::remove_file(&live).unwrap();
+    fs::rename(&original, &live).unwrap();
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_never_follows_a_swapped_live_root_and_recovers_when_restored() {
+    use std::os::unix::fs::symlink;
+
+    let (root, live, candidate, plan) = fixture("apply-ancestor-swap");
+    assert!(preview(&live, &candidate, &plan).status.success());
+    let marker = root.join("publication-ready");
+    let escape = root.join("escape-apply");
+    copy_tree(&template(), &escape);
+    let escape_before = snapshot(&escape);
+    let mut command = Command::new(binary());
+    command
+        .arg("--json")
+        .args(apply_args(&live, &candidate, &plan))
+        .env("MDP_TEST_AUTHOR_PUBLICATION_MARKER", &marker)
+        .stdout(Stdio::null());
+    let mut child = command.spawn().unwrap();
+    for _ in 0..500 {
+        if marker.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(marker.exists());
+    let original = root.join("live-opened-apply");
+    fs::rename(&live, &original).unwrap();
+    symlink(&escape, &live).unwrap();
+    fs::write(marker.with_extension("go"), "go\n").unwrap();
+    assert!(!child.wait().unwrap().success());
+    assert_eq!(snapshot(&escape), escape_before);
+
+    fs::remove_file(&live).unwrap();
+    fs::rename(&original, &live).unwrap();
+    let recovered = apply(&live, &candidate, &plan, None);
+    assert!(recovered.status.success());
+    assert_eq!(snapshot(&live), snapshot(&candidate));
+    assert_eq!(snapshot(&escape), escape_before);
     let _ = fs::remove_dir_all(root);
 }

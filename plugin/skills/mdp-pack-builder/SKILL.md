@@ -70,7 +70,8 @@ mdp --json author preview --dir PACK_ROOT \
   --candidate CANDIDATE_ROOT --out CHANGE_SET_JSON
 ```
 
-`author preview` uses the normal pack validator, writes no live-pack files,
+`author preview` uses the normal pack validator, writes no live-pack files but
+always creates the required `--out` change-set file,
 and returns bounded `created`, `changed`, `unchanged`, and `deleted` path lists
 without file bodies. Review those lists and the candidate itself. Do not treat
 a generated candidate or a successful preview as reviewed authority.
