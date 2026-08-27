@@ -203,8 +203,9 @@ function assertAssetParityCiContract(workflow) {
   assertCliJobWiring(workflow)
   assertCliPathFilter(workflow, 'plugin/assets/**')
   assertCliPathFilter(workflow, 'assets/**')
-  assertUnconditionalStep(workflow, 'Validate authored asset parity')
-  const commands = runBlock(workflow, 'Validate authored asset parity')
+  const cliJob = jobBlock(workflow, 'cli').join('\n')
+  assertUnconditionalStep(cliJob, 'Validate authored asset parity')
+  const commands = runBlock(cliJob, 'Validate authored asset parity')
     .filter((line) => !line.startsWith('#'))
   assert.deepEqual(
     commands,
@@ -305,6 +306,18 @@ for (const [name, mutation] of [
   [
     'disabled changes job',
     ciWorkflow.replace('  changes:\n    runs-on:', '  changes:\n    if: false\n    runs-on:'),
+  ],
+  [
+    'parity step moved to disabled job',
+    ciWorkflow
+      .replace(
+        '      - name: Validate authored asset parity\n        run: |\n          make validate-asset-sync\n',
+        '',
+      )
+      .replace(
+        '  mcp-macos:\n',
+        '  dead-parity:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n      - name: Validate authored asset parity\n        run: |\n          make validate-asset-sync\n\n  mcp-macos:\n',
+      ),
   ],
 ]) {
   assert.throws(() => assertAssetParityCiContract(mutation), undefined, name)
