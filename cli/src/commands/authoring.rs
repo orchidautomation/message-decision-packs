@@ -841,7 +841,11 @@ fn named_identity(parent: &File, leaf: &CString) -> Result<Option<(u64, u64, u32
         return Err(error).context("inspecting author authority leaf");
     }
     let stat = unsafe { stat.assume_init() };
-    Ok(Some((stat.st_dev as u64, stat.st_ino as u64, stat.st_mode)))
+    Ok(Some((
+        stat.st_dev as u64,
+        stat.st_ino as u64,
+        stat.st_mode as u32,
+    )))
 }
 
 #[cfg(unix)]
