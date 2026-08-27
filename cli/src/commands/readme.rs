@@ -25,14 +25,19 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
     let warnings = human_reference_warnings(&existing, &manifest, &source_ledger, &readme_path);
     let card_refs = cards.iter().collect::<Vec<_>>();
     let fresh_block = render_inventory_block(&manifest, &card_refs, &source_ledger, &prompt_ids);
+    let fresh_ownership = render_ownership_block();
+    let existing_ownership = extract_ownership_block(&existing);
+    let existing_inventory = extract_inventory_block(&existing);
     let changed_generated_regions = changed_generated_regions(&existing, Some(&fresh_block));
-    let Some(existing_block) = extract_inventory_block(&existing) else {
+    if existing_ownership.is_none() && existing_inventory.is_none() {
         return Ok(json!({
             "contract": README_INVENTORY_CONTRACT,
             "status": "unassessed",
             "valid": true,
             "drift": false,
             "has_owned_block": false,
+            "has_ownership_region": false,
+            "has_inventory_region": false,
             "path": readme_path.display().to_string(),
             "generated_regions": generated_region_report(&changed_generated_regions),
             "changed_generated_regions": changed_generated_regions,
@@ -40,7 +45,7 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
             "semantic_prose_review": "not-performed",
             "warnings": warnings
         }));
-    };
+    }
 
     if changed_generated_regions.is_empty() {
         Ok(json!({
@@ -49,6 +54,8 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
             "valid": true,
             "drift": false,
             "has_owned_block": true,
+            "has_ownership_region": true,
+            "has_inventory_region": true,
             "path": readme_path.display().to_string(),
             "inventory_sha256": sha256_hex(fresh_block.as_bytes()),
             "generated_regions": generated_region_report(&changed_generated_regions),
@@ -63,10 +70,16 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
             "status": "stale",
             "valid": false,
             "drift": true,
-            "has_owned_block": true,
+            "has_owned_block": existing_inventory.is_some(),
+            "has_ownership_region": existing_ownership.is_some(),
+            "has_inventory_region": existing_inventory.is_some(),
             "path": readme_path.display().to_string(),
             "expected_sha256": sha256_hex(fresh_block.as_bytes()),
-            "actual_sha256": sha256_hex(existing_block.as_bytes()),
+            "actual_sha256": existing_inventory.as_deref().map(|block| sha256_hex(block.as_bytes())),
+            "generated_region_sha256": {
+                "ownership": region_hash_evidence(&fresh_ownership, existing_ownership.as_deref()),
+                "inventory": region_hash_evidence(&fresh_block, existing_inventory.as_deref())
+            },
             "diagnostics": [stale_drift_issue(&readme_path, "error")],
             "generated_regions": generated_region_report(&changed_generated_regions),
             "changed_generated_regions": changed_generated_regions,
@@ -75,6 +88,13 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
             "warnings": warnings
         }))
     }
+}
+
+fn region_hash_evidence(expected: &str, actual: Option<&str>) -> Value {
+    json!({
+        "expected": sha256_hex(expected.as_bytes()),
+        "actual": actual.map(|region| sha256_hex(region.as_bytes()))
+    })
 }
 
 /// Regenerate only the owned README inventory block, preserving arbitrary human
@@ -467,6 +487,14 @@ mod tests {
         assert_eq!(check["valid"], false);
         assert_eq!(check["changed_generated_regions"], json!(["ownership"]));
         assert_eq!(check["diagnostics"][0]["code"], "readme_inventory_drift");
+        assert_ne!(
+            check["generated_region_sha256"]["ownership"]["expected"],
+            check["generated_region_sha256"]["ownership"]["actual"]
+        );
+        assert_eq!(
+            check["generated_region_sha256"]["inventory"]["expected"],
+            check["generated_region_sha256"]["inventory"]["actual"]
+        );
 
         let validation = crate::commands::health::validate_pack(&root).expect("validate");
         assert_eq!(validation["valid"], true, "drift stays warning-first");
@@ -478,6 +506,52 @@ mod tests {
             .expect("ownership drift warning");
         assert_eq!(drift["severity"], "warning");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn partial_generated_region_presence_is_stale_in_both_directions() {
+        let cases = [
+            ("ownership", "inventory", json!(["inventory"])),
+            ("inventory", "ownership", json!(["ownership"])),
+        ];
+        for (kept, removed, expected_changed) in cases {
+            let root = std::env::temp_dir().join(format!("mdp-readme-partial-{kept}-{}", nonce()));
+            init_pack(&root, "Partial Region Pack", "gtm", true, false)
+                .expect("pack should initialize");
+            let readme_path = root.join(".mdp/README.md");
+            let readme = std::fs::read_to_string(&readme_path).expect("readme");
+            let removed_block = if removed == "ownership" {
+                extract_ownership_block(&readme).expect("ownership block")
+            } else {
+                extract_inventory_block(&readme).expect("inventory block")
+            };
+            let partial = readme.replacen(&removed_block, "", 1);
+            std::fs::write(&readme_path, partial).expect("write partial readme");
+
+            let check = check_readme(&root).expect("check");
+            assert_eq!(check["status"], "stale", "kept {kept}");
+            assert_eq!(check["valid"], false, "kept {kept}");
+            assert_eq!(check["changed_generated_regions"], expected_changed);
+            assert_eq!(check["has_ownership_region"], kept == "ownership");
+            assert_eq!(check["has_inventory_region"], kept == "inventory");
+            assert!(
+                check["generated_region_sha256"][removed]["actual"].is_null(),
+                "missing {removed} region must have null actual hash"
+            );
+            assert!(
+                check["generated_region_sha256"][kept]["actual"].is_string(),
+                "kept {kept} region must retain checksum evidence"
+            );
+
+            let validation = crate::commands::health::validate_pack(&root).expect("validate");
+            assert_eq!(validation["valid"], true, "drift stays warning-first");
+            assert!(validation["issues"].as_array().is_some_and(|issues| {
+                issues.iter().any(|issue| {
+                    issue["code"] == "readme_inventory_drift" && issue["severity"] == "warning"
+                })
+            }));
+            let _ = std::fs::remove_dir_all(root);
+        }
     }
 
     #[test]
