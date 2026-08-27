@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { consentBinding, consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
 import { identityBoundDirectoryCandidates } from './lib/identity-bound-directory.mjs'
+import { superviseProcess } from './lib/process-supervisor.mjs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, parse, relative, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -577,6 +578,51 @@ esac
     manifest_out: manifest,
   })], { ...roleEnv, MDP_SECURE_INSTALL_BIN: realCli })
   assert.equal(retried.result.structuredContent.status, 'ready', JSON.stringify(retried))
+})
+
+test('receipt cleanup removes staging killed before atomic publication', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-staging-timeout-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const simulator = join(root, 'secure-install-staging-timeout.mjs')
+  writeFileSync(simulator, `#!/usr/bin/env node
+import { copyFileSync, fstatSync, fsyncSync, openSync, writeSync } from 'node:fs'
+const args = process.argv.slice(2)
+const source = args[args.indexOf('--source') + 1]
+const stagingLeaf = '.mdp-quarantine-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+copyFileSync(source, stagingLeaf)
+const stats = fstatSync(openSync(stagingLeaf, 'r'), { bigint: true })
+writeSync(4, JSON.stringify({ contract: 'mdp.secure-install-receipt.v1', dev: stats.dev.toString(), ino: stats.ino.toString(), staging_leaf: stagingLeaf }))
+fsyncSync(4)
+setInterval(() => {}, 1_000)
+`)
+  chmodSync(simulator, 0o755)
+  const wrapper = join(root, 'secure-install-staging-timeout.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action install "*) exec "${simulator}" "$@" ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 400,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(existsSync(request), false)
+  assert.equal(readdirSync(work).some((name) => name.startsWith('.mdp-quarantine-')), false)
 })
 
 test('receipt-bound timeout cleanup preserves an identical concurrent replacement', async (t) => {
@@ -1261,6 +1307,24 @@ test('keeps SIGKILL escalation alive after the child leader exits', async (t) =>
   assert.equal(reply.result.structuredContent.code, 'cli-timeout')
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 800))
   assert.equal(existsSync(marker), false)
+})
+
+test('absolute supervisor deadline bounds non-closing process-group polling', async (t) => {
+  if (process.platform === 'win32') return t.skip('Unix process-group behavior')
+  const started = Date.now()
+  const absoluteDeadlineMs = started + 150
+  const result = await superviseProcess({
+    command: [process.execPath],
+    args: ['-e', `const {spawn}=require('node:child_process'); spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'}); process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{},1000)`],
+    cwd: tmpdir(),
+    environment: process.env,
+    timeoutMs: 75,
+    terminationGraceMs: 50,
+    absoluteDeadlineMs,
+    maxOutputBytes: 1024,
+  })
+  assert.equal(result.timedOut, true)
+  assert(Date.now() - started < 300, 'closure polling must not add its default one-second window')
 })
 
 test('interrupting the real CLI during staging removes its exact claim and private transaction', async (t) => {

@@ -287,7 +287,7 @@ const childEnvironment = (includeNativeModel = false) =>
       .map((key) => [key, process.env[key]]),
   )
 
-const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null, terminationGraceMs = undefined) =>
+const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null, terminationGraceMs = undefined, absoluteDeadlineMs = null) =>
   superviseProcess({
     command: [process.env.MDP_BIN || 'mdp'],
     args,
@@ -299,6 +299,7 @@ const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = f
     deadlineMetadata,
     signal,
     ...(terminationGraceMs === undefined ? {} : { terminationGraceMs }),
+    ...(absoluteDeadlineMs === null ? {} : { absoluteDeadlineMs }),
   })
 
 const tools = [
@@ -471,11 +472,11 @@ const assertPrepareActive = (signal) => {
   if (signal?.aborted) throw Object.assign(new Error('preparation cancelled'), { code: 'cli-cancelled' })
 }
 
-const invokeSecureInstaller = (output, action, deadline, terminationGraceMs, signal = null) => {
+const invokeSecureInstaller = (output, action, deadline, terminationGraceMs, signal = null, leaf = basename(output.path)) => {
   const args = [
     '--json', '__secure-install',
     '--action', action,
-    '--name', basename(output.path),
+    '--name', leaf,
     '--dir-fd', '3',
     '--expected-dev', output.parentIdentity.dev.toString(),
     '--expected-ino', output.parentIdentity.ino.toString(),
@@ -500,6 +501,7 @@ const invokeSecureInstaller = (output, action, deadline, terminationGraceMs, sig
     maxOutputBytes: MAX_CHILD_BUFFER_BYTES,
     inheritedFds: [output.fd, output.receiptFd],
     signal,
+    absoluteDeadlineMs: deadline,
   })
 }
 
@@ -509,8 +511,8 @@ const readInstallReceipt = (output) => {
   if (bytes <= 0 || bytes === buffer.length) return null
   let receipt
   try { receipt = JSON.parse(buffer.subarray(0, bytes).toString('utf8')) } catch { return null }
-  if (receipt?.contract !== 'mdp.secure-install-receipt.v1' || !/^\d+$/.test(receipt.dev || '') || !/^\d+$/.test(receipt.ino || '')) return null
-  return { dev: BigInt(receipt.dev), ino: BigInt(receipt.ino) }
+  if (receipt?.contract !== 'mdp.secure-install-receipt.v1' || !/^\d+$/.test(receipt.dev || '') || !/^\d+$/.test(receipt.ino || '') || !/^\.mdp-quarantine-[0-9a-f]{32}$/.test(receipt.staging_leaf || '')) return null
+  return { dev: BigInt(receipt.dev), ino: BigInt(receipt.ino), stagingLeaf: receipt.staging_leaf }
 }
 
 const publishPinnedOutput = async (output, deadline, terminationGraceMs, signal) => {
@@ -542,15 +544,22 @@ const verifyPinnedOutput = async (output, deadline, terminationGraceMs, signal) 
 
 const removePinnedOutput = async (output, deadline, terminationGraceMs) => {
   if (!output.installedIdentity) return true
-  try {
-    const invocation = await invokeSecureInstaller(output, 'remove', deadline, terminationGraceMs)
-    let envelope
-    try { envelope = JSON.parse(invocation.stdout) } catch { return false }
-    return invocation.status === 0 && envelope?.ok === true && envelope?.command === 'secure-install' &&
-      envelope.data?.contract === 'mdp.secure-install.v1' && ['removed', 'absent'].includes(envelope.data?.status)
-  } catch {
-    return false
+  const removeLeaf = async (leaf) => {
+    try {
+      const invocation = await invokeSecureInstaller(output, 'remove', deadline, terminationGraceMs, null, leaf)
+      let envelope
+      try { envelope = JSON.parse(invocation.stdout) } catch { return 'failed' }
+      if (invocation.status !== 0 || envelope?.ok !== true || envelope?.command !== 'secure-install' || envelope.data?.contract !== 'mdp.secure-install.v1') return 'failed'
+      return ['removed', 'absent'].includes(envelope.data?.status) ? envelope.data.status : 'failed'
+    } catch {
+      return 'failed'
+    }
   }
+  const outcomes = await Promise.all([
+    removeLeaf(basename(output.path)),
+    removeLeaf(output.installedIdentity.stagingLeaf),
+  ])
+  return outcomes.every((outcome) => ['removed', 'absent'].includes(outcome))
 }
 
 const normalizePreparedOutputPaths = (data, outputs) => {
@@ -614,7 +623,7 @@ const callPrepareRunValidated = async (args, signal = null) => {
     cliArgs.push('--out', pinnedOutputs[0].cliPath)
     if (manifestOut) cliArgs.push('--manifest-out', pinnedOutputs[1].cliPath)
     if (parsed.full === true) cliArgs.push('--full')
-    const invocation = await invokeCli(cliArgs, dir, remainingPrepareTimeout(workDeadline, terminationGraceMs), null, false, null, signal, terminationGraceMs)
+    const invocation = await invokeCli(cliArgs, dir, remainingPrepareTimeout(workDeadline, terminationGraceMs), null, false, null, signal, terminationGraceMs, workDeadline)
     if (invocation.timedOut || invocation.cancelled || invocation.overflowed || invocation.spawnFailed) {
       return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.cancelled ? 'cli-cancelled' : invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable' }, true)
     }

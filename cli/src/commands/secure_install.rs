@@ -190,7 +190,8 @@ fn secure_install_with_hook<F: FnOnce()>(
             &json!({
                 "contract": "mdp.secure-install-receipt.v1",
                 "dev": identity.0.to_string(),
-                "ino": identity.1.to_string()
+                "ino": identity.1.to_string(),
+                "staging_leaf": staging_name.to_str()?
             }),
         )?;
         receipt.write_all(b"\n")?;
@@ -358,6 +359,12 @@ mod tests {
         assert_eq!(receipt["contract"], "mdp.secure-install-receipt.v1");
         assert_eq!(receipt["dev"], installed["dev"]);
         assert_eq!(receipt["ino"], installed["ino"]);
+        assert!(
+            receipt["staging_leaf"]
+                .as_str()
+                .unwrap()
+                .starts_with(".mdp-quarantine-")
+        );
         assert_eq!(
             std::fs::read(renamed.join("request.json")).unwrap(),
             b"fixture"

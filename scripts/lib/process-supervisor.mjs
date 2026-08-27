@@ -126,10 +126,12 @@ const groupIsClosed = (processGroupId) => {
   }
 }
 
-const waitForClosedGroup = async (processGroupId, attempts = 40) => {
+const waitForClosedGroup = async (processGroupId, attempts = 40, absoluteDeadlineMs = null) => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (groupIsClosed(processGroupId)) return true
-    await new Promise((resolveWait) => setTimeout(resolveWait, 25))
+    const remaining = absoluteDeadlineMs === null ? 25 : absoluteDeadlineMs - Date.now()
+    if (remaining <= 0) return false
+    await new Promise((resolveWait) => setTimeout(resolveWait, Math.min(25, remaining)))
   }
   return groupIsClosed(processGroupId)
 }
@@ -146,6 +148,7 @@ export const superviseProcess = ({
   deadlineMetadata = null,
   signal = null,
   inheritedFds = [],
+  absoluteDeadlineMs = null,
 }) =>
   new Promise((resolveResult) => {
     const startedAt = performance.now()
@@ -170,14 +173,17 @@ export const superviseProcess = ({
       if (escalationPromise) return escalationPromise
       terminateProcessGroup(child, processGroupId, 'SIGTERM')
       escalationPromise = new Promise((resolveEscalation) => {
+        const graceMs = absoluteDeadlineMs === null
+          ? terminationGraceMs
+          : Math.max(0, Math.min(terminationGraceMs, absoluteDeadlineMs - Date.now()))
         setTimeout(async () => {
           terminateProcessGroup(child, processGroupId, 'SIGKILL')
-          const processGroupClosed = await waitForClosedGroup(processGroupId)
+          const processGroupClosed = await waitForClosedGroup(processGroupId, 40, absoluteDeadlineMs)
           const recovered = processGroupClosed && recovery
             ? cleanupMdpRecoveryClaim(recovery)
             : false
           resolveEscalation({ processGroupClosed, recovered })
-        }, terminationGraceMs)
+        }, graceMs)
       })
       return escalationPromise
     }
