@@ -4,6 +4,8 @@ use serde_yaml::Value as YamlValue;
 use std::collections::BTreeSet;
 
 pub(crate) const README_INVENTORY_CONTRACT: &str = "mdp.readme-inventory.v1";
+pub(crate) const README_OWNERSHIP_BEGIN: &str = "<!-- mdp:readme-ownership v1 begin -->";
+pub(crate) const README_OWNERSHIP_END: &str = "<!-- mdp:readme-ownership v1 end -->";
 pub(crate) const README_INVENTORY_BEGIN: &str = "<!-- mdp:readme-inventory v1 begin -->";
 pub(crate) const README_INVENTORY_END: &str = "<!-- mdp:readme-inventory v1 end -->";
 
@@ -15,6 +17,8 @@ pub(crate) fn render_pack_readme(
 ) -> String {
     let mut out = String::new();
     line(&mut out, &format!("# {}", manifest.name));
+    line(&mut out, "");
+    out.push_str(&render_ownership_block());
     line(&mut out, "");
     section(&mut out, "Authority");
     line(
@@ -164,9 +168,30 @@ pub(crate) fn render_pack_readme(
     out
 }
 
-/// Render the deterministic, marker-delimited inventory block that is the only
-/// machine-owned region of the README. Refresh replaces exactly this region and
-/// preserves arbitrary human orientation outside it.
+/// Render the small machine-owned ownership legend. Everything outside this
+/// block and the inventory block is explicitly human-owned prose that refresh
+/// preserves but does not semantically review.
+pub(crate) fn render_ownership_block() -> String {
+    let mut out = String::new();
+    line(&mut out, README_OWNERSHIP_BEGIN);
+    line(&mut out, "");
+    line(&mut out, "## README ownership");
+    line(&mut out, "");
+    bullet(
+        &mut out,
+        "Machine-owned: this ownership legend and the marker-delimited Inventory block. `mdp readme refresh` may replace only those regions.",
+    );
+    bullet(
+        &mut out,
+        "Human-owned: every other README byte. Refresh preserves that prose without reviewing its thesis, claims, source interpretation, or gaps.",
+    );
+    line(&mut out, README_OWNERSHIP_END);
+    out
+}
+
+/// Render the deterministic, marker-delimited inventory block. Along with the
+/// ownership legend, this is a machine-owned README region; refresh preserves
+/// arbitrary human orientation outside those two regions.
 pub(crate) fn render_inventory_block(
     _manifest: &Manifest,
     cards: &[&Card],
@@ -252,16 +277,86 @@ pub(crate) fn render_inventory_block(
 /// unassessed and unable to affect pack readiness. The captured string equals
 /// the freshly rendered block byte-for-byte for unchanged authority.
 pub(crate) fn extract_inventory_block(readme: &str) -> Option<String> {
-    let begin = readme.find(README_INVENTORY_BEGIN)?;
-    let end = block_end_offset(readme, begin)?;
-    Some(readme[begin..end].to_string())
+    extract_marked_block(readme, README_INVENTORY_BEGIN, README_INVENTORY_END)
+}
+
+pub(crate) fn extract_ownership_block(readme: &str) -> Option<String> {
+    extract_marked_block(readme, README_OWNERSHIP_BEGIN, README_OWNERSHIP_END)
 }
 
 /// Replace the owned inventory block in `readme` with `fresh_block`. When no
 /// owned block is present, append the block at the end as an explicit migration
 /// from legacy orientation-only prose.
 pub(crate) fn replace_inventory_block(readme: &str, fresh_block: &str) -> String {
-    match extract_inventory_block_offsets(readme) {
+    replace_marked_block(
+        readme,
+        fresh_block,
+        README_INVENTORY_BEGIN,
+        README_INVENTORY_END,
+    )
+}
+
+/// Refresh both machine-owned README regions. A legacy README is migrated by
+/// prepending the ownership legend and appending the generated inventory; its
+/// existing human prose remains byte-for-byte intact between those additions.
+pub(crate) fn replace_readme_regions(readme: &str, fresh_inventory: &str) -> String {
+    let ownership = render_ownership_block();
+    let with_ownership = if extract_ownership_block(readme).is_some() {
+        replace_marked_block(
+            readme,
+            &ownership,
+            README_OWNERSHIP_BEGIN,
+            README_OWNERSHIP_END,
+        )
+    } else {
+        insert_ownership_block(readme, &ownership)
+    };
+    replace_inventory_block(&with_ownership, fresh_inventory)
+}
+
+pub(crate) fn human_owned_readme(readme: &str) -> String {
+    let without_ownership =
+        remove_marked_block(readme, README_OWNERSHIP_BEGIN, README_OWNERSHIP_END);
+    remove_marked_block(
+        &without_ownership,
+        README_INVENTORY_BEGIN,
+        README_INVENTORY_END,
+    )
+}
+
+fn extract_marked_block(readme: &str, begin_marker: &str, end_marker: &str) -> Option<String> {
+    let (begin, end) = marked_block_offsets(readme, begin_marker, end_marker)?;
+    Some(readme[begin..end].to_string())
+}
+
+fn insert_ownership_block(readme: &str, ownership: &str) -> String {
+    if readme.starts_with("# ") {
+        if let Some(line_end) = readme.find('\n') {
+            let insertion = line_end + 1;
+            let mut out = String::with_capacity(readme.len() + ownership.len() + 1);
+            out.push_str(&readme[..insertion]);
+            out.push('\n');
+            out.push_str(ownership);
+            out.push('\n');
+            out.push_str(&readme[insertion..]);
+            return out;
+        }
+    }
+    let mut out = ownership.to_string();
+    if !readme.is_empty() {
+        out.push('\n');
+        out.push_str(readme);
+    }
+    out
+}
+
+fn replace_marked_block(
+    readme: &str,
+    fresh_block: &str,
+    begin_marker: &str,
+    end_marker: &str,
+) -> String {
+    match marked_block_offsets(readme, begin_marker, end_marker) {
         Some((begin, end)) => {
             let mut out = String::with_capacity(readme.len() + fresh_block.len());
             out.push_str(&readme[..begin]);
@@ -280,18 +375,32 @@ pub(crate) fn replace_inventory_block(readme: &str, fresh_block: &str) -> String
     }
 }
 
-fn extract_inventory_block_offsets(readme: &str) -> Option<(usize, usize)> {
-    let begin = readme.find(README_INVENTORY_BEGIN)?;
-    let end = block_end_offset(readme, begin)?;
+fn remove_marked_block(readme: &str, begin_marker: &str, end_marker: &str) -> String {
+    let Some((begin, end)) = marked_block_offsets(readme, begin_marker, end_marker) else {
+        return readme.to_string();
+    };
+    let mut out = String::with_capacity(readme.len() - (end - begin));
+    out.push_str(&readme[..begin]);
+    out.push_str(&readme[end..]);
+    out
+}
+
+fn marked_block_offsets(
+    readme: &str,
+    begin_marker: &str,
+    end_marker: &str,
+) -> Option<(usize, usize)> {
+    let begin = readme.find(begin_marker)?;
+    let end = block_end_offset(readme, begin, end_marker)?;
     Some((begin, end))
 }
 
 /// Return the offset just past the end of the owned block beginning at `begin`,
 /// consuming the single line terminator after the end marker so the captured
 /// string equals the freshly rendered block byte-for-byte.
-fn block_end_offset(readme: &str, begin: usize) -> Option<usize> {
-    let end_marker_start = begin + readme[begin..].find(README_INVENTORY_END)?;
-    let after_marker = end_marker_start + README_INVENTORY_END.len();
+fn block_end_offset(readme: &str, begin: usize, end_marker: &str) -> Option<usize> {
+    let end_marker_start = begin + readme[begin..].find(end_marker)?;
+    let after_marker = end_marker_start + end_marker.len();
     let bytes = readme.as_bytes();
     if after_marker < bytes.len() && bytes[after_marker] == b'\n' {
         Some(after_marker + 1)
@@ -409,6 +518,18 @@ mod tests {
     }
 
     #[test]
+    fn bundled_starter_readmes_mark_machine_and_human_ownership() {
+        for readme in [
+            include_str!("../../plugin/assets/templates/basic/.mdp/README.md"),
+            include_str!("../../plugin/assets/templates/proposal/.mdp/README.md"),
+        ] {
+            assert!(extract_ownership_block(readme).is_some());
+            assert!(extract_inventory_block(readme).is_some());
+            assert!(readme.contains("Human-owned: every other README byte"));
+        }
+    }
+
+    #[test]
     fn inventory_block_is_deterministic_and_byte_stable_for_unchanged_authority() {
         let manifest = manifest_with("Deterministic Pack");
         let cards = vec![
@@ -477,6 +598,9 @@ mod tests {
         let prompts = vec!["generate-outbound-copy".to_string()];
         let readme = render_pack_readme(&manifest, &card_refs, &ledger, &prompts);
         assert!(readme.contains("## Authority"));
+        assert!(readme.contains(README_OWNERSHIP_BEGIN));
+        assert!(readme.contains(README_OWNERSHIP_END));
+        assert!(readme.contains("Human-owned: every other README byte"));
         assert!(readme.contains(README_INVENTORY_BEGIN));
         assert!(readme.contains(README_INVENTORY_END));
         let extracted = extract_inventory_block(&readme).expect("block should extract");

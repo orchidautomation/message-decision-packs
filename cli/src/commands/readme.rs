@@ -4,8 +4,8 @@ use crate::constants::DEFAULT_DIR;
 use crate::models::{Card, Manifest};
 use crate::pack_io::{read_card, read_manifest, resolve_pack_path};
 use crate::pack_readme::{
-    README_INVENTORY_CONTRACT, extract_inventory_block, render_inventory_block,
-    replace_inventory_block,
+    README_INVENTORY_CONTRACT, extract_inventory_block, extract_ownership_block,
+    human_owned_readme, render_inventory_block, render_ownership_block, replace_readme_regions,
 };
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
@@ -19,6 +19,9 @@ use std::path::Path;
 pub(crate) fn check_readme(root: &Path) -> Result<Value> {
     let readme_path = root.join(DEFAULT_DIR).join("README.md");
     let existing = fs::read_to_string(&readme_path).unwrap_or_default();
+    let (manifest, cards, source_ledger, prompt_ids) = load_readme_authority(root)?;
+    let warnings = human_reference_warnings(&existing, &manifest, &source_ledger, &readme_path);
+    let unassessed_changed_regions = changed_generated_regions(&existing, None);
     let Some(existing_block) = extract_inventory_block(&existing) else {
         return Ok(json!({
             "contract": README_INVENTORY_CONTRACT,
@@ -26,13 +29,18 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
             "valid": true,
             "drift": false,
             "has_owned_block": false,
-            "path": readme_path.display().to_string()
+            "path": readme_path.display().to_string(),
+            "generated_regions": generated_region_report(&unassessed_changed_regions),
+            "changed_generated_regions": unassessed_changed_regions,
+            "untouched_human_regions": untouched_human_regions(),
+            "semantic_prose_review": "not-performed",
+            "warnings": warnings
         }));
     };
 
-    let (manifest, cards, source_ledger, prompt_ids) = load_readme_authority(root)?;
     let card_refs = cards.iter().collect::<Vec<_>>();
     let fresh_block = render_inventory_block(&manifest, &card_refs, &source_ledger, &prompt_ids);
+    let changed_generated_regions = changed_generated_regions(&existing, Some(&fresh_block));
     if existing_block == fresh_block {
         Ok(json!({
             "contract": README_INVENTORY_CONTRACT,
@@ -41,7 +49,12 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
             "drift": false,
             "has_owned_block": true,
             "path": readme_path.display().to_string(),
-            "inventory_sha256": sha256_hex(fresh_block.as_bytes())
+            "inventory_sha256": sha256_hex(fresh_block.as_bytes()),
+            "generated_regions": generated_region_report(&changed_generated_regions),
+            "changed_generated_regions": changed_generated_regions,
+            "untouched_human_regions": untouched_human_regions(),
+            "semantic_prose_review": "not-performed",
+            "warnings": warnings
         }))
     } else {
         Ok(json!({
@@ -53,7 +66,12 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
             "path": readme_path.display().to_string(),
             "expected_sha256": sha256_hex(fresh_block.as_bytes()),
             "actual_sha256": sha256_hex(existing_block.as_bytes()),
-            "diagnostics": [stale_drift_issue(&readme_path, "error")]
+            "diagnostics": [stale_drift_issue(&readme_path, "error")],
+            "generated_regions": generated_region_report(&changed_generated_regions),
+            "changed_generated_regions": changed_generated_regions,
+            "untouched_human_regions": untouched_human_regions(),
+            "semantic_prose_review": "not-performed",
+            "warnings": warnings
         }))
     }
 }
@@ -67,8 +85,10 @@ pub(crate) fn refresh_readme(root: &Path, out: Option<&Path>, dry_run: bool) -> 
     let fresh_block = render_inventory_block(&manifest, &card_refs, &source_ledger, &prompt_ids);
     let readme_path = root.join(DEFAULT_DIR).join("README.md");
     let existing = fs::read_to_string(&readme_path).unwrap_or_default();
-    let updated = replace_inventory_block(&existing, &fresh_block);
+    let updated = replace_readme_regions(&existing, &fresh_block);
     let had_owned_block = extract_inventory_block(&existing).is_some();
+    let changed_generated_regions = changed_generated_regions(&existing, Some(&fresh_block));
+    let warnings = human_reference_warnings(&existing, &manifest, &source_ledger, &readme_path);
     let bytes = updated.len() as u64;
 
     let (status, target_path) = if dry_run {
@@ -95,7 +115,12 @@ pub(crate) fn refresh_readme(root: &Path, out: Option<&Path>, dry_run: bool) -> 
         "had_owned_block": had_owned_block,
         "inventory_sha256": sha256_hex(fresh_block.as_bytes()),
         "bytes": bytes,
-        "block": fresh_block
+        "block": fresh_block,
+        "generated_regions": generated_region_report(&changed_generated_regions),
+        "changed_generated_regions": changed_generated_regions,
+        "untouched_human_regions": untouched_human_regions(),
+        "semantic_prose_review": "not-performed",
+        "warnings": warnings
     });
     if dry_run {
         if let Some(object) = data.as_object_mut() {
@@ -109,20 +134,135 @@ pub(crate) fn refresh_readme(root: &Path, out: Option<&Path>, dry_run: bool) -> 
 /// block exists and is stale. Missing README, legacy prose without the marker,
 /// unreadable manifest/cards, or a fresh block all return `None`; the ordinary
 /// validate paths already surface manifest/card/read failures.
-pub(crate) fn readme_drift_issue(root: &Path) -> Option<Value> {
-    let result = check_readme(root).ok()?;
+pub(crate) fn readme_validation_issues(root: &Path) -> Vec<Value> {
+    let Some(result) = check_readme(root).ok() else {
+        return vec![];
+    };
+    let mut issues = result["warnings"].as_array().cloned().unwrap_or_default();
     if result["status"] == "stale" {
         // Validate integration surfaces drift as a warning so legacy and
         // card-mutating flows remain compatible; strict validation promotes
         // it to a blocker. The standalone `readme check` command keeps its own
         // error-level diagnostic.
-        Some(stale_drift_issue(
+        issues.push(stale_drift_issue(
             &std::path::PathBuf::from(result["path"].as_str().unwrap_or(".mdp/README.md")),
             "warning",
-        ))
-    } else {
-        None
+        ));
     }
+    issues
+}
+
+fn changed_generated_regions(existing: &str, fresh_inventory: Option<&str>) -> Vec<&'static str> {
+    let mut changed = Vec::new();
+    let fresh_ownership = render_ownership_block();
+    if extract_ownership_block(existing).as_deref() != Some(fresh_ownership.as_str()) {
+        changed.push("ownership");
+    }
+    if fresh_inventory
+        .is_some_and(|fresh| extract_inventory_block(existing).as_deref() != Some(fresh))
+    {
+        changed.push("inventory");
+    }
+    changed
+}
+
+fn generated_region_report(changed: &[&str]) -> Value {
+    json!([
+        {"id": "ownership", "ownership": "machine", "changed": changed.contains(&"ownership")},
+        {"id": "inventory", "ownership": "machine", "changed": changed.contains(&"inventory")}
+    ])
+}
+
+fn untouched_human_regions() -> Value {
+    json!([{
+        "id": "readme-prose",
+        "ownership": "human",
+        "changed": false,
+        "reviewed": false,
+        "includes": ["thesis", "source interpretation", "gaps", "other prose"]
+    }])
+}
+
+fn human_reference_warnings(
+    readme: &str,
+    manifest: &Manifest,
+    source_ledger: &Value,
+    readme_path: &Path,
+) -> Vec<Value> {
+    let human = human_owned_readme(readme);
+    let card_paths = manifest
+        .cards
+        .iter()
+        .map(|card| card.path.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let source_ids = source_ledger["sources"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|source| source["id"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut warnings = Vec::new();
+    let mut seen_cards = std::collections::BTreeSet::new();
+    for token in inline_code_tokens(&human) {
+        if token.starts_with("cards/")
+            && matches!(token.rsplit_once('.'), Some((_, "yaml" | "yml")))
+            && !card_paths.contains(token.as_str())
+            && seen_cards.insert(token.clone())
+        {
+            warnings.push(reference_warning(
+                "readme_human_card_reference_missing",
+                "card",
+                &token,
+                readme_path,
+            ));
+        }
+    }
+    if let Some(sources) = markdown_section(&human, "Sources") {
+        let mut seen_sources = std::collections::BTreeSet::new();
+        for token in inline_code_tokens(sources) {
+            if !source_ids.contains(token.as_str()) && seen_sources.insert(token.clone()) {
+                warnings.push(reference_warning(
+                    "readme_human_source_reference_missing",
+                    "source",
+                    &token,
+                    readme_path,
+                ));
+            }
+        }
+    }
+    warnings
+}
+
+fn reference_warning(code: &str, kind: &str, reference: &str, path: &Path) -> Value {
+    let mut warning = issue(
+        code,
+        "warning",
+        path.display().to_string(),
+        format!(
+            "Human-owned README prose references removed {kind} `{reference}`; refresh did not rewrite or semantically reconcile that prose."
+        ),
+    );
+    warning["authority"] = json!("non-authoritative-mechanical-warning");
+    warning["reference_kind"] = json!(kind);
+    warning["reference"] = json!(reference);
+    warning
+}
+
+fn inline_code_tokens(markdown: &str) -> Vec<String> {
+    markdown
+        .split('`')
+        .enumerate()
+        .filter_map(|(index, token)| (index % 2 == 1).then(|| token.trim().to_string()))
+        .filter(|token| !token.is_empty())
+        .collect()
+}
+
+fn markdown_section<'a>(markdown: &'a str, title: &str) -> Option<&'a str> {
+    let heading = format!("## {title}");
+    let start = markdown.find(&heading)? + heading.len();
+    let tail = &markdown[start..];
+    let end = tail.find("\n## ").unwrap_or(tail.len());
+    Some(&tail[..end])
 }
 
 fn stale_drift_issue(readme_path: &Path, severity: &str) -> Value {
@@ -214,6 +354,13 @@ mod tests {
         assert_eq!(result["valid"], true);
         assert_eq!(result["drift"], false);
         assert_eq!(result["has_owned_block"], true);
+        assert_eq!(result["changed_generated_regions"], json!([]));
+        assert_eq!(result["semantic_prose_review"], "not-performed");
+        assert!(
+            std::fs::read_to_string(root.join(".mdp/README.md"))
+                .unwrap()
+                .contains(crate::pack_readme::README_OWNERSHIP_BEGIN)
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -270,6 +417,8 @@ mod tests {
 
         let refreshed = refresh_readme(&root, None, false).expect("refresh");
         assert_eq!(refreshed["status"], "saved");
+        assert_eq!(refreshed["changed_generated_regions"], json!(["inventory"]));
+        assert_eq!(refreshed["untouched_human_regions"][0]["reviewed"], false);
         let after = std::fs::read_to_string(&readme_path).expect("readme after");
         assert!(after.contains("- card entries:"));
         assert!(!after.contains("hand-edited"));
@@ -349,7 +498,7 @@ mod tests {
         assert_eq!(result["valid"], true);
         assert_eq!(result["drift"], false);
         assert_eq!(result["has_owned_block"], false);
-        assert!(readme_drift_issue(&root).is_none());
+        assert!(readme_validation_issues(&root).is_empty());
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -368,13 +517,97 @@ mod tests {
         let result = refresh_readme(&root, None, false).expect("refresh");
         assert_eq!(result["status"], "saved");
         assert_eq!(result["had_owned_block"], false);
+        assert_eq!(
+            result["changed_generated_regions"],
+            json!(["ownership", "inventory"])
+        );
         let after = std::fs::read_to_string(&readme_path).expect("readme after");
         assert!(after.starts_with("# Legacy Hand Authored"));
         assert!(after.contains("Custom orientation a human wrote."));
+        assert!(after.contains(crate::pack_readme::README_OWNERSHIP_BEGIN));
         assert!(after.contains(crate::pack_readme::README_INVENTORY_BEGIN));
         // After migration, check reports fresh.
         let check = check_readme(&root).expect("check");
         assert_eq!(check["status"], "fresh");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn refresh_preserves_human_only_edits_and_reports_no_generated_change() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-human-only-{}", nonce()));
+        init_pack(&root, "Human Only Readme Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let mut edited = std::fs::read_to_string(&readme_path).expect("readme");
+        edited.push_str("\nHuman-owned conference note; preserve these exact bytes.\n");
+        std::fs::write(&readme_path, &edited).expect("write human edit");
+
+        let result = refresh_readme(&root, None, false).expect("refresh");
+        assert_eq!(result["changed_generated_regions"], json!([]));
+        assert_eq!(
+            std::fs::read_to_string(&readme_path).expect("refreshed readme"),
+            edited
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn removed_card_and_source_references_warn_without_rewriting_human_prose() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-broken-refs-{}", nonce()));
+        init_pack(&root, "Broken Reference Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let before = std::fs::read_to_string(&readme_path).expect("readme");
+
+        let mut manifest = read_manifest(&root).expect("manifest");
+        let removed_index = manifest
+            .cards
+            .iter()
+            .position(|card| before.contains(&format!("`{}`", card.path)))
+            .expect("generated README should reference at least one manifest card");
+        let removed_card = manifest.cards.remove(removed_index);
+        std::fs::write(
+            root.join(".mdp/manifest.yaml"),
+            serde_yaml::to_string(&manifest).expect("serialize manifest"),
+        )
+        .expect("write manifest");
+
+        let sources_path = root.join(".mdp/sources.yaml");
+        let mut sources: YamlValue =
+            serde_yaml::from_str(&std::fs::read_to_string(&sources_path).expect("sources"))
+                .expect("parse sources");
+        let source_rows = sources["sources"].as_sequence_mut().expect("source rows");
+        let removed_source = source_rows[0]["id"].as_str().unwrap().to_string();
+        assert!(before.contains(&format!("`{removed_source}`")));
+        source_rows.remove(0);
+        std::fs::write(
+            &sources_path,
+            serde_yaml::to_string(&sources).expect("serialize sources"),
+        )
+        .expect("write sources");
+
+        let result = check_readme(&root).expect("check");
+        let warnings = result["warnings"].as_array().expect("warnings");
+        assert!(warnings.iter().any(|warning| {
+            warning["code"] == "readme_human_card_reference_missing"
+                && warning["reference"] == removed_card.path
+                && warning["authority"] == "non-authoritative-mechanical-warning"
+        }));
+        assert!(warnings.iter().any(|warning| {
+            warning["code"] == "readme_human_source_reference_missing"
+                && warning["reference"] == removed_source
+        }));
+        assert_eq!(
+            std::fs::read_to_string(&readme_path).expect("unchanged readme"),
+            before,
+            "checking references must not rewrite human prose"
+        );
+        let validation_issues = readme_validation_issues(&root);
+        assert!(
+            validation_issues
+                .iter()
+                .any(|warning| { warning["code"] == "readme_human_card_reference_missing" })
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
