@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process'
-import { fstatSync } from 'node:fs'
+import { fstatSync, writeSync } from 'node:fs'
 import { cleanupOwnedTempWorkspace, cleanupStaleOwnedTempWorkspaces, createOwnedTempWorkspace } from './lib/temp-workspace.mjs'
 
 const jobserverStdio = (makeflags = '') => {
@@ -32,6 +32,8 @@ if (purposeIndex < 0 || !options[purposeIndex + 1]) {
   process.exit(2)
 }
 const purpose = options[purposeIndex + 1]
+const CLEANUP_INCOMPLETE_EXIT = 74
+const reportCleanupIncomplete = () => writeSync(2, 'temporary workspace cleanup incomplete\n')
 cleanupStaleOwnedTempWorkspaces({ purpose })
 const root = createOwnedTempWorkspace({ purpose })
 const [command, ...args] = process.argv.slice(separator + 1)
@@ -48,17 +50,23 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   })
 }
 child.once('error', (error) => {
-  cleanupOwnedTempWorkspace(root, { purpose })
+  if (!cleanupOwnedTempWorkspace(root, { purpose })) reportCleanupIncomplete()
   console.error(`unable to start validation command: ${error.message}`)
   process.exit(127)
 })
 child.once('exit', (code, signal) => {
-  cleanupOwnedTempWorkspace(root, { purpose })
+  const cleanupComplete = cleanupOwnedTempWorkspace(root, { purpose })
   if (forwardedSignal || signal) {
+    if (!cleanupComplete) reportCleanupIncomplete()
     const terminalSignal = forwardedSignal || signal
     process.removeAllListeners(terminalSignal)
     process.kill(process.pid, terminalSignal)
     return
   }
+  if (!cleanupComplete && code === 0) {
+    reportCleanupIncomplete()
+    process.exit(CLEANUP_INCOMPLETE_EXIT)
+  }
+  if (!cleanupComplete) reportCleanupIncomplete()
   process.exit(code ?? 1)
 })

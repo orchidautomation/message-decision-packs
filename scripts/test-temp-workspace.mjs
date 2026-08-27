@@ -52,6 +52,36 @@ test('creates unpredictable private roots and cleans handled success and failure
   }
 })
 
+test('wrapper refuses child success when owned-root cleanup is incomplete', async (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-wrapper-cleanup-refusal-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const helper = join(base, 'refuse-cleanup')
+  writeFileSync(helper, '#!/bin/sh\nexit 73\n', { mode: 0o700 })
+  const observedPath = join(base, 'observed')
+  const environment = {
+    ...process.env,
+    TMPDIR: base,
+    OBSERVED_PATH: observedPath,
+    MDP_SECURE_INSTALL_BIN: helper,
+  }
+  delete environment.NODE_TEST_CONTEXT
+  const script = "require('fs').writeFileSync(process.env.OBSERVED_PATH, process.env.MDP_TEMP_ROOT)"
+  const child = spawn(
+    process.execPath,
+    [wrapper, '--purpose', 'validation', '--', process.execPath, '-e', script],
+    { env: environment },
+  )
+  let stderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk) => { stderr += chunk })
+  const code = await new Promise((resolve) => child.on('close', resolve))
+  assert.equal(code, 74)
+  assert.equal(stderr, 'temporary workspace cleanup incomplete\n')
+  const ownedRoot = readFileSync(observedPath, 'utf8')
+  assert.equal(existsSync(ownedRoot), true)
+  assert.doesNotMatch(stderr, /mdp-owned|request|private/i)
+})
+
 test('concurrent validation wrappers use distinct roots and clean both', async (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-concurrent-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
