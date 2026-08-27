@@ -10,7 +10,7 @@
   ],
   "output_case_ids": [
     "review-structural-train", "review-routing-train", "review-installed-train",
-    "review-structural-validation", "review-routing-validation", "review-installed-validation", "review-explicit-pointer-validation", "review-cold-conformance-train"
+    "review-structural-validation", "review-routing-validation", "review-installed-validation", "review-explicit-pointer-validation", "review-cold-conformance-train", "review-gap-handoff-train"
   ],
   "supported_modes": ["structural", "routing-eval", "installed-qa"],
   "required_assertion_categories": ["cli-gate", "content", "handoff"],

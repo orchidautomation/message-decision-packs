@@ -20,6 +20,19 @@ gates, blockers, and decisions.
 
 ## Route Before Loading Detail
 
+Present MDP as two product journeys, not as five skills the user must learn:
+
+- **Author and maintain** creates, explicitly edits, validates, and reviews
+  durable pack authority. Route mutations to `$mdp-pack-builder`; route
+  read-only pack QA to `$mdp-pack-review`.
+- **Use and decide** selects an existing pack, exact job, and supplied input,
+  then returns a bounded decision or workflow bundle without changing pack
+  authority. Route GTM work to `$mdp-gtm-brief` and proposal work to
+  `$mdp-proposal-review`.
+
+Ask which journey is intended only when the request is genuinely ambiguous.
+Absent explicit edit intent, default to Use and decide or read-only review.
+
 - Creating or editing `.mdp/`: `$mdp-pack-builder`.
 - Read-only pack audit, hardening, or installed QA: `$mdp-pack-review`.
 - Supplied-prospect fit, bounded GTM context, or supplied-copy review:
@@ -30,6 +43,13 @@ gates, blockers, and decisions.
 
 Naming MDP does not override these ownership rules. Hand off one bounded phase
 at a time; never let the coordinator silently perform the specialized work.
+
+For a mixed request, declare the lane order before starting. Complete and
+close one lane before crossing: a usage-discovered gap remains a bounded
+finding until the user explicitly approves an Author and maintain follow-up.
+Never treat a request to decide, audit, validate, or explain as permission to
+edit durable pack authority. After an authoring handoff, rerun the CLI before
+resuming use; do not reuse the earlier decision.
 
 ## Minimal Operator Journey
 
@@ -64,5 +84,9 @@ The Rust CLI is the decision authority. Preserve or reduce its authority; never 
 
 ## Closeout
 
-Report the pack root, selected owner/job, commands run, readiness state,
-durable artifacts, unresolved gaps, and installed-versus-source uncertainty.
+Name the journey and report the pack root, selected owner/job, commands run,
+readiness state, durable artifacts, unresolved gaps, next action, and
+installed-versus-source uncertainty. Author and maintain closes only with
+validated file changes or read-only findings; Use and decide closes with the
+canonical decision, verified bundle when present, gaps, and next permitted
+action.

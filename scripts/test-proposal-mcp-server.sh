@@ -356,7 +356,7 @@ assert oversized_excerpt["error"]["code"] == -32602
 assert "max_source_bytes must be between 1000 and 100000" in oversized_excerpt["error"]["message"]
 
 clean_run_missing_release = responses[13]
-assert clean_run_missing_release["error"]["code"] == -32602
+assert clean_run_missing_release["error"]["code"] == -32602, clean_run_missing_release
 assert "clean_run_v1 requires pack_release_id" in clean_run_missing_release["error"]["message"]
 
 all_output = stdout_path.read_text(encoding="utf-8") + stderr_path.read_text(encoding="utf-8")
@@ -370,6 +370,7 @@ cp "$root/scripts/mdp-proposal-mcp-server.mjs" "$timeout_bundle/scripts/"
 cp "$root/scripts/lib/deadline-policy.mjs" "$timeout_bundle/scripts/lib/"
 cp "$root/scripts/lib/mcp-path-policy.mjs" "$timeout_bundle/scripts/lib/"
 cp "$root/scripts/lib/mcp-provider-consent.mjs" "$timeout_bundle/scripts/lib/"
+cp "$root/scripts/lib/mcp-lifecycle.mjs" "$timeout_bundle/scripts/lib/"
 cat > "$timeout_bundle/scripts/mdp-proposal-runner.mjs" <<'JS'
 import { spawn } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
@@ -422,6 +423,37 @@ assert response["result"]["isError"] is True
 assert content["timed_out"] is True
 assert content["runner_exit_status"] == 124
 assert content["termination_signal"] == "SIGTERM"
+PY
+
+python3 - "$timeout_bundle/scripts/mdp-proposal-mcp-server.mjs" "$pack" "$source_file" "$tmp_dir/cancel-workdir" "$tmp_dir" <<'PY'
+import json, os, subprocess, sys, time
+server, pack, source, workdir, root = sys.argv[1:]
+env = dict(os.environ)
+env.update({
+    "MDP_MCP_PACK_ROOTS": os.path.dirname(pack),
+    "MDP_MCP_INPUT_ROOTS": os.pathsep.join([os.path.dirname(source), root]),
+    "MDP_MCP_APPROVAL_ROOTS": root,
+    "MDP_MCP_WORK_ROOTS": root,
+    "MDP_MCP_CONSENT_ROOTS": root,
+})
+process = subprocess.Popen(["node", server], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+call = {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"mdp_proposal_run","arguments":{"pack":pack,"workdir":workdir,"source_paths":[source],"source_id":"synthetic-rfp-summary","source_kind":"synthetic-example","dry_run":True,"timeout_ms":5000}}}
+process.stdin.write(json.dumps(call) + "\n")
+process.stdin.write(json.dumps({"jsonrpc":"2.0","id":2,"method":"ping"}) + "\n")
+process.stdin.flush()
+ping = json.loads(process.stdout.readline())
+assert ping == {"jsonrpc":"2.0","id":2,"result":{}}, ping
+process.stdin.write(json.dumps({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}) + "\n")
+process.stdin.flush()
+cancelled = json.loads(process.stdout.readline())
+assert cancelled["id"] == 1, cancelled
+assert cancelled["result"]["isError"] is True, cancelled
+content = cancelled["result"]["structuredContent"]
+assert content["cancelled"] is True, content
+assert content["diagnostic"]["phase"] == "cancellation", content
+assert root not in json.dumps(content["diagnostic"]), content
+process.kill()
+process.wait()
 PY
 
 native_workdir="$tmp_dir/native-workdir"
@@ -494,6 +526,17 @@ messages = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8") if 
 assert messages[0]["error"]["code"] == -32600
 assert "exceeds 1000000 bytes" in messages[0]["error"]["message"]
 assert messages[1] == {"jsonrpc":"2.0","id":2,"result":{}}
+PY
+
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"unsupported-/private/customer/path"}}' \
+  | node "$root/scripts/mdp-proposal-mcp-server.mjs" > "$tmp_dir/version-output.jsonl"
+python3 - "$tmp_dir/version-output.jsonl" <<'PY'
+import json, sys
+message = json.loads(open(sys.argv[1], encoding="utf-8").read())
+assert message["error"]["code"] == -32602
+assert message["error"]["data"]["contract"] == "mdp.mcp-diagnostic.v1"
+assert message["error"]["data"]["supported_protocol_versions"] == ["2025-06-18"]
+assert "/private/customer" not in json.dumps(message)
 PY
 
 echo '{"ok":true,"contract":"mdp.proposal-mcp-test.v0"}'

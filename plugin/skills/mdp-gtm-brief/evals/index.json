@@ -6,11 +6,11 @@
     "gtm-fit-train", "gtm-brief-train", "gtm-copy-review-train", "gtm-no-send-train",
     "gtm-fit-validation", "gtm-brief-validation", "gtm-copy-review-validation", "gtm-enrichment-refusal-validation",
     "gtm-fit-typo-train", "gtm-brief-indirect-train", "gtm-fit-typo-validation", "gtm-review-indirect-validation",
-    "gtm-named-mdp-train", "gtm-named-mdp-validation"
+    "gtm-named-mdp-train", "gtm-named-mdp-validation", "gtm-silent-mutation-refusal-train"
   ],
   "output_case_ids": [
     "gtm-fit-train", "gtm-brief-train", "gtm-copy-review-train",
-    "gtm-fit-validation", "gtm-brief-validation", "gtm-managed-cleanup-validation", "gtm-copy-review-validation"
+    "gtm-fit-validation", "gtm-brief-validation", "gtm-managed-cleanup-validation", "gtm-copy-review-validation", "gtm-silent-authority-mutation-train"
   ],
   "supported_modes": ["prospect-fit-or-brief", "outbound-copy-brief", "outbound-copy-review"],
   "required_assertion_categories": ["cli-gate", "evidence", "boundary"],

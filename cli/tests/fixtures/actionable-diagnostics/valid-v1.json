@@ -1,0 +1,17 @@
+{
+  "contract": "mdp.actionable-diagnostic.v1",
+  "phase": "readiness",
+  "code": "missing_required_authority",
+  "retryability": "after-user-action",
+  "summary": "Required structured decision authority is missing or unassessed.",
+  "prerequisites": [
+    {
+      "kind": "authority",
+      "summary": "Add or select the required structured authority; README prose cannot satisfy it."
+    }
+  ],
+  "next_action": {
+    "kind": "manual",
+    "summary": "Resolve the named authority gap before retrying."
+  }
+}

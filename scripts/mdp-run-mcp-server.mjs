@@ -32,8 +32,17 @@ import {
   RECOMMENDED_TIMEOUT_MS,
   validateTransportTimeout,
 } from './lib/deadline-policy.mjs'
+import {
+  MCP_MAX_CONCURRENT_TOOL_CALLS,
+  MCP_MAX_QUEUED_TOOL_CALLS,
+  MCP_PROTOCOL_VERSION,
+  createBoundedToolScheduler,
+  mcpDiagnostic,
+  safeMcpMessage,
+  toolErrorDiagnostic,
+  validateProtocolVersion,
+} from './lib/mcp-lifecycle.mjs'
 
-const MCP_PROTOCOL_VERSION = '2025-06-18'
 const SERVER_NAME = 'message-decision-packs-runner'
 const MAX_JSON_RPC_LINE_BYTES = 1_000_000
 const MAX_REQUEST_FILE_BYTES = 1_048_576
@@ -100,11 +109,16 @@ const errorResponse = (id, code, message, data) => ({
   id: id ?? null,
   error: data === undefined ? { code, message } : { code, message, data },
 })
-const toolResult = (structuredContent, isError = false) => ({
-  content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }],
-  structuredContent,
-  isError,
-})
+const toolResult = (structuredContent, isError = false) => {
+  const normalized = isError && structuredContent?.diagnostic === undefined
+    ? { ...structuredContent, diagnostic: toolErrorDiagnostic(structuredContent?.code) }
+    : structuredContent
+  return {
+    content: [{ type: 'text', text: JSON.stringify(normalized, null, 2) }],
+    structuredContent: normalized,
+    isError,
+  }
+}
 
 const validateDeadlinePlan = (plan, timeoutMs, executionId = null) => {
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return false
@@ -933,7 +947,7 @@ const callRun = async (args, signal = null) => {
   return toolResult({ ...envelope.data, deadline_plan: plan })
 }
 
-const callVerifyRun = async (args) => {
+const callVerifyRun = async (args, signal = null) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['bundle_path', 'receipt_path', 'artifact_root', 'timeout_ms']))
   const policy = requirePolicy()
@@ -946,9 +960,9 @@ const callVerifyRun = async (args) => {
   validateTransportTimeout(timeoutMs)
   const cliArgs = ['--json', 'verify-run', '--bundle', bundlePath, '--receipt', receiptPath]
   if (artifactRoot) cliArgs.push('--artifact-root', artifactRoot)
-  const invocation = await invokeCli(cliArgs, dirname(bundlePath), timeoutMs)
-  if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
-    const code = invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable'
+  const invocation = await invokeCli(cliArgs, dirname(bundlePath), timeoutMs, null, false, null, signal)
+  if (invocation.timedOut || invocation.cancelled || invocation.overflowed || invocation.spawnFailed) {
+    const code = invocation.cancelled ? 'cli-cancelled' : invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable'
     return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code, ...(invocation.deadline ? { deadline: invocation.deadline } : {}) }, true)
   }
   let envelope
@@ -988,18 +1002,22 @@ const handleToolCall = async (params, signal = null) => {
     case 'mdp_run':
       return await callRun(call.arguments || {}, signal)
     case 'mdp_verify_run':
-      return await callVerifyRun(call.arguments || {})
+      return await callVerifyRun(call.arguments || {}, signal)
     default:
       throw Object.assign(new Error(`unknown tool: ${call.name}`), { code: JSON_RPC_METHOD_NOT_FOUND })
   }
 }
 
 const activeRequests = new Map()
+const pendingCancellations = new Set()
 
 const cancelActiveRequest = (requestId) => {
   const controller = activeRequests.get(String(requestId))
   if (controller) controller.abort()
+  else if (toolScheduler?.isQueued(requestId)) pendingCancellations.add(String(requestId))
 }
+
+let toolScheduler = null
 
 const handleRequest = async (message) => {
   if (!message || typeof message !== 'object' || Array.isArray(message)) {
@@ -1016,15 +1034,18 @@ const handleRequest = async (message) => {
   try {
     switch (message.method) {
       case 'initialize':
-        return notification
-          ? null
-          : response(message.id, {
-              protocolVersion: message.params?.protocolVersion || MCP_PROTOCOL_VERSION,
+        if (notification) return null
+        {
+          const versionError = validateProtocolVersion(message.params)
+          if (versionError) return errorResponse(message.id, versionError.code, versionError.message, versionError.data)
+          return response(message.id, {
+              protocolVersion: MCP_PROTOCOL_VERSION,
               capabilities: { tools: { listChanged: false } },
               serverInfo: { name: SERVER_NAME, version: serverVersion },
               instructions:
                 'Use the canonical path in order: mdp_run_tools, mdp_prepare_run, mdp_run, then mdp_verify_run. Each stage consumes explicit local paths and returns CLI-owned artifacts. The surrounding agent and MCP adapter are control plane only; only CLI results and receipts have decision authority.',
             })
+        }
       case 'notifications/initialized':
         return null
       case '$/cancelRequest': {
@@ -1043,7 +1064,11 @@ const handleRequest = async (message) => {
         if (notification) return null
         const controller = new AbortController()
         activeRequests.set(String(message.id), controller)
+        if (pendingCancellations.delete(String(message.id))) controller.abort()
         try {
+          if (controller.signal.aborted) {
+            return response(message.id, toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'cli-cancelled' }, true))
+          }
           return response(message.id, await handleToolCall(message.params, controller.signal))
         } finally {
           activeRequests.delete(String(message.id))
@@ -1060,7 +1085,12 @@ const handleRequest = async (message) => {
       : errorResponse(
           message.id,
           Number.isInteger(error.code) ? error.code : JSON_RPC_INVALID_PARAMS,
-          error.message || 'invalid parameters',
+          safeMcpMessage(error.message, 'invalid parameters'),
+          mcpDiagnostic({
+            code: Number.isInteger(error.code) ? 'mcp-protocol-failure' : 'mcp-arguments-invalid',
+            phase: 'tool-call',
+            nextAction: 'Correct the request using tools/list and retry.',
+          }),
         )
   }
 }
@@ -1093,20 +1123,63 @@ const handleLine = async (line) => {
 
 let buffer = ''
 let discardingOversizedLine = false
-let queue = Promise.resolve()
-const enqueue = (line) => {
-  let parsed
-  try { parsed = JSON.parse(line) } catch { parsed = null }
-  const cancellation = parsed && !Array.isArray(parsed) &&
-    (parsed.method === '$/cancelRequest' || parsed.method === 'notifications/cancelled')
-  if (cancellation) {
-    void handleRequest(parsed)
+toolScheduler = createBoundedToolScheduler({
+  maxConcurrent: MCP_MAX_CONCURRENT_TOOL_CALLS,
+  maxQueued: MCP_MAX_QUEUED_TOOL_CALLS,
+  busyResponse: (id) => errorResponse(id, -32000, 'MCP tool concurrency limit reached', mcpDiagnostic({
+    code: 'mcp-server-busy',
+    phase: 'scheduling',
+    retryable: true,
+    nextAction: 'Retry after an active tool call completes.',
+  })),
+})
+
+const dispatchRequest = (message) => {
+  if (message && !Array.isArray(message) && message.method === 'tools/call' && 'id' in message) {
+    return toolScheduler.schedule(message.id, () => handleRequest(message))
+  }
+  return handleRequest(message)
+}
+
+const dispatchLine = async (line) => {
+  if (Buffer.byteLength(line, 'utf8') > MAX_JSON_RPC_LINE_BYTES) {
+    writeMessage(errorResponse(null, JSON_RPC_INVALID_REQUEST, `JSON-RPC message exceeds ${MAX_JSON_RPC_LINE_BYTES} bytes`))
     return
   }
-  queue = queue.then(() => handleLine(line))
+  if (!line.trim()) return
+  let message
+  try { message = JSON.parse(line) } catch {
+    writeMessage(errorResponse(null, JSON_RPC_PARSE_ERROR, 'parse error'))
+    return
+  }
+  if (Array.isArray(message)) {
+    const replies = (await Promise.all(message.map(dispatchRequest))).filter(Boolean)
+    if (replies.length) writeMessage(replies)
+    return
+  }
+  const reply = await dispatchRequest(message)
+  if (reply) writeMessage(reply)
+}
+
+const pendingLines = new Set()
+let inputEnded = false
+let inputHold = null
+const releaseInputHold = () => {
+  if (inputEnded && pendingLines.size === 0 && inputHold !== null) {
+    clearInterval(inputHold)
+    inputHold = null
+  }
+}
+const enqueue = (line) => {
+  if (inputHold === null) inputHold = setInterval(() => {}, 1_000)
+  const pending = dispatchLine(line)
+  pendingLines.add(pending)
+  pending.finally(() => {
+    pendingLines.delete(pending)
+    releaseInputHold()
+  })
 }
 process.stdin.setEncoding('utf8')
-process.stdin.resume()
 process.stdin.on('data', (chunk) => {
   if (discardingOversizedLine) {
     const newline = chunk.indexOf('\n')
@@ -1128,7 +1201,11 @@ process.stdin.on('data', (chunk) => {
 })
 process.stdin.on('end', () => {
   if (buffer.trim() && !discardingOversizedLine) enqueue(buffer)
+  inputEnded = true
+  releaseInputHold()
 })
+process.stdin.resume()
+process.stdin.ref?.()
 
 process.on('uncaughtException', () => {
   process.stderr.write('mdp run MCP server fatal error\n')

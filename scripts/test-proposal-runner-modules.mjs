@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -125,6 +125,37 @@ test('recovery removes only the exact transaction named by a bounded owned claim
   assert.equal(existsSync(transaction), false)
   assert.equal(existsSync(claim), false)
   assert.equal(existsSync(unrelated), true)
+})
+
+test('supervisor recovery accepts the exact v2 claim emitted by the native CLI', (t) => {
+  if (process.platform === 'win32' || typeof process.getuid !== 'function') return
+  const root = mkdtempSync(join(tmpdir(), 'mdp-recovery-v2-module-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const output = join(root, 'clean-run')
+  const transactionLeaf = '.clean-run.tmp-0123456789abcdef0123456789abcdef'
+  const transaction = join(root, transactionLeaf)
+  const claim = join(root, '.clean-run.mdp-run.claim')
+  mkdirSync(transaction, { mode: 0o700 })
+  chmodSync(transaction, 0o700)
+  const transactionStats = statSync(transaction)
+  writeFileSync(claim, `${JSON.stringify({
+    contract: 'mdp.run-recovery-claim.v2',
+    execution_id: 'run-v2',
+    transaction_leaf: transactionLeaf,
+    created_unix_seconds: Math.floor(Date.now() / 1000),
+    owner_uid: process.getuid(),
+    process_id: 4242,
+    transaction_dev: transactionStats.dev,
+    transaction_ino: transactionStats.ino,
+  })}\n`, { mode: 0o600 })
+  chmodSync(claim, 0o600)
+  assert.equal(cleanupMdpRecoveryClaim({
+    outputDir: output,
+    executionId: 'run-v2',
+    expectedProcessId: 4242,
+  }), true)
+  assert.equal(existsSync(transaction), false)
+  assert.equal(existsSync(claim), false)
 })
 
 test('recovery refuses hard-linked or mismatched claims without deleting a transaction', (t) => {

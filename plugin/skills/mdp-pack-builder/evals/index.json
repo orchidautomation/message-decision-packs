@@ -11,7 +11,7 @@
   "output_case_ids": [
     "builder-source-plan-train", "builder-source-extract-train", "builder-gtm-train", "builder-proposal-train",
     "builder-source-plan-validation", "builder-source-extract-validation", "builder-gtm-validation", "builder-proposal-validation",
-    "builder-gtm-approved-boundary-train", "builder-gtm-partial-authority-train", "builder-gtm-blocking-gap-validation"
+    "builder-gtm-approved-boundary-train", "builder-gtm-partial-authority-train", "builder-gtm-blocking-gap-validation", "builder-authoring-closeout-validation"
   ],
   "supported_modes": ["source-plan", "source-extract", "gtm-authoring", "proposal-authoring"],
   "required_assertion_categories": ["content", "evidence", "boundary"],

@@ -254,3 +254,18 @@ policy. Timeout/cancellation receipts expose a closed phase/limit observation
 and remain no-draft; old v1 receipts without that optional evidence remain
 readable. Interpret phases as safe runtime checkpoints—blocking filesystem
 syscalls are not preempted.
+
+## Direct-run crash recovery
+
+When `mdp run` returns `output-directory-claimed`, first preview the validated
+recovery plan using the exact same final output directory:
+
+```bash
+mdp --json recover-run --out-dir RUN_DIR
+```
+
+Use `--apply` only when that preview returns `status: ready`. Do not manually
+generalize the two reported hidden paths or clean nearby directories. The CLI
+refuses recent/live claims, links, unsafe owner/mode/type metadata, changed
+transaction identity, and any destination that already contains a published
+run.
