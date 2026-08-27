@@ -1325,8 +1325,15 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             paragraph_open = false;
             continue;
         }
-        if line.starts_with("## ") {
-            in_sources = line == "## Sources";
+        if is_atx_heading(line) {
+            let level = line
+                .trim_start_matches(' ')
+                .bytes()
+                .take_while(|byte| *byte == b'#')
+                .count();
+            if level <= 2 {
+                in_sources = line == "## Sources";
+            }
             paragraph_open = false;
             continue;
         }
@@ -1952,6 +1959,32 @@ mod tests {
     }
 
     #[test]
+    fn higher_level_heading_ends_sources_warnings_in_check_and_validate() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-source-heading-{}", nonce()));
+        init_pack(&root, "Source Heading Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let mut readme = std::fs::read_to_string(&readme_path).expect("README");
+        readme.push_str("\n## Sources\n# Other topic\n- `not-a-source`: ordinary prose\n");
+        std::fs::write(&readme_path, readme).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert!(
+            checked["warnings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|warning| { warning["reference"] != "not-a-source" })
+        );
+        assert!(
+            readme_validation_issues(&root)
+                .iter()
+                .all(|issue| { issue["reference"] != "not-a-source" })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn source_reference_parser_ignores_near_headings_inline_code_and_fences() {
         let markdown = r#"# Human README
 
@@ -1978,6 +2011,14 @@ Inline `inline-code` must be ignored.
 - `outside-section`: ignored
 "#;
         assert_eq!(source_reference_ids(markdown), vec!["declared-source"]);
+
+        let higher_heading_exit =
+            "## Sources\n- `declared`: accepted\n# Other topic\n- `outside-h1`: unrelated\n";
+        assert_eq!(
+            source_reference_ids(higher_heading_exit),
+            vec!["declared"],
+            "a higher-level heading ends the Sources section"
+        );
 
         let list_fence = "- ```text\n  list-fenced body\n  ```\n\n## Sources\n- `visible-after-list-fence`: accepted\n";
         assert_eq!(
