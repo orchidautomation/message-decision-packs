@@ -513,6 +513,8 @@ fn cli_contract() -> Value {
         "contract": "mdp.cli-graph.v1",
         "source": "clap",
         "canonical_invocation": "mdp",
+        "subcommand_required": root.is_subcommand_required_set(),
+        "classification": if root.is_subcommand_required_set() { "namespace" } else { "agent-callable" },
         "root_arguments": root_arguments,
         "root_argument_groups": root_groups,
         "commands": commands
@@ -526,6 +528,7 @@ fn collect_commands(command: &Command, parent_path: &[String], output: &mut Vec<
         let human_only_reason = path.iter().any(|segment| segment == "help").then_some(
             "Clap-generated help navigation; use --json with an authored command for a machine envelope",
         );
+        let subcommand_required = subcommand.is_subcommand_required_set();
         output.push(json!({
             "name": subcommand.get_name(),
             "path": path,
@@ -534,7 +537,8 @@ fn collect_commands(command: &Command, parent_path: &[String], output: &mut Vec<
             "about": subcommand.get_about().map(ToString::to_string),
             "arguments": arguments_for(subcommand, &path),
             "argument_groups": groups_for(subcommand),
-            "classification": if human_only_reason.is_some() { "human-only" } else { "agent-callable" },
+            "subcommand_required": subcommand_required,
+            "classification": if human_only_reason.is_some() { "human-only" } else if subcommand_required { "namespace" } else { "agent-callable" },
             "human_only_reason": human_only_reason
         }));
         collect_commands(subcommand, &path, output);
@@ -1117,6 +1121,8 @@ mod tests {
         let result = capabilities();
         assert_eq!(result["cli"]["contract"], "mdp.cli-graph.v1");
         assert_eq!(result["cli"]["source"], "clap");
+        assert_eq!(result["cli"]["subcommand_required"], true);
+        assert_eq!(result["cli"]["classification"], "namespace");
 
         let projected = result["cli"]["commands"]
             .as_array()
@@ -1154,6 +1160,11 @@ mod tests {
                 command["arguments"],
                 json!(arguments_for(clap_command, &owned_path)),
                 "argument semantic drift at {path:?}"
+            );
+            assert_eq!(
+                command["subcommand_required"],
+                clap_command.is_subcommand_required_set(),
+                "subcommand requirement drift at {path:?}"
             );
         }
     }
@@ -1242,6 +1253,15 @@ mod tests {
                         .is_some_and(|path| path.first() == Some(&json!("help")))
                 })
                 .all(|command| command["classification"] == "human-only")
+        );
+        for namespace in [&["conformance"][..], &["readme"][..]] {
+            let command = projected_command(commands, namespace);
+            assert_eq!(command["subcommand_required"], true);
+            assert_eq!(command["classification"], "namespace");
+        }
+        assert_eq!(
+            projected_command(commands, &["capabilities"])["subcommand_required"],
+            false
         );
     }
 
