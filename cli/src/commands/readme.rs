@@ -331,7 +331,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
                 **opening_container == container
                     && project_container_path(line, opening_container).is_some()
             })
-            .and_then(|_| link_definition_suffix_title_state(block_content));
+            .and_then(|_| link_definition_continuation_title_state(block_content));
         if previous_container.is_some_and(|previous| previous != container) {
             indented_code = false;
             indented_code_can_start = true;
@@ -401,9 +401,11 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         .then_some(container.clone());
         definition_destination_pending =
             is_link_reference_destination_pending(block_content).then_some(container.clone());
+        let paragraph_continues = line_continues_paragraph(block_content)
+            || (paragraph_open && markdown_indent_columns(block_content) >= 4);
         paragraph_open = !definition_title_continuation
             && definition_destination_continuation.is_none()
-            && line_continues_paragraph(block_content);
+            && paragraph_continues;
     }
     code_span_tokens(&visible)
 }
@@ -442,6 +444,12 @@ fn is_atx_heading(line: &str) -> bool {
 fn is_thematic_or_setext_line(line: &str) -> bool {
     let trimmed = line.trim_matches([' ', '\t']);
     if trimmed.len() >= 1 && trimmed.bytes().all(|byte| byte == b'=') {
+        return true;
+    }
+    if !trimmed.is_empty()
+        && trimmed.bytes().all(|byte| byte == b'-')
+        && (trimmed.len() >= 3 || line.trim_end_matches([' ', '\t']) == line)
+    {
         return true;
     }
     for marker in [b'-', b'_', b'*'] {
@@ -561,6 +569,12 @@ fn link_definition_suffix_title_state(suffix: &str) -> Option<bool> {
     } else {
         valid_link_title(trailing).then_some(true)
     }
+}
+
+fn link_definition_continuation_title_state(line: &str) -> Option<bool> {
+    (markdown_indent_columns(line) <= 3)
+        .then(|| link_definition_suffix_title_state(line))
+        .flatten()
 }
 
 fn valid_link_title(title: &str) -> bool {
@@ -868,7 +882,7 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
                 **opening_container == container
                     && project_container_path(line, opening_container).is_some()
             })
-            .and_then(|_| link_definition_suffix_title_state(block_content));
+            .and_then(|_| link_definition_continuation_title_state(block_content));
         if fence
             .as_ref()
             .is_some_and(|(_, _, opening_container)| *opening_container != container)
@@ -901,9 +915,11 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
         .then_some(container.clone());
         definition_destination_pending =
             is_link_reference_destination_pending(block_content).then_some(container.clone());
+        let paragraph_continues = line_continues_paragraph(block_content)
+            || (paragraph_open && markdown_indent_columns(block_content) >= 4);
         paragraph_open = !definition_title_continuation
             && definition_destination_continuation.is_none()
-            && line_continues_paragraph(block_content);
+            && paragraph_continues;
         if !in_sources {
             continue;
         }
@@ -1690,6 +1706,13 @@ Inline `inline-code` must be ignored.
             ),
             vec!["cards/after-empty-item-visible.yaml"],
             "an empty list item cannot interrupt an open paragraph"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "Heading\n-\n2. ```markdown\n   `cards/after-short-setext-hidden.yaml`\n   ```\nRoot `cards/after-short-setext-visible.yaml`.\n"
+            ),
+            vec!["cards/after-short-setext-visible.yaml"],
+            "a single hyphen is a valid setext underline"
         );
     }
 
