@@ -19,7 +19,16 @@ const requiredPrefix = [
 ]
 
 function hasShellOverride(line) {
-  return /(?:^|[\s{,])(?:shell|["']shell["'])\s*:/u.test(line.trim())
+  if (hasMappingKey(line, 'shell')) {
+    return true
+  }
+  if (/(?:^|[\s{,])shell\s*:/u.test(line.trim())) {
+    return true
+  }
+  const quotedKeys = line.matchAll(
+    /(?:^|[\s{,])((?:"(?:\\.|[^"\\])*")|(?:'(?:''|[^'])*'))\s*:/gu,
+  )
+  return [...quotedKeys].some((match) => hasMappingKey(`${match[1]}:`, 'shell'))
 }
 
 function hasMappingKey(line, key) {
@@ -361,6 +370,20 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       '      - name: Validate authored asset parity\n',
       '      - name: Validate authored asset parity\n        shell: /bin/true {0}\n',
+    ),
+  ],
+  [
+    'explicit mapping-key parity shell',
+    ciWorkflow.replace(
+      `          ${assetParityCommand}\n`,
+      `          ${assetParityCommand}\n        ? "shell"\n        : "/bin/true {0}"\n`,
+    ),
+  ],
+  [
+    'escaped flow-style workflow shell',
+    ciWorkflow.replace(
+      'jobs:\n',
+      'defaults: { run: { "\\u0073hell": "/bin/true {0}" } }\n\njobs:\n',
     ),
   ],
   [
