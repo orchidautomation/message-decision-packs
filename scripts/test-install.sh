@@ -59,7 +59,6 @@ PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --agents -y --base-url "$BASE_URL"
 assert_log "$(cat <<'EOF'
 cli args:--yes skip:0
 cursor args:--yes skip:1
-codex args:--yes skip:1
 opencode args:--yes skip:1
 EOF
 )"
@@ -67,5 +66,9 @@ EOF
 : > "$LOG_FILE"
 PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --claude-code -y --base-url "$BASE_URL"
 assert_log "claude-code args:--yes skip:0"
+
+: > "$LOG_FILE"
+PATH="$TEST_PATH" "$ROOT/scripts/install.sh" --codex -y --base-url "$BASE_URL"
+assert_log "codex args:--yes skip:0"
 
 echo "Installer fixture tests passed."

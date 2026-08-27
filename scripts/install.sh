@@ -144,6 +144,12 @@ run_installer() {
     return 0
   fi
 
+  if [ "$agents" = "1" ] && [ "$target" = "codex" ] && ! command -v codex >/dev/null 2>&1; then
+    echo "Skipping Codex bundle because the codex CLI is not available on PATH." >&2
+    echo "Run with --codex to require Codex installation and fail if prerequisites are missing." >&2
+    return 0
+  fi
+
   if [ "$yes" = "1" ]; then
     installer_args+=(--yes)
   fi
