@@ -565,14 +565,19 @@ fn is_complete_html_tag(line: &str) -> bool {
         return bytes.get(index) == Some(&b'>') && index + 1 == bytes.len();
     }
     loop {
+        let separator_start = index;
         while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
             index += 1;
         }
+        let attribute_separated = index > separator_start;
         if bytes.get(index) == Some(&b'>') {
             return index + 1 == bytes.len();
         }
         if bytes.get(index) == Some(&b'/') && bytes.get(index + 1) == Some(&b'>') {
             return index + 2 == bytes.len();
+        }
+        if !attribute_separated {
+            return false;
         }
         if !bytes
             .get(index)
@@ -2118,6 +2123,11 @@ Inline `inline-code` must be ignored.
             vec!["cards/lowercase-cdata-visible.yaml"],
             "CDATA openers are case-sensitive"
         );
+        assert_eq!(
+            inline_code_tokens("<x:y>\n`cards/unseparated-attribute-visible.yaml`\n"),
+            vec!["cards/unseparated-attribute-visible.yaml"],
+            "HTML attributes require separating whitespace"
+        );
     }
 
     #[test]
@@ -2307,6 +2317,39 @@ Inline `inline-code` must be ignored.
         );
         assert!(refreshed.contains("<![cdata[\n"));
         assert!(refreshed.ends_with("]]>\n"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unseparated_html_attribute_does_not_hide_owned_regions() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-invalid-html-{}", nonce()));
+        init_pack(&root, "Invalid HTML Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let invalid_html = readme.replacen(
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            &format!("<x:y>\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+            1,
+        );
+        std::fs::write(&readme_path, &invalid_html).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "fresh", "{checked}");
+        refresh_readme(&root, None, false).expect("refresh README");
+        let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_OWNERSHIP_BEGIN)
+                .count(),
+            1
+        );
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_INVENTORY_BEGIN)
+                .count(),
+            1
+        );
+        assert!(refreshed.contains("<x:y>\n"));
         let _ = std::fs::remove_dir_all(root);
     }
 

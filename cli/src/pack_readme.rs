@@ -668,14 +668,19 @@ fn is_complete_html_tag(line: &str) -> bool {
         return bytes.get(index) == Some(&b'>') && index + 1 == bytes.len();
     }
     loop {
+        let separator_start = index;
         while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
             index += 1;
         }
+        let attribute_separated = index > separator_start;
         if bytes.get(index) == Some(&b'>') {
             return index + 1 == bytes.len();
         }
         if bytes.get(index) == Some(&b'/') && bytes.get(index + 1) == Some(&b'>') {
             return index + 2 == bytes.len();
+        }
+        if !attribute_separated {
+            return false;
         }
         if !bytes
             .get(index)
@@ -1811,6 +1816,18 @@ mod tests {
         assert!(validate_readme_regions(&lowercase_cdata).is_ok());
         assert_eq!(extract_ownership_block(&lowercase_cdata), Some(ownership));
         assert_eq!(extract_inventory_block(&lowercase_cdata), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let invalid_unseparated_attribute = format!("<x:y>\n{ownership}{inventory}");
+        assert!(validate_readme_regions(&invalid_unseparated_attribute).is_ok());
+        assert_eq!(
+            extract_ownership_block(&invalid_unseparated_attribute),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&invalid_unseparated_attribute),
+            Some(inventory)
+        );
         for opener in ["> <div>", "- <div>"] {
             let ownership = render_ownership_block();
             let inventory =
