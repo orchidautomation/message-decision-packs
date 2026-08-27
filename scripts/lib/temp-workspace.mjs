@@ -319,6 +319,7 @@ export const cleanupStaleOwnedTempWorkspaces = ({
   nowMs = Date.now(),
   secureHelperPath,
   secureHelperDiagnostics,
+  readDirectory = (path) => readdirSync(path, { withFileTypes: true }),
 } = {}) => {
   const normalizedPurpose = safePurpose(purpose)
   if (!Number.isSafeInteger(minAgeMs) || minAgeMs < 60_000) {
@@ -327,7 +328,7 @@ export const cleanupStaleOwnedTempWorkspaces = ({
   const canonicalBase = realpathSync(resolve(baseDir))
   const prefix = `mdp-owned-${normalizedPurpose}-`
   const removed = []
-  const entries = readdirSync(canonicalBase, { withFileTypes: true })
+  const entries = readDirectory(canonicalBase)
   // A killed terminal deletion may leave the ownership marker hard-linked as
   // a durable parent-relative recovery record. Restore proof only into the
   // exact quarantined inode encoded by that record, then resume normal cleanup.
@@ -337,7 +338,7 @@ export const cleanupStaleOwnedTempWorkspaces = ({
     const parentStats = fstatSync(parentFd, { bigint: true })
     for (const entry of entries) {
       const recovery = ownedRecoveryRecord(entry.name)
-      if (!recovery || !entry.isFile() || entry.isSymbolicLink()) continue
+      if (!recovery) continue
       const expectedMarkerBasename = quarantinedOwnedBasename(recovery.targetName)
       const result = secureDirectoryAction({
         action: 'recover-owned-workspace', parentFd, parentStats, name: entry.name,
@@ -383,7 +384,7 @@ export const cleanupStaleOwnedTempWorkspaces = ({
     const expectedMarkerBasename = entry.name.startsWith(prefix)
       ? entry.name
       : recoveredBasename?.startsWith(prefix) ? recoveredBasename : null
-    if (!expectedMarkerBasename || !entry.isDirectory() || entry.isSymbolicLink()) continue
+    if (!expectedMarkerBasename) continue
     const candidate = join(canonicalBase, entry.name)
     // A fresh named root cannot be stale. This cheap, conservative filter
     // avoids spawning one native inspection helper per active workspace.

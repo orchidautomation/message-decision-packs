@@ -351,12 +351,24 @@ test('stale sweep reclaims a SIGKILL terminal record bound to the exact quaranti
   const recordName = `.mdp-owned-temp-recovery-${quarantineName}-${identity.dev.toString(16)}-${identity.ino.toString(16)}-${'5'.repeat(32)}`
   linkSync(join(quarantine, TEMP_WORKSPACE_MARKER), join(realpathSync(base), recordName))
   unlinkSync(join(quarantine, TEMP_WORKSPACE_MARKER))
+  const ordinary = createOwnedTempWorkspace({
+    purpose: 'validation', baseDir: base, nowMs: 0, pid: 999_999_999,
+  })
+  writeFileSync(join(ordinary, 'private'), 'ordinary private bytes')
+  const unknownDirents = (path) => readdirSync(path, { withFileTypes: true }).map((entry) => ({
+    name: entry.name,
+    isFile: () => false,
+    isDirectory: () => false,
+    isSymbolicLink: () => false,
+  }))
 
   assert.deepEqual(cleanupStaleOwnedTempWorkspaces({
     purpose: 'validation', baseDir: base, minAgeMs: 60_000,
     nowMs: Date.now() + 120_000,
-  }), [quarantine])
+    readDirectory: unknownDirents,
+  }).sort(), [quarantine, ordinary].sort())
   assert.equal(existsSync(quarantine), false)
+  assert.equal(existsSync(ordinary), false)
   assert.equal(existsSync(join(realpathSync(base), recordName)), false)
 })
 
