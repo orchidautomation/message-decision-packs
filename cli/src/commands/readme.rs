@@ -4,7 +4,7 @@ use crate::constants::DEFAULT_DIR;
 use crate::models::{Card, Manifest};
 use crate::pack_io::{read_card, read_manifest, resolve_pack_path};
 use crate::pack_readme::{
-    README_INVENTORY_CONTRACT, extract_inventory_block, extract_ownership_block,
+    README_INVENTORY_CONTRACT, extract_inventory_block, extract_ownership_block, fence_delimiter,
     human_owned_readme, render_inventory_block, render_ownership_block, replace_readme_regions,
     validate_readme_regions,
 };
@@ -280,33 +280,46 @@ fn reference_warning(code: &str, kind: &str, reference: &str, path: &Path) -> Va
 }
 
 fn inline_code_tokens(markdown: &str) -> Vec<String> {
-    markdown
-        .split('`')
-        .enumerate()
-        .filter_map(|(index, token)| (index % 2 == 1).then(|| token.trim().to_string()))
-        .filter(|token| !token.is_empty())
-        .collect()
+    let mut fence: Option<(char, usize)> = None;
+    let mut tokens = Vec::new();
+    for raw_line in markdown.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        if let Some((character, length, closing)) = fence_delimiter(line, fence) {
+            if closing {
+                fence = None;
+            } else if fence.is_none() {
+                fence = Some((character, length));
+            }
+            continue;
+        }
+        if fence.is_some() {
+            continue;
+        }
+        tokens.extend(
+            line.split('`')
+                .enumerate()
+                .filter_map(|(index, token)| (index % 2 == 1).then(|| token.trim().to_string()))
+                .filter(|token| !token.is_empty()),
+        );
+    }
+    tokens
 }
 
 fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut in_sources = false;
-    let mut fence: Option<&str> = None;
+    let mut fence: Option<(char, usize)> = None;
     let mut ids = Vec::new();
     for raw_line in markdown.lines() {
         let line = raw_line.trim_end_matches('\r');
-        let trimmed = line.trim_start();
-        if let Some(active) = fence {
-            if trimmed.starts_with(active) {
+        if let Some((character, length, closing)) = fence_delimiter(line, fence) {
+            if closing {
                 fence = None;
+            } else if fence.is_none() {
+                fence = Some((character, length));
             }
             continue;
         }
-        if trimmed.starts_with("```") {
-            fence = Some("```");
-            continue;
-        }
-        if trimmed.starts_with("~~~") {
-            fence = Some("~~~");
+        if fence.is_some() {
             continue;
         }
         if line.starts_with("## ") {
@@ -892,6 +905,37 @@ Inline `inline-code` must be ignored.
 - `outside-section`: ignored
 "#;
         assert_eq!(source_reference_ids(markdown), vec!["declared-source"]);
+    }
+
+    #[test]
+    fn card_reference_parser_ignores_backtick_and_tilde_fenced_code() {
+        let markdown = r#"Human `cards/outside.yaml` reference.
+
+```markdown
+`cards/backtick-fenced.yaml`
+```
+
+~~~text
+`cards/tilde-fenced.yaml`
+~~~
+"#;
+        assert_eq!(
+            inline_code_tokens(markdown),
+            vec!["cards/outside.yaml"],
+            "fenced examples are not human card-reference claims"
+        );
+    }
+
+    #[test]
+    fn invalid_backtick_fence_info_does_not_hide_card_references() {
+        let markdown = "```markdown`invalid\n`cards/visible.yaml`\n```\n";
+        // The invalid opener is ordinary prose. Its own paired backticks are
+        // mechanically visible, as is the card reference on the next line.
+        assert!(
+            inline_code_tokens(markdown)
+                .iter()
+                .any(|token| token == "cards/visible.yaml")
+        );
     }
 
     #[test]

@@ -391,7 +391,10 @@ fn standalone_marker_line_offsets(readme: &str, marker: &str) -> Vec<(usize, usi
     offsets
 }
 
-fn fence_delimiter(line: &str, open: Option<(char, usize)>) -> Option<(char, usize, bool)> {
+pub(crate) fn fence_delimiter(
+    line: &str,
+    open: Option<(char, usize)>,
+) -> Option<(char, usize, bool)> {
     let leading_spaces = line
         .chars()
         .take_while(|character| *character == ' ')
@@ -418,7 +421,17 @@ fn fence_delimiter(line: &str, open: Option<(char, usize)>) -> Option<(char, usi
                 && rest[length..].trim().is_empty();
             closing.then_some((character, length, true))
         }
-        None => Some((character, length, false)),
+        None => {
+            let info = &rest[length..];
+            if character == '`' && info.contains('`') {
+                // CommonMark forbids backticks in a backtick fence's info
+                // string. Treat this as ordinary prose so subsequent marker
+                // lines remain visible instead of being hidden by a fake fence.
+                None
+            } else {
+                Some((character, length, false))
+            }
+        }
     }
 }
 
@@ -723,6 +736,17 @@ mod tests {
         assert_eq!(refreshed.matches(README_OWNERSHIP_BEGIN).count(), 3);
         assert_eq!(refreshed.matches(README_INVENTORY_BEGIN).count(), 3);
         assert!(validate_readme_regions(&refreshed).is_ok());
+    }
+
+    #[test]
+    fn invalid_backtick_info_string_does_not_hide_owned_marker_lines() {
+        let readme = format!(
+            "```markdown`invalid\n{README_OWNERSHIP_BEGIN}\nlegend\n{README_OWNERSHIP_END}\n```\n"
+        );
+        assert!(validate_readme_regions(&readme).is_ok());
+        let extracted = extract_ownership_block(&readme).expect("visible ownership region");
+        assert!(extracted.starts_with(README_OWNERSHIP_BEGIN));
+        assert!(extracted.ends_with(&format!("{README_OWNERSHIP_END}\n")));
     }
 
     #[test]
