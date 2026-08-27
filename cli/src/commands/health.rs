@@ -132,6 +132,36 @@ pub(crate) fn doctor(root: &Path) -> Value {
             "Select a readable pack root and rerun `mdp doctor`.",
         )
     } else {
+        let declared_format = fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|raw| serde_yaml::from_str::<YamlValue>(&raw).ok())
+            .and_then(|value| {
+                yaml_get(&value, "format")
+                    .and_then(YamlValue::as_str)
+                    .map(str::to_string)
+            });
+        if declared_format
+            .as_deref()
+            .is_some_and(|format| format != FORMAT_VERSION)
+        {
+            checks.insert("format", json!(declared_format));
+            checks.insert("manifest_parseable", json!(true));
+            return doctor_result(
+                "pack-wrong-format",
+                false,
+                checks,
+                vec![issue(
+                    "manifest_format",
+                    "error",
+                    ".mdp/manifest.yaml#/format",
+                    format!("manifest format must be {FORMAT_VERSION}"),
+                )],
+                installation,
+                json!({"status":"not-assessed","authority":"mdp.profile-activation-decision.v1","reason_code":"pack_wrong_format"}),
+                job_readiness,
+                "Migrate the pack to the supported format, then rerun `mdp validate`.",
+            );
+        }
         match read_manifest(root) {
             Err(_) => doctor_result(
                 "pack-structurally-invalid",
@@ -6794,12 +6824,7 @@ mod tests {
 
         let wrong_format = temp_pack("doctor-wrong-format");
         let wrong_format_manifest = wrong_format.join(".mdp/manifest.yaml");
-        let manifest = std::fs::read_to_string(&wrong_format_manifest).unwrap();
-        std::fs::write(
-            &wrong_format_manifest,
-            manifest.replacen("format: mdp.v0", "format: mdp.v999", 1),
-        )
-        .unwrap();
+        std::fs::write(&wrong_format_manifest, "format: mdp.v999\n").unwrap();
         let wrong_format_result = doctor(&wrong_format);
         assert_eq!(wrong_format_result["status"], "pack-wrong-format");
         assert_eq!(wrong_format_result["valid"], false);
