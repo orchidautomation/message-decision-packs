@@ -96,6 +96,21 @@ jobs:
       - name: Validate public skills with skills-ref
         run: make validate-skill-ref
 
+  mcp-macos:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify identity-bound MCP prepare publication
+        run: >-
+          node --test
+          --test-name-pattern='maps identity-bound|completes prepare, run, and verify|prepare refuses request and manifest parent swaps'
+          scripts/test-run-mcp-server.mjs
+
   pluxx:
     runs-on: ubuntu-latest
     steps:

@@ -104,6 +104,10 @@ server must start with operator-approved `MDP_MCP_*_ROOTS`; provider-capable
 runs also require startup permission, a credential, and a matching one-shot
 consent record. Tool arguments cannot grant either permission.
 
+The canonical adapter supports identity-bound prepare publication on Linux and
+macOS. It fails closed on Windows or another host without a supported kernel
+file-descriptor directory; use the CLI directly on those hosts.
+
 The MCP adapter transports file-oriented CLI calls and adds no decision
 authority or isolation assurance. The older proposal MCP is compatibility-only
 and is not part of beginner/default discovery. Existing consumers can follow

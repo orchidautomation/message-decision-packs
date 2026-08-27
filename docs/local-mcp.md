@@ -18,6 +18,12 @@ server to start with `MDP_ALLOW_NATIVE_MODEL_CALLS=1` and `OPENAI_API_KEY`, plus
 a matching out-of-band, one-shot consent record. Never pass credentials as MCP
 arguments.
 
+Canonical prepare publication is supported on Linux and macOS, where the
+adapter can bind installation to an already-open, identity-checked work
+directory. It fails closed on Windows and other hosts without a supported
+kernel file-descriptor directory; use the CLI directly there rather than
+weakening the approved-root boundary.
+
 ## The four stages
 
 Use these tools in order:

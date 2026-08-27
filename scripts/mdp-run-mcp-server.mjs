@@ -22,6 +22,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
 import { consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
+import { resolveIdentityBoundDirectory } from './lib/identity-bound-directory.mjs'
 
 import { superviseProcess } from './lib/process-supervisor.mjs'
 import {
@@ -440,9 +441,6 @@ const blockedPrepareRun = (code, message, nextCommand = 'mdp prepare-run --help'
 })
 
 const pinOutputParent = (reservation) => {
-  if (process.platform !== 'linux') {
-    throw Object.assign(new Error('identity-bound output publication is unavailable on this platform'), { code: 'mcp-output-denied' })
-  }
   let fd
   try {
     fd = openSync(reservation.parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
@@ -450,10 +448,10 @@ const pinOutputParent = (reservation) => {
     if (!opened.isDirectory() || opened.dev !== BigInt(reservation.parentIdentity.dev) || opened.ino !== BigInt(reservation.parentIdentity.ino)) {
       throw Object.assign(new Error('work output parent changed while being pinned'), { code: 'mcp-output-denied' })
     }
-    const pinnedParent = `/proc/${process.pid}/fd/${fd}`
-    if (realpathSync(pinnedParent) !== reservation.parent) {
-      throw Object.assign(new Error('work output parent could not be identity-bound'), { code: 'mcp-output-denied' })
-    }
+    const pinnedParent = resolveIdentityBoundDirectory({
+      fd,
+      identity: reservation.parentIdentity,
+    })
     return { ...reservation, fd, securePath: join(pinnedParent, basename(reservation.path)) }
   } catch (error) {
     if (fd !== undefined) closeSync(fd)

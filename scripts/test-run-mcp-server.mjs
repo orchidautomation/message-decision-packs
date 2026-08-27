@@ -3,6 +3,7 @@ import { chmodSync, cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFi
 import { createHash } from 'node:crypto'
 import { consentBinding, consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
+import { identityBoundDirectoryCandidates } from './lib/identity-bound-directory.mjs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, parse, relative, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -286,6 +287,15 @@ test('resolves consent across configured roots and rejects missing or ambiguous 
   }
 })
 
+test('maps identity-bound directory handles only for supported host platforms', () => {
+  assert.deepEqual(identityBoundDirectoryCandidates('linux', 42, 7), [
+    '/proc/self/fd/7',
+    '/proc/42/fd/7',
+  ])
+  assert.deepEqual(identityBoundDirectoryCandidates('darwin', 42, 7), ['/dev/fd/7'])
+  assert.deepEqual(identityBoundDirectoryCandidates('win32', 42, 7), [])
+})
+
 test('denies a generative request without consent before any provider spawn', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-mcp-no-consent-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -371,7 +381,7 @@ test('completes prepare, run, and verify across disjoint approved roots for any 
 })
 
 test('prepare refuses request and manifest parent swaps without escaped or partial writes', async (t) => {
-  if (process.platform !== 'linux') return t.skip('identity-bound /proc directory handles require Linux')
+  if (!['linux', 'darwin'].includes(process.platform)) return t.skip('identity-bound directory handles require Linux or macOS')
   const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-parent-race-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const packRoot = join(root, 'packs')
