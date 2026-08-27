@@ -619,10 +619,12 @@ fn is_complete_html_tag(line: &str) -> bool {
         }) {
             index += 1;
         }
+        let value_separator_start = index;
         while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
             index += 1;
         }
         if bytes.get(index) != Some(&b'=') {
+            index = value_separator_start;
             continue;
         }
         index += 1;
@@ -2854,6 +2856,43 @@ Inline `inline-code` must be ignored.
             assert!(refreshed.contains(&format!("{opener}\n")));
             let _ = std::fs::remove_dir_all(root);
         }
+    }
+
+    #[test]
+    fn valueless_html_attributes_keep_marker_text_human_owned() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-html-attributes-{}", nonce()));
+        init_pack(&root, "HTML Attribute Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let human_raw_html = format!(
+            "<x disabled class=foo>\n{}\nhuman raw HTML bytes\n{}\n{}\nhuman raw HTML bytes\n{}\n\n",
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            crate::pack_readme::README_OWNERSHIP_END,
+            crate::pack_readme::README_INVENTORY_BEGIN,
+            crate::pack_readme::README_INVENTORY_END,
+        );
+        let adversarial = format!("{human_raw_html}{readme}");
+        std::fs::write(&readme_path, &adversarial).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "fresh", "{checked}");
+        refresh_readme(&root, None, false).expect("refresh README");
+        let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
+        assert!(refreshed.starts_with(&human_raw_html));
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_OWNERSHIP_BEGIN)
+                .count(),
+            2
+        );
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_INVENTORY_BEGIN)
+                .count(),
+            2
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

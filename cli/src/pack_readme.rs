@@ -731,10 +731,12 @@ fn is_complete_html_tag(line: &str) -> bool {
         }) {
             index += 1;
         }
+        let value_separator_start = index;
         while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
             index += 1;
         }
         if bytes.get(index) != Some(&b'=') {
+            index = value_separator_start;
             continue;
         }
         index += 1;
@@ -1925,6 +1927,20 @@ mod tests {
         assert!(validate_readme_regions(&raw_html).is_ok());
         assert_eq!(extract_ownership_block(&raw_html), Some(ownership));
         assert_eq!(extract_inventory_block(&raw_html), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let valueless_attributes = format!(
+            "<x disabled class=foo>\n{README_OWNERSHIP_BEGIN}\nhuman raw HTML bytes\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman raw HTML bytes\n{README_INVENTORY_END}\n\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&valueless_attributes).is_ok());
+        assert_eq!(
+            extract_ownership_block(&valueless_attributes),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&valueless_attributes),
+            Some(inventory)
+        );
         let ownership = render_ownership_block();
         let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
         let eol_script = format!(
