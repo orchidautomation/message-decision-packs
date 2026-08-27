@@ -552,7 +552,21 @@ fn remove_directory_tree_if_identity_with_hooks<
     after_outer_quarantine();
     let recovery_record = if owned_marker_proof.is_some() {
         let marker_name = current_owned_marker_name(target_fd)?;
-        let marker_identity = named_identity(target_fd, &marker_name)?;
+        let marker_fd = unsafe {
+            libc::openat(
+                target_fd,
+                marker_name.as_ptr(),
+                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if marker_fd < 0 {
+            return Err(io::Error::last_os_error()).map_err(Into::into);
+        }
+        let marker = unsafe { File::from_raw_fd(marker_fd) };
+        let marker_identity = opened_identity(marker_fd)?;
+        if named_identity(target_fd, &marker_name)? != marker_identity {
+            bail!("owned workspace marker identity changed before recovery publication");
+        }
         let record_name = owned_recovery_name(&quarantine, opened)?;
         if unsafe {
             libc::linkat(
@@ -566,9 +580,17 @@ fn remove_directory_tree_if_identity_with_hooks<
         {
             return Err(io::Error::last_os_error()).map_err(Into::into);
         }
+        let record_identity = named_identity(dir_fd, &record_name)?;
+        if record_identity != marker_identity
+            || named_identity(target_fd, &marker_name)? != marker_identity
+        {
+            remove_if_identity(dir_fd, &record_name, record_identity.0, record_identity.1)?;
+            bail!("owned workspace marker identity changed during recovery publication");
+        }
         if unsafe { libc::fsync(dir_fd) } != 0 {
             return Err(io::Error::last_os_error()).map_err(Into::into);
         }
+        drop(marker);
         Some((record_name, marker_identity))
     } else {
         None
