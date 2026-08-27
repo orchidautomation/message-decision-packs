@@ -217,11 +217,15 @@ function assertNoWorkflowShellOverride(workflow) {
 function assertNoWorkflowYamlIndirection(workflow) {
   const indirection = workflow
     .split(/\r?\n/)
-    .find((line) => /(?:^|[\s{[,:])(?:&|\*)[A-Za-z0-9_-]+(?=\s|[,}\]:]|$)/u.test(line))
+    .find(
+      (line) =>
+        /(?:^|[\s{[,:])(?:&|\*)[A-Za-z0-9_-]+(?=\s|[,}\]:]|$)/u.test(line) ||
+        /(?:^|[\s{[,:])!(?:!|<)?[A-Za-z0-9_:/.-]+>?/u.test(line),
+    )
   assert.equal(
     indirection,
     undefined,
-    'required CI workflow must not use YAML anchors or aliases',
+    'required CI workflow must not use YAML anchors, aliases, or tags',
   )
 }
 
@@ -425,6 +429,13 @@ for (const [name, mutation] of [
     ciWorkflow.replace(
       'jobs:\n',
       'env:\n  SHELL_KEY: &shell_key shell\ndefaults: { run: { *shell_key: "/bin/true {0}" } }\n\njobs:\n',
+    ),
+  ],
+  [
+    'tagged disabled parity step',
+    ciWorkflow.replace(
+      '      - name: Validate authored asset parity\n',
+      '      - name: Validate authored asset parity\n        !!str if: false\n',
     ),
   ],
   [
