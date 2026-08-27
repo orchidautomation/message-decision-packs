@@ -486,17 +486,22 @@ fn remove_directory_tree_if_identity_with_hooks<
     } else {
         None
     };
-    let _sigterm_guard = SigtermMaskGuard::block()?;
-    if named_identity(dir_fd, name)? != opened {
-        bail!("secure remove directory tree identity changed before removal");
-    }
     let quarantine = directory_tree_quarantine_name(name)?;
-    rename_no_replace(dir_fd, name, &quarantine)?;
-    if named_identity(dir_fd, &quarantine)? != opened {
-        rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
-            anyhow!("secure remove directory tree mismatch restore failed: {error}")
-        })?;
-        bail!("secure remove directory tree identity changed during quarantine");
+    {
+        // Mask only the finite identity-check/rename transaction. The
+        // recoverable outer name and marker protocol make interruption during
+        // the potentially long recursive walk safe to retry.
+        let _sigterm_guard = SigtermMaskGuard::block()?;
+        if named_identity(dir_fd, name)? != opened {
+            bail!("secure remove directory tree identity changed before removal");
+        }
+        rename_no_replace(dir_fd, name, &quarantine)?;
+        if named_identity(dir_fd, &quarantine)? != opened {
+            rename_no_replace(dir_fd, &quarantine, name).map_err(|error| {
+                anyhow!("secure remove directory tree mismatch restore failed: {error}")
+            })?;
+            bail!("secure remove directory tree identity changed during quarantine");
+        }
     }
     after_outer_quarantine();
     let removal = (|| -> Result<()> {
@@ -510,6 +515,7 @@ fn remove_directory_tree_if_identity_with_hooks<
         Ok(())
     })();
     if let Err(removal_error) = removal {
+        let _sigterm_guard = SigtermMaskGuard::block()?;
         if let Some(proof) = &owned_marker_proof {
             ensure_owned_marker_proof(target_fd, proof).map_err(|proof_error| {
                 anyhow!(
@@ -718,6 +724,9 @@ fn ensure_owned_marker_proof(dir_fd: RawFd, value: &Value) -> Result<()> {
             .map_err(|error| anyhow!("owned workspace recovery proof restore failed: {error}"));
     }
     let mut marker = unsafe { File::from_raw_fd(marker_fd) };
+    if unsafe { libc::fchmod(marker_fd, 0o600) } != 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
     serde_json::to_writer(&mut marker, value)?;
     marker.write_all(b"\n")?;
     marker.sync_all()?;
@@ -1403,6 +1412,22 @@ mod tests {
             identity.ino(),
             &mut |directory_fd, entry, _| {
                 if entry.to_bytes() == OWNED_MARKER_NAME && !added {
+                    let mut current = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+                    assert_eq!(
+                        unsafe {
+                            libc::pthread_sigmask(
+                                libc::SIG_SETMASK,
+                                std::ptr::null(),
+                                current.as_mut_ptr(),
+                            )
+                        },
+                        0
+                    );
+                    assert_eq!(
+                        unsafe { libc::sigismember(current.assume_init_ref(), libc::SIGTERM) },
+                        0,
+                        "SIGTERM must remain unmasked during recursive deletion"
+                    );
                     let late = CString::new("late-private").unwrap();
                     let fd = unsafe {
                         libc::openat(
@@ -1432,6 +1457,14 @@ mod tests {
             )
             .unwrap()["value"]["contract"],
             "mdp.owned-temp-workspace.v1"
+        );
+        assert_eq!(
+            std::fs::metadata(tree.join(".mdp-owned-temp-workspace.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
         );
         remove_directory_tree_if_identity(
             parent.as_raw_fd(),
