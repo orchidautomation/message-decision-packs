@@ -9,6 +9,7 @@ export const TEMP_WORKSPACE_CONTRACT = 'mdp.owned-temp-workspace.v1'
 export const TEMP_WORKSPACE_MARKER = '.mdp-owned-temp-workspace.json'
 export const DEFAULT_STALE_AGE_MS = 24 * 60 * 60 * 1000
 const TEMP_WORKSPACE_QUARANTINE_PREFIX = '.mdp-owned-temp-quarantine-'
+const TEMP_WORKSPACE_RECOVERY_PREFIX = '.mdp-owned-temp-recovery-'
 
 const currentUid = () => (typeof process.getuid === 'function' ? process.getuid() : null)
 const mode = (stats) => stats.mode & 0o777
@@ -51,6 +52,8 @@ const secureDirectoryAction = ({ action, parentFd, parentStats, name, toName, ex
     const expectedStatus = action === 'move-directory' ? 'moved'
       : action === 'verify-directory' ? envelope?.data?.status
         : action === 'inspect-owned-workspace' ? 'inspected'
+          : action === 'recover-owned-workspace' ? envelope?.data?.status
+            : action === 'remove' ? envelope?.data?.status
         : 'removed'
     const ok = envelope?.ok === true &&
       envelope?.command === 'secure-install' &&
@@ -108,6 +111,24 @@ const quarantinedOwnedBasename = (leaf) => {
   const match = /^(mdp-owned-[a-z][a-z0-9-]{0,47}-[A-Za-z0-9]{6})-[0-9a-f]{32}$/.exec(encoded)
   return match?.[1] ?? null
 }
+
+const ownedRecoveryRecord = (leaf) => {
+  if (!leaf.startsWith(TEMP_WORKSPACE_RECOVERY_PREFIX)) return null
+  const encoded = leaf.slice(TEMP_WORKSPACE_RECOVERY_PREFIX.length)
+  const match = /^(.*)-([0-9a-f]+)-([0-9a-f]+)-([0-9a-f]{32})$/.exec(encoded)
+  if (!match || quarantinedOwnedBasename(match[1]) === null) return null
+  try {
+    return { targetName: match[1], targetDev: BigInt(`0x${match[2]}`), targetIno: BigInt(`0x${match[3]}`) }
+  } catch { return null }
+}
+
+const validRecoveryMarker = (marker, purpose, expectedBasename) =>
+  marker?.contract === TEMP_WORKSPACE_CONTRACT &&
+  marker?.purpose === purpose &&
+  marker?.basename === expectedBasename &&
+  Number.isSafeInteger(marker?.created_at_ms) && marker.created_at_ms >= 0 &&
+  Number.isSafeInteger(marker?.pid) && marker.pid >= 1 &&
+  marker?.uid === currentUid()
 
 const processIsAlive = (pid) => {
   if (!Number.isSafeInteger(pid) || pid < 1) return false
@@ -306,7 +327,58 @@ export const cleanupStaleOwnedTempWorkspaces = ({
   const canonicalBase = realpathSync(resolve(baseDir))
   const prefix = `mdp-owned-${normalizedPurpose}-`
   const removed = []
-  for (const entry of readdirSync(canonicalBase, { withFileTypes: true })) {
+  const entries = readdirSync(canonicalBase, { withFileTypes: true })
+  // A killed terminal deletion may leave the ownership marker hard-linked as
+  // a durable parent-relative recovery record. Restore proof only into the
+  // exact quarantined inode encoded by that record, then resume normal cleanup.
+  let parentFd
+  try {
+    parentFd = openSync(canonicalBase, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
+    const parentStats = fstatSync(parentFd, { bigint: true })
+    for (const entry of entries) {
+      const recovery = ownedRecoveryRecord(entry.name)
+      if (!recovery || !entry.isFile() || entry.isSymbolicLink()) continue
+      const expectedMarkerBasename = quarantinedOwnedBasename(recovery.targetName)
+      const result = secureDirectoryAction({
+        action: 'recover-owned-workspace', parentFd, parentStats, name: entry.name,
+        expected: { dev: recovery.targetDev, ino: recovery.targetIno }, helper: secureHelperPath,
+      })
+      if (!result.ok || !['restored', 'target-absent'].includes(result.status)) {
+        if (Array.isArray(secureHelperDiagnostics)) secureHelperDiagnostics.push({ action: 'recover-owned-workspace', name: entry.name, ...result })
+        continue
+      }
+      const marker = result.data.marker
+      if (result.data.target_name !== recovery.targetName ||
+          !validRecoveryMarker(marker, normalizedPurpose, expectedMarkerBasename) ||
+          nowMs - marker.created_at_ms < minAgeMs || processIsAlive(marker.pid)) continue
+      let recordIdentity
+      try {
+        recordIdentity = { dev: BigInt(result.data.record_dev), ino: BigInt(result.data.record_ino) }
+      } catch { continue }
+      let cleaned = result.status === 'target-absent'
+      const candidate = join(canonicalBase, recovery.targetName)
+      if (!cleaned) {
+        cleaned = cleanupOwnedTempWorkspace(candidate, {
+          purpose: normalizedPurpose, expectedMarkerBasename,
+          secureHelperPath, secureHelperDiagnostics,
+        })
+        if (cleaned) removed.push(candidate)
+      }
+      if (!cleaned) continue
+      const removeRecord = secureDirectoryAction({
+        action: 'remove', parentFd, parentStats, name: entry.name,
+        expected: recordIdentity, helper: secureHelperPath,
+      })
+      if ((!removeRecord.ok || !['removed', 'absent'].includes(removeRecord.status)) && Array.isArray(secureHelperDiagnostics)) {
+        secureHelperDiagnostics.push({ action: 'remove-recovery-record', name: entry.name, ...removeRecord })
+      }
+    }
+  } catch {
+    // Fail closed: ordinary stale candidates may still be inspected below.
+  } finally {
+    if (parentFd !== undefined) closeSync(parentFd)
+  }
+  for (const entry of entries) {
     const recoveredBasename = quarantinedOwnedBasename(entry.name)
     const expectedMarkerBasename = entry.name.startsWith(prefix)
       ? entry.name

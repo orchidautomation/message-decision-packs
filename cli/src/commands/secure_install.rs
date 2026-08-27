@@ -117,6 +117,7 @@ fn directory_tree_quarantine_name(name: &CStr) -> Result<CString> {
 
 const OWNED_MARKER_NAME: &[u8] = b".mdp-owned-temp-workspace.json";
 const OWNED_MARKER_QUARANTINE_PREFIX: &str = ".mdp-owned-temp-workspace.json.quarantine-";
+const OWNED_RECOVERY_PREFIX: &str = ".mdp-owned-temp-recovery-";
 
 fn is_owned_marker_name(name: &CStr) -> bool {
     name.to_bytes() == OWNED_MARKER_NAME
@@ -134,6 +135,45 @@ fn entry_quarantine_name(name: &CStr) -> Result<CString> {
         .map_err(Into::into);
     }
     quarantine_name()
+}
+
+fn owned_recovery_name(target: &CStr, identity: (u64, u64)) -> Result<CString> {
+    CString::new(format!(
+        "{OWNED_RECOVERY_PREFIX}{}-{:x}-{:x}-{}",
+        target.to_str()?,
+        identity.0,
+        identity.1,
+        quarantine_nonce()?
+    ))
+    .map_err(Into::into)
+}
+
+fn parse_owned_recovery_name(name: &CStr) -> Result<(CString, u64, u64)> {
+    let encoded = name
+        .to_str()?
+        .strip_prefix(OWNED_RECOVERY_PREFIX)
+        .ok_or_else(|| anyhow!("owned recovery name is invalid"))?;
+    let (rest, nonce) = encoded
+        .rsplit_once('-')
+        .ok_or_else(|| anyhow!("owned recovery nonce is missing"))?;
+    let (rest, ino) = rest
+        .rsplit_once('-')
+        .ok_or_else(|| anyhow!("owned recovery inode is missing"))?;
+    let (target, dev) = rest
+        .rsplit_once('-')
+        .ok_or_else(|| anyhow!("owned recovery device is missing"))?;
+    if nonce.len() != 32 || !nonce.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("owned recovery nonce is invalid");
+    }
+    let target = checked_name(target)?;
+    if recoverable_owned_basename(&target).is_none() {
+        bail!("owned recovery target is invalid");
+    }
+    Ok((
+        target,
+        u64::from_str_radix(dev, 16)?,
+        u64::from_str_radix(ino, 16)?,
+    ))
 }
 
 #[cfg(target_os = "linux")]
@@ -510,6 +550,29 @@ fn remove_directory_tree_if_identity_with_hooks<
         }
     }
     after_outer_quarantine();
+    let recovery_record = if owned_marker_proof.is_some() {
+        let marker_name = current_owned_marker_name(target_fd)?;
+        let marker_identity = named_identity(target_fd, &marker_name)?;
+        let record_name = owned_recovery_name(&quarantine, opened)?;
+        if unsafe {
+            libc::linkat(
+                target_fd,
+                marker_name.as_ptr(),
+                dir_fd,
+                record_name.as_ptr(),
+                0,
+            )
+        } != 0
+        {
+            return Err(io::Error::last_os_error()).map_err(Into::into);
+        }
+        if unsafe { libc::fsync(dir_fd) } != 0 {
+            return Err(io::Error::last_os_error()).map_err(Into::into);
+        }
+        Some((record_name, marker_identity))
+    } else {
+        None
+    };
     let restore_after_failure = |removal_error: &anyhow::Error| -> Result<()> {
         if let Some(proof) = &owned_marker_proof {
             ensure_owned_marker_proof(target_fd, proof).map_err(|proof_error| {
@@ -532,6 +595,9 @@ fn remove_directory_tree_if_identity_with_hooks<
             Err(status_error) => bail!(
                 "secure remove directory tree failed ({removal_error}); quarantine status failed: {status_error}"
             ),
+        }
+        if let Some((record, identity)) = &recovery_record {
+            remove_if_identity(dir_fd, record, identity.0, identity.1)?;
         }
         bail!("{removal_error}")
     };
@@ -585,6 +651,9 @@ fn remove_directory_tree_if_identity_with_hooks<
     })();
     if let Err(removal_error) = terminal {
         return restore_after_failure(&removal_error);
+    }
+    if let Some((record, identity)) = &recovery_record {
+        remove_if_identity(dir_fd, record, identity.0, identity.1)?;
     }
     drop(target);
     Ok(())
@@ -644,10 +713,7 @@ fn directory_identity_status(
     }
 }
 
-fn recovery_marker_name(dir_fd: RawFd, requested: &CStr) -> Result<CString> {
-    if requested.to_bytes() != OWNED_MARKER_NAME {
-        bail!("owned workspace marker is absent");
-    }
+fn recovery_marker_names(dir_fd: RawFd) -> Result<Vec<CString>> {
     let duplicate = fresh_directory_description(dir_fd)?;
     let stream = unsafe { libc::fdopendir(duplicate) };
     if stream.is_null() {
@@ -677,6 +743,14 @@ fn recovery_marker_name(dir_fd: RawFd, requested: &CStr) -> Result<CString> {
     if unsafe { libc::closedir(stream) } != 0 {
         return Err(io::Error::last_os_error()).map_err(Into::into);
     }
+    Ok(matches)
+}
+
+fn recovery_marker_name(dir_fd: RawFd, requested: &CStr) -> Result<CString> {
+    if requested.to_bytes() != OWNED_MARKER_NAME {
+        bail!("owned workspace marker is absent");
+    }
+    let mut matches = recovery_marker_names(dir_fd)?;
     if matches.len() != 1 {
         bail!("owned workspace recovery marker is missing or ambiguous");
     }
@@ -796,6 +870,98 @@ fn ensure_owned_marker_proof(dir_fd: RawFd, value: &Value) -> Result<()> {
         return Err(io::Error::last_os_error()).map_err(Into::into);
     }
     Ok(())
+}
+
+fn recover_owned_workspace(dir_fd: RawFd, record_name: &CString) -> Result<Value> {
+    let (target_name, target_dev, target_ino) = parse_owned_recovery_name(record_name)?;
+    let record_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            record_name.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if record_fd < 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    let record = unsafe { File::from_raw_fd(record_fd) };
+    let record_identity = opened_identity(record_fd)?;
+    let metadata = record.metadata()?;
+    use std::os::unix::fs::MetadataExt;
+    if !metadata.is_file()
+        || metadata.mode() & 0o777 != 0o600
+        || metadata.uid() != unsafe { libc::geteuid() }
+        || metadata.len() > 4_096
+    {
+        bail!("owned recovery record metadata is invalid");
+    }
+    let mut bytes = Vec::new();
+    record.take(4_097).read_to_end(&mut bytes)?;
+    if bytes.len() > 4_096 {
+        bail!("owned recovery record exceeds size limit");
+    }
+    let marker: Value = serde_json::from_slice(&bytes)?;
+    let target_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            target_name.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if target_fd < 0 {
+        let error = io::Error::last_os_error();
+        if error.kind() == io::ErrorKind::NotFound {
+            return Ok(json!({
+                "contract": "mdp.secure-install.v1", "status": "target-absent",
+                "target_name": target_name.to_str()?, "record_dev": record_identity.0.to_string(),
+                "record_ino": record_identity.1.to_string(), "marker": marker
+            }));
+        }
+        return Err(error).map_err(Into::into);
+    }
+    let target = unsafe { File::from_raw_fd(target_fd) };
+    if opened_identity(target_fd)? != (target_dev, target_ino)
+        || named_identity(dir_fd, &target_name)? != (target_dev, target_ino)
+    {
+        bail!("owned recovery target identity mismatch");
+    }
+    let canonical = CString::new(OWNED_MARKER_NAME)?;
+    let fallback_markers = recovery_marker_names(target_fd)?;
+    if fallback_markers.len() > 1 {
+        bail!("owned recovery target has ambiguous marker proofs");
+    }
+    if unsafe {
+        libc::linkat(
+            dir_fd,
+            record_name.as_ptr(),
+            target_fd,
+            canonical.as_ptr(),
+            0,
+        )
+    } != 0
+    {
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::AlreadyExists
+            || inspect_owned_marker(target_fd, &canonical)?["value"] != marker
+        {
+            return Err(error).map_err(Into::into);
+        }
+    }
+    if unsafe { libc::fsync(target_fd) } != 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    for fallback in fallback_markers {
+        if named_identity(target_fd, &fallback)? != record_identity {
+            bail!("owned recovery marker identity mismatch");
+        }
+        remove_if_identity(target_fd, &fallback, record_identity.0, record_identity.1)?;
+    }
+    drop(target);
+    Ok(json!({
+        "contract": "mdp.secure-install.v1", "status": "restored",
+        "target_name": target_name.to_str()?, "record_dev": record_identity.0.to_string(),
+        "record_ino": record_identity.1.to_string(), "marker": marker
+    }))
 }
 
 fn secure_install_with_hook<F: FnOnce()>(
@@ -1012,8 +1178,9 @@ pub(crate) fn secure_install(
                 json!({"contract": "mdp.secure-install.v1", "status": "inspected", "marker": inspected["value"], "marker_mtime_ms": inspected["mtime_ms"]}),
             )
         }
+        "recover-owned-workspace" => recover_owned_workspace(dir_fd, &name),
         _ => bail!(
-            "secure install action must be install, verify, remove, move-directory, remove-directory, remove-directory-tree, verify-directory, or inspect-owned-workspace"
+            "secure install action must be install, verify, remove, move-directory, remove-directory-tree, verify-directory, inspect-owned-workspace, or recover-owned-workspace"
         ),
     }
 }
@@ -1316,6 +1483,8 @@ mod tests {
                 || {
                     if stage == "terminal" {
                         unsafe { libc::pthread_kill(libc::pthread_self(), libc::SIGTERM) };
+                    } else if stage == "terminal-kill" {
+                        unsafe { libc::kill(libc::getpid(), libc::SIGKILL) };
                     }
                 },
             );
@@ -1399,14 +1568,20 @@ mod tests {
             .status()
             .unwrap();
         assert_eq!(marker_status.signal(), Some(libc::SIGKILL));
-        let marker_recovered_name = std::fs::read_dir(&root)
+        let marker_entries = std::fs::read_dir(&root)
             .unwrap()
-            .next()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let marker_recovered_name = marker_entries
+            .iter()
+            .find(|name| name.starts_with(".mdp-owned-temp-quarantine-"))
             .unwrap()
+            .clone();
+        let marker_record_name = marker_entries
+            .iter()
+            .find(|name| name.starts_with(OWNED_RECOVERY_PREFIX))
             .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .into_owned();
+            .clone();
         let marker_recovered = root.join(&marker_recovered_name);
         assert!(
             !marker_recovered
@@ -1430,11 +1605,24 @@ mod tests {
             json!({})
         );
         let parent = File::open(&root).unwrap();
+        let recovered = recover_owned_workspace(
+            parent.as_raw_fd(),
+            &CString::new(marker_record_name.clone()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(recovered["status"], "restored");
         remove_directory_tree_if_identity(
             parent.as_raw_fd(),
             &CString::new(marker_recovered_name).unwrap(),
             marker_identity.dev(),
             marker_identity.ino(),
+        )
+        .unwrap();
+        remove_if_identity(
+            parent.as_raw_fd(),
+            &CString::new(marker_record_name).unwrap(),
+            recovered["record_dev"].as_str().unwrap().parse().unwrap(),
+            recovered["record_ino"].as_str().unwrap().parse().unwrap(),
         )
         .unwrap();
 
@@ -1454,6 +1642,77 @@ mod tests {
             .status()
             .unwrap();
         assert_eq!(terminal_status.signal(), Some(libc::SIGTERM));
+        assert!(std::fs::read_dir(&root).unwrap().next().is_none());
+
+        std::fs::create_dir(&tree).unwrap();
+        std::fs::write(tree.join(".mdp-owned-temp-workspace.json"), b"{}").unwrap();
+        std::fs::set_permissions(
+            tree.join(".mdp-owned-temp-workspace.json"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        let terminal_identity = std::fs::metadata(&tree).unwrap();
+        let killed_terminal = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("killed_tree_removal_preserves_a_discoverable_owned_quarantine")
+            .arg("--nocapture")
+            .env(CHILD_ROOT, &root)
+            .env("MDP_TEST_KILLED_TREE_NAME", &initial_name)
+            .env("MDP_TEST_KILLED_TREE_STAGE", "terminal-kill")
+            .status()
+            .unwrap();
+        assert_eq!(killed_terminal.signal(), Some(libc::SIGKILL));
+        let entries = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let target_name = entries
+            .iter()
+            .find(|name| name.starts_with(".mdp-owned-temp-quarantine-"))
+            .unwrap()
+            .clone();
+        let record_name = entries
+            .iter()
+            .find(|name| name.starts_with(OWNED_RECOVERY_PREFIX))
+            .unwrap()
+            .clone();
+        let saved = root.join("saved-owned");
+        std::fs::rename(root.join(&target_name), &saved).unwrap();
+        std::fs::create_dir(root.join(&target_name)).unwrap();
+        std::fs::write(root.join(&target_name).join("unrelated"), b"keep").unwrap();
+        let parent = File::open(&root).unwrap();
+        assert!(
+            recover_owned_workspace(
+                parent.as_raw_fd(),
+                &CString::new(record_name.clone()).unwrap(),
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read(root.join(&target_name).join("unrelated")).unwrap(),
+            b"keep"
+        );
+        std::fs::remove_dir_all(root.join(&target_name)).unwrap();
+        std::fs::rename(&saved, root.join(&target_name)).unwrap();
+        let recovered = recover_owned_workspace(
+            parent.as_raw_fd(),
+            &CString::new(record_name.clone()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(recovered["status"], "restored");
+        remove_directory_tree_if_identity(
+            parent.as_raw_fd(),
+            &CString::new(target_name).unwrap(),
+            terminal_identity.dev(),
+            terminal_identity.ino(),
+        )
+        .unwrap();
+        remove_if_identity(
+            parent.as_raw_fd(),
+            &CString::new(record_name).unwrap(),
+            recovered["record_dev"].as_str().unwrap().parse().unwrap(),
+            recovered["record_ino"].as_str().unwrap().parse().unwrap(),
+        )
+        .unwrap();
         assert!(std::fs::read_dir(&root).unwrap().next().is_none());
         std::fs::remove_dir(&root).unwrap();
     }
