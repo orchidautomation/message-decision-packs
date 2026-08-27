@@ -334,7 +334,9 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
                     && project_container_path(line, opening_container).is_some()
             })
             .and_then(|_| link_definition_continuation_title_state(block_content));
-        if line_is_raw_html(block_content, &mut raw_html_end_tag) {
+        if (raw_html_end_tag.is_some() || fence.is_none())
+            && line_is_raw_html(block_content, &mut raw_html_end_tag, !paragraph_open)
+        {
             visible.push('\n');
             paragraph_open = false;
             continue;
@@ -447,11 +449,21 @@ fn markdown_indent_columns(line: &str) -> usize {
     columns
 }
 
-fn line_is_raw_html(line: &str, end_tag: &mut Option<&'static str>) -> bool {
+#[derive(Clone, Debug)]
+enum RawHtmlEnd {
+    Literal(&'static str),
+    BlankLine,
+}
+
+fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag: bool) -> bool {
     let lower = line.trim_start_matches([' ', '\t']).to_ascii_lowercase();
-    if let Some(tag) = *end_tag {
-        if lower.contains(&format!("</{tag}>")) {
-            *end_tag = None;
+    if let Some(termination) = end.as_ref() {
+        let closed = match termination {
+            RawHtmlEnd::Literal(literal) => lower.contains(literal),
+            RawHtmlEnd::BlankLine => lower.trim().is_empty(),
+        };
+        if closed {
+            *end = None;
         }
         return true;
     }
@@ -464,12 +476,200 @@ fn line_is_raw_html(line: &str, end_tag: &mut Option<&'static str>) -> bool {
                 .is_some_and(|character| character.is_ascii_whitespace() || character == '>')
         {
             if !lower.contains(&format!("</{tag}>")) {
-                *end_tag = Some(tag);
+                *end = Some(RawHtmlEnd::Literal(match tag {
+                    "script" => "</script>",
+                    "pre" => "</pre>",
+                    "style" => "</style>",
+                    _ => "</textarea>",
+                }));
             }
             return true;
         }
     }
+    for (opener, closer) in [("<!--", "-->"), ("<?", "?>"), ("<![cdata[", "]]>")] {
+        if lower.starts_with(opener) {
+            if !lower.contains(closer) {
+                *end = Some(RawHtmlEnd::Literal(closer));
+            }
+            return true;
+        }
+    }
+    if lower.starts_with("<!") && lower.as_bytes().get(2).is_some_and(u8::is_ascii_alphabetic) {
+        if !lower.contains('>') {
+            *end = Some(RawHtmlEnd::Literal(">"));
+        }
+        return true;
+    }
+    if starts_block_html_tag(&lower) {
+        *end = Some(RawHtmlEnd::BlankLine);
+        return true;
+    }
+    if allow_complete_tag && is_complete_html_tag(&lower) {
+        *end = Some(RawHtmlEnd::BlankLine);
+        return true;
+    }
     false
+}
+
+fn is_complete_html_tag(line: &str) -> bool {
+    let bytes = line.trim_end_matches([' ', '\t']).as_bytes();
+    let mut index = 0;
+    if bytes.get(index) != Some(&b'<') {
+        return false;
+    }
+    index += 1;
+    let closing = bytes.get(index) == Some(&b'/');
+    index += usize::from(closing);
+    if !bytes.get(index).is_some_and(u8::is_ascii_alphabetic) {
+        return false;
+    }
+    index += 1;
+    while bytes
+        .get(index)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+    {
+        index += 1;
+    }
+    if closing {
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        return bytes.get(index) == Some(&b'>') && index + 1 == bytes.len();
+    }
+    loop {
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        if bytes.get(index) == Some(&b'>') {
+            return index + 1 == bytes.len();
+        }
+        if bytes.get(index) == Some(&b'/') && bytes.get(index + 1) == Some(&b'>') {
+            return index + 2 == bytes.len();
+        }
+        if !bytes
+            .get(index)
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
+        {
+            return false;
+        }
+        index += 1;
+        while bytes.get(index).is_some_and(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b':' | b'-')
+        }) {
+            index += 1;
+        }
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        if bytes.get(index) != Some(&b'=') {
+            continue;
+        }
+        index += 1;
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        match bytes.get(index).copied() {
+            Some(quote @ (b'\'' | b'"')) => {
+                index += 1;
+                while bytes.get(index).is_some_and(|byte| *byte != quote) {
+                    index += 1;
+                }
+                if bytes.get(index) != Some(&quote) {
+                    return false;
+                }
+                index += 1;
+            }
+            Some(byte) if !byte.is_ascii_whitespace() && !b"\"'=<>`".contains(&byte) => {
+                index += 1;
+                while bytes
+                    .get(index)
+                    .is_some_and(|byte| !byte.is_ascii_whitespace() && !b"\"'=<>`".contains(byte))
+                {
+                    index += 1;
+                }
+            }
+            _ => return false,
+        }
+    }
+}
+
+fn starts_block_html_tag(line: &str) -> bool {
+    const TAGS: &[&str] = &[
+        "address",
+        "article",
+        "aside",
+        "base",
+        "basefont",
+        "blockquote",
+        "body",
+        "caption",
+        "center",
+        "col",
+        "colgroup",
+        "dd",
+        "details",
+        "dialog",
+        "dir",
+        "div",
+        "dl",
+        "dt",
+        "fieldset",
+        "figcaption",
+        "figure",
+        "footer",
+        "form",
+        "frame",
+        "frameset",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "head",
+        "header",
+        "hr",
+        "html",
+        "iframe",
+        "legend",
+        "li",
+        "link",
+        "main",
+        "menu",
+        "menuitem",
+        "nav",
+        "noframes",
+        "ol",
+        "optgroup",
+        "option",
+        "p",
+        "param",
+        "search",
+        "section",
+        "summary",
+        "table",
+        "tbody",
+        "td",
+        "tfoot",
+        "th",
+        "thead",
+        "title",
+        "tr",
+        "track",
+        "ul",
+    ];
+    let candidate = line.strip_prefix("</").or_else(|| line.strip_prefix('<'));
+    candidate.is_some_and(|candidate| {
+        TAGS.iter().any(|tag| {
+            candidate.starts_with(tag)
+                && candidate[tag.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|character| {
+                        character.is_ascii_whitespace() || matches!(character, '>' | '/')
+                    })
+        })
+    })
 }
 
 fn line_continues_paragraph(line: &str, paragraph_open: bool) -> bool {
@@ -938,7 +1138,9 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
                     && project_container_path(line, opening_container).is_some()
             })
             .and_then(|_| link_definition_continuation_title_state(block_content));
-        if line_is_raw_html(block_content, &mut raw_html_end_tag) {
+        if (raw_html_end_tag.is_some() || fence.is_none())
+            && line_is_raw_html(block_content, &mut raw_html_end_tag, !paragraph_open)
+        {
             paragraph_open = false;
             continue;
         }
@@ -1834,6 +2036,27 @@ Inline `inline-code` must be ignored.
             vec!["cards/raw-root.yaml"],
             "raw HTML block content is not inline-parsed"
         );
+        assert_eq!(
+            inline_code_tokens(
+                "```markdown\n<script>\n```\nRoot `cards/fenced-script-root.yaml`.\n"
+            ),
+            vec!["cards/fenced-script-root.yaml"],
+            "raw HTML state cannot start inside fenced code"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "<?php\n`cards/processing-instruction.yaml`\n?>\nRoot `cards/processing-root.yaml`.\n"
+            ),
+            vec!["cards/processing-root.yaml"],
+            "processing-instruction raw HTML is not inline-parsed"
+        );
+        assert_eq!(
+            inline_code_tokens(
+                "<widget data-value='human'>\n`cards/custom-html.yaml`\n\nRoot `cards/custom-root.yaml`.\n"
+            ),
+            vec!["cards/custom-root.yaml"],
+            "complete custom-tag raw HTML is not inline-parsed"
+        );
     }
 
     #[test]
@@ -1886,13 +2109,27 @@ Inline `inline-code` must be ignored.
             "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nParagraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n\n# Heading\n2. ```markdown\n   `cards/after-heading-hidden.yaml`\n   ```\nRoot `cards/after-heading-visible.yaml`.\n\n[ref]: /url\n2. ```markdown\n   `cards/after-definition-hidden.yaml`\n   ```\nRoot `cards/after-definition-visible.yaml`.\n\n> [ref]: /url\n>   \"title\"\n> 2. ```markdown\n>    `cards/quoted-definition-hidden.yaml`\n>    ```\nRoot `cards/quoted-definition-visible.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
         );
         readme.push_str(&format!(
-            "\n[title-ref]: /url\n  \"See `cards/definition-title-missing.yaml`\"\n\n<script>\n`cards/raw-html-missing.yaml`\n{}\nhuman raw marker\n{}\n{}\nhuman raw marker\n{}\n</script>\n",
+            "\n[title-ref]: /url\n  \"See `cards/definition-title-missing.yaml`\"\n\n<script>\n`cards/raw-html-missing.yaml`\n{}\nhuman raw marker\n{}\n{}\nhuman raw marker\n{}\n</script>\n<?php\n`cards/raw-processing-missing.yaml`\n?>\n<![CDATA[\n`cards/raw-cdata-missing.yaml`\n]]>\n<div>\n`cards/raw-block-missing.yaml`\n\n<widget data-value='human'>\n`cards/raw-custom-missing.yaml`\n\n",
             crate::pack_readme::README_OWNERSHIP_BEGIN,
             crate::pack_readme::README_OWNERSHIP_END,
             crate::pack_readme::README_INVENTORY_BEGIN,
             crate::pack_readme::README_INVENTORY_END,
         ));
         std::fs::write(&readme_path, readme).expect("write human examples");
+        refresh_readme(&root, None, false).expect("refresh with raw HTML examples");
+        let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
+        for preserved in [
+            "`cards/raw-html-missing.yaml`",
+            "`cards/raw-processing-missing.yaml`",
+            "`cards/raw-cdata-missing.yaml`",
+            "`cards/raw-block-missing.yaml`",
+            "`cards/raw-custom-missing.yaml`",
+        ] {
+            assert!(
+                refreshed.contains(preserved),
+                "refresh preserves {preserved}"
+            );
+        }
 
         let checked = check_readme(&root).expect("check README");
         let check_refs = checked["warnings"]

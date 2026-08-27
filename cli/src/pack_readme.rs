@@ -417,7 +417,7 @@ struct MarkdownFenceScanner {
     paragraph_open: bool,
     definition_title_pending: Option<MarkdownContainer>,
     definition_destination_pending: Option<MarkdownContainer>,
-    raw_html_end_tag: Option<&'static str>,
+    raw_html_end: Option<RawHtmlEnd>,
 }
 
 impl MarkdownFenceScanner {
@@ -466,7 +466,19 @@ impl MarkdownFenceScanner {
             self.container = container.clone();
             (content, container)
         };
-        if line_is_raw_html(block_content, &mut self.raw_html_end_tag) {
+        let canonical_owned_marker = self.raw_html_end.is_none()
+            && container.is_empty()
+            && matches!(
+                block_content,
+                README_OWNERSHIP_BEGIN
+                    | README_OWNERSHIP_END
+                    | README_INVENTORY_BEGIN
+                    | README_INVENTORY_END
+            );
+        if !canonical_owned_marker
+            && (self.raw_html_end.is_some() || self.fence.is_none())
+            && line_is_raw_html(block_content, &mut self.raw_html_end, !self.paragraph_open)
+        {
             self.paragraph_open = false;
             return true;
         }
@@ -531,11 +543,21 @@ impl MarkdownFenceScanner {
     }
 }
 
-fn line_is_raw_html(line: &str, end_tag: &mut Option<&'static str>) -> bool {
+#[derive(Clone, Debug)]
+enum RawHtmlEnd {
+    Literal(&'static str),
+    BlankLine,
+}
+
+fn line_is_raw_html(line: &str, end: &mut Option<RawHtmlEnd>, allow_complete_tag: bool) -> bool {
     let lower = line.trim_start_matches([' ', '\t']).to_ascii_lowercase();
-    if let Some(tag) = *end_tag {
-        if lower.contains(&format!("</{tag}>")) {
-            *end_tag = None;
+    if let Some(termination) = end.as_ref() {
+        let closed = match termination {
+            RawHtmlEnd::Literal(literal) => lower.contains(literal),
+            RawHtmlEnd::BlankLine => lower.trim().is_empty(),
+        };
+        if closed {
+            *end = None;
         }
         return true;
     }
@@ -548,12 +570,200 @@ fn line_is_raw_html(line: &str, end_tag: &mut Option<&'static str>) -> bool {
                 .is_some_and(|character| character.is_ascii_whitespace() || character == '>')
         {
             if !lower.contains(&format!("</{tag}>")) {
-                *end_tag = Some(tag);
+                *end = Some(RawHtmlEnd::Literal(match tag {
+                    "script" => "</script>",
+                    "pre" => "</pre>",
+                    "style" => "</style>",
+                    _ => "</textarea>",
+                }));
             }
             return true;
         }
     }
+    for (opener, closer) in [("<!--", "-->"), ("<?", "?>"), ("<![cdata[", "]]>")] {
+        if lower.starts_with(opener) {
+            if !lower.contains(closer) {
+                *end = Some(RawHtmlEnd::Literal(closer));
+            }
+            return true;
+        }
+    }
+    if lower.starts_with("<!") && lower.as_bytes().get(2).is_some_and(u8::is_ascii_alphabetic) {
+        if !lower.contains('>') {
+            *end = Some(RawHtmlEnd::Literal(">"));
+        }
+        return true;
+    }
+    if starts_block_html_tag(&lower) {
+        *end = Some(RawHtmlEnd::BlankLine);
+        return true;
+    }
+    if allow_complete_tag && is_complete_html_tag(&lower) {
+        *end = Some(RawHtmlEnd::BlankLine);
+        return true;
+    }
     false
+}
+
+fn is_complete_html_tag(line: &str) -> bool {
+    let bytes = line.trim_end_matches([' ', '\t']).as_bytes();
+    let mut index = 0;
+    if bytes.get(index) != Some(&b'<') {
+        return false;
+    }
+    index += 1;
+    let closing = bytes.get(index) == Some(&b'/');
+    index += usize::from(closing);
+    if !bytes.get(index).is_some_and(u8::is_ascii_alphabetic) {
+        return false;
+    }
+    index += 1;
+    while bytes
+        .get(index)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+    {
+        index += 1;
+    }
+    if closing {
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        return bytes.get(index) == Some(&b'>') && index + 1 == bytes.len();
+    }
+    loop {
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        if bytes.get(index) == Some(&b'>') {
+            return index + 1 == bytes.len();
+        }
+        if bytes.get(index) == Some(&b'/') && bytes.get(index + 1) == Some(&b'>') {
+            return index + 2 == bytes.len();
+        }
+        if !bytes
+            .get(index)
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
+        {
+            return false;
+        }
+        index += 1;
+        while bytes.get(index).is_some_and(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b':' | b'-')
+        }) {
+            index += 1;
+        }
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        if bytes.get(index) != Some(&b'=') {
+            continue;
+        }
+        index += 1;
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        match bytes.get(index).copied() {
+            Some(quote @ (b'\'' | b'"')) => {
+                index += 1;
+                while bytes.get(index).is_some_and(|byte| *byte != quote) {
+                    index += 1;
+                }
+                if bytes.get(index) != Some(&quote) {
+                    return false;
+                }
+                index += 1;
+            }
+            Some(byte) if !byte.is_ascii_whitespace() && !b"\"'=<>`".contains(&byte) => {
+                index += 1;
+                while bytes
+                    .get(index)
+                    .is_some_and(|byte| !byte.is_ascii_whitespace() && !b"\"'=<>`".contains(byte))
+                {
+                    index += 1;
+                }
+            }
+            _ => return false,
+        }
+    }
+}
+
+fn starts_block_html_tag(line: &str) -> bool {
+    const TAGS: &[&str] = &[
+        "address",
+        "article",
+        "aside",
+        "base",
+        "basefont",
+        "blockquote",
+        "body",
+        "caption",
+        "center",
+        "col",
+        "colgroup",
+        "dd",
+        "details",
+        "dialog",
+        "dir",
+        "div",
+        "dl",
+        "dt",
+        "fieldset",
+        "figcaption",
+        "figure",
+        "footer",
+        "form",
+        "frame",
+        "frameset",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "head",
+        "header",
+        "hr",
+        "html",
+        "iframe",
+        "legend",
+        "li",
+        "link",
+        "main",
+        "menu",
+        "menuitem",
+        "nav",
+        "noframes",
+        "ol",
+        "optgroup",
+        "option",
+        "p",
+        "param",
+        "search",
+        "section",
+        "summary",
+        "table",
+        "tbody",
+        "td",
+        "tfoot",
+        "th",
+        "thead",
+        "title",
+        "tr",
+        "track",
+        "ul",
+    ];
+    let candidate = line.strip_prefix("</").or_else(|| line.strip_prefix('<'));
+    candidate.is_some_and(|candidate| {
+        TAGS.iter().any(|tag| {
+            candidate.starts_with(tag)
+                && candidate[tag.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|character| {
+                        character.is_ascii_whitespace() || matches!(character, '>' | '/')
+                    })
+        })
+    })
 }
 
 fn project_container_path<'a>(
@@ -1533,6 +1743,29 @@ mod tests {
         assert!(validate_readme_regions(&raw_html).is_ok());
         assert_eq!(extract_ownership_block(&raw_html), Some(ownership));
         assert_eq!(extract_inventory_block(&raw_html), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let fenced_script = format!("```markdown\n<script>\n```\n{ownership}\n{inventory}");
+        assert!(validate_readme_regions(&fenced_script).is_ok());
+        assert!(open_fence_at_eof(&fenced_script).is_none());
+        assert_eq!(extract_ownership_block(&fenced_script), Some(ownership));
+        assert_eq!(extract_inventory_block(&fenced_script), Some(inventory));
+        for (open, close) in [
+            ("<?php", "?>"),
+            ("<![CDATA[", "]]>"),
+            ("<div>", "\n"),
+            ("<widget data-value='human'>", "\n"),
+        ] {
+            let ownership = render_ownership_block();
+            let inventory =
+                format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+            let non_tag_html = format!(
+                "{open}\n{README_OWNERSHIP_BEGIN}\nhuman\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman\n{README_INVENTORY_END}\n{close}\n{ownership}\n{inventory}"
+            );
+            assert!(validate_readme_regions(&non_tag_html).is_ok());
+            assert_eq!(extract_ownership_block(&non_tag_html), Some(ownership));
+            assert_eq!(extract_inventory_block(&non_tag_html), Some(inventory));
+        }
     }
 
     #[test]
