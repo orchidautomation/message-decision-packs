@@ -3,6 +3,7 @@
 import {
   chmodSync,
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -71,6 +72,14 @@ assert(
     ),
   'Release workflow must hash and install the same exact Pluxx 0.1.40 tarball.',
 )
+assert(
+  releaseWorkflow.includes('npm pack @openai/codex@0.148.0') &&
+    releaseWorkflow.includes(
+      'sha512-bh5kH9+BMrFaHGmLeoSansPdfRksvr4UXzjQInns/KRO7r8VJ+6AAW+SqUsE8XcG3+OW/mI4EEy8Gpo9UDXGvQ==',
+    ) &&
+    releaseWorkflow.includes('test "$(codex --version)" = "codex-cli 0.148.0"'),
+  'Release workflow must hash, install, and identify the exact native Codex CLI used by smoke.',
+)
 const releaseSequence = [
   'pluxx publish --github-release --allow-dirty --version "$version"',
   'gh release download "v$version" --dir release-assets',
@@ -85,6 +94,7 @@ assert(
       position === 0 ? true : releaseSequenceIndexes[position - 1] < index,
     ) &&
     releaseWorkflow.includes('release-assets/SHA256SUMS.txt') &&
+    releaseWorkflow.includes('release-assets/install-codex.sh') &&
     releaseWorkflow.includes('release-assets/release-manifest.json'),
   `Release workflow must publish, download, stage, finalize, and upload in order; got ${releaseSequenceIndexes.join(', ')}.`,
 )
@@ -161,6 +171,46 @@ process.exit(1)
 `,
 )
 chmodSync(fakeGhPath, 0o755)
+
+const fakeCodexPath = join(fakeBin, 'codex')
+writeFileSync(
+  fakeCodexPath,
+  `#!/usr/bin/env node
+const fs = require('node:fs')
+const path = require('node:path')
+const args = process.argv.slice(2)
+const selector = 'message-decision-packs@message-decision-packs-local'
+if (args[0] === 'plugin' && args[1] === 'add' && args[2] === selector && args[3] === '--json') {
+  if (process.env.PLUXX_TEST_CODEX_FAILURE === 'add') {
+    const cache = path.join(
+      process.env.CODEX_HOME,
+      'plugins/cache/message-decision-packs-local/message-decision-packs',
+    )
+    fs.mkdirSync(cache, { recursive: true })
+    fs.writeFileSync(path.join(cache, 'partial'), 'partial native cache')
+    fs.appendFileSync(process.env.PLUXX_CODEX_CONFIG_PATH, '\\npartial_native_registration = true\\n')
+    process.exit(17)
+  }
+  process.stdout.write(JSON.stringify({ pluginId: selector }))
+  process.exit(0)
+}
+if (args[0] === 'plugin' && args[1] === 'list' && args[2] === '--json') {
+  process.stdout.write(JSON.stringify({
+    installed: [{
+      pluginId: selector,
+      installed: true,
+      enabled: true,
+      version: process.env.PLUXX_TEST_PLUGIN_VERSION,
+      source: { source: 'local', path: process.env.PLUXX_CODEX_INSTALL_DIR },
+    }],
+  }))
+  process.exit(0)
+}
+process.stderr.write('unexpected fake Codex invocation: ' + args.join(' '))
+process.exit(1)
+`,
+)
+chmodSync(fakeCodexPath, 0o755)
 const fakeMdpPath = join(fakeBin, 'mdp')
 writeFileSync(
   fakeMdpPath,
@@ -253,10 +303,46 @@ try {
     'Finalized release manifest must bind exact staged CLI artifacts.',
   )
   const finalizedChecksums = parseChecksums(join(releaseRoot, 'SHA256SUMS.txt'))
+  const finalizedCodexInstaller = readFileSync(join(releaseRoot, 'install-codex.sh'), 'utf8')
+  assert(
+    finalizedCodexInstaller.includes('# MDP_NATIVE_CODEX_REGISTRATION_V1') &&
+      finalizedCodexInstaller.includes('codex plugin add "$plugin_selector" --json') &&
+      finalizedCodexInstaller.includes('plugin.installed !== true') &&
+      finalizedCodexInstaller.includes('plugin.enabled !== true') &&
+      finalizedCodexInstaller.includes('sourcePath !== installDir'),
+    'Finalized Codex installer must register and verify the native plugin.',
+  )
   assert(
     finalizedChecksums.get('install.sh') === sha256(stagedInstallPath) &&
       finalizedChecksums.get('install.sh') !== generatedInstallChecksum,
     'Finalized plugin checksums must independently match the replaced install.sh.',
+  )
+  assert(
+    finalizedChecksums.get('install-codex.sh') === sha256(join(releaseRoot, 'install-codex.sh')),
+    'Finalized checksums must bind the patched native Codex installer.',
+  )
+  const omittedChecksumRoot = join(tempRoot, 'omitted-codex-installer-checksum')
+  cpSync(releaseRoot, omittedChecksumRoot, { recursive: true })
+  copyFileSync(
+    join(remoteReleaseRoot, 'install-codex.sh'),
+    join(omittedChecksumRoot, 'install-codex.sh'),
+  )
+  writeFileSync(
+    join(omittedChecksumRoot, 'SHA256SUMS.txt'),
+    readFileSync(join(omittedChecksumRoot, 'SHA256SUMS.txt'), 'utf8')
+      .split(/\r?\n/u)
+      .filter((line) => !line.endsWith('  install-codex.sh'))
+      .join('\n'),
+  )
+  const omittedChecksum = spawnSync(
+    'bash',
+    [join(root, 'scripts/finalize-release-assets.sh'), omittedChecksumRoot],
+    { cwd: root, encoding: 'utf8' },
+  )
+  assert(
+    omittedChecksum.status !== 0 &&
+      omittedChecksum.stderr.includes('Release checksum inventory is missing: install-codex.sh'),
+    'Release finalization must reject an unbound patched Codex installer.',
   )
   const cliChecksums = parseChecksums(join(releaseRoot, 'MDP_CLI_SHA256SUMS.txt'))
   const expectedCliAssets = [
@@ -308,6 +394,7 @@ try {
       PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
       PLUXX_CODEX_INSTALL_DIR: codexPluginRoot,
       PLUXX_CODEX_MARKETPLACE_PATH: join(codexHome, '.agents/plugins/marketplace.json'),
+      PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
       PLUXX_INSTALL_LOCK_ROOT: join(codexHome, '.pluxx/install-locks'),
       PLUXX_RUNTIME_STORE_ROOT: join(codexHome, '.pluxx/runtimes'),
     },
@@ -329,6 +416,102 @@ try {
     readFileSync(codexConfigPath, 'utf8').includes('hooks = true'),
     'Generated Codex installer must enable hooks in the isolated Codex config path.',
   )
+  const codexMarketplacePath = join(codexHome, '.agents/plugins/marketplace.json')
+  const nativeCachePath = join(
+    codexHome,
+    '.codex/plugins/cache/message-decision-packs-local/message-decision-packs',
+  )
+  mkdirSync(nativeCachePath, { recursive: true })
+  writeFileSync(join(nativeCachePath, 'sentinel'), 'previous native cache')
+  const beforeFailedRegistration = {
+    config: readFileSync(codexConfigPath, 'utf8'),
+    marketplace: readFileSync(codexMarketplacePath, 'utf8'),
+    runner: sha256(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')),
+  }
+  const traversalSentinel = join(codexHome, '.codex/plugins/escape-target/sentinel')
+  mkdirSync(dirname(traversalSentinel), { recursive: true })
+  writeFileSync(traversalSentinel, 'unrelated cache-adjacent bytes')
+  const traversalRegistration = spawnSync('bash', [join(releaseRoot, 'install-codex.sh')], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      HOME: codexHome,
+      CODEX_HOME: join(codexHome, '.codex'),
+      MDP_SKIP_CLI_UPDATE: '1',
+      PLUXX_CODEX_BUNDLE_PATH: join(
+        releaseRoot,
+        'message-decision-packs-codex-latest.tar.gz',
+      ),
+      PLUXX_CODEX_CONFIG_PATH: codexConfigPath,
+      PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
+      PLUXX_CODEX_INSTALL_DIR: codexPluginRoot,
+      PLUXX_CODEX_MARKETPLACE_PATH: codexMarketplacePath,
+      PLUXX_CODEX_MARKETPLACE_NAME: '../../escape-target',
+      PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
+      PLUXX_INSTALL_LOCK_ROOT: join(codexHome, '.pluxx/install-locks'),
+      PLUXX_RUNTIME_STORE_ROOT: join(codexHome, '.pluxx/runtimes'),
+    },
+    encoding: 'utf8',
+  })
+  assert(
+    traversalRegistration.status !== 0 &&
+      traversalRegistration.stderr.includes('Refusing unsafe Codex plugin or marketplace identifier.'),
+    'Unsafe marketplace traversal must fail before native cache backup.',
+  )
+  assert(
+    readFileSync(traversalSentinel, 'utf8') === 'unrelated cache-adjacent bytes',
+    'Unsafe marketplace traversal must preserve unrelated bytes.',
+  )
+  assert(
+    readFileSync(codexConfigPath, 'utf8') === beforeFailedRegistration.config &&
+      readFileSync(codexMarketplacePath, 'utf8') === beforeFailedRegistration.marketplace &&
+      sha256(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')) ===
+        beforeFailedRegistration.runner,
+    'Unsafe marketplace traversal must roll back installer-owned state.',
+  )
+  const failedRegistration = spawnSync('bash', [join(releaseRoot, 'install-codex.sh')], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      HOME: codexHome,
+      CODEX_HOME: join(codexHome, '.codex'),
+      MDP_SKIP_CLI_UPDATE: '1',
+      PLUXX_CODEX_BUNDLE_PATH: join(
+        releaseRoot,
+        'message-decision-packs-codex-latest.tar.gz',
+      ),
+      PLUXX_CODEX_CONFIG_PATH: codexConfigPath,
+      PLUXX_CODEX_ENABLE_PLUGIN_HOOKS: '1',
+      PLUXX_CODEX_INSTALL_DIR: codexPluginRoot,
+      PLUXX_CODEX_MARKETPLACE_PATH: codexMarketplacePath,
+      PLUXX_TEST_PLUGIN_VERSION: sourceVersion,
+      PLUXX_TEST_CODEX_FAILURE: 'add',
+      PLUXX_INSTALL_LOCK_ROOT: join(codexHome, '.pluxx/install-locks'),
+      PLUXX_RUNTIME_STORE_ROOT: join(codexHome, '.pluxx/runtimes'),
+    },
+    encoding: 'utf8',
+  })
+  assert(failedRegistration.status !== 0, 'Native Codex registration failure must fail install.')
+  assert(
+    readFileSync(codexConfigPath, 'utf8') === beforeFailedRegistration.config,
+    'Native Codex registration failure must restore the prior config.',
+  )
+  assert(
+    readFileSync(codexMarketplacePath, 'utf8') === beforeFailedRegistration.marketplace,
+    'Native Codex registration failure must restore the prior marketplace.',
+  )
+  assert(
+    sha256(join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs')) ===
+      beforeFailedRegistration.runner,
+    'Native Codex registration failure must restore the prior plugin install.',
+  )
+  assert(
+    readFileSync(join(nativeCachePath, 'sentinel'), 'utf8') === 'previous native cache',
+    'Native Codex registration failure must restore the prior native cache.',
+  )
+  assert(!existsSync(join(nativeCachePath, 'partial')), 'Partial native cache must be removed.')
   const codexTools = run('node', [join(codexPluginRoot, 'scripts/mdp-proposal-runner.mjs'), 'tools'], {
     cwd: root,
   }).stdout

@@ -8,12 +8,14 @@ if [ ! -d "$release_assets" ]; then
 fi
 
 release_assets="$(cd "$release_assets" && pwd)"
-for required in SHA256SUMS.txt install.sh release-manifest.json; do
+for required in SHA256SUMS.txt install.sh install-codex.sh release-manifest.json; do
   if [ ! -f "$release_assets/$required" ]; then
     echo "Missing release asset: $required" >&2
     exit 1
   fi
 done
+
+node "$(dirname "$0")/patch-codex-installer.mjs" "$release_assets/install-codex.sh"
 
 node "$(dirname "$0")/finalize-release-manifest.mjs" "$release_assets/release-manifest.json"
 
@@ -26,7 +28,7 @@ cleanup() {
 trap cleanup EXIT
 
 awk 'NF >= 2 { print $2 }' "$release_assets/SHA256SUMS.txt" > "$asset_list"
-for required_checksum in install.sh release-manifest.json; do
+for required_checksum in install.sh install-codex.sh release-manifest.json; do
   if ! grep -Fxq "$required_checksum" "$asset_list"; then
     echo "Release checksum inventory is missing: $required_checksum" >&2
     exit 1

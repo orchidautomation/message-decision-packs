@@ -26,6 +26,7 @@ bash <(curl -fsSL https://mdp.orchidlabs.dev/install.sh) --opencode -y
 ```
 
 The vanity installer redirects to assets from the latest GitHub release. Rerun the same command to update. Set `MDP_VERSION` to pin a release.
+The Codex installer requires the native `codex` CLI, registers the local marketplace selector, and fails unless Codex reports the plugin installed and enabled. Restart Codex after installation so its skills, hooks, and MCP declaration are loaded in a fresh process.
 
 ## What Ships
 

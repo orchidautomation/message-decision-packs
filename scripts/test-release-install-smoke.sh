@@ -73,6 +73,20 @@ for plugin_root in \
 done
 SH
 chmod +x "$fake_installer"
+fake_codex="$TMP_DIR/codex"
+cat > "$fake_codex" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "plugin" ] && [ "${2:-}" = "list" ] && [ "${3:-}" = "--json" ]; then
+  cat <<'JSON'
+{"installed":[{"pluginId":"message-decision-packs@message-decision-packs-local","installed":true,"enabled":true,"version":"0.0.0-local","source":{"source":"local","path":"REPLACE_CODEX_PLUGIN_ROOT"}}]}
+JSON
+  exit 0
+fi
+echo "unexpected fake Codex invocation" >&2
+exit 1
+EOF
+chmod +x "$fake_codex"
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64) staged_target="x86_64-unknown-linux-gnu" ;;
   Darwin-x86_64) staged_target="x86_64-apple-darwin" ;;
@@ -119,9 +133,11 @@ writeFileSync(output, `${JSON.stringify({
 NODE
 
 install_home="$TMP_DIR/install-home"
+sed -i "s|REPLACE_CODEX_PLUGIN_ROOT|$install_home/.codex/plugins/message-decision-packs|" "$fake_codex"
 MDP_RELEASE_REQUIRE_STAGED_PARITY=1 \
 MDP_RELEASE_INSTALLER="$fake_installer" \
 MDP_RELEASE_INSTALL_HOME="$install_home" \
+MDP_CODEX_BIN="$fake_codex" \
 EXPECTED_INSTALL_HOME="$install_home" \
 CODEX_HOME="$TMP_DIR/poison-codex-home" \
 PLUXX_CODEX_CONFIG_PATH="$TMP_DIR/poison-codex-config.toml" \

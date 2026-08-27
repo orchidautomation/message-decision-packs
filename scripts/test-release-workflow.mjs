@@ -11,6 +11,8 @@ const ciWorkflowPath = join(root, '.github/workflows/ci.yml')
 const stepName = 'Install and smoke-test the published release'
 const buildCommand = 'cargo build --manifest-path cli/Cargo.toml'
 const smokeCommand = 'scripts/release-install-smoke.sh "$version"'
+const codexPackCommand = 'npm pack @openai/codex@0.148.0'
+const codexVersionCommand = 'test "$(codex --version)" = "codex-cli 0.148.0"'
 const assetParityCommand = '/usr/bin/env -i /usr/bin/diff -qr "${{ github.workspace }}/plugin/assets" "${{ github.workspace }}/assets"'
 const requiredPrefix = [
   'set -euo pipefail',
@@ -278,6 +280,15 @@ function assertReleaseSmokeContract(workflow) {
   assert.notEqual(buildIndex, -1, 'release smoke step must execute the exact source CLI build')
   assert.notEqual(smokeIndex, -1, 'release smoke step must execute the published smoke')
   assert.ok(buildIndex < smokeIndex, 'source CLI build must execute before published smoke')
+  const codexPackIndex = workflow.indexOf(codexPackCommand)
+  const codexVersionIndex = workflow.indexOf(codexVersionCommand)
+  const smokeStepIndex = workflow.indexOf(`- name: ${stepName}`)
+  assert.ok(codexPackIndex >= 0, 'release workflow must install the pinned native Codex package')
+  assert.ok(codexVersionIndex >= 0, 'release workflow must verify the exact native Codex version')
+  assert.ok(
+    codexPackIndex < codexVersionIndex && codexVersionIndex < smokeStepIndex,
+    'pinned native Codex setup must complete before release smoke',
+  )
 }
 
 function assertAssetParityCiContract(workflow) {
@@ -318,6 +329,8 @@ for (const [name, mutation] of [
       .replace(`          ${buildCommand}\n`, '')
       .replace(`            ${smokeCommand}`, `            ${smokeCommand}\n          ${buildCommand}`),
   ],
+  ['missing pinned Codex package', workflow.replace(codexPackCommand, 'npm pack @openai/codex@latest')],
+  ['missing Codex version proof', workflow.replace(codexVersionCommand, 'codex --version')],
 ]) {
   assert.throws(() => assertReleaseSmokeContract(mutation), undefined, name)
 }

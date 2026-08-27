@@ -72,6 +72,15 @@ jobs:
           actual="$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`)' "$pluxx_tarball_path")"
           test "$actual" = "$expected"
           npm install -g "$pluxx_tarball_path"
+      - name: Install pinned Codex CLI
+        run: |
+          expected='sha512-bh5kH9+BMrFaHGmLeoSansPdfRksvr4UXzjQInns/KRO7r8VJ+6AAW+SqUsE8XcG3+OW/mI4EEy8Gpo9UDXGvQ=='
+          codex_tarball="$(npm pack @openai/codex@0.148.0 --pack-destination "$RUNNER_TEMP" --silent)"
+          codex_tarball_path="$RUNNER_TEMP/$codex_tarball"
+          actual="$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`)' "$codex_tarball_path")"
+          test "$actual" = "$expected"
+          npm install -g "$codex_tarball_path"
+          test "$(codex --version)" = "codex-cli 0.148.0"
       - name: Download CLI binary artifacts
         uses: actions/download-artifact@v4
         with:
@@ -115,7 +124,7 @@ jobs:
           cp llms-full.txt release-assets/llms-full.txt
           chmod +x release-assets/install.sh release-assets/install-cli.sh
           scripts/finalize-release-assets.sh release-assets
-          gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/SHA256SUMS.txt release-assets/release-manifest.json release-assets/install.sh release-assets/install-cli.sh release-assets/llms.txt release-assets/llms-full.txt --clobber
+          gh release upload "v$version" release-assets/mdp-* release-assets/MDP_CLI_SHA256SUMS.txt release-assets/SHA256SUMS.txt release-assets/release-manifest.json release-assets/install.sh release-assets/install-cli.sh release-assets/install-codex.sh release-assets/llms.txt release-assets/llms-full.txt --clobber
       - name: Install and smoke-test the published release
         shell: bash
         run: |
