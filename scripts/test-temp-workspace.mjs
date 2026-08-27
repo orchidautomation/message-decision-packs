@@ -287,6 +287,35 @@ exit "$status"
   assert.equal(existsSync(join(base, quarantine)), false)
 })
 
+test('stale sweep accepts the recoverable marker rename left by native interruption', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-marker-recovery-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const root = createOwnedTempWorkspace({
+    purpose: 'validation',
+    baseDir: base,
+    nowMs: 0,
+    pid: 999_999_999,
+  })
+  writeFileSync(join(root, 'private'), 'private bytes')
+  const quarantine = join(
+    realpathSync(base),
+    `.mdp-owned-temp-quarantine-${basename(root)}-${'2'.repeat(32)}`,
+  )
+  renameSync(root, quarantine)
+  renameSync(
+    join(quarantine, TEMP_WORKSPACE_MARKER),
+    join(quarantine, `.mdp-owned-temp-workspace.json.quarantine-${'3'.repeat(32)}`),
+  )
+
+  assert.deepEqual(cleanupStaleOwnedTempWorkspaces({
+    purpose: 'validation',
+    baseDir: base,
+    minAgeMs: 60_000,
+    nowMs: Date.now() + 120_000,
+  }), [quarantine])
+  assert.equal(existsSync(quarantine), false)
+})
+
 test('stale cleanup requires marker, owner-safe modes, age, and a dead pid', (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-stale-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))
