@@ -1,7 +1,9 @@
 import { randomBytes } from 'node:crypto'
-import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const TEMP_WORKSPACE_CONTRACT = 'mdp.owned-temp-workspace.v1'
 export const TEMP_WORKSPACE_MARKER = '.mdp-owned-temp-workspace.json'
@@ -11,6 +13,40 @@ const MAX_MARKER_BYTES = 4_096
 const currentUid = () => (typeof process.getuid === 'function' ? process.getuid() : null)
 const mode = (stats) => stats.mode & 0o777
 const sameIdentity = (left, right) => left.dev === right.dev && left.ino === right.ino
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const secureHelper = () => {
+  if (process.env.MDP_BIN) return process.env.MDP_BIN
+  const developmentBinary = join(repositoryRoot, 'cli', 'target', 'debug', 'mdp')
+  return existsSync(developmentBinary) ? developmentBinary : 'mdp'
+}
+const secureDirectoryAction = ({ action, parentFd, parentStats, name, toName, expected }) => {
+  const args = [
+    '--json', '__secure-install', '--action', action,
+    '--name', name,
+    '--dir-fd', '3',
+    '--expected-dev', String(parentStats.dev),
+    '--expected-ino', String(parentStats.ino),
+    '--expected-file-dev', String(expected.dev),
+    '--expected-file-ino', String(expected.ino),
+  ]
+  if (toName) args.push('--to-name', toName)
+  const result = spawnSync(secureHelper(), args, {
+    stdio: ['ignore', 'pipe', 'pipe', parentFd],
+    encoding: 'utf8',
+    timeout: 10_000,
+  })
+  if (result.status !== 0 || result.error) return false
+  try {
+    const envelope = JSON.parse(result.stdout)
+    const expectedStatus = action === 'move-directory' ? 'moved' : 'removed'
+    return envelope?.ok === true &&
+      envelope?.command === 'secure-install' &&
+      envelope?.data?.contract === 'mdp.secure-install.v1' &&
+      envelope?.data?.status === expectedStatus
+  } catch {
+    return false
+  }
+}
 export const resolveDescriptorDirectoryPath = ({
   fd,
   identity,
@@ -86,7 +122,11 @@ export const createOwnedTempWorkspace = ({ purpose, baseDir = tmpdir(), nowMs = 
     utimesSync(root, createdAt, createdAt)
     return root
   } catch (error) {
-    rmSync(root, { recursive: true, force: true })
+    // Creation failures must not fall back to recursive pathname deletion.
+    // If a complete ownership marker exists, the same identity-bound cleanup
+    // protocol may remove it; otherwise preserve the empty/private residue for
+    // conservative stale inspection.
+    cleanupOwnedTempWorkspace(root, { purpose: normalizedPurpose })
     throw error
   }
 }
@@ -116,7 +156,12 @@ export const inspectOwnedTempWorkspace = (root, { purpose } = {}) => {
 }
 
 export const cleanupOwnedTempWorkspace = (root, options = {}) => {
-  const { beforeQuarantine, ...inspectionOptions } = options
+  const {
+    beforeQuarantine,
+    beforeRestore,
+    resolveDescriptor = resolveDescriptorDirectoryPath,
+    ...inspectionOptions
+  } = options
   let inspected
   try { inspected = inspectOwnedTempWorkspace(root, inspectionOptions) } catch { return false }
   if (!inspected) return false
@@ -127,7 +172,7 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     parentFd = openSync(parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
     const parentStats = fstatSync(parentFd)
     if (!parentStats.isDirectory()) return false
-    const parentReference = resolveDescriptorDirectoryPath({ fd: parentFd, identity: parentStats })
+    const parentReference = resolveDescriptor({ fd: parentFd, identity: parentStats })
     if (!parentReference) return false
     const ownedPath = join(parentReference, basename(inspected.root))
     const quarantine = join(parentReference, quarantineLeaf)
@@ -139,16 +184,33 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
     }
     const finalStats = lstatSync(ownedPath)
     if (!sameIdentity(finalStats, inspected.rootStats)) return false
-    if (typeof beforeQuarantine === 'function') beforeQuarantine()
+    if (typeof beforeQuarantine === 'function') beforeQuarantine({ ownedPath, quarantine })
     if (!sameIdentity(fstatSync(parentFd), parentStats)) return false
-    renameSync(ownedPath, quarantine)
+    if (!secureDirectoryAction({
+      action: 'move-directory',
+      parentFd,
+      parentStats,
+      name: basename(inspected.root),
+      toName: quarantineLeaf,
+      expected: inspected.rootStats,
+    })) return false
+    try {
+      lstatSync(ownedPath)
+      return false
+    } catch (error) {
+      if (error?.code !== 'ENOENT') return false
+    }
     const movedStats = lstatSync(quarantine)
     if (!sameIdentity(movedStats, inspected.rootStats)) {
-      try {
-        lstatSync(ownedPath)
-      } catch (error) {
-        if (error?.code === 'ENOENT') renameSync(quarantine, ownedPath)
-      }
+      if (typeof beforeRestore === 'function') beforeRestore({ ownedPath, quarantine })
+      secureDirectoryAction({
+        action: 'move-directory',
+        parentFd,
+        parentStats,
+        name: quarantineLeaf,
+        toName: basename(inspected.root),
+        expected: inspected.rootStats,
+      })
       return false
     }
     let quarantineFd
@@ -156,15 +218,19 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
       quarantineFd = openSync(quarantine, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
       const quarantineStats = fstatSync(quarantineFd)
       if (!sameIdentity(quarantineStats, inspected.rootStats)) return false
-      const quarantineReference = resolveDescriptorDirectoryPath({ fd: quarantineFd, identity: quarantineStats })
+      const quarantineReference = resolveDescriptor({ fd: quarantineFd, identity: quarantineStats })
       // Without a kernel-owned descriptor path, preserve the quarantine rather
       // than fall back to a replaceable pathname for recursive deletion.
       if (!quarantineReference) {
-        try {
-          lstatSync(ownedPath)
-        } catch (error) {
-          if (error?.code === 'ENOENT') renameSync(quarantine, ownedPath)
-        }
+        if (typeof beforeRestore === 'function') beforeRestore({ ownedPath, quarantine })
+        secureDirectoryAction({
+          action: 'move-directory',
+          parentFd,
+          parentStats,
+          name: quarantineLeaf,
+          toName: basename(inspected.root),
+          expected: inspected.rootStats,
+        })
         return false
       }
       for (const entry of readdirSync(quarantineReference)) {
@@ -172,7 +238,19 @@ export const cleanupOwnedTempWorkspace = (root, options = {}) => {
       }
       const namedStats = lstatSync(quarantine)
       if (!sameIdentity(namedStats, inspected.rootStats)) return false
-      rmdirSync(quarantine)
+      if (!secureDirectoryAction({
+        action: 'remove-directory',
+        parentFd,
+        parentStats,
+        name: quarantineLeaf,
+        expected: inspected.rootStats,
+      })) return false
+      try {
+        lstatSync(quarantine)
+        return false
+      } catch (error) {
+        if (error?.code !== 'ENOENT') return false
+      }
     } finally {
       if (quarantineFd !== undefined) closeSync(quarantineFd)
     }

@@ -208,6 +208,73 @@ fn remove_if_identity(
     remove_if_identity_with_hook(dir_fd, name, expected_file_dev, expected_file_ino, || {})
 }
 
+fn move_directory_no_replace(
+    dir_fd: RawFd,
+    from: &CString,
+    to: &CString,
+    expected_dev: u64,
+    expected_ino: u64,
+) -> Result<()> {
+    let target_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            from.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if target_fd < 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    let target = unsafe { File::from_raw_fd(target_fd) };
+    let opened = opened_identity(target_fd)?;
+    if opened != (expected_dev, expected_ino) || named_identity(dir_fd, from)? != opened {
+        bail!("secure move directory identity mismatch");
+    }
+    let _sigterm_guard = SigtermMaskGuard::block()?;
+    if named_identity(dir_fd, from)? != opened {
+        bail!("secure move directory identity changed before rename");
+    }
+    rename_no_replace(dir_fd, from, to)?;
+    if named_identity(dir_fd, to)? != opened {
+        let _ = rename_no_replace(dir_fd, to, from);
+        bail!("secure move directory identity changed during rename");
+    }
+    drop(target);
+    Ok(())
+}
+
+fn remove_empty_directory_if_identity(
+    dir_fd: RawFd,
+    name: &CString,
+    expected_dev: u64,
+    expected_ino: u64,
+) -> Result<()> {
+    let target_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if target_fd < 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    let target = unsafe { File::from_raw_fd(target_fd) };
+    let opened = opened_identity(target_fd)?;
+    if opened != (expected_dev, expected_ino) || named_identity(dir_fd, name)? != opened {
+        bail!("secure remove directory identity mismatch");
+    }
+    let _sigterm_guard = SigtermMaskGuard::block()?;
+    if named_identity(dir_fd, name)? != opened {
+        bail!("secure remove directory identity changed before removal");
+    }
+    if unsafe { libc::unlinkat(dir_fd, name.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    drop(target);
+    Ok(())
+}
+
 fn secure_install_with_hook<F: FnOnce()>(
     source: &Path,
     name: &CString,
@@ -296,6 +363,7 @@ pub(crate) fn secure_install(
     expected_file_dev: Option<u64>,
     expected_file_ino: Option<u64>,
     receipt_fd: Option<RawFd>,
+    to_name: Option<&str>,
 ) -> Result<Value> {
     checked_directory(dir_fd, expected_dev, expected_ino)?;
     let name = checked_name(name)?;
@@ -368,7 +436,39 @@ pub(crate) fn secure_install(
                 "sha256": target_sha256
             }))
         }
-        _ => bail!("secure install action must be install, verify, or remove"),
+        "move-directory" => {
+            let to_name = checked_name(
+                to_name.ok_or_else(|| anyhow!("secure move destination name is required"))?,
+            )?;
+            let expected_file_dev =
+                expected_file_dev.ok_or_else(|| anyhow!("expected directory dev is required"))?;
+            let expected_file_ino =
+                expected_file_ino.ok_or_else(|| anyhow!("expected directory ino is required"))?;
+            move_directory_no_replace(
+                dir_fd,
+                &name,
+                &to_name,
+                expected_file_dev,
+                expected_file_ino,
+            )?;
+            Ok(json!({"contract": "mdp.secure-install.v1", "status": "moved"}))
+        }
+        "remove-directory" => {
+            let expected_file_dev =
+                expected_file_dev.ok_or_else(|| anyhow!("expected directory dev is required"))?;
+            let expected_file_ino =
+                expected_file_ino.ok_or_else(|| anyhow!("expected directory ino is required"))?;
+            remove_empty_directory_if_identity(
+                dir_fd,
+                &name,
+                expected_file_dev,
+                expected_file_ino,
+            )?;
+            Ok(json!({"contract": "mdp.secure-install.v1", "status": "removed"}))
+        }
+        _ => bail!(
+            "secure install action must be install, verify, remove, move-directory, or remove-directory"
+        ),
     }
 }
 
@@ -379,6 +479,78 @@ mod tests {
     use std::io::Write;
     use std::os::fd::{AsRawFd, IntoRawFd};
     use std::os::unix::fs::{MetadataExt, symlink};
+
+    #[test]
+    fn directory_move_is_no_replace_and_identity_bound() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-directory-move-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source = root.join("source");
+        let destination = root.join("destination");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(source.join("owned"), b"owned bytes").unwrap();
+        std::fs::write(destination.join("keep"), b"unrelated bytes").unwrap();
+        let parent = File::open(&root).unwrap();
+        let source_identity = std::fs::metadata(&source).unwrap();
+        let source_name = CString::new("source").unwrap();
+        let destination_name = CString::new("destination").unwrap();
+
+        assert!(
+            move_directory_no_replace(
+                parent.as_raw_fd(),
+                &source_name,
+                &destination_name,
+                source_identity.dev(),
+                source_identity.ino(),
+            )
+            .is_err()
+        );
+        assert_eq!(std::fs::read(source.join("owned")).unwrap(), b"owned bytes");
+        assert_eq!(
+            std::fs::read(destination.join("keep")).unwrap(),
+            b"unrelated bytes"
+        );
+
+        std::fs::remove_dir_all(&destination).unwrap();
+        move_directory_no_replace(
+            parent.as_raw_fd(),
+            &source_name,
+            &destination_name,
+            source_identity.dev(),
+            source_identity.ino(),
+        )
+        .unwrap();
+        assert!(!source.exists());
+        assert_eq!(
+            std::fs::read(destination.join("owned")).unwrap(),
+            b"owned bytes"
+        );
+        std::fs::remove_file(destination.join("owned")).unwrap();
+        assert!(
+            remove_empty_directory_if_identity(
+                parent.as_raw_fd(),
+                &destination_name,
+                source_identity.dev(),
+                source_identity.ino().wrapping_add(1),
+            )
+            .is_err()
+        );
+        remove_empty_directory_if_identity(
+            parent.as_raw_fd(),
+            &destination_name,
+            source_identity.dev(),
+            source_identity.ino(),
+        )
+        .unwrap();
+        assert!(!destination.exists());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn installs_and_removes_relative_to_renamed_directory_handle() {
@@ -418,6 +590,7 @@ mod tests {
             None,
             None,
             Some(receipt_fd),
+            None,
         )
         .unwrap();
         let receipt: Value =
@@ -447,6 +620,7 @@ mod tests {
             Some(installed["dev"].as_str().unwrap().parse().unwrap()),
             Some(installed["ino"].as_str().unwrap().parse().unwrap()),
             None,
+            None,
         )
         .unwrap();
         assert!(!renamed.join("request.json").exists());
@@ -459,6 +633,7 @@ mod tests {
             identity.ino(),
             Some(installed["dev"].as_str().unwrap().parse().unwrap()),
             Some(installed["ino"].as_str().unwrap().parse().unwrap()),
+            None,
             None,
         )
         .unwrap();
@@ -493,6 +668,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .is_err()
         );
@@ -507,6 +683,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .is_err()
         );
@@ -518,6 +695,7 @@ mod tests {
                 directory.as_raw_fd(),
                 identity.dev(),
                 identity.ino(),
+                None,
                 None,
                 None,
                 None,
@@ -532,6 +710,7 @@ mod tests {
                 directory.as_raw_fd(),
                 identity.dev(),
                 identity.ino(),
+                None,
                 None,
                 None,
                 None,
@@ -546,6 +725,7 @@ mod tests {
                 directory.as_raw_fd(),
                 identity.dev(),
                 identity.ino(),
+                None,
                 None,
                 None,
                 None,

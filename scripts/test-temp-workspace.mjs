@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { cleanupOwnedTempWorkspace, cleanupStaleOwnedTempWorkspaces, createOwnedTempWorkspace, resolveDescriptorDirectoryPath, TEMP_WORKSPACE_MARKER } from './lib/temp-workspace.mjs'
@@ -205,4 +205,82 @@ test('root replacement during cleanup is preserved without unrelated deletion', 
     readdirSync(base).some((entry) => entry.startsWith('.mdp-owned-temp-quarantine-')),
     false,
   )
+})
+
+test('quarantine destination collision preserves both unrelated and owned bytes', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-quarantine-collision-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
+  writeFileSync(join(root, 'owned'), 'owned bytes')
+  let collision
+
+  const removed = cleanupOwnedTempWorkspace(root, {
+    purpose: 'validation',
+    beforeQuarantine: ({ quarantine }) => {
+      collision = quarantine
+      mkdirSync(quarantine, { mode: 0o700 })
+      writeFileSync(join(quarantine, 'keep'), 'unrelated quarantine bytes')
+    },
+  })
+
+  assert.equal(removed, false)
+  assert.equal(readFileSync(join(root, 'owned'), 'utf8'), 'owned bytes')
+  assert.equal(
+    readFileSync(join(base, basename(collision), 'keep'), 'utf8'),
+    'unrelated quarantine bytes',
+  )
+})
+
+test('missing or no-op secure helper fails closed without claiming cleanup', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-helper-fail-closed-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const previous = process.env.MDP_BIN
+  t.after(() => {
+    if (previous === undefined) delete process.env.MDP_BIN
+    else process.env.MDP_BIN = previous
+  })
+
+  const missingRoot = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
+  writeFileSync(join(missingRoot, 'owned'), 'owned bytes')
+  process.env.MDP_BIN = join(base, 'missing-mdp')
+  assert.equal(cleanupOwnedTempWorkspace(missingRoot, { purpose: 'validation' }), false)
+  assert.equal(readFileSync(join(missingRoot, 'owned'), 'utf8'), 'owned bytes')
+
+  const noOp = join(base, 'no-op-mdp')
+  writeFileSync(
+    noOp,
+    '#!/bin/sh\nprintf \'%s\\n\' \'{"ok":true,"command":"secure-install","data":{"contract":"mdp.secure-install.v1","status":"moved"}}\'\n',
+    { mode: 0o700 },
+  )
+  process.env.MDP_BIN = noOp
+  const noOpRoot = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
+  writeFileSync(join(noOpRoot, 'owned'), 'owned bytes')
+  assert.equal(cleanupOwnedTempWorkspace(noOpRoot, { purpose: 'validation' }), false)
+  assert.equal(readFileSync(join(noOpRoot, 'owned'), 'utf8'), 'owned bytes')
+})
+
+test('restore destination collision preserves replacement and quarantined original', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-restore-collision-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
+  writeFileSync(join(root, 'owned'), 'owned bytes')
+  let resolverCalls = 0
+  let quarantine
+
+  const removed = cleanupOwnedTempWorkspace(root, {
+    purpose: 'validation',
+    resolveDescriptor: (args) => {
+      resolverCalls += 1
+      return resolverCalls === 1 ? resolveDescriptorDirectoryPath(args) : null
+    },
+    beforeRestore: (paths) => {
+      quarantine = paths.quarantine
+      mkdirSync(paths.ownedPath, { mode: 0o700 })
+      writeFileSync(join(paths.ownedPath, 'keep'), 'concurrent replacement bytes')
+    },
+  })
+
+  assert.equal(removed, false)
+  assert.equal(readFileSync(join(root, 'keep'), 'utf8'), 'concurrent replacement bytes')
+  assert.equal(readFileSync(join(base, basename(quarantine), 'owned'), 'utf8'), 'owned bytes')
 })
