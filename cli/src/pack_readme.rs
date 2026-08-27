@@ -467,7 +467,9 @@ impl MarkdownFenceScanner {
             pending_definition_title
                 .as_ref()
                 .is_some_and(|opening_container| {
-                    *opening_container == container && is_link_title_continuation(block_content)
+                    *opening_container == container
+                        && project_container_path(line, opening_container).is_some()
+                        && is_link_title_continuation(block_content)
                 });
         if self
             .fence

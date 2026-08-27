@@ -319,7 +319,9 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
             pending_definition_title
                 .as_ref()
                 .is_some_and(|opening_container| {
-                    *opening_container == container && is_link_title_continuation(block_content)
+                    *opening_container == container
+                        && project_container_path(line, opening_container).is_some()
+                        && is_link_title_continuation(block_content)
                 });
         if previous_container.is_some_and(|previous| previous != container) {
             indented_code = false;
@@ -815,7 +817,9 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             pending_definition_title
                 .as_ref()
                 .is_some_and(|opening_container| {
-                    *opening_container == container && is_link_title_continuation(block_content)
+                    *opening_container == container
+                        && project_container_path(line, opening_container).is_some()
+                        && is_link_title_continuation(block_content)
                 });
         if fence
             .as_ref()
@@ -1613,6 +1617,43 @@ Inline `inline-code` must be ignored.
             vec!["cards/exited-definition-visible.yaml"],
             "a definition title continuation cannot escape its opening container"
         );
+        assert_eq!(
+            inline_code_tokens(
+                "- [ref]: /url\n- \"title\"\n  2. ```markdown\n     `cards/sibling-definition-visible.yaml`\n     ```\n"
+            ),
+            vec!["cards/sibling-definition-visible.yaml"],
+            "a definition title continuation cannot move to a sibling list item"
+        );
+    }
+
+    #[test]
+    fn readme_check_warns_for_card_after_definition_sibling() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-definition-sibling-{}", nonce()));
+        init_pack(&root, "Definition Sibling Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let mut readme = std::fs::read_to_string(&readme_path).expect("README");
+        readme.push_str(
+            "\n- [ref]: /url\n- \"title\"\n  2. ```markdown\n     `cards/sibling-definition-visible.yaml`\n     ```\n",
+        );
+        std::fs::write(&readme_path, readme).expect("write sibling definition fixture");
+
+        let checked = check_readme(&root).expect("check README");
+        assert!(
+            checked["warnings"]
+                .as_array()
+                .expect("warnings")
+                .iter()
+                .any(
+                    |warning| warning["code"] == "readme_human_card_reference_missing"
+                        && warning["reference"] == "cards/sibling-definition-visible.yaml"
+                )
+        );
+        assert!(readme_validation_issues(&root).iter().any(|warning| {
+            warning["code"] == "readme_human_card_reference_missing"
+                && warning["reference"] == "cards/sibling-definition-visible.yaml"
+        }));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
