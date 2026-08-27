@@ -42,7 +42,17 @@ else
   install_home="$(mktemp -d)"
   cleanup_home=1
 fi
+cleanup_artifact_root=0
+if [ -n "${MDP_TEMP_ROOT:-}" ]; then
+  artifact_root="$MDP_TEMP_ROOT"
+else
+  artifact_root="$(mktemp -d)"
+  cleanup_artifact_root=1
+fi
 cleanup() {
+  if [ "$cleanup_artifact_root" = "1" ]; then
+    rm -rf "$artifact_root"
+  fi
   if [ "$cleanup_home" = "1" ]; then
     rm -rf "$install_home"
   fi
@@ -339,13 +349,13 @@ for expected in \
   fi
 done
 
-proposal_fixture="$(mktemp -d)"
-run_fixture="$(mktemp -d)"
+proposal_fixture="$(mktemp -d "$artifact_root/proposal.XXXXXX")"
+run_fixture="$(mktemp -d "$artifact_root/run.XXXXXX")"
 trap 'rm -rf "$proposal_fixture" "$run_fixture"; cleanup' EXIT
-"$mdp_bin" --json init --template proposal --dir "$proposal_fixture" >/tmp/mdp-release-install-init.json
-"$mdp_bin" --json validate --dir "$proposal_fixture" >/tmp/mdp-release-install-validate.json
+"$mdp_bin" --json init --template proposal --dir "$proposal_fixture" >"$artifact_root/mdp-release-install-init.json"
+"$mdp_bin" --json validate --dir "$proposal_fixture" >"$artifact_root/mdp-release-install-validate.json"
 installed_gtm_fixture="$proposal_fixture/installed-gtm-pack"
-"$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-init.json
+"$mdp_bin" --json init --template gtm --dir "$installed_gtm_fixture" >"$artifact_root/mdp-release-install-gtm-init.json"
 source_route_budget_bin="$ROOT/cli/target/debug/mdp"
 if [ ! -x "$source_route_budget_bin" ]; then
   echo "Route-budget installed parity requires a source CLI binary: $source_route_budget_bin" >&2
@@ -363,8 +373,8 @@ MDP_BIN="$mdp_bin" \
 MDP_PARITY_GTM_PACK="$installed_gtm_fixture" \
 MDP_PARITY_PROPOSAL_PACK="$proposal_fixture" \
   "$node_bin" "$codex_plugin_root/scripts/test-universal-native-parity.mjs"
-"$mdp_bin" --json validate --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-validate.json
-"$mdp_bin" --json eval --strict --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-strict-eval.json
+"$mdp_bin" --json validate --strict --dir "$installed_gtm_fixture" >"$artifact_root/mdp-release-install-gtm-strict-validate.json"
+"$mdp_bin" --json eval --strict --dir "$installed_gtm_fixture" >"$artifact_root/mdp-release-install-gtm-strict-eval.json"
 gtm_route="$("$mdp_bin" --json route --entries \
   --dir "$installed_gtm_fixture" \
   --persona PMM \
@@ -430,7 +440,7 @@ assert data["query"]["persona"] == "PMM"
 assert data["route_count"] == 1
 assert data["routes"][0]["job_id"] == data["routes"][0]["job"]
 PY
-"$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >/tmp/mdp-release-install-gtm-gaps.json
+"$mdp_bin" --json gaps --dir "$installed_gtm_fixture" >"$artifact_root/mdp-release-install-gtm-gaps.json"
 for job_id in prospect-fit-or-brief outbound-copy-brief outbound-copy-review; do
   requirements_json="$proposal_fixture/installed-gtm-$job_id-requirements.json"
   "$mdp_bin" --json requirements --dir "$installed_gtm_fixture" --job "$job_id" >"$requirements_json"
@@ -450,7 +460,7 @@ PY
 done
 gtm_fixture="$proposal_fixture/gtm-pack"
 cp -R "$ROOT/examples/clay-audiences-self-serve-enterprise-expansion" "$gtm_fixture"
-"$mdp_bin" --json validate --dir "$gtm_fixture" >/tmp/mdp-release-install-gtm-validate.json
+"$mdp_bin" --json validate --dir "$gtm_fixture" >"$artifact_root/mdp-release-install-gtm-validate.json"
 
 persona_fixture_root="$proposal_fixture/persona-reference-packs"
 declared_persona_fixture="$persona_fixture_root/declared"
@@ -693,7 +703,7 @@ if [ -f "$ROOT/scripts/skill-eval-harness.py" ]; then
     --corpus "$ROOT/plugin/skill-evals" \
     --mdp-bin "$mdp_bin" \
     --installed-skills-root "$codex_plugin_root/skills" \
-    --installed-corpus "$codex_plugin_root/skill-evals" >/tmp/mdp-release-install-skill-eval.json
+    --installed-corpus "$codex_plugin_root/skill-evals" >"$artifact_root/mdp-release-install-skill-eval.json"
 fi
 
 echo "Release install smoke passed for $version at $install_home"
