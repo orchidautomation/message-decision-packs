@@ -1933,6 +1933,20 @@ mod tests {
         assert_eq!(extract_inventory_block(&raw_html), Some(inventory));
         let ownership = render_ownership_block();
         let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let thematic_before_html = format!(
+            "- - -\n<x>\n{README_OWNERSHIP_BEGIN}\nhuman raw HTML bytes\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman raw HTML bytes\n{README_INVENTORY_END}\n\n{ownership}{inventory}"
+        );
+        assert!(validate_readme_regions(&thematic_before_html).is_ok());
+        assert_eq!(
+            extract_ownership_block(&thematic_before_html),
+            Some(ownership)
+        );
+        assert_eq!(
+            extract_inventory_block(&thematic_before_html),
+            Some(inventory)
+        );
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
         let valueless_attributes = format!(
             "<x disabled class=foo>\n{README_OWNERSHIP_BEGIN}\nhuman raw HTML bytes\n{README_OWNERSHIP_END}\n{README_INVENTORY_BEGIN}\nhuman raw HTML bytes\n{README_INVENTORY_END}\n\n{ownership}{inventory}"
         );
@@ -2038,6 +2052,18 @@ mod tests {
         assert!(open_fence_at_eof(&invalid_multiline_title).is_some());
         assert_eq!(extract_ownership_block(&invalid_multiline_title), None);
         assert_eq!(extract_inventory_block(&invalid_multiline_title), None);
+        for invalid_parenthesized_title in ["[ref]: /url (foo ( bar)", "[ref]: /url (foo ( bar"] {
+            let ownership = render_ownership_block();
+            let inventory =
+                format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+            let invalid_title = format!(
+                "{invalid_parenthesized_title}\n2. ```markdown\n   human paragraph\n   ```\n{ownership}{inventory}"
+            );
+            assert!(validate_readme_regions(&invalid_title).is_ok());
+            assert!(open_fence_at_eof(&invalid_title).is_some());
+            assert_eq!(extract_ownership_block(&invalid_title), None);
+            assert_eq!(extract_inventory_block(&invalid_title), None);
+        }
         let ownership = render_ownership_block();
         let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
         let escaped_destination_space =

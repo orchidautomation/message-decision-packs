@@ -2701,6 +2701,42 @@ Inline `inline-code` must be ignored.
     }
 
     #[test]
+    fn nested_parenthesized_titles_keep_check_refresh_fail_closed() {
+        for (case, title) in [
+            ("complete", "[ref]: /url (foo ( bar)"),
+            ("incomplete", "[ref]: /url (foo ( bar"),
+        ] {
+            let root =
+                std::env::temp_dir().join(format!("mdp-readme-nested-title-{case}-{}", nonce()));
+            init_pack(&root, "Nested Title Pack", "gtm", true, false)
+                .expect("pack should initialize");
+            let readme_path = root.join(".mdp/README.md");
+            let readme = std::fs::read_to_string(&readme_path).expect("README");
+            let prefix = format!("{title}\n2. ```markdown\n   human paragraph\n   ```");
+            let adversarial = readme.replacen(
+                crate::pack_readme::README_OWNERSHIP_BEGIN,
+                &format!("{prefix}\n{}", crate::pack_readme::README_OWNERSHIP_BEGIN),
+                1,
+            );
+            std::fs::write(&readme_path, &adversarial).expect("write README");
+
+            let checked = check_readme(&root).expect("check README");
+            assert_eq!(checked["status"], "unassessed", "{case}: {checked}");
+            let error = refresh_readme(&root, None, true)
+                .expect_err("dry-run must refuse insertion inside the actual open fence");
+            assert_eq!(
+                error.to_string(),
+                crate::pack_readme::README_FENCE_DIAGNOSTIC
+            );
+            assert_eq!(
+                std::fs::read_to_string(&readme_path).expect("README after refusal"),
+                adversarial
+            );
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
     fn multiline_title_tracks_its_actual_opening_delimiter() {
         let root = std::env::temp_dir().join(format!("mdp-readme-title-delimiter-{}", nonce()));
         init_pack(&root, "Title Delimiter Pack", "gtm", true, false)
@@ -2871,6 +2907,42 @@ Inline `inline-code` must be ignored.
         let readme = std::fs::read_to_string(&readme_path).expect("README");
         let human_raw_html = format!(
             "<x disabled class=foo>\n{}\nhuman raw HTML bytes\n{}\n{}\nhuman raw HTML bytes\n{}\n\n",
+            crate::pack_readme::README_OWNERSHIP_BEGIN,
+            crate::pack_readme::README_OWNERSHIP_END,
+            crate::pack_readme::README_INVENTORY_BEGIN,
+            crate::pack_readme::README_INVENTORY_END,
+        );
+        let adversarial = format!("{human_raw_html}{readme}");
+        std::fs::write(&readme_path, &adversarial).expect("write README");
+
+        let checked = check_readme(&root).expect("check README");
+        assert_eq!(checked["status"], "fresh", "{checked}");
+        refresh_readme(&root, None, false).expect("refresh README");
+        let refreshed = std::fs::read_to_string(&readme_path).expect("refreshed README");
+        assert!(refreshed.starts_with(&human_raw_html));
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_OWNERSHIP_BEGIN)
+                .count(),
+            2
+        );
+        assert_eq!(
+            refreshed
+                .matches(crate::pack_readme::README_INVENTORY_BEGIN)
+                .count(),
+            2
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn thematic_break_before_html_keeps_marker_text_human_owned() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-thematic-html-{}", nonce()));
+        init_pack(&root, "Thematic HTML Pack", "gtm", true, false).expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let readme = std::fs::read_to_string(&readme_path).expect("README");
+        let human_raw_html = format!(
+            "- - -\n<x>\n{}\nhuman raw HTML bytes\n{}\n{}\nhuman raw HTML bytes\n{}\n\n",
             crate::pack_readme::README_OWNERSHIP_BEGIN,
             crate::pack_readme::README_OWNERSHIP_END,
             crate::pack_readme::README_INVENTORY_BEGIN,
