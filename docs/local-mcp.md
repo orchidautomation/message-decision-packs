@@ -49,6 +49,22 @@ validation, receipts, and verification. MCP availability does not prove fresh
 context, isolation, provider execution, source truth, replay safety, or audit
 grade.
 
+## Lifecycle and protocol behavior
+
+Both packaged stdio adapters support MCP protocol `2025-06-18` only. An
+unsupported initialize version receives a bounded JSON-RPC invalid-parameters
+error naming the supported version; the server never echoes an unknown version.
+Tool execution is explicitly limited to two active calls with sixteen queued
+calls. Initialize, ping, tools/list, and cancellation remain responsive while
+long tool calls run; excess calls receive a retryable bounded busy error.
+
+Every subprocess-backed stage, including prepare and verify, honors MCP
+cancellation and terminates its process group. MCP-owned failures set
+`isError: true` and include `mdp.mcp-diagnostic.v1` metadata with a safe phase,
+retryability, and next action. A well-formed CLI block/no-draft result or
+`valid: false` verification remains decision/integrity data with
+`isError: false`; the adapter does not reclassify CLI authority.
+
 ## Proposal v0 compatibility
 
 `scripts/mdp-proposal-mcp-server.mjs`, `mdp_proposal_tools`, and

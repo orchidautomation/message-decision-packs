@@ -1118,6 +1118,7 @@ fn proposal_mcp_run_result_schema() -> Value {
             "audit_grade_eligible",
             "runner_assurance",
             "timed_out",
+            "cancelled",
             "termination_signal",
             "timeout_ms",
             "inner_timeout_ms",
@@ -1150,6 +1151,19 @@ fn proposal_mcp_run_result_schema() -> Value {
                 "anyOf": [canonical_authority_block_v1_schema(), {"type": "null"}]
             },
             "timed_out": {"type": "boolean"},
+            "cancelled": {"type": "boolean"},
+            "diagnostic": {
+                "type": "object",
+                "required": ["contract", "code", "phase", "retryable", "next_action"],
+                "additionalProperties": false,
+                "properties": {
+                    "contract": {"const": "mdp.mcp-diagnostic.v1"},
+                    "code": {"type": "string"},
+                    "phase": {"type": "string"},
+                    "retryable": {"type": "boolean"},
+                    "next_action": {"type": "string"}
+                }
+            },
             "termination_signal": {"type": ["string", "null"]},
             "timeout_ms": {"type": "integer", "minimum": 251, "maximum": 300000},
             "inner_timeout_ms": {"const": 60000},
