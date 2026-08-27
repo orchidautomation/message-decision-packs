@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { cleanupOwnedTempWorkspace, cleanupStaleOwnedTempWorkspaces, createOwnedTempWorkspace, resolveDescriptorDirectoryPath, TEMP_WORKSPACE_MARKER } from './lib/temp-workspace.mjs'
 
 const wrapper = fileURLToPath(new URL('./with-temp-workspace.mjs', import.meta.url))
+const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
 
 const runWrapper = (base, observedPath, exitCode = 0, delayMs = 0) => {
   const environment = { ...process.env, TMPDIR: base, OBSERVED_PATH: observedPath }
@@ -80,6 +81,17 @@ test('wrapper refuses child success when owned-root cleanup is incomplete', asyn
   const ownedRoot = readFileSync(observedPath, 'utf8')
   assert.equal(existsSync(ownedRoot), true)
   assert.doesNotMatch(stderr, /mdp-owned|request|private/i)
+})
+
+test('validation wrapper resolves the helper from Cargo effective target directory', () => {
+  const target = join(tmpdir(), 'mdp-custom-cargo-target')
+  const result = spawnSync('make', ['-pn', 'validate-temp-workspace', 'MDP_TEMP_WORKSPACE_ACTIVE=1'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+    env: { ...process.env, CARGO_TARGET_DIR: target },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, new RegExp(`^MDP_BUILD_BIN := ${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/debug/mdp$`, 'm'))
 })
 
 test('concurrent validation wrappers use distinct roots and clean both', async (t) => {
