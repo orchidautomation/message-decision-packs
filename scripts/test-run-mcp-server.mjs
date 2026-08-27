@@ -842,7 +842,21 @@ esac
     dir: pack, job: 'prospect-fit-or-brief', model: 'fixture-model', out: preparedRequest,
   })], { ...roleEnv, MDP_SECURE_INSTALL_BIN: realCli })
   assert.equal(prepared.result.structuredContent.status, 'ready', JSON.stringify(prepared))
-  const [blockedRun] = await rpc(fixtureCli(root), [toolCall(3, 'mdp_run', {
+  const [blockedConstruction] = await rpc(fixtureCli(root), [toolCall(3, 'mdp_run', {
+    request_path: preparedRequest,
+    request_sha256: prepared.result.structuredContent.request_sha256,
+    output_dir: join(output, 'construction-run'),
+  })], {
+    ...roleEnv,
+    MDP_SECURE_INSTALL_BIN: wrapper,
+    MDP_TEST_FREEZE_WRITE_FAILURE: '1',
+  })
+  assert.equal(blockedConstruction.result.structuredContent.code, 'mcp-cleanup-incomplete', JSON.stringify(blockedConstruction))
+  assert.equal(blockedConstruction.result.isError, true)
+  assert.equal(blockedConstruction.error, undefined, 'cleanup refusal must remain a tool result, not JSON-RPC invalid params')
+  assert.doesNotMatch(JSON.stringify(blockedConstruction), /mdp-owned-run-mcp-freeze/)
+
+  const [blockedRun] = await rpc(fixtureCli(root), [toolCall(4, 'mdp_run', {
     request_path: preparedRequest,
     request_sha256: prepared.result.structuredContent.request_sha256,
     output_dir: join(output, 'run'),

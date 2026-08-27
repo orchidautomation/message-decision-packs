@@ -220,6 +220,7 @@ const freezeRequestFile = (value) => {
     }
     privateDir = createOwnedTempWorkspace({ purpose: 'run-mcp-freeze' })
     const frozenPath = join(privateDir, 'request.json')
+    if (process.env.MDP_TEST_FREEZE_WRITE_FAILURE === '1') throw new Error('injected freeze write failure')
     writeFileSync(frozenPath, bytes, { flag: 'wx', mode: 0o400 })
     return {
       path: frozenPath,
@@ -749,7 +750,15 @@ const callRun = async (args, signal = null) => {
   const outputRequest = requiredString(parsed, 'output_dir')
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
-  const frozenRequest = freezeRequestFile(policy.existing('work', requestPath, 'file').path)
+  let frozenRequest
+  try {
+    frozenRequest = freezeRequestFile(policy.existing('work', requestPath, 'file').path)
+  } catch (error) {
+    if (error?.code === 'mcp-cleanup-incomplete') {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'mcp-cleanup-incomplete' }, true)
+    }
+    throw error
+  }
   let invocation
   let plan = null
   try {
