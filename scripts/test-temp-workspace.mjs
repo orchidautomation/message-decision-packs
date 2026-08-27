@@ -176,6 +176,24 @@ exit 73
   assert.equal(readdirSync(base).some((name) => name.startsWith('mdp-owned-validation-')), false)
 })
 
+test('validation wrapper stops when the helper build produces no executable', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-make-helper-build-failure-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const environment = { ...process.env, TMPDIR: base }
+  delete environment.MDP_BIN
+  delete environment.MDP_SECURE_INSTALL_BIN
+  delete environment.MDP_TEMP_WORKSPACE_ACTIVE
+  delete environment.NODE_TEST_CONTEXT
+  const result = spawnSync('make', ['CARGO=false', 'validate-llms'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+    env: environment,
+    timeout: 30_000,
+  })
+  assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  assert.equal(readdirSync(base).some((name) => name.startsWith('mdp-owned-validation-')), false)
+})
+
 test('concurrent validation wrappers use distinct roots and clean both', async (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-concurrent-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))

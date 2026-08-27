@@ -664,6 +664,12 @@ fn remove_directory_tree_if_identity_with_hooks<
             }
             after_entry_quarantine(target_fd, &marker_name, false);
             drop(marker);
+            if named_identity(target_fd, &marker_quarantine)? != marker_identity {
+                rename_no_replace(target_fd, &marker_quarantine, &marker_name).map_err(
+                    |error| anyhow!("owned workspace marker mismatch restore failed: {error}"),
+                )?;
+                bail!("owned workspace marker identity changed before terminal removal");
+            }
             if unsafe { libc::unlinkat(target_fd, marker_quarantine.as_ptr(), 0) } != 0 {
                 return Err(io::Error::last_os_error()).map_err(Into::into);
             }
@@ -1963,6 +1969,79 @@ mod tests {
         .unwrap();
         assert!(std::fs::read_dir(&root).unwrap().next().is_none());
         std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn terminal_marker_quarantine_replacement_is_preserved() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-terminal-marker-race-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let name = format!(
+            ".mdp-owned-temp-quarantine-mdp-owned-validation-Ab12Cd-{}",
+            "6".repeat(32)
+        );
+        let tree = root.join(&name);
+        std::fs::create_dir(&tree).unwrap();
+        std::fs::write(tree.join(".mdp-owned-temp-workspace.json"), b"{}").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            tree.join(".mdp-owned-temp-workspace.json"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        let identity = std::fs::metadata(&tree).unwrap();
+        let parent = File::open(&root).unwrap();
+        let mut replaced = false;
+        let result = remove_directory_tree_if_identity_with_hooks(
+            parent.as_raw_fd(),
+            &CString::new(name).unwrap(),
+            identity.dev(),
+            identity.ino(),
+            &mut |_, _, _| {},
+            &mut |directory_fd, marker_name, is_directory| {
+                if is_owned_marker_name(marker_name) && !is_directory && !replaced {
+                    let quarantine = recovery_marker_names(directory_fd).unwrap().remove(0);
+                    let saved = CString::new("saved-owned-marker").unwrap();
+                    rename_no_replace(directory_fd, &quarantine, &saved).unwrap();
+                    let replacement_fd = unsafe {
+                        libc::openat(
+                            directory_fd,
+                            quarantine.as_ptr(),
+                            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_CLOEXEC,
+                            0o600,
+                        )
+                    };
+                    assert!(replacement_fd >= 0);
+                    let mut replacement = unsafe { File::from_raw_fd(replacement_fd) };
+                    replacement.write_all(br#"{"replacement":true}"#).unwrap();
+                    replaced = true;
+                }
+            },
+            || {},
+            || {},
+        );
+        assert!(result.is_err());
+        assert!(replaced);
+        let retained = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.is_dir())
+            .unwrap();
+        assert_eq!(
+            std::fs::read(retained.join("saved-owned-marker")).unwrap(),
+            b"{}"
+        );
+        assert_eq!(
+            std::fs::read(retained.join(".mdp-owned-temp-workspace.json")).unwrap(),
+            br#"{"replacement":true}"#
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -19,7 +19,7 @@ $(VALIDATION_TARGETS):
 else
 $(VALIDATION_TARGETS):
 	@mdp_build_bin="$$($(CARGO) build --manifest-path cli/Cargo.toml --message-format=json-render-diagnostics | $(PYTHON) -c 'import json,sys; artifacts=[m.get("executable") for line in sys.stdin if (m:=json.loads(line)).get("reason")=="compiler-artifact" and m.get("target",{}).get("name")=="mdp" and "bin" in m.get("target",{}).get("kind",[]) and m.get("executable")]; print(artifacts[-1] if artifacts else "")')"; \
-	test -n "$$mdp_build_bin" && test -x "$$mdp_build_bin"; \
+	test -n "$$mdp_build_bin" && test -x "$$mdp_build_bin" || exit 1; \
 	MDP_BIN="$${MDP_BIN:-$$mdp_build_bin}" MDP_SECURE_INSTALL_BIN="$${MDP_SECURE_INSTALL_BIN:-$$mdp_build_bin}" node scripts/with-temp-workspace.mjs --purpose validation -- $(MAKE) $@
 endif
 endif
