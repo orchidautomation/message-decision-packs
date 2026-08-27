@@ -631,6 +631,7 @@ fn line_continues_paragraph(line: &str) -> bool {
         && markdown_indent_columns(line) < 4
         && !is_atx_heading(line)
         && !is_thematic_or_setext_line(line)
+        && !is_link_reference_definition(line)
         && !line.trim_start_matches([' ', '\t']).starts_with("<!--")
 }
 
@@ -659,6 +660,26 @@ fn is_thematic_or_setext_line(line: &str) -> bool {
                 .all(|byte| byte == marker || matches!(byte, b' ' | b'\t'))
         {
             return true;
+        }
+    }
+    false
+}
+
+fn is_link_reference_definition(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
+        return false;
+    }
+    let bytes = trimmed.as_bytes();
+    let mut escaped = false;
+    for index in 1..bytes.len().min(1001) {
+        match bytes[index] {
+            b'\\' if !escaped => escaped = true,
+            b']' if !escaped => {
+                return index > 1 && bytes.get(index + 1) == Some(&b':');
+            }
+            b'[' if !escaped => return false,
+            _ => escaped = false,
         }
     }
     false
@@ -1187,6 +1208,15 @@ mod tests {
         assert!(open_fence_at_eof(&after_heading).is_none());
         assert_eq!(extract_ownership_block(&after_heading), Some(ownership));
         assert_eq!(extract_inventory_block(&after_heading), Some(inventory));
+        let ownership = render_ownership_block();
+        let inventory = format!("{README_INVENTORY_BEGIN}\n## Inventory\n{README_INVENTORY_END}\n");
+        let after_definition = format!(
+            "[ref]: /url\n2. ```markdown\n   fenced body\n   ```\n{ownership}\n{inventory}"
+        );
+        assert!(validate_readme_regions(&after_definition).is_ok());
+        assert!(open_fence_at_eof(&after_definition).is_none());
+        assert_eq!(extract_ownership_block(&after_definition), Some(ownership));
+        assert_eq!(extract_inventory_block(&after_definition), Some(inventory));
     }
 
     #[test]
