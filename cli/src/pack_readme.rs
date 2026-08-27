@@ -487,7 +487,7 @@ impl MarkdownFenceScanner {
             self.paragraph_open = false;
             true
         } else {
-            self.paragraph_open = !blank;
+            self.paragraph_open = line_continues_paragraph(block_content);
             false
         }
     }
@@ -611,6 +611,57 @@ fn advance_markdown_column(column: usize, byte: u8) -> usize {
     } else {
         column + 1
     }
+}
+
+fn markdown_indent_columns(line: &str) -> usize {
+    let mut columns = 0;
+    for byte in line.bytes() {
+        match byte {
+            b' ' => columns += 1,
+            b'\t' => columns += 4 - (columns % 4),
+            _ => break,
+        }
+    }
+    columns
+}
+
+fn line_continues_paragraph(line: &str) -> bool {
+    let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
+    !blank
+        && markdown_indent_columns(line) < 4
+        && !is_atx_heading(line)
+        && !is_thematic_or_setext_line(line)
+        && !line.trim_start_matches([' ', '\t']).starts_with("<!--")
+}
+
+fn is_atx_heading(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 {
+        return false;
+    }
+    let hashes = trimmed.bytes().take_while(|byte| *byte == b'#').count();
+    (1..=6).contains(&hashes) && matches!(trimmed.as_bytes().get(hashes), None | Some(b' ' | b'\t'))
+}
+
+fn is_thematic_or_setext_line(line: &str) -> bool {
+    let trimmed = line.trim_matches([' ', '\t']);
+    if !trimmed.is_empty() && trimmed.bytes().all(|byte| byte == b'=') {
+        return true;
+    }
+    for marker in [b'-', b'_', b'*'] {
+        let count = trimmed
+            .bytes()
+            .filter(|byte| !matches!(byte, b' ' | b'\t'))
+            .count();
+        if count >= 3
+            && trimmed
+                .bytes()
+                .all(|byte| byte == marker || matches!(byte, b' ' | b'\t'))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// Return byte ranges `(start, content_end, line_end)` for every Markdown line.
@@ -1130,6 +1181,12 @@ mod tests {
             open_fence_at_eof("Paragraph\n1. ```markdown\n   body").is_some(),
             "an ordered list starting at one may interrupt a paragraph"
         );
+        let after_heading =
+            format!("# Heading\n2. ```markdown\n   fenced body\n   ```\n{ownership}\n{inventory}");
+        assert!(validate_readme_regions(&after_heading).is_ok());
+        assert!(open_fence_at_eof(&after_heading).is_none());
+        assert_eq!(extract_ownership_block(&after_heading), Some(ownership));
+        assert_eq!(extract_inventory_block(&after_heading), Some(inventory));
     }
 
     #[test]

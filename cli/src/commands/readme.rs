@@ -377,7 +377,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         // re-enables block start; ordinary prose keeps later indentation in
         // the paragraph, where inline code spans remain mechanically visible.
         indented_code_can_start = blank;
-        paragraph_open = !blank;
+        paragraph_open = line_continues_paragraph(block_content);
     }
     code_span_tokens(&visible)
 }
@@ -392,6 +392,45 @@ fn markdown_indent_columns(line: &str) -> usize {
         }
     }
     columns
+}
+
+fn line_continues_paragraph(line: &str) -> bool {
+    let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
+    !blank
+        && markdown_indent_columns(line) < 4
+        && !is_atx_heading(line)
+        && !is_thematic_or_setext_line(line)
+        && !line.trim_start_matches([' ', '\t']).starts_with("<!--")
+}
+
+fn is_atx_heading(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 {
+        return false;
+    }
+    let hashes = trimmed.bytes().take_while(|byte| *byte == b'#').count();
+    (1..=6).contains(&hashes) && matches!(trimmed.as_bytes().get(hashes), None | Some(b' ' | b'\t'))
+}
+
+fn is_thematic_or_setext_line(line: &str) -> bool {
+    let trimmed = line.trim_matches([' ', '\t']);
+    if trimmed.len() >= 1 && trimmed.bytes().all(|byte| byte == b'=') {
+        return true;
+    }
+    for marker in [b'-', b'_', b'*'] {
+        let count = trimmed
+            .bytes()
+            .filter(|byte| !matches!(byte, b' ' | b'\t'))
+            .count();
+        if count >= 3
+            && trimmed
+                .bytes()
+                .all(|byte| byte == marker || matches!(byte, b' ' | b'\t'))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -674,7 +713,7 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
             paragraph_open = false;
             continue;
         }
-        paragraph_open = !line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
+        paragraph_open = line_continues_paragraph(block_content);
         if !in_sources {
             continue;
         }
@@ -1392,6 +1431,13 @@ Inline `inline-code` must be ignored.
                 .is_empty(),
             "an ordered list starting at one may interrupt a paragraph"
         );
+        assert_eq!(
+            inline_code_tokens(
+                "# Heading\n2. ```markdown\n   `cards/after-heading-hidden.yaml`\n   ```\nRoot `cards/after-heading-visible.yaml`.\n"
+            ),
+            vec!["cards/after-heading-visible.yaml"],
+            "an ATX heading closes the prior block before an ordered list"
+        );
     }
 
     #[test]
@@ -1411,7 +1457,7 @@ Inline `inline-code` must be ignored.
         let readme_path = root.join(".mdp/README.md");
         let mut readme = std::fs::read_to_string(&readme_path).expect("README");
         readme.push_str(
-            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nParagraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n\nHuman `cards/visible-missing.yaml`.\n",
+            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\n> ```markdown\n> `cards/quoted-fenced.yaml`\nRoot `cards/quoted-root.yaml`.\n\n- ```markdown\n  `cards/list-fenced.yaml`\nRoot `cards/list-root.yaml`.\n\n- outer\n  - ```markdown\n    `cards/nested-list-fenced.yaml`\nRoot `cards/nested-list-root.yaml`.\n\nParagraph\n2. ```markdown\n   `cards/non-one-ordered-visible.yaml`\n\n# Heading\n2. ```markdown\n   `cards/after-heading-hidden.yaml`\n   ```\nRoot `cards/after-heading-visible.yaml`.\n\nHuman `cards/visible-missing.yaml`.\n",
         );
         std::fs::write(&readme_path, readme).expect("write human examples");
 
@@ -1431,6 +1477,7 @@ Inline `inline-code` must be ignored.
                 "cards/list-root.yaml",
                 "cards/nested-list-root.yaml",
                 "cards/non-one-ordered-visible.yaml",
+                "cards/after-heading-visible.yaml",
                 "cards/visible-missing.yaml"
             ]
         );
@@ -1448,6 +1495,7 @@ Inline `inline-code` must be ignored.
                 "cards/list-root.yaml",
                 "cards/nested-list-root.yaml",
                 "cards/non-one-ordered-visible.yaml",
+                "cards/after-heading-visible.yaml",
                 "cards/visible-missing.yaml"
             ]
         );
