@@ -9,6 +9,7 @@ const MAX_DIAGNOSTICS: usize = 32;
 const TARGET_COMMANDS: &[&str] = &[
     "init",
     "doctor",
+    "check",
     "validate",
     "skills",
     "requirements",

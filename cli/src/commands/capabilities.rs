@@ -344,6 +344,7 @@ pub(crate) fn capabilities() -> Value {
             author_command("preview", "writes-new-change-set", &["--candidate", "--out"], &["--dir"]),
             author_command("apply", "transactional-pack-write", &["--candidate", "--change-set"], &["--dir"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
+            command("check", "mdp.readiness.v1", "read-only", false, false, false, &["--dir", "--job", "--input-validation"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
             command("prepare-run", RUN_REQUEST_COMPILE_V1, "read-only-unless-out", false, true, false, &["--dir", "--job", "--operation", "--input", "--model", "--retention-policy", "--created-at", "--out", "--manifest-out", "--full"]),

@@ -7,13 +7,22 @@ import { fileURLToPath } from 'node:url'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
 import { consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
 import {
+  MCP_MAX_CONCURRENT_TOOL_CALLS,
+  MCP_MAX_QUEUED_TOOL_CALLS,
+  MCP_PROTOCOL_VERSION,
+  createBoundedToolScheduler,
+  mcpDiagnostic,
+  safeMcpMessage,
+  toolErrorDiagnostic,
+  validateProtocolVersion,
+} from './lib/mcp-lifecycle.mjs'
+import {
   MAX_TIMEOUT_MS as DEADLINE_MAX_TIMEOUT_MS,
   MIN_TIMEOUT_MS,
   RECOMMENDED_TIMEOUT_MS,
   validateTransportTimeout,
 } from './lib/deadline-policy.mjs'
 
-const MCP_PROTOCOL_VERSION = '2025-06-18'
 const SERVER_NAME = 'message-decision-packs-proposal'
 const MAX_OUTPUT_CHARS = 80_000
 const MAX_CHILD_BUFFER_BYTES = 1_000_000
@@ -201,11 +210,21 @@ const assertNoUnsupportedArgs = (args, allowed) => {
   }
 }
 
-const toolResult = ({ text, structuredContent, isError = false }) => ({
-  content: [{ type: 'text', text }],
-  structuredContent,
-  isError,
-})
+const toolResult = ({ text, structuredContent, isError = false }) => {
+  const normalized = isError && structuredContent?.diagnostic === undefined
+    ? {
+        ...structuredContent,
+        diagnostic: toolErrorDiagnostic(
+          structuredContent?.code || (structuredContent?.cancelled ? 'cli-cancelled' : structuredContent?.timed_out ? 'cli-timeout' : 'proposal-mcp-failure'),
+        ),
+      }
+    : structuredContent
+  return {
+    content: [{ type: 'text', text: normalized === structuredContent ? text : JSON.stringify(normalized, null, 2) }],
+    structuredContent: normalized,
+    isError,
+  }
+}
 
 const terminateProcessTree = (child, signal) => {
   if (!child.pid) return
@@ -223,7 +242,7 @@ const terminateProcessTree = (child, signal) => {
   }
 }
 
-const runNode = (script, args, timeoutMs = DEFAULT_TIMEOUT_MS, includeProviderCredential = false) => {
+const runNode = (script, args, timeoutMs = DEFAULT_TIMEOUT_MS, includeProviderCredential = false, abortSignal = null) => {
   const environment = childEnvironment()
   if (!includeProviderCredential) delete environment.OPENAI_API_KEY
   return new Promise((resolveResult) => {
@@ -232,6 +251,7 @@ const runNode = (script, args, timeoutMs = DEFAULT_TIMEOUT_MS, includeProviderCr
     let stdoutBytes = 0
     let stderrBytes = 0
     let timedOut = false
+    let cancelled = false
     let overflowed = false
     let spawnError = null
     let finished = false
@@ -268,25 +288,40 @@ const runNode = (script, args, timeoutMs = DEFAULT_TIMEOUT_MS, includeProviderCr
       killTimer = setTimeout(() => terminateProcessTree(child, 'SIGKILL'), TERMINATION_GRACE_MS)
     }, timeoutMs)
 
+    const cancel = () => {
+      if (finished || timedOut || cancelled) return
+      cancelled = true
+      terminateProcessTree(child, 'SIGTERM')
+      killTimer ||= setTimeout(() => terminateProcessTree(child, 'SIGKILL'), TERMINATION_GRACE_MS)
+    }
+    if (abortSignal) {
+      if (abortSignal.aborted) cancel()
+      else abortSignal.addEventListener('abort', cancel, { once: true })
+    }
+
     child.on('close', (code, signal) => {
       if (finished) return
       finished = true
       clearTimeout(timeout)
+      if (abortSignal) abortSignal.removeEventListener('abort', cancel)
       if (killTimer) clearTimeout(killTimer)
       const stdout = redact(Buffer.concat(stdoutChunks).toString('utf8'), environment)
       const rawStderr = Buffer.concat(stderrChunks).toString('utf8')
       const errorText = spawnError && !timedOut ? spawnError.message : ''
       const stderr = redact(`${rawStderr}${errorText}`, environment)
       resolveResult({
-        status: timedOut ? 124 : overflowed || spawnError ? 1 : (code ?? 1),
+        status: timedOut || cancelled ? 124 : overflowed || spawnError ? 1 : (code ?? 1),
         stdout,
-        stderr: timedOut
+        stderr: cancelled
+          ? 'proposal runner cancelled'
+          : timedOut
           ? `proposal runner timed out after ${timeoutMs}ms`
           : overflowed
             ? `proposal runner exceeded ${MAX_CHILD_BUFFER_BYTES} bytes of buffered output`
             : stderr,
         timedOut,
-        signal: timedOut ? 'SIGTERM' : signal,
+        cancelled,
+        signal: timedOut || cancelled ? 'SIGTERM' : signal,
         environmentKeys: Object.keys(environment).sort(),
       })
     })
@@ -465,6 +500,7 @@ const proposalRunOutputSchema = {
     'audit_grade_eligible',
     'runner_assurance',
     'timed_out',
+    'cancelled',
     'termination_signal',
     'timeout_ms',
     'inner_timeout_ms',
@@ -488,6 +524,19 @@ const proposalRunOutputSchema = {
     terminal_state: { type: ['string', 'null'] },
     canonical_authority: { type: ['object', 'null'] },
     timed_out: { type: 'boolean' },
+    cancelled: { type: 'boolean' },
+    diagnostic: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['contract', 'code', 'phase', 'retryable', 'next_action'],
+      properties: {
+        contract: { const: 'mdp.mcp-diagnostic.v1' },
+        code: { type: 'string' },
+        phase: { type: 'string' },
+        retryable: { type: 'boolean' },
+        next_action: { type: 'string' },
+      },
+    },
     termination_signal: { type: ['string', 'null'] },
     timeout_ms: { type: 'integer', minimum: MIN_TIMEOUT_MS, maximum: MAX_TIMEOUT_MS },
     inner_timeout_ms: { const: RECOMMENDED_TIMEOUT_MS },
@@ -525,10 +574,10 @@ const tools = [
   },
 ]
 
-const callProposalTools = async (args) => {
+const callProposalTools = async (args, signal = null) => {
   const parsedArgs = asObject(args || {}, 'arguments')
   assertNoUnsupportedArgs(parsedArgs, new Set())
-  const result = await runNode(runnerPath, ['tools'])
+  const result = await runNode(runnerPath, ['tools'], DEFAULT_TIMEOUT_MS, false, signal)
   if (result.status !== 0) {
     return toolResult({
       isError: true,
@@ -536,6 +585,7 @@ const callProposalTools = async (args) => {
       structuredContent: {
         ok: false,
         contract: 'mdp.proposal-mcp-error.v0',
+        code: result.cancelled ? 'cli-cancelled' : result.timedOut ? 'cli-timeout' : 'proposal-runner-failed',
         status: result.status,
         stderr: compact(result.stderr, 12_000),
         stdout: compact(result.stdout, 12_000),
@@ -565,7 +615,7 @@ const callProposalTools = async (args) => {
   return toolResult({ text: JSON.stringify(structuredContent, null, 2), structuredContent })
 }
 
-const callProposalRun = async (args) => {
+const callProposalRun = async (args, signal = null) => {
   const parsedArgs = asObject(args || {}, 'arguments')
   const allowed = new Set([
     'pack',
@@ -718,7 +768,7 @@ const callProposalRun = async (args) => {
   runnerArgs.push('--timeout-ms', String(timeoutMs))
 
   finalCheckInputs()
-  const result = await runNode(runnerPath, runnerArgs, timeoutMs, providerCapable)
+  const result = await runNode(runnerPath, runnerArgs, timeoutMs, providerCapable, signal)
   let parsed = null
   try {
     parsed = parseRunnerJson(result.stdout)
@@ -750,6 +800,7 @@ const callProposalRun = async (args) => {
         }
       : {}),
     timed_out: result.timedOut,
+    cancelled: result.cancelled,
     termination_signal: result.signal,
     timeout_ms: timeoutMs,
     inner_timeout_ms: RECOMMENDED_TIMEOUT_MS,
@@ -786,18 +837,28 @@ const callProposalRun = async (args) => {
   return toolResult({ text: JSON.stringify(structuredContent, null, 2), structuredContent })
 }
 
-const handleToolCall = async (params) => {
+const handleToolCall = async (params, signal = null) => {
   const call = asObject(params || {}, 'params')
   if (typeof call.name !== 'string' || call.name.trim() === '') throw new Error('params.name must be a non-empty string')
   const args = call.arguments || {}
   switch (call.name) {
     case 'mdp_proposal_tools':
-      return await callProposalTools(args)
+      return await callProposalTools(args, signal)
     case 'mdp_proposal_run':
-      return await callProposalRun(args)
+      return await callProposalRun(args, signal)
     default:
       throw Object.assign(new Error(`Unknown tool: ${call.name}`), { code: JSON_RPC_METHOD_NOT_FOUND })
   }
+}
+
+const activeRequests = new Map()
+const pendingCancellations = new Set()
+let toolScheduler = null
+
+const cancelActiveRequest = (requestId) => {
+  const controller = activeRequests.get(String(requestId))
+  if (controller) controller.abort()
+  else if (toolScheduler?.isQueued(requestId)) pendingCancellations.add(String(requestId))
 }
 
 const handleRequest = async (message) => {
@@ -818,8 +879,10 @@ const handleRequest = async (message) => {
     switch (method) {
       case 'initialize': {
         if (isNotification) return null
+        const versionError = validateProtocolVersion(params)
+        if (versionError) return errorResponse(id, versionError.code, versionError.message, versionError.data)
         return response(id, {
-          protocolVersion: params?.protocolVersion || MCP_PROTOCOL_VERSION,
+          protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {
             tools: { listChanged: false },
           },
@@ -833,15 +896,34 @@ const handleRequest = async (message) => {
       }
       case 'notifications/initialized':
         return null
+      case '$/cancelRequest':
+      case 'notifications/cancelled':
+        cancelActiveRequest(params?.requestId)
+        return null
       case 'ping':
         if (isNotification) return null
         return response(id, {})
       case 'tools/list':
         if (isNotification) return null
         return response(id, { tools })
-      case 'tools/call':
+      case 'tools/call': {
         if (isNotification) return null
-        return response(id, await handleToolCall(params))
+        const controller = new AbortController()
+        activeRequests.set(String(id), controller)
+        if (pendingCancellations.delete(String(id))) controller.abort()
+        try {
+          if (controller.signal.aborted) {
+            return response(id, toolResult({
+              isError: true,
+              text: 'proposal request cancelled',
+              structuredContent: { ok: false, contract: 'mdp.proposal-mcp-error.v0', code: 'cli-cancelled' },
+            }))
+          }
+          return response(id, await handleToolCall(params, controller.signal))
+        } finally {
+          activeRequests.delete(String(id))
+        }
+      }
       default:
         if (isNotification) return null
         return errorResponse(id, JSON_RPC_METHOD_NOT_FOUND, `Method not found: ${method}`)
@@ -849,7 +931,11 @@ const handleRequest = async (message) => {
   } catch (error) {
     const code = Number.isInteger(error.code) ? error.code : JSON_RPC_INVALID_PARAMS
     if (isNotification) return null
-    return errorResponse(id, code, redact(error.message || 'Tool call failed'))
+    return errorResponse(id, code, safeMcpMessage(redact(error.message || 'Tool call failed')), mcpDiagnostic({
+      code: code === JSON_RPC_INVALID_PARAMS ? 'mcp-arguments-invalid' : 'mcp-protocol-failure',
+      phase: 'tool-call',
+      nextAction: 'Correct the request using tools/list and retry.',
+    }))
   }
 }
 
@@ -886,12 +972,63 @@ const handleLine = async (line) => {
 
 let buffer = ''
 let discardingOversizedLine = false
-let inputQueue = Promise.resolve()
+toolScheduler = createBoundedToolScheduler({
+  maxConcurrent: MCP_MAX_CONCURRENT_TOOL_CALLS,
+  maxQueued: MCP_MAX_QUEUED_TOOL_CALLS,
+  busyResponse: (id) => errorResponse(id, -32000, 'MCP tool concurrency limit reached', mcpDiagnostic({
+    code: 'mcp-server-busy',
+    phase: 'scheduling',
+    retryable: true,
+    nextAction: 'Retry after an active tool call completes.',
+  })),
+})
+
+const dispatchRequest = (message) => {
+  if (message && !Array.isArray(message) && message.method === 'tools/call' && 'id' in message) {
+    return toolScheduler.schedule(message.id, () => handleRequest(message))
+  }
+  return handleRequest(message)
+}
+
+const dispatchLine = async (line) => {
+  if (Buffer.byteLength(line, 'utf8') > MAX_JSON_RPC_LINE_BYTES) {
+    writeMessage(errorResponse(null, JSON_RPC_INVALID_REQUEST, `JSON-RPC message exceeds ${MAX_JSON_RPC_LINE_BYTES} bytes`))
+    return
+  }
+  if (!line.trim()) return
+  let message
+  try { message = JSON.parse(line) } catch (error) {
+    writeMessage(errorResponse(null, JSON_RPC_PARSE_ERROR, redact(`Parse error: ${error.message}`)))
+    return
+  }
+  if (Array.isArray(message)) {
+    const replies = (await Promise.all(message.map(dispatchRequest))).filter(Boolean)
+    if (replies.length) writeMessage(replies)
+    return
+  }
+  const reply = await dispatchRequest(message)
+  if (reply) writeMessage(reply)
+}
+
+const pendingLines = new Set()
+let inputEnded = false
+let inputHold = null
+const releaseInputHold = () => {
+  if (inputEnded && pendingLines.size === 0 && inputHold !== null) {
+    clearInterval(inputHold)
+    inputHold = null
+  }
+}
 const enqueueLine = (line) => {
-  inputQueue = inputQueue.then(() => handleLine(line))
+  if (inputHold === null) inputHold = setInterval(() => {}, 1_000)
+  const pending = dispatchLine(line)
+  pendingLines.add(pending)
+  pending.finally(() => {
+    pendingLines.delete(pending)
+    releaseInputHold()
+  })
 }
 process.stdin.setEncoding('utf8')
-process.stdin.resume()
 process.stdin.on('data', (chunk) => {
   if (discardingOversizedLine) {
     const newlineIndex = chunk.indexOf('\n')
@@ -918,7 +1055,11 @@ process.stdin.on('data', (chunk) => {
 process.stdin.on('end', () => {
   const remaining = buffer.trim()
   if (remaining && !discardingOversizedLine) enqueueLine(remaining)
+  inputEnded = true
+  releaseInputHold()
 })
+process.stdin.resume()
+process.stdin.ref?.()
 
 process.on('uncaughtException', (error) => {
   process.stderr.write(`mdp proposal MCP server fatal error: ${redact(error.stack || error.message)}\n`)

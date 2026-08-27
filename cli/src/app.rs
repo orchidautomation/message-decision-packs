@@ -15,7 +15,8 @@ use crate::commands::{
     emit_brief_scoped, eval_pack, explain, gaps, init_pack_targeted, init_pack_targeted_dry_run,
     pack, preview_pack_change_set, project_conformance_file, project_conformance_report,
     project_prompt_output_validation_file, project_run_files, project_source_file,
-    prospect_brief_with_context, rebind_synthetic_chain, recover_run_output, refresh_readme,
+    prospect_brief_with_context, readiness, rebind_synthetic_chain, recover_run_output,
+    refresh_readme,
     render_human_brief_file, render_human_brief_markdown, render_mermaid,
     render_readable_prospect_brief, requirements, route_budget_preflight_command,
     route_budget_preflight_query_command, route_scoped, run_preflight_file, run_receipt,
@@ -210,6 +211,16 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             ),
         },
         Commands::Doctor { dir } => print_output(json_mode, summary_mode, "doctor", doctor(&dir)),
+        Commands::Check {
+            dir,
+            job,
+            input_validation,
+        } => print_output(
+            json_mode,
+            summary_mode,
+            "check",
+            readiness(&dir, job.as_deref(), input_validation.as_deref()),
+        ),
         Commands::Skills { dir, job } => print_output(
             json_mode,
             summary_mode,
