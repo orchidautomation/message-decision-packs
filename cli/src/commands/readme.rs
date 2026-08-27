@@ -304,10 +304,50 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut fence: Option<(char, usize)> = None;
     let mut indented_code = false;
     let mut indented_code_can_start = true;
+    let mut list_container: Option<(usize, usize)> = None;
+    let mut list_blank_lines = 0;
     let mut visible = String::with_capacity(markdown.len());
     for (start, content_end, line_end) in markdown_line_offsets(markdown) {
         let line = &markdown[start..content_end];
-        if let Some((character, length, closing)) = fence_delimiter(line, fence) {
+        let (quote_depth, quoted_content) = strip_blockquote_prefixes(line);
+        if list_container.is_some_and(|(depth, _)| depth != quote_depth) {
+            list_container = None;
+            list_blank_lines = 0;
+        }
+        let quoted_blank = quoted_content
+            .bytes()
+            .all(|byte| matches!(byte, b' ' | b'\t'));
+        let block_content = if let Some((content_indent, item_content)) =
+            list_item_content(quoted_content)
+        {
+            list_container = Some((quote_depth, content_indent));
+            list_blank_lines = 0;
+            item_content
+        } else if let Some((_, content_indent)) = list_container {
+            if quoted_blank {
+                list_blank_lines += 1;
+                if list_blank_lines >= 2 {
+                    // Two blank lines terminate a CommonMark list container;
+                    // later indentation is root-relative rather than a lazy
+                    // continuation of the former list item.
+                    list_container = None;
+                    list_blank_lines = 0;
+                }
+                ""
+            } else if let Some(continuation) = strip_indent_columns(quoted_content, content_indent)
+            {
+                list_blank_lines = 0;
+                continuation
+            } else {
+                list_container = None;
+                list_blank_lines = 0;
+                quoted_content
+            }
+        } else {
+            quoted_content
+        };
+
+        if let Some((character, length, closing)) = fence_delimiter(block_content, fence) {
             if closing {
                 fence = None;
                 indented_code_can_start = true;
@@ -324,8 +364,10 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
             continue;
         }
 
-        let blank = line.bytes().all(|byte| matches!(byte, b' ' | b'\t'));
-        let indented = markdown_indent_columns(line) >= 4;
+        let blank = block_content
+            .bytes()
+            .all(|byte| matches!(byte, b' ' | b'\t'));
+        let indented = markdown_indent_columns(block_content) >= 4;
         if indented_code {
             if blank || indented {
                 // Blank lines belong to an open indented block when a later
@@ -360,6 +402,75 @@ fn markdown_indent_columns(line: &str) -> usize {
         }
     }
     columns
+}
+
+fn strip_blockquote_prefixes(mut line: &str) -> (usize, &str) {
+    let mut depth = 0;
+    loop {
+        let bytes = line.as_bytes();
+        let spaces = bytes
+            .iter()
+            .take(3)
+            .take_while(|byte| **byte == b' ')
+            .count();
+        if bytes.get(spaces) != Some(&b'>') {
+            return (depth, line);
+        }
+        let mut consumed = spaces + 1;
+        if matches!(bytes.get(consumed), Some(b' ' | b'\t')) {
+            consumed += 1;
+        }
+        line = &line[consumed..];
+        depth += 1;
+    }
+}
+
+fn list_item_content(line: &str) -> Option<(usize, &str)> {
+    let bytes = line.as_bytes();
+    let leading = bytes
+        .iter()
+        .take(3)
+        .take_while(|byte| **byte == b' ')
+        .count();
+    let marker_end = match bytes.get(leading)? {
+        b'-' | b'+' | b'*' => leading + 1,
+        byte if byte.is_ascii_digit() => {
+            let mut cursor = leading;
+            while bytes.get(cursor).is_some_and(u8::is_ascii_digit) && cursor - leading < 9 {
+                cursor += 1;
+            }
+            if !matches!(bytes.get(cursor), Some(b'.' | b')')) {
+                return None;
+            }
+            cursor + 1
+        }
+        _ => return None,
+    };
+    let spacing_start = marker_end;
+    let mut content_start = spacing_start;
+    while matches!(bytes.get(content_start), Some(b' ' | b'\t')) {
+        content_start += 1;
+    }
+    if content_start == spacing_start {
+        return None;
+    }
+    let content_indent = markdown_indent_columns(&line[..content_start]);
+    Some((content_indent, &line[content_start..]))
+}
+
+fn strip_indent_columns(line: &str, required: usize) -> Option<&str> {
+    let mut columns = 0;
+    for (index, byte) in line.bytes().enumerate() {
+        match byte {
+            b' ' => columns += 1,
+            b'\t' => columns += 4 - (columns % 4),
+            _ => return (columns >= required).then_some(&line[index..]),
+        }
+        if columns >= required {
+            return Some(&line[index + 1..]);
+        }
+    }
+    (columns >= required).then_some("")
 }
 
 /// Project CommonMark-style backtick code spans in bounded linear time.
@@ -1099,11 +1210,15 @@ Inline `inline-code` must be ignored.
 
     #[test]
     fn card_reference_parser_excludes_indented_code_blocks_only() {
-        let markdown = "    `cards/first-code.yaml`\n\n\t`cards/continued-code.yaml`\nOutside `cards/visible.yaml`.\nParagraph continuation\n    `cards/paragraph-span.yaml`\n";
+        let markdown = "    `cards/first-code.yaml`\n\n\t`cards/continued-code.yaml`\nOutside `cards/visible.yaml`.\nParagraph continuation\n    `cards/paragraph-span.yaml`\n\n- item\n\n    Human `cards/list-continuation.yaml`\n\n>     `cards/blockquote-code.yaml`\n";
         assert_eq!(
             inline_code_tokens(markdown),
-            vec!["cards/visible.yaml", "cards/paragraph-span.yaml"],
-            "blank-line continuation stays code, while indentation cannot interrupt a paragraph"
+            vec![
+                "cards/visible.yaml",
+                "cards/paragraph-span.yaml",
+                "cards/list-continuation.yaml"
+            ],
+            "code blocks respect paragraph, list-container, and blockquote boundaries"
         );
     }
 
@@ -1114,7 +1229,7 @@ Inline `inline-code` must be ignored.
         let readme_path = root.join(".mdp/README.md");
         let mut readme = std::fs::read_to_string(&readme_path).expect("README");
         readme.push_str(
-            "\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\nHuman `cards/visible-missing.yaml`.\n",
+            "\n\n    Example `cards/indented-missing.yaml`\n\n    Continued `cards/continued-missing.yaml`\n\n- item\n\n    Human `cards/list-missing.yaml`\n\n>     `cards/blockquote-missing.yaml`\n\nHuman `cards/visible-missing.yaml`.\n",
         );
         std::fs::write(&readme_path, readme).expect("write human examples");
 
@@ -1126,14 +1241,20 @@ Inline `inline-code` must be ignored.
             .filter(|warning| warning["code"] == "readme_human_card_reference_missing")
             .map(|warning| warning["reference"].as_str().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(check_refs, vec!["cards/visible-missing.yaml"]);
+        assert_eq!(
+            check_refs,
+            vec!["cards/list-missing.yaml", "cards/visible-missing.yaml"]
+        );
 
         let validate_refs = readme_validation_issues(&root)
             .into_iter()
             .filter(|issue| issue["code"] == "readme_human_card_reference_missing")
             .map(|issue| issue["reference"].as_str().unwrap().to_string())
             .collect::<Vec<_>>();
-        assert_eq!(validate_refs, vec!["cards/visible-missing.yaml"]);
+        assert_eq!(
+            validate_refs,
+            vec!["cards/list-missing.yaml", "cards/visible-missing.yaml"]
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
