@@ -8,6 +8,7 @@ import { superviseProcess } from './lib/process-supervisor.mjs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, parse, relative, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -61,6 +62,12 @@ if (args.includes('prepare-run')) {
 if (args.includes('verify-run')) {
   const receiptPath = args[args.indexOf('--receipt') + 1]
   const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'))
+  if (receipt.test_mode === 'hang') {
+    writeFileSync(receipt.ready_path, '')
+    process.on('SIGTERM', () => {})
+    setInterval(() => {}, 1000)
+    await new Promise(() => {})
+  }
   const data = { contract: 'mdp.run-verification.v1', valid: receipt.valid !== false, checks: [] }
   process.stdout.write(JSON.stringify({ ok: true, command: 'verify-run', data }))
   if (!data.valid) process.exit(1)
@@ -223,6 +230,7 @@ const rpc = (cli, messages, extraEnv = {}) =>
     child.on('error', rejectPromise)
     child.on('close', (status) => {
       if (status !== 0) return rejectPromise(new Error(`server exited ${status}: ${stderr}`))
+      if (!stdout.trim()) return rejectPromise(new Error(`server returned no JSON-RPC response: ${stderr}`))
       resolvePromise(
         stdout
           .trim()
@@ -251,6 +259,7 @@ const toolCall = (id, name, args = {}) => ({
   method: 'tools/call',
   params: { name, arguments: args },
 })
+const replyById = (replies, id) => replies.find((reply) => reply.id === id)
 
 const consentFixture = (root, id, overrides = {}) => {
   const value = { contract: 'mdp.mcp-provider-consent.v1', provider: 'openai', purpose: 'mdp.run', request_sha256: 'a'.repeat(64), source_sha256s: [], output_root: realpathSync(root), expires_at: new Date(Date.now() + 60_000).toISOString(), nonce: `${id}-nonce`, ...overrides }
@@ -362,6 +371,21 @@ test('lists preparation, run, and verification tools and identifies MCP as trans
   const runTool = replies[1].result.tools.find((tool) => tool.name === 'mdp_run')
   assert(runTool.inputSchema.required.includes('request_sha256'))
   assert.match(replies[2].result.structuredContent.canonical_path[2].input, /request_sha256/)
+})
+
+test('rejects unsupported MCP versions with bounded safe negotiation metadata', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-version-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const [reply] = await rpc(fixtureCli(root), [{
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: { protocolVersion: `unsupported-${root}` },
+  }])
+  assert.equal(reply.error.code, -32602)
+  assert.equal(reply.error.data.contract, 'mdp.mcp-diagnostic.v1')
+  assert.deepEqual(reply.error.data.supported_protocol_versions, ['2025-06-18'])
+  assert.equal(JSON.stringify(reply).includes(root), false)
 })
 
 test('completes prepare, run, and verify across disjoint approved roots for any profile', async (t) => {
@@ -1132,6 +1156,8 @@ sys.stdout.write(json.dumps({
         output_dir: profile.run,
         consent_id: profile.consent,
       }),
+    ], roleEnv))
+    completed.push(...await rpc(realCli, [
       toolCall(index * 2 + 2, 'mdp_verify_run', {
         bundle_path: join(profile.run, 'run-bundle.json'),
         receipt_path: join(profile.run, 'run-receipt.json'),
@@ -1140,12 +1166,14 @@ sys.stdout.write(json.dumps({
     ], roleEnv))
   }
   for (let index = 0; index < profiles.length; index += 1) {
-    const run = completed[index * 2].result.structuredContent
-    const verification = completed[index * 2 + 1].result.structuredContent
-    assert.equal(run.contract, 'mdp.run-execution.v1', JSON.stringify(completed[index * 2]))
+    const runReply = replyById(completed, index * 2 + 1)
+    const verifyReply = replyById(completed, index * 2 + 2)
+    const run = runReply.result.structuredContent
+    const verification = verifyReply.result.structuredContent
+    assert.equal(run.contract, 'mdp.run-execution.v1', JSON.stringify(runReply))
     assert.equal(run.terminal_state, 'no-draft:runner-failed')
     assert.equal(run.run_dir, profiles[index].run)
-    assert.equal(verification.contract, 'mdp.run-verification.v1', JSON.stringify(completed[index * 2 + 1]))
+    assert.equal(verification.contract, 'mdp.run-verification.v1', JSON.stringify(verifyReply))
     assert.equal(verification.valid, true)
   }
 })
@@ -1165,10 +1193,10 @@ test('returns canonical valid and invalid read-only verification data', async (t
     toolCall(1, 'mdp_verify_run', { bundle_path: bundle, receipt_path: validReceipt, artifact_root: artifacts }),
     toolCall(2, 'mdp_verify_run', { bundle_path: bundle, receipt_path: invalidReceipt }),
   ])
-  assert.equal(replies[0].result.isError, false)
-  assert.equal(replies[0].result.structuredContent.valid, true)
-  assert.equal(replies[1].result.isError, false)
-  assert.equal(replies[1].result.structuredContent.valid, false)
+  assert.equal(replyById(replies, 1).result.isError, false)
+  assert.equal(replyById(replies, 1).result.structuredContent.valid, true)
+  assert.equal(replyById(replies, 2).result.isError, false)
+  assert.equal(replyById(replies, 2).result.structuredContent.valid, false)
 })
 
 test('notifications/cancelled aborts a hanging clean run with sanitized cancellation data', async (t) => {
@@ -1180,6 +1208,13 @@ test('notifications/cancelled aborts a hanging clean run with sanitized cancella
   const child = spawn(process.execPath, [server], {
     env: { ...process.env, MDP_BIN: fixtureCli(root), ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])) },
     stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, 'close')
+      child.kill('SIGKILL')
+      await closed
+    }
   })
   const replies = []
   let outputText = ''
@@ -1219,7 +1254,68 @@ test('notifications/cancelled aborts a hanging clean run with sanitized cancella
   assert.equal(reply.result.structuredContent.deadline.outcome, 'cancelled')
   assert.equal(reply.result.structuredContent.deadline.phase, 'cancellation')
   assert.equal(JSON.stringify(reply).includes(root), false)
-  child.kill('SIGKILL')
+})
+
+test('verify cancellation is bounded while ping remains responsive', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-verify-cancel-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const bundle = join(root, 'run-bundle.json')
+  const receipt = join(root, 'run-receipt.json')
+  const ready = join(root, 'verify.ready')
+  writeFileSync(bundle, '{}')
+  writeFileSync(receipt, JSON.stringify({ test_mode: 'hang', ready_path: ready }))
+  const child = spawn(process.execPath, [server], {
+    env: { ...process.env, MDP_BIN: fixtureCli(root), ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])) },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, 'close')
+      child.kill('SIGKILL')
+      await closed
+    }
+  })
+  const replies = []
+  let outputText = ''
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    outputText += chunk
+    let newline
+    while ((newline = outputText.indexOf('\n')) >= 0) {
+      const line = outputText.slice(0, newline)
+      outputText = outputText.slice(newline + 1)
+      if (line.trim()) replies.push(JSON.parse(line))
+    }
+  })
+  child.stdin.write(`${JSON.stringify(toolCall(1, 'mdp_verify_run', { bundle_path: bundle, receipt_path: receipt, timeout_ms: 5_000 }))}\n`)
+  await waitForFile(ready)
+  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping' })}\n`)
+  await new Promise((resolvePromise, rejectPromise) => {
+    const deadline = setTimeout(() => rejectPromise(new Error('ping was starved by verify')), 1_000)
+    const poll = setInterval(() => {
+      if (replies.some((reply) => reply.id === 2)) {
+        clearTimeout(deadline)
+        clearInterval(poll)
+        resolvePromise()
+      }
+    }, 5)
+  })
+  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 1 } })}\n`)
+  await new Promise((resolvePromise, rejectPromise) => {
+    const deadline = setTimeout(() => rejectPromise(new Error('verify cancellation response timed out')), 3_000)
+    const poll = setInterval(() => {
+      if (replies.some((reply) => reply.id === 1)) {
+        clearTimeout(deadline)
+        clearInterval(poll)
+        resolvePromise()
+      }
+    }, 10)
+  })
+  const reply = replies.find((item) => item.id === 1)
+  assert.equal(reply.result.isError, true)
+  assert.equal(reply.result.structuredContent.code, 'cli-cancelled')
+  assert.equal(reply.result.structuredContent.diagnostic.phase, 'cancellation')
+  assert.equal(JSON.stringify(reply).includes(root), false)
 })
 
 test('passes only file paths to a bounded CLI child and returns its authority unchanged', async (t) => {
@@ -1403,10 +1499,10 @@ test('rejects request symlinks, hard links, existing output directories, and ove
     toolCall(3, 'mdp_run', withExactRequestDigest(cleanRequest, { output_dir: existingOutput })),
     toolCall(4, 'mdp_run', withExactRequestDigest(oversized, { output_dir: join(root, 'four') })),
   ])
-  assert.match(replies[0].error.message, /must not be a symlink/)
-  assert.match(replies[1].error.message, /exactly one hard link/)
-  assert.match(replies[2].error.message, /must not already exist/)
-  assert.match(replies[3].error.message, /exceeds 1048576 bytes/)
+  assert.match(replyById(replies, 1).error.message, /must not be a symlink/)
+  assert.match(replyById(replies, 2).error.message, /exactly one hard link/)
+  assert.match(replyById(replies, 3).error.message, /must not already exist/)
+  assert.match(replyById(replies, 4).error.message, /exceeds 1048576 bytes/)
 })
 
 test('executes frozen request bytes when the public path is mutated or replaced after spawn', async (t) => {
@@ -1460,14 +1556,13 @@ test('fails closed without returning CLI stderr, partial stdout, paths, or sourc
     toolCall(1, 'mdp_run', withExactRequestDigest(failedRequest, { output_dir: join(root, 'failed-run') })),
     toolCall(2, 'mdp_run', withExactRequestDigest(invalidRequest, { output_dir: join(root, 'invalid-run') })),
   ])
-  assert.deepEqual(replies[0].result.structuredContent, {
-    ok: false,
-    contract: 'mdp.run-mcp-error.v1',
-    code: 'cli-run-failed',
-  })
-  assert.equal(JSON.stringify(replies[0]).includes('PRIVATE-SOURCE-BODY'), false)
-  assert.equal(JSON.stringify(replies[0]).includes('/private/customer/path'), false)
-  assert.equal(replies[1].result.structuredContent.code, 'invalid-cli-output')
+  const failed = replyById(replies, 1)
+  const invalid = replyById(replies, 2)
+  assert.equal(failed.result.structuredContent.code, 'cli-run-failed')
+  assert.equal(failed.result.structuredContent.diagnostic.contract, 'mdp.mcp-diagnostic.v1')
+  assert.equal(JSON.stringify(failed).includes('PRIVATE-SOURCE-BODY'), false)
+  assert.equal(JSON.stringify(failed).includes('/private/customer/path'), false)
+  assert.equal(invalid.result.structuredContent.code, 'invalid-cli-output')
 })
 
 test('returns a canonical no-draft result even when the CLI exits nonzero', async (t) => {
@@ -1533,11 +1628,8 @@ test('rejects a wrong CLI contract and reports spawn failure without leaking pat
     toolCall(2, 'mdp_run', withExactRequestDigest(request, { output_dir: join(root, 'spawn-run') })),
   ])
   assert.equal(wrongContract.result.structuredContent.code, 'invalid-cli-contract')
-  assert.deepEqual(spawnFailure.result.structuredContent, {
-    ok: false,
-    contract: 'mdp.run-mcp-error.v1',
-    code: 'cli-unavailable',
-  })
+  assert.equal(spawnFailure.result.structuredContent.code, 'cli-unavailable')
+  assert.equal(spawnFailure.result.structuredContent.diagnostic.retryable, true)
   assert.equal(JSON.stringify(spawnFailure).includes(root), false)
 })
 
@@ -1553,8 +1645,8 @@ test('bounds hung and overflowing children', async (t) => {
     toolCall(1, 'mdp_run', withExactRequestDigest(hang, { output_dir: join(root, 'hang-run'), timeout_ms: 500 })),
     toolCall(2, 'mdp_run', withExactRequestDigest(overflow, { output_dir: join(root, 'overflow-run') })),
   ])
-  assert.equal(replies[0].result.structuredContent.code, 'cli-timeout')
-  assert.equal(replies[1].result.structuredContent.code, 'cli-output-limit')
+  assert.equal(replyById(replies, 1).result.structuredContent.code, 'cli-timeout')
+  assert.equal(replyById(replies, 2).result.structuredContent.code, 'cli-output-limit')
 })
 
 test('keeps SIGKILL escalation alive after the child leader exits', async (t) => {
