@@ -18,9 +18,29 @@ const fixtureCli = (root) => {
   writeFileSync(
     path,
     `#!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 const args = process.argv.slice(2)
+if (args.includes('prepare-run')) {
+  const packDir = args[args.indexOf('--dir') + 1]
+  const out = args[args.indexOf('--out') + 1]
+  if (!out) {
+    process.stdout.write(JSON.stringify({ ok: false, command: 'prepare-run', data: { contract: 'mdp.run-request-compile.v1', status: 'blocked' } }))
+    process.exit(1)
+  }
+  const request = {
+    contract: 'mdp.run-request.v1',
+    execution_id: 'exec-fixture',
+    mode: 'deterministic',
+    pack_dir: packDir,
+    inputs: [],
+  }
+  writeFileSync(out, JSON.stringify(request))
+  const manifestIndex = args.indexOf('--manifest-out')
+  if (manifestIndex >= 0) writeFileSync(args[manifestIndex + 1], JSON.stringify({ contract: 'mdp.run-request-compile-manifest.v1' }))
+  process.stdout.write(JSON.stringify({ ok: true, command: 'prepare-run', data: { contract: 'mdp.run-request-compile.v1', status: 'ready', request_path: out } }))
+  process.exit(0)
+}
 if (args.includes('verify-run')) {
   const receiptPath = args[args.indexOf('--receipt') + 1]
   const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'))
@@ -61,6 +81,9 @@ if (existsSync(outputDir + '.pause-before-read')) {
   }
 }
 const request = JSON.parse(readFileSync(requestPath, 'utf8'))
+mkdirSync(outputDir)
+writeFileSync(outputDir + '/run-bundle.json', '{}')
+writeFileSync(outputDir + '/run-receipt.json', JSON.stringify({ valid: true }))
 writeFileSync(outputDir + '.invocation.json', JSON.stringify({
   args,
   request,
@@ -300,6 +323,43 @@ test('lists preparation, run, and verification tools and identifies MCP as trans
   assert.match(replies[2].result.structuredContent.canonical_path[3].artifact, /mdp\.run-verification\.v1/)
   assert.deepEqual(replies[2].result.structuredContent.mcp_authority, [])
   assert.match(replies[2].result.structuredContent.guardrails.join(' '), /does not prove fresh context/)
+  const prepareTool = replies[1].result.tools.find((tool) => tool.name === 'mdp_prepare_run')
+  assert(prepareTool.inputSchema.required.includes('out'))
+})
+
+test('completes prepare, run, and verify across disjoint approved roots for any profile', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-handoff-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const roots = Object.fromEntries(['pack', 'input', 'approval', 'work', 'output', 'consent'].map((role) => {
+    const path = join(root, role)
+    mkdirSync(path)
+    return [role, path]
+  }))
+  const profiles = [
+    { name: 'gtm', job: 'prospect-fit-or-brief' },
+    { name: 'proposal', job: 'bid-no-bid-review' },
+  ]
+  const roleEnv = Object.fromEntries(Object.entries(roots).map(([role, path]) => [`MDP_MCP_${role.toUpperCase()}_ROOTS`, path]))
+  const messages = []
+  for (const [index, profile] of profiles.entries()) {
+    const pack = join(roots.pack, `${profile.name}-pack`)
+    mkdirSync(pack)
+    const request = join(roots.work, `${profile.name}-request.json`)
+    const run = join(roots.output, `${profile.name}-run`)
+    const id = index * 3
+    messages.push(
+      toolCall(id + 1, 'mdp_prepare_run', { dir: pack, job: profile.job, model: 'fixture-model', out: request }),
+      toolCall(id + 2, 'mdp_run', { request_path: request, output_dir: run }),
+      toolCall(id + 3, 'mdp_verify_run', { bundle_path: join(run, 'run-bundle.json'), receipt_path: join(run, 'run-receipt.json'), artifact_root: run }),
+    )
+  }
+  const replies = await rpc(fixtureCli(root), messages, roleEnv)
+  for (let index = 0; index < profiles.length; index += 1) {
+    assert.equal(replies[index * 3].result.structuredContent.status, 'ready', JSON.stringify(replies[index * 3]))
+    assert.equal(replies[index * 3 + 1].result.structuredContent.contract, 'mdp.run-execution.v1')
+    assert.equal(replies[index * 3 + 2].result.structuredContent.contract, 'mdp.run-verification.v1')
+    assert.equal(replies[index * 3 + 2].result.structuredContent.valid, true)
+  }
 })
 
 test('returns canonical valid and invalid read-only verification data', async (t) => {

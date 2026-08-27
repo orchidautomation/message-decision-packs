@@ -632,7 +632,7 @@ for profile in proposal gtm; do
     --artifact-root "$run_dir") >"$proposal_fixture/$profile-verify.json"
 done
 
-python3 - "$proposal_fixture/proposal-request.json" "$proposal_fixture/mcp-run-request.json" <<'PY'
+python3 - "$proposal_fixture/proposal-request.json" "$run_fixture/mcp-run-request.json" <<'PY'
 import json, sys
 value = json.load(open(sys.argv[1]))
 value["execution_id"] = "release-smoke-mcp"
@@ -641,7 +641,7 @@ open(sys.argv[2], "a").write("\n")
 PY
 mcp_run_stdout="$({
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
-  python3 - "$proposal_fixture/mcp-run-request.json" "$run_fixture/mcp-run" <<'PY'
+  python3 - "$run_fixture/mcp-run-request.json" "$run_fixture/mcp-run" <<'PY'
 import json, sys
 print(json.dumps({"jsonrpc":"2.0", "id":2, "method":"tools/call", "params": {
     "name":"mdp_run", "arguments":{"request_path":sys.argv[1], "output_dir":sys.argv[2]}}}))
@@ -672,13 +672,11 @@ activation_output="$(
   bash "$codex_plugin_root/scripts/mdp-activate.sh"
 )"
 for expected in \
-  "Local proposal runner: available in the plugin/source bundle." \
-  "Native OpenAI runner: available as the lower-level BYOK stateless API boundary." \
+  "Canonical native OpenAI driver: available for an operator-authorized BYOK model step." \
   "OPENAI_API_KEY: not detected; only required for an optional real native OpenAI runner call." \
   "Canonical local stdio MCP: available" \
   "MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run." \
   "The canonical MCP is local stdio transport only, not a hosted or remote MCP service." \
-  "The proposal MCP is compatibility-only and intentionally absent from default discovery." \
   "Hooks report readiness only; the CLI receipt is the blocking gate."; do
   if ! printf '%s\n' "$activation_output" | grep -F "$expected" >/dev/null; then
     echo "Installed activation output missing expected guardrail: $expected" >&2

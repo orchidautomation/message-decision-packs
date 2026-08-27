@@ -25,14 +25,17 @@ Use these tools in order:
 | Stage | Tool | Input | Produced artifact | Next stage |
 |---|---|---|---|---|
 | Inspect | `mdp_run_tools` | No arguments | `mdp.run-mcp-tools.v1` boundary inventory | `mdp_prepare_run` |
-| Prepare | `mdp_prepare_run` | Pack directory, exact job/model step, and declared input paths | `mdp.run-request.v1` and optional compile manifest | `mdp_run` |
+| Prepare | `mdp_prepare_run` | Pack directory, exact job/model step, declared input paths, and required new `out` path under an approved work root | Persisted `mdp.run-request.v1` and optional compile manifest under the work root | `mdp_run` |
 | Run | `mdp_run` | Request path and a new output directory | `run-bundle.json`, `run-receipt.json`, and declared artifacts | `mdp_verify_run` |
 | Verify | `mdp_verify_run` | Bundle and receipt paths, plus optional artifact root | `mdp.run-verification.v1` | Return the verified CLI authority unchanged |
 
 The adapter accepts explicit local paths, not ambient chat, inline source
-bodies, or assurance overrides. `mdp_prepare_run` does not call a provider.
-`mdp_run` executes exactly one request and preserves canonical no-draft results.
-`mdp_verify_run` is read-only.
+bodies, or assurance overrides. `mdp_prepare_run` requires `out`, persists that
+request under `MDP_MCP_WORK_ROOTS`, and does not call a provider. `mdp_run`
+accepts the same work-root request, executes exactly one request, and writes its
+run directory under `MDP_MCP_OUTPUT_ROOTS`. `mdp_verify_run` reads that bundle,
+receipt, and artifact root from the same approved output boundary and is
+otherwise read-only.
 
 MCP is transport, not authority. The Rust `mdp` CLI remains the sole authority
 for request parsing, staging, execution, terminal state, assurance, hashes,

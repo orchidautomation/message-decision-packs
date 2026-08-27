@@ -96,20 +96,8 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 native_runner_available() {
   local candidate
   for candidate in \
-    "${PLUGIN_ROOT:-}/scripts/mdp-native-normalize-openai.mjs" \
-    "$SCRIPT_DIR/mdp-native-normalize-openai.mjs"; do
-    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-proposal_runner_available() {
-  local candidate
-  for candidate in \
-    "${PLUGIN_ROOT:-}/scripts/mdp-proposal-runner.mjs" \
-    "$SCRIPT_DIR/mdp-proposal-runner.mjs"; do
+    "${PLUGIN_ROOT:-}/scripts/mdp-native-model-openai.mjs" \
+    "$SCRIPT_DIR/mdp-native-model-openai.mjs"; do
     if [ -n "$candidate" ] && [ -f "$candidate" ]; then
       return 0
     fi
@@ -129,19 +117,9 @@ run_mcp_available() {
   return 1
 }
 
-print_proposal_audit_readiness() {
-  if [ ! -f "$TARGET_DIR/.mdp/prompts/normalize-opportunity.yaml" ]; then
-    return 0
-  fi
-
+print_clean_run_readiness() {
   echo
   echo "MDP clean-run readiness:"
-  if proposal_runner_available; then
-    echo "  Local proposal runner: available in the plugin/source bundle."
-    echo "  Inspect local runner steps with: node \"\${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs\" tools"
-  else
-    echo "  Local proposal runner: not found in the plugin/source bundle."
-  fi
   if run_mcp_available; then
     echo "  Canonical local stdio MCP: available as node \"${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs\"."
     echo "  MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run."
@@ -150,9 +128,9 @@ print_proposal_audit_readiness() {
     echo "  Canonical local stdio MCP: not found in the plugin/source bundle."
   fi
   if native_runner_available; then
-    echo "  Native OpenAI runner: available as the lower-level BYOK stateless API boundary."
+    echo "  Canonical native OpenAI driver: available for an operator-authorized BYOK model step."
   else
-    echo "  Native OpenAI runner: not found in the plugin/source bundle."
+    echo "  Canonical native OpenAI driver: not found in the plugin/source bundle."
   fi
 
   if [ -n "${OPENAI_API_KEY:-}" ]; then
@@ -164,7 +142,6 @@ print_proposal_audit_readiness() {
   echo "  No OpenAI key is required for MDP install, validation, receipts, fit/review, dry-runs, mocks, or hardened headless runner audits."
   echo "  The canonical MCP is local stdio transport only, not a hosted or remote MCP service."
   echo "  MCP adds no authority or isolation assurance; the CLI result, receipt, and verification remain authoritative."
-  echo "  The proposal MCP is compatibility-only and intentionally absent from default discovery."
   echo "  Hooks report readiness only; the CLI receipt is the blocking gate."
 }
 
@@ -177,7 +154,7 @@ echo "  mdp --json validate --dir \"$TARGET_DIR\""
 echo "Deliberate commands for later use: mdp fit, mdp brief --context, mdp check-claims, mdp gaps, mdp eval."
 echo "Do not enrich, scrape, send outreach, update a CRM, or auto-generate full briefs from hook activation."
 
-print_proposal_audit_readiness
+print_clean_run_readiness
 
 if ! command -v mdp >/dev/null 2>&1; then
   echo "MDP activation warning: mdp CLI is not installed on PATH."

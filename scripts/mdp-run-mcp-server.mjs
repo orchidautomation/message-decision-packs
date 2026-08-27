@@ -58,7 +58,7 @@ const providerCapabilityAvailable = () => process.env.MDP_ALLOW_NATIVE_MODEL_CAL
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
 let pathPolicy = null
-try { pathPolicy = createPathPolicy(process.env, ['pack', 'input', 'output', 'consent']) } catch (error) { pathPolicy = { startupError: error } }
+try { pathPolicy = createPathPolicy(process.env, ['pack', 'input', 'work', 'output', 'consent']) } catch (error) { pathPolicy = { startupError: error } }
 const requirePolicy = () => {
   if (pathPolicy?.startupError) throw pathPolicy.startupError
   return pathPolicy
@@ -309,11 +309,11 @@ const tools = [
     name: 'mdp_prepare_run',
     title: 'Prepare an MDP run request offline',
     description:
-      'Compile one sealed mdp.run-request.v1 (and optional compile manifest) from a pack, selected job/step, and declared local input paths. No provider is invoked. Next, pass the request file to mdp_run.',
+      'Compile and persist one sealed mdp.run-request.v1 under an approved work root from a pack, selected job/step, and declared local input paths. No provider is invoked. Next, pass that request path to mdp_run.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
-      required: ['dir', 'job', 'model'],
+      required: ['dir', 'job', 'model', 'out'],
       properties: {
         dir: { type: 'string', description: 'Existing pack directory.' },
         job: { type: 'string', description: 'Exact profile job id.' },
@@ -322,8 +322,8 @@ const tools = [
         model: { type: 'string', description: 'Requested model name.' },
         retention_policy: { type: 'string', enum: ['receipt-only', 'customer-controlled-workdir'] },
         created_at: { type: 'string', description: 'Optional RFC3339 UTC test clock.' },
-        out: { type: 'string', description: 'Optional exact request output path.' },
-        manifest_out: { type: 'string', description: 'Optional full compiler manifest output path.' },
+        out: { type: 'string', description: 'Required new mdp.run-request.v1 path under an approved work root.' },
+        manifest_out: { type: 'string', description: 'Optional new full compiler manifest path under an approved work root.' },
         full: { type: 'boolean' },
         timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
       },
@@ -341,7 +341,7 @@ const tools = [
       properties: {
         request_path: {
           type: 'string',
-          description: 'Existing regular, single-link, non-symlink mdp.run-request.v1 JSON file.',
+          description: 'Existing regular, single-link, non-symlink mdp.run-request.v1 file under an approved work root.',
         },
         output_dir: {
           type: 'string',
@@ -367,8 +367,8 @@ const tools = [
       additionalProperties: false,
       required: ['bundle_path', 'receipt_path'],
       properties: {
-        bundle_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-bundle.v1 file.' },
-        receipt_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-receipt.v1 file.' },
+        bundle_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-bundle.v1 file under an approved output root.' },
+        receipt_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-receipt.v1 file under an approved output root.' },
         artifact_root: { type: 'string', description: 'Optional existing, non-symlink artifact directory.' },
         timeout_ms: { type: 'integer', minimum: MIN_TIMEOUT_MS, maximum: MAX_TIMEOUT_MS },
       },
@@ -395,7 +395,7 @@ const callRunTools = (args) => {
         stage: 'prepare',
         tool: 'mdp_prepare_run',
         input: 'pack directory, exact job/model step, and declared input paths',
-        artifact: 'mdp.run-request.v1 plus optional compile manifest',
+        artifact: 'persisted mdp.run-request.v1 under an approved work root, plus optional compile manifest',
         next: 'mdp_run',
       },
       {
@@ -459,8 +459,10 @@ const callPrepareRunValidated = async (args) => {
     const path = policy.freeze('input', mapping.slice(separator + 1)).path
     return `${name}=${path}`
   })
-  const out = parsed.out === undefined ? null : policy.select('output', dirname(resolve(requiredString(parsed, 'out')))).path + sep + basename(resolve(parsed.out))
-  const manifestOut = parsed.manifest_out === undefined ? null : policy.select('output', dirname(resolve(requiredString(parsed, 'manifest_out')))).path + sep + basename(resolve(parsed.manifest_out))
+  const requestOutput = policy.newOutput('work', requiredString(parsed, 'out'))
+  const out = requestOutput.path
+  const manifestOutput = parsed.manifest_out === undefined ? null : policy.newOutput('work', requiredString(parsed, 'manifest_out'))
+  const manifestOut = manifestOutput?.path ?? null
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
   const cliArgs = ['--json', 'prepare-run', '--dir', dir, '--job', job, '--model', model]
@@ -468,7 +470,7 @@ const callPrepareRunValidated = async (args) => {
   for (const mapping of frozenInputs) cliArgs.push('--input', mapping)
   if (parsed.retention_policy !== undefined) cliArgs.push('--retention-policy', parsed.retention_policy)
   if (parsed.created_at !== undefined) cliArgs.push('--created-at', parsed.created_at)
-  if (out) cliArgs.push('--out', out)
+  cliArgs.push('--out', out)
   if (manifestOut) cliArgs.push('--manifest-out', manifestOut)
   if (parsed.full === true) cliArgs.push('--full')
   const invocation = await invokeCli(cliArgs, dir, timeoutMs)
@@ -482,6 +484,11 @@ const callPrepareRunValidated = async (args) => {
   }
   if (envelope?.ok !== true || envelope?.command !== 'prepare-run' || !envelope.data || envelope.data.contract !== 'mdp.run-request-compile.v1' || envelope.data.status !== 'ready') {
     return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.status === 0 ? 'invalid-cli-contract' : 'prepare-run-refused' }, true)
+  }
+  try {
+    policy.existing('work', out, 'file')
+  } catch {
+    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'prepared-request-missing' }, true)
   }
   return toolResult(envelope.data)
 }
@@ -502,7 +509,7 @@ const callRun = async (args, signal = null) => {
   const outputRequest = requiredString(parsed, 'output_dir')
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
-  const frozenRequest = freezeRequestFile(policy.existing('input', requestPath, 'file').path)
+  const frozenRequest = freezeRequestFile(policy.existing('work', requestPath, 'file').path)
   const approvedPack = frozenRequest.packDir
     ? policy.existing('pack', frozenRequest.packDir, 'directory')
     : null
@@ -677,8 +684,8 @@ const callVerifyRun = async (args) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['bundle_path', 'receipt_path', 'artifact_root', 'timeout_ms']))
   const policy = requirePolicy()
-  const bundlePath = policy.existing('input', requiredString(parsed, 'bundle_path'), 'file').path
-  const receiptPath = policy.existing('input', requiredString(parsed, 'receipt_path'), 'file').path
+  const bundlePath = policy.existing('output', requiredString(parsed, 'bundle_path'), 'file').path
+  const receiptPath = policy.existing('output', requiredString(parsed, 'receipt_path'), 'file').path
   const artifactRoot = parsed.artifact_root === undefined
     ? null
     : policy.existing('output', requiredString(parsed, 'artifact_root'), 'directory').path

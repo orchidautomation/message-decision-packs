@@ -21,8 +21,7 @@ export default definePlugin({
     "defaultPrompts": [
       "Turn these GTM or proposal source notes into a local Message Decision Pack, then validate it.",
       "Review this .mdp pack for gaps, unsupported claims, routing issues, and weak eval coverage.",
-      "Given this prospect or proposal context, run the right MDP route, fit, or review gate before drafting.",
-      "Use the canonical four-stage local MDP MCP path to prepare, run, and verify one declared job."
+      "Run the right MDP route, fit, or review gate before drafting; for MCP, use the canonical four-stage prepare/run/verify path."
     ]
   },
 

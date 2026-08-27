@@ -95,10 +95,11 @@ MCP-capable hosts use one default adapter for every profile:
 node "${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs"
 ```
 
-Call `mdp_run_tools` to inspect the boundary, then use `mdp_prepare_run` to
-produce `mdp.run-request.v1`, `mdp_run` to produce `run-bundle.json` and
+Call `mdp_run_tools` to inspect the boundary, then use `mdp_prepare_run` with a
+required new `out` path under `MDP_MCP_WORK_ROOTS` to persist
+`mdp.run-request.v1`, `mdp_run` with that same work-root request to produce `run-bundle.json` and
 `run-receipt.json`, and `mdp_verify_run` to produce
-`mdp.run-verification.v1`. Each result names the next permitted stage. The
+`mdp.run-verification.v1` from those files under `MDP_MCP_OUTPUT_ROOTS`. Each result names the next permitted stage. The
 server must start with operator-approved `MDP_MCP_*_ROOTS`; provider-capable
 runs also require startup permission, a credential, and a matching one-shot
 consent record. Tool arguments cannot grant either permission.
