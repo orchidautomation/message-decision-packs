@@ -525,9 +525,16 @@ fn collect_commands(command: &Command, parent_path: &[String], output: &mut Vec<
     for subcommand in command.get_subcommands() {
         let mut path = parent_path.to_vec();
         path.push(subcommand.get_name().to_string());
-        let human_only_reason = path.iter().any(|segment| segment == "help").then_some(
-            "Clap-generated help navigation; use --json with an authored command for a machine envelope",
-        );
+        let human_only_reason = if path
+            .first()
+            .is_some_and(|segment| segment == "__secure-install")
+        {
+            Some("Internal MCP transport helper; it is not an agent-callable product command")
+        } else {
+            path.iter().any(|segment| segment == "help").then_some(
+                "Clap-generated help navigation; use --json with an authored command for a machine envelope",
+            )
+        };
         let subcommand_required = subcommand.is_subcommand_required_set();
         output.push(json!({
             "name": subcommand.get_name(),
@@ -1253,6 +1260,20 @@ mod tests {
                         .is_some_and(|path| path.first() == Some(&json!("help")))
                 })
                 .all(|command| command["classification"] == "human-only")
+        );
+        let secure_install = projected_command(commands, &["__secure-install"]);
+        assert_eq!(secure_install["classification"], "human-only");
+        assert!(
+            secure_install["human_only_reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("not an agent-callable"))
+        );
+        assert!(
+            result["commands"]
+                .as_array()
+                .expect("agent-callable compatibility commands")
+                .iter()
+                .all(|command| command["name"] != "__secure-install")
         );
         for namespace in [&["conformance"][..], &["readme"][..]] {
             let command = projected_command(commands, namespace);

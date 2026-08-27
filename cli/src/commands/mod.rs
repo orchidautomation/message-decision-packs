@@ -18,6 +18,8 @@ pub(crate) mod run_receipt;
 pub(crate) mod run_verification;
 pub(crate) mod sample_leads;
 pub(crate) mod schemas;
+#[cfg(unix)]
+pub(crate) mod secure_install;
 pub(crate) mod skills;
 pub(crate) mod source_binding;
 pub(crate) mod synthetic_chain;
@@ -57,6 +59,8 @@ pub(crate) use run_receipt::{RunReceiptOptions, run_receipt};
 pub(crate) use run_verification::verify_run_files;
 pub(crate) use sample_leads::sample_leads;
 pub(crate) use schemas::schema;
+#[cfg(unix)]
+pub(crate) use secure_install::secure_install;
 pub(crate) use skills::skills;
 pub(crate) use source_binding::validate_source_binding_file;
 pub(crate) use synthetic_chain::rebind_synthetic_chain;

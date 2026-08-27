@@ -3,6 +3,8 @@ import { chmodSync, cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFi
 import { createHash } from 'node:crypto'
 import { consentBinding, consumeProviderConsent } from './lib/mcp-provider-consent.mjs'
 import { createPathPolicy } from './lib/mcp-path-policy.mjs'
+import { identityBoundDirectoryCandidates } from './lib/identity-bound-directory.mjs'
+import { superviseProcess } from './lib/process-supervisor.mjs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, parse, relative, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -18,9 +20,44 @@ const fixtureCli = (root) => {
   writeFileSync(
     path,
     `#!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 const args = process.argv.slice(2)
+if (args.includes('prepare-run')) {
+  const packDir = args[args.indexOf('--dir') + 1]
+  const out = args[args.indexOf('--out') + 1]
+  const pausePath = packDir + '/.prepare-pause.json'
+  if (existsSync(pausePath)) {
+    const pause = JSON.parse(readFileSync(pausePath, 'utf8'))
+    writeFileSync(pause.ready, '')
+    while (!existsSync(pause.continue)) await new Promise((resolveWait) => setTimeout(resolveWait, 5))
+  }
+  if (!out) {
+    process.stdout.write(JSON.stringify({ ok: false, command: 'prepare-run', data: { contract: 'mdp.run-request-compile.v1', status: 'blocked' } }))
+    process.exit(1)
+  }
+  const request = {
+    contract: 'mdp.run-request.v1',
+    execution_id: 'exec-fixture',
+    mode: 'deterministic',
+    pack_dir: packDir,
+    inputs: [],
+  }
+  let requestBytes = JSON.stringify(request)
+  const requestSizePath = packDir + '/.prepare-request-size'
+  if (existsSync(requestSizePath)) {
+    const requestedSize = Number(readFileSync(requestSizePath, 'utf8'))
+    if (Number.isInteger(requestedSize) && requestedSize >= requestBytes.length) {
+      requestBytes = requestBytes + ' '.repeat(requestedSize - requestBytes.length)
+    }
+  }
+  writeFileSync(out, requestBytes)
+  const manifestIndex = args.indexOf('--manifest-out')
+  if (manifestIndex >= 0) writeFileSync(args[manifestIndex + 1], JSON.stringify({ contract: 'mdp.run-request-compile-manifest.v1' }))
+  process.stdout.write(JSON.stringify({ ok: true, command: 'prepare-run', data: { contract: 'mdp.run-request-compile.v1', status: 'ready', request_path: out, request_sha256: createHash('sha256').update(requestBytes).digest('hex') } }))
+  process.exit(0)
+}
 if (args.includes('verify-run')) {
   const receiptPath = args[args.indexOf('--receipt') + 1]
   const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'))
@@ -61,6 +98,9 @@ if (existsSync(outputDir + '.pause-before-read')) {
   }
 }
 const request = JSON.parse(readFileSync(requestPath, 'utf8'))
+mkdirSync(outputDir)
+writeFileSync(outputDir + '/run-bundle.json', '{}')
+writeFileSync(outputDir + '/run-receipt.json', JSON.stringify({ valid: true }))
 writeFileSync(outputDir + '.invocation.json', JSON.stringify({
   args,
   request,
@@ -167,7 +207,7 @@ const rpc = (cli, messages, extraEnv = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
     const roots = testRoot(messages)
     const child = spawn(process.execPath, [server], {
-      env: { ...process.env, MDP_BIN: cli, MDP_MCP_SECRET_MARKER: 'must-not-cross-boundary', ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, roots])), ...extraEnv },
+      env: { ...process.env, MDP_BIN: cli, ...(existsSync(realCli) ? { MDP_SECURE_INSTALL_BIN: realCli } : {}), MDP_MCP_SECRET_MARKER: 'must-not-cross-boundary', ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, roots])), ...extraEnv },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -196,6 +236,14 @@ const rpc = (cli, messages, extraEnv = {}) =>
     }
     child.stdin.end()
   })
+
+const exactFileSha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
+
+const withExactRequestDigest = (requestPath, args = {}) => ({
+  ...args,
+  request_path: requestPath,
+  request_sha256: exactFileSha256(requestPath),
+})
 
 const toolCall = (id, name, args = {}) => ({
   jsonrpc: '2.0',
@@ -257,19 +305,28 @@ test('resolves consent across configured roots and rejects missing or ambiguous 
   }
 })
 
+test('maps path-backed identity-bound directory handles only where supported', () => {
+  assert.deepEqual(identityBoundDirectoryCandidates('linux', 42, 7), [
+    '/proc/self/fd/7',
+    '/proc/42/fd/7',
+  ])
+  assert.deepEqual(identityBoundDirectoryCandidates('darwin', 42, 7), [])
+  assert.deepEqual(identityBoundDirectoryCandidates('win32', 42, 7), [])
+})
+
 test('denies a generative request without consent before any provider spawn', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'mdp-mcp-no-consent-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const request = join(root, 'request.json')
   writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', mode: 'generative' }))
-  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run') })], { OPENAI_API_KEY: 'consent-test-key', MDP_ALLOW_NATIVE_MODEL_CALLS: '1' })
+  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: join(root, 'run') }))], { OPENAI_API_KEY: 'consent-test-key', MDP_ALLOW_NATIVE_MODEL_CALLS: '1' })
   assert.equal(reply.error.code, -32602)
   assert.match(reply.error.message, /consent/)
   assert.equal(existsSync(join(root, 'run.invocation.json')), false)
 })
 
 const waitForFile = async (path) => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 1_000; attempt += 1) {
     if (existsSync(path)) return
     await new Promise((resolveWait) => setTimeout(resolveWait, 5))
   }
@@ -286,8 +343,754 @@ test('lists preparation, run, and verification tools and identifies MCP as trans
   ])
   assert.equal(replies[0].result.serverInfo.name, 'message-decision-packs-runner')
   assert.deepEqual(replies[1].result.tools.map((tool) => tool.name), ['mdp_run_tools', 'mdp_prepare_run', 'mdp_run', 'mdp_verify_run'])
+  assert.deepEqual(
+    replies[2].result.structuredContent.canonical_path.map(({ stage, tool, next }) => ({ stage, tool, next })),
+    [
+      { stage: 'inspect', tool: 'mdp_run_tools', next: 'mdp_prepare_run' },
+      { stage: 'prepare', tool: 'mdp_prepare_run', next: 'mdp_run' },
+      { stage: 'run', tool: 'mdp_run', next: 'mdp_verify_run' },
+      { stage: 'verify', tool: 'mdp_verify_run', next: null },
+    ],
+  )
+  assert.match(replies[2].result.structuredContent.canonical_path[1].artifact, /mdp\.run-request\.v1/)
+  assert.match(replies[2].result.structuredContent.canonical_path[2].artifact, /run-bundle\.json/)
+  assert.match(replies[2].result.structuredContent.canonical_path[3].artifact, /mdp\.run-verification\.v1/)
   assert.deepEqual(replies[2].result.structuredContent.mcp_authority, [])
   assert.match(replies[2].result.structuredContent.guardrails.join(' '), /does not prove fresh context/)
+  const prepareTool = replies[1].result.tools.find((tool) => tool.name === 'mdp_prepare_run')
+  assert(prepareTool.inputSchema.required.includes('out'))
+  const runTool = replies[1].result.tools.find((tool) => tool.name === 'mdp_run')
+  assert(runTool.inputSchema.required.includes('request_sha256'))
+  assert.match(replies[2].result.structuredContent.canonical_path[2].input, /request_sha256/)
+})
+
+test('completes prepare, run, and verify across disjoint approved roots for any profile', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-handoff-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const roots = Object.fromEntries(['pack', 'input', 'approval', 'work', 'output', 'consent'].map((role) => {
+    const path = join(root, role)
+    mkdirSync(path)
+    return [role, path]
+  }))
+  const profiles = [
+    { name: 'gtm', job: 'prospect-fit-or-brief' },
+    { name: 'proposal', job: 'bid-no-bid-review' },
+  ]
+  const roleEnv = Object.fromEntries(Object.entries(roots).map(([role, path]) => [`MDP_MCP_${role.toUpperCase()}_ROOTS`, path]))
+  for (const [index, profile] of profiles.entries()) {
+    const pack = join(roots.pack, `${profile.name}-pack`)
+    mkdirSync(pack)
+    const request = join(roots.work, `${profile.name}-request.json`)
+    const manifest = join(roots.work, `${profile.name}-manifest.json`)
+    const run = join(roots.output, `${profile.name}-run`)
+    const [prepared] = await rpc(fixtureCli(root), [
+      toolCall(index * 3 + 1, 'mdp_prepare_run', { dir: pack, job: profile.job, model: 'fixture-model', out: request, manifest_out: manifest }),
+    ], roleEnv)
+    assert.equal(prepared.result.structuredContent.status, 'ready', JSON.stringify(prepared))
+    assert.equal(existsSync(manifest), true)
+    const [ran] = await rpc(fixtureCli(root), [toolCall(index * 3 + 2, 'mdp_run', {
+      request_path: request,
+      request_sha256: prepared.result.structuredContent.request_sha256,
+      output_dir: run,
+    })], roleEnv)
+    assert.equal(ran.result.structuredContent.contract, 'mdp.run-execution.v1')
+    const [verified] = await rpc(fixtureCli(root), [
+      toolCall(index * 3 + 3, 'mdp_verify_run', { bundle_path: join(run, 'run-bundle.json'), receipt_path: join(run, 'run-receipt.json'), artifact_root: run }),
+    ], roleEnv)
+    assert.equal(verified.result.structuredContent.contract, 'mdp.run-verification.v1')
+    assert.equal(verified.result.structuredContent.valid, true)
+  }
+})
+
+test('run rejects a substituted prepared request before spawning the CLI', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-request-digest-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const request = join(root, 'request.json')
+  const spawnMarker = join(root, 'cli-spawned')
+  const markerCli = join(root, 'must-not-spawn.mjs')
+  writeFileSync(markerCli, `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(spawnMarker)}, 'spawned')\n`)
+  chmodSync(markerCli, 0o755)
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', execution_id: 'replacement', mode: 'deterministic' }))
+  const [reply] = await rpc(markerCli, [toolCall(1, 'mdp_run', {
+    request_path: request,
+    request_sha256: '0'.repeat(64),
+    output_dir: join(root, 'run'),
+  })])
+  assert.equal(reply.error.code, -32602)
+  assert.match(reply.error.message, /request_sha256 does not match/)
+  assert.equal(existsSync(spawnMarker), false)
+})
+
+test('run rejects an omitted prepared request digest before spawning the CLI', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-request-digest-required-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const request = join(root, 'request.json')
+  const spawnMarker = join(root, 'cli-spawned')
+  const markerCli = join(root, 'must-not-spawn.mjs')
+  writeFileSync(markerCli, `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(spawnMarker)}, 'spawned')\n`)
+  chmodSync(markerCli, 0o755)
+  writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', execution_id: 'missing-digest', mode: 'deterministic' }))
+  const [reply] = await rpc(markerCli, [toolCall(1, 'mdp_run', {
+    request_path: request,
+    output_dir: join(root, 'run'),
+  })])
+  assert.equal(reply.error.code, -32602)
+  assert.match(reply.error.message, /request_sha256/)
+  assert.equal(existsSync(spawnMarker), false)
+})
+
+test('prepare refuses request and manifest parent swaps without escaped or partial writes', async (t) => {
+  if (!['linux', 'darwin'].includes(process.platform)) return t.skip('identity-bound directory handles require Linux or macOS')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-parent-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const packRoot = join(root, 'packs')
+  const inputRoot = join(root, 'inputs')
+  const workRoot = join(root, 'work')
+  const outputRoot = join(root, 'output')
+  const consentRoot = join(root, 'consent')
+  for (const path of [packRoot, inputRoot, workRoot, outputRoot, consentRoot]) mkdirSync(path)
+  const roleEnv = {
+    MDP_MCP_PACK_ROOTS: packRoot,
+    MDP_MCP_INPUT_ROOTS: inputRoot,
+    MDP_MCP_WORK_ROOTS: workRoot,
+    MDP_MCP_OUTPUT_ROOTS: outputRoot,
+    MDP_MCP_CONSENT_ROOTS: consentRoot,
+  }
+
+  for (const attacked of ['request', 'manifest']) {
+    const pack = join(packRoot, attacked)
+    const requestParent = join(workRoot, `${attacked}-request-parent`)
+    const manifestParent = join(workRoot, `${attacked}-manifest-parent`)
+    const escapedParent = join(root, `${attacked}-escaped`)
+    const ready = join(root, `${attacked}.ready`)
+    const continuePath = join(root, `${attacked}.continue`)
+    for (const path of [pack, requestParent, manifestParent, escapedParent]) mkdirSync(path)
+    writeFileSync(join(pack, '.prepare-pause.json'), JSON.stringify({ ready, continue: continuePath }))
+    const request = join(requestParent, 'request.json')
+    const manifest = join(manifestParent, 'manifest.json')
+    const attackedParent = attacked === 'request' ? requestParent : manifestParent
+    const renamedParent = `${attackedParent}-renamed`
+    const pending = rpc(fixtureCli(root), [
+      toolCall(1, 'mdp_prepare_run', {
+        dir: pack,
+        job: 'prospect-fit-or-brief',
+        model: 'fixture-model',
+        out: request,
+        manifest_out: manifest,
+      }),
+    ], roleEnv)
+    await waitForFile(ready)
+    renameSync(attackedParent, renamedParent)
+    symlinkSync(escapedParent, attackedParent, 'dir')
+    writeFileSync(continuePath, '')
+    const [reply] = await pending
+    assert.equal(reply.result.structuredContent.status, 'blocked', JSON.stringify(reply))
+    assert.match(reply.result.structuredContent.diagnostics[0].message, /changed|outside approved roots/)
+    assert.equal(existsSync(join(escapedParent, attacked === 'request' ? 'request.json' : 'manifest.json')), false)
+    assert.equal(existsSync(join(renamedParent, attacked === 'request' ? 'request.json' : 'manifest.json')), false)
+    assert.equal(existsSync(attacked === 'request' ? manifest : request), false)
+  }
+})
+
+test('prepare rejects a replaced published leaf and preserves concurrent bytes', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-leaf-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  const output = join(root, 'output')
+  const consent = join(root, 'consent')
+  for (const path of [pack, work, output, consent]) mkdirSync(path)
+  const ready = join(root, 'install.ready')
+  const continuePath = join(root, 'install.continue')
+  const wrapper = join(root, 'secure-install-wrapper.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+tmp="${join(root, 'capture')}.$$"
+"${realCli}" "$@" >"$tmp"
+status=$?
+case " $* " in
+  *" --action install "*)
+    : >"${ready}"
+    while [ ! -e "${continuePath}" ]; do sleep 0.01; done
+    ;;
+esac
+cat "$tmp"
+rm -f "$tmp"
+exit "$status"
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const displaced = join(work, 'request.displaced.json')
+  const pending = rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+  })], {
+    MDP_MCP_PACK_ROOTS: pack,
+    MDP_MCP_INPUT_ROOTS: root,
+    MDP_MCP_WORK_ROOTS: work,
+    MDP_MCP_OUTPUT_ROOTS: output,
+    MDP_MCP_CONSENT_ROOTS: consent,
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  await waitForFile(ready)
+  renameSync(request, displaced)
+  writeFileSync(request, 'concurrent replacement')
+  writeFileSync(continuePath, '')
+  const [reply] = await pending
+  assert.equal(reply.result.structuredContent.status, 'blocked', JSON.stringify(reply))
+  assert.equal(readFileSync(request, 'utf8'), 'concurrent replacement')
+  assert.equal(existsSync(displaced), true)
+  assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
+})
+
+test('prepare publishes only requests consumable by the run adapter size boundary', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-request-size-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const roleEnv = Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root]))
+
+  writeFileSync(join(pack, '.prepare-request-size'), String(1_048_576))
+  const atLimit = join(work, 'at-limit.json')
+  const [accepted] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: atLimit,
+  })], roleEnv)
+  assert.equal(accepted.result.structuredContent.status, 'ready', JSON.stringify(accepted))
+  assert.equal(readFileSync(atLimit).length, 1_048_576)
+
+  writeFileSync(join(pack, '.prepare-request-size'), String(1_048_577))
+  const overLimit = join(work, 'over-limit.json')
+  const [rejected] = await rpc(fixtureCli(root), [toolCall(2, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: overLimit,
+  })], roleEnv)
+  assert.equal(rejected.result.structuredContent.status, 'blocked', JSON.stringify(rejected))
+  assert.match(rejected.result.structuredContent.diagnostics[0].message, /mdp_run limit/)
+  assert.equal(existsSync(overLimit), false)
+})
+
+test('prepare deadline bounds helpers and recovers an install killed before identity output', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-install-timeout-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-timeout.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action install "*)
+    "${realCli}" "$@" >/dev/null
+    sleep 10
+    ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const manifest = join(work, 'manifest.json')
+  const roleEnv = {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  }
+  const child = spawn(process.execPath, [server], {
+    env: { ...process.env, MDP_BIN: fixtureCli(root), MDP_SECURE_INSTALL_BIN: wrapper, ...roleEnv },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  t.after(() => child.kill('SIGKILL'))
+  const replies = []
+  let outputText = ''
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    outputText += chunk
+    let newline
+    while ((newline = outputText.indexOf('\n')) >= 0) {
+      const line = outputText.slice(0, newline)
+      outputText = outputText.slice(newline + 1)
+      if (line.trim()) replies.push(JSON.parse(line))
+    }
+  })
+  const waitForReply = async (id) => {
+    for (let attempt = 0; attempt < 1_000; attempt += 1) {
+      const reply = replies.find((candidate) => candidate.id === id)
+      if (reply) return reply
+      await new Promise((resolveWait) => setTimeout(resolveWait, 5))
+    }
+    throw new Error(`response ${id} timed out`)
+  }
+  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} })}\n`)
+  await waitForReply(0)
+  const started = Date.now()
+  child.stdin.write(`${JSON.stringify(toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    manifest_out: manifest,
+    timeout_ms: 400,
+  }))}\n`)
+  const blocked = await waitForReply(1)
+  const elapsed = Date.now() - started
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(blocked.result.structuredContent.diagnostics[0].code, 'cli-timeout', JSON.stringify(blocked))
+  assert(elapsed < 550, `the caller timeout must include helper termination and cleanup; elapsed=${elapsed}`)
+  assert.equal(existsSync(request), false, 'cleanup must remove a complete install whose identity envelope was lost')
+  assert.equal(existsSync(manifest), false, 'every sibling output must receive cleanup within the reserved deadline window')
+  assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
+
+  child.stdin.end()
+  const [retried] = await rpc(fixtureCli(root), [toolCall(2, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    manifest_out: manifest,
+  })], { ...roleEnv, MDP_SECURE_INSTALL_BIN: realCli })
+  assert.equal(retried.result.structuredContent.status, 'ready', JSON.stringify(retried))
+})
+
+test('receipt cleanup removes partial staging killed during copy before atomic publication', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-staging-timeout-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const simulator = join(root, 'secure-install-staging-timeout.mjs')
+  writeFileSync(simulator, `#!/usr/bin/env node
+import { fstatSync, fsyncSync, openSync, writeFileSync, writeSync } from 'node:fs'
+const args = process.argv.slice(2)
+const source = args[args.indexOf('--source') + 1]
+const stagingLeaf = '.mdp-quarantine-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+writeFileSync(stagingLeaf, 'partial-sensitive-bytes')
+const stats = fstatSync(openSync(stagingLeaf, 'r'), { bigint: true })
+writeSync(4, JSON.stringify({ contract: 'mdp.secure-install-receipt.v1', dev: stats.dev.toString(), ino: stats.ino.toString(), staging_leaf: stagingLeaf }))
+fsyncSync(4)
+setInterval(() => {}, 1_000)
+`)
+  chmodSync(simulator, 0o755)
+  const wrapper = join(root, 'secure-install-staging-timeout.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action install "*) exec "${simulator}" "$@" ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 400,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(existsSync(request), false)
+  assert.equal(readdirSync(work).some((name) => name.startsWith('.mdp-quarantine-')), false)
+})
+
+test('prepare reports verifier timeout accurately and removes the published request', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-verify-timeout-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  mkdirSync(pack)
+  mkdirSync(work)
+  const wrapper = join(root, 'secure-verify-timeout.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action verify "*) "${realCli}" "$@" >/dev/null; sleep 10 ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 400,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(blocked.result.structuredContent.diagnostics[0].code, 'cli-timeout', JSON.stringify(blocked))
+  assert.equal(existsSync(request), false)
+})
+
+test('receipt-bound timeout cleanup preserves an identical concurrent replacement', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-identical-replacement-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-identical-race.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action install "*)
+    "${realCli}" "$@" >/dev/null || exit $?
+    mv request.json request.original.json
+    cp request.original.json request.json
+    sleep 10
+    ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 400,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(existsSync(request), true, 'identity cleanup must preserve the replacement')
+  assert.deepEqual(readFileSync(request), readFileSync(join(work, 'request.original.json')))
+  assert.equal(readdirSync(work).some((name) => name.includes('mdp-quarantine')), false)
+})
+
+test('prepare surfaces a cleanup helper refusal instead of claiming recovery', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-cleanup-refusal-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-cleanup-refusal.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action install "*) exec "${realCli}" "$@" ;;
+  *) exit 73 ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 1_000,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(blocked.result.structuredContent.diagnostics[0].code, 'mcp-cleanup-incomplete')
+  assert.match(blocked.result.structuredContent.diagnostics[0].message, /inspect required output paths before retry/)
+  assert.equal(existsSync(request), true, 'failed cleanup must not be reported as recovered')
+})
+
+test('cleanup timeout restores a quarantined concurrent replacement before escalation', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-cleanup-critical-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-cleanup-critical.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+action=""
+name=""
+previous=""
+for value in "$@"; do
+  if [ "$previous" = "--action" ]; then action="$value"; fi
+  if [ "$previous" = "--name" ]; then name="$value"; fi
+  previous="$value"
+done
+if [ "$action" = "install" ]; then exec "${realCli}" "$@"; fi
+if [ "$action" = "verify" ]; then
+  mv request.json request.original.json
+  cp request.original.json request.json
+  exit 73
+fi
+if [ "$action" = "remove" ] && [ "$name" = "request.json" ]; then
+  quarantine=.mdp-wrapper-quarantine
+  mv request.json "$quarantine"
+  trap 'mv "$quarantine" request.json; exit 143' TERM
+  sleep 10
+fi
+exec "${realCli}" "$@"
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+    timeout_ms: 400,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.diagnostics[0].code, 'mcp-cleanup-incomplete', JSON.stringify(blocked))
+  assert.deepEqual(readFileSync(request), readFileSync(join(work, 'request.original.json')))
+  assert.equal(existsSync(join(work, '.mdp-wrapper-quarantine')), false, 'SIGTERM critical section must restore the unrelated file before SIGKILL')
+})
+
+test('prepare revalidates exact published leaf identity after verifier returns', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('descriptor-bound publication requires Unix')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-post-verify-race-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const wrapper = join(root, 'secure-install-post-verify-race.sh')
+  writeFileSync(wrapper, `#!/bin/sh
+case " $* " in
+  *" --action verify "*)
+    tmp="${join(root, 'verify-result')}.$$"
+    "${realCli}" "$@" >"$tmp" || exit $?
+    mv request.json request.original.json
+    printf concurrent-replacement >request.json
+    cat "$tmp"
+    rm -f "$tmp"
+    ;;
+  *) exec "${realCli}" "$@" ;;
+esac
+`)
+  chmodSync(wrapper, 0o755)
+  const request = join(work, 'request.json')
+  const [blocked] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_prepare_run', {
+    dir: pack,
+    job: 'prospect-fit-or-brief',
+    model: 'fixture-model',
+    out: request,
+  })], {
+    ...Object.fromEntries(['PACK', 'INPUT', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])),
+    MDP_SECURE_INSTALL_BIN: wrapper,
+  })
+  assert.equal(blocked.result.structuredContent.status, 'blocked', JSON.stringify(blocked))
+  assert.equal(readFileSync(request, 'utf8'), 'concurrent-replacement')
+})
+
+test('notifications/cancelled aborts prepare and cleans any publication independently', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-cancel-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const pack = join(root, 'pack')
+  const work = join(root, 'work')
+  for (const path of [pack, work]) mkdirSync(path)
+  const ready = join(root, 'prepare.ready')
+  writeFileSync(join(pack, '.prepare-pause.json'), JSON.stringify({ ready, continue: join(root, 'prepare.continue') }))
+  const request = join(work, 'request.json')
+  const child = spawn(process.execPath, [server], {
+    env: { ...process.env, MDP_BIN: fixtureCli(root), ...(existsSync(realCli) ? { MDP_SECURE_INSTALL_BIN: realCli } : {}), ...Object.fromEntries(['PACK', 'INPUT', 'APPROVAL', 'WORK', 'OUTPUT', 'CONSENT'].map((role) => [`MDP_MCP_${role}_ROOTS`, root])) },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  let outputText = ''
+  const replies = []
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    outputText += chunk
+    let newline
+    while ((newline = outputText.indexOf('\n')) >= 0) {
+      const line = outputText.slice(0, newline)
+      outputText = outputText.slice(newline + 1)
+      if (line.trim()) replies.push(JSON.parse(line))
+    }
+  })
+  child.stdin.write(`${JSON.stringify(toolCall(1, 'mdp_prepare_run', { dir: pack, job: 'prospect-fit-or-brief', model: 'fixture-model', out: request, timeout_ms: 2_000 }))}\n`)
+  await waitForFile(ready)
+  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 1 } })}\n`)
+  await new Promise((resolvePromise, rejectPromise) => {
+    const deadline = setTimeout(() => rejectPromise(new Error('prepare cancellation response timed out')), 3_000)
+    const poll = setInterval(() => {
+      if (replies.some((reply) => reply.id === 1)) {
+        clearTimeout(deadline)
+        clearInterval(poll)
+        resolvePromise()
+      }
+    }, 10)
+  })
+  const reply = replies.find((item) => item.id === 1)
+  assert.equal(reply.result.structuredContent.code, 'cli-cancelled', JSON.stringify(reply))
+  assert.equal(existsSync(request), false)
+  child.kill('SIGKILL')
+})
+
+test('real CLI completes canonical GTM and proposal handoffs across disjoint roots', async (t) => {
+  if (!existsSync(realCli)) return t.skip('compiled CLI is unavailable')
+  if (process.platform === 'win32') return t.skip('offline native-driver fixture requires a Unix executable')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-real-handoff-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const roots = Object.fromEntries(['pack', 'input', 'approval', 'work', 'output', 'consent', 'bin'].map((role) => {
+    const path = join(root, role)
+    mkdirSync(path)
+    return [role, path]
+  }))
+
+  // The real CLI observes and seals this executable during preparation, then
+  // invokes it as its native driver runtime. It returns a canonical local
+  // provider-timeout result without making a provider or network call.
+  const offlineNode = join(roots.bin, 'node')
+  writeFileSync(offlineNode, `#!/usr/bin/python3
+import json
+import sys
+
+request = json.load(sys.stdin)
+sys.stdout.write(json.dumps({
+    "contract": "mdp.native-model-subprocess-result.v1",
+    "execution_id": request["execution_id"],
+    "terminal_state": "no-draft:runner-failed",
+    "output": None,
+    "provider_request_body_sha256": None,
+    "provider_request_schema_id": None,
+    "provider_response_body_sha256": None,
+    "provider_output_schema_sha256": None,
+    "provider_observation": None,
+    "diagnostic_code": "provider_timeout"
+}))
+`)
+  chmodSync(offlineNode, 0o755)
+
+  const gtmPack = join(roots.pack, 'gtm')
+  const proposalPack = join(roots.pack, 'proposal')
+  cpSync(join(repoRoot, 'plugin', 'assets', 'templates', 'basic'), gtmPack, { recursive: true })
+  cpSync(join(repoRoot, 'plugin', 'assets', 'templates', 'proposal'), proposalPack, { recursive: true })
+  const rawRow = join(roots.input, 'collected-attempt-results.json')
+  cpSync(join(repoRoot, 'examples', 'clay-audiences-self-serve-enterprise-expansion', 'fixtures', 'collected-attempt-results.json'), rawRow)
+  const requirements = join(roots.input, 'requirements.json')
+  writeFileSync(requirements, JSON.stringify({ contract: 'mdp.requirements.v2' }))
+  const sourceBindingSha = join(roots.input, 'source-binding.sha256')
+  const sourceAttemptSha = join(roots.input, 'source-attempt.sha256')
+  const collectedResultsSha = join(roots.input, 'collected-results.sha256')
+  for (const path of [sourceBindingSha, sourceAttemptSha, collectedResultsSha]) writeFileSync(path, `${'a'.repeat(64)}\n`)
+  const rawOpportunity = join(roots.input, 'raw-opportunity.json')
+  writeFileSync(rawOpportunity, JSON.stringify({ company_name: 'Synthetic Example', opportunity_summary: 'Conference demonstration fixture' }))
+
+  const profiles = [
+    {
+      name: 'gtm',
+      pack: gtmPack,
+      job: 'prospect-fit-or-brief',
+      operation: 'model:prospect-fit-or-brief/normalization',
+      inputs: [
+        `raw_row=${rawRow}`,
+        `decision_input_requirements=${requirements}`,
+        `source_binding_sha256=${sourceBindingSha}`,
+        `source_attempt_request_sha256=${sourceAttemptSha}`,
+        `collected_attempt_results_sha256=${collectedResultsSha}`,
+      ],
+    },
+    {
+      name: 'proposal',
+      pack: proposalPack,
+      job: 'bid-no-bid-review',
+      operation: 'model:bid-no-bid-review/normalization',
+      inputs: [`raw_opportunity=${rawOpportunity}`],
+    },
+  ].map((profile) => ({
+    ...profile,
+    request: join(roots.work, `${profile.name}-request.json`),
+    run: join(roots.output, `${profile.name}-run`),
+    consent: `${profile.name}-consent`,
+  }))
+  const roleEnv = {
+    ...Object.fromEntries(Object.entries(roots).filter(([role]) => role !== 'bin').map(([role, path]) => [`MDP_MCP_${role.toUpperCase()}_ROOTS`, path])),
+    PATH: `${roots.bin}${delimiter}${process.env.PATH || ''}`,
+    MDP_ALLOW_NATIVE_MODEL_CALLS: '1',
+    OPENAI_API_KEY: 'offline-fixture-key',
+  }
+  const prepared = []
+  for (const [index, profile] of profiles.entries()) {
+    const replies = await rpc(realCli, [toolCall(index + 1, 'mdp_prepare_run', {
+      dir: profile.pack,
+      job: profile.job,
+      operation: profile.operation,
+      inputs: profile.inputs,
+      model: 'gpt-test',
+      out: profile.request,
+    })], roleEnv)
+    assert.equal(replies.length, 1, `${profile.name} preparation must return one MCP reply`)
+    prepared.push(replies[0])
+  }
+  for (const [index, profile] of profiles.entries()) {
+    assert.equal(prepared[index].result.structuredContent.status, 'ready', JSON.stringify(prepared[index]))
+    assert.doesNotMatch(JSON.stringify(prepared[index].result.structuredContent), /\/proc\/|mdp-run-mcp-prepare-/)
+    assert.equal(existsSync(profile.request), true)
+    const requestBytes = readFileSync(profile.request)
+    assert.equal(prepared[index].result.structuredContent.request_sha256, createHash('sha256').update(requestBytes).digest('hex'))
+    const request = JSON.parse(requestBytes)
+    const sourceSha256s = request.inputs.map((input) => createHash('sha256').update(readFileSync(input.source_path)).digest('hex'))
+    const expiresAt = new Date(Date.now() + 60_000).toISOString()
+    const consent = {
+      contract: 'mdp.mcp-provider-consent.v1',
+      provider: 'openai',
+      purpose: 'mdp.run',
+      request_sha256: prepared[index].result.structuredContent.request_sha256,
+      source_sha256s: sourceSha256s,
+      output_root: realpathSync(roots.output),
+      expires_at: expiresAt,
+      nonce: `${profile.name}-real-handoff-nonce`,
+    }
+    consent.binding_sha256 = consentBinding({
+      provider: consent.provider,
+      purpose: consent.purpose,
+      requestSha256: consent.request_sha256,
+      sourceSha256s,
+      outputRoot: consent.output_root,
+      expiresAt,
+      nonce: consent.nonce,
+    })
+    writeFileSync(join(roots.consent, `${profile.consent}.json`), JSON.stringify(consent))
+  }
+
+  const completed = []
+  for (const [index, profile] of profiles.entries()) {
+    completed.push(...await rpc(realCli, [
+      toolCall(index * 2 + 1, 'mdp_run', {
+        request_path: profile.request,
+        request_sha256: prepared[index].result.structuredContent.request_sha256,
+        output_dir: profile.run,
+        consent_id: profile.consent,
+      }),
+      toolCall(index * 2 + 2, 'mdp_verify_run', {
+        bundle_path: join(profile.run, 'run-bundle.json'),
+        receipt_path: join(profile.run, 'run-receipt.json'),
+        artifact_root: profile.run,
+      }),
+    ], roleEnv))
+  }
+  for (let index = 0; index < profiles.length; index += 1) {
+    const run = completed[index * 2].result.structuredContent
+    const verification = completed[index * 2 + 1].result.structuredContent
+    assert.equal(run.contract, 'mdp.run-execution.v1', JSON.stringify(completed[index * 2]))
+    assert.equal(run.terminal_state, 'no-draft:runner-failed')
+    assert.equal(run.run_dir, profiles[index].run)
+    assert.equal(verification.contract, 'mdp.run-verification.v1', JSON.stringify(completed[index * 2 + 1]))
+    assert.equal(verification.valid, true)
+  }
 })
 
 test('returns canonical valid and invalid read-only verification data', async (t) => {
@@ -333,7 +1136,7 @@ test('notifications/cancelled aborts a hanging clean run with sanitized cancella
       if (line.trim()) replies.push(JSON.parse(line))
     }
   })
-  child.stdin.write(`${JSON.stringify(toolCall(1, 'mdp_run', { request_path: request, output_dir: output }))}\n`)
+  child.stdin.write(`${JSON.stringify(toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: output })))}\n`)
   const cancelTimer = setTimeout(() => {
     child.stdin.write(`${JSON.stringify({
       jsonrpc: '2.0',
@@ -370,7 +1173,7 @@ test('passes only file paths to a bounded CLI child and returns its authority un
   const output = join(root, 'new-run')
   writeFileSync(request, '{}')
 
-  const [reply] = await rpc(cli, [toolCall(1, 'mdp_run', { request_path: request, output_dir: output })])
+  const [reply] = await rpc(cli, [toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: output }))])
   const result = reply.result.structuredContent
   assert.equal(reply.result.isError, false)
   assert.equal(result.execution_id, 'exec-fixture')
@@ -413,8 +1216,8 @@ test('rejects output roots inside the request pack before spawning the CLI', asy
   const safe = join(root, 'external-scratch', 'safe-run')
   mkdirSync(dirname(safe), { recursive: true })
   const replies = await rpc(cli, [
-    ...unsafe.map((output, index) => toolCall(index + 1, 'mdp_run', { request_path: request, output_dir: output })),
-    toolCall(unsafe.length + 1, 'mdp_run', { request_path: request, output_dir: safe }),
+    ...unsafe.map((output, index) => toolCall(index + 1, 'mdp_run', withExactRequestDigest(request, { output_dir: output }))),
+    toolCall(unsafe.length + 1, 'mdp_run', withExactRequestDigest(request, { output_dir: safe })),
   ])
   for (const [index, output] of unsafe.entries()) {
     assert.equal(replies[index].error.code, -32602)
@@ -435,7 +1238,7 @@ test('rejects a request whose pack_dir is outside the approved pack root before 
   const request = join(root, 'request.json')
   writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', pack_dir: outsidePack }))
   const output = join(root, 'run')
-  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', { request_path: request, output_dir: output })], {
+  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: output }))], {
     MDP_MCP_PACK_ROOTS: approvedPack,
     MDP_MCP_INPUT_ROOTS: root,
     MDP_MCP_OUTPUT_ROOTS: root,
@@ -457,7 +1260,7 @@ test('rejects a declared deterministic input outside the approved input root bef
   const request = join(approvedInput, 'request.json')
   writeFileSync(request, JSON.stringify({ contract: 'mdp.run-request.v1', inputs: [{ logical_name: 'source', source_path: outsideInput }] }))
   const output = join(root, 'run')
-  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', { request_path: request, output_dir: output })], {
+  const [reply] = await rpc(fixtureCli(root), [toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: output }))], {
     MDP_MCP_PACK_ROOTS: root,
     MDP_MCP_INPUT_ROOTS: approvedInput,
     MDP_MCP_OUTPUT_ROOTS: root,
@@ -486,8 +1289,8 @@ test('forwards native model permission and credential only for generative reques
   const replies = await rpc(
     cli,
     [
-      toolCall(1, 'mdp_run', { request_path: deterministic, output_dir: join(root, 'deterministic-run') }),
-      toolCall(2, 'mdp_run', { request_path: generative, output_dir: join(root, 'generative-run'), consent_id: 'gen-consent' }),
+      toolCall(1, 'mdp_run', withExactRequestDigest(deterministic, { output_dir: join(root, 'deterministic-run') })),
+      toolCall(2, 'mdp_run', withExactRequestDigest(generative, { output_dir: join(root, 'generative-run'), consent_id: 'gen-consent' })),
     ],
     { OPENAI_API_KEY: 'test-key-must-not-be-printed', MDP_ALLOW_NATIVE_MODEL_CALLS: '1' },
   )
@@ -511,6 +1314,7 @@ test('rejects ambient or inline request arguments before spawning the CLI', asyn
   const [reply] = await rpc(fixtureCli(root), [
     toolCall(1, 'mdp_run', {
       request_path: request,
+      request_sha256: exactFileSha256(request),
       output_dir: join(root, 'new-run'),
       request: { ambient_chat: 'do not allow' },
     }),
@@ -537,10 +1341,10 @@ test('rejects request symlinks, hard links, existing output directories, and ove
   writeFileSync(oversized, 'x'.repeat(1_048_577))
 
   const replies = await rpc(cli, [
-    toolCall(1, 'mdp_run', { request_path: requestLink, output_dir: join(root, 'one') }),
-    toolCall(2, 'mdp_run', { request_path: requestHardLink, output_dir: join(root, 'two') }),
-    toolCall(3, 'mdp_run', { request_path: cleanRequest, output_dir: existingOutput }),
-    toolCall(4, 'mdp_run', { request_path: oversized, output_dir: join(root, 'four') }),
+    toolCall(1, 'mdp_run', withExactRequestDigest(requestLink, { output_dir: join(root, 'one') })),
+    toolCall(2, 'mdp_run', withExactRequestDigest(requestHardLink, { output_dir: join(root, 'two') })),
+    toolCall(3, 'mdp_run', withExactRequestDigest(cleanRequest, { output_dir: existingOutput })),
+    toolCall(4, 'mdp_run', withExactRequestDigest(oversized, { output_dir: join(root, 'four') })),
   ])
   assert.match(replies[0].error.message, /must not be a symlink/)
   assert.match(replies[1].error.message, /exactly one hard link/)
@@ -561,7 +1365,7 @@ test('executes frozen request bytes when the public path is mutated or replaced 
     writeFileSync(`${output}.pause-before-read`, '')
     const pending = rpc(
       cli,
-      [toolCall(1, 'mdp_run', { request_path: request, output_dir: output })],
+      [toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: output }))],
       { OPENAI_API_KEY: 'must-not-cross-after-mutation', MDP_ALLOW_NATIVE_MODEL_CALLS: '1' },
     )
     await waitForFile(`${output}.ready`)
@@ -596,8 +1400,8 @@ test('fails closed without returning CLI stderr, partial stdout, paths, or sourc
   writeFileSync(invalidRequest, JSON.stringify({ test_mode: 'invalid-json' }))
 
   const replies = await rpc(cli, [
-    toolCall(1, 'mdp_run', { request_path: failedRequest, output_dir: join(root, 'failed-run') }),
-    toolCall(2, 'mdp_run', { request_path: invalidRequest, output_dir: join(root, 'invalid-run') }),
+    toolCall(1, 'mdp_run', withExactRequestDigest(failedRequest, { output_dir: join(root, 'failed-run') })),
+    toolCall(2, 'mdp_run', withExactRequestDigest(invalidRequest, { output_dir: join(root, 'invalid-run') })),
   ])
   assert.deepEqual(replies[0].result.structuredContent, {
     ok: false,
@@ -615,7 +1419,7 @@ test('returns a canonical no-draft result even when the CLI exits nonzero', asyn
   const request = join(root, 'no-draft.json')
   writeFileSync(request, JSON.stringify({ test_mode: 'no-draft' }))
   const [reply] = await rpc(fixtureCli(root), [
-    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'no-draft-run') }),
+    toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: join(root, 'no-draft-run') })),
   ])
   assert.equal(reply.result.isError, false)
   assert.equal(reply.result.structuredContent.valid, false)
@@ -639,7 +1443,7 @@ test('returns a canonical unavailable result as data when the CLI cannot establi
   const request = join(root, 'unavailable.json')
   writeFileSync(request, JSON.stringify({ test_mode: 'unavailable' }))
   const [reply] = await rpc(fixtureCli(root), [
-    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'unavailable-run') }),
+    toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: join(root, 'unavailable-run') })),
   ])
   assert.equal(reply.result.isError, false)
   assert.equal(reply.result.structuredContent.valid, false)
@@ -654,7 +1458,7 @@ test('rejects contradictory child exit status and canonical terminal state', asy
   const request = join(root, 'contradiction.json')
   writeFileSync(request, JSON.stringify({ test_mode: 'nonzero-success' }))
   const [reply] = await rpc(fixtureCli(root), [
-    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run') }),
+    toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: join(root, 'run') })),
   ])
   assert.equal(reply.result.isError, true)
   assert.equal(reply.result.structuredContent.code, 'invalid-cli-contract')
@@ -666,10 +1470,10 @@ test('rejects a wrong CLI contract and reports spawn failure without leaking pat
   const request = join(root, 'request.json')
   writeFileSync(request, JSON.stringify({ test_mode: 'wrong-contract' }))
   const [wrongContract] = await rpc(fixtureCli(root), [
-    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'wrong-run') }),
+    toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: join(root, 'wrong-run') })),
   ])
   const [spawnFailure] = await rpc(join(root, 'missing-mdp'), [
-    toolCall(2, 'mdp_run', { request_path: request, output_dir: join(root, 'spawn-run') }),
+    toolCall(2, 'mdp_run', withExactRequestDigest(request, { output_dir: join(root, 'spawn-run') })),
   ])
   assert.equal(wrongContract.result.structuredContent.code, 'invalid-cli-contract')
   assert.deepEqual(spawnFailure.result.structuredContent, {
@@ -689,8 +1493,8 @@ test('bounds hung and overflowing children', async (t) => {
   writeFileSync(hang, JSON.stringify({ test_mode: 'hang' }))
   writeFileSync(overflow, JSON.stringify({ test_mode: 'overflow' }))
   const replies = await rpc(cli, [
-    toolCall(1, 'mdp_run', { request_path: hang, output_dir: join(root, 'hang-run'), timeout_ms: 500 }),
-    toolCall(2, 'mdp_run', { request_path: overflow, output_dir: join(root, 'overflow-run') }),
+    toolCall(1, 'mdp_run', withExactRequestDigest(hang, { output_dir: join(root, 'hang-run'), timeout_ms: 500 })),
+    toolCall(2, 'mdp_run', withExactRequestDigest(overflow, { output_dir: join(root, 'overflow-run') })),
   ])
   assert.equal(replies[0].result.structuredContent.code, 'cli-timeout')
   assert.equal(replies[1].result.structuredContent.code, 'cli-output-limit')
@@ -704,11 +1508,55 @@ test('keeps SIGKILL escalation alive after the child leader exits', async (t) =>
   const marker = join(root, 'descendant-survived')
   writeFileSync(request, JSON.stringify({ test_mode: 'descendant', marker_path: marker }))
   const [reply] = await rpc(fixtureCli(root), [
-    toolCall(1, 'mdp_run', { request_path: request, output_dir: join(root, 'run'), timeout_ms: 500 }),
+    toolCall(1, 'mdp_run', withExactRequestDigest(request, { output_dir: join(root, 'run'), timeout_ms: 500 })),
   ])
   assert.equal(reply.result.structuredContent.code, 'cli-timeout')
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 800))
   assert.equal(existsSync(marker), false)
+})
+
+test('absolute supervisor deadline bounds non-closing process-group polling', async (t) => {
+  if (process.platform === 'win32') return t.skip('Unix process-group behavior')
+  const started = Date.now()
+  const absoluteDeadlineMs = started + 150
+  const result = await superviseProcess({
+    command: [process.execPath],
+    args: ['-e', `const {spawn}=require('node:child_process'); spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'}); process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{},1000)`],
+    cwd: tmpdir(),
+    environment: process.env,
+    timeoutMs: 75,
+    terminationGraceMs: 50,
+    absoluteDeadlineMs,
+    maxOutputBytes: 1024,
+  })
+  assert.equal(result.timedOut, true)
+  assert(Date.now() - started < 300, 'closure polling must not add its default one-second window')
+})
+
+test('TERM-only supervisor mode never escalates a finite safety helper to SIGKILL', async (t) => {
+  if (process.platform === 'win32') return t.skip('Unix process-group behavior')
+  const root = mkdtempSync(join(tmpdir(), 'mdp-supervisor-term-only-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const marker = join(root, 'restored')
+  const ready = join(root, 'ready')
+  const readyPromise = waitForFile(ready)
+  const resultPromise = superviseProcess({
+    command: [process.execPath],
+    args: ['-e', `const fs=require('node:fs');process.on('SIGTERM',()=>setTimeout(()=>{fs.writeFileSync(${JSON.stringify(marker)},'restored');process.exit(0)},100));fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)`],
+    cwd: root,
+    environment: process.env,
+    timeoutMs: 25,
+    terminationGraceMs: 10,
+    terminationMode: 'term-only',
+    startTimeoutAfter: readyPromise,
+    maxOutputBytes: 1024,
+  })
+  await readyPromise
+  const started = Date.now()
+  const result = await resultPromise
+  assert.equal(result.timedOut, true)
+  assert.equal(readFileSync(marker, 'utf8'), 'restored', 'helper must finish after the nominal kill deadline')
+  assert(Date.now() - started >= 100, 'TERM-only mode must wait rather than escalating to SIGKILL')
 })
 
 test('interrupting the real CLI during staging removes its exact claim and private transaction', async (t) => {
@@ -754,7 +1602,7 @@ test('interrupting the real CLI during staging removes its exact claim and priva
     model: null,
   })}\n`)
   const [reply] = await rpc(realCli, [
-    toolCall(1, 'mdp_run', { request_path: requestPath, output_dir: outputDir, timeout_ms: 500 }),
+    toolCall(1, 'mdp_run', withExactRequestDigest(requestPath, { output_dir: outputDir, timeout_ms: 500 })),
   ])
   assert.equal(reply.result.structuredContent.code, 'cli-timeout')
   assert.equal(existsSync(outputDir), false)

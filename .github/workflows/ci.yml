@@ -62,6 +62,7 @@ jobs:
               - "scripts/mdp-native-model-openai.mjs"
               - "scripts/mdp-native-normalize-openai.mjs"
               - "scripts/lib/deadline-policy.mjs"
+              - "scripts/lib/identity-bound-directory.mjs"
               - "scripts/lib/process-supervisor.mjs"
               - "scripts/lib/proposal-*.mjs"
 
@@ -95,6 +96,24 @@ jobs:
           python3 scripts/skill-eval-harness.py --mdp-bin cli/target/debug/mdp
       - name: Validate public skills with skills-ref
         run: make validate-skill-ref
+
+  mcp-macos:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build secure publication helper
+        run: cargo build --manifest-path cli/Cargo.toml
+      - name: Verify identity-bound MCP prepare publication
+        run: >-
+          node --test
+          --test-name-pattern='maps path-backed identity-bound|completes prepare, run, and verify|prepare refuses request and manifest parent swaps'
+          scripts/test-run-mcp-server.mjs
 
   pluxx:
     runs-on: ubuntu-latest

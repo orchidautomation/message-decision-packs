@@ -14,6 +14,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -36,6 +37,8 @@ const MAX_JSON_RPC_LINE_BYTES = 1_000_000
 const MAX_REQUEST_FILE_BYTES = 1_048_576
 const MAX_CHILD_BUFFER_BYTES = 1_000_000
 const DEFAULT_TIMEOUT_MS = RECOMMENDED_TIMEOUT_MS
+const MAX_PREPARE_CLEANUP_RESERVE_MS = 100
+const MAX_PREPARE_TERMINATION_GRACE_MS = 25
 const JSON_RPC_PARSE_ERROR = -32700
 const JSON_RPC_INVALID_REQUEST = -32600
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -58,7 +61,7 @@ const providerCapabilityAvailable = () => process.env.MDP_ALLOW_NATIVE_MODEL_CAL
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const bundleRoot = resolve(scriptDir, '..')
 let pathPolicy = null
-try { pathPolicy = createPathPolicy(process.env, ['pack', 'input', 'output', 'consent']) } catch (error) { pathPolicy = { startupError: error } }
+try { pathPolicy = createPathPolicy(process.env, ['pack', 'input', 'work', 'output', 'consent']) } catch (error) { pathPolicy = { startupError: error } }
 const requirePolicy = () => {
   if (pathPolicy?.startupError) throw pathPolicy.startupError
   return pathPolicy
@@ -284,7 +287,7 @@ const childEnvironment = (includeNativeModel = false) =>
       .map((key) => [key, process.env[key]]),
   )
 
-const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null) =>
+const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = false, deadlineMetadata = null, signal = null, terminationGraceMs = undefined, absoluteDeadlineMs = null) =>
   superviseProcess({
     command: [process.env.MDP_BIN || 'mdp'],
     args,
@@ -295,6 +298,8 @@ const invokeCli = (args, cwd, timeoutMs, recovery = null, includeNativeModel = f
     recovery,
     deadlineMetadata,
     signal,
+    ...(terminationGraceMs === undefined ? {} : { terminationGraceMs }),
+    ...(absoluteDeadlineMs === null ? {} : { absoluteDeadlineMs }),
   })
 
 const tools = [
@@ -302,18 +307,18 @@ const tools = [
     name: 'mdp_run_tools',
     title: 'Inspect the MDP clean-run boundary',
     description:
-      'Describe the local file-oriented clean-run adapter. MCP is transport only; the mdp CLI remains the sole authority for execution, hashes, assurance, validation, and terminal state.',
+      'Discover the canonical four-stage local MCP path and its artifacts: inspect, prepare, run, then verify. MCP is transport only; the mdp CLI remains the sole authority.',
     inputSchema: { type: 'object', additionalProperties: false, properties: {} },
   },
   {
     name: 'mdp_prepare_run',
     title: 'Prepare an MDP run request offline',
     description:
-      'Compile one sealed mdp.run-request.v1 from a pack, selected job/step, and declared local input paths. Preparation is read-only unless explicit output paths are provided and never invokes a provider.',
+      'Compile and persist one sealed mdp.run-request.v1 under an approved work root from a pack, selected job/step, and declared local input paths. No provider is invoked. Next, pass that request path and returned request_sha256 to mdp_run.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
-      required: ['dir', 'job', 'model'],
+      required: ['dir', 'job', 'model', 'out'],
       properties: {
         dir: { type: 'string', description: 'Existing pack directory.' },
         job: { type: 'string', description: 'Exact profile job id.' },
@@ -322,10 +327,15 @@ const tools = [
         model: { type: 'string', description: 'Requested model name.' },
         retention_policy: { type: 'string', enum: ['receipt-only', 'customer-controlled-workdir'] },
         created_at: { type: 'string', description: 'Optional RFC3339 UTC test clock.' },
-        out: { type: 'string', description: 'Optional exact request output path.' },
-        manifest_out: { type: 'string', description: 'Optional full compiler manifest output path.' },
+        out: { type: 'string', description: 'Required new mdp.run-request.v1 path under an approved work root.' },
+        manifest_out: { type: 'string', description: 'Optional new full compiler manifest path under an approved work root.' },
         full: { type: 'boolean' },
-        timeout_ms: { type: 'integer', minimum: 100, maximum: MAX_TIMEOUT_MS },
+        timeout_ms: {
+          type: 'integer',
+          minimum: 100,
+          maximum: MAX_TIMEOUT_MS,
+          description: 'Normal prepare deadline in milliseconds. On failure, a finite TERM-only identity cleanup may finish restoring filesystem invariants before the response returns.',
+        },
       },
     },
   },
@@ -333,15 +343,20 @@ const tools = [
     name: 'mdp_run',
     title: 'Run an explicit MDP request',
     description:
-      'Spawn mdp run with one explicit run-request file and a new output directory. Raw chat, source bodies, inline requests, and assurance overrides are not accepted.',
+      'Pass one mdp.run-request.v1 file to mdp run and produce a run directory containing run-bundle.json, run-receipt.json, and declared artifacts. Next, pass the bundle and receipt to mdp_verify_run. Raw chat, source bodies, inline requests, and assurance overrides are not accepted.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
-      required: ['request_path', 'output_dir'],
+      required: ['request_path', 'request_sha256', 'output_dir'],
       properties: {
         request_path: {
           type: 'string',
-          description: 'Existing regular, single-link, non-symlink mdp.run-request.v1 JSON file.',
+          description: 'Existing regular, single-link, non-symlink mdp.run-request.v1 file under an approved work root.',
+        },
+        request_sha256: {
+          type: 'string',
+          pattern: '^[0-9a-f]{64}$',
+          description: 'Exact SHA-256 returned by mdp_prepare_run for this persisted request.',
         },
         output_dir: {
           type: 'string',
@@ -361,14 +376,14 @@ const tools = [
     name: 'mdp_verify_run',
     title: 'Verify an MDP run receipt',
     description:
-      'Run the read-only mdp verify-run command for explicit bundle and receipt files. Returns the canonical CLI verification result without adding MCP assurance.',
+      'Read an explicit run-bundle.json and run-receipt.json with mdp verify-run and return mdp.run-verification.v1. This is the terminal read-only stage and adds no MCP assurance.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
       required: ['bundle_path', 'receipt_path'],
       properties: {
-        bundle_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-bundle.v1 file.' },
-        receipt_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-receipt.v1 file.' },
+        bundle_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-bundle.v1 file under an approved output root.' },
+        receipt_path: { type: 'string', description: 'Existing regular, non-symlink mdp.run-receipt.v1 file under an approved output root.' },
         artifact_root: { type: 'string', description: 'Optional existing, non-symlink artifact directory.' },
         timeout_ms: { type: 'integer', minimum: MIN_TIMEOUT_MS, maximum: MAX_TIMEOUT_MS },
       },
@@ -383,10 +398,40 @@ const callRunTools = (args) => {
     contract: 'mdp.run-mcp-tools.v1',
     transport: 'local-stdio',
     tools: ['mdp_run_tools', 'mdp_prepare_run', 'mdp_run', 'mdp_verify_run'],
+    canonical_path: [
+      {
+        stage: 'inspect',
+        tool: 'mdp_run_tools',
+        input: 'no arguments',
+        artifact: 'mdp.run-mcp-tools.v1 boundary inventory',
+        next: 'mdp_prepare_run',
+      },
+      {
+        stage: 'prepare',
+        tool: 'mdp_prepare_run',
+        input: 'pack directory, exact job/model step, and declared input paths',
+        artifact: 'persisted mdp.run-request.v1 under an approved work root, plus optional compile manifest',
+        next: 'mdp_run',
+      },
+      {
+        stage: 'run',
+        tool: 'mdp_run',
+        input: 'mdp.run-request.v1 path, prepare-returned request_sha256, and a new output directory',
+        artifact: 'run-bundle.json, run-receipt.json, and declared run artifacts',
+        next: 'mdp_verify_run',
+      },
+      {
+        stage: 'verify',
+        tool: 'mdp_verify_run',
+        input: 'run-bundle.json and run-receipt.json paths',
+        artifact: 'mdp.run-verification.v1',
+        next: null,
+      },
+    ],
     cli_authority: ['run request parsing', 'pack and input staging', 'execution', 'terminal state', 'assurance', 'artifact hashes', 'validation', 'receipt'],
     mcp_authority: [],
     guardrails: [
-      'Only explicit local request_path and output_dir arguments cross this MCP boundary.',
+      'Only explicit local paths and the closed prepare/run selectors declared by these tool schemas cross this MCP boundary; ambient chat and inline source bodies are rejected.',
       'The adapter freezes one bounded read of request_path in a private read-only copy before classifying or spawning the CLI.',
       'The adapter starts a separate CLI process with bounded time, output, stdin, and environment.',
       'Only a parsed mdp.run-request.v1 with mode=generative may inherit OPENAI_API_KEY and MDP_ALLOW_NATIVE_MODEL_CALLS from the server startup environment; tool arguments cannot supply or enable either.',
@@ -408,7 +453,160 @@ const blockedPrepareRun = (code, message, nextCommand = 'mdp prepare-run --help'
   next_command: nextCommand,
 })
 
-const callPrepareRunValidated = async (args) => {
+const pinOutputParent = (reservation, receiptPath) => {
+  let fd
+  let receiptFd
+  try {
+    fd = openSync(reservation.parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
+    const opened = fstatSync(fd, { bigint: true })
+    if (!opened.isDirectory() || opened.dev !== BigInt(reservation.parentIdentity.dev) || opened.ino !== BigInt(reservation.parentIdentity.ino)) {
+      throw Object.assign(new Error('work output parent changed while being pinned'), { code: 'mcp-output-denied' })
+    }
+    receiptFd = openSync(receiptPath, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL, 0o600)
+    unlinkSync(receiptPath)
+    return { ...reservation, fd, receiptFd }
+  } catch (error) {
+    if (fd !== undefined) closeSync(fd)
+    if (receiptFd !== undefined) closeSync(receiptFd)
+    throw error
+  }
+}
+
+const remainingPrepareTimeout = (deadline, terminationGraceMs = 0) => {
+  const remaining = deadline - Date.now() - terminationGraceMs
+  if (remaining <= 0) throw new Error('prepare deadline exhausted')
+  return remaining
+}
+
+const assertPrepareActive = (signal) => {
+  if (signal?.aborted) throw Object.assign(new Error('preparation cancelled'), { code: 'cli-cancelled' })
+}
+
+const invokeSecureInstaller = (output, action, deadline, terminationGraceMs, signal = null, leaf = basename(output.path)) => {
+  const args = [
+    '--json', '__secure-install',
+    '--action', action,
+    '--name', leaf,
+    '--dir-fd', '3',
+    '--expected-dev', output.parentIdentity.dev.toString(),
+    '--expected-ino', output.parentIdentity.ino.toString(),
+  ]
+  if (action === 'install') args.push('--source', output.cliPath, '--receipt-fd', '4')
+  else if (action === 'verify') args.push(
+    '--source', output.cliPath,
+    '--expected-file-dev', output.installedIdentity.dev.toString(),
+    '--expected-file-ino', output.installedIdentity.ino.toString(),
+  )
+  else args.push(
+    '--expected-file-dev', output.installedIdentity.dev.toString(),
+    '--expected-file-ino', output.installedIdentity.ino.toString(),
+  )
+  return superviseProcess({
+    command: [process.env.MDP_SECURE_INSTALL_BIN || process.env.MDP_BIN || 'mdp'],
+    args,
+    cwd: output.parent,
+    environment: childEnvironment(false),
+    timeoutMs: remainingPrepareTimeout(deadline, terminationGraceMs),
+    terminationGraceMs,
+    maxOutputBytes: MAX_CHILD_BUFFER_BYTES,
+    inheritedFds: [output.fd, output.receiptFd],
+    signal,
+    absoluteDeadlineMs: deadline,
+    terminationMode: action === 'remove' ? 'term-only' : 'term-kill',
+  })
+}
+
+const readInstallReceipt = (output) => {
+  const buffer = Buffer.alloc(512)
+  const bytes = readSync(output.receiptFd, buffer, 0, buffer.length, 0)
+  if (bytes <= 0 || bytes === buffer.length) return null
+  let receipt
+  try { receipt = JSON.parse(buffer.subarray(0, bytes).toString('utf8')) } catch { return null }
+  if (receipt?.contract !== 'mdp.secure-install-receipt.v1' || !/^\d+$/.test(receipt.dev || '') || !/^\d+$/.test(receipt.ino || '') || !/^\.mdp-quarantine-[0-9a-f]{32}$/.test(receipt.staging_leaf || '')) return null
+  return { dev: BigInt(receipt.dev), ino: BigInt(receipt.ino), stagingLeaf: receipt.staging_leaf }
+}
+
+const assertPrepareInvocationSucceeded = (invocation, phase) => {
+  const code = invocation.cancelled
+    ? 'cli-cancelled'
+    : invocation.timedOut
+      ? 'cli-timeout'
+      : invocation.overflowed
+        ? 'cli-output-limit'
+        : invocation.spawnFailed
+          ? 'cli-unavailable'
+          : null
+  if (code) throw Object.assign(new Error(`secure output ${phase} did not complete`), { code })
+}
+
+const publishPinnedOutput = async (output, deadline, terminationGraceMs, signal) => {
+  const invocation = await invokeSecureInstaller(output, 'install', deadline, terminationGraceMs, signal)
+  output.installedIdentity = readInstallReceipt(output)
+  assertPrepareInvocationSucceeded(invocation, 'publication')
+  assertPrepareActive(signal)
+  let envelope
+  try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output installer returned invalid data') }
+  const stagedSha256 = createHash('sha256').update(readFileSync(output.cliPath)).digest('hex')
+  if (invocation.status !== 0 || envelope?.ok !== true || envelope?.command !== 'secure-install' || envelope.data?.contract !== 'mdp.secure-install.v1' || envelope.data?.status !== 'installed' || envelope.data?.sha256 !== stagedSha256) {
+    throw new Error('secure output installer refused publication')
+  }
+  const stdoutIdentity = { dev: BigInt(envelope.data.dev), ino: BigInt(envelope.data.ino) }
+  if (!output.installedIdentity || output.installedIdentity.dev !== stdoutIdentity.dev || output.installedIdentity.ino !== stdoutIdentity.ino) {
+    throw new Error('secure output installer receipt mismatch')
+  }
+}
+
+const verifyPinnedOutput = async (output, deadline, terminationGraceMs, signal) => {
+  const invocation = await invokeSecureInstaller(output, 'verify', deadline, terminationGraceMs, signal)
+  assertPrepareInvocationSucceeded(invocation, 'verification')
+  assertPrepareActive(signal)
+  let envelope
+  try { envelope = JSON.parse(invocation.stdout) } catch { throw new Error('secure output verifier returned invalid data') }
+  const stagedSha256 = createHash('sha256').update(readFileSync(output.cliPath)).digest('hex')
+  if (invocation.status !== 0 || envelope?.ok !== true || envelope?.command !== 'secure-install' || envelope.data?.contract !== 'mdp.secure-install.v1' || envelope.data?.status !== 'verified' || envelope.data?.sha256 !== stagedSha256) {
+    throw new Error('secure output verifier refused publication')
+  }
+}
+
+const assertPublishedLeafIdentity = (output) => {
+  const current = lstatSync(output.path, { bigint: true })
+  if (current.isSymbolicLink() || !current.isFile() || current.dev !== output.installedIdentity.dev || current.ino !== output.installedIdentity.ino) {
+    throw new Error('published output leaf identity changed before handoff')
+  }
+}
+
+const removePinnedOutput = async (output, deadline, terminationGraceMs) => {
+  if (!output.installedIdentity) return true
+  const removeLeaf = async (leaf) => {
+    try {
+      const invocation = await invokeSecureInstaller(output, 'remove', deadline, terminationGraceMs, null, leaf)
+      let envelope
+      try { envelope = JSON.parse(invocation.stdout) } catch { return 'failed' }
+      if (invocation.status !== 0 || envelope?.ok !== true || envelope?.command !== 'secure-install' || envelope.data?.contract !== 'mdp.secure-install.v1') return 'failed'
+      return ['removed', 'absent'].includes(envelope.data?.status) ? envelope.data.status : 'failed'
+    } catch {
+      return 'failed'
+    }
+  }
+  const outcomes = await Promise.all([
+    removeLeaf(basename(output.path)),
+    removeLeaf(output.installedIdentity.stagingLeaf),
+  ])
+  return outcomes.every((outcome) => ['removed', 'absent'].includes(outcome))
+}
+
+const normalizePreparedOutputPaths = (data, outputs) => {
+  const normalized = { ...data }
+  for (const key of ['request_path', 'manifest_path', 'next_command']) {
+    if (typeof normalized[key] !== 'string') continue
+    for (const output of outputs) {
+      if (output.cliPath) normalized[key] = normalized[key].replaceAll(output.cliPath, output.path)
+    }
+  }
+  return normalized
+}
+
+const callPrepareRunValidated = async (args, signal = null) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['dir', 'job', 'operation', 'inputs', 'model', 'retention_policy', 'created_at', 'out', 'manifest_out', 'full', 'timeout_ms']))
   const policy = requirePolicy()
@@ -429,50 +627,123 @@ const callPrepareRunValidated = async (args) => {
     const path = policy.freeze('input', mapping.slice(separator + 1)).path
     return `${name}=${path}`
   })
-  const out = parsed.out === undefined ? null : policy.select('output', dirname(resolve(requiredString(parsed, 'out')))).path + sep + basename(resolve(parsed.out))
-  const manifestOut = parsed.manifest_out === undefined ? null : policy.select('output', dirname(resolve(requiredString(parsed, 'manifest_out')))).path + sep + basename(resolve(parsed.manifest_out))
+  const requestOutput = policy.newOutput('work', requiredString(parsed, 'out'))
+  const out = requestOutput.path
+  const manifestOutput = parsed.manifest_out === undefined ? null : policy.newOutput('work', requiredString(parsed, 'manifest_out'))
+  const manifestOut = manifestOutput?.path ?? null
+  if (manifestOut === out) throw new Error('out and manifest_out must name distinct files')
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) throw new Error(`timeout_ms must be an integer between 100 and ${MAX_TIMEOUT_MS}`)
-  const cliArgs = ['--json', 'prepare-run', '--dir', dir, '--job', job, '--model', model]
-  if (parsed.operation !== undefined) cliArgs.push('--operation', parsed.operation)
-  for (const mapping of frozenInputs) cliArgs.push('--input', mapping)
-  if (parsed.retention_policy !== undefined) cliArgs.push('--retention-policy', parsed.retention_policy)
-  if (parsed.created_at !== undefined) cliArgs.push('--created-at', parsed.created_at)
-  if (out) cliArgs.push('--out', out)
-  if (manifestOut) cliArgs.push('--manifest-out', manifestOut)
-  if (parsed.full === true) cliArgs.push('--full')
-  const invocation = await invokeCli(cliArgs, dir, timeoutMs)
-  if (invocation.timedOut || invocation.overflowed || invocation.spawnFailed) {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable' }, true)
+  const pinnedOutputs = []
+  const deadline = Date.now() + timeoutMs
+  const cleanupReserveMs = Math.min(MAX_PREPARE_CLEANUP_RESERVE_MS, Math.max(25, Math.floor(timeoutMs / 4)))
+  const terminationGraceMs = Math.min(MAX_PREPARE_TERMINATION_GRACE_MS, Math.max(5, Math.floor(cleanupReserveMs / 4)))
+  const workDeadline = deadline - cleanupReserveMs
+  const privateDir = mkdtempSync(join(tmpdir(), 'mdp-run-mcp-prepare-'))
+  let published = false
+  try {
+    pinnedOutputs.push({ ...pinOutputParent(requestOutput, join(privateDir, 'request.receipt')), cliPath: join(privateDir, 'request.json'), installedIdentity: null })
+    if (manifestOutput) pinnedOutputs.push({ ...pinOutputParent(manifestOutput, join(privateDir, 'manifest.receipt')), cliPath: join(privateDir, 'manifest.json'), installedIdentity: null })
+    const requestParent = { path: requestOutput.parent, root: requestOutput.root, identity: requestOutput.parentIdentity }
+    const manifestParent = manifestOutput && { path: manifestOutput.parent, root: manifestOutput.root, identity: manifestOutput.parentIdentity }
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    const cliArgs = ['--json', 'prepare-run', '--dir', dir, '--job', job, '--model', model]
+    if (parsed.operation !== undefined) cliArgs.push('--operation', parsed.operation)
+    for (const mapping of frozenInputs) cliArgs.push('--input', mapping)
+    if (parsed.retention_policy !== undefined) cliArgs.push('--retention-policy', parsed.retention_policy)
+    if (parsed.created_at !== undefined) cliArgs.push('--created-at', parsed.created_at)
+    cliArgs.push('--out', pinnedOutputs[0].cliPath)
+    if (manifestOut) cliArgs.push('--manifest-out', pinnedOutputs[1].cliPath)
+    if (parsed.full === true) cliArgs.push('--full')
+    const invocation = await invokeCli(cliArgs, dir, remainingPrepareTimeout(workDeadline, terminationGraceMs), null, false, null, signal, terminationGraceMs, workDeadline)
+    if (invocation.timedOut || invocation.cancelled || invocation.overflowed || invocation.spawnFailed) {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.cancelled ? 'cli-cancelled' : invocation.timedOut ? 'cli-timeout' : invocation.overflowed ? 'cli-output-limit' : 'cli-unavailable' }, true)
+    }
+    let envelope
+    try { envelope = JSON.parse(invocation.stdout) } catch { return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true) }
+    if (envelope?.ok === false && envelope?.command === 'prepare-run' && envelope.data?.contract === 'mdp.run-request-compile.v1') {
+      return toolResult(normalizePreparedOutputPaths(envelope.data, pinnedOutputs))
+    }
+    if (envelope?.ok !== true || envelope?.command !== 'prepare-run' || !envelope.data || envelope.data.contract !== 'mdp.run-request-compile.v1' || envelope.data.status !== 'ready') {
+      return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.status === 0 ? 'invalid-cli-contract' : 'prepare-run-refused' }, true)
+    }
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    for (const [index, output] of pinnedOutputs.entries()) {
+      const staged = lstatSync(output.cliPath)
+      if (staged.isSymbolicLink() || !staged.isFile()) throw new Error('prepared output was not a regular file')
+      if (index === 0 && staged.size > MAX_REQUEST_FILE_BYTES) {
+        throw new Error(`prepared request exceeds mdp_run limit of ${MAX_REQUEST_FILE_BYTES} bytes`)
+      }
+    }
+    const stagedRequestSha256 = createHash('sha256').update(readFileSync(pinnedOutputs[0].cliPath)).digest('hex')
+    if (envelope.data.request_sha256 !== stagedRequestSha256) {
+      throw new Error('prepare-run request_sha256 did not match the persisted request')
+    }
+    for (const output of pinnedOutputs) {
+      await publishPinnedOutput(output, workDeadline, terminationGraceMs, signal)
+    }
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    policy.existing('work', out, 'file')
+    if (manifestOut) policy.existing('work', manifestOut, 'file')
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    for (const output of pinnedOutputs) await verifyPinnedOutput(output, workDeadline, terminationGraceMs, signal)
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    policy.existing('work', out, 'file')
+    if (manifestOut) policy.existing('work', manifestOut, 'file')
+    for (const output of pinnedOutputs) assertPublishedLeafIdentity(output)
+    policy.finalCheck('work', requestOutput.parent, requestParent, 'directory')
+    if (manifestOutput) policy.finalCheck('work', manifestOutput.parent, manifestParent, 'directory')
+    for (const output of pinnedOutputs) assertPublishedLeafIdentity(output)
+    assertPrepareActive(signal)
+    published = true
+    return toolResult(normalizePreparedOutputPaths(envelope.data, pinnedOutputs))
+  } finally {
+    let cleanupComplete = true
+    try {
+      if (!published) {
+        const results = await Promise.all(pinnedOutputs.map((output) => removePinnedOutput(output, deadline, terminationGraceMs)))
+        cleanupComplete = results.every(Boolean)
+      }
+    } finally {
+      for (const output of pinnedOutputs) {
+        closeSync(output.fd)
+        closeSync(output.receiptFd)
+      }
+      rmSync(privateDir, { recursive: true, force: true })
+    }
+    if (!cleanupComplete) throw Object.assign(new Error('secure output cleanup incomplete; inspect required output paths before retry'), { code: 'mcp-cleanup-incomplete' })
   }
-  let envelope
-  try { envelope = JSON.parse(invocation.stdout) } catch { return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: 'invalid-cli-output' }, true) }
-  if (envelope?.ok === false && envelope?.command === 'prepare-run' && envelope.data?.contract === 'mdp.run-request-compile.v1') {
-    return toolResult(envelope.data)
-  }
-  if (envelope?.ok !== true || envelope?.command !== 'prepare-run' || !envelope.data || envelope.data.contract !== 'mdp.run-request-compile.v1' || envelope.data.status !== 'ready') {
-    return toolResult({ ok: false, contract: 'mdp.run-mcp-error.v1', code: invocation.status === 0 ? 'invalid-cli-contract' : 'prepare-run-refused' }, true)
-  }
-  return toolResult(envelope.data)
 }
 
-const callPrepareRun = async (args) => {
+const callPrepareRun = async (args, signal = null) => {
   try {
-    return await callPrepareRunValidated(args)
+    return await callPrepareRunValidated(args, signal)
   } catch (error) {
-    return blockedPrepareRun('mcp-arguments-invalid', error?.message || 'preparation refused')
+    const code = ['mcp-cleanup-incomplete', 'cli-cancelled', 'cli-timeout', 'cli-output-limit', 'cli-unavailable'].includes(error?.code) ? error.code : 'mcp-arguments-invalid'
+    return blockedPrepareRun(code, error?.message || 'preparation refused')
   }
 }
 
 const callRun = async (args, signal = null) => {
   const parsed = asObject(args || {}, 'arguments')
-  assertOnly(parsed, new Set(['request_path', 'output_dir', 'timeout_ms', 'consent_id']))
+  assertOnly(parsed, new Set(['request_path', 'request_sha256', 'output_dir', 'timeout_ms', 'consent_id']))
   const requestPath = requiredString(parsed, 'request_path')
+  const requestSha256 = requiredString(parsed, 'request_sha256')
+  if (!/^[0-9a-f]{64}$/.test(requestSha256)) throw new Error('request_sha256 must be a lowercase SHA-256 digest')
   const policy = requirePolicy()
   const outputRequest = requiredString(parsed, 'output_dir')
   const timeoutMs = parsed.timeout_ms ?? DEFAULT_TIMEOUT_MS
   validateTransportTimeout(timeoutMs)
-  const frozenRequest = freezeRequestFile(policy.existing('input', requestPath, 'file').path)
+  const frozenRequest = freezeRequestFile(policy.existing('work', requestPath, 'file').path)
+  if (frozenRequest.sha256 !== requestSha256) {
+    rmSync(frozenRequest.privateDir, { recursive: true, force: true })
+    throw new Error('request_sha256 does not match the prepared request')
+  }
   const approvedPack = frozenRequest.packDir
     ? policy.existing('pack', frozenRequest.packDir, 'directory')
     : null
@@ -647,8 +918,8 @@ const callVerifyRun = async (args) => {
   const parsed = asObject(args || {}, 'arguments')
   assertOnly(parsed, new Set(['bundle_path', 'receipt_path', 'artifact_root', 'timeout_ms']))
   const policy = requirePolicy()
-  const bundlePath = policy.existing('input', requiredString(parsed, 'bundle_path'), 'file').path
-  const receiptPath = policy.existing('input', requiredString(parsed, 'receipt_path'), 'file').path
+  const bundlePath = policy.existing('output', requiredString(parsed, 'bundle_path'), 'file').path
+  const receiptPath = policy.existing('output', requiredString(parsed, 'receipt_path'), 'file').path
   const artifactRoot = parsed.artifact_root === undefined
     ? null
     : policy.existing('output', requiredString(parsed, 'artifact_root'), 'directory').path
@@ -694,7 +965,7 @@ const handleToolCall = async (params, signal = null) => {
     case 'mdp_run_tools':
       return callRunTools(call.arguments || {})
     case 'mdp_prepare_run':
-      return await callPrepareRun(call.arguments || {})
+      return await callPrepareRun(call.arguments || {}, signal)
     case 'mdp_run':
       return await callRun(call.arguments || {}, signal)
     case 'mdp_verify_run':
@@ -733,7 +1004,7 @@ const handleRequest = async (message) => {
               capabilities: { tools: { listChanged: false } },
               serverInfo: { name: SERVER_NAME, version: serverVersion },
               instructions:
-                'Use mdp_run with an already-written run-request file and a new output directory. Use mdp_verify_run to independently check the resulting bundle and receipt. The surrounding agent is control plane only; only the CLI result and receipt have decision authority.',
+                'Use the canonical path in order: mdp_run_tools, mdp_prepare_run, mdp_run, then mdp_verify_run. Each stage consumes explicit local paths and returns CLI-owned artifacts. The surrounding agent and MCP adapter are control plane only; only CLI results and receipts have decision authority.',
             })
       case 'notifications/initialized':
         return null

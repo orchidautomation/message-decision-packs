@@ -43,6 +43,21 @@ if ! printf '%s\n' "$activation_output" | grep -F "detected in $workspace_fixtur
   echo "MDP activation must use PLUXX_HOOK_WORKSPACE_ROOT when hook cwd is the plugin root." >&2
   exit 1
 fi
+if ! printf '%s\n' "$activation_output" | grep -F "MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run." >/dev/null; then
+  echo "MDP activation must expose the canonical MCP path for a basic/GTM pack." >&2
+  printf '%s\n' "$activation_output" >&2
+  exit 1
+fi
+
+source_activation_output="$(
+  cd "$plugin_fixture"
+  env -u PLUGIN_ROOT MDP_HOOK_DIR="$workspace_fixture" bash "$ROOT/scripts/mdp-activate.sh"
+)"
+if ! printf '%s\n' "$source_activation_output" | grep -F "available as node \"$ROOT/scripts/mdp-run-mcp-server.mjs\"" >/dev/null; then
+  echo "Direct source activation must discover the canonical MCP without PLUGIN_ROOT." >&2
+  printf '%s\n' "$source_activation_output" >&2
+  exit 1
+fi
 
 plugin_root_output="$(
   cd "$plugin_fixture"
@@ -57,28 +72,28 @@ proposal_output="$(
   cd "$plugin_fixture"
   PLUGIN_ROOT="$ROOT" PLUXX_HOOK_WORKSPACE_ROOT="$proposal_fixture" OPENAI_API_KEY= bash "$ROOT/scripts/mdp-activate.sh"
 )"
-if ! printf '%s\n' "$proposal_output" | grep -F "MDP proposal audit readiness:" >/dev/null; then
-  echo "MDP activation must print proposal audit readiness for proposal packs." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "MDP clean-run readiness:" >/dev/null; then
+  echo "MDP activation must print clean-run readiness for proposal packs." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "Local proposal runner: available in the plugin/source bundle." >/dev/null; then
-  echo "MDP activation must report local proposal runner availability for proposal packs." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "Canonical local stdio MCP: available" >/dev/null; then
+  echo "MDP activation must report canonical local stdio MCP availability for proposal packs." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "Local stdio MCP wrapper: available" >/dev/null; then
-  echo "MDP activation must report local stdio MCP wrapper availability for proposal packs." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "Canonical native OpenAI driver: available for an operator-authorized BYOK model step." >/dev/null; then
+  echo "MDP activation must report the canonical native driver." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "The bundled MCP is local stdio only, not a hosted or remote MCP service." >/dev/null; then
+if ! printf '%s\n' "$proposal_output" | grep -F "The canonical MCP is local stdio transport only, not a hosted or remote MCP service." >/dev/null; then
   echo "MDP activation must avoid implying a hosted/remote MCP service exists." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi
-if ! printf '%s\n' "$proposal_output" | grep -F "MCP transport alone is not audit-grade" >/dev/null; then
-  echo "MDP activation must explain MCP transport alone is not audit-grade." >&2
+if ! printf '%s\n' "$proposal_output" | grep -F "MCP path: mdp_run_tools -> mdp_prepare_run -> mdp_run -> mdp_verify_run." >/dev/null; then
+  echo "MDP activation must report the canonical four-tool path." >&2
   printf '%s\n' "$proposal_output" >&2
   exit 1
 fi

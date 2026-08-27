@@ -377,12 +377,15 @@ environment for a parsed generative request, and adds no assurance.
 7. call `mdp run-receipt --require-runner-audit`;
 8. continue to `fit`, `route`, `author-proof-output`, `verify-output`, or `render-brief` as needed.
 
-Inspect the local surface with:
+Existing compatibility consumers can inspect the legacy command surface with:
 
 ```bash
 node scripts/mdp-proposal-runner.mjs tools
-node scripts/mdp-proposal-mcp-server.mjs
 ```
+
+Do not register the proposal MCP for a new integration. Use the canonical
+profile-neutral four-tool path in [Local MCP](local-mcp.md); retain the v0
+server only until its known consumer has migrated.
 
 Pluxx continues to package skills, hooks, assets, and scripts for supported hosts. The local runner/MCP wrapper owns source staging and the runtime call into the native/headless boundary, while the CLI owns deterministic artifact checks. MCP transport alone is not audit-grade; dry-run/mock runner modes are valid for CI and demo fixtures only, and they must block or remain non-audit-grade when `--require-runner-audit` is used.
 

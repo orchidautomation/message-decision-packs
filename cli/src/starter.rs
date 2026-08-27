@@ -3008,7 +3008,8 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "required": true,
             "default": "N/A",
             "missing_behavior": "Return malformed with draft_allowed false; do not collect or infer missing data.",
-            "producer": "source"
+            "producer": "source",
+            "schema_ref": "mdp.collected-attempt-results.v2"
         },
         {
             "name": "decision_input_requirements",
@@ -3016,7 +3017,8 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "required": true,
             "default": "N/A",
             "missing_behavior": "Return malformed with draft_allowed false.",
-            "producer": "pack"
+            "producer": "pack",
+            "schema_ref": "mdp.requirements.v2"
         },
         {
             "name": "source_binding_sha256",
@@ -3024,7 +3026,9 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "required": true,
             "default": "N/A",
             "missing_behavior": "Return malformed with draft_allowed false.",
-            "producer": "host"
+            "producer": "host",
+            "schema_ref": "mdp.sha256.v1",
+            "media_type": "text/plain"
         },
         {
             "name": "source_attempt_request_sha256",
@@ -3032,7 +3036,9 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "required": true,
             "default": "N/A",
             "missing_behavior": "Return malformed with draft_allowed false.",
-            "producer": "host"
+            "producer": "host",
+            "schema_ref": "mdp.sha256.v1",
+            "media_type": "text/plain"
         },
         {
             "name": "collected_attempt_results_sha256",
@@ -3040,7 +3046,9 @@ fn prospect_normalization_prompt_contract(include_output_schemas: bool) -> Value
             "required": true,
             "default": "N/A",
             "missing_behavior": "Return malformed with draft_allowed false.",
-            "producer": "host"
+            "producer": "host",
+            "schema_ref": "mdp.sha256.v1",
+            "media_type": "text/plain"
         }
     ]);
     prompt["instructions"] = json!([

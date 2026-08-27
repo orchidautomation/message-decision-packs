@@ -2,7 +2,7 @@ import { definePlugin } from 'pluxx'
 
 export default definePlugin({
   name: 'message-decision-packs',
-  version: '0.1.76',
+  version: '0.1.77',
   description: 'Author, validate, and use Message Decision Packs with the local mdp CLI.',
   homepage: 'https://orchidautomation.com',
   author: {
@@ -12,7 +12,7 @@ export default definePlugin({
   brand: {
     "displayName": "Message Decision Packs",
     "shortDescription": "Versioned decision context for agents.",
-    "longDescription": "Message Decision Packs gives supported agents versioned decision context for GTM messaging and proposal review workflows. MDP stores personas or roles, fit or review rules, signals, approved claims, proof, avoid-rules, output-rules, source evidence, eval fixtures, and explicit gaps, then deterministically routes bounded job-specific context and emits inspectable, hash-bound traces with the local mdp CLI. MDP is not an agent runtime, graph database, memory layer, or orchestration framework. Model calls, sending, CRM updates, enrichment, scraping, sequencing, proposal submission, and approval workflow ownership stay outside MDP.",
+    "longDescription": "Message Decision Packs gives supported agents versioned decision context for GTM messaging and proposal review workflows. MDP stores personas or roles, fit or review rules, signals, approved claims, proof, avoid-rules, output-rules, source evidence, eval fixtures, and explicit gaps, then deterministically routes bounded job-specific context and emits inspectable, hash-bound traces with the local mdp CLI. MCP-capable hosts use one profile-neutral local stdio path: mdp_run_tools, mdp_prepare_run, mdp_run, then mdp_verify_run; MCP transports CLI-owned artifacts and adds no authority. MDP is not an agent runtime, graph database, memory layer, or orchestration framework. Model calls, sending, CRM updates, enrichment, scraping, sequencing, proposal submission, and approval workflow ownership stay outside MDP.",
     "icon": "./assets/brand/icon.png",
     "screenshots": [
       "./assets/brand/screenshot.png"
@@ -21,7 +21,7 @@ export default definePlugin({
     "defaultPrompts": [
       "Turn these GTM or proposal source notes into a local Message Decision Pack, then validate it.",
       "Review this .mdp pack for gaps, unsupported claims, routing issues, and weak eval coverage.",
-      "Given this prospect or proposal context, run the right MDP route, fit, or review gate before drafting."
+      "Run the right MDP route, fit, or review gate before drafting; for MCP, use the canonical four-stage prepare/run/verify path."
     ]
   },
 

@@ -6,6 +6,8 @@ use crate::cli::{
 use crate::commands::briefs::prospect_brief_from_fit_with_context;
 use crate::commands::prompt_output::validate_prompt_output_file_with_lineage_inputs;
 use crate::commands::routing::{fit_for_job, fit_normalized};
+#[cfg(unix)]
+use crate::commands::secure_install;
 use crate::commands::{
     AssembleConformancePaths, BehavioralEvidencePaths, RunReceiptOptions, TargetInitOptions,
     assemble_conformance, author_proof_output_file, capabilities, check_claims_scoped,
@@ -230,6 +232,33 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 compiled.output(options.full),
             )
         }
+        #[cfg(unix)]
+        Commands::SecureInstall {
+            action,
+            source,
+            name,
+            dir_fd,
+            expected_dev,
+            expected_ino,
+            expected_file_dev,
+            expected_file_ino,
+            receipt_fd,
+        } => print_output(
+            json_mode,
+            summary_mode,
+            "secure-install",
+            secure_install(
+                &action,
+                source.as_deref(),
+                &name,
+                dir_fd,
+                expected_dev,
+                expected_ino,
+                expected_file_dev,
+                expected_file_ino,
+                receipt_fd,
+            )?,
+        ),
         Commands::RebindSyntheticChain {
             dir,
             job,

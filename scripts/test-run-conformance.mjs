@@ -287,9 +287,9 @@ try {
       jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args },
     });
     const input = [
-      call(1, "mdp_run", { request_path: qualifiedRequest, output_dir: qualifiedOut }),
+      call(1, "mdp_run", { request_path: qualifiedRequest, request_sha256: createHash("sha256").update(readFileSync(qualifiedRequest)).digest("hex"), output_dir: qualifiedOut }),
       call(2, "mdp_verify_run", { bundle_path: join(qualifiedOut, "run-bundle.json"), receipt_path: join(qualifiedOut, "run-receipt.json"), artifact_root: qualifiedOut }),
-      call(3, "mdp_run", { request_path: disqualifiedRequest, output_dir: disqualifiedOut }),
+      call(3, "mdp_run", { request_path: disqualifiedRequest, request_sha256: createHash("sha256").update(readFileSync(disqualifiedRequest)).digest("hex"), output_dir: disqualifiedOut }),
       call(4, "mdp_verify_run", { bundle_path: join(disqualifiedOut, "run-bundle.json"), receipt_path: join(disqualifiedOut, "run-receipt.json"), artifact_root: disqualifiedOut }),
     ].join("\n");
     const invoked = spawnSync(process.execPath, [join(repoRoot, "scripts", "mdp-run-mcp-server.mjs")], {
@@ -338,7 +338,7 @@ try {
     const outDir = join(root, "mcp-real.run");
     writeJson(requestPath, request("mcp-real"));
     const runMessage = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: {
-      name: "mdp_run", arguments: { request_path: requestPath, output_dir: outDir },
+      name: "mdp_run", arguments: { request_path: requestPath, request_sha256: createHash("sha256").update(readFileSync(requestPath)).digest("hex"), output_dir: outDir },
     } });
     const verifyMessage = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: {
       name: "mdp_verify_run", arguments: {

@@ -101,7 +101,7 @@ Use [canonical runner support matrix](https://github.com/orchidautomation/messag
 - `run-receipt`: record and gate the host-owned context boundary plus artifact hashes; audit-grade proposal review requires `--isolation isolated`, `--declared-inputs-only`, successful validation whose artifact hashes match the supplied prompt-output and source-audit files, a runner audit whose prompt-output hash matches the supplied prompt output and reports `tool_invocations_observed: 0`, source audit when documents/PDFs were normalized, and for production pilots `--runner-audit ... --require-runner-audit`.
 - `scripts/mdp-proposal-runner.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed bundles): host-neutral local proposal runner surface. Use `tools` to inspect local runner steps. Use `run --dry-run` for request hygiene, `run --mock-response` for fixture safety, and real `run --model ...` only when the operator chose a real native call.
 - Treat `scripts/lib/proposal-runner-*.mjs` as bundled internal implementation modules. Invoke the runner or MCP entrypoint rather than importing those modules as a public API.
-- `scripts/mdp-proposal-mcp-server.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs` in installed bundles): local stdio MCP wrapper exposing `mdp_proposal_tools` and file/path-only `mdp_proposal_run`. It is not hosted/remote, does not accept raw chat text as source evidence, and dry-run/mock runs are never audit-grade.
+- `scripts/mdp-run-mcp-server.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs` in installed bundles): the only default MCP path. Use `mdp_run_tools` → `mdp_prepare_run` → `mdp_run` → `mdp_verify_run`; require prepare `out` under the approved work root, pass that same request and prepare-returned `request_sha256` to run, and verify the emitted bundle/receipt from the approved output root. The artifacts are the boundary inventory, `mdp.run-request.v1`, run bundle/receipt, and `mdp.run-verification.v1`. MCP adds no authority. The proposal MCP remains compatibility-only for existing v0 consumers.
 - `scripts/mdp-native-model-openai.mjs` (or `${PLUGIN_ROOT}/scripts/mdp-native-model-openai.mjs`): internal profile-neutral OpenAI Responses subprocess for one selected declared model step. Operators normally invoke it through `mdp run`. Real calls require both startup environment values `MDP_ALLOW_NATIVE_MODEL_CALLS=1` and `OPENAI_API_KEY`; mock/dry-run validation is key-free and does not prove a call. The official endpoint is fixed. `scripts/mdp-native-normalize-openai.mjs` is a v0 compatibility adapter.
 - `schema driver-request-v2` and `schema driver-result-v2`: inspect the closed versioned CLI-to-subprocess boundary. These are driver contracts, not substitutes for operator-authored `run-request-v1`.
 - `fit`: decide fit, insufficient context, or disqualification for supplied GTM prospect JSON.
@@ -157,12 +157,18 @@ node scripts/mdp-run-mcp-server.mjs
 node "${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs"
 ```
 
-It exposes `mdp_run_tools`, `mdp_run`, and read-only `mdp_verify_run`.
-`mdp_run` accepts only `request_path`, a new `output_dir`, and an optional
-bounded `timeout_ms`. `mdp_verify_run` accepts existing bundle and receipt paths,
-an optional artifact root, and the same bounded deadline. Each tool spawns the
-matching CLI command as a separate process with a bounded environment, stdin,
-output buffer, and deadline, then returns the canonical CLI data object unchanged.
+It exposes the canonical four-stage path: inspect with `mdp_run_tools`, compile
+and persist an `mdp.run-request.v1` with `mdp_prepare_run`, execute that exact
+work-root request with `mdp_run`, then inspect the output-root bundle and receipt
+with read-only `mdp_verify_run`. Preparation requires `out` under an approved
+work root and optionally writes `manifest_out` there. `mdp_run` accepts only
+that `request_path`, the exact `request_sha256` returned by prepare, a new
+`output_dir`, and an optional bounded `timeout_ms`. The adapter freezes the
+request and rejects a digest mismatch before execution.
+`mdp_verify_run` accepts the resulting bundle and receipt paths, an optional
+artifact root, and the same bounded deadline. Each tool spawns the matching CLI
+command as a separate process with a bounded environment, stdin, output buffer,
+and deadline, then returns the canonical CLI data object unchanged.
 It does not accept inline requests, raw source bodies, ambient chat, provider
 credentials, native-call enable flags, or assurance overrides. For a parsed
 generative request only, it may inherit `OPENAI_API_KEY` and
