@@ -1,6 +1,7 @@
-import { chmodSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 
 export const TEMP_WORKSPACE_CONTRACT = 'mdp.owned-temp-workspace.v1'
 export const TEMP_WORKSPACE_MARKER = '.mdp-owned-temp-workspace.json'
@@ -9,6 +10,20 @@ const MAX_MARKER_BYTES = 4_096
 
 const currentUid = () => (typeof process.getuid === 'function' ? process.getuid() : null)
 const mode = (stats) => stats.mode & 0o777
+const sameIdentity = (left, right) => left.dev === right.dev && left.ino === right.ino
+const descriptorDirectoryPath = (fd, identity) => {
+  const candidates = process.platform === 'linux'
+    ? [`/proc/self/fd/${fd}`, `/proc/${process.pid}/fd/${fd}`]
+    : process.platform === 'darwin' ? [`/dev/fd/${fd}`] : []
+  for (const candidate of candidates) {
+    try {
+      if (sameIdentity(statSync(candidate), identity)) return candidate
+    } catch {
+      // Try the next kernel-owned descriptor namespace.
+    }
+  }
+  return null
+}
 const safePurpose = (purpose) => {
   if (typeof purpose !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(purpose)) {
     throw new Error('temp workspace purpose must use lowercase letters, digits, and hyphens')
@@ -83,16 +98,70 @@ export const inspectOwnedTempWorkspace = (root, { purpose } = {}) => {
 }
 
 export const cleanupOwnedTempWorkspace = (root, options = {}) => {
+  const { beforeQuarantine, ...inspectionOptions } = options
   let inspected
-  try { inspected = inspectOwnedTempWorkspace(root, options) } catch { return false }
+  try { inspected = inspectOwnedTempWorkspace(root, inspectionOptions) } catch { return false }
   if (!inspected) return false
+  const parent = dirname(inspected.root)
+  const quarantineLeaf = `.mdp-owned-temp-quarantine-${randomBytes(16).toString('hex')}`
+  let parentFd
   try {
-    const finalStats = lstatSync(inspected.root)
-    if (finalStats.dev !== inspected.rootStats.dev || finalStats.ino !== inspected.rootStats.ino) return false
-    rmSync(inspected.root, { recursive: true, force: false })
+    parentFd = openSync(parent, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
+    const parentStats = fstatSync(parentFd)
+    if (!parentStats.isDirectory()) return false
+    const parentReference = descriptorDirectoryPath(parentFd, parentStats) || parent
+    const ownedPath = join(parentReference, basename(inspected.root))
+    const quarantine = join(parentReference, quarantineLeaf)
+    try {
+      lstatSync(quarantine)
+      return false
+    } catch (error) {
+      if (error?.code !== 'ENOENT') return false
+    }
+    const finalStats = lstatSync(ownedPath)
+    if (!sameIdentity(finalStats, inspected.rootStats)) return false
+    if (typeof beforeQuarantine === 'function') beforeQuarantine()
+    if (!sameIdentity(fstatSync(parentFd), parentStats)) return false
+    renameSync(ownedPath, quarantine)
+    const movedStats = lstatSync(quarantine)
+    if (!sameIdentity(movedStats, inspected.rootStats)) {
+      try {
+        lstatSync(ownedPath)
+      } catch (error) {
+        if (error?.code === 'ENOENT') renameSync(quarantine, ownedPath)
+      }
+      return false
+    }
+    let quarantineFd
+    try {
+      quarantineFd = openSync(quarantine, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
+      const quarantineStats = fstatSync(quarantineFd)
+      if (!sameIdentity(quarantineStats, inspected.rootStats)) return false
+      const quarantineReference = descriptorDirectoryPath(quarantineFd, quarantineStats)
+      // Without a kernel-owned descriptor path, preserve the quarantine rather
+      // than fall back to a replaceable pathname for recursive deletion.
+      if (!quarantineReference) {
+        try {
+          lstatSync(ownedPath)
+        } catch (error) {
+          if (error?.code === 'ENOENT') renameSync(quarantine, ownedPath)
+        }
+        return false
+      }
+      for (const entry of readdirSync(quarantineReference)) {
+        rmSync(join(quarantineReference, entry), { recursive: true, force: false })
+      }
+      const namedStats = lstatSync(quarantine)
+      if (!sameIdentity(namedStats, inspected.rootStats)) return false
+      rmdirSync(quarantine)
+    } finally {
+      if (quarantineFd !== undefined) closeSync(quarantineFd)
+    }
     return true
   } catch {
     return false
+  } finally {
+    if (parentFd !== undefined) closeSync(parentFd)
   }
 }
 

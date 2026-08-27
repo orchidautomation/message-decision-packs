@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -156,4 +156,31 @@ test('tampered marker and unrelated temp data are never removed', (t) => {
   cleanupStaleOwnedTempWorkspaces({ purpose: 'validation', baseDir: base, minAgeMs: 60_000, nowMs: 120_000 })
   assert.equal(existsSync(root), true)
   assert.equal(existsSync(unrelated), true)
+})
+
+test('root replacement during cleanup is preserved without unrelated deletion', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-root-swap-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
+  writeFileSync(join(root, 'owned'), 'owned bytes')
+  const displaced = join(base, 'displaced-owned-root')
+  const replacement = join(base, 'replacement')
+  mkdirSync(replacement, { mode: 0o700 })
+  writeFileSync(join(replacement, 'keep'), 'replacement bytes')
+
+  const removed = cleanupOwnedTempWorkspace(root, {
+    purpose: 'validation',
+    beforeQuarantine: () => {
+      renameSync(root, displaced)
+      renameSync(replacement, root)
+    },
+  })
+
+  assert.equal(removed, false)
+  assert.equal(readFileSync(join(root, 'keep'), 'utf8'), 'replacement bytes')
+  assert.equal(readFileSync(join(displaced, 'owned'), 'utf8'), 'owned bytes')
+  assert.equal(
+    readdirSync(base).some((entry) => entry.startsWith('.mdp-owned-temp-quarantine-')),
+    false,
+  )
 })
