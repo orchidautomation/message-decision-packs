@@ -207,6 +207,25 @@ test('root replacement during cleanup is preserved without unrelated deletion', 
   )
 })
 
+test('inspection-window root replacement cannot reuse the pinned marker proof', (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'mdp-temp-inspection-swap-'))
+  t.after(() => rmSync(base, { recursive: true, force: true }))
+  const root = createOwnedTempWorkspace({ purpose: 'validation', baseDir: base })
+  const original = `${root}-original`
+  writeFileSync(join(root, 'owned'), 'owned bytes')
+
+  assert.equal(cleanupOwnedTempWorkspace(root, {
+    purpose: 'validation',
+    afterMarkerRead: () => {
+      renameSync(root, original)
+      mkdirSync(root, { mode: 0o700 })
+      writeFileSync(join(root, 'keep'), 'replacement bytes')
+    },
+  }), false)
+  assert.equal(readFileSync(join(root, 'keep'), 'utf8'), 'replacement bytes')
+  assert.equal(readFileSync(join(original, 'owned'), 'utf8'), 'owned bytes')
+})
+
 test('quarantine destination collision preserves both unrelated and owned bytes', (t) => {
   const base = mkdtempSync(join(tmpdir(), 'mdp-temp-quarantine-collision-'))
   t.after(() => rmSync(base, { recursive: true, force: true }))

@@ -138,32 +138,48 @@ export const createOwnedTempWorkspace = ({ purpose, baseDir = tmpdir(), nowMs = 
   }
 }
 
-export const inspectOwnedTempWorkspace = (root, { purpose } = {}) => {
+export const inspectOwnedTempWorkspace = (root, { purpose, afterMarkerRead } = {}) => {
   const requested = resolve(root)
-  const rootStats = lstatSync(requested)
-  if (!rootStats.isDirectory() || rootStats.isSymbolicLink() || mode(rootStats) !== 0o700) return null
-  const uid = currentUid()
-  if (uid !== null && rootStats.uid !== uid) return null
-  const markerPath = join(requested, TEMP_WORKSPACE_MARKER)
-  const markerStats = lstatSync(markerPath)
-  if (!markerStats.isFile() || markerStats.isSymbolicLink() || mode(markerStats) !== 0o600 || markerStats.size > MAX_MARKER_BYTES) return null
-  if (uid !== null && markerStats.uid !== uid) return null
-  let marker
-  try { marker = JSON.parse(readFileSync(markerPath, 'utf8')) } catch { return null }
-  if (
-    marker?.contract !== TEMP_WORKSPACE_CONTRACT ||
-    marker.basename !== basename(requested) ||
-    typeof marker.purpose !== 'string' ||
-    (purpose !== undefined && marker.purpose !== purpose) ||
-    !Number.isSafeInteger(marker.created_at_ms) || marker.created_at_ms < 0 ||
-    !Number.isSafeInteger(marker.pid) || marker.pid < 1 ||
-    marker.uid !== uid
-  ) return null
-  // Node's numeric stat fields can lose precision for APFS inode values. Keep
-  // a bigint identity for every value passed across the JS/Rust helper
-  // boundary while retaining the ordinary stats for mode/uid validation.
-  const rootIdentity = lstatSync(requested, { bigint: true })
-  return { root: requested, marker, rootStats, rootIdentity, markerStats }
+  let rootFd
+  let markerFd
+  try {
+    // Pin the candidate before consuming any ownership proof. Marker metadata
+    // and bytes are then read through that descriptor, so a pathname swap can
+    // never splice an old marker onto a replacement root identity.
+    rootFd = openSync(requested, constants.O_RDONLY | (constants.O_DIRECTORY || 0) | (constants.O_NOFOLLOW || 0))
+    const rootStats = fstatSync(rootFd)
+    const rootIdentity = fstatSync(rootFd, { bigint: true })
+    if (!rootStats.isDirectory() || mode(rootStats) !== 0o700) return null
+    const uid = currentUid()
+    if (uid !== null && rootStats.uid !== uid) return null
+    const rootReference = resolveDescriptorDirectoryPath({
+      fd: rootFd,
+      identity: rootIdentity,
+      stat: (path) => statSync(path, { bigint: true }),
+      fstat: (fd) => fstatSync(fd, { bigint: true }),
+    })
+    if (!rootReference) return null
+    markerFd = openSync(join(rootReference, TEMP_WORKSPACE_MARKER), constants.O_RDONLY | (constants.O_NOFOLLOW || 0))
+    const markerStats = fstatSync(markerFd)
+    if (!markerStats.isFile() || mode(markerStats) !== 0o600 || markerStats.size > MAX_MARKER_BYTES) return null
+    if (uid !== null && markerStats.uid !== uid) return null
+    let marker
+    try { marker = JSON.parse(readFileSync(markerFd, 'utf8')) } catch { return null }
+    if (typeof afterMarkerRead === 'function') afterMarkerRead({ requested, rootReference })
+    if (
+      marker?.contract !== TEMP_WORKSPACE_CONTRACT ||
+      marker.basename !== basename(requested) ||
+      typeof marker.purpose !== 'string' ||
+      (purpose !== undefined && marker.purpose !== purpose) ||
+      !Number.isSafeInteger(marker.created_at_ms) || marker.created_at_ms < 0 ||
+      !Number.isSafeInteger(marker.pid) || marker.pid < 1 ||
+      marker.uid !== uid
+    ) return null
+    return { root: requested, marker, rootStats, rootIdentity, markerStats }
+  } finally {
+    if (markerFd !== undefined) closeSync(markerFd)
+    if (rootFd !== undefined) closeSync(rootFd)
+  }
 }
 
 export const cleanupOwnedTempWorkspace = (root, options = {}) => {
