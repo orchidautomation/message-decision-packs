@@ -80,17 +80,21 @@ fn quarantine_name() -> Result<CString> {
     CString::new(format!(".mdp-quarantine-{}", quarantine_nonce()?)).map_err(Into::into)
 }
 
-fn directory_tree_quarantine_name(name: &CStr) -> Result<CString> {
+fn recoverable_owned_basename(name: &CStr) -> Option<&str> {
     const PREFIX: &str = ".mdp-owned-temp-quarantine-";
     let leaf = name.to_str().unwrap_or_default();
-    let recoverable_owned_name = leaf.strip_prefix(PREFIX).and_then(|encoded| {
+    leaf.strip_prefix(PREFIX).and_then(|encoded| {
         let (owned_name, nonce) = encoded.rsplit_once('-')?;
         (owned_name.starts_with("mdp-owned-")
             && nonce.len() == 32
             && nonce.bytes().all(|byte| byte.is_ascii_hexdigit()))
         .then_some(owned_name)
-    });
-    match recoverable_owned_name {
+    })
+}
+
+fn directory_tree_quarantine_name(name: &CStr) -> Result<CString> {
+    const PREFIX: &str = ".mdp-owned-temp-quarantine-";
+    match recoverable_owned_basename(name) {
         Some(owned_name) => CString::new(format!("{PREFIX}{owned_name}-{}", quarantine_nonce()?))
             .map_err(Into::into),
         None => quarantine_name(),
@@ -458,6 +462,17 @@ fn remove_directory_tree_if_identity_with_hooks<
     if opened != (expected_dev, expected_ino) || named_identity(dir_fd, name)? != opened {
         bail!("secure remove directory tree identity mismatch");
     }
+    let owned_marker_proof = if recoverable_owned_basename(name).is_some() {
+        Some(
+            inspect_owned_marker(
+                target_fd,
+                &CString::new(OWNED_MARKER_NAME).expect("static marker name is valid"),
+            )?["value"]
+                .clone(),
+        )
+    } else {
+        None
+    };
     let _sigterm_guard = SigtermMaskGuard::block()?;
     if named_identity(dir_fd, name)? != opened {
         bail!("secure remove directory tree identity changed before removal");
@@ -482,6 +497,13 @@ fn remove_directory_tree_if_identity_with_hooks<
         Ok(())
     })();
     if let Err(removal_error) = removal {
+        if let Some(proof) = &owned_marker_proof {
+            ensure_owned_marker_proof(target_fd, proof).map_err(|proof_error| {
+                anyhow!(
+                    "secure remove directory tree failed ({removal_error}); recovery proof restore failed: {proof_error}"
+                )
+            })?;
+        }
         match named_identity(dir_fd, &quarantine) {
             Ok(identity) if identity == opened => {
                 rename_no_replace(dir_fd, &quarantine, name).map_err(|restore_error| {
@@ -663,6 +685,36 @@ fn inspect_owned_marker_with_hook<F: FnOnce()>(
 
 fn inspect_owned_marker(dir_fd: RawFd, name: &CString) -> Result<Value> {
     inspect_owned_marker_with_hook(dir_fd, name, || {})
+}
+
+fn ensure_owned_marker_proof(dir_fd: RawFd, value: &Value) -> Result<()> {
+    let canonical = CString::new(OWNED_MARKER_NAME)?;
+    if let Ok(existing) = inspect_owned_marker(dir_fd, &canonical) {
+        if existing["value"] == *value {
+            return Ok(());
+        }
+        bail!("owned workspace recovery proof changed during removal");
+    }
+    let marker_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            canonical.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if marker_fd < 0 {
+        return Err(io::Error::last_os_error())
+            .map_err(|error| anyhow!("owned workspace recovery proof restore failed: {error}"));
+    }
+    let mut marker = unsafe { File::from_raw_fd(marker_fd) };
+    serde_json::to_writer(&mut marker, value)?;
+    marker.write_all(b"\n")?;
+    marker.sync_all()?;
+    if unsafe { libc::fsync(dir_fd) } != 0 {
+        return Err(io::Error::last_os_error()).map_err(Into::into);
+    }
+    Ok(())
 }
 
 fn secure_install_with_hook<F: FnOnce()>(
@@ -1294,6 +1346,86 @@ mod tests {
         )
         .unwrap();
         std::fs::remove_dir(&root).unwrap();
+    }
+
+    #[test]
+    fn late_child_after_marker_snapshot_restores_owned_recovery_proof() {
+        let root = std::env::temp_dir().join(format!(
+            "mdp-secure-tree-late-marker-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let name = format!(
+            ".mdp-owned-temp-quarantine-mdp-owned-validation-Ab12Cd-{}",
+            "4".repeat(32)
+        );
+        let tree = root.join(&name);
+        std::fs::create_dir(&tree).unwrap();
+        std::fs::write(tree.join("private"), b"private bytes").unwrap();
+        std::fs::write(
+            tree.join(".mdp-owned-temp-workspace.json"),
+            br#"{"contract":"mdp.owned-temp-workspace.v1"}"#,
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            tree.join(".mdp-owned-temp-workspace.json"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        let identity = std::fs::metadata(&tree).unwrap();
+        let parent = File::open(&root).unwrap();
+        let mut added = false;
+        let result = remove_directory_tree_if_identity_with_hook(
+            parent.as_raw_fd(),
+            &CString::new(name.clone()).unwrap(),
+            identity.dev(),
+            identity.ino(),
+            &mut |directory_fd, entry, _| {
+                if entry.to_bytes() == OWNED_MARKER_NAME && !added {
+                    let late = CString::new("late-private").unwrap();
+                    let fd = unsafe {
+                        libc::openat(
+                            directory_fd,
+                            late.as_ptr(),
+                            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_CLOEXEC,
+                            0o600,
+                        )
+                    };
+                    assert!(fd >= 0);
+                    let mut file = unsafe { File::from_raw_fd(fd) };
+                    file.write_all(b"late private bytes").unwrap();
+                    added = true;
+                }
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read(tree.join("late-private")).unwrap(),
+            b"late private bytes"
+        );
+        let directory = File::open(&tree).unwrap();
+        assert_eq!(
+            inspect_owned_marker(
+                directory.as_raw_fd(),
+                &CString::new(".mdp-owned-temp-workspace.json").unwrap()
+            )
+            .unwrap()["value"]["contract"],
+            "mdp.owned-temp-workspace.v1"
+        );
+        remove_directory_tree_if_identity(
+            parent.as_raw_fd(),
+            &CString::new(name).unwrap(),
+            identity.dev(),
+            identity.ino(),
+        )
+        .unwrap();
+        assert!(std::fs::read_dir(&root).unwrap().next().is_none());
+        std::fs::remove_dir(root).unwrap();
     }
 
     #[test]
