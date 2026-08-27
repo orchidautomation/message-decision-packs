@@ -141,11 +141,41 @@ For MCP-capable hosts, launch the profile-neutral local stdio server:
 node scripts/mdp-run-mcp-server.mjs
 ```
 
-It exposes `mdp_run_tools`, path-only `mdp_run`, and read-only
-`mdp_verify_run`. `mdp_run` accepts an existing request path and a new output
-directory; it does not accept inline source text, credentials, or an enable
-flag. Only a parsed generative request may inherit the key and native-call
-permission that were present when the server started.
+It exposes one canonical four-stage path:
+
+1. `mdp_run_tools` inventories the boundary and the next stages.
+2. `mdp_prepare_run` compiles a pack, exact job/model step, and declared input
+   paths into a required persisted `mdp.run-request.v1`. Pass `out` under an
+   approved work root; `manifest_out` is optional under the same role. Prepare
+   also returns the exact persisted `request_sha256`.
+3. `mdp_run` requires that existing work-root request path, prepare-returned
+   `request_sha256`, and a new output directory. It freezes the request and
+   rejects a digest mismatch before execution, then returns the CLI-owned bundle
+   and receipt.
+4. `mdp_verify_run` reads the resulting bundle and receipt from the approved
+   output root and returns the terminal CLI verification.
+
+Configure the local server with explicit `MDP_MCP_PACK_ROOTS`,
+`MDP_MCP_INPUT_ROOTS`, `MDP_MCP_WORK_ROOTS`, `MDP_MCP_OUTPUT_ROOTS`, and
+`MDP_MCP_CONSENT_ROOTS` before startup. Every server startup requires all five
+root roles; only a generative run consumes consent. For that run, the operator
+creates an out-of-band, one-shot consent record under the consent root, bound
+to the provider, purpose, exact prepared request and declared-source hashes,
+output root, expiry, and nonce, then passes only its `consent_id` to `mdp_run`.
+Tool arguments cannot manufacture consent or authorize provider access. The
+prepare-to-run handoff stays under the `work` role; it is not re-authorized as
+an input file. These tools do not accept inline source text, credentials, or an
+enable flag. Only a parsed generative request with valid one-shot consent may
+inherit the key and native-call permission that were present when the server
+started.
+
+`timeout_ms` bounds normal prepare, publication, and verification work. If
+failure cleanup has entered the finite descriptor-relative identity transaction,
+the supervisor sends TERM but never SIGKILLs that remove helper; the helper
+finishes unlinking the owned inode or restoring an unrelated leaf before the
+pending TERM takes effect. A failure response may therefore follow the normal
+deadline by that finite safety finalization instead of stranding filesystem
+state.
 
 MCP is transport only. It invokes the same CLI and returns canonical CLI data
 unchanged; it adds no execution, validation, or isolation authority.

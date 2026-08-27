@@ -3,13 +3,14 @@
 These are the current public docs:
 
 - [Getting Started](getting-started.md): installation and first use.
+- [Local MCP](local-mcp.md): the canonical four-tool local stdio path and bounded proposal v0 migration guidance.
 - [Conceptual Decision Flow](conceptual-decision-flow.md): pack layers, routing, fit, briefs, and drafting boundaries.
 - [Portfolio-Aware GTM Scope](portfolio-scope.md): scope existing primitives by product, capability, solution, or segment within one pack.
 - [Prompt Contracts](prompt-extraction-contract.md): normalization and extraction schemas.
 - [Decision Input Contracts](decision-input-contracts.md): attempted-complete job inputs, source-attempt policy, normalized envelopes, and no-draft behavior.
 - [Cold-model Conformance](cold-model-conformance.md): deterministic sufficiency, recorded behavioral trials, composite authority, private/public reports, and privacy boundaries.
 - [Runner Receipts](run-receipts.md): context-isolation receipt contract for audit-grade proposal workflows.
-- [Local Proposal Runner Surface](proposal-runner.md): host-neutral local command surface for staged source audit, native/headless normalization, validation, receipts, and review probes.
+- [Compatibility Proposal Runner Surface](proposal-runner.md): bounded v0 command/MCP compatibility for existing proposal consumers.
 - [Deterministic Proposal Evidence Harness](proposal-evidence-harness.md): network-free synthetic contract and negative-boundary proof for CI.
 - [Headless Normalization Runners](headless-normalization-runners.md): native/headless runner recipes for Codex, Claude Code, Cursor, OpenCode, and the bundled local stdio MCP wrapper.
 - [Native API Normalization Runner](native-api-normalization-runner.md): optional BYOK OpenAI reference runner for stateless Structured Outputs normalization.

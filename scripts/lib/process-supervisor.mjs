@@ -126,10 +126,12 @@ const groupIsClosed = (processGroupId) => {
   }
 }
 
-const waitForClosedGroup = async (processGroupId, attempts = 40) => {
+const waitForClosedGroup = async (processGroupId, attempts = 40, absoluteDeadlineMs = null) => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (groupIsClosed(processGroupId)) return true
-    await new Promise((resolveWait) => setTimeout(resolveWait, 25))
+    const remaining = absoluteDeadlineMs === null ? 25 : absoluteDeadlineMs - Date.now()
+    if (remaining <= 0) return false
+    await new Promise((resolveWait) => setTimeout(resolveWait, Math.min(25, remaining)))
   }
   return groupIsClosed(processGroupId)
 }
@@ -145,6 +147,10 @@ export const superviseProcess = ({
   recovery = null,
   deadlineMetadata = null,
   signal = null,
+  inheritedFds = [],
+  absoluteDeadlineMs = null,
+  terminationMode = 'term-kill',
+  startTimeoutAfter = null,
 }) =>
   new Promise((resolveResult) => {
     const startedAt = performance.now()
@@ -161,22 +167,37 @@ export const superviseProcess = ({
       cwd,
       detached: process.platform !== 'win32',
       env: environment,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe', ...(inheritedFds || [])],
     })
     const processGroupId = child.pid
 
     const escalate = () => {
       if (escalationPromise) return escalationPromise
       terminateProcessGroup(child, processGroupId, 'SIGTERM')
+      if (terminationMode === 'term-only') {
+        // Safety-critical finite helpers restore their invariants before
+        // unmasking SIGTERM. Never SIGKILL them mid-transaction; resolution
+        // waits for the child close event after the pending TERM is delivered.
+        escalationPromise = new Promise((resolveEscalation) => {
+          child.once('close', () => resolveEscalation({
+            processGroupClosed: groupIsClosed(processGroupId),
+            recovered: false,
+          }))
+        })
+        return escalationPromise
+      }
       escalationPromise = new Promise((resolveEscalation) => {
+        const graceMs = absoluteDeadlineMs === null
+          ? terminationGraceMs
+          : Math.max(0, Math.min(terminationGraceMs, absoluteDeadlineMs - Date.now()))
         setTimeout(async () => {
           terminateProcessGroup(child, processGroupId, 'SIGKILL')
-          const processGroupClosed = await waitForClosedGroup(processGroupId)
+          const processGroupClosed = await waitForClosedGroup(processGroupId, 40, absoluteDeadlineMs)
           const recovered = processGroupClosed && recovery
             ? cleanupMdpRecoveryClaim(recovery)
             : false
           resolveEscalation({ processGroupClosed, recovered })
-        }, terminationGraceMs)
+        }, graceMs)
       })
       return escalationPromise
     }
@@ -195,10 +216,22 @@ export const superviseProcess = ({
     child.on('error', () => {
       spawnFailed = true
     })
-    const timeout = setTimeout(() => {
-      timedOut = true
-      escalate()
-    }, timeoutMs)
+    let timeout = null
+    const armTimeout = () => {
+      if (finishRequested) return
+      timeout = setTimeout(() => {
+        timedOut = true
+        escalate()
+      }, timeoutMs)
+    }
+    if (startTimeoutAfter) {
+      Promise.resolve(startTimeoutAfter).then(armTimeout, () => {
+        spawnFailed = true
+        escalate()
+      })
+    } else {
+      armTimeout()
+    }
     const cancel = () => {
       if (finishRequested || timedOut || cancelled) return
       cancelled = true

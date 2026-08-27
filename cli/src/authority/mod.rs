@@ -90,10 +90,14 @@ pub(crate) const SUPPORTED_COMMAND_SURFACES: &[(&str, SurfaceRole)] = &[
     ("capabilities", SurfaceRole::Projection),
     ("conformance", SurfaceRole::Verifier),
     ("init", SurfaceRole::ArtifactWriter),
+    ("author", SurfaceRole::ArtifactWriter),
     ("doctor", SurfaceRole::Diagnostic),
     ("skills", SurfaceRole::Projection),
     ("requirements", SurfaceRole::Projection),
     ("prepare-run", SurfaceRole::Projection),
+    // Hidden transport helper: writes only beneath an inherited, identity-
+    // checked directory descriptor and carries no agent-callable authority.
+    ("__secure-install", SurfaceRole::ArtifactWriter),
     ("rebind-synthetic-chain", SurfaceRole::ArtifactWriter),
     ("validate-source-binding", SurfaceRole::Verifier),
     ("validate", SurfaceRole::Verifier),

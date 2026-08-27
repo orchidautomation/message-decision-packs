@@ -28,14 +28,17 @@ jobs:
           filters: |
             cli:
               - ".github/workflows/ci.yml"
+              - ".github/workflows/release.yml"
               - "cli/**"
               - "rust-toolchain.toml"
               - "Makefile"
               - "plugin/.codex-plugin/plugin.json"
+              - "plugin/assets/**"
               - "plugin/assets/templates/**"
               - "plugin/assets/authority-conformance/**"
               - "plugin/assets/**/*.md"
               - "assets/authority-conformance/**"
+              - "assets/**"
               - "assets/**/*.md"
               - "plugin/skills/**"
               - "plugin/skill-evals/**"
@@ -55,14 +58,19 @@ jobs:
               - "scripts/test-authority-conformance.mjs"
               - "scripts/test-run-mcp-server.mjs"
               - "scripts/mdp-run-mcp-server.mjs"
+              - "scripts/test-temp-workspace.mjs"
+              - "scripts/with-temp-workspace.mjs"
               - "scripts/test-proposal-mcp-server.sh"
               - "scripts/mdp-proposal-mcp-server.mjs"
               - "scripts/mdp-proposal-runner.mjs"
+              - "scripts/test-release-workflow.mjs"
               - "scripts/test-native-model-driver.mjs"
               - "scripts/mdp-native-model-openai.mjs"
               - "scripts/mdp-native-normalize-openai.mjs"
               - "scripts/lib/deadline-policy.mjs"
+              - "scripts/lib/identity-bound-directory.mjs"
               - "scripts/lib/process-supervisor.mjs"
+              - "scripts/lib/temp-workspace.mjs"
               - "scripts/lib/proposal-*.mjs"
 
   cli:
@@ -78,6 +86,11 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
         working-directory: cli
+      - name: Validate release workflow contract
+        run: node scripts/test-release-workflow.mjs
+      - name: Validate authored asset parity
+        run: |
+          /usr/bin/env -i /usr/bin/diff -qr "${{ github.workspace }}/plugin/assets" "${{ github.workspace }}/assets"
       - name: Test CLI
         run: cargo test
         working-directory: cli
@@ -95,6 +108,26 @@ jobs:
           python3 scripts/skill-eval-harness.py --mdp-bin cli/target/debug/mdp
       - name: Validate public skills with skills-ref
         run: make validate-skill-ref
+
+  mcp-macos:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build secure publication helper
+        run: cargo build --manifest-path cli/Cargo.toml
+      - name: Verify identity-bound MCP prepare publication
+        run: >-
+          node --test
+          --test-name-pattern='maps path-backed identity-bound|completes prepare, run, and verify|prepare refuses request and manifest parent swaps'
+          scripts/test-run-mcp-server.mjs
+      - name: Verify temporary workspace cleanup
+        run: node --test scripts/test-temp-workspace.mjs
 
   pluxx:
     runs-on: ubuntu-latest

@@ -57,6 +57,41 @@ mdp --json explain --dir PACK_ROOT
 mdp --json gaps --dir PACK_ROOT
 ```
 
+## Stage Every Multi-File Change
+
+Never make a multi-file authoring pass directly in the live pack. Copy the
+complete pack to a separate candidate directory outside the live tree, make
+all intended `.mdp/` edits there, refresh candidate-owned projections, and
+then seal a preview:
+
+```bash
+mdp --json readme refresh --dir CANDIDATE_ROOT
+mdp --json author preview --dir PACK_ROOT \
+  --candidate CANDIDATE_ROOT --out CHANGE_SET_JSON
+```
+
+`author preview` uses the normal pack validator and writes no live-pack files.
+A successful preview creates the required `--out` change-set file; a refused
+preview creates no plan. The result contains bounded `created`, `changed`,
+`unchanged`, and `deleted` path lists without file bodies. Review those lists
+and the candidate itself. Do not treat a generated candidate or a successful
+preview as reviewed authority.
+
+Only after review, apply that exact sealed change set:
+
+```bash
+mdp --json author apply --dir PACK_ROOT \
+  --candidate CANDIDATE_ROOT --change-set CHANGE_SET_JSON
+```
+
+Apply refuses exact live or candidate paths that changed after preview. A
+handled publication failure rolls back all MDP-owned writes and reports the
+rolled-back paths; it never overwrites a concurrent edit. Preserve the
+candidate and change-set file for inspection when apply is refused or recovery
+is indeterminate. Files outside `.mdp/` and runtime output directories are not
+author-managed. This workflow is filesystem-native and does not require or
+create a Git repository, commit, or branch.
+
 Every newly initialized or one-prompt-generated GTM pack must keep the starter
 prospect Decision Input Contract or replace it with an equally complete
 pack-specific contract before it is presented as governed or self-standing.
@@ -346,7 +381,7 @@ If this pack-build flow is also proving a sample proposal-review run, create a r
 mdp --json run-receipt --dir PACK_ROOT --workflow proposal-review --isolation isolated --declared-inputs-only --prompt-id normalize-opportunity --prompt-output OUTPUT_JSON --validation VALIDATION_JSON --source-audit SOURCE_AUDIT_JSON --runner-audit RUNNER_AUDIT_JSON --require-runner-audit
 ```
 
-Use `mdp --json schema runner-audit` for the host-owned native/headless runner evidence. Prefer the host-neutral local proposal runner at `scripts/mdp-proposal-runner.mjs` in source checkouts or `${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs` in installed Pluxx bundles when proving a proposal sample run; it stages sources, builds the declared-input-only request, calls the native runner, validates, receipts, and then runs review probes. For MCP-capable hosts, use the bundled local stdio MCP wrapper at `scripts/mdp-proposal-mcp-server.mjs` or `${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs`, which exposes `mdp_proposal_tools` and file/path-only `mdp_proposal_run`. This is not a hosted or remote MCP service, and MCP transport alone does not prove audit-grade isolation. The lower-level optional BYOK native reference runner at `scripts/mdp-native-normalize-openai.mjs` or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` still owns the stateless API call; dry-run/mock checks require no API key, while a real model call requires the operator's secure `OPENAI_API_KEY`. Pluxx-packaged skills can route users toward the runner, but pack authoring alone does not prove the model context boundary.
+Use `mdp --json schema runner-audit` for the host-owned native/headless runner evidence. Prefer the canonical CLI path for a proposal sample run. For MCP-capable hosts, use `scripts/mdp-run-mcp-server.mjs` or `${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs` and call `mdp_run_tools` → `mdp_prepare_run` → `mdp_run` → `mdp_verify_run`. Require prepare `out` under the approved work root, pass that request and prepare-returned `request_sha256` to run, and verify the emitted bundle/receipt from the approved output root. Those stages produce the boundary inventory, `mdp.run-request.v1`, run bundle/receipt, and `mdp.run-verification.v1`; MCP adds no authority or isolation assurance. The proposal runner and proposal MCP remain compatibility-only for existing v0 source-intake/receipt consumers. The lower-level optional BYOK native reference runner at `scripts/mdp-native-normalize-openai.mjs` or `${PLUGIN_ROOT}/scripts/mdp-native-normalize-openai.mjs` is also v0 compatibility; dry-run/mock checks require no API key, while a real model call requires the operator's secure `OPENAI_API_KEY`. Pluxx-packaged skills can route users toward the canonical run path, but pack authoring alone does not prove the model context boundary.
 
 Runner contract acceptance and integration support are separate. Consult [canonical runner support matrix](https://github.com/orchidautomation/message-decision-packs/blob/main/docs/headless-normalization-runners.md#canonical-runner-support-matrix) and use only `verified`, `recipe-only`, `unsupported`, or `fixture/mock-only`. Pack authoring, a documented recipe, a schema-valid audit, or MCP transport does not prove a verified integration.
 

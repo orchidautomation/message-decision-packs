@@ -241,7 +241,10 @@ The older proposal runner, proposal MCP wrapper, `mdp run-receipt`, and
 `scripts/mdp-native-normalize-openai.mjs` remain v0 compatibility surfaces.
 The profile-neutral local stdio MCP surface is
 `scripts/mdp-run-mcp-server.mjs`; it transports file paths to the same CLI and
-adds no authority or isolation assurance.
+adds no authority or isolation assurance. Its single canonical path is
+`mdp_run_tools` → `mdp_prepare_run` → `mdp_run` → `mdp_verify_run`; see
+[Local MCP](docs/local-mcp.md). The proposal MCP is packaged only as a bounded
+v0 compatibility surface and is not part of default discovery.
 
 Profiles express domain language over ten universal primitives:
 
@@ -281,6 +284,8 @@ See [Distribution](docs/distribution.md) for the release and update contract and
 - [Minimal context routing](docs/minimal-context-routing.md) — job budgets, exact routed-context digests, invocation binding, and selected-authority enforcement.
 
 - [Getting Started](docs/getting-started.md): install, create, route, fit, brief, and validate.
+- [Failure-Safe Pack Authoring](docs/pack-authoring.md): preview, validate, and transactionally apply complete multi-file candidates without Git.
+- [Local MCP](docs/local-mcp.md): the canonical four-stage stdio adapter and proposal v0 migration.
 - [Portfolio-Aware GTM Scope](docs/portfolio-scope.md): product, capability, solution, and segment scoping inside one pack.
 - [Product Foundations](docs/product-foundations.md): exact per-job product authority, readiness, compatibility, and README orientation.
 - [Conceptual Decision Flow](docs/conceptual-decision-flow.md): layer ownership and deterministic decision boundaries.

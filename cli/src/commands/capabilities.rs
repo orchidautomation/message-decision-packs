@@ -1,5 +1,6 @@
 use crate::authority::{SUPPORTED_COMMAND_SURFACES, SUPPORTED_PROJECTION_SURFACES};
 use crate::cli::Cli;
+use crate::commands::PACK_AUTHORING_RESULT_V1;
 use crate::commands::decision_trace::{
     DECISION_TRACE_V1, MAX_MERMAID_BYTES, MAX_TRACE_EDGES, MAX_TRACE_LABEL_BYTES, MAX_TRACE_NODES,
     MAX_TRACE_SOURCE_BYTES,
@@ -340,6 +341,8 @@ pub(crate) fn capabilities() -> Value {
             nested_command("assemble", JOB_CONFORMANCE_V1, &["--candidate", "--deterministic", "--behavioral", "--artifact-root"], &["--trial"], &["--out", "--dry-run"]),
             nested_command_with_outputs("report", &[CONFORMANCE_REPORT_V1, PUBLIC_CONFORMANCE_REPORT_V1], &["--conformance", "--artifact-root", "--visibility", "--generated-at"], &[], &["--out", "--dry-run"]),
             command("init", "mdp.init.v0", "writes-files", true, false, false, &["--name", "--target-name", "--target-kind", "--target-alias", "--exclude-term", "--dir", "--template", "--force", "--include-output-schemas", "--dry-run"]),
+            author_command("preview", "writes-new-change-set", &["--candidate", "--out"], &["--dir"]),
+            author_command("apply", "transactional-pack-write", &["--candidate", "--change-set"], &["--dir"]),
             command("doctor", "mdp.doctor.v0", "read-only", false, false, false, &["--dir"]),
             command("skills", "mdp.skills.v1", "read-only", false, false, false, &["--dir", "--job"]),
             command("requirements", REQUIREMENTS_CONTRACT, "read-only", false, false, false, &["--dir", "--job"]),
@@ -441,6 +444,30 @@ fn command(
     })
 }
 
+fn author_command(
+    subcommand: &str,
+    side_effects: &str,
+    required_args: &[&str],
+    optional_args: &[&str],
+) -> Value {
+    let mut args = required_args.to_vec();
+    args.extend_from_slice(optional_args);
+    json!({
+        "name": format!("author {subcommand}"),
+        "argv": ["author", subcommand],
+        "output_contract": PACK_AUTHORING_RESULT_V1,
+        "side_effects": side_effects,
+        "supports_json": true,
+        "supports_summary": true,
+        "supports_out": subcommand == "preview",
+        "supports_dry_run": false,
+        "supports_strict": false,
+        "required_args": required_args,
+        "optional_args": optional_args,
+        "args": args,
+    })
+}
+
 fn nested_command(
     subcommand: &str,
     output_contract: &str,
@@ -525,9 +552,16 @@ fn collect_commands(command: &Command, parent_path: &[String], output: &mut Vec<
     for subcommand in command.get_subcommands() {
         let mut path = parent_path.to_vec();
         path.push(subcommand.get_name().to_string());
-        let human_only_reason = path.iter().any(|segment| segment == "help").then_some(
-            "Clap-generated help navigation; use --json with an authored command for a machine envelope",
-        );
+        let human_only_reason = if path
+            .first()
+            .is_some_and(|segment| segment == "__secure-install")
+        {
+            Some("Internal MCP transport helper; it is not an agent-callable product command")
+        } else {
+            path.iter().any(|segment| segment == "help").then_some(
+                "Clap-generated help navigation; use --json with an authored command for a machine envelope",
+            )
+        };
         let subcommand_required = subcommand.is_subcommand_required_set();
         output.push(json!({
             "name": subcommand.get_name(),
@@ -854,6 +888,17 @@ mod tests {
                 .expect("commands array")
                 .iter()
                 .any(|command| command["name"] == "capabilities")
+        );
+        let author_preview = result["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .find(|command| command["argv"] == json!(["author", "preview"]))
+            .expect("author preview command");
+        assert_eq!(author_preview["side_effects"], "writes-new-change-set");
+        assert_eq!(
+            author_preview["required_args"],
+            json!(["--candidate", "--out"])
         );
         let report = result["commands"]
             .as_array()
@@ -1253,6 +1298,20 @@ mod tests {
                         .is_some_and(|path| path.first() == Some(&json!("help")))
                 })
                 .all(|command| command["classification"] == "human-only")
+        );
+        let secure_install = projected_command(commands, &["__secure-install"]);
+        assert_eq!(secure_install["classification"], "human-only");
+        assert!(
+            secure_install["human_only_reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("not an agent-callable"))
+        );
+        assert!(
+            result["commands"]
+                .as_array()
+                .expect("agent-callable compatibility commands")
+                .iter()
+                .all(|command| command["name"] != "__secure-install")
         );
         for namespace in [&["conformance"][..], &["readme"][..]] {
             let command = projected_command(commands, namespace);

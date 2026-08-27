@@ -39,7 +39,7 @@ upgrade.
    - Any dry-run, mock, fixture, advisory, blocked, malformed, failed, or
      timed-out result is not audit-grade.
 
-## Source Checkout Commands
+## V0 Compatibility: Source Checkout Commands
 
 First create candidate intake and inspect the declared-input-only request:
 
@@ -70,7 +70,7 @@ node scripts/mdp-proposal-runner.mjs run \
 `--source-audit` is optional when the runner can create the ledger from the
 supplied file, but it never replaces `--source` or human source approval.
 
-## Installed Plugin Commands
+## V0 Compatibility: Installed Plugin Commands
 
 Use the same arguments against the installed bundle:
 
@@ -98,34 +98,40 @@ host's actual `PLUGIN_ROOT`.
 
 ## MCP Path
 
-Launch the local stdio adapter from source or the installed bundle:
+Launch the canonical profile-neutral local stdio adapter from source or the
+installed bundle:
 
 ```bash
-node scripts/mdp-proposal-mcp-server.mjs
-node "${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs"
+node scripts/mdp-run-mcp-server.mjs
+node "${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs"
 ```
 
-Call `mdp_proposal_run` with path-only arguments:
+Use `mdp_run_tools` → `mdp_prepare_run` → `mdp_run` → `mdp_verify_run`. The
+stages produce the boundary inventory, `mdp.run-request.v1`, run
+bundle/receipt, and `mdp.run-verification.v1`. Pass paths only; MCP adds no
+authority or isolation assurance. `mdp-proposal-mcp-server.mjs` and its two
+tools remain compatibility-only for existing v0 consumers and must not be
+presented as a second default path.
 
-```json
-{
-  "pack": "PACK_ROOT",
-  "workdir": "NEW_WORKDIR",
-  "source_paths": ["SOURCE_FILE"],
-  "source_intake_path": "APPROVED_SOURCE_INTAKE_JSON",
-  "source_audit_path": "SOURCE_AUDIT_JSON",
-  "model": "MODEL_ID",
-  "require_audit_grade": true
-}
-```
-
-Raw proposal text and ambient chat are not MCP arguments. At least one
-`source_paths` file is required; `source_audit_path` alone is not a runnable
-source. Treat an MCP tool error as blocked.
+For v1, pass the exact approved source/input files as `logical_name=path`
+mappings to `mdp_prepare_run`, require its `out` path under an approved work
+root, then pass that same request path and prepare-returned `request_sha256` to
+`mdp_run`; it rejects a mismatch before execution. Verify the emitted
+`run-bundle.json` and `run-receipt.json` from the approved output root. Raw
+proposal text and ambient chat are never MCP arguments. Treat any MCP tool
+error or invalid CLI verification as blocked.
 
 ## Read Results, Not Vibes
 
-For MCP, consume the strict top-level fields:
+For the canonical MCP path, consume the CLI-owned `mdp.run-execution.v1`
+authority block and terminal state, then require `mdp.run-verification.v1`
+`valid: true`. Return those authorities unchanged.
+
+### V0 compatibility result fields
+
+Only an existing `mdp_proposal_run` consumer should use the v0
+`source_paths`/`source_audit_path` arguments and consume these strict top-level
+fields:
 
 - `mode`
 - `decision`
@@ -135,7 +141,7 @@ For MCP, consume the strict top-level fields:
 - `termination_signal`
 - `runner_exit_status`
 
-For a direct runner call, read `proposal-runner-result.json` and its referenced
+For a v0 direct runner call, read `proposal-runner-result.json` and its referenced
 `mdp.run-receipt.v0`. MCP transport, tool availability, an installed command,
 schema-valid JSON, or a runner identifier never upgrades the result.
 Report integration support separately from this invocation using only the

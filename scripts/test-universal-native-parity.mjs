@@ -145,7 +145,7 @@ const publicRoutedContextAcceptance = ({ baseRequest, routedInput, pack, jobId }
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
-        params: { name: 'mdp_run', arguments: { request_path: requestPath, output_dir: outputDir } },
+        params: { name: 'mdp_run', arguments: { request_path: requestPath, request_sha256: sha256File(requestPath), output_dir: outputDir } },
       })}\n`,
     },
   )
@@ -699,6 +699,7 @@ try {
             name: 'mdp_run',
             arguments: {
               request_path: mcpParity.requestPath,
+              request_sha256: sha256File(mcpParity.requestPath),
               output_dir: mcpParity.outputDir,
               timeout_ms: 300000,
             },

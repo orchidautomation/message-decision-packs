@@ -1,5 +1,9 @@
 # Getting Started
 
+For multi-file edits to an existing pack, do not author directly in the live
+tree. Stage a complete candidate and use `mdp author preview` followed by
+`mdp author apply`; see [Failure-safe pack authoring](pack-authoring.md).
+
 Message Decision Packs (MDP) are local/offline files plus a local `mdp` CLI and agent plugin. MDP stores GTM messaging decisions and profile-specific review decisions as routing contracts, fit or review rules, approved claims, avoid-rules, output-rules, and evidence gaps. It does not send messages, update CRM, enrich leads, scrape data, sequence outbound, submit proposals, own approvals, or act as an AI SDR.
 
 If you want the mental model first, read [Conceptual Decision Flow](conceptual-decision-flow.md). It explains how a provider-neutral prospect/source row moves through fit, persona, pains, hooks, proof, CTA policy, avoid-rules, output-rules, and bounded context for drafting.
@@ -87,6 +91,34 @@ a new run and receipt. Hosts such as Clay own rows, batching, retries,
 credentials, source collection, and downstream actions; MDP owns the frozen
 decision contract and validation.
 
+### Use the canonical local MCP path
+
+MCP-capable hosts use one default adapter for every profile:
+
+```bash
+node "${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs"
+```
+
+Call `mdp_run_tools` to inspect the boundary, then use `mdp_prepare_run` with a
+required new `out` path under `MDP_MCP_WORK_ROOTS` to persist
+`mdp.run-request.v1`, then pass both that path and prepare's `request_sha256` to
+`mdp_run`. The adapter freezes the request and rejects a digest mismatch before
+execution; a matched request produces `run-bundle.json` and
+`run-receipt.json`, and `mdp_verify_run` to produce
+`mdp.run-verification.v1` from those files under `MDP_MCP_OUTPUT_ROOTS`. Each result names the next permitted stage. The
+server must start with operator-approved `MDP_MCP_*_ROOTS`; provider-capable
+runs also require startup permission, a credential, and a matching one-shot
+consent record. Tool arguments cannot grant either permission.
+
+The canonical adapter supports identity-bound prepare publication on Linux and
+macOS. It fails closed on Windows or another unsupported host; use the CLI
+directly on those hosts.
+
+The MCP adapter transports file-oriented CLI calls and adds no decision
+authority or isolation assurance. The older proposal MCP is compatibility-only
+and is not part of beginner/default discovery. Existing consumers can follow
+the bounded migration in [Local MCP](local-mcp.md).
+
 ## Create A Starter Pack
 
 ```bash
@@ -128,7 +160,7 @@ The proposal starter also includes proof-output draft examples under `examples/p
 
 The proposal starter does not create prospect rows or outbound fixtures. It is a synthetic proposal review profile for bid/no-bid, compliance, proof, red-team, and executive review workflows. Its `normalize-opportunity` prompt normalizes messy proposal/RFP context into bounded profile vocabulary for local validation; `verify-output` checks proof-carrying generated text against real pack IDs before the text is trusted. Neither command submits, scrapes, enriches, certifies, or manages proposal work.
 
-For a video-ready end-to-end walkthrough with messy synthetic source files, a generated proposal `.mdp/`, local proposal runner artifacts, run-receipt gates, route checks, proof-output verification, and a readable review layer, run `bash examples/proposal-flow-video/scripts/run-demo.sh` from the repository root. The default demo uses offline mock mode and should produce a blocked/non-audit-grade receipt; the CLI blocks demo/fixture/mock/synthetic runner evidence from `audit-grade`. Complete the [Proposal Demo Go/No-Go Gate](proposal-demo-go-no-go.md) before recording or presenting it. Production runs should switch to a real native/headless run, either through the local runner command or bundled local stdio MCP wrapper, and require an audit-grade receipt backed by real runner evidence.
+For a video-ready end-to-end walkthrough with messy synthetic source files, a generated proposal `.mdp/`, local proposal runner artifacts, run-receipt gates, route checks, proof-output verification, and a readable review layer, run `bash examples/proposal-flow-video/scripts/run-demo.sh` from the repository root. The default demo uses offline mock mode and should produce a blocked/non-audit-grade receipt; the CLI blocks demo/fixture/mock/synthetic runner evidence from `audit-grade`. Complete the [Proposal Demo Go/No-Go Gate](proposal-demo-go-no-go.md) before recording or presenting it. Production runs should use the canonical `mdp run` path directly or through the profile-neutral local stdio MCP adapter and require the exact CLI-owned evidence appropriate to the selected contract. The older proposal runner/MCP remains compatibility-only.
 
 The starter creates:
 

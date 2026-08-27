@@ -1,4 +1,10 @@
-# Local Proposal Runner Surface
+# Compatibility Proposal Runner Surface
+
+> **Compatibility-only:** New MCP integrations must use the canonical
+> `mdp_run_tools` → `mdp_prepare_run` → `mdp_run` → `mdp_verify_run` path in
+> [`scripts/mdp-run-mcp-server.mjs`](local-mcp.md). This v0 proposal runner and
+> MCP remain packaged only for existing consumers that still need the legacy
+> source-intake or receipt envelope.
 
 `scripts/mdp-proposal-runner.mjs` is the host-neutral local runner surface for proposal normalization. It wraps the existing native runner and CLI gates into one customer-controlled artifact chain:
 
@@ -13,7 +19,7 @@ local sources
   -> optional fit/route review-support probes
 ```
 
-This runner is also wrapped by a bundled local stdio MCP server. It is not a hosted or remote MCP service.
+This runner is also wrapped by a compatibility-only local stdio MCP server. It is not a hosted or remote MCP service and is not part of beginner/default discovery.
 
 The native runner path is currently `recipe-only`. The MCP wrapper is transport, not verification. See the [canonical runner support matrix](headless-normalization-runners.md#canonical-runner-support-matrix); do not infer a verified integration from tool availability, a runner identifier, or schema-valid audit JSON.
 
@@ -55,10 +61,9 @@ runner modules (including readiness reports), proposal skills, local runner
 tool inventory, MCP tool schema, activation guardrails, and a freshly
 initialized proposal pack. Source-tree tests alone are not release proof.
 
-```bash
-node scripts/mdp-proposal-runner.mjs tools
-node scripts/mdp-proposal-mcp-server.mjs
-```
+Existing consumers can inspect the legacy command surface with
+`node scripts/mdp-proposal-runner.mjs tools`. New MCP consumers should follow
+[Local MCP](local-mcp.md).
 
 The runner step names are:
 
@@ -73,12 +78,12 @@ When `--clean-run-v1` is selected, `mdp_clean_run_v1` replaces the legacy
 sole authority for the v1 validation artifact, hashes, terminal state, receipt,
 and canonical authority block.
 
-The stdio MCP server exposes two callable MCP tools:
+The compatibility stdio MCP server exposes two callable MCP tools:
 
 - `mdp_proposal_tools` — read-only inspection of the runner boundary contract.
 - `mdp_proposal_run` — file/path-only wrapper around `mdp-proposal-runner.mjs run`.
 
-`mdp_proposal_run` intentionally accepts local source file paths and source-audit paths, not raw chat text. MCP transport is only the call boundary; audit-grade status still comes from a valid runner audit plus `mdp run-receipt --require-runner-audit`.
+`mdp_proposal_run` intentionally accepts local source file paths and source-audit paths, not raw chat text. MCP transport is only the call boundary; audit-grade status still comes from a valid runner audit plus `mdp run-receipt --require-runner-audit`. Do not adopt this tool for a new integration; migrate to the canonical four-tool path.
 
 The MCP tool accepts `clean_run_v1: true` with a required
 `pack_release_id`. It returns the CLI-owned `authority_contract`,
@@ -314,8 +319,12 @@ Installed Pluxx bundles package repo scripts, so hosts can use:
 
 ```bash
 node "${PLUGIN_ROOT}/scripts/mdp-proposal-runner.mjs" ...
-node "${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs"
 ```
+
+Existing compatibility consumers may still launch
+`${PLUGIN_ROOT}/scripts/mdp-proposal-mcp-server.mjs` while migrating. Default
+MCP discovery and all new integrations use
+`${PLUGIN_ROOT}/scripts/mdp-run-mcp-server.mjs`; see [Local MCP](local-mcp.md).
 
 The documented installer still installs release assets, not the current `main` branch:
 
