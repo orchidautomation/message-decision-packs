@@ -61,6 +61,32 @@ function assertDirectJobProperty(lines, property, expected) {
   assert.deepEqual(matches.map((line) => line.trim()), [`${property}: ${expected}`])
 }
 
+function filterStepBlock(workflow) {
+  const changes = jobBlock(workflow, 'changes')
+  const start = changes.findIndex(
+    (line) => line.match(/^\s*/u)[0].length === 6 && line.trim() === '- id: filter',
+  )
+  assert.notEqual(start, -1, 'changes job must contain the projected filter step')
+  let end = changes.length
+  for (let index = start + 1; index < changes.length; index += 1) {
+    const trimmed = changes[index].trim()
+    const indent = changes[index].match(/^\s*/u)[0].length
+    if (trimmed.startsWith('- ') && indent === 6) {
+      end = index
+      break
+    }
+  }
+  const step = changes.slice(start, end)
+  assert.ok(
+    step.some(
+      (line) =>
+        line.match(/^\s*/u)[0].length === 8 && line.trim() === 'uses: dorny/paths-filter@v4',
+    ),
+    'filter step must use dorny/paths-filter@v4',
+  )
+  return step
+}
+
 function assertCliJobWiring(workflow) {
   const changes = jobBlock(workflow, 'changes')
   const outputsIndex = changes.findIndex(
@@ -76,6 +102,7 @@ function assertCliJobWiring(workflow) {
   const cli = jobBlock(workflow, 'cli')
   assertDirectJobProperty(cli, 'needs', 'changes')
   assertDirectJobProperty(cli, 'if', "needs.changes.outputs.cli == 'true'")
+  filterStepBlock(workflow)
 }
 
 function runBlock(workflow, name) {
@@ -100,7 +127,7 @@ function assertUnconditionalStep(workflow, name) {
 }
 
 function assertCliPathFilter(workflow, requiredGlob) {
-  const lines = workflow.split(/\r?\n/)
+  const lines = filterStepBlock(workflow)
   const filtersIndex = lines.findIndex((line) => line.trim() === 'filters: |')
   assert.notEqual(filtersIndex, -1, 'missing paths-filter filters block')
   const filtersIndent = lines[filtersIndex].match(/^\s*/u)[0].length
@@ -218,6 +245,14 @@ for (const [name, mutation] of [
   [
     'cli job no longer needs changes',
     ciWorkflow.replace('    needs: changes', '    needs: pluxx'),
+  ],
+  [
+    'renamed paths filter step',
+    ciWorkflow.replace('      - id: filter', '      - id: filter2'),
+  ],
+  [
+    'replaced paths filter action',
+    ciWorkflow.replace('        uses: dorny/paths-filter@v4', '        uses: actions/checkout@v4'),
   ],
 ]) {
   assert.throws(() => assertAssetParityCiContract(mutation), undefined, name)
