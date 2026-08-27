@@ -642,9 +642,11 @@ PY
 mcp_run_stdout="$({
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
   python3 - "$run_fixture/mcp-run-request.json" "$run_fixture/mcp-run" <<'PY'
-import json, sys
+import hashlib, json, sys
 print(json.dumps({"jsonrpc":"2.0", "id":2, "method":"tools/call", "params": {
-    "name":"mdp_run", "arguments":{"request_path":sys.argv[1], "output_dir":sys.argv[2]}}}))
+    "name":"mdp_run", "arguments":{"request_path":sys.argv[1],
+    "request_sha256":hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest(),
+    "output_dir":sys.argv[2]}}}))
 PY
 } | (cd "$install_home" && \
   MDP_BIN="$mdp_bin" \
