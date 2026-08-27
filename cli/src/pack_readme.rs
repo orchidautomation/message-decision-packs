@@ -8,6 +8,7 @@ pub(crate) const README_OWNERSHIP_BEGIN: &str = "<!-- mdp:readme-ownership v1 be
 pub(crate) const README_OWNERSHIP_END: &str = "<!-- mdp:readme-ownership v1 end -->";
 pub(crate) const README_INVENTORY_BEGIN: &str = "<!-- mdp:readme-inventory v1 begin -->";
 pub(crate) const README_INVENTORY_END: &str = "<!-- mdp:readme-inventory v1 end -->";
+pub(crate) const README_MARKER_DIAGNOSTIC: &str = "README machine-owned markers are malformed; expected zero or exactly one non-overlapping begin/end pair for each generated region";
 
 pub(crate) fn render_pack_readme(
     manifest: &Manifest,
@@ -299,7 +300,11 @@ pub(crate) fn replace_inventory_block(readme: &str, fresh_block: &str) -> String
 /// Refresh both machine-owned README regions. A legacy README is migrated by
 /// prepending the ownership legend and appending the generated inventory; its
 /// existing human prose remains byte-for-byte intact between those additions.
-pub(crate) fn replace_readme_regions(readme: &str, fresh_inventory: &str) -> String {
+pub(crate) fn replace_readme_regions(
+    readme: &str,
+    fresh_inventory: &str,
+) -> Result<String, &'static str> {
+    validate_readme_regions(readme)?;
     let ownership = render_ownership_block();
     let with_ownership = if extract_ownership_block(readme).is_some() {
         replace_marked_block(
@@ -311,7 +316,7 @@ pub(crate) fn replace_readme_regions(readme: &str, fresh_inventory: &str) -> Str
     } else {
         insert_ownership_block(readme, &ownership)
     };
-    replace_inventory_block(&with_ownership, fresh_inventory)
+    Ok(replace_inventory_block(&with_ownership, fresh_inventory))
 }
 
 pub(crate) fn human_owned_readme(readme: &str) -> String {
@@ -325,8 +330,48 @@ pub(crate) fn human_owned_readme(readme: &str) -> String {
 }
 
 fn extract_marked_block(readme: &str, begin_marker: &str, end_marker: &str) -> Option<String> {
-    let (begin, end) = marked_block_offsets(readme, begin_marker, end_marker)?;
+    let (begin, end) = inspect_marked_region(readme, begin_marker, end_marker)
+        .ok()
+        .flatten()?;
     Some(readme[begin..end].to_string())
+}
+
+/// Reject ambiguous marker layouts before any generated-region replacement.
+/// This keeps malformed or duplicated markers from turning intervening human
+/// prose into a machine-owned span on a later refresh.
+pub(crate) fn validate_readme_regions(readme: &str) -> Result<(), &'static str> {
+    let ownership = inspect_marked_region(readme, README_OWNERSHIP_BEGIN, README_OWNERSHIP_END)?;
+    let inventory = inspect_marked_region(readme, README_INVENTORY_BEGIN, README_INVENTORY_END)?;
+    if let (Some((left_begin, left_end)), Some((right_begin, right_end))) = (ownership, inventory)
+        && left_begin < right_end
+        && right_begin < left_end
+    {
+        return Err(README_MARKER_DIAGNOSTIC);
+    }
+    Ok(())
+}
+
+fn inspect_marked_region(
+    readme: &str,
+    begin_marker: &str,
+    end_marker: &str,
+) -> Result<Option<(usize, usize)>, &'static str> {
+    let begins = readme
+        .match_indices(begin_marker)
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    let ends = readme
+        .match_indices(end_marker)
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    match (begins.as_slice(), ends.as_slice()) {
+        ([], []) => Ok(None),
+        ([begin], [end]) if begin < end => Ok(Some((
+            *begin,
+            block_end_offset(readme, *begin, end_marker).ok_or(README_MARKER_DIAGNOSTIC)?,
+        ))),
+        _ => Err(README_MARKER_DIAGNOSTIC),
+    }
 }
 
 fn insert_ownership_block(readme: &str, ownership: &str) -> String {
@@ -390,9 +435,9 @@ fn marked_block_offsets(
     begin_marker: &str,
     end_marker: &str,
 ) -> Option<(usize, usize)> {
-    let begin = readme.find(begin_marker)?;
-    let end = block_end_offset(readme, begin, end_marker)?;
-    Some((begin, end))
+    inspect_marked_region(readme, begin_marker, end_marker)
+        .ok()
+        .flatten()
 }
 
 /// Return the offset just past the end of the owned block beginning at `begin`,

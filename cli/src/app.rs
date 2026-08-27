@@ -1036,6 +1036,9 @@ fn apply_strict(mut data: Value, strict: bool, source: StrictWarningSource) -> V
             .into_iter()
             .flatten()
             .filter(|issue| issue["severity"].as_str() == Some("warning"))
+            .filter(|issue| {
+                issue["authority"].as_str() != Some("non-authoritative-mechanical-warning")
+            })
             .cloned()
             .collect::<Vec<_>>(),
         StrictWarningSource::ConstraintWarnings => data["constraint_warnings"]
@@ -1753,6 +1756,27 @@ mod tests {
         assert_eq!(data["valid"], false);
         assert_eq!(data["strict"]["warning_count"], 1);
         assert_eq!(data["strict_warnings"][0]["code"], "target_word_count");
+    }
+
+    #[test]
+    fn strict_validation_does_not_promote_non_authoritative_mechanical_warnings() {
+        let data = apply_strict(
+            json!({
+                "valid": true,
+                "issues": [{
+                    "code": "readme_human_source_reference_missing",
+                    "severity": "warning",
+                    "authority": "non-authoritative-mechanical-warning",
+                    "message": "advisory only"
+                }]
+            }),
+            true,
+            StrictWarningSource::Issues,
+        );
+
+        assert_eq!(data["valid"], true);
+        assert_eq!(data["strict"]["warning_count"], 0);
+        assert!(data.get("strict_warnings").is_none());
     }
 
     #[test]

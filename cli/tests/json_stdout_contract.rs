@@ -115,6 +115,59 @@ fn capabilities_envelope_is_one_parseable_json_value() {
 }
 
 #[test]
+fn strict_validate_keeps_readme_mechanical_warning_advisory_in_json_and_exit() {
+    let root = std::env::temp_dir().join(format!(
+        "mdp-strict-readme-advisory-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create fixture root");
+    let init = Command::new(mdp_bin())
+        .args(["--json", "init", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("initialize fixture pack");
+    assert!(init.status.success(), "init failed: {:?}", init.stdout);
+
+    let readme_path = root.join(".mdp/README.md");
+    let readme = std::fs::read_to_string(&readme_path).expect("read starter README");
+    let edited = readme.replacen(
+        "## Sources\n\n",
+        "## Sources\n\n- `missing-advisory`: synthetic fixture\n",
+        1,
+    );
+    assert_ne!(
+        edited, readme,
+        "fixture should edit the exact Sources section"
+    );
+    std::fs::write(&readme_path, edited).expect("write advisory reference");
+
+    let output = Command::new(mdp_bin())
+        .args(["--json", "validate", "--strict", "--dir"])
+        .arg(&root)
+        .output()
+        .expect("strict validate fixture pack");
+    assert_eq!(output.status.code(), Some(0), "stdout: {:?}", output.stdout);
+    assert!(output.stderr.is_empty());
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one JSON validation envelope");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["data"]["valid"], true);
+    assert_eq!(envelope["data"]["strict"]["warning_count"], 0);
+    assert!(envelope["data"]["issues"].as_array().is_some_and(|issues| {
+        issues.iter().any(|issue| {
+            issue["code"] == "readme_human_source_reference_missing"
+                && issue["authority"] == "non-authoritative-mechanical-warning"
+        })
+    }));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn help_and_version_wrap_as_one_parseable_json_value() {
     let (help_code, _, help_stderr, help_value) = run(&["--json", "--help"], Case::Ok);
     assert_eq!(help_code, 0);

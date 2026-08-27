@@ -6,8 +6,9 @@ use crate::pack_io::{read_card, read_manifest, resolve_pack_path};
 use crate::pack_readme::{
     README_INVENTORY_CONTRACT, extract_inventory_block, extract_ownership_block,
     human_owned_readme, render_inventory_block, render_ownership_block, replace_readme_regions,
+    validate_readme_regions,
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use serde_yaml::Value as YamlValue;
 use std::fs;
@@ -19,9 +20,12 @@ use std::path::Path;
 pub(crate) fn check_readme(root: &Path) -> Result<Value> {
     let readme_path = root.join(DEFAULT_DIR).join("README.md");
     let existing = fs::read_to_string(&readme_path).unwrap_or_default();
+    validate_readme_regions(&existing).map_err(|message| anyhow!(message))?;
     let (manifest, cards, source_ledger, prompt_ids) = load_readme_authority(root)?;
     let warnings = human_reference_warnings(&existing, &manifest, &source_ledger, &readme_path);
-    let unassessed_changed_regions = changed_generated_regions(&existing, None);
+    let card_refs = cards.iter().collect::<Vec<_>>();
+    let fresh_block = render_inventory_block(&manifest, &card_refs, &source_ledger, &prompt_ids);
+    let changed_generated_regions = changed_generated_regions(&existing, Some(&fresh_block));
     let Some(existing_block) = extract_inventory_block(&existing) else {
         return Ok(json!({
             "contract": README_INVENTORY_CONTRACT,
@@ -30,17 +34,14 @@ pub(crate) fn check_readme(root: &Path) -> Result<Value> {
             "drift": false,
             "has_owned_block": false,
             "path": readme_path.display().to_string(),
-            "generated_regions": generated_region_report(&unassessed_changed_regions),
-            "changed_generated_regions": unassessed_changed_regions,
+            "generated_regions": generated_region_report(&changed_generated_regions),
+            "changed_generated_regions": changed_generated_regions,
             "untouched_human_regions": untouched_human_regions(),
             "semantic_prose_review": "not-performed",
             "warnings": warnings
         }));
     };
 
-    let card_refs = cards.iter().collect::<Vec<_>>();
-    let fresh_block = render_inventory_block(&manifest, &card_refs, &source_ledger, &prompt_ids);
-    let changed_generated_regions = changed_generated_regions(&existing, Some(&fresh_block));
     if existing_block == fresh_block {
         Ok(json!({
             "contract": README_INVENTORY_CONTRACT,
@@ -85,7 +86,8 @@ pub(crate) fn refresh_readme(root: &Path, out: Option<&Path>, dry_run: bool) -> 
     let fresh_block = render_inventory_block(&manifest, &card_refs, &source_ledger, &prompt_ids);
     let readme_path = root.join(DEFAULT_DIR).join("README.md");
     let existing = fs::read_to_string(&readme_path).unwrap_or_default();
-    let updated = replace_readme_regions(&existing, &fresh_block);
+    let updated =
+        replace_readme_regions(&existing, &fresh_block).map_err(|message| anyhow!(message))?;
     let had_owned_block = extract_inventory_block(&existing).is_some();
     let changed_generated_regions = changed_generated_regions(&existing, Some(&fresh_block));
     let warnings = human_reference_warnings(&existing, &manifest, &source_ledger, &readme_path);
@@ -217,17 +219,15 @@ fn human_reference_warnings(
             ));
         }
     }
-    if let Some(sources) = markdown_section(&human, "Sources") {
-        let mut seen_sources = std::collections::BTreeSet::new();
-        for token in inline_code_tokens(sources) {
-            if !source_ids.contains(token.as_str()) && seen_sources.insert(token.clone()) {
-                warnings.push(reference_warning(
-                    "readme_human_source_reference_missing",
-                    "source",
-                    &token,
-                    readme_path,
-                ));
-            }
+    let mut seen_sources = std::collections::BTreeSet::new();
+    for token in source_reference_ids(&human) {
+        if !source_ids.contains(token.as_str()) && seen_sources.insert(token.clone()) {
+            warnings.push(reference_warning(
+                "readme_human_source_reference_missing",
+                "source",
+                &token,
+                readme_path,
+            ));
         }
     }
     warnings
@@ -257,12 +257,45 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
         .collect()
 }
 
-fn markdown_section<'a>(markdown: &'a str, title: &str) -> Option<&'a str> {
-    let heading = format!("## {title}");
-    let start = markdown.find(&heading)? + heading.len();
-    let tail = &markdown[start..];
-    let end = tail.find("\n## ").unwrap_or(tail.len());
-    Some(&tail[..end])
+fn source_reference_ids(markdown: &str) -> Vec<String> {
+    let mut in_sources = false;
+    let mut fence: Option<&str> = None;
+    let mut ids = Vec::new();
+    for raw_line in markdown.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        let trimmed = line.trim_start();
+        if let Some(active) = fence {
+            if trimmed.starts_with(active) {
+                fence = None;
+            }
+            continue;
+        }
+        if trimmed.starts_with("```") {
+            fence = Some("```");
+            continue;
+        }
+        if trimmed.starts_with("~~~") {
+            fence = Some("~~~");
+            continue;
+        }
+        if line.starts_with("## ") {
+            in_sources = line == "## Sources";
+            continue;
+        }
+        if !in_sources {
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("- `") else {
+            continue;
+        };
+        let Some((id, _)) = rest.split_once("`:") else {
+            continue;
+        };
+        if !id.is_empty() {
+            ids.push(id.to_string());
+        }
+    }
+    ids
 }
 
 fn stale_drift_issue(readme_path: &Path, severity: &str) -> Value {
@@ -498,6 +531,12 @@ mod tests {
         assert_eq!(result["valid"], true);
         assert_eq!(result["drift"], false);
         assert_eq!(result["has_owned_block"], false);
+        assert_eq!(
+            result["changed_generated_regions"],
+            json!(["ownership", "inventory"])
+        );
+        assert_eq!(result["generated_regions"][0]["changed"], true);
+        assert_eq!(result["generated_regions"][1]["changed"], true);
         assert!(readme_validation_issues(&root).is_empty());
         let _ = std::fs::remove_dir_all(root);
     }
@@ -529,6 +568,43 @@ mod tests {
         // After migration, check reports fresh.
         let check = check_readme(&root).expect("check");
         assert_eq!(check["status"], "fresh");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn malformed_markers_fail_repeated_refresh_without_changing_human_bytes() {
+        let root = std::env::temp_dir().join(format!("mdp-readme-malformed-{}", nonce()));
+        init_pack(&root, "Malformed Readme Pack", "gtm", true, false)
+            .expect("pack should initialize");
+        let readme_path = root.join(".mdp/README.md");
+        let ownership_begin = crate::pack_readme::README_OWNERSHIP_BEGIN;
+        let ownership_end = crate::pack_readme::README_OWNERSHIP_END;
+        let inventory_begin = crate::pack_readme::README_INVENTORY_BEGIN;
+        let inventory_end = crate::pack_readme::README_INVENTORY_END;
+        let cases = [
+            format!("# Human\n\nkeep unmatched bytes\n{ownership_begin}\n"),
+            format!(
+                "# Human\n\n{ownership_begin}\nlegend\n{ownership_end}\nkeep duplicate bytes\n{ownership_begin}\nlegend two\n{ownership_end}\n"
+            ),
+            format!(
+                "# Human\n\n{ownership_begin}\nkeep nested bytes\n{inventory_begin}\ninventory\n{ownership_end}\n{inventory_end}\n"
+            ),
+        ];
+        for malformed in cases {
+            std::fs::write(&readme_path, &malformed).expect("write malformed readme");
+            for _ in 0..2 {
+                let error = refresh_readme(&root, None, false)
+                    .expect_err("malformed markers must fail closed");
+                assert_eq!(
+                    error.to_string(),
+                    crate::pack_readme::README_MARKER_DIAGNOSTIC
+                );
+                assert_eq!(
+                    std::fs::read_to_string(&readme_path).expect("readme after refusal"),
+                    malformed
+                );
+            }
+        }
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -609,6 +685,35 @@ mod tests {
                 .any(|warning| { warning["code"] == "readme_human_card_reference_missing" })
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn source_reference_parser_ignores_near_headings_inline_code_and_fences() {
+        let markdown = r#"# Human README
+
+## Sources appendix
+- `near-heading`: must be ignored
+
+```markdown
+## Sources
+- `fenced-heading`: must be ignored
+```
+
+## Sources
+Inline `inline-code` must be ignored.
+
+```text
+- `fenced-code`: must be ignored
+```
+
+- not-backticked: ignored
+- `missing-colon` ignored
+- `declared-source`: accepted list shape
+
+## Next
+- `outside-section`: ignored
+"#;
+        assert_eq!(source_reference_ids(markdown), vec!["declared-source"]);
     }
 
     #[test]
