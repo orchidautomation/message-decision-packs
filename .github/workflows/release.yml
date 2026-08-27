@@ -121,6 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
+          cargo build --manifest-path cli/Cargo.toml
           MDP_RELEASE_REQUIRE_STAGED_PARITY=1 \
             MDP_RELEASE_INSTALLER="release-assets/install.sh" \
             scripts/release-install-smoke.sh "$version"

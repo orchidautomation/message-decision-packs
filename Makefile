@@ -162,6 +162,7 @@ validate-installers:
 	node --check scripts/mdp-proposal-runner.mjs
 	node --check scripts/mdp-proposal-evidence-harness.mjs
 	node --check scripts/test-route-budget-installed-parity.mjs
+	node scripts/test-release-workflow.mjs
 	node --check scripts/mdp-proposal-mcp-server.mjs
 	node --check scripts/lib/process-supervisor.mjs
 	node --check scripts/mdp-run-mcp-server.mjs
