@@ -376,15 +376,13 @@ fn inspect_marked_region(
 }
 
 /// Locate exact, standalone marker lines outside Markdown fenced code blocks.
-/// Both LF and CRLF line endings are recognized and included in replacement
+/// LF, CRLF, and bare-CR line endings are recognized and included in replacement
 /// offsets. Quoted, inline, indented, or fenced marker text remains human prose.
 fn standalone_marker_line_offsets(readme: &str, marker: &str) -> Vec<(usize, usize)> {
     let mut offsets = Vec::new();
-    let mut offset = 0;
     let mut fence: Option<(char, usize)> = None;
-    for raw_line in readme.split_inclusive('\n') {
-        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
-        let line = line.strip_suffix('\r').unwrap_or(line);
+    for (start, content_end, line_end) in markdown_line_offsets(readme) {
+        let line = &readme[start..content_end];
         if let Some((character, length, closing)) = fence_delimiter(line, fence) {
             if closing {
                 fence = None;
@@ -392,18 +390,16 @@ fn standalone_marker_line_offsets(readme: &str, marker: &str) -> Vec<(usize, usi
                 fence = Some((character, length));
             }
         } else if fence.is_none() && line == marker {
-            offsets.push((offset, offset + raw_line.len()));
+            offsets.push((start, line_end));
         }
-        offset += raw_line.len();
     }
     offsets
 }
 
 fn open_fence_at_eof(readme: &str) -> Option<(char, usize)> {
     let mut fence = None;
-    for raw_line in readme.split_inclusive('\n') {
-        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
-        let line = line.strip_suffix('\r').unwrap_or(line);
+    for (start, content_end, _) in markdown_line_offsets(readme) {
+        let line = &readme[start..content_end];
         if let Some((character, length, closing)) = fence_delimiter(line, fence) {
             if closing {
                 fence = None;
@@ -413,6 +409,41 @@ fn open_fence_at_eof(readme: &str) -> Option<(char, usize)> {
         }
     }
     fence
+}
+
+/// Return byte ranges `(start, content_end, line_end)` for every Markdown line.
+/// The content range excludes its line ending while `line_end` includes the
+/// exact LF, CRLF, or bare-CR bytes so generated-region replacement is lossless.
+pub(crate) fn markdown_line_offsets(markdown: &str) -> Vec<(usize, usize, usize)> {
+    let bytes = markdown.as_bytes();
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        match bytes[cursor] {
+            b'\r' => {
+                let line_end = if bytes.get(cursor + 1) == Some(&b'\n') {
+                    cursor + 2
+                } else {
+                    cursor + 1
+                };
+                lines.push((start, cursor, line_end));
+                start = line_end;
+                cursor = line_end;
+            }
+            b'\n' => {
+                let line_end = cursor + 1;
+                lines.push((start, cursor, line_end));
+                start = line_end;
+                cursor = line_end;
+            }
+            _ => cursor += 1,
+        }
+    }
+    if start < bytes.len() {
+        lines.push((start, bytes.len(), bytes.len()));
+    }
+    lines
 }
 
 pub(crate) fn fence_delimiter(
@@ -836,6 +867,38 @@ mod tests {
             Some(render_ownership_block())
         );
         assert_eq!(extract_inventory_block(&refreshed), Some(fresh_inventory));
+    }
+
+    #[test]
+    fn standalone_bare_cr_markers_and_fences_keep_exact_offsets() {
+        let ownership = render_ownership_block().replace('\n', "\r");
+        let inventory = format!("{README_INVENTORY_BEGIN}\r## Inventory\r{README_INVENTORY_END}\r");
+        let readme = format!("{ownership}\rHuman bytes.\r\r{inventory}");
+        assert!(validate_readme_regions(&readme).is_ok());
+        assert_eq!(
+            extract_ownership_block(&readme).as_deref(),
+            Some(ownership.as_str())
+        );
+        assert_eq!(
+            extract_inventory_block(&readme).as_deref(),
+            Some(inventory.as_str())
+        );
+
+        let fenced_markers = format!(
+            "# Legacy\r\r```markdown\r{README_OWNERSHIP_BEGIN}\r{README_OWNERSHIP_END}\r{README_INVENTORY_BEGIN}\r{README_INVENTORY_END}\r```\rHuman bytes.\r"
+        );
+        let manifest = manifest_with("Bare CR Pack");
+        let cards = vec![card("pains", CardKind::Pains, 1)];
+        let card_refs = cards.iter().collect::<Vec<_>>();
+        let fresh = render_inventory_block(&manifest, &card_refs, &source_ledger(&[]), &[]);
+        let once = replace_readme_regions(&fenced_markers, &fresh).expect("first refresh");
+        assert!(once.contains(&fenced_markers));
+        assert!(validate_readme_regions(&once).is_ok());
+        let twice = replace_readme_regions(&once, &fresh).expect("second refresh");
+        assert_eq!(
+            twice, once,
+            "bare-CR fenced marker prose must not duplicate regions"
+        );
     }
 
     #[test]

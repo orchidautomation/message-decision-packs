@@ -5,8 +5,8 @@ use crate::models::{Card, Manifest};
 use crate::pack_io::{read_card, read_manifest, resolve_pack_path};
 use crate::pack_readme::{
     README_INVENTORY_CONTRACT, extract_inventory_block, extract_ownership_block, fence_delimiter,
-    human_owned_readme, render_inventory_block, render_ownership_block, replace_readme_regions,
-    validate_readme_regions,
+    human_owned_readme, markdown_line_offsets, render_inventory_block, render_ownership_block,
+    replace_readme_regions, validate_readme_regions,
 };
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
@@ -303,9 +303,8 @@ fn reference_warning(code: &str, kind: &str, reference: &str, path: &Path) -> Va
 fn inline_code_tokens(markdown: &str) -> Vec<String> {
     let mut fence: Option<(char, usize)> = None;
     let mut visible = String::with_capacity(markdown.len());
-    for raw_line in markdown.split_inclusive('\n') {
-        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
-        let line = line.strip_suffix('\r').unwrap_or(line);
+    for (start, content_end, line_end) in markdown_line_offsets(markdown) {
+        let line = &markdown[start..content_end];
         if let Some((character, length, closing)) = fence_delimiter(line, fence) {
             if closing {
                 fence = None;
@@ -321,7 +320,7 @@ fn inline_code_tokens(markdown: &str) -> Vec<String> {
             visible.push('\n');
             continue;
         }
-        visible.push_str(raw_line);
+        visible.push_str(&markdown[start..line_end]);
     }
     code_span_tokens(&visible)
 }
@@ -386,8 +385,8 @@ fn source_reference_ids(markdown: &str) -> Vec<String> {
     let mut in_sources = false;
     let mut fence: Option<(char, usize)> = None;
     let mut ids = Vec::new();
-    for raw_line in markdown.lines() {
-        let line = raw_line.trim_end_matches('\r');
+    for (start, content_end, _) in markdown_line_offsets(markdown) {
+        let line = &markdown[start..content_end];
         if let Some((character, length, closing)) = fence_delimiter(line, fence) {
             if closing {
                 fence = None;
@@ -825,6 +824,7 @@ mod tests {
             "# Human README\n\n~~~text\nkeep tilde bytes\n",
             "# Human README\n\n```markdown\nNBSP is not a close\n```\u{00a0}\n",
             "# Human README\n\n~~~text\nem space is not a close\n~~~\u{2003}\n",
+            "# Human README\r\r```markdown\rbare CR stays open\r",
         ] {
             std::fs::write(&readme_path, human).expect("write open-fence README");
             let before = check_readme(&root).expect("check legacy open-fence README");
@@ -1037,6 +1037,13 @@ Inline `inline-code` must be ignored.
             inline_code_tokens(markdown),
             vec!["cards/outside.yaml"],
             "fenced examples are not human card-reference claims"
+        );
+        let bare_cr =
+            "Outside `cards/outside.yaml`.\r```markdown\r`cards/bare-cr-fenced.yaml`\r```\r";
+        assert_eq!(
+            inline_code_tokens(bare_cr),
+            vec!["cards/outside.yaml"],
+            "bare-CR fences must remain block structure"
         );
     }
 
